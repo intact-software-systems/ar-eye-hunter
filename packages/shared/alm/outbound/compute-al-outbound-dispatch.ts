@@ -333,7 +333,7 @@ function computeAckTrackingWrites<TPrepared>(
         return {
             mutations: read.pendingAck
                 ? [
-                    { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
+                    { kind: 'delete-pending-ack', originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
                     { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
                 ]
                 : [],
@@ -342,7 +342,12 @@ function computeAckTrackingWrites<TPrepared>(
     }
 
     return {
-        mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+        mutations: [{
+            kind: 'set-pending-ack',
+            originPeerId: read.msg.id.senderId,
+            snapshot: pending,
+            expireAtTimestamp: messageExpiresAtMs
+        }],
         durableEffects: [{
             effectId: toALOutboundEffectId([
                 'ack-timeout',

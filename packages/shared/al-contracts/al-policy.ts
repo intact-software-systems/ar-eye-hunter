@@ -27,6 +27,12 @@ export type ALRepairAlgo = 'none' | 'retransmit';
 
 export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver';
 
+/**
+ * What a tracked receipt counts: next hops under `hop` and `subtree`, logical recipients under
+ * `receiver`. `none` tracks no receipt.
+ */
+export type ALReceiptMode = Exclude<ALAckAlgo, 'none'>;
+
 export type ALExpiryAlgo = 'ttl-only' | 'expires-at' | 'fresh-until';
 
 export type ALRetryAlgo = 'none' | 'exp-backoff';

@@ -83,7 +83,7 @@ describe('WS server pre-submission readiness', () => {
         await vi.advanceTimersByTimeAsync(50);
         expect(native.sent).toEqual([]);
         expect(await backend.workQueue.getItem(key)).toBeUndefined();
-        expect(await store.readReceiptState(message.id.msgId)).toBeUndefined();
+        expect(await store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
     });
 
     it('retains native-send failure accounting when an open socket throws', async () => {

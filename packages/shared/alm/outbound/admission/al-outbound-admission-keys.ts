@@ -12,8 +12,18 @@ export function toALOutboundSentMessageKey(namespace: string, msgId: string): st
     return `${namespace}:sent:${msgId}`;
 }
 
-export function toALOutboundPendingAckKey(namespace: string, msgId: string): string {
-    return `${namespace}:pending-ack:${msgId}`;
+/** A pending-ACK row's identity: msgIds are origin-unique, so the origin and the id name it (D40). */
+export interface ALOutboundPendingAckRef {
+    readonly originPeerId: string;
+    readonly msgId: string;
+}
+
+export interface ToALOutboundPendingAckKeyInput extends ALOutboundPendingAckRef {
+    readonly namespace: string;
+}
+
+export function toALOutboundPendingAckKey(input: ToALOutboundPendingAckKeyInput): string {
+    return `${input.namespace}:pending-ack:${JSON.stringify([input.originPeerId, input.msgId])}`;
 }
 
 export function toALOutboundRepairAttemptKey(namespace: string, msgId: string): string {

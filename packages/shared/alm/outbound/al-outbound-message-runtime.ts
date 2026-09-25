@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
@@ -74,7 +74,10 @@ export interface ALOutboundAckTrackingPlan {
     readonly timeoutMs: number;
     readonly maxAttempts: number;
     readonly expectedPeerIds: readonly string[];
-    readonly mode?: 'merge' | 'replace';
+    /** How a re-plan updates a retained receipt's expected set; absent merges. */
+    readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
+    /** The send's resolved ack algorithm: what the receipt it tracks counts. */
+    readonly mode: ALReceiptMode;
 }
 
 export interface ALOutboundRepairTrackingPlan {

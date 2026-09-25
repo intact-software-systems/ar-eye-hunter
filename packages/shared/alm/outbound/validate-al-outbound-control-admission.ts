@@ -6,6 +6,7 @@ import type {
     ALControlAdmissionCandidate,
     ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
+import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
@@ -41,12 +42,11 @@ export function validateALOutboundControlAdmission(
             issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
         }
         if (
-            !read.pending || !read.pending.expectedPeerIds.includes(payload.fromPeerId) ||
-            read.pending.ackedPeerIds.includes(payload.fromPeerId)
+            !read.pending || !read.pending.expectedPeerIds.includes(toALOutboundAckedPeerId(read.pending.mode, payload))
         ) {
             issues.push({
                 code: 'unauthorized',
-                message: 'AL acknowledgement sender has no pending outbound obligation'
+                message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
             });
         }
         return issues;
@@ -70,7 +70,8 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
             const payload = read.parsed.payload;
             return read.history.kind === 'acks' &&
                 read.history.values.some((prior) =>
-                    prior.fromPeerId === payload.fromPeerId && prior.status === payload.status
+                    prior.fromPeerId === payload.fromPeerId &&
+                    prior.logicalRecipientPeerId === payload.logicalRecipientPeerId && prior.status === payload.status
                 );
         }
         case 'nack': {

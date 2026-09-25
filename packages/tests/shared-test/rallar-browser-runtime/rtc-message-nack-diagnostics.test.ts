@@ -91,8 +91,10 @@ async function admitAttemptedMessage(
             ...bundle.mutations,
             {
                 kind: 'set-pending-ack',
+                originPeerId: sessionId,
                 snapshot: {
                     msgId: 'attempted',
+                    mode: 'hop',
                     expectedPeerIds: ['receiver'],
                     ackedPeerIds: [],
                     timeoutMs: 2000,

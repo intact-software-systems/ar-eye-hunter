@@ -353,6 +353,7 @@ describe('IndexedDB AL runtime stores', () => {
                                 toPeerId: 'upstream',
                                 status: 'subtree-complete',
                                 localReady: false,
+                                localRecipient: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
                                 ackedFromPeerIds: [],
                                 carrier: 'ws'
@@ -715,7 +716,8 @@ describe('IndexedDB AL runtime stores', () => {
                     enabled: true,
                     timeoutMs: 10,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,

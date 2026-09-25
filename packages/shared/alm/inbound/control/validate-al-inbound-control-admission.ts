@@ -20,8 +20,9 @@ export function validateALInboundControlAdmission(
         );
     }
     if (
-        pending.ackedFromPeerIds.includes(ack.fromPeerId) ||
-        acks.some((prior) => prior.fromPeerId === ack.fromPeerId)
+        acks.some((prior) =>
+            prior.fromPeerId === ack.fromPeerId && prior.logicalRecipientPeerId === ack.logicalRecipientPeerId
+        )
     ) {
         issues.push(rejectInboundControl('Inbound acknowledgement was already admitted'));
     }

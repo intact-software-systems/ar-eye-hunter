@@ -117,6 +117,7 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
+                        localRecipient: false,
                         expectedFromPeerIds: ['receiver'],
                         ackedFromPeerIds: [],
                         expireAtTimestamp,
@@ -349,6 +350,7 @@ describe('inbound control admission', () => {
                 toPeerId: message.id.senderId,
                 status: 'subtree-complete',
                 localReady: true,
+                localRecipient: false,
                 expectedFromPeerIds: ['lower-relay', 'leaf'],
                 ackedFromPeerIds: ['lower-relay'],
                 carrier: 'rtc'
@@ -376,6 +378,92 @@ describe('inbound control admission', () => {
         expect(new Set(candidate.completedEffects.map((effect) => effect.effectId)).size).toBe(2);
     });
 
+    it('keys a child\'s acknowledgements by the recipient each speaks for, refusing only a repeat (D40)', () => {
+        const nowMs = 1_800_000_000_000;
+        const toAck = (logicalRecipientPeerId: string): ALAckPayload => ({
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId,
+            fromPeerId: 'child-relay',
+            toPeerId: 'self',
+            status: 'subtree-complete',
+            observedAtEpochMs: nowMs,
+            carrier: 'rtc'
+        });
+        const readWith = (ack: ALAckPayload) =>
+            computeALInboundControlAdmission({
+                namespace: 'inbound',
+                ack,
+                controlOwners: TRACKED_CONTROL_OWNERS,
+                owner: {
+                    msgId: message.id.msgId,
+                    senderId: message.id.senderId,
+                    source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                    supersedenceKey: null
+                },
+                pending: {
+                    toPeerId: message.id.senderId,
+                    status: 'subtree-complete',
+                    localReady: true,
+                    localRecipient: false,
+                    expectedFromPeerIds: ['child-relay', 'leaf'],
+                    ackedFromPeerIds: ['child-relay'],
+                    carrier: 'rtc'
+                },
+                acks: [toAck('grandchild-1')],
+                nowMs,
+                controlMsgId: 'control'
+            }, normalizeALRuntimeStoreRetention());
+
+        expect(validateALInboundControlAdmission(readWith(toAck('grandchild-2')))).toEqual([]);
+        expect(validateALInboundControlAdmission(readWith(toAck('grandchild-1'))).map((issue) => issue.message))
+            .toEqual(['Inbound acknowledgement was already admitted']);
+    });
+
+    it('names itself beside the recipients it relays for when it delivered the message locally', () => {
+        const nowMs = 1_800_000_000_000;
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'leaf',
+                fromPeerId: 'leaf',
+                toPeerId: 'self',
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'rtc'
+            },
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                localRecipient: true,
+                expectedFromPeerIds: ['leaf'],
+                ackedFromPeerIds: [],
+                carrier: 'rtc'
+            },
+            acks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        // The relay is a logical recipient too: the origin's receiver-mode receipt must be able to name it.
+        expect(
+            upstream.map((control) => control?.type === 'ack' ? control.payload.logicalRecipientPeerId : undefined)
+        ).toEqual(['self', 'leaf']);
+    });
+
     it('re-originates the origin from its own message-owner row, never from what a child claimed', () => {
         const nowMs = 1_800_000_000_000;
         const candidate = computeALInboundControlAdmission({
@@ -401,6 +489,7 @@ describe('inbound control admission', () => {
                 toPeerId: message.id.senderId,
                 status: 'subtree-complete',
                 localReady: true,
+                localRecipient: false,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: [],
                 carrier: 'ws'
@@ -445,11 +534,21 @@ describe('inbound control admission', () => {
                 toPeerId: message.id.senderId,
                 status: 'delivered',
                 localReady: true,
+                localRecipient: false,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: ['stranger'],
                 carrier: 'ws'
             },
-            acks: [],
+            acks: [{
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'stranger',
+                fromPeerId: 'stranger',
+                toPeerId: message.id.senderId,
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'ws'
+            }],
             nowMs,
             controlMsgId: 'control'
         }, normalizeALRuntimeStoreRetention());

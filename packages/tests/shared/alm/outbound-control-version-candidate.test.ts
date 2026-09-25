@@ -106,6 +106,7 @@ describe('outbound control version candidate', () => {
             sent,
             pending: {
                 msgId: message.id.msgId,
+                mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
                 timeoutMs: 2_000,

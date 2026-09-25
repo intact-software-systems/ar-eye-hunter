@@ -258,6 +258,7 @@ function computeIncomingAcknowledgements(
         toPeerId: plan.ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
+        localRecipient: plan.localDelivery.enabled || plan.localDelivery.deferred,
         expireAtTimestamp,
         carrier: toALDeliveryCarrier(read.source)
     });
@@ -376,7 +377,10 @@ function toCompletedAckEffects(
     if (!completed) {
         return [];
     }
-    return toALInboundCompletedAckRecipients(transition.completedRecipientPeerIds).map((logicalRecipient) =>
+    return toALInboundCompletedAckRecipients(
+        transition.completedRecipientPeerIds,
+        transition.completedLocalRecipient
+    ).map((logicalRecipient) =>
         toALInboundAckEffect({
             toPeerId: completed.toPeerId,
             ackedMsgId: completed.msgId,

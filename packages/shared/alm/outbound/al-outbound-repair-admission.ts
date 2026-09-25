@@ -236,7 +236,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const status = await this.admissionStore.commitBundle({
             senderId: clientRecord.senderId,
             expectedVersion: clientRecord.version,
-            mutations: [{ kind: 'delete-pending-ack', msgId }, { kind: 'delete-repair-attempt', msgId }],
+            mutations: [
+                { kind: 'delete-pending-ack', originPeerId: clientRecord.senderId, msgId },
+                { kind: 'delete-repair-attempt', msgId }
+            ],
             durableEffects: []
         });
         if (status === 'conflict') {
@@ -253,7 +256,12 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return {
             senderId: msg.id.senderId,
             expectedVersion,
-            mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+            mutations: [{
+                kind: 'set-pending-ack',
+                originPeerId: msg.id.senderId,
+                snapshot: pending,
+                expireAtTimestamp: messageExpiresAtMs
+            }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
                 {
@@ -305,6 +313,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             mutations: [
                 {
                     kind: 'delete-pending-ack',
+                    originPeerId: msg.id.senderId,
                     msgId: pending.msgId
                 },
                 {

@@ -56,7 +56,7 @@ import {
     type ALOutboundEffectCandidate,
     type ALOutboundEffectObservation
 } from './al-outbound-admission-effect-store.ts';
-import { toALOutboundVersionKey } from './al-outbound-admission-keys.ts';
+import { toALOutboundVersionKey, type ALOutboundPendingAckRef } from './al-outbound-admission-keys.ts';
 import {
     ALOutboundAdmissionMutations,
     type ALOutboundAdmissionMutation,
@@ -266,9 +266,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         seq: number
     ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
-    readonly readReceiptState: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
+    readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
-    readonly readPendingAck: (msgId: string) => Promise<ALOutboundPendingAckSnapshot | undefined>;
+    readonly readPendingAck: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     /** Decodes one claimed work row of this scope, including the canonical message its payload references. */
     readonly readWorkSnapshot: (entry: ResourceEntry) => Promise<ALOutboundEffectSnapshot<TPrepared>>;
@@ -391,12 +391,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readSentMessageByOrdering(session, trackKey, seq));
     }
 
-    async readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.backend.readWithin((session) => this.reads.readPendingAck(session, msgId));
+    async readPendingAck(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readPendingAck(session, receipt));
     }
 
-    async readReceiptState(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        return await this.backend.readWithin((session) => this.reads.readReceiptState(session, msgId));
+    async readReceiptState(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readReceiptState(session, receipt));
     }
 
     async readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {

@@ -300,12 +300,26 @@ export class ALOutboundControlAdmission<TPrepared> {
                 targetMsgId,
                 nowMs,
                 owner,
-                ownerVersion: owner ? await this.reads.readClientRecord(session, owner) : undefined,
+                ...await this.readOwnedControlSurface(session, owner, targetMsgId),
                 sent: await this.reads.readStoredMessage(session, targetMsgId),
-                pending: await this.reads.readReceiptState(session, targetMsgId),
                 history: await this.readControlHistory(session, parsed, targetMsgId)
             };
         });
+    }
+
+    /** What only a known owner has: its version fence and the receipt it originated for the message. */
+    private async readOwnedControlSurface(
+        session: ALAdmissionReadSession,
+        owner: string | undefined,
+        msgId: string
+    ): Promise<Pick<ALControlAdmissionRead, 'ownerVersion' | 'pending'>> {
+        if (owner === undefined) {
+            return {};
+        }
+        return {
+            ownerVersion: await this.reads.readClientRecord(session, owner),
+            pending: await this.reads.readReceiptState(session, { originPeerId: owner, msgId })
+        };
     }
 
     private async readControlHistory(
@@ -353,7 +367,11 @@ export class ALOutboundControlAdmission<TPrepared> {
             candidate.history,
             candidate.controlExpireAtTimestamp
         );
-        const pendingAckKey = toALOutboundPendingAckKey(this.namespace, read.targetMsgId);
+        const pendingAckKey = toALOutboundPendingAckKey({
+            namespace: this.namespace,
+            originPeerId: read.owner!,
+            msgId: read.targetMsgId
+        });
         if (candidate.pending.kind === 'remove') {
             await tx.remove(pendingAckKey);
         }

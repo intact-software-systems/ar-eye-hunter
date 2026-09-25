@@ -1177,6 +1177,7 @@ async function seedTrackedAcknowledgement(
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
+                    localRecipient: false,
                     expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
                     expireAtTimestamp,

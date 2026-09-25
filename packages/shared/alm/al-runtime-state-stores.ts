@@ -1,5 +1,5 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import type { ALMessageHandlingPlan, ALReceiptMode } from '../al-contracts/al-policy.ts';
 import type { ALReadyable } from '../al-contracts/al-runtime.ts';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import type { Key } from '../queuebox/ResourceEntry.ts';
@@ -92,6 +92,8 @@ export interface ALOutboundSentMessageSnapshot {
 
 export interface ALOutboundPendingAckSnapshot {
     readonly msgId: string;
+    /** Types both peer lists: next-hop ids under `hop` and `subtree`, logical recipient ids under `receiver`. */
+    readonly mode: ALReceiptMode;
     readonly expectedPeerIds: readonly string[];
     readonly ackedPeerIds: readonly string[];
     readonly timeoutMs: number;

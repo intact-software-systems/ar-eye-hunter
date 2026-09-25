@@ -162,6 +162,7 @@ describe('PostgreSQL inbound admission', () => {
                             toPeerId: 'peer-1',
                             status: 'subtree-complete',
                             localReady: false,
+                            localRecipient: false,
                             expectedFromPeerIds: ['peer-2'],
                             ackedFromPeerIds: [],
                             carrier: 'ws'
@@ -316,8 +317,10 @@ describe('PostgreSQL outbound admission', () => {
                 ...bundle.mutations,
                 {
                     kind: 'set-pending-ack',
+                    originPeerId: msg.id.senderId,
                     snapshot: {
                         msgId: msg.id.msgId,
+                        mode: 'hop',
                         expectedPeerIds: ['peer-1'],
                         ackedPeerIds: [],
                         timeoutMs: 2_000,

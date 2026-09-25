@@ -75,8 +75,10 @@ describe('outbound control admission identity', () => {
                 ...admission,
                 mutations: [...admission.mutations, {
                     kind: 'set-pending-ack',
+                    originPeerId: 'sender',
                     snapshot: {
                         msgId,
+                        mode: 'hop',
                         expectedPeerIds: ['receiver'],
                         ackedPeerIds: [],
                         timeoutMs: 2_000,
@@ -153,7 +155,7 @@ describe('outbound control admission identity', () => {
 
             expect(await control.admit(accepted)).toEqual({ kind: 'committed' });
             if (type === 'ack') {
-                expect(await admissionStore.readPendingAck(msgId)).toBeUndefined();
+                expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId })).toBeUndefined();
             }
             else {
                 const retained = await readRetainedWork(admissionStore, workQueue);
@@ -176,7 +178,7 @@ describe('outbound control admission identity', () => {
         const candidate = JSON.stringify(ack);
 
         expect(await control.admit(ack)).toEqual({ kind: 'committed' });
-        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
+        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(JSON.stringify(ack)).toBe(candidate);
         const acceptedState = [...state.data];
         expect((await control.admit(ack)).kind).toBe('rejected');
@@ -376,7 +378,7 @@ describe('outbound control admission identity', () => {
         });
 
         expect(await control.admit(controlMessage('ack', 'peer-255'))).toEqual({ kind: 'committed' });
-        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
+        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(decodeALAdmissionControlValue(state.data.get(key)?.value, 'message', 'acks').values).toHaveLength(256);
     });
 
@@ -640,8 +642,10 @@ async function seedObligation(
             ...admission.mutations,
             {
                 kind: 'set-pending-ack',
+                originPeerId: 'sender',
                 snapshot: {
                     msgId: 'message',
+                    mode: 'hop',
                     expectedPeerIds: input.expectedPeerIds,
                     ackedPeerIds: input.ackedPeerIds,
                     timeoutMs: 2000,

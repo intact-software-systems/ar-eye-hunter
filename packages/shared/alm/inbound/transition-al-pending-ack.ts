@@ -12,6 +12,7 @@ export interface TrackALPendingAckSnapshotInput {
     readonly toPeerId: string;
     readonly expectedFromPeerIds: readonly string[];
     readonly localReady: boolean;
+    readonly localRecipient: boolean;
     readonly expireAtTimestamp: number | undefined;
     readonly carrier: ALDeliveryCarrier;
 }
@@ -33,7 +34,14 @@ export interface ALPendingAckTransition {
     readonly completed?: ALCompletedPendingAck;
     /** The logical recipients the counted ACKs confirmed, each once (D40); empty while pending. */
     readonly completedRecipientPeerIds: readonly string[];
+    /** The completion also speaks for this relay: it is a logical recipient and delivered locally. */
+    readonly completedLocalRecipient: boolean;
 }
+
+const NO_AL_PENDING_ACK_TRANSITION: ALPendingAckTransition = {
+    completedRecipientPeerIds: [],
+    completedLocalRecipient: false
+};
 
 export function trackALPendingAckSnapshot(
     input: TrackALPendingAckSnapshotInput
@@ -56,6 +64,7 @@ export function trackALPendingAckSnapshot(
         toPeerId: input.toPeerId,
         status: 'subtree-complete',
         localReady: (input.current?.localReady ?? false) || input.localReady,
+        localRecipient: input.localRecipient,
         expectedFromPeerIds: [...expectedFromPeerIds],
         ackedFromPeerIds: [...ackedFromPeerIds],
         ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),
@@ -67,7 +76,7 @@ export function markALPendingAckLocalReadySnapshot(
     input: MarkALPendingAckLocalReadySnapshotInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return { completedRecipientPeerIds: [] };
+        return NO_AL_PENDING_ACK_TRANSITION;
     }
 
     return trackALPendingAckSnapshot({
@@ -77,6 +86,7 @@ export function markALPendingAckLocalReadySnapshot(
         toPeerId: input.current.toPeerId,
         expectedFromPeerIds: input.current.expectedFromPeerIds,
         localReady: true,
+        localRecipient: input.current.localRecipient,
         expireAtTimestamp: input.current.expireAtTimestamp,
         carrier: input.current.carrier
     });
@@ -86,7 +96,7 @@ export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return { completedRecipientPeerIds: [] };
+        return NO_AL_PENDING_ACK_TRANSITION;
     }
 
     const ackedFromPeerIds = new Set(input.current.ackedFromPeerIds);
@@ -104,6 +114,7 @@ export function acceptALPendingAckPayload(
         toPeerId: input.current.toPeerId,
         expectedFromPeerIds: input.current.expectedFromPeerIds,
         localReady: input.current.localReady,
+        localRecipient: input.current.localRecipient,
         expireAtTimestamp: input.current.expireAtTimestamp,
         carrier: input.current.carrier
     });
@@ -115,7 +126,7 @@ function finalizeALPendingAckTransition(
     pending: ALPendingAckSnapshot
 ): ALPendingAckTransition {
     if (!pending.localReady) {
-        return { pending, completedRecipientPeerIds: [] };
+        return { pending, completedRecipientPeerIds: [], completedLocalRecipient: false };
     }
 
     const ackedFromPeerIds = new Set(pending.ackedFromPeerIds);
@@ -129,7 +140,8 @@ function finalizeALPendingAckTransition(
                 status: pending.status,
                 ...(pending.expireAtTimestamp === undefined ? {} : { expireAtTimestamp: pending.expireAtTimestamp })
             },
-            completedRecipientPeerIds: [...new Set(countedAcks.map((ack) => ack.logicalRecipientPeerId))]
+            completedRecipientPeerIds: [...new Set(countedAcks.map((ack) => ack.logicalRecipientPeerId))],
+            completedLocalRecipient: pending.localRecipient
         }
-        : { pending, completedRecipientPeerIds: [] };
+        : { pending, completedRecipientPeerIds: [], completedLocalRecipient: false };
 }

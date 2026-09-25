@@ -740,7 +740,7 @@ export class WebRtcOverlayMulticastManager {
     private toAckTrackingPlan(
         effective: ALQosEffectivePolicy,
         expectedPeerIds: readonly string[],
-        mode?: 'merge' | 'replace'
+        expectedPeerIdsUpdate?: 'merge' | 'replace'
     ): ALOutboundAckTrackingPlan | undefined {
         if (effective.ack.algo === 'none') {
             return undefined;
@@ -753,7 +753,8 @@ export class WebRtcOverlayMulticastManager {
                 ? 0
                 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [...new Set(expectedPeerIds)],
-            mode
+            expectedPeerIdsUpdate,
+            mode: effective.ack.algo
         };
     }
 
@@ -906,7 +907,7 @@ export class WebRtcOverlayMulticastManager {
             ackTracking: dispatchPlan.ackTracking
                 ? {
                     ...dispatchPlan.ackTracking,
-                    mode: 'replace'
+                    expectedPeerIdsUpdate: 'replace'
                 }
                 : undefined,
             repairTracking: request.repair

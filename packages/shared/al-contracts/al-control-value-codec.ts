@@ -102,16 +102,20 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
 export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot {
     const record = decodeControlRecord(
         value,
-        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
+        ['toPeerId', 'status', 'localReady', 'localRecipient', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
         ['expireAtTimestamp']
     );
     if (typeof record.localReady !== 'boolean') {
         throw new TypeError('Pending ACK readiness is invalid');
     }
+    if (typeof record.localRecipient !== 'boolean') {
+        throw new TypeError('Pending ACK local recipient flag is invalid');
+    }
     return {
         toPeerId: decodeControlIdentifier(record.toPeerId, 'pending ACK receiver identity'),
         status: decodeAckStatus(record.status),
         localReady: record.localReady,
+        localRecipient: record.localRecipient,
         expectedFromPeerIds: decodeControlIdentifierArray(
             record.expectedFromPeerIds,
             'pending ACK expected peer identity'

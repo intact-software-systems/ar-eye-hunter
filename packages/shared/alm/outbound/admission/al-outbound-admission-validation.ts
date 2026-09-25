@@ -3,7 +3,8 @@ import {
     requireOptionalPersistedALUniqueStringArray,
     requirePersistedALBoolean,
     requirePersistedALNonEmptyString,
-    requirePersistedALSafeInteger
+    requirePersistedALSafeInteger,
+    type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
 import type {
@@ -55,7 +56,7 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
             ? {
                 ...policy.ackTracking,
                 expectedPeerIds: plan.ackTracking?.expectedPeerIds ?? [],
-                mode: plan.ackTracking?.mode
+                expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate
             }
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
@@ -105,8 +106,9 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             'enabled',
             'timeoutMs',
             'maxAttempts',
-            'expectedPeerIds'
-        ], ['mode']);
+            'expectedPeerIds',
+            'mode'
+        ], ['expectedPeerIdsUpdate']);
         requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
         requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
         requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
@@ -114,9 +116,13 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             throw new TypeError('Captured acknowledgement peers are missing');
         }
         requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
-        if (ack.mode !== undefined && ack.mode !== 'merge' && ack.mode !== 'replace') {
-            throw new TypeError('Captured acknowledgement mode is invalid');
+        if (
+            ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
+            ack.expectedPeerIdsUpdate !== 'replace'
+        ) {
+            throw new TypeError('Captured acknowledgement peer update is invalid');
         }
+        requirePersistedALReceiptMode(ack.mode, 'captured acknowledgement mode');
     }
     if (policy.retryTracking !== null) {
         const retry = decodeALAdmissionRecord(policy.retryTracking, ['enabled', 'maxAttempts'], ['retryDelayMs']);
@@ -150,12 +156,22 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
 }
 
 export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string): ALOutboundPendingAckSnapshot {
-    const fields = ['msgId', 'expectedPeerIds', 'ackedPeerIds', 'timeoutMs', 'maxAttempts', 'attempts', 'deadlineAtMs'];
+    const fields = [
+        'msgId',
+        'mode',
+        'expectedPeerIds',
+        'ackedPeerIds',
+        'timeoutMs',
+        'maxAttempts',
+        'attempts',
+        'deadlineAtMs'
+    ];
     const snapshot = decodeALAdmissionRecord(value, fields);
     requirePersistedALNonEmptyString(snapshot.msgId, 'pending acknowledgement message id');
     if (snapshot.msgId !== expectedMsgId) {
         throw new TypeError('Persisted AL pending acknowledgement identity does not match its slot');
     }
+    requirePersistedALReceiptMode(snapshot.mode, 'pending acknowledgement mode');
     if (snapshot.expectedPeerIds === undefined || snapshot.ackedPeerIds === undefined) {
         throw new TypeError('Persisted AL pending acknowledgement peer arrays are missing');
     }
@@ -199,4 +215,10 @@ export function decodeALOutboundNotYetInSyncRetry(
         throw new TypeError('Persisted AL not-yet-in-sync retry effect identity does not match its snapshot');
     }
     return value as ALOutboundNotYetInSyncRetrySnapshot;
+}
+
+function requirePersistedALReceiptMode(value: PersistedALValue | undefined, label: string): void {
+    if (value !== 'hop' && value !== 'subtree' && value !== 'receiver') {
+        throw new TypeError(`Persisted AL ${label} is invalid`);
+    }
 }

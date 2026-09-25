@@ -122,7 +122,7 @@ describe('ALOutboundMessageRuntime', () => {
             .toEqual([EntityStatus.COMPLETED]);
         expect(release.mock.calls[0]![0][0]!.entry.audit.expiryTs.epochMilliseconds).toBe(31_000);
         expect(send).toHaveBeenCalledTimes(1);
-        expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
+        expect(await admissionStore.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
     });
 
@@ -221,7 +221,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 }
             })
         });
@@ -677,7 +678,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,
@@ -740,7 +742,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 }
             }),
             planRepairMessage: async (msg) => ({
@@ -1215,7 +1218,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,

@@ -80,8 +80,11 @@ sender and receiver it names the acknowledged message's origin
 (`originPeerId`, the message's `senderId`) and the recipient it speaks for
 (`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
 whose pending receipt completes re-originates one ACK per logical recipient
-its subtree confirmed, and speaks for itself only when no confirming ACK is
-retained. The origin is never copied from a child: the relay names its own
+its subtree confirmed, beside its own when it is a logical recipient that
+delivered locally (the pending row's `localRecipient`), and speaks for itself
+alone when no confirming ACK is retained. The relay refuses a child's ACK as a
+duplicate only when both its sender and its logical recipient repeat, so a child
+relay's ACKs for different recipients are each admitted. The origin is never copied from a child: the relay names its own
 message-owner row's sender, and both the relay's inbound control admission
 and the origin's outbound control admission refuse an ACK whose
 `originPeerId` names another origin. An

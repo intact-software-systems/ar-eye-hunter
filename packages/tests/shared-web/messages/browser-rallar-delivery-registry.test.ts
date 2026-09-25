@@ -620,6 +620,7 @@ function toAcknowledgementSettlement(msgId: string, atMs: number): ALDeliverySet
         msgId,
         carrier: 'rtc',
         atMs,
+        mode: 'hop',
         confirmedHopPeerIds: ['peer-1'],
         unconfirmedHopPeerIds: [],
         complete: true

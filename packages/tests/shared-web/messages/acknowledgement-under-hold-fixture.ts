@@ -77,7 +77,7 @@ export interface HoldSender {
     deliver(frame: ALMessage): void;
     /** The typeId of every frame the fault port was asked about. */
     readFaultedTypeIds(): readonly string[];
-    /** The receipt the carrier's outbound admission store retains for a sent message. */
+    /** The receipt the carrier's outbound admission store retains for a message this sender originated. */
     readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
 }
 
@@ -205,7 +205,11 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
         advance: async (ms) => void vi.setSystemTime(Date.now() + ms),
         deliver: (frame) => void channel.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => decideSend.mock.calls.map(([, serialized]) => toSerializedTypeId(serialized)),
-        readPendingAck: (msgId) => resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck(msgId)
+        readPendingAck: (msgId) =>
+            resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck({
+                originPeerId: 'self',
+                msgId
+            })
     };
 }
 
@@ -294,7 +298,11 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
-        readPendingAck: (msgId) => resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck(msgId)
+        readPendingAck: (msgId) =>
+            resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck({
+                originPeerId: sessionId,
+                msgId
+            })
     };
 }
 

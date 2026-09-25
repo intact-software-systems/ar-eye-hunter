@@ -25,6 +25,7 @@ describe('browser session delivery observation', () => {
             msgId: handle.msgId,
             carrier: 'ws',
             atMs: 0,
+            mode: 'hop',
             confirmedHopPeerIds: ['current-hop'],
             unconfirmedHopPeerIds: [],
             complete: true

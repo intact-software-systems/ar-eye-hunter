@@ -291,6 +291,7 @@ describe('ALInboundMessageRuntime', () => {
                         toPeerId: 'peer-1',
                         status: 'subtree-complete',
                         localReady: false,
+                        localRecipient: false,
                         expectedFromPeerIds: ['peer-2'],
                         ackedFromPeerIds: [],
                         carrier: 'ws'
@@ -401,19 +402,21 @@ describe('ALInboundMessageRuntime', () => {
         await pendingRelease;
         await expect.poll(() => releaseConflictObserved).toBe(true);
         vi.setSystemTime(Date.now() + 100);
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
+        // The relay is a group member that delivered locally, so it names itself beside `peer-2`.
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
 
         const ackPayloads = readAckPayloads(controlMessages);
 
         expect(releaseConflictObserved).toBe(true);
-        expect(ackPayloads).toHaveLength(1);
-        expect(ackPayloads[0]).toMatchObject({
-            ackedMsgId: seq2.id.msgId,
-            toPeerId: 'peer-1',
-            originPeerId: 'peer-1',
-            logicalRecipientPeerId: 'peer-2',
-            status: 'subtree-complete'
-        });
+        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        for (const ack of ackPayloads) {
+            expect(ack).toMatchObject({
+                ackedMsgId: seq2.id.msgId,
+                toPeerId: 'peer-1',
+                originPeerId: 'peer-1',
+                status: 'subtree-complete'
+            });
+        }
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 });
@@ -467,18 +470,20 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             { kind: 'ws-client', peerId: 'peer-2' }
         );
 
-        await expect.poll(() => controlMessages).toHaveLength(1);
+        // One ACK for the downstream recipient and one for the relay itself, a group member that delivered.
+        await expect.poll(() => controlMessages).toHaveLength(2);
         expect(controlAcceptances).toHaveLength(1);
 
-        const parsed = parseALControlMessage(controlMessages[0]);
-        expect(parsed?.type).toBe('ack');
-        expect(parsed?.payload).toMatchObject({
-            ackedMsgId: msg.id.msgId,
-            toPeerId: 'peer-1',
-            originPeerId: 'peer-1',
-            logicalRecipientPeerId: 'peer-2',
-            status: 'subtree-complete'
-        });
+        const ackPayloads = readAckPayloads(controlMessages);
+        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        for (const ack of ackPayloads) {
+            expect(ack).toMatchObject({
+                ackedMsgId: msg.id.msgId,
+                toPeerId: 'peer-1',
+                originPeerId: 'peer-1',
+                status: 'subtree-complete'
+            });
+        }
     });
 
     it('sends an upstream receipt accepted while forwarding is still in progress', async () => {
@@ -514,11 +519,15 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         releaseForwarding.resolve();
         await admission;
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toEqual([expect.objectContaining({
-            ackedMsgId: msg.id.msgId,
-            toPeerId: 'peer-1',
-            status: 'subtree-complete'
-        })]);
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
+        expect(readAckPayloads(controlMessages)).toEqual(expect.arrayContaining(['peer-2', 'self'].map((recipient) =>
+            expect.objectContaining({
+                ackedMsgId: msg.id.msgId,
+                toPeerId: 'peer-1',
+                logicalRecipientPeerId: recipient,
+                status: 'subtree-complete'
+            })
+        )));
     });
 
     it('does not complete deferred subtree ack after the source message expires', async () => {
@@ -823,17 +832,18 @@ describe('ALInboundMessageRuntime durable effects', () => {
         await runtime2.ready();
         vi.setSystemTime(Date.now() + 100);
 
-        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
         const ackPayloads = readAckPayloads(controlMessages);
 
-        expect(ackPayloads).toHaveLength(1);
-        expect(ackPayloads[0]).toMatchObject({
-            ackedMsgId: msg.id.msgId,
-            toPeerId: 'peer-1',
-            originPeerId: 'peer-1',
-            logicalRecipientPeerId: 'peer-2',
-            status: 'subtree-complete'
-        });
+        expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        for (const ack of ackPayloads) {
+            expect(ack).toMatchObject({
+                ackedMsgId: msg.id.msgId,
+                toPeerId: 'peer-1',
+                originPeerId: 'peer-1',
+                status: 'subtree-complete'
+            });
+        }
     });
 });
 

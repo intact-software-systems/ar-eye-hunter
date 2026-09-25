@@ -383,7 +383,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,
@@ -472,7 +473,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,

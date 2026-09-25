@@ -371,19 +371,22 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         expect(delivered).toEqual([message.id.msgId]);
         const upstream = (await fixture.outbound()).map(shared.parseALControlMessage)
             .filter((control) => control?.type === 'ack');
-        // The relay re-originates one ACK per logical recipient its subtree confirmed (D40).
-        expect(upstream).toHaveLength(2);
-        // Each is its own durable work row, so the two leave in either order.
-        expect(upstream.map((control) => control?.payload)).toEqual(expect.arrayContaining(['peer-2', 'peer-3'].map((recipient) =>
-            expect.objectContaining({
-                status: 'subtree-complete',
-                fromPeerId: 'self',
-                toPeerId: 'peer-1',
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'peer-1',
-                logicalRecipientPeerId: recipient
-            })
-        )));
+        // The relay re-originates one ACK per logical recipient its subtree confirmed (D40), and names
+        // itself too: it is a group member that delivered the message locally.
+        expect(upstream).toHaveLength(3);
+        // Each is its own durable work row, so they leave in any order.
+        expect(upstream.map((control) => control?.payload)).toEqual(
+            expect.arrayContaining(['self', 'peer-2', 'peer-3'].map((recipient) =>
+                expect.objectContaining({
+                    status: 'subtree-complete',
+                    fromPeerId: 'self',
+                    toPeerId: 'peer-1',
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: recipient
+                })
+            ))
+        );
     });
 });
 

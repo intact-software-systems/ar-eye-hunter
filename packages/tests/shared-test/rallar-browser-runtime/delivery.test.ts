@@ -163,6 +163,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
+        mode: 'hop',
         confirmedHopPeerIds: ['peer-1'],
         unconfirmedHopPeerIds: ['peer-2'],
         complete: true

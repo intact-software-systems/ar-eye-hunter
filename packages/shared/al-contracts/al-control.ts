@@ -115,6 +115,8 @@ export interface ALPendingAckSnapshot {
     readonly toPeerId: string;
     readonly status: ALAckStatus;
     readonly localReady: boolean;
+    /** This relay is itself a logical recipient: its completed ACK set names it beside its children's. */
+    readonly localRecipient: boolean;
     readonly expectedFromPeerIds: readonly string[];
     readonly ackedFromPeerIds: readonly string[];
     readonly expireAtTimestamp?: number;

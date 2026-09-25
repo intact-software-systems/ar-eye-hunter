@@ -197,7 +197,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send' }],
-                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'] }
+                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], mode: 'hop' }
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -227,7 +227,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 ...verdict,
                 msgId: 'control-peer-2',
                 outcome: 'rejected',
-                reason: 'AL acknowledgement sender has no pending outbound obligation'
+                reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
             }
         ]);
         runtime.dispose();

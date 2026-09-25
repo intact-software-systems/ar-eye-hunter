@@ -135,6 +135,16 @@ ACK whose deadline has passed even if a receipt is still read. Every carrier dis
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
 reasons) for every control it decides.
 
+A receipt row is keyed by its origin and message id
+(`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
+store namespace never collide on a message id. Its `mode` is the send's resolved ack algorithm
+and types its peer lists: next hops under `hop` and `subtree`, logical recipients under
+`receiver`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
+`receiver`, its sender otherwise, so a hop ACK never stands in for a logical recipient. A control
+is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
+the receipt already counted joins the history and states no settlement. The `acknowledgement`
+settlement carries the `mode`, so `complete` under `receiver` is logical completion.
+
 An RTT heartbeat is not one of these entries.
 [`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it
 straight to an open socket -- the same bytes `enqueueOutboxIfAbsent` sends today -- with no

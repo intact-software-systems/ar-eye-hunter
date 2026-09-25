@@ -211,7 +211,7 @@ function toNoRouteDispatchPlan(
 function toAckTrackingPlan(
     effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
     recipients: readonly WsServerResolvedRecipient[],
-    mode?: 'merge' | 'replace'
+    expectedPeerIdsUpdate?: 'merge' | 'replace'
 ): ALOutboundAckTrackingPlan | undefined {
     if (effective.ack.algo === 'none') {
         return undefined;
@@ -221,7 +221,8 @@ function toAckTrackingPlan(
         timeoutMs: effective.ack.opts.timeoutMs,
         maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
         expectedPeerIds: [...new Set(recipients.map((recipient) => recipient.peerId))],
-        mode
+        expectedPeerIdsUpdate,
+        mode: effective.ack.algo
     };
 }
 

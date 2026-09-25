@@ -379,7 +379,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
         dropReasonCode: undefined,
         persist: false,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-        ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'] },
+        ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], mode: 'hop' },
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
     };
 }

@@ -106,6 +106,7 @@ export function toALOutboundAcknowledgementSettlement(
     return snapshot === undefined ? undefined : {
         kind: 'acknowledgement',
         msgId: candidate.read.targetMsgId,
+        mode: snapshot.mode,
         confirmedHopPeerIds: snapshot.ackedPeerIds,
         unconfirmedHopPeerIds: snapshot.expectedPeerIds.filter(
             (peerId) => !snapshot.ackedPeerIds.includes(peerId)
@@ -170,7 +171,13 @@ function computePendingAckWrite(
             acks: [],
             ack: read.parsed.payload
         });
-        return next ? { kind: 'set', value: next } : { kind: 'remove' };
+        if (!next) {
+            return { kind: 'remove' };
+        }
+        // A peer the receipt already counted: the ACK joins the history and moves no receipt.
+        return next.ackedPeerIds.length === read.pending?.ackedPeerIds.length
+            ? { kind: 'unchanged' }
+            : { kind: 'set', value: next };
     }
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending
         ? { kind: 'remove' }

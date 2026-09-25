@@ -1,4 +1,5 @@
 import type { ALAckPayload } from '../../al-contracts/al-control.ts';
+import type { ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALOutboundAckTrackingPlan } from './al-outbound-message-runtime.ts';
 
@@ -19,18 +20,20 @@ export interface AcceptALOutboundPendingAckSnapshotInput {
 export function trackALOutboundPendingAckSnapshot(
     input: TrackALOutboundPendingAckSnapshotInput
 ): ALOutboundPendingAckSnapshot | undefined {
-    const mode = input.tracking.mode ?? 'merge';
-    const expectedPeerIds = new Set(mode === 'replace' ? [] : input.current?.expectedPeerIds);
-    const ackedPeerIds = new Set(mode === 'replace' ? [] : input.current?.ackedPeerIds);
+    const { mode } = input.tracking;
+    const replace = input.tracking.expectedPeerIdsUpdate === 'replace';
+    const expectedPeerIds = new Set(replace ? [] : input.current?.expectedPeerIds);
+    const ackedPeerIds = new Set(replace ? [] : input.current?.ackedPeerIds);
     for (const peerId of input.tracking.expectedPeerIds) {
         expectedPeerIds.add(peerId);
     }
     for (const ack of input.acks) {
-        if (expectedPeerIds.size === 0 || expectedPeerIds.has(ack.fromPeerId)) {
-            ackedPeerIds.add(ack.fromPeerId);
+        const peerId = toALOutboundAckedPeerId(mode, ack);
+        if (expectedPeerIds.size === 0 || expectedPeerIds.has(peerId)) {
+            ackedPeerIds.add(peerId);
         }
     }
-    if (mode === 'replace' && input.current) {
+    if (replace && input.current) {
         for (const peerId of input.current.ackedPeerIds) {
             if (expectedPeerIds.has(peerId)) {
                 ackedPeerIds.add(peerId);
@@ -40,6 +43,7 @@ export function trackALOutboundPendingAckSnapshot(
 
     const pending: ALOutboundPendingAckSnapshot = {
         msgId: input.msgId,
+        mode,
         expectedPeerIds: [...expectedPeerIds],
         ackedPeerIds: [...ackedPeerIds],
         timeoutMs: input.tracking.timeoutMs,
@@ -57,13 +61,24 @@ export function acceptALOutboundPendingAckSnapshot(
         return undefined;
     }
 
+    const { mode, expectedPeerIds } = input.current;
     const ackedPeerIds = new Set(input.current.ackedPeerIds);
     for (const ack of [input.ack, ...input.acks]) {
-        if (input.current.expectedPeerIds.length === 0 || input.current.expectedPeerIds.includes(ack.fromPeerId)) {
-            ackedPeerIds.add(ack.fromPeerId);
+        const peerId = toALOutboundAckedPeerId(mode, ack);
+        if (expectedPeerIds.length === 0 || expectedPeerIds.includes(peerId)) {
+            ackedPeerIds.add(peerId);
         }
     }
     return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
+}
+
+/**
+ * The peer an ACK confirms in a receipt of this mode: the logical recipient it speaks for under
+ * `receiver`, the hop that sent it otherwise. A hop ACK names the hop itself, so it never stands in
+ * for a logical recipient it did not name.
+ */
+export function toALOutboundAckedPeerId(mode: ALReceiptMode, ack: ALAckPayload): string {
+    return mode === 'receiver' ? ack.logicalRecipientPeerId : ack.fromPeerId;
 }
 
 /**

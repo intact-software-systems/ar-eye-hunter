@@ -57,7 +57,15 @@ describe('admission control decoding', () => {
         observedAtEpochMs: 7,
         carrier: 'rtc'
     };
-    const pending = { toPeerId: 'b', status: 'delivered', localReady: false, expectedFromPeerIds: ['a'], ackedFromPeerIds: [], carrier: 'ws' };
+    const pending = {
+        toPeerId: 'b',
+        status: 'delivered',
+        localReady: false,
+        localRecipient: false,
+        expectedFromPeerIds: ['a'],
+        ackedFromPeerIds: [],
+        carrier: 'ws'
+    };
 
     it('accepts each current stored control variant', () => {
         const cases = [
@@ -114,6 +122,13 @@ describe('admission control decoding', () => {
                 'pending'
             )
         ).toThrow(TypeError);
+    });
+
+    it('rejects a pending receipt that does not say whether the relay is a logical recipient', () => {
+        const { localRecipient: _localRecipient, ...unflagged } = pending;
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: unflagged }, 'msg', 'pending'))
+            .toThrow(TypeError);
     });
 
     // A row written before the carrier field existed is undecodable until its control TTL passes.

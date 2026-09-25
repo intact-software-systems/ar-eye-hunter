@@ -181,15 +181,16 @@ function toRepairEffects(
 }
 
 /**
- * A relay speaks for each logical recipient its completed subtree confirmed (D40). When the ACKs that
- * confirmed them are no longer retained, or none were expected, it can name only itself.
+ * A relay speaks for each logical recipient its completed subtree confirmed (D40), and for itself when
+ * it is a logical recipient that delivered locally. When the ACKs that confirmed its children are no
+ * longer retained, or none were expected, it can name only itself.
  */
 export function toALInboundCompletedAckRecipients(
-    completedRecipientPeerIds: readonly string[]
+    completedRecipientPeerIds: readonly string[],
+    completedLocalRecipient: boolean
 ): readonly ALInboundAckRecipient[] {
-    return completedRecipientPeerIds.length === 0
-        ? [{ kind: 'self' }]
-        : completedRecipientPeerIds.map((peerId) => ({ kind: 'relayed', peerId }));
+    const relayed = completedRecipientPeerIds.map((peerId): ALInboundAckRecipient => ({ kind: 'relayed', peerId }));
+    return completedLocalRecipient || relayed.length === 0 ? [{ kind: 'self' }, ...relayed] : relayed;
 }
 
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {

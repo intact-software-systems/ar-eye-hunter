@@ -381,6 +381,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: admitted.msgId,
                 carrier: 'rtc',
                 atMs: AT_MS,
+                mode: 'hop',
                 confirmedHopPeerIds: ['peer-1'],
                 unconfirmedHopPeerIds: ['peer-2'],
                 complete
@@ -446,6 +447,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: MSG_ID,
                 carrier: 'rtc',
                 atMs: AT_MS,
+                mode: 'hop',
                 confirmedHopPeerIds: ['peer-1'],
                 unconfirmedHopPeerIds: [],
                 complete: true
@@ -539,6 +541,7 @@ describe('terminal guard', () => {
             msgId: cancelled.msgId,
             carrier: 'rtc',
             atMs: AT_MS + 1,
+            mode: 'hop',
             confirmedHopPeerIds: ['peer-1'],
             unconfirmedHopPeerIds: ['peer-2'],
             complete: true

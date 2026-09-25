@@ -615,7 +615,8 @@ export class WsQueueBoxClientService {
             maxAttempts: effective.retry.algo === 'none'
                 ? 0
                 : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [targets.toPeerId]
+            expectedPeerIds: [targets.toPeerId],
+            mode: effective.ack.algo
         };
     }
 

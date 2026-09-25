@@ -1,4 +1,5 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
+import type { ALReceiptMode } from '../../al-contracts/al-policy.ts';
 
 export type ALDeliveryState =
     | 'submitted'
@@ -116,6 +117,8 @@ export type ALDeliverySettlement =
         msgId: string;
         carrier: ALDeliveryCarrier;
         atMs: number;
+        /** Under `receiver` the peer lists name logical recipients and `complete` is logical completion. */
+        mode: ALReceiptMode;
         confirmedHopPeerIds: readonly string[];
         unconfirmedHopPeerIds: readonly string[];
         complete: boolean;

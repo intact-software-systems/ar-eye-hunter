@@ -325,8 +325,10 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
         ...admission,
         mutations: [...admission.mutations, {
             kind: 'set-pending-ack',
+            originPeerId: message.id.senderId,
             snapshot: {
                 msgId: message.id.msgId,
+                mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
                 timeoutMs: 2_000,

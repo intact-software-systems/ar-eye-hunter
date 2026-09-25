@@ -61,7 +61,11 @@ export function computeALInboundControlAdmission(
         completedEffects: completed
             ? computeCompletedAcknowledgementWork(
                 read,
-                { completed, recipientPeerIds: transition.completedRecipientPeerIds },
+                {
+                    completed,
+                    recipientPeerIds: transition.completedRecipientPeerIds,
+                    localRecipient: transition.completedLocalRecipient
+                },
                 retention
             )
             : [],
@@ -130,6 +134,7 @@ function toALInboundControlObservations(
 interface ALInboundCompletedAcknowledgement {
     readonly completed: ALCompletedPendingAck;
     readonly recipientPeerIds: readonly string[];
+    readonly localRecipient: boolean;
 }
 
 /**
@@ -145,7 +150,10 @@ function computeCompletedAcknowledgementWork(
     // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
     const carrier = toALDeliveryCarrier(read.owner.source);
     const relayPeerId = read.ack.toPeerId;
-    const recipients = toALInboundCompletedAckRecipients(acknowledgement.recipientPeerIds);
+    const recipients = toALInboundCompletedAckRecipients(
+        acknowledgement.recipientPeerIds,
+        acknowledgement.localRecipient
+    );
     return recipients.map((recipient, index) => {
         const controlMsgId = `${read.controlMsgId}:${index}`;
         return computeALInboundWorkEntry({

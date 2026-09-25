@@ -191,6 +191,7 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
+                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
                     expireAtTimestamp: input.expireAtTimestamp,
@@ -748,6 +749,7 @@ describe('inbound admission persisted values', () => {
                             toPeerId: 'upstream',
                             status: 'subtree-complete',
                             localReady: false,
+                            localRecipient: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
                             expireAtTimestamp: Date.now() + 60_000,
@@ -799,6 +801,7 @@ describe('inbound admission persisted values', () => {
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: false,
+                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: []
                 }
@@ -911,6 +914,7 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
+                        localRecipient: false,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
                         expireAtTimestamp,

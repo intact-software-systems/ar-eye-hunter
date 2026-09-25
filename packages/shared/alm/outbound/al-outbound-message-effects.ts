@@ -189,7 +189,10 @@ export class ALOutboundMessageEffects<TPrepared> {
             return { status: 'completed' };
         }
         // A complete receipt already stated the delivery; this attempt owes no settlement of its own.
-        const receipts = await runtime.admissionStore.readReceiptState(msgId);
+        const receipts = await runtime.admissionStore.readReceiptState({
+            originPeerId: lifecycle.canonicalMessage.id.senderId,
+            msgId
+        });
         if (receipts && isALOutboundReceiptComplete(receipts)) {
             return { status: 'completed' };
         }

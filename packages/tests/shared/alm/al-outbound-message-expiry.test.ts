@@ -204,8 +204,10 @@ describe('outbound message expiry', () => {
             ...bundle,
             mutations: [...bundle.mutations, {
                 kind: 'set-pending-ack',
+                originPeerId: message.id.senderId,
                 snapshot: {
                     msgId: message.id.msgId,
+                    mode: 'hop',
                     expectedPeerIds: ['peer-1'],
                     ackedPeerIds: [],
                     timeoutMs: 50,
@@ -236,9 +238,9 @@ describe('outbound message expiry', () => {
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         const commit = vi.spyOn(store, 'commitBundle').mockResolvedValueOnce('conflict');
         await expect(repair.retryPendingAck(message.id.msgId)).rejects.toBeInstanceOf(RetryableConflictError);
-        expect(await store.readPendingAck(message.id.msgId)).toBeDefined();
+        expect(await store.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeDefined();
         await repair.retryPendingAck(message.id.msgId);
-        expect(await store.readPendingAck(message.id.msgId)).toBeUndefined();
+        expect(await store.readPendingAck({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
         commit.mockRestore();
     });
 
