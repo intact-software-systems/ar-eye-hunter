@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
+    AL_RECEIPT_DEADLINE_GRACE_MS,
     decodeALControlMessage,
     newALReceiptControlMessage,
     type ALAckPayload,
@@ -23,7 +24,6 @@ import type {
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
-import { AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS } from '../../alm/outbound/control/compute-al-outbound-receipt-admission.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
@@ -102,8 +102,8 @@ export class WsQueueBoxServerReceiptAggregation {
         this.#dependencies.queueEngine.excludeTask(this.#sweepTaskId);
     }
 
-    /** The typed reason a relayed receiver ACK may not count, answered at ingress; undefined when it may. */
-    validateRelayedAck(ack: ALAckPayload): ALMessageRejection | undefined {
+    /** The typed reason a relayed receiver ACK may not count, read against the live aggregate at ingress. */
+    readRelayedAckRejection(ack: ALAckPayload): ALMessageRejection | undefined {
         const aggregate = this.#aggregates.get(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId));
         const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.#dependencies.clock.nowMs());
         return issues.length === 0 ? undefined : { code: 'unauthorized', message: issues.join('; ') };
@@ -225,7 +225,7 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    /** A receipt row outlives its message by the grace the origin keeps its receipt row for. */
+    /** A receipt row outlives its message's deadline by the receipt grace, as the origin's receipt row does. */
     private async writeReceipt(receipt: ALReceiptPayload, deadlineAtMs: number): Promise<void> {
         const id = {
             v: 2 as const,
@@ -233,7 +233,7 @@ export class WsQueueBoxServerReceiptAggregation {
             senderId: this.#dependencies.serverPeerId,
             ts: receipt.observedAtEpochMs
         };
-        const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS;
+        const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_RECEIPT_DEADLINE_GRACE_MS;
         const message = decodePersistedALMessageValue({
             ...newALReceiptControlMessage(id, receipt),
             constraints: { expiresAtMs }
@@ -258,7 +258,9 @@ export function toWsQueueBoxServerInboundPlan(
 
 /**
  * A receipt is a durable outbox row: its immediate phase resolves nobody, and its dequeue reaches the
- * origin's socket on this instance or, through the cluster publisher, on another.
+ * origin's socket on this instance or, through the cluster publisher, on another. The control message
+ * itself stays volatile and best-effort, as every control must (`validateControlEnvelope`), so the QoS
+ * planner would plan it volatile: the durable plan is built here instead, for the row alone.
  */
 function toWsQueueBoxServerReceiptDispatchPlan(
     message: ALMessage

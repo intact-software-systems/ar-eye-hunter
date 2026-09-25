@@ -16,7 +16,7 @@ export interface ALInboundReceiver {
      * Why a receiver's ACK addressed to its origin may not be admitted here as that origin's aggregating
      * relay hop; undefined admits it. The WS server answers for the broadcasts it aggregates.
      */
-    readonly validateRelayedAck: (ack: ALAckPayload) => ALMessageRejection | undefined;
+    readonly readRelayedAckRejection: (ack: ALAckPayload) => ALMessageRejection | undefined;
 }
 
 const NOT_THIS_RECEIVER: ALMessageRejection = {
@@ -26,9 +26,9 @@ const NOT_THIS_RECEIVER: ALMessageRejection = {
 
 export function toALInboundReceiver(
     selfPeerId: string,
-    validateRelayedAck: ALInboundReceiver['validateRelayedAck'] | undefined
+    readRelayedAckRejection: ALInboundReceiver['readRelayedAckRejection'] | undefined
 ): ALInboundReceiver {
-    return { selfPeerId, validateRelayedAck: validateRelayedAck ?? (() => NOT_THIS_RECEIVER) };
+    return { selfPeerId, readRelayedAckRejection: readRelayedAckRejection ?? (() => NOT_THIS_RECEIVER) };
 }
 
 export function validateALInboundMessage(
@@ -81,6 +81,6 @@ function validateALInboundControlAddress(
         return undefined;
     }
     return control.type === 'ack' && source.kind === 'ws-client'
-        ? receiver.validateRelayedAck(control.payload)
+        ? receiver.readRelayedAckRejection(control.payload)
         : NOT_THIS_RECEIVER;
 }

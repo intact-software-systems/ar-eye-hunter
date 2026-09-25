@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS, newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -50,8 +50,8 @@ describe('WS client receipt tracking for a receiver room send', () => {
 
         await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
 
-        // The complete aggregate ends the row: the server's receipts own its schedule, and nothing is left to wait for.
-        expect(await readReceipt(fixture)).toBeUndefined();
+        // The complete aggregate leaves its final snapshot, so a redelivered receipt finds nothing to move.
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b', 'c'] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             msgId: 'room-message-1',
             carrier: 'ws',
@@ -62,7 +62,7 @@ describe('WS client receipt tracking for a receiver room send', () => {
         });
     });
 
-    it('settles a timed-out aggregate at the message deadline, naming the missing recipient, and ends the receipt', async () => {
+    it('settles a timed-out aggregate at the message deadline, naming the missing recipient, and keeps its final snapshot', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000_000);
         const fixture = await createReceiptTrackingFixture();
@@ -74,7 +74,7 @@ describe('WS client receipt tracking for a receiver room send', () => {
 
         expect((await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']))).left).toBeUndefined();
 
-        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b'] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             confirmedHopPeerIds: ['b'],
             unconfirmedHopPeerIds: ['c'],
@@ -100,18 +100,19 @@ describe('WS client receipt tracking for a receiver room send', () => {
 
 describe('WS client receipt admission edges', () => {
     afterEach(() => {
+        vi.useRealTimers();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         TestWebSocket.instances.length = 0;
     });
 
-    it('acknowledges an empty admitted audience at once and writes no receipt row', async () => {
+    it('acknowledges an empty admitted audience at once', async () => {
         const fixture = await createReceiptTrackingFixture();
         await fixture.service.enqueueOutboxIfAbsent(roomMessage());
 
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', []));
 
-        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: [], ackedPeerIds: [] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
             expect.objectContaining({ confirmedHopPeerIds: [], unconfirmedHopPeerIds: [], complete: true })
         ]);
@@ -138,6 +139,45 @@ describe('WS client receipt admission edges', () => {
 
         expect(await readReceipt(fixture)).toBeUndefined();
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([]);
+    });
+
+    it.each(['admitted', 'complete'] as const)(
+        'refuses a redelivered %s receipt after the complete aggregate without a write or a settlement',
+        async (redelivered) => {
+            const fixture = await createReceiptTrackingFixture();
+            await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+            await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+            await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+            const settled = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').length;
+
+            // Receipt rows are durable at-least-once outbox rows: the same receipt may be dispatched again.
+            await fixture.service.acceptIncomingMessage(receiptMessage(redelivered, redelivered === 'complete' ? ['b', 'c'] : []));
+
+            const acknowledgements = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+            expect(acknowledgements).toHaveLength(settled);
+            expect(acknowledgements.at(-1)).toMatchObject({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true });
+            expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
+        }
+    );
+
+    it.each([
+        { name: 'after the admitted row it answers', admitted: true },
+        { name: 'with no row at all', admitted: false }
+    ])('refuses a timed-out receipt past the message deadline plus the receipt grace $name', async ({ admitted }) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000_000);
+        const fixture = await createReceiptTrackingFixture();
+        const message = roomMessage();
+        await fixture.service.enqueueOutboxIfAbsent(message);
+        if (admitted) {
+            await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        }
+        const settled = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').length;
+        vi.setSystemTime(message.constraints!.expiresAtMs! + AL_RECEIPT_DEADLINE_GRACE_MS + 1_000);
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']));
+
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toHaveLength(settled);
     });
 
     it('reads afresh after a version conflict and refuses once the conflicts outlast its attempts', async () => {

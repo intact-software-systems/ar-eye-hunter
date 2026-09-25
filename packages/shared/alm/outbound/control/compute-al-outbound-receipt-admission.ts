@@ -1,4 +1,4 @@
-import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import type { ALOutboundAdmissionMutation } from '../admission/al-outbound-admission-mutations.ts';
@@ -6,12 +6,6 @@ import type { ALOutboundVersionedClientRecord } from '../admission/al-outbound-a
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
-
-/**
- * How long the origin keeps a receipt row past its message deadline. The server sweeps an aggregate
- * at that deadline, so its `timed-out` receipt is written after it and still has to cross the cluster.
- */
-export const AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS = 30_000;
 
 /** What one origin holds about the message a receipt names, read in one session. */
 export interface ALOutboundReceiptAdmissionSurface {
@@ -26,13 +20,13 @@ export interface ALOutboundReceiptAdmissionRead extends ALOutboundReceiptAdmissi
 }
 
 /**
- * `set` keeps a row: the one a terminal receipt answers against, or the one a terminal receipt that
- * overtook its `admitted` receipt leaves so the late `admitted` moves nothing. `remove` ends the row,
- * and `settle` states the receipt without a row: an empty audience is complete as it is admitted.
+ * The receipt row a receipt leaves. Every phase keeps it until the message deadline plus the receipt
+ * grace: a terminal receipt leaves its final snapshot, so a redelivered receipt finds nothing to move.
  */
-export type ALOutboundReceiptWrite =
-    | Readonly<{ kind: 'set'; value: ALOutboundPendingAckSnapshot; expireAtTimestamp: number; }>
-    | Readonly<{ kind: 'remove' | 'settle'; value: ALOutboundPendingAckSnapshot; }>;
+export interface ALOutboundReceiptWrite {
+    readonly value: ALOutboundPendingAckSnapshot;
+    readonly expireAtTimestamp: number;
+}
 
 export interface ALOutboundReceiptAdmissionCandidate {
     readonly read: ALOutboundReceiptAdmissionRead;
@@ -40,56 +34,67 @@ export interface ALOutboundReceiptAdmissionCandidate {
     readonly write: ALOutboundReceiptWrite | undefined;
 }
 
+/**
+ * A receipt answers against the row an earlier receipt left, or, when none has, against the message
+ * the origin sent: a terminal receipt may overtake its `admitted` one. It replaces the expected set with
+ * the server's frozen audience and adds the recipients it confirmed to those already counted.
+ */
 export function computeALOutboundReceiptAdmission(
     read: ALOutboundReceiptAdmissionRead
 ): ALOutboundReceiptAdmissionCandidate {
+    const current = read.pending ?? toTrackedReceipt(read);
+    if (current === undefined) {
+        return { read, write: undefined };
+    }
+    const expected = read.receipt.expectedRecipientPeerIds;
+    const acked = new Set([...current.ackedPeerIds, ...read.receipt.confirmedRecipientPeerIds]);
     return {
         read,
-        write: read.receipt.phase === 'admitted' ? toAdmittedWrite(read) : toTerminalWrite(read)
+        write: {
+            value: {
+                ...current,
+                expectedPeerIds: expected,
+                ackedPeerIds: expected.filter((peerId) => acked.has(peerId))
+            },
+            expireAtTimestamp: current.deadlineAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
+        }
     };
 }
 
-/** Every reason this receipt may not move the origin's receipt; a missing row or message makes the rest moot. */
+/** Every reason this receipt may not move the origin's receipt; a missing row and message make the rest moot. */
 export function validateALOutboundReceiptAdmission(
     candidate: ALOutboundReceiptAdmissionCandidate
 ): readonly ALMessageRejection[] {
     const { read, write } = candidate;
-    if (read.receipt.phase !== 'admitted' && read.pending !== undefined) {
-        return validateReceiptMode(read.pending);
-    }
-    if (!read.stored || read.stored.reference.senderId !== read.receipt.originPeerId) {
-        return [refuseReceipt('AL receipt names no retained outbound message of its origin')];
+    if (write === undefined) {
+        return [toMissingReceiptRejection(read)];
     }
     const issues: ALMessageRejection[] = [];
-    if (write === undefined) {
+    if (write.value.mode !== 'receiver') {
         issues.push(refuseReceipt('AL receipt names a message that tracks no receiver receipt'));
     }
-    if (read.receipt.phase === 'admitted' && read.stored.reference.expiresAtMs <= read.nowMs) {
+    if (read.receipt.phase === 'admitted' && write.value.deadlineAtMs <= read.nowMs) {
         issues.push(refuseReceipt('AL admitted receipt arrived after its message deadline'));
     }
-    if (write?.kind === 'set' && read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
+    if (write.expireAtTimestamp <= read.nowMs) {
+        issues.push(refuseReceipt('AL receipt arrived after its message deadline and the receipt grace'));
+    }
+    if (read.pending !== undefined && hasSameReceipt(read.pending, write.value)) {
         issues.push(refuseReceipt('AL receipt moves no receipt of its message'));
     }
     return issues;
 }
 
-export function toALOutboundReceiptMutations(
+export function toALOutboundReceiptMutation(
     write: ALOutboundReceiptWrite,
     receipt: ALReceiptPayload
-): readonly ALOutboundAdmissionMutation[] {
-    switch (write.kind) {
-        case 'set':
-            return [{
-                kind: 'set-pending-ack',
-                originPeerId: receipt.originPeerId,
-                snapshot: write.value,
-                expireAtTimestamp: write.expireAtTimestamp
-            }];
-        case 'remove':
-            return [{ kind: 'delete-pending-ack', originPeerId: receipt.originPeerId, msgId: receipt.msgId }];
-        case 'settle':
-            return [];
-    }
+): ALOutboundAdmissionMutation {
+    return {
+        kind: 'set-pending-ack',
+        originPeerId: receipt.originPeerId,
+        snapshot: write.value,
+        expireAtTimestamp: write.expireAtTimestamp
+    };
 }
 
 /** The receipt as the delivery fact its commit states; a `timed-out` aggregate never completes it. */
@@ -109,53 +114,31 @@ export function toALOutboundReceiptSettlement(
 }
 
 /**
- * The server's receipts own this row's schedule: no `ack-timeout` work is written for it, and its
- * deadline is the message's. An empty audience settles complete without a row.
+ * The receipt row the origin's sent message would have: the server's receipts own its schedule, so no
+ * `ack-timeout` work is written for it, and its deadline is the message's.
  */
-function toAdmittedWrite(read: ALOutboundReceiptAdmissionRead): ALOutboundReceiptWrite | undefined {
-    const tracking = read.stored?.policy.ackTracking;
-    if (!read.stored || tracking?.mode !== 'receiver') {
+function toTrackedReceipt(read: ALOutboundReceiptAdmissionRead): ALOutboundPendingAckSnapshot | undefined {
+    const { stored, receipt } = read;
+    const tracking = stored?.policy.ackTracking;
+    if (!stored || stored.reference.senderId !== receipt.originPeerId || !tracking) {
         return undefined;
     }
-    const expiresAtMs = read.stored.reference.expiresAtMs;
-    const value: ALOutboundPendingAckSnapshot = {
-        msgId: read.receipt.msgId,
+    return {
+        msgId: receipt.msgId,
         mode: tracking.mode,
-        ...toReceiptPeers(read),
+        expectedPeerIds: [],
+        ackedPeerIds: [],
         timeoutMs: tracking.timeoutMs,
         maxAttempts: tracking.maxAttempts,
-        attempts: read.pending?.attempts ?? 0,
-        deadlineAtMs: expiresAtMs
+        attempts: 0,
+        deadlineAtMs: stored.reference.expiresAtMs
     };
-    return value.expectedPeerIds.length === 0
-        ? { kind: 'settle', value }
-        : { kind: 'set', value, expireAtTimestamp: expiresAtMs + AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS };
 }
 
-/**
- * A terminal receipt answers against the row its `admitted` receipt created, and ends it. One that
- * overtook its `admitted` receipt keeps the row it would have ended, so the late `admitted` finds its
- * audience already answered.
- */
-function toTerminalWrite(read: ALOutboundReceiptAdmissionRead): ALOutboundReceiptWrite | undefined {
-    if (read.pending !== undefined) {
-        return { kind: 'remove', value: { ...read.pending, ...toReceiptPeers(read) } };
-    }
-    return toAdmittedWrite(read);
-}
-
-function toReceiptPeers(
-    read: ALOutboundReceiptAdmissionRead
-): Pick<ALOutboundPendingAckSnapshot, 'expectedPeerIds' | 'ackedPeerIds'> {
-    const expected = read.receipt.expectedRecipientPeerIds;
-    const acked = new Set([...read.pending?.ackedPeerIds ?? [], ...read.receipt.confirmedRecipientPeerIds]);
-    return { expectedPeerIds: expected, ackedPeerIds: expected.filter((peerId) => acked.has(peerId)) };
-}
-
-function validateReceiptMode(pending: ALOutboundPendingAckSnapshot): readonly ALMessageRejection[] {
-    return pending.mode === 'receiver'
-        ? []
-        : [refuseReceipt('AL receipt names a message that tracks no receiver receipt')];
+function toMissingReceiptRejection(read: ALOutboundReceiptAdmissionRead): ALMessageRejection {
+    return read.stored && read.stored.reference.senderId === read.receipt.originPeerId
+        ? refuseReceipt('AL receipt names a message that tracks no receiver receipt')
+        : refuseReceipt('AL receipt names no retained outbound message of its origin');
 }
 
 function hasSameReceipt(pending: ALOutboundPendingAckSnapshot, next: ALOutboundPendingAckSnapshot): boolean {

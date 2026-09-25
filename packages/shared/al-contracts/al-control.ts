@@ -88,6 +88,14 @@ export interface ALReceiptPayload {
     readonly observedAtEpochMs: number;
 }
 
+/**
+ * How long a receipt outlives its message's deadline, on both sides of the receipt contract: the server
+ * keeps each receipt's outbox row this long past it, and the origin keeps its receipt row this long past
+ * it. The server sweeps an aggregate at the deadline, so its `timed-out` receipt is written after it and
+ * still has to cross the cluster.
+ */
+export const AL_RECEIPT_DEADLINE_GRACE_MS = 30_000;
+
 export type ALControlPayload = ALAckPayload | ALNackPayload | ALRepairPayload | ALReceiptPayload;
 
 export type ALParsedControlMessage =

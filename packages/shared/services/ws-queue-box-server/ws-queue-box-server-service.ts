@@ -254,7 +254,7 @@ export class WsQueueBoxServerService {
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
-            validateRelayedAck: (ack) => this.receipts.validateRelayedAck(ack),
+            readRelayedAckRejection: (ack) => this.receipts.readRelayedAckRejection(ack),
             forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
@@ -414,7 +414,7 @@ export class WsQueueBoxServerService {
         const protocol = validateALInboundMessage(
             message,
             { kind: 'ws-client', peerId: fromPeerId },
-            toALInboundReceiver(this.name, (ack) => this.receipts.validateRelayedAck(ack))
+            toALInboundReceiver(this.name, (ack) => this.receipts.readRelayedAckRejection(ack))
         );
         if (protocol.left) {
             return Either.ofLeft(protocol.left);

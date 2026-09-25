@@ -234,7 +234,7 @@ describe('WS server receipt aggregate', () => {
             phase: 'admitted',
             expectedRecipientPeerIds: []
         });
-        expect(aggregation.validateRelayedAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
+        expect(aggregation.readRelayedAckRejection(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' }))?.message)
             .toBe('AL acknowledgement names no receipt this server aggregates');
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });

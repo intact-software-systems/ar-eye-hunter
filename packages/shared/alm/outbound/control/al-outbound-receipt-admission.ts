@@ -4,7 +4,7 @@ import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../a
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
-    toALOutboundReceiptMutations,
+    toALOutboundReceiptMutation,
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
@@ -51,7 +51,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         const status = await admissionStore.commitBundle({
             senderId: receipt.originPeerId,
             expectedVersion: surface.clientRecord?.version,
-            mutations: toALOutboundReceiptMutations(candidate.write, receipt),
+            mutations: [toALOutboundReceiptMutation(candidate.write, receipt)],
             durableEffects: []
         });
         if (status === 'committed') {

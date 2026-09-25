@@ -111,7 +111,7 @@ export namespace ALInboundMessageRuntime {
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
-        readonly validateRelayedAck?: ALInboundReceiver['validateRelayedAck'];
+        readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
@@ -330,7 +330,10 @@ export class ALInboundMessageRuntime {
         const validated = validateALInboundMessage(
             msg,
             source,
-            toALInboundReceiver(this.dependencies.effectPreparation.selfPeerId, this.dependencies.validateRelayedAck)
+            toALInboundReceiver(
+                this.dependencies.effectPreparation.selfPeerId,
+                this.dependencies.readRelayedAckRejection
+            )
         );
         if (validated.left) {
             return Either.ofLeft(validated.left);
