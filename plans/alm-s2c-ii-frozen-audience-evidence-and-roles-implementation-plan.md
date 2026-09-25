@@ -75,6 +75,24 @@ to settle or to route to the maintainer:
   `msgId`. Then update `runtime-diagnostic-contract.md`.
 - **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
   stop being refused `unsupported` (D42, S2c-i Task 4).
+- **Outbox-fanned `receiver` messages keep retransmitting after `complete`** (final review m2; pre-existing on
+  8d98a7d6f). In the production outbox fan-out mode (`forwardsRoomScopedMessages: false`) the server's own
+  outbound runtime writes a `receiver`-mode pending row and `ack-timeout` work for the room message, but
+  the receivers' ACKs feed the aggregator, never that row, so `b` and `c` keep receiving retransmissions
+  after the origin's receipt reads `complete`. Suppress the dequeue-time pending row for aggregated room
+  messages or let the aggregator feed it, and extend the Task 4 pin ("answers an outbox-fanned receiver
+  message with one complete row") to advance past the ack timeout.
+- **Receipt redelivery to a reconnecting origin in a cluster** (final review m3). The receipt row's
+  deadline + grace expiry keeps it deliverable on a single instance (a no-route dequeue retries); with a
+  cluster publisher the dequeue publishes once as `cluster-local-complete`, so an origin disconnected at
+  that moment never gets the receipt. Belongs with the D38 durable receipt.
+- **The aggregate map's next-deadline scan** (final review m1, remainder): the server now caps an
+  aggregate at `WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS`, but `deleteAggregate` still rescans the map for
+  the next deadline whenever an aggregate leaves (O(n) per completing ACK); a sorted deadline index removes it.
+- **Task 2c readiness notes** (informational): the harness's room-wait retry leaves
+  `roomRefreshAttempts`/`roomRefreshSuccesses` at 1 however many retries ran, and the split readiness
+  files import each other's types (a type-only cycle). The product defect behind the retry stays with the
+  maintainer (next item).
 - **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
   ~835 and 878–918; a maintainer task chip).
 

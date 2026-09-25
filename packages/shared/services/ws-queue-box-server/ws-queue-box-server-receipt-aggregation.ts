@@ -17,6 +17,7 @@ import {
     type ALMessageHandlingPlan,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -28,6 +29,13 @@ import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
+
+/**
+ * The longest the server holds a receipt aggregate in memory: the retention of the durable effect and
+ * pending-control rows the same outbound owner keeps (`DEFAULT_AL_EPHEMERAL_TTL_MS`). The origin accepts
+ * a terminal receipt until its own deadline plus the receipt grace, so an earlier `timed-out` still lands.
+ */
+export const WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS = DEFAULT_AL_EPHEMERAL_TTL_MS;
 
 export namespace WsQueueBoxServerReceiptAggregation {
     /** What the server froze when it admitted a `receiver` room message: the audience its receipt answers for. */
@@ -94,7 +102,10 @@ export class WsQueueBoxServerReceiptAggregation {
         dependencies.queueEngine.includeTask(this.#sweepTaskId, {
             name: this.#sweepTaskId,
             maxConcurrency: () => 1,
-            isWork: () => this.hasDueAggregate(),
+            isWork: () => {
+                this.scheduleNextSweep();
+                return this.hasDueAggregate();
+            },
             runnable: () => this.writeTimedOutReceipts(),
             ongoingTasks: []
         });
@@ -155,14 +166,20 @@ export class WsQueueBoxServerReceiptAggregation {
         return receipts;
     }
 
-    /** A message the server admitted, or retained for admission, starts its receipt here. */
+    /**
+     * A message the server admitted, or retained for admission, starts its receipt here, once: a
+     * re-sent message the runtime answers `pending-admission` again finds its aggregate already live.
+     */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const kind = admitted.acceptance?.kind;
         if (admitted.roomAudience === undefined || (kind !== 'admitted' && kind !== 'pending-admission')) {
             return;
         }
         const admission = this.toAdmission(admitted, admitted.roomAudience);
-        if (admission !== undefined) {
+        if (
+            admission !== undefined &&
+            !this.#aggregates.has(toReceiptAggregateKey(admission.originPeerId, admission.msgId))
+        ) {
             await this.writeReceipt(this.recordAdmission(admission), admission.deadlineAtMs);
         }
     }
@@ -184,7 +201,10 @@ export class WsQueueBoxServerReceiptAggregation {
         }
     }
 
-    /** A `receiver` room message is aggregated; a message without a deadline answers within its ACK timeout. */
+    /**
+     * A `receiver` room message is aggregated; a message without a deadline answers within its ACK
+     * timeout, and no aggregate outlives the server's receipt window, whatever deadline the client named.
+     */
     private toAdmission(
         admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
         roomAudience: WsServerRoomAudience
@@ -202,7 +222,10 @@ export class WsQueueBoxServerReceiptAggregation {
             originPeerId,
             expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
             snapshotVersion: roomAudience.snapshotVersion,
-            deadlineAtMs: resolveALMessageExpireAtMs(message, effective) ?? clock.nowMs() + effective.ack.opts.timeoutMs
+            deadlineAtMs: Math.min(
+                resolveALMessageExpireAtMs(message, effective) ?? clock.nowMs() + effective.ack.opts.timeoutMs,
+                clock.nowMs() + WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS
+            )
         };
     }
 
@@ -215,8 +238,12 @@ export class WsQueueBoxServerReceiptAggregation {
         this.#nextDeadlineAtMs = nextDeadlineAtMs;
     }
 
-    private hasDueAggregate(): boolean {
+    /** The engine forgets a wake once it fires, so each poll arms the next deadline again. */
+    private scheduleNextSweep(): void {
         this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, this.#nextDeadlineAtMs);
+    }
+
+    private hasDueAggregate(): boolean {
         return this.#nextDeadlineAtMs !== undefined && this.#nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
     }
 

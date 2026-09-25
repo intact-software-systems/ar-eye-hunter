@@ -451,6 +451,7 @@ export class WsQueueBoxServerService {
                 ? {}
                 : { groupRecipientPeerIds: [...authorization.roomAudience.recipientPeerIds] })
         });
+        // The admission's delivery runs on a later work batch, so the aggregate exists before any recipient can ACK.
         await this.receipts.writeAdmittedReceipt({
             message,
             originPeerId: fromPeerId,

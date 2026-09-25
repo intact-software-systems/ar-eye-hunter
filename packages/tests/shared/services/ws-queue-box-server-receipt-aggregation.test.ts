@@ -20,11 +20,15 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { WsQueueBoxServerReceiptAggregation } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
+import {
+    WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
+    WsQueueBoxServerReceiptAggregation
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -43,6 +47,8 @@ interface ReceiptFixture {
     readonly clock: { nowMs: number; };
     /** The origin's socket on a second instance, when the origin's live session is there. */
     readonly remoteOrigin: SimulatedWebSocket | undefined;
+    /** What the server's own outbound owner stated about the messages it originated. */
+    readonly settlements: ALDeliverySettlement[];
 }
 
 interface ReceiptFixtureOptions {
@@ -77,6 +83,52 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
             code: 'unauthorized',
             message: 'AL acknowledgement confirms a peer the receipt already counted'
         });
+    });
+
+    it('refuses a WS session ACK that names another recipient of a message the server originated', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
+        const fromServer: ALMessage = {
+            ...roomMessage(fixture.clock.nowMs),
+            id: { v: 2, msgId: 'server-room-1', ts: fixture.clock.nowMs, senderId: 'server' },
+            delivery: undefined,
+            qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } }
+        };
+        await fixture.service.enqueueOutboxIfAbsent(fromServer);
+        const forged = newALAckControlMessage(
+            { v: 2, msgId: 'ack-c-for-b', senderId: 'c', ts: fixture.clock.nowMs },
+            {
+                ackedMsgId: 'server-room-1',
+                fromPeerId: 'c',
+                toPeerId: 'server',
+                originPeerId: 'server',
+                logicalRecipientPeerId: 'b',
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: fixture.clock.nowMs
+            }
+        );
+
+        const refused = await fixture.service.acceptIncomingMessage(forged, 'c');
+
+        expect(refused.left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
+        });
+        expect(fixture.settlements.flatMap((settlement) => settlement.kind === 'acknowledgement' ? settlement.confirmedHopPeerIds : [])).not.toContain('b');
+    });
+
+    it('caps the aggregate deadline at the server receipt window whatever deadline the message names', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
+        const farFuture = { ...roomMessage(fixture.clock.nowMs), constraints: { expiresAtMs: fixture.clock.nowMs + 10 * 24 * 60 * 60_000 } };
+        expect((await fixture.service.acceptIncomingMessage(farFuture, 'a')).right?.kind).toBe('admitted');
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted']);
+
+        fixture.clock.nowMs += WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS;
+
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase);
+        }).toEqual(['admitted', 'timed-out']);
     });
 
     it('answers the origin with the admitted audience at once and the complete aggregate as one more row', async () => {
@@ -256,6 +308,22 @@ describe('WS server receipt aggregate', () => {
         expect(aggregation.sweep(Number.MAX_SAFE_INTEGER)).toEqual([]);
     });
 
+    it('writes the admitted receipt once for a message admitted again while its aggregate lives', async () => {
+        const enqueued: ALMessage[] = [];
+        const aggregation = createAggregation(enqueued);
+        const admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage = {
+            message: roomMessage(1_000),
+            originPeerId: 'a',
+            roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION },
+            acceptance: { kind: 'pending-admission' }
+        };
+
+        await aggregation.writeAdmittedReceipt(admitted);
+        await aggregation.writeAdmittedReceipt(admitted);
+
+        expect(enqueued.map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase)).toEqual(['admitted']);
+    });
+
     it('answers an empty audience complete at admission and keeps nothing to sweep', () => {
         const aggregation = createAggregation();
 
@@ -269,14 +337,17 @@ describe('WS server receipt aggregate', () => {
     });
 });
 
-function createAggregation(): WsQueueBoxServerReceiptAggregation {
+function createAggregation(enqueued: ALMessage[] = []): WsQueueBoxServerReceiptAggregation {
     const aggregation = new WsQueueBoxServerReceiptAggregation({
         serverPeerId: 'server',
         clock: { nowMs: () => 1_000 },
         newControlId: () => 'receipt',
         qosProvider: undefined,
         queueEngine: new InboxOutboxEngine(),
-        enqueueOutbox: async (message) => ({ verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [] }),
+        enqueueOutbox: async (message) => {
+            enqueued.push(message);
+            return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [] };
+        },
         acceptServerControl: async () => ({ kind: 'not-handled' })
     });
     onTestFinished(() => aggregation.dispose());
@@ -321,6 +392,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const engine = new InboxOutboxEngine();
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
+    const settlements: ALDeliverySettlement[] = [];
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
@@ -331,7 +403,8 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
             resolvePeerRecipients: (peerId) => options.origin === 'remote' && peerId === 'a' ? [] : [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
-        inboundStores: { admissionStore: createTestInboundStore(admission, clock), workQueue: admission.workQueue }
+        inboundStores: { admissionStore: createTestInboundStore(admission, clock), workQueue: admission.workQueue },
+        outboundSettlements: (settlement) => settlements.push(settlement)
     });
     const remoteOrigin = options.origin === 'remote' ? await createRemoteOriginInstance(service, outbox) : undefined;
     service.authorizeInboundMessagesWith({
@@ -351,7 +424,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         service.dispose();
         vi.restoreAllMocks();
     });
-    return { service, engine, outbox, sockets, clock, remoteOrigin };
+    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements };
 }
 
 /** A second instance holding the origin's live socket; the two meet only through the shared outbox and the bus. */

@@ -30,11 +30,12 @@ const entries = [
     {
         // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
         // ACK per logical recipient measure 215.255859375 KiB; the WS client's receipt admission from
-        // the server's aggregate brings it to 216.73828125 KiB. The next whole-KiB ceiling is 217.
+        // the server's aggregate brings it to 216.73828125 KiB; the rest of S2c-i (WS ordering, bounded and
+        // idempotent receipts, the WS-session ACK rule) measures 217.01171875 KiB. The next whole-KiB ceiling is 218.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 217
+        brotliBudgetKiB: 218
     },
     {
         label: 'browser/rallar-core.ts',

@@ -23,6 +23,27 @@ describe('inbound control addressing', () => {
         expect(validated.left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' });
     });
 
+    it.each(['server', 'origin'])('refuses a WS session ACK to %s that speaks for another recipient', (toPeerId) => {
+        const forged = newALAckControlMessage(
+            { v: 2, msgId: 'ack-forged', senderId: 'recipient', ts: 1 },
+            {
+                ackedMsgId: 'message-1',
+                fromPeerId: 'recipient',
+                toPeerId,
+                originPeerId: toPeerId,
+                logicalRecipientPeerId: 'another-recipient',
+                carrier: 'ws',
+                status: 'delivered',
+                observedAtEpochMs: 1
+            }
+        );
+
+        expect(validateALInboundMessage(forged, fromClient('recipient'), SERVER).left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement from a WS session speaks for another recipient than its sender'
+        });
+    });
+
     it('keeps next-hop addressing for every other control and carrier', () => {
         const nack = newALNackControlMessage(
             { v: 2, msgId: 'nack-1', senderId: 'recipient', ts: 1 },
