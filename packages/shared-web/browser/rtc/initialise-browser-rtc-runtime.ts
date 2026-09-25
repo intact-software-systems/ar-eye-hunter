@@ -1,9 +1,7 @@
-import {
-    resolveBrowserRtcOverlayALOutboundRuntimeStores,
-    resolveBrowserRtcRxALInboundRuntimeStores
-} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -78,6 +76,7 @@ export interface InitialiseRtcRxStreamerInput {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
+    readonly inboundStores: ALInboundRuntimeStores;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
 }
@@ -90,7 +89,7 @@ export function initialiseRtcRxStreamer(
         queueEngine: qboxEngine,
         multicast: webRtcOverlayMulticastManager,
         sessionId: clientData.sessionId,
-        inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
+        inboundStores: input.inboundStores,
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,

@@ -1,3 +1,4 @@
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -20,7 +21,7 @@ describe('ALM lifecycle recipe evidence', () => {
             }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle');
             expect(scenario).toBeDefined();
             const replaceable = scenario!.sender.commands
-                .filter((command) => command.kind === 'messages.send')
+                .filter(isRallarBlackBoxTestMessagesSendCommand)
                 .filter((command) =>
                     command.payload !== null && typeof command.payload === 'object' &&
                     !Array.isArray(command.payload) && 'specimen' in command.payload && command.payload.specimen === 'supersedence'

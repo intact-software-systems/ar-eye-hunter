@@ -64,6 +64,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
                 effectId: 'persisted-dispatch',
@@ -82,6 +83,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -113,6 +115,7 @@ describe('inbound durable effect worker lifecycle', () => {
             new ALAdmissionCorruptionError('queuebox:page', new TypeError('invalid stored queue metadata'))
         );
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -150,6 +153,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(message, Number.MAX_SAFE_INTEGER)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
                 effectId: 'corrupt-delivery',
@@ -158,6 +162,7 @@ describe('inbound durable effect worker lifecycle', () => {
             })]
         });
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -191,6 +196,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const nowMs = Date.now();
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: nowMs - 20_000,
             expireAtTimestamp: nowMs + 120_000,
@@ -208,6 +214,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -245,6 +252,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const missingSource = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' }, 'receiver', 'chat', {});
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
@@ -255,6 +263,7 @@ describe('inbound durable effect worker lifecycle', () => {
         await resources.workQueue.enqueueIfAbsent(work.entry);
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -290,6 +299,7 @@ describe('inbound durable effect worker lifecycle', () => {
             observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [],
             durableEffects: [computeALInboundWorkEntry({
+                carrier: 'ws',
                 namespace: resources.admissionStore.namespace,
                 observedAtMs: Date.now(),
                 effectId: `${failure}-buffered-release`,
@@ -310,6 +320,7 @@ describe('inbound durable effect worker lifecycle', () => {
             );
         }
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -338,6 +349,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const delivered: string[] = [];
         const dependencies = {
             ...resources,
+            carrier: 'ws' as const,
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -358,6 +370,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
 
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
             expireAtTimestamp: Date.now() + 60_000,
@@ -416,6 +429,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async (entry) => {
@@ -444,6 +458,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const dispatchStarted = Promise.withResolvers<void>();
         const releaseDispatch = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async () => {
@@ -474,6 +489,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const sendStarted = Promise.withResolvers<void>();
         const releaseSend = Promise.withResolvers<void>();
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
@@ -491,6 +507,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         // Retained control work gives the batch a delivery to hold, so the admission below must outlive it.
         const forwarded = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'forwarded-control',
             observedAtMs: Date.now(),
@@ -502,7 +519,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -520,7 +538,8 @@ describe('inbound durable effect worker lifecycle', () => {
             fromPeerId: 'sender',
             toPeerId: 'receiver',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         });
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
@@ -538,6 +557,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
@@ -553,6 +573,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // batch already read. No engine round is ever driven here, so only a commit's own
         // announcement can bring the batch that would claim it.
         const forwarded = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'unannounced-control',
             observedAtMs: Date.now(),
@@ -564,7 +585,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -584,7 +606,8 @@ describe('inbound durable effect worker lifecycle', () => {
             fromPeerId: 'sender',
             toPeerId: 'receiver',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         });
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
@@ -606,6 +629,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
@@ -620,6 +644,7 @@ describe('inbound durable effect worker lifecycle', () => {
         // The retained row of the pin above, behind the page the bootstrap batch already read. No
         // engine round is ever driven here, so only an announcement can bring the batch that claims it.
         const forwarded = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: resources.admissionStore.namespace,
             effectId: 'expired-retention-control',
             observedAtMs: nowMs,
@@ -631,7 +656,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -662,6 +688,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
     it('dispatches a replayed admission in the batch its own commit schedules', async () => {
         const fixture = createInboundTestRuntime({
+            carrier: 'ws',
             stores: createInboundTestStores({
                 namespace: 'replayed-dispatch',
                 storage: 'memory',
@@ -693,6 +720,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
             planIncomingMessage,
             dispatchInboxEntry: async () => {},
@@ -736,6 +764,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const read = await readAdmission(store, buffered);
         const trackKey = toALOrderingTrackKey(buffered)!;
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: store.namespace,
             observedAtMs: Date.now(),
             effectId: 'release-without-canonical-message',
@@ -749,13 +778,14 @@ describe('inbound durable effect worker lifecycle', () => {
             observations: read.observations,
             mutations: [{
                 kind: 'set-buffered',
-                snapshot: { trackKey, seq: 2, msg: buffered, plan: read.prePlan },
+                snapshot: { trackKey, seq: 2, msg: buffered, plan: read.prePlan, carrier: 'ws' },
                 expireAtTimestamp: Date.now() + 60_000
             }],
             durableEffects: [work]
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -793,6 +823,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const deliveredMessageIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -829,6 +860,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -903,6 +935,7 @@ describe('inbound durable effect worker lifecycle', () => {
                 toCanonicalMessageMutation(external, expireAtTimestamp)
             ],
             durableEffects: [computeALInboundWorkEntry({
+                carrier: 'ws',
                 namespace: store.namespace,
                 effectId: 'externally-admitted-work',
                 observedAtMs: Date.now(),
@@ -925,6 +958,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...resources,
 
             planIncomingMessage,
@@ -962,6 +996,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const store = resources.admissionStore;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: stage, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: store.namespace,
             effectId: 'paused-delivery',
             observedAtMs: Date.now(),
@@ -1001,6 +1036,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const deliveredMessageIds: string[] = [];
         const dependencies = {
             ...resources,
+            carrier: 'ws' as const,
             planIncomingMessage,
             dispatchInboxEntry: async (entry: ResourceEntry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -1089,14 +1125,16 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage): Reso
         fromPeerId: 'sender',
         toPeerId: 'receiver',
         status: 'accepted',
-        observedAtEpochMs: 1
+        observedAtEpochMs: 1,
+        carrier: 'ws'
     });
     return computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace,
         effectId: toALInboundPendingControlId(ack),
         observedAtMs: Date.now(),
         expireAtTimestamp: expiresAtMs,
-        payload: { kind: 'admit-control', msg: ack, expiresAtMs }
+        payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs }
     }).entry;
 }
 
@@ -1129,7 +1167,8 @@ async function seedTrackedAcknowledgement(
                     localReady: true,
                     expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
-                    expireAtTimestamp
+                    expireAtTimestamp,
+                    carrier: 'ws'
                 }
             },
             expireAtTimestamp

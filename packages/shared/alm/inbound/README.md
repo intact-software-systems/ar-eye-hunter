@@ -30,6 +30,83 @@ not invoke admission or delivery. Storage readiness precedes the first work scan
 Disposal prevents further local work and unregisters the task. A runtime-owned
 engine stops; a supplied shared engine remains available to its other tasks.
 
+## Store identity and carrier partition
+
+One inbound admission store exists per browser session, keyed
+`browser-session-inbound:<sessionId>` and resolved once, in the browser's
+composition root
+([`initialiseMiddleware`](../../../shared-web/browser/connection/initialise-browser-middleware.ts)),
+by
+[`resolveBrowserSessionALInboundRuntimeStores`](../../../shared-web/browser/al-runtime/browser-al-runtime-stores.ts).
+That one resolved store is injected as a required dependency into both
+carrier services — the WS client's `WsQueueBoxClientService` and RTC's
+`WebRtcRxStreamerService` — and neither resolves its own.
+
+Every stored key stays session-logical: dedup, message-owner, ordering,
+supersedence, and control rows are shared across carriers, because a given
+message and its control history are one identity no matter which carrier
+delivered them.
+
+What is partitioned per carrier is which QueueBox work rows a runtime may
+claim. [`toALInboundWorkType`](./al-inbound-work-entry.ts) types a work row
+`AL_INBOUND:<carrier>:<fnv1a64(namespace)>`, so each inbound runtime — RTC or
+WS — reserves only its own carrier's type and re-plans, delivers, sends
+control, and forwards only on its own carrier. One data-admission commit
+bundle carries one carrier — the arriving message's own — on every ordinary
+effect it writes (dispatch, forward, ack, nack, repair). The one exception is
+a buffered release: the buffered slot records the carrier the buffered
+message itself arrived on, and its `release-buffered` row is written under
+that slot's carrier, never the releasing message's, so the buffered
+message's own runtime is the one that re-plans and dispatches it. When a
+releasable slot has already vanished, its confirmation-only row falls back
+to the releasing read's carrier, because there is no slot carrier left to
+read and the row dispatches nothing.
+
+The control and ACK row family — `pending`, `acks`, and the owner index — is
+carrier-tagged too, and lives in its own file,
+[`inbound/control/al-inbound-control-rows.ts`](./control/al-inbound-control-rows.ts):
+`pending.carrier` is the data message's own arrival carrier, and each entry
+in `acks` carries the carrier that ACK itself arrived on, independent of the
+message's carrier.
+[`ALInboundControlAdmission.admit(msg, source)`](./control/al-inbound-control-admission.ts)
+takes the arrival source, from which its carrier is derived. A message's
+pending admission retained concurrently over both carriers is a value
+outcome, not a thrown corruption: the retained row keeps the first arrival's
+source and carrier.
+
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2b'`. An
+existing browser database at a different schema identity is deleted and
+recreated once, as described under
+["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
+
+**The deploy window.** No row kind this change touches lacks an expiry, so
+nothing the WS server's PostgreSQL store holds from before the deploy stays
+undecodable or unclaimed forever — but the window is longer than "30
+minutes" for two of the four row kinds:
+
+- `pending` and `acks` control rows, and carrier-less `admit-control`
+  retained payloads, are undecodable for their control TTL — 30 minutes by
+  default (`controlHistoryTtlMs`/`controlPendingTtlMs`) — except that a
+  `pending` row whose own message TTL outlives 30 minutes stays undecodable
+  for that longer message TTL instead.
+- A buffered-slot row written by the old build carries no `carrier` and is
+  undecodable for the message's own TTL, or 60 minutes by default
+  (`bufferedMessageTtlMs`/`repositoryTtlMs`) when the message has none. Until
+  it expires, every later admission on that same ordered track calls
+  `readOrderingState`, which lists and decodes every buffered slot of the
+  track, so the whole track stalls on `ALAdmissionCorruptionError` — not only
+  the one message the slot buffered. Past expiry, the row keeps throwing
+  until the runtime-state expiry worker sweeps it, because the PostgreSQL
+  prefix read decodes a row before it applies the expiry filter.
+- Old-format `AL_INBOUND:<fnv1a64(namespace)>` work rows with no carrier
+  segment are simply unclaimed by either runtime until they expire.
+
+An ACK sent by a page still running the old build is refused as malformed
+until that page reloads — this is not bounded by the row TTL, since the
+page itself, not a stored row, is what is out of date. The refusal is
+symmetric: an old-build page also refuses a new-build ACK carrying the new
+field, until it reloads.
+
 ## Admission and invocation paths
 
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
@@ -140,9 +217,12 @@ to come round to it.
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
 authority owner before admission. Current authorized recipients intersect the
-captured recipients. Revocation retires pending work without admission metadata or
-receipts. Temporary authority catch-up uses the existing `RETRY`/future `nextTs`
-path with `reason: 'not-ready'`, preserving the processing attempt count.
+captured recipients. An admitted room multicast counts the server among its group
+members, so the server delivers it locally to the topic router, which owns the
+room's fanout; the server never forwards it. Revocation retires pending work
+without admission metadata or receipts. Temporary authority catch-up uses the
+existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`, preserving the
+processing attempt count.
 
 The deadline is captured before pending retention and checked again after awaited
 authority reads. Changed policy, restart, and retry cannot extend it. Conditional

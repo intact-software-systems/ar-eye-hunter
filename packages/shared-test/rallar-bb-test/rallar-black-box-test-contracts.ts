@@ -1,6 +1,10 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
@@ -306,6 +310,19 @@ export type RallarBlackBoxTestMessagesSendCommand =
         orderingKey?: string;
         seq?: number;
         handleId?: string;
+        /** A harness floor, resolved to an absolute one at send time; absent, the product stamps the sender's version. */
+        minSnapshotVersion?: Readonly<{ absolute: number; }> | Readonly<{ aboveCurrentBy: number; }>;
+    }>;
+
+/**
+ * A harness capability, not a product path: re-admits the envelope an earlier handle's first carrier captured on
+ * the other carrier, and names nothing else a send would.
+ */
+export type RallarBlackBoxTestMessagesReplayCommand =
+    & RallarBlackBoxTestCommandBase<'messages.send'>
+    & Readonly<{
+        connection?: string;
+        replayOnCarrier: Readonly<{ handleId: string; carrier: ALDeliveryCarrier; }>;
     }>;
 
 export type RallarBlackBoxTestMessagesObserveCommand =
@@ -662,6 +679,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestRtcSendCommand
     | RallarBlackBoxTestRtcStreamCommand
     | RallarBlackBoxTestMessagesSendCommand
+    | RallarBlackBoxTestMessagesReplayCommand
     | RallarBlackBoxTestMessagesObserveCommand
     | RallarBlackBoxTestMessagesCancelCommand
     | RallarBlackBoxTestMessagesReceivedCommand
@@ -934,6 +952,16 @@ export interface RallarBlackBoxTestMessagesSendResultValue {
     readonly msgId?: string;
     readonly carrier: RallarBlackBoxTestMessagesCarrier;
     readonly status: ALDeliveryState;
+    readonly reason?: string;
+}
+
+/** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
+export interface RallarBlackBoxTestMessagesReplayResultValue {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; absent for `admitted`, `duplicate` and `pending`, which carry none. */
     readonly reason?: string;
 }
 

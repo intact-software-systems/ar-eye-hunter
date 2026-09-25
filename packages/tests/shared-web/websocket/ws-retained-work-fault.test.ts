@@ -9,7 +9,10 @@ import {
 } from 'vitest';
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    configureBrowserALRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
@@ -63,6 +66,7 @@ describe('WS retained-work faults', () => {
             qboxEngine: engine,
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -138,6 +142,7 @@ describe('WS retained-work faults', () => {
             qboxEngine: engine,
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);

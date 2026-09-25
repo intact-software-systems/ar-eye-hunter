@@ -13,7 +13,6 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionObservations,
@@ -22,10 +21,15 @@ import {
     type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundPendingControlId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
-    toALInboundWorkKey
+    toALInboundWorkKey,
+    toALInboundWorkType,
+    validateALInboundWorkWrites,
+    type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -37,6 +41,9 @@ import {
 } from 'vitest';
 
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
+
+/** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
+const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 const message: ALMessage = {
     id: { v: 2, msgId: 'message', senderId: 'sender:with:delimiter', ts: 1_800_000_000_000 },
@@ -66,8 +73,9 @@ function createFixture() {
         backend,
         store,
         workQueue: state.workQueue,
-        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now }),
         control: createTestALInboundControlAdmission({
+            carrier: 'ws',
             ...stores,
             nowMs: Date.now,
             newControlId: () => 'generated-control'
@@ -105,7 +113,8 @@ function createBufferedSnapshot() {
         trackKey: toALOrderingTrackKey(message)!,
         seq: 2,
         message: toMessageReference(message),
-        plan: planMessage(message)
+        plan: planMessage(message),
+        carrier: 'ws' as const
     };
 }
 
@@ -124,6 +133,7 @@ async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candi
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
     return computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace: 'inbound',
         effectId,
         payload,
@@ -183,7 +193,8 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     localReady: true,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
-                    expireAtTimestamp: input.expireAtTimestamp
+                    expireAtTimestamp: input.expireAtTimestamp,
+                    carrier: 'ws'
                 }
             },
             expireAtTimestamp: input.expireAtTimestamp
@@ -536,6 +547,49 @@ describe('inbound admission persisted values', () => {
         expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
+    it('rejects queued work whose type names no carrier of its namespace', () => {
+        const entry = { ...createWork().entry, typeId: toALInboundWorkType('other-scope', 'ws') };
+
+        expect(() => decodeALInboundWorkEntry(entry, 'inbound')).toThrow(ALAdmissionCorruptionError);
+    });
+
+    it.each([
+        { named: 'names no carrier', carrier: undefined },
+        { named: 'names a carrier other than its row type', carrier: 'rtc' }
+    ])('rejects a retained control admission that $named', ({ carrier }) => {
+        const ack = createAcknowledgement('receiver');
+        const expiresAtMs = Date.now() + 60_000;
+        const retained = computeALInboundWorkEntry({
+            namespace: 'inbound',
+            effectId: toALInboundPendingControlId(ack),
+            payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs },
+            observedAtMs: Date.now(),
+            expireAtTimestamp: expiresAtMs,
+            carrier: 'ws'
+        });
+        const entry = {
+            ...retained.entry,
+            resource: JSON.stringify({
+                namespace: 'inbound',
+                effectId: retained.effectId,
+                payload: { kind: 'admit-control', msg: ack, carrier, expiresAtMs }
+            })
+        };
+
+        expect(decodeALInboundWorkEntry(retained.entry, 'inbound').payload).toMatchObject({ carrier: 'ws' });
+        expect(() => decodeALInboundWorkEntry(entry, 'inbound')).toThrow(ALAdmissionCorruptionError);
+    });
+
+    it('refuses a durable effect write whose carrier differs from the type its entry names', () => {
+        const work = createWork();
+
+        expect(validateALInboundWorkWrites([work], 'inbound').right).toEqual([work]);
+        expect(validateALInboundWorkWrites([{ ...work, carrier: 'rtc' }], 'inbound').left).toEqual({
+            code: 'malformed',
+            message: 'Inbound admission work differs from its computed value'
+        });
+    });
+
     it('rolls back earlier admission writes when the existing durable effect is corrupt', async () => {
         const { state, store, workQueue } = createFixture();
         const work = createWork();
@@ -658,7 +712,7 @@ describe('inbound admission persisted values', () => {
             }))
         ).toBe('committed');
 
-        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'not-handled' });
+        expect(await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL)).toEqual({ kind: 'not-handled' });
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:control:pending:')).sort())
             .toEqual([
                 'inbound:control:pending:message:second-sender',
@@ -682,7 +736,8 @@ describe('inbound admission persisted values', () => {
                             localReady: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
-                            expireAtTimestamp: Date.now() + 60_000
+                            expireAtTimestamp: Date.now() + 60_000,
+                            carrier: 'ws'
                         }
                     },
                     Date.now() + 60_000
@@ -691,7 +746,7 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL)).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect((await claimWork(port, store.namespace)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
     });
@@ -711,7 +766,7 @@ describe('inbound admission persisted values', () => {
             return await write(operation);
         });
 
-        expect(await control.admit(createAcknowledgement('receiver'))).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL)).toEqual({ kind: 'pending-control' });
         expect(state.data.has('inbound:control:acks:message:sender%3Awith%3Adelimiter')).toBe(false);
         expect(state.data.get('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBeDefined();
         expect((await claimWork(port, store.namespace)).map((effect) => effect.payload.kind)).toEqual(['admit-control']);
@@ -736,7 +791,7 @@ describe('inbound admission persisted values', () => {
             });
         });
 
-        await expect(control.admit(createAcknowledgement('receiver')))
+        await expect(control.admit(createAcknowledgement('receiver'), WS_ARRIVAL))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -750,14 +805,16 @@ describe('inbound admission persisted values', () => {
                 fromPeerId,
                 toPeerId: 'self',
                 status: 'accepted' as const,
-                observedAtEpochMs
+                observedAtEpochMs,
+                carrier: 'ws' as const
             })),
             {
                 ackedMsgId: message.id.msgId,
                 fromPeerId: expectedPeerIds[0]!,
                 toPeerId: 'self',
                 status: 'delivered' as const,
-                observedAtEpochMs: 256
+                observedAtEpochMs: 256,
+                carrier: 'ws' as const
             }
         ];
         await backend.write((transaction) =>
@@ -768,7 +825,7 @@ describe('inbound admission persisted values', () => {
             )
         );
 
-        expect(await control.admit(createAcknowledgement('receiver-255'))).toMatchObject({
+        expect(await control.admit(createAcknowledgement('receiver-255'), WS_ARRIVAL)).toMatchObject({
             kind: 'committed',
             acceptance: { handled: true }
         });
@@ -838,7 +895,8 @@ async function seedPendingAcknowledgement(
                         localReady: true,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
-                        expireAtTimestamp
+                        expireAtTimestamp,
+                        carrier: 'ws'
                     }
                 },
                 expireAtTimestamp
@@ -864,7 +922,8 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             fromPeerId,
             toPeerId: 'self',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         }
     );
 }

@@ -164,7 +164,7 @@ function createMessage(senderId: string, version: number, supersedenceKey = 'sha
 
 /** The claim step of the worker over one page, so a concurrency test observes the rows the runtime would. */
 async function claimWork(stores: ALInboundRuntimeStores) {
-    const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+    const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now });
     const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
     return (await port.claim({ maxCount: 10, observedEntries: page.entries }))
         .map((claim) => decodeALInboundWorkEntry(claim.entry, stores.admissionStore.namespace));

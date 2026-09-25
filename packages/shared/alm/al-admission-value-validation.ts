@@ -1,5 +1,6 @@
 import {
     decodeALAckPayload,
+    decodeALDeliveryCarrier,
     decodeALNackPayload,
     decodeALPendingAckSnapshot,
     decodeALRepairPayload
@@ -14,6 +15,7 @@ import {
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
+import type { ALDeliveryCarrier } from './delivery/al-delivery-lifecycle.ts';
 
 import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
 
@@ -22,6 +24,10 @@ export function decodeALAdmissionString(value: unknown): string {
         throw new TypeError('Stored admission identifier is invalid');
     }
     return value;
+}
+
+export function decodeALAdmissionCarrier(value: unknown): ALDeliveryCarrier {
+    return decodeALDeliveryCarrier(value, 'Stored admission carrier');
 }
 
 export function decodeALAdmissionNumber(value: unknown): number {

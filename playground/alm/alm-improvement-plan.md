@@ -56,6 +56,22 @@ question.
 | D29 | S2c's acceptance needs a third agent role (`AlmConformanceRole`) and a three-agent Hetzner catalog entry beside the existing two-agent one (2026-09-23).                                                                                                                                                                                                                                                                                    |
 | D30 | The three moving pins under S2b (`al-storage-snapshot.test.ts`, `al-indexeddb-operation-counts.test.ts`, `inbound/al-inbound-admission-transactions.test.ts`) are named, not pre-declared with counts; the implementation measures and records each (2026-09-23).                                                                                                                                                                           |
 | D31 | S2a's acceptance is both S1 hosted scenarios, `delivery-lifecycle` and `delivery-reload`, running green in a regime with a same-regime green baseline (2026-09-23).                                                                                                                                                                                                                                                                         |
+| D32 | S2b keeps two inbound runtimes over one session store with carrier-partitioned QueueBox work types (`AL_INBOUND:<carrier>:<fnv(namespace)>`); keys stay session-logical (2026-09-24).                                                                                                                                                                                                                                                       |
+| D33 | `carrier` is a required field on every `pending` and `acks` control value; the WS server's PostgreSQL rows written before the deploy stay undecodable for at most their 30-minute TTL, accepted under D3; no migration, no optional field, no wrapper row (2026-09-24).                                                                                                                                                                     |
+| D34 | `messages.send` gains the harness fields `replayOnCarrier` and `minSnapshotVersion` (absolute or `aboveCurrentBy`) in S2b, as black-box capabilities, never product behaviour (2026-09-24).                                                                                                                                                                                                                                                 |
+| D35 | S2b's acceptance follows the code: the storage reset is proven by the unit test; the `not-yet-in-sync` scenario proves NACK → sender retry → delivery after the snapshot advances, and NACK → expiry → absence; the named pins may read "unchanged, measured" (2026-09-24).                                                                                                                                                                 |
+| D36 | The `browser-ws-client` store scope becomes outbound-only; the rtc-rx inbound id is deleted; the outbound keys do not move (2026-09-24).                                                                                                                                                                                                                                                                                                    |
+| D37 | Live-only broadcast ACKs are counted in memory per instance and the completed or timed-out aggregate is written as one `WS_OUTBOX` row addressed to the origin session, so the existing cluster fanout routes it; no new pub/sub kind or server-side registry (2026-09-24).                                                                                                                                                                 |
+| D38 | The durable channel's receipt is the server's existing ALM pending-ACK row, keyed per D40; no AppInbox receipt command in S2c (2026-09-24).                                                                                                                                                                                                                                                                                                 |
+| D39 | On admitting a room broadcast the WS server returns the frozen audience to the origin as the first control, from which the origin's pending row is created; the origin identity stays `senderId` (2026-09-24).                                                                                                                                                                                                                              |
+| D40 | ACK dedup keys become `(fromPeerId, logicalRecipientPeerId)`; durable receipt rows are keyed by `(groupRef, originPeerId, msgId)`; a relay re-originates one ACK per logical recipient (2026-09-24).                                                                                                                                                                                                                                        |
+| D41 | `receiver` and `all-logical-recipients` are one frozen-audience algorithm under two request names; `group-leader` stays on `subtree` until A2; the three-peer scenario uses `all-logical-recipients` (2026-09-24).                                                                                                                                                                                                                          |
+| D42 | An unimplemented algorithm/target pair is a typed admission refusal `unsupported` naming the pair; the default capability set stops claiming what no provider supports; never a silent downgrade (2026-09-24).                                                                                                                                                                                                                              |
+| D43 | Under a frozen audience a session that leaves after admission stays in the expected set and the receipt reports it missing or partial; the live publisher no longer intersects a frozen broadcast with current membership (2026-09-24).                                                                                                                                                                                                     |
+| D44 | The ws `ordering-resync` variant asserts the receiver-side NACK/resync observation, not only one delivery (2026-09-24).                                                                                                                                                                                                                                                                                                                     |
+| D45 | The third conformance role is `recipient-b`; the identity assessment accepts one sender and N recipients where a scenario declares it; a three-agent Playwright run exists only for scenarios declaring three roles; the generator splits by scenario family before any scenario lands; Hetzner gains a three-agent entry with pattern `one-sender-two-recipients` (2026-09-24).                                                            |
+| D46 | S2c's second schema-id bump and its server-side window are accepted under D3 as D33 is; no server-side migration (2026-09-24).                                                                                                                                                                                                                                                                                                              |
+| D47 | S2c lands as two PRs: S2c-i contract and server path (ACK v2, modes, keys, WS ingress, aggregation and the outbox row, client-assigned ordering), then S2c-ii audience, evidence, roles and the consumer proof (2026-09-24).                                                                                                                                                                                                                |
 
 ### Standing direction
 
@@ -519,10 +535,93 @@ dispatch latency read from the inbound block against the diagnosis's 0.7–1.2 s
 7–23 s drain cycles it explains; no harness budget changed; no new timer, queue, or registry; no new
 `file.cognitive-load` pin; the lane's return to `test:ci` stays the maintainer's decision.
 
+### Release 3, S2b: one identity
+
+**Outcome:** one logical message has one inbound identity per browser session whatever carried it —
+an RTC-then-WS or WS-then-RTC arrival deduplicates instead of delivering twice — the control and ACK
+history rows say which carrier each entry arrived on, the browser database resets once on the schema
+move, and the `not-yet-in-sync` behaviour carried in from F2 has a conformance scenario.
+
+**Owners:** [shared-web/browser/al-runtime](../../packages/shared-web/browser/al-runtime/) (the session
+inbound store id and the composition root), [alm/inbound](../../packages/shared/alm/inbound/) (the
+carrier-partitioned work types, the carrier-tagged control rows), `al-contracts/al-control.ts` (the
+shared control values), and the generator plus two `messages.send` fields in
+[rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
+`plans/alm-s2b-one-identity-implementation-plan.md`; design:
+[alm-s2-design-proposal.md](alm-s2-design-proposal.md) §2.2 (decisions D20, D30).
+
+**What the code survey found (2026-09-24):** the two inbound runtimes cannot share one QueueBox work
+type — each re-plans stored rows with its own carrier's planner (only the RTC planner applies room
+authority), delivers to its own consumers, sends control on its own outbound, and the WS runtime
+exists before the RTC one — so the merged store needs carrier-partitioned work types; the store
+registry builds a new store on every resolve, so the composition root must resolve once and inject;
+the inbound store and its control value types are shared with the WS server's PostgreSQL backend,
+which has no schema id and no reset; and neither new scenario is expressible without a same-envelope
+replay on the other carrier and a snapshot floor on `messages.send`.
+
+**Changes:**
+
+1. One inbound admission store per session (`browser-session-inbound:<sid>`), resolved once in the
+   middleware and injected into both carrier services; the rtc-rx inbound scope is deleted; the
+   ws-client scope becomes outbound-only; `AL_ADMISSION_SCHEMA_ID` moves to `rallar-alm-2026-09-s2b`
+   and the reset is proven against the f2c id.
+2. Each inbound runtime claims only the work rows whose QueueBox type names its carrier
+   (`AL_INBOUND:<carrier>:<fnv(namespace)>`); every effect intent names its carrier; keys stay
+   session-logical so dedup, owner, ordering and supersedence unify.
+3. `carrier` is a required field on every `pending` (the data message's carrier) and `acks` entry (the
+   ACK's arrival carrier); the control row family moves out of `al-inbound-admission-store.ts`;
+   control admission takes the arrival source; `admission-outcome` reports the carrier.
+4. Harness: `messages.send` gains `replayOnCarrier` and `minSnapshotVersion` (absolute or
+   `aboveCurrentBy`); the `cross-carrier-duplicate` scenario in both orders and the `not-yet-in-sync`
+   scenario (delivered after the refresh; expires undelivered).
+
+**Acceptance:** one `committed/admitted` and one `not-handled/duplicate` for the same `msgId` on
+different carriers in both orders with exactly one page dispatch; the reset proven by the unit test
+(the conformance lane runs fresh browser contexts, so it never observes one); a `not-yet-in-sync`
+reason on an `alm.conformance.*` typeId in the corpus; the three named pins measured and recorded
+(D30), one default send and one admission unchanged; the hosted full-scope read green against S2a's
+both-normal baseline; no harness constant changed. D32–D36 are settled (2026-09-24).
+
+**What execution found (2026-09-24):** S2b's execution (PR #588) recorded three product/harness gaps
+for the maintainer, beyond the plan: (a) the api-v1 WS server admits a WS-carried multicast room
+envelope but never routes it, so the product's own RTC→WS fallback may be silently dropped —
+fixed in Task 7 (R-S2b-1); (b) no plain-member write
+advances `GroupSnapshot.group.snapshotVersion`, so `not-yet-in-sync` `delivered-after-refresh` is a
+named red until a version-advancing write exists; (c) the sender's `not-yet-in-sync` retry is one
+retry about 2.5–3 s after the first refusal, because the second NACK's control admission is rejected
+as already admitted — recorded, not diagnosed. The conformance catalog's growth also crossed a
+per-cell lane ceiling, not a scenario budget: `CARRIER_TEST_TIMEOUT_MS` moved from 300 s to 360 s for
+the `rtc-with-ws-fallback` full-scope cell (measured 4.8–5.3 min). Hetzner manifest 18's receiver
+absence-window sum grew from 289 s on `main` to 326 s at this head, against its 300 s
+`recommendedTerminalTimeoutSeconds`; the manifest is non-mainline and outside the supported-manifests
+matrix, so this is recorded, not gated.
+
+**The deploy-window disclosure (D33), completed.** D33 accepted an undecodable window on the
+condition that it is stated; the first statement understated both its scope and its bound. No row
+kind this change touches lacks an expiry, so nothing stays undecodable or unclaimed forever, but two
+of the four affected row kinds run longer than the "30 minutes" D33 names: `pending`/`acks` control
+rows and carrier-less `admit-control` payloads are undecodable for their control TTL (30 minutes by
+default, or the message's own TTL for a `pending` row whose message outlives that); old-format
+`AL_INBOUND:<fnv1a64(namespace)>` work rows are simply unclaimed until they expire; and a
+pre-deploy buffered-slot row, missing the now-required `carrier`, is undecodable for the message's
+TTL or 60 minutes by default — during which every later admission on that same ordered track throws
+`ALAdmissionCorruptionError`, because `readOrderingState` decodes every buffered slot of the track,
+not only the one the slot buffered, and the row keeps throwing past its own expiry until the
+runtime-state expiry worker sweeps it. An ACK from a page still on the old build is refused as
+malformed until that page reloads, and the refusal is symmetric. See
+[`packages/shared/alm/inbound/README.md`](../../packages/shared/alm/inbound/README.md#store-identity-and-carrier-partition)
+"The deploy window" for the full statement.
+
 ### Release 3, Slice 2: outcomes
 
-- **S2 One identity and receipted audiences.** S2b and S2c carry the outcome below; S2a is concrete
-  above. Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
+- **S2 One identity and receipted audiences.** S2a and S2b are concrete above; S2c carries the
+  outcome below and lands as two PRs (D47): `plans/alm-s2c-i-receipt-contract-and-server-path-implementation-plan.md`
+  (ACK v2, `receiver`, logical receipt keys, the WS server's admission, aggregation and outbox-row
+  routing, client-assigned WS ordering) and
+  `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md` (the frozen audience
+  on both carriers, retry to missing recipients through the tree, logical evidence, the third role
+  and three-agent runs, the consumer proof); the code survey's corrections and the settled questions
+  D37–D47 are in [alm-s2c-design-addendum.md](alm-s2c-design-addendum.md). Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
   keys; carrier-tagged control and ACK histories only. The logical audience is frozen at admission
   from the channel's addressed sessions and the identified room snapshot. ACKs carry origin and
   logical recipient; relays forward far ACKs toward the origin; the WS server aggregates broadcast
@@ -732,3 +831,9 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-23: the hosted delivery-lifecycle intermittent diagnosed
   (playground/alm/alm-s2-hosted-lifecycle-diagnosis.md); the S2 design questions settled as D18–D31
   and folded into the proposal; S2 split into S2a/S2b/S2c with S2a in the concrete horizon.
+- 2026-09-24: S2a delivered (merged as `4c4634841`); S2b moved into the concrete horizon with its plan
+  under `plans/`; the S2c code survey recorded as an addendum; the sixteen open questions settled with
+  the maintainer as D32–D47; the S2c-i and S2c-ii plans written under `plans/`.
+- 2026-09-24: S2b executed on `claude/alm-s2b-one-identity` (PR #588); the three product/harness gaps
+  (WS-carried multicast room routing, no plain-member snapshot-version advance, the one-retry
+  `not-yet-in-sync` timing) recorded for the maintainer.

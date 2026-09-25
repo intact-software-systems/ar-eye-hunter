@@ -347,7 +347,8 @@ function toDeliveredAck(message: ALMessage): ALMessage {
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,
         status: 'delivered',
-        observedAtEpochMs: Date.now()
+        observedAtEpochMs: Date.now(),
+        carrier: 'ws'
     });
 }
 
@@ -391,7 +392,8 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
     return createTestALOutboundControlAdmission({
         admissionStore: fixture.store,
         workQueue: fixture.backend.workQueue,
-        nowMs: Date.now
+        nowMs: Date.now,
+        carrier: 'ws'
     });
 }
 

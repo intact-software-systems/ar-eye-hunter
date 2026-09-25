@@ -1066,8 +1066,28 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(entry?.manifest.metadata).toMatchObject({
             family: 'alm-conformance',
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: ['delivery-reload', 'bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
+            scenarios: [
+                'delivery-reload',
+                'bounded-rejection',
+                'deadline-expiry',
+                'delivery-baseline',
+                'delivery-lifecycle',
+                'ordering-resync',
+                'not-yet-in-sync',
+                'cross-carrier-duplicate'
+            ]
         });
+
+        const commandIds = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+            .map((command) => command.commandId ?? '');
+        // Both cross-carrier orders run on Hetzner: api-v1 routes a WS-carried multicast room envelope (Task 7, R-S2b-1).
+        expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-ws-then-rtc'))).toBe(true);
+        expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-ws');
+        // delivered-after-refresh is withheld: no plain-member write advances the snapshot version.
+        expect(commandIds.some((commandId) => commandId.includes('not-yet-in-sync-delivered-after-refresh'))).toBe(false);
+        for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
+            expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
+        }
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');

@@ -58,6 +58,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
                 workPort: createTestALInboundWorkPort({
+                    carrier: 'rtc',
                     admissionStore: store,
                     workQueue: backend.workQueue,
                     nowMs: () => nowMs

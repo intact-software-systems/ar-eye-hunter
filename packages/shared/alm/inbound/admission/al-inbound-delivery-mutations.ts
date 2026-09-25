@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 
 /** The provenance, ordering and dedup rows an admitted message owns. */
 export function toALInboundAdmittedMessageMutations(
@@ -63,7 +64,13 @@ export function toALInboundDeliveryMutations(
     // not merely until admission advances the contiguous sequence.
     mutations.push({
         kind: 'set-buffered',
-        snapshot: { trackKey: plan.orderingRuntime.trackKey, seq: plan.orderingRuntime.seq, msg: read.msg, plan },
+        snapshot: {
+            trackKey: plan.orderingRuntime.trackKey,
+            seq: plan.orderingRuntime.seq,
+            msg: read.msg,
+            plan,
+            carrier: toALDeliveryCarrier(read.source)
+        },
         expireAtTimestamp: resolveExpireAtTimestampWithFallback(
             resolveALMessageExpireAtMs(read.msg, plan.effective),
             read.retention.bufferedMessageTtlMs,

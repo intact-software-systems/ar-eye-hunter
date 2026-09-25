@@ -9,11 +9,12 @@ import {
 
 import type {
     BlackBoxRallarDeliveryObservation,
+    BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageSendInput
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
-import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
+import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -335,6 +336,59 @@ it('projects a durable admission as enqueued and a queued admission as queued', 
     expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', enqueued: true, backpressured: false });
 });
 
+it('replays a handle\'s envelope on the named carrier and reports that admission\'s verdict, opening no handle', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage({ ...send, carrier: 'rtc' });
+    facade.behavior.replayCapturedMessage.mockResolvedValueOnce({ kind: 'duplicate' });
+    facade.behavior.replayCapturedMessage.mockResolvedValueOnce({ kind: 'unroutable', reason: 'no-route', detail: 'no WS route' });
+
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-1', carrier: 'ws' } };
+    expect(await runtime.sendMessage(replay)).toEqual({
+        handleId: 'h-1',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        verdict: 'duplicate',
+        reason: undefined
+    });
+    expect(await runtime.sendMessage(replay)).toMatchObject({ verdict: 'unroutable', reason: 'no WS route' });
+    expect(facade.behavior.replayCapturedMessage).toHaveBeenCalledWith({ msgId: delivery.msgId, carrier: 'ws' });
+    expect(facade.records.typedSends).toHaveLength(1);
+    await expect(runtime.sendMessage({ ...replay, replayOnCarrier: { handleId: 'h-unknown', carrier: 'ws' } }))
+        .rejects.toThrow('messages.send.replayOnCarrier names no retained handle h-unknown.');
+    await expect(runtime.sendMessage({ ...replay, replayOnCarrier: { handleId: 'h-1', carrier: 'quic' } }))
+        .rejects.toThrow('messages.send.replayOnCarrier must name a handleId and a ws or rtc carrier.');
+    await expect(runtime.sendMessage({ ...replay, carrier: 'ws', payload: { n: 2 } }))
+        .rejects.toThrow('messages.send names carrier, payload beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
+it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
+    const runtime = await loadRuntime();
+    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(12);
+    await runtime.connect(connection);
+    const rtcSend = { ...send, carrier: 'rtc' };
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-absolute', minSnapshotVersion: { absolute: 999_999 } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-above', minSnapshotVersion: { aboveCurrentBy: 1 } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-default' });
+
+    expect(facade.records.typedSends.map(([, options]) => options?.minSnapshotVersion)).toEqual([999_999, 13, undefined]);
+    expect(facade.behavior.resolveRoomMinSnapshotVersion).toHaveBeenCalledWith(
+        expect.objectContaining({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' })
+    );
+    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(undefined);
+    await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-uncached', minSnapshotVersion: { aboveCurrentBy: 1 } }))
+        .rejects.toThrow('messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; room-1 has none cached.');
+    expect(events.some((event) => JSON.stringify(event).includes('h-uncached')), 'a refused floor leaves no send_started').toBe(false);
+    await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-both', minSnapshotVersion: { absolute: 1, aboveCurrentBy: 1 } }))
+        .rejects.toThrow('messages.send.minSnapshotVersion must name exactly one of absolute or aboveCurrentBy, as a positive integer.');
+    expect(facade.records.typedSends).toHaveLength(3);
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-above', carrier: 'ws' } };
+    await expect(runtime.sendMessage({ ...replay, minSnapshotVersion: { absolute: 1 } }))
+        .rejects.toThrow('messages.send names minSnapshotVersion beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
     const runtime = await loadRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 0 });
@@ -427,7 +481,7 @@ it('clamps an already-elapsed command deadline to a zero admission wait', async 
     const delivery = openDelivery({ kind: 'pending' });
     facade.behavior.typedSend.mockResolvedValue(delivery.handle);
     await native.connect(connection);
-    const pageInputs: BlackBoxRallarMessageSendInput[] = [];
+    const pageInputs: (BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput)[] = [];
     const recordingRuntime: BlackBoxRallarRuntime = {
         ...native,
         sendMessage: async (input) => {

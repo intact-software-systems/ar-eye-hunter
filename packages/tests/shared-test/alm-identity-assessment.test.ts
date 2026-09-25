@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     assessAlmConformanceIdentity,
@@ -525,7 +526,7 @@ interface TranscriptValueInput {
 }
 
 function transcriptValue({ command, role, document, sender }: TranscriptValueInput): ApiJsonObject {
-    if (command.kind === 'messages.send') {
+    if (isRallarBlackBoxTestMessagesSendCommand(command)) {
         return { msgId: `original:${command.commandId}`, ...(command.handleId === undefined ? {} : { handleId: command.handleId }), carrier: command.carrier };
     }
     if (command.kind === 'agent.reload') {
@@ -560,8 +561,8 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         return { handleId: command.handleId, confirmedHopPeerIds: ['peer'], unconfirmedHopPeerIds: [] };
     }
     if (command.kind === 'wait' && command.absent !== true) {
-        const sent = sender.commands.find((candidate) =>
-            candidate.kind === 'messages.send' && isSameJsonValue(decodeJsonValue(candidate.payload), command.match.equals)
+        const sent = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) =>
+            isSameJsonValue(decodeJsonValue(candidate.payload), command.match.equals)
         );
         if (sent?.kind !== 'messages.send') {
             return {};

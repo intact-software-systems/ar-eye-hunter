@@ -15,6 +15,7 @@ import type {
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
+    BlackBoxRallarMessageReplayDiagnostics,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
@@ -67,7 +68,9 @@ export interface BlackBoxRallarRuntime {
     /** An absent deadline gives typed-message admission its default wait budget; realtime sends ignore it. */
     send(input: unknown, deadlineEpochMs?: number): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
-    sendMessage(input: unknown): Promise<BlackBoxRallarMessageSendDiagnostics>;
+    sendMessage(
+        input: unknown
+    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics>;
     observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     cancelDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     readReceipts(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;

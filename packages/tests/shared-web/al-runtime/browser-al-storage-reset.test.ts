@@ -11,13 +11,13 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 
 const STORE_NAME = 'entries';
-/** The schema identity F2c replaced: a store written at it carries no per-row revision. */
-const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-f2';
-/** The deleted store-global revision key, spelled out because its constant is gone. */
-const REMOVED_REVISION_KEY = '__rallar_al_admission_revision__';
+/** The schema identity S2b replaced: a store written at it keys inbound rows per carrier. */
+const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-f2c';
+/** The deleted per-carrier RTC inbound namespace, spelled out because its identity is gone. */
+const REMOVED_RTC_RX_INBOUND_NAMESPACE = 'browser:browser-rtc-rx:session-1:inbound:admission';
 
 describe('browser ALM storage schema identity reset', () => {
-    it('resets the F2 database once and recreates it without the store-global revision row', async () => {
+    it('resets the F2c database once and recreates it at the S2b schema identity', async () => {
         const dbName = `al-storage-reset-schema-id-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
@@ -43,7 +43,6 @@ describe('browser ALM storage schema identity reset', () => {
                 reason: 'schema-id-mismatch'
             }]);
             expect(await getRow(db, 'version:old-row')).toBeUndefined();
-            expect(await getRow(db, REMOVED_REVISION_KEY)).toBeUndefined();
             expect(await getRow(db, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({
                 key: AL_ADMISSION_SCHEMA_KEY,
                 value: AL_ADMISSION_SCHEMA_ID
@@ -64,6 +63,40 @@ describe('browser ALM storage schema identity reset', () => {
         }
         finally {
             reopened.close();
+        }
+    });
+
+    it('drops an F2c per-carrier inbound dedup row instead of migrating it', async () => {
+        const dbName = `al-storage-reset-carrier-inbound-${crypto.randomUUID()}`;
+        const oldDb = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: PREVIOUS_SCHEMA_ID,
+            onStorageReset: assertNoStorageReset
+        });
+        await putRow(oldDb, {
+            key: `${REMOVED_RTC_RX_INBOUND_NAMESPACE}:dedup:sender:msg-1`,
+            value: Number.MAX_SAFE_INTEGER,
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            writeToken: 'f2c-writer',
+            revision: 1
+        });
+        oldDb.close();
+
+        const events: ALStorageResetEvent[] = [];
+        const db = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: (event) => events.push(event)
+        });
+        try {
+            expect(events.map((event) => event.reason)).toEqual(['schema-id-mismatch']);
+            // Every surviving key, not a lookup of the old one: the reset reads nothing it drops.
+            expect(await getAllKeys(db)).toEqual([AL_ADMISSION_SCHEMA_KEY]);
+        }
+        finally {
+            db.close();
         }
     });
 
@@ -224,6 +257,14 @@ function putRow(db: IDBDatabase, row: object): Promise<void> {
         transaction.oncomplete = () => resolve();
         transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB write aborted'));
         transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed'));
+    });
+}
+
+function getAllKeys(db: IDBDatabase): Promise<IDBValidKey[]> {
+    return new Promise((resolve, reject) => {
+        const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB read failed'));
     });
 }
 

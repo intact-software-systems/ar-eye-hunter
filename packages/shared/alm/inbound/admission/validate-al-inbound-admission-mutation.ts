@@ -1,3 +1,4 @@
+import { decodeALAdmissionControlValue } from '../../al-admission-value-validation.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundAdmissionObservations,
@@ -37,6 +38,14 @@ export function validateALInboundAdmissionMutation(
     // Readers clamp a buffered slot against the retention the row itself states, so the two must agree.
     if (mutation.kind === 'set-inbound-message' && mutation.value.retainUntilMs !== mutation.expireAtTimestamp) {
         issues.push('Inbound admission candidate retains its canonical message for an undeclared lifetime');
+    }
+    if (mutation.kind === 'set-control-acks' || mutation.kind === 'set-control-pending') {
+        try {
+            decodeALAdmissionControlValue(mutation.value, mutation.msgId, mutation.value.kind);
+        }
+        catch {
+            issues.push('Inbound admission candidate has an invalid control value');
+        }
     }
     if (mutation.kind === 'set-control-owners') {
         try {

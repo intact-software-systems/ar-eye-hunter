@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -38,6 +39,11 @@ export interface ALAckPayload {
     readonly toPeerId: string;
     readonly status: ALAckStatus;
     readonly observedAtEpochMs: number;
+    /**
+     * The carrier the ACK travels on. The sender names the carrier it sends on; a store that records
+     * the ACK stamps the carrier it arrived on.
+     */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export interface ALNackPayload {
@@ -89,6 +95,8 @@ export interface ALPendingAckSnapshot {
     readonly expectedFromPeerIds: readonly string[];
     readonly ackedFromPeerIds: readonly string[];
     readonly expireAtTimestamp?: number;
+    /** The carrier the acknowledged data message arrived on. */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export type ALControlPersistenceValue =

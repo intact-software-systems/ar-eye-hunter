@@ -7,13 +7,13 @@ import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
     decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs
+    resolveALInboundWorkDueAtMs,
+    type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
@@ -173,6 +173,7 @@ describe('ALInboundWorkSelector claim order', () => {
         'dispatches an acknowledged message before it sends the acknowledgement over %s',
         async (storage) => {
             const fixture = createInboundTestRuntime({
+                carrier: 'ws',
                 stores: createInboundTestStores({
                     namespace: 'claim-order',
                     storage,
@@ -266,6 +267,7 @@ describe('ALInboundWorkSelector claim order', () => {
             });
             const dispatchedIds: string[] = [];
             const fixture = createInboundTestRuntime({
+                carrier: 'ws',
                 stores: createInboundTestStores({
                     namespace: 'ingress-wake',
                     storage: 'memory',
@@ -361,7 +363,7 @@ function createSelectorFixture(): SelectorFixture {
     const delivery = createInboundTestDispatch(stores, () => NOW_MS).delivery;
     return {
         namespace,
-        port: createTestALInboundWorkPort({ ...stores, nowMs: () => NOW_MS }),
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: () => NOW_MS }),
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS })
     };
 }
@@ -383,7 +385,7 @@ function createTimedSelectorFixture(): SelectorFixture {
     });
     const stores = { admissionStore, workQueue: state.workQueue };
     const delivery = createInboundTestDispatch(stores, () => nowMs).delivery;
-    const port = createTestALInboundWorkPort({ ...stores, nowMs: () => nowMs });
+    const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: () => nowMs });
     return {
         namespace,
         port: {
@@ -423,6 +425,7 @@ async function createControlRoundFixture(
     ports: Pick<CreateInboundTestRuntimeInput, 'failControlSend' | 'gateDispatch'>
 ): Promise<InboundTestRuntime> {
     const fixture = createInboundTestRuntime({
+        carrier: 'ws',
         stores: createInboundTestStores({
             namespace: 'control-round',
             storage,
@@ -507,6 +510,7 @@ function createPendingAdmissionEntry(namespace: string, observedAtMs: number = N
     );
     const msg = { ...original, constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 } };
     return computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace,
         effectId: toALInboundPendingAdmissionId(msg),
         payload: { kind: 'admit-message', msg, source: { kind: 'ws-client', peerId: 'peer-1' } },
@@ -540,7 +544,7 @@ async function createDispatchPageFixture(rowCount: number = DISPATCH_PAGE_ROWS):
     const delivery = createInboundTestDispatch(stores, Date.now).delivery;
     return {
         delivery,
-        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now }),
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now }),
         effects
     };

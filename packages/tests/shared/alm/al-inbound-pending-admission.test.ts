@@ -119,7 +119,7 @@ it('refuses to report pending when an existing admission attempt completed after
     const admissionRead = await stores.admissionStore.readIncomingMessage({ msg: fixture.message, source: fixture.work.payload.source, nowMs, prePlan });
     expect(admissionRead.dedupExpiresAt).toBeUndefined();
 
-    const admission = new ALInboundMessageAdmission({ ...dependencies, workPort: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }) });
+    const admission = new ALInboundMessageAdmission({ ...dependencies, workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now }) });
     onTestFinished(() => admission.dispose());
     expect(await admission.retainPending(fixture.work.payload)).toMatchObject({ kind: 'not-admitted' });
     expect(await stores.workQueue.getItem(fixture.work.entry.key)).toEqual(terminal);
@@ -127,7 +127,7 @@ it('refuses to report pending when an existing admission attempt completed after
     expect(controls).toEqual([]);
 });
 
-it.each(['payload', 'source', 'scope', 'deadline'] as const)('refuses a conflicting pending %s observation at the existing QueueBox slot', async (field) => {
+it.each(['payload', 'scope', 'deadline'] as const)('refuses a conflicting pending %s observation at the existing QueueBox slot', async (field) => {
     const stores = createDefaultIndexedDbALInboundRuntimeStores({ dbName: `pending-conflict-${crypto.randomUUID()}`, namespace: 'full-scope' });
     const fixture = await retainConflictedAdmission(stores);
     if (fixture.work.payload.kind !== 'admit-message') {
@@ -137,7 +137,7 @@ it.each(['payload', 'source', 'scope', 'deadline'] as const)('refuses a conflict
     const pending = fixture.work.payload;
     const admission = new ALInboundMessageAdmission({
         ...runtimeDependencies(stores, [], []),
-        workPort: createTestALInboundWorkPort({ ...stores, nowMs: Date.now })
+        workPort: createTestALInboundWorkPort({ carrier: 'rtc', ...stores, nowMs: Date.now })
     });
     if (field === 'scope') {
         const resource = JSON.stringify({ ...JSON.parse(fixture.work.entry.resource), namespace: 'other-full-scope' });
@@ -148,10 +148,25 @@ it.each(['payload', 'source', 'scope', 'deadline'] as const)('refuses a conflict
     }
     const candidate = field === 'payload'
         ? { ...pending, msg: { ...pending.msg, payload: { ...pending.msg.payload, resource: '{"changed":true}' } } }
-        : field === 'source'
-        ? { ...pending, source: { kind: 'trusted-server' as const } }
         : { ...pending, msg: { ...pending.msg, constraints: { ...pending.msg.constraints, expiresAtMs: fixture.work.expireAtTimestamp + 1 } } };
     await expect(admission.retainPending(candidate)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    expect(await stores.workQueue.getItem(fixture.work.entry.key)).toEqual(before);
+});
+
+it('answers the same pending message from another source as retained, keeping the first source', async () => {
+    const stores = createDefaultIndexedDbALInboundRuntimeStores({ dbName: `pending-source-${crypto.randomUUID()}`, namespace: 'full-scope' });
+    const fixture = await retainConflictedAdmission(stores);
+    if (fixture.work.payload.kind !== 'admit-message') {
+        throw new Error('Expected pending admission');
+    }
+    const before = await stores.workQueue.getItem(fixture.work.entry.key);
+    const admission = new ALInboundMessageAdmission({
+        ...runtimeDependencies(stores, [], []),
+        workPort: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now })
+    });
+    onTestFinished(() => admission.dispose());
+
+    expect(await admission.retainPending({ ...fixture.work.payload, source: { kind: 'trusted-server' } })).toEqual({ kind: 'pending-admission' });
     expect(await stores.workQueue.getItem(fixture.work.entry.key)).toEqual(before);
 });
 
@@ -175,7 +190,8 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         fromPeerId: 'sender',
         toPeerId: 'receiver',
         status: 'delivered',
-        observedAtEpochMs: Date.now()
+        observedAtEpochMs: Date.now(),
+        carrier: 'rtc'
     });
     const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
     const malformed = await runtime.admitIncomingMessage({}, { kind: 'trusted-server' });
@@ -324,6 +340,7 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
             queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
         }),
+        carrier: 'rtc',
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, { ...observations, selfPeerId: 'receiver', fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId }),
         dispatchInboxEntry: async (entry: ResourceEntry) => {

@@ -185,6 +185,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const message = newInboundMessage('missing-owner', undefined, 'hello');
         const work = computeALInboundWorkEntry({
+            carrier: 'ws',
             namespace: NAMESPACE,
             observedAtMs: Date.now(),
             effectId: 'dispatch-without-owner',
@@ -281,6 +282,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
     const delivered: string[] = [];
     const forwarded: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'ws',
         ...resources,
         planIncomingMessage,
         dispatchInboxEntry: async (entry) => {
@@ -346,7 +348,7 @@ async function readAllWorkRows(queue: InMemoryQueueBox): Promise<readonly Resour
         let cursor = null;
         do {
             const page = await queue.readWorkPage({
-                typeId: toALInboundWorkType(NAMESPACE),
+                typeId: toALInboundWorkType(NAMESPACE, 'ws'),
                 status,
                 maxToRead: 32,
                 cursor

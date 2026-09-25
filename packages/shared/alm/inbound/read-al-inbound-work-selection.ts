@@ -10,7 +10,7 @@ import {
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import type { ALInboundDurableEffect, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
+import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
@@ -19,7 +19,8 @@ import type { ALInboundDeferredEffect } from './al-inbound-runtime-diagnostics.t
 import {
     decodeALInboundWorkEntry,
     resolveALInboundWorkDueAtMs,
-    resolveALInboundWorkReadyAt
+    resolveALInboundWorkReadyAt,
+    type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 
 const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;

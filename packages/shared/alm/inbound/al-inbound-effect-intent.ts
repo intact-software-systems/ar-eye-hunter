@@ -6,12 +6,16 @@ import type {
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 
 export interface ALInboundEffectIntent {
     readonly effectId: string;
     readonly expireAtTimestamp: number | undefined;
+    /** Whose runtime claims the row: the admitted message's carrier, or a buffered release's own message's. */
+    readonly carrier: ALDeliveryCarrier;
     readonly payload:
         | {
             readonly kind: 'send-ack';
@@ -42,6 +46,7 @@ export interface ALInboundEffectIntent {
 interface ALInboundLocalDeliveryInput {
     readonly msg: ALMessage;
     readonly plan: ALMessageHandlingPlan;
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export interface ALInboundControlEffectInput extends ALInboundLocalDeliveryInput {
@@ -53,6 +58,7 @@ interface ALInboundAckEffectInput {
     readonly ackedMsgId: string;
     readonly status: ALAckStatus;
     readonly expireAtTimestamp: number | undefined;
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export function toALInboundForwardingEffects(
@@ -63,6 +69,7 @@ export function toALInboundForwardingEffects(
         return [{
             effectId: toEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
             expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+            carrier: input.carrier,
             payload: {
                 kind: 'forward-message',
                 message: toALInboundMessageReference(input.msg),
@@ -87,6 +94,8 @@ export function toALInboundBufferedReleaseEffects(read: ALInboundMessageReadDto)
             expireAtTimestamp: buffered === undefined
                 ? undefined
                 : resolveALMessageExpireAtMs(buffered.msg, buffered.plan.effective),
+            // A vanished slot names no carrier; its row only confirms completion and dispatches nothing.
+            carrier: buffered?.carrier ?? toALDeliveryCarrier(read.source),
             payload: { kind: 'release-buffered', trackKey, seq }
         };
     });
@@ -101,6 +110,7 @@ export function toALInboundLocalDeliveryEffects(
     return [{
         effectId: toEffectId(['dispatch', input.msg.id.senderId, input.msg.id.msgId]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+        carrier: input.carrier,
         payload: {
             kind: 'dispatch-local',
             message: toALInboundMessageReference(input.msg)
@@ -119,6 +129,7 @@ export function toALInboundNegativeControlEffects(
     const nack: ALInboundEffectIntent = {
         effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+        carrier: input.carrier,
         payload: {
             kind: 'send-nack',
             toPeerId,
@@ -149,6 +160,7 @@ function toRepairEffects(
             input.plan.orderingRuntime.missingSeqs.join(',')
         ]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
+        carrier: input.carrier,
         payload: {
             kind: 'send-repair',
             toPeerId,
@@ -163,6 +175,7 @@ export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundE
     return {
         effectId: toEffectId(['ack', input.ackedMsgId, input.toPeerId, input.status]),
         expireAtTimestamp: input.expireAtTimestamp,
+        carrier: input.carrier,
         payload: {
             kind: 'send-ack',
             toPeerId: input.toPeerId,

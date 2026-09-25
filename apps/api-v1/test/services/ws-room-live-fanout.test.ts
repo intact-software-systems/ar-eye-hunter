@@ -6,11 +6,13 @@ import {
     newALBroadcastMessage,
     newALEventRoute,
     newALMulticastMessage,
+    toALGroupTargetKey,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -67,10 +69,7 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
             const message = roomMessage(snapshot);
 
             await runtime.router.route(message);
-            assert.deepEqual(runtime.sent.map((send) => send.sessionId), [
-                'session-1',
-                'session-2'
-            ]);
+            assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['session-2']);
             assert.ok(runtime.sent.every((send) => send.encoded === JSON.stringify(message)));
             assert.equal(runtime.reads.snapshots, 1);
             assert.equal(runtime.reads.revisions, 0);
@@ -157,7 +156,7 @@ Deno.test('room authority checks leases again after asynchronous topic handlers'
 });
 
 Deno.test('same-tuple authoritative disconnect removes a recipient despite the cached summary', async () => {
-    const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
+    const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
         await putRoomSnapshot(runtime.repository, snapshot);
@@ -175,7 +174,7 @@ Deno.test('same-tuple authoritative disconnect removes a recipient despite the c
         );
 
         await runtime.router.route(roomMessage(snapshot));
-        assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['session-1']);
+        assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['session-3']);
         assert.deepEqual(findGroupStateSnapshotByRef(snapshot.group, runtime.manager), snapshot);
         assert.equal(runtime.reads.snapshots, 1);
     }
@@ -197,7 +196,7 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
         const message = roomMessage(snapshot);
 
         await runtime.router.route(message);
-        assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['outsider', 'session-1', 'session-2']);
+        assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['outsider', 'session-2']);
         assert.equal(
             runtime.sent[0]?.encoded,
             JSON.stringify({
@@ -255,6 +254,45 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
     }
 });
 
+Deno.test('a WS-carried room multicast reaches the other admitted members live and never echoes to its origin', async () => {
+    const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
+    const runtime = createLiveRoomRuntime(Date.now());
+    try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.cache.observe(snapshot);
+        runtime.router.install();
+        const message = newALMulticastMessage(
+            'session-1',
+            newALEventRoute('room.chat', snapshot.group.groupId, 'fallback-1'),
+            snapshot.group,
+            'chat.message.v1',
+            { text: 'over the fallback carrier' },
+            {
+                ttlMs: 30_000,
+                orderingKey: toALGroupTargetKey(snapshot.group),
+                reliability: 'at-least-once',
+                ack: 'none',
+                ownership: 'shared',
+                overlayId: toScopedOverlayId(snapshot.group)
+            }
+        );
+
+        const accepted = await runtime.service.acceptIncomingMessage(message, 'session-1');
+        assert.deepEqual(accepted.right, { kind: 'admitted' });
+        const roomSends = () => runtime.sent.filter((send) => decodePersistedALMessage(send.encoded).route.topicId === 'room.chat');
+        await waitForRoomSends(() => roomSends().length >= 2);
+
+        assert.deepEqual(roomSends(), [
+            { sessionId: 'session-2', encoded: JSON.stringify(message) },
+            { sessionId: 'session-3', encoded: JSON.stringify(message) }
+        ]);
+    }
+    finally {
+        runtime.service.dispose();
+        await runtime.manager.clear();
+    }
+});
+
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime(Date.now());
     const service = createDefaultWsQueueBoxServerService({
@@ -287,7 +325,7 @@ function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
-    for (const sessionId of ['session-1', 'session-2', 'outsider']) {
+    for (const sessionId of ['session-1', 'session-2', 'session-3', 'outsider']) {
         const webSocket = createOpenTestWebSocket();
         webSocket.send = (data) => {
             assert.ok(typeof data === 'string');
@@ -314,6 +352,14 @@ function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
         nowEpochMs: () => deliveryClock.atEpochMs
     });
     return { ...state, service, socket, router, sent, deliveryClock, outboundStores };
+}
+
+/** Admission returns before the inbound worker delivers, so the router publishes on a later batch. */
+async function waitForRoomSends(isSettled: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 100 && !isSettled(); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function roomMessage(snapshot: GroupSnapshot): ALMessage {

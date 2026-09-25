@@ -9,11 +9,18 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         kind: 'messages.send',
         title: 'Send ALM Message',
         description:
-            'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status.',
+            'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status. ' +
+            'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
+            'send time. A replay names only replayOnCarrier (and connection): a harness capability the product never ' +
+            'exercises, it re-admits the envelope an earlier handle\'s first carrier captured on the other carrier, ' +
+            'opens no handle, and returns that admission verdict.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['send result with handleId, carrier, and admission status'],
+        artifactExpectations: [
+            'send result with handleId, carrier, and admission status',
+            'replay result with handleId, msgId, carrier, and admission verdict'
+        ],
         example: {
             kind: 'messages.send',
             commandId: 'send-alm-message',

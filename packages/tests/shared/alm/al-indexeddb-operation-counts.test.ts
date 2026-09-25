@@ -347,6 +347,7 @@ interface IdleInboundRotation {
 async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'): Promise<IdleInboundRotation> {
     const observer = createCountingIndexedDbOperationObserver();
     const fixture = createInboundTestRuntime({
+        carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
         effectWorkerId: INBOUND_WORKER_ID,
         canDispatchMessage: () => false
@@ -389,6 +390,7 @@ interface DrainedInboundRotation {
 async function readDrainedInboundRotation(): Promise<DrainedInboundRotation> {
     const observer = createCountingIndexedDbOperationObserver();
     const fixture = createInboundTestRuntime({
+        carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
         effectWorkerId: INBOUND_WORKER_ID
     });
@@ -417,6 +419,7 @@ interface AdmittedInboundDelivery {
 async function readAdmittedInboundDelivery(): Promise<AdmittedInboundDelivery> {
     const observer = createCountingIndexedDbOperationObserver();
     const fixture = createInboundTestRuntime({
+        carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
         effectWorkerId: INBOUND_WORKER_ID
     });

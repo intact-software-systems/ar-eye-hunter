@@ -114,6 +114,7 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
         qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
     });
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'rtc',
         selfPeerId: 'receiver',
         stores,
         planIncomingMessage: (incoming, ingress, observations) => {

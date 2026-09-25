@@ -117,21 +117,28 @@ function toPageWindowProbes(
     ];
 }
 
+/** One message per event unless `identity` names it, admitted over WS unless it names the carrier and reason. */
 function toInboundOutcomeEvent(
     atEpochMs: number,
     agentId: string,
-    outcome: string
+    outcome: string,
+    identity: Readonly<{ msgId?: string; carrier?: string; reason?: string; }> = {}
 ): RallarBlackBoxTestRecord {
+    const data = {
+        kind: 'admission-outcome',
+        workerId: INBOUND_WORKER_ID,
+        msgId: `msg-${atEpochMs}`,
+        typeId: 'alm.conformance',
+        carrier: 'ws',
+        outcome,
+        reason: outcome === 'committed' ? 'admitted' : 'pending-admission',
+        ...identity
+    };
     return {
         kind: 'diagnostic',
         atEpochMs,
         agentId,
-        payload: {
-            topic: 'rallar.browser.alm.inbound_diagnostics',
-            payload: {
-                data: { kind: 'admission-outcome', workerId: INBOUND_WORKER_ID, outcome }
-            }
-        }
+        payload: { topic: 'rallar.browser.alm.inbound_diagnostics', payload: { data } }
     };
 }
 
@@ -871,6 +878,24 @@ describe('decodeALMObservationSnapshot', () => {
         expect(decoded.right?.readinessProbes).toEqual([
             { atEpochMs: 1_000, role: 'sender', cause: 'age-bound', durationMs: 12 },
             { atEpochMs: 1_001, role: 'receiver', cause: 'own-commit', durationMs: 8 }
+        ]);
+    });
+
+    it('keeps each inbound outcome\'s msgId, carrier and reason, so one message arriving twice pairs up', () => {
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-cross-carrier-duplicate',
+            results: [],
+            events: [
+                toInboundOutcomeEvent(1_000, RECEIVER_AGENT_ID, 'committed', { msgId: 'm-1', carrier: 'rtc' }),
+                toInboundOutcomeEvent(1_001, RECEIVER_AGENT_ID, 'not-handled', { msgId: 'm-1', reason: 'duplicate' }),
+                toInboundOutcomeEvent(1_002, RECEIVER_AGENT_ID, 'committed', { carrier: 'quic' }),
+                toInboundOutcomeEvent(1_003, RECEIVER_AGENT_ID, 'committed', { reason: '' })
+            ]
+        });
+
+        expect(decoded.right?.inboundOutcomes).toEqual([
+            { atEpochMs: 1_000, role: 'receiver', workerId: INBOUND_WORKER_ID, msgId: 'm-1', carrier: 'rtc', outcome: 'committed', reason: 'admitted' },
+            { atEpochMs: 1_001, role: 'receiver', workerId: INBOUND_WORKER_ID, msgId: 'm-1', carrier: 'ws', outcome: 'not-handled', reason: 'duplicate' }
         ]);
     });
 

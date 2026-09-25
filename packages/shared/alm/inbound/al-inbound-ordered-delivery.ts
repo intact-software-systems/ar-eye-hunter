@@ -13,6 +13,7 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
@@ -142,6 +143,7 @@ export class ALInboundOrderedDelivery {
             effects: [{
                 effectId: `resync:${encodeURIComponent(msg.id.senderId)}:${encodeURIComponent(msg.id.msgId)}`,
                 expireAtTimestamp: read.nowMs + read.retention.durableEffectTtlMs,
+                carrier: toALDeliveryCarrier(read.source),
                 payload: {
                     kind: 'send-nack',
                     toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,

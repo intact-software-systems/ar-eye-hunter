@@ -25,7 +25,7 @@ import {
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
     toBrowserRtcOverlayALRuntimeStoreId,
-    toBrowserRtcRxALRuntimeStoreId,
+    toBrowserSessionALInboundRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
 
@@ -58,24 +58,24 @@ function toBrowserRuntimeStoreScopes(
     sessionId: string,
     options: BrowserALRuntimeOptions
 ): readonly ALRuntimeStoreScope<ALOutboundTransportMessage>[] {
+    const sessionInboundId = toBrowserSessionALInboundRuntimeStoreId(sessionId);
     const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
-    const rtcRxId = toBrowserRtcRxALRuntimeStoreId(sessionId);
     const rtcOverlayId = toBrowserRtcOverlayALRuntimeStoreId(sessionId);
 
     return [
         {
-            id: wsClientId,
+            id: sessionInboundId,
             factories: createBrowserRuntimeStoreFactories(
-                wsClientId,
-                { inbound: true, outbound: true },
+                sessionInboundId,
+                { inbound: true },
                 options
             )
         },
         {
-            id: rtcRxId,
+            id: wsClientId,
             factories: createBrowserRuntimeStoreFactories(
-                rtcRxId,
-                { inbound: true },
+                wsClientId,
+                { outbound: true },
                 options
             )
         },
@@ -120,34 +120,32 @@ export function configureBrowserALRuntimeStores(
     input: ConfigureBrowserALRuntimeStoresInput
 ): void {
     const { diagnosticsPorts, ...options } = input;
+    const inMemory = !isIndexedDbALRuntimeStoreSupported();
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         observer: diagnosticsPorts.indexedDbOperationObserver,
         onStorageReset: diagnosticsPorts.onStorageReset,
         canonicalScope: `browser-session:${sessionId}`,
-        outboundBackend: !isIndexedDbALRuntimeStoreSupported()
+        inboundBackend: inMemory
+            ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
+            : options.inboundBackend,
+        outboundBackend: inMemory
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
             : options.outboundBackend
     };
     configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped));
 }
 
-export function resolveBrowserWsClientALInboundRuntimeStores(
+export function resolveBrowserSessionALInboundRuntimeStores(
     sessionId: string
 ): ALInboundRuntimeStores {
-    return resolveALInboundRuntimeStores(toBrowserWsClientALRuntimeStoreId(sessionId));
+    return resolveALInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId));
 }
 
 export function resolveBrowserWsClientALOutboundRuntimeStores(
     sessionId: string
 ): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
     return resolveALOutboundRuntimeStores(toBrowserWsClientALRuntimeStoreId(sessionId));
-}
-
-export function resolveBrowserRtcRxALInboundRuntimeStores(
-    sessionId: string
-): ALInboundRuntimeStores {
-    return resolveALInboundRuntimeStores(toBrowserRtcRxALRuntimeStoreId(sessionId));
 }
 
 export function resolveBrowserRtcOverlayALOutboundRuntimeStores(

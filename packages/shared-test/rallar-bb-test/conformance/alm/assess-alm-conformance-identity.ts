@@ -1,3 +1,4 @@
+import { isRallarBlackBoxTestMessagesSendCommand } from '../../alm/is-rallar-black-box-test-messages-send-command.ts';
 import { isRallarBlackBoxTestResult } from '../../composite-results.ts';
 import type { ControlResultEnvelope } from '../../control-protocol.ts';
 import type {
@@ -176,7 +177,7 @@ interface AlmIdentitySendPayload {
 function isIdentitySend(
     command: RallarBlackBoxTestCommand
 ): command is RallarBlackBoxTestMessagesSendCommand & { readonly payload: AlmIdentitySendPayload; } {
-    return command.kind === 'messages.send' && isAlmIdentitySendPayload(command.payload);
+    return isRallarBlackBoxTestMessagesSendCommand(command) && isAlmIdentitySendPayload(command.payload);
 }
 
 function isAlmIdentitySendPayload(value: unknown): value is AlmIdentitySendPayload {

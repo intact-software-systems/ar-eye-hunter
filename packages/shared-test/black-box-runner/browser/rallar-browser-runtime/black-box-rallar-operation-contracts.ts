@@ -13,7 +13,11 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -283,6 +287,35 @@ export interface BlackBoxRallarMessageSendInput {
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
     readonly handleId: string;
+    /** Absent, the product stamps the sender's own room version. */
+    readonly minSnapshotVersion: BlackBoxRallarMessageSnapshotFloor | undefined;
+}
+
+/** A harness floor: `aboveCurrentBy` resolves against the sender's room version at send time. */
+export type BlackBoxRallarMessageSnapshotFloor =
+    | Readonly<{ absolute: number; }>
+    | Readonly<{ aboveCurrentBy: number; }>;
+
+export interface BlackBoxRallarMessageReplayTarget {
+    readonly handleId: string;
+    readonly carrier: ALDeliveryCarrier;
+}
+
+/** A `messages.send` that names only the earlier handle and the carrier its captured envelope is re-admitted on. */
+export interface BlackBoxRallarMessageReplayInput {
+    readonly timeoutMs: number;
+    readonly connection: string;
+    readonly replayOnCarrier: BlackBoxRallarMessageReplayTarget;
+}
+
+/** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
+export interface BlackBoxRallarMessageReplayDiagnostics {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason: string | undefined;
 }
 
 export interface BlackBoxRallarMessageSendDiagnostics {

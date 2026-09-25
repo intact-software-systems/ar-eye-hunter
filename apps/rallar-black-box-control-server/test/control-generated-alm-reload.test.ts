@@ -7,6 +7,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestFaultInjectCommand,
+    RallarBlackBoxTestMessagesReplayCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
@@ -116,7 +117,7 @@ class GeneratedAlmPorts {
             case 'fault.inject':
                 return this.injectFault(command);
             case 'messages.send':
-                return this.send(command);
+                return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
             case 'messages.observe': {
                 const message = this.handles.get(command.handleId);
                 if (message && command.state.length === 1 && command.state[0] === 'expired') {
@@ -199,7 +200,10 @@ class GeneratedAlmPorts {
                 }
             }
         }
-        if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
+        if (command.minSnapshotVersion !== undefined) {
+            this.refuseNotYetInSync(message);
+        }
+        else if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
             this.deliver(message);
         }
         return {
@@ -211,6 +215,50 @@ class GeneratedAlmPorts {
                 status: rejected ? 'rejected' : 'accepted',
                 reason: rejected ? 'Payload exceeds fixture carrier limit' : undefined
             }
+        };
+    }
+
+    /** The receiver's snapshot is below the send's floor: it refuses the copy over RTC and writes nothing. */
+    private refuseNotYetInSync(message: PortMessage): void {
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: message.msgId,
+                    typeId: message.command.typeId,
+                    carrier: 'rtc',
+                    outcome: 'rejected',
+                    reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
+                }
+            }
+        });
+    }
+
+    /** The receiver's one inbound identity refuses the replayed copy as a duplicate, so nothing more is delivered. */
+    private replay({ replayOnCarrier: replay }: RallarBlackBoxTestMessagesReplayCommand): RallarBlackBoxTestCommandOutcome {
+        const original = this.handles.get(replay.handleId);
+        assert(original);
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: original.msgId,
+                    typeId: original.command.typeId,
+                    carrier: replay.carrier,
+                    outcome: 'not-handled',
+                    reason: 'duplicate'
+                }
+            }
+        });
+        return {
+            status: 'ok',
+            value: { handleId: replay.handleId, msgId: original.msgId, carrier: replay.carrier, verdict: 'admitted' }
         };
     }
 

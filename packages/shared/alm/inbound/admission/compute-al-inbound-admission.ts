@@ -5,6 +5,7 @@ import {
     acceptALSupersedenceObservation,
     type ALSupersedenceAcceptance
 } from '../../compute-al-supersedence-observation.ts';
+import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundAdmissionRead,
@@ -27,6 +28,7 @@ import {
     computeALInboundBufferedReleaseSupersedenceAcceptance,
     computeALInboundOrderingAcceptance
 } from '../al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
     type ALInboundEffectFacts
@@ -127,6 +129,7 @@ interface InboundPendingAckInput {
     readonly nowMs: number;
     readonly senderId: string;
     readonly retention: ALInboundMessageReadDto['retention'];
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export function computeALInboundAdmission(
@@ -144,6 +147,7 @@ function computeALInboundAdmissionChanges(
     const controls: ALInboundControlEffectInput = {
         msg: read.msg,
         plan: read.plan,
+        carrier: toALDeliveryCarrier(read.source),
         fromPeerId: read.fromPeerId
     };
     if (read.plan.dropReason) {
@@ -166,10 +170,7 @@ function computeALInboundAdmissionChanges(
         effects: [
             ...(read.plan.localDelivery.deferred
                 ? toALInboundNegativeControlEffects(controls)
-                : toALInboundLocalDeliveryEffects({
-                    msg: read.msg,
-                    plan: read.plan
-                })),
+                : toALInboundLocalDeliveryEffects(controls)),
             ...acknowledgements.immediateEffects,
             ...toALInboundForwardingEffects(controls, shouldForward),
             ...acknowledgements.completedEffects,
@@ -189,7 +190,7 @@ export function computeALInboundBufferedRelease(
         ? computeBufferedAcknowledgements(read, read.snapshot.plan, supersedenceAcceptance)
         : { mutations: [], immediateEffects: [], completedEffects: [] };
     const intent = deliverable
-        ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan })[0]?.payload
+        ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan, carrier: read.snapshot.carrier })[0]?.payload
         : undefined;
     const expiresAtMs = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective);
     const expireAtTimestamp = expiresAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
@@ -242,7 +243,8 @@ function computeIncomingAcknowledgements(
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.msg.id.msgId,
                 status: shouldForward ? 'forwarded' : 'delivered',
-                expireAtTimestamp
+                expireAtTimestamp,
+                carrier: toALDeliveryCarrier(read.source)
             })]
         };
     }
@@ -253,7 +255,8 @@ function computeIncomingAcknowledgements(
         toPeerId: plan.ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
-        expireAtTimestamp
+        expireAtTimestamp,
+        carrier: toALDeliveryCarrier(read.source)
     });
     const changes = toAckTransitionChanges(transition, {
         msgId: read.msg.id.msgId,
@@ -261,7 +264,8 @@ function computeIncomingAcknowledgements(
         hadPending: read.pendingAck !== undefined,
         expireAtTimestamp,
         nowMs: read.nowMs,
-        retention: read.retention
+        retention: read.retention,
+        carrier: toALDeliveryCarrier(read.source)
     });
     if (!transition.pending) {
         return changes;
@@ -315,7 +319,8 @@ function computeBufferedAcknowledgements(
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.snapshot.msg.id.msgId,
                 status: 'delivered',
-                expireAtTimestamp
+                expireAtTimestamp,
+                carrier: toALDeliveryCarrier(read.source)
             })]
         };
     }
@@ -330,7 +335,8 @@ function computeBufferedAcknowledgements(
         hadPending: read.pendingAck !== undefined,
         expireAtTimestamp,
         nowMs: read.nowMs,
-        retention: read.retention
+        retention: read.retention,
+        carrier: toALDeliveryCarrier(read.source)
     });
 }
 
@@ -358,7 +364,8 @@ function toAckTransitionChanges(
             toPeerId: transition.completed.toPeerId,
             ackedMsgId: transition.completed.msgId,
             status: transition.completed.status,
-            expireAtTimestamp: transition.completed.expireAtTimestamp ?? input.expireAtTimestamp
+            expireAtTimestamp: transition.completed.expireAtTimestamp ?? input.expireAtTimestamp,
+            carrier: input.carrier
         })]
         : [];
     return { mutations, immediateEffects: [], completedEffects };

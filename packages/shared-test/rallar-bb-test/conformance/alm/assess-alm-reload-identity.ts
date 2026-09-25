@@ -1,4 +1,5 @@
 import type { BlackBoxRallarDocumentFacts } from '../../../black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { isRallarBlackBoxTestMessagesSendCommand } from '../../alm/is-rallar-black-box-test-messages-send-command.ts';
 import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
@@ -106,7 +107,7 @@ function readReloadEvidence(read: ReadReloadEvidenceInput): ReloadEvidence | und
         return undefined;
     }
     const prefix = senderCommands.slice(senderStart, prefixEnd + 1);
-    const sends = prefix.filter((command) => command.kind === 'messages.send');
+    const sends = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
     const send = sends[0];
     if (
         sends.length !== 1 || !send || !read.reloadSends.includes(send) ||
@@ -137,7 +138,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         !['recipe.run', 'recipe.load', 'loop', 'parallel'].includes(command.kind)
     );
     const originals = allCommands.filter((command) =>
-        command.kind === 'messages.send' &&
+        isRallarBlackBoxTestMessagesSendCommand(command) &&
         (command.typeId === send.typeId ||
             isSameJsonValue(decodeJsonValue(command.payload), decodeJsonValue(send.payload)))
     );

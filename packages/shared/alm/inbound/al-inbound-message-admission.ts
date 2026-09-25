@@ -13,6 +13,7 @@ import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
@@ -145,15 +146,21 @@ export class ALInboundMessageAdmission {
             effectId: toALInboundPendingAdmissionId(pending.msg),
             payload: pending,
             observedAtMs: clock.nowMs(),
-            expireAtTimestamp: deadline
+            expireAtTimestamp: deadline,
+            carrier: toALDeliveryCarrier(pending.source)
         });
         decodeALInboundWorkEntry(work.entry, admissionStore.namespace);
         const observed = await this.dependencies.workPort.retainIfAbsent(work.entry);
         const stored = decodeALInboundWorkEntry(observed, admissionStore.namespace);
-        if (!jsonEquals(stored.payload, pending) || stored.expireAtTimestamp !== deadline) {
+        // One message retained by an earlier arrival, over either carrier, is this same pending admission:
+        // the row keeps that first arrival's source, and only a different message or deadline is corrupt.
+        if (
+            stored.payload.kind !== 'admit-message' || !jsonEquals(stored.payload.msg, pending.msg) ||
+            stored.expireAtTimestamp !== deadline
+        ) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(observed.key),
-                new TypeError('Pending inbound admission differs from its immutable message or source')
+                new TypeError('Pending inbound admission differs from its immutable message')
             );
         }
         if (deadline <= clock.nowMs()) {

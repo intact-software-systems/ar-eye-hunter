@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -24,6 +25,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
         /** The message this ingress decided on, so one delivery can be followed to the drain that ran it. */
         msgId: string;
         typeId: string;
+        /** The carrier the message arrived on. */
+        carrier: ALDeliveryCarrier;
         outcome: ALInboundAdmissionOutcome;
         /** The plan's drop reason, the rejection's code, or the acceptance kind that carries neither. */
         reason: string;

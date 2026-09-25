@@ -76,7 +76,14 @@ records what the runner was doing while the cell ran:
   [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from
   the lane's `alm-<role>` agent id prefix; any other id is `unattributed` rather than guessed. `[]`
   when the cell carried no inbound event at all; otherwise every direction is reported, `no-events`
-  for one that carried none of the three kinds. A measured direction carries:
+  for one that carried none of the three kinds. The decoded snapshot keeps each `admission-outcome`'s
+  `msgId`, `carrier` and `reason` beside its `outcome`, so one message arriving over both carriers
+  reads as two outcomes for one `msgId`. In the `cross-carrier-duplicate` scenario, both orders show
+  one `committed`/`admitted` and one `not-handled`/`duplicate` for the pair's `msgId`; in
+  `rtc-then-ws` the refused copy is the one on carrier `ws`. In `not-yet-in-sync`, the receiver's
+  refusal reads `rejected` over `rtc` with a reason starting `not-yet-in-sync`;
+  `delivered-after-refresh` reads red at `received-1`, because no plain-member write advances the
+  snapshot version. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no

@@ -9,62 +9,20 @@ import type {
 import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObserveInput,
-    BlackBoxRallarMessageSendInput,
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
     decodeBlackBoxCommandNumber,
-    decodeBlackBoxCommandRouting,
     decodeBlackBoxCommandString,
     isBlackBoxCommandRecord,
-    isRallarMessagePayload,
-    type BlackBoxRallarCommandRecord,
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
 
-type MessageSendIdentity = Pick<
-    BlackBoxRallarMessageSendInput,
-    'timeoutMs' | 'connection' | 'carrier' | 'typeId' | 'handleId'
->;
-
-type MessageSendOptions = Pick<BlackBoxRallarMessageSendInput, 'roomRef' | 'scope' | 'reliability' | 'ack'>;
-
-const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
-const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'all'];
-const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
-    'best-effort',
-    'at-least-once'
-];
 const FAULT_CARRIERS: readonly TransportFaultCarrier[] = ['ws', 'rtc'];
 const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType']>[] = ['ack', 'nack', 'repair'];
 
 /** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
 const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
-
-export function decodeBlackBoxRallarMessageSendInput(
-    value: unknown
-): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
-    if (!isBlackBoxCommandRecord(value)) {
-        return toInputIssue('messages.send input must be an object.');
-    }
-    const payload = value.payload;
-    if (!('payload' in value) || !isRallarMessagePayload(payload)) {
-        return toInputIssue('messages.send.payload is required.');
-    }
-    return decodeMessageSendIdentity(value).flatMap(
-        (issue) => Either.ofLeft(issue),
-        (identity) =>
-            decodeMessageSendOptions(value).mapRight((options) => ({
-                ...identity,
-                ...options,
-                payload,
-                topicId: decodeBlackBoxCommandString(value.topicId),
-                ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
-                orderingKey: decodeBlackBoxCommandString(value.orderingKey),
-                seq: decodeBlackBoxCommandNumber(value.seq)
-            }))
-    );
-}
 
 export function decodeBlackBoxRallarDeliveryHandleInput(
     value: unknown
@@ -153,53 +111,6 @@ export function decodeBlackBoxRallarStorageCountersInput(
     return reset === undefined || typeof reset === 'boolean'
         ? Either.ofRight({ reset: reset === true })
         : toInputIssue('storage.counters.reset must be a boolean.');
-}
-
-function decodeMessageSendIdentity(
-    record: BlackBoxRallarCommandRecord
-): Either<BlackBoxRallarInputIssue, MessageSendIdentity> {
-    const timeoutMs = decodeBlackBoxCommandNumber(record.timeoutMs);
-    if (timeoutMs === undefined) {
-        return toInputIssue('messages.send.timeoutMs is required.');
-    }
-    const connection = decodeBlackBoxCommandString(record.connection);
-    if (connection === undefined) {
-        return toInputIssue('messages.send.connection is required.');
-    }
-    const carrier = MESSAGE_CARRIERS.find((candidate) => candidate === record.carrier);
-    if (carrier === undefined) {
-        return toInputIssue('messages.send.carrier must be ws, rtc, or rtc-with-ws-fallback.');
-    }
-    const typeId = decodeBlackBoxCommandString(record.typeId);
-    if (typeId === undefined) {
-        return toInputIssue('messages.send.typeId is required.');
-    }
-    const handleId = decodeBlackBoxCommandString(record.handleId);
-    return handleId === undefined
-        ? toInputIssue('messages.send.handleId is required.')
-        : Either.ofRight({ timeoutMs, connection, carrier, typeId, handleId });
-}
-
-/** A null scope or reliability reads as absent, the way the recipe schema writes an unset option. */
-function decodeMessageSendOptions(
-    record: BlackBoxRallarCommandRecord
-): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
-    const scope = record.scope ?? undefined;
-    const reliability = record.reliability ?? undefined;
-    const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
-    const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
-    return decodeBlackBoxCommandRouting(record).flatMap(
-        (issue) => Either.ofLeft(issue),
-        (routing) => {
-            if (scope !== undefined && knownScope === undefined) {
-                return toInputIssue('messages.send.scope must be room, world, or all.');
-            }
-            if (reliability !== undefined && knownReliability === undefined) {
-                return toInputIssue('messages.send.reliability must be best-effort or at-least-once.');
-            }
-            return Either.ofRight({ ...routing, scope: knownScope, reliability: knownReliability });
-        }
-    );
 }
 
 function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {

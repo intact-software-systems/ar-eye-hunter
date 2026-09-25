@@ -345,11 +345,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             random: dependencies.random
         });
         const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
-        const controlAdmission = dependencies.admissionStore.createControlAdmission(
-            workPort,
-            dependencies.clock,
-            settlements
-        );
+        const controlAdmission = dependencies.admissionStore.createControlAdmission({
+            port: workPort,
+            clock: dependencies.clock,
+            settlements,
+            carrier: dependencies.carrier
+        });
         this.dispatchAdmission = new ALOutboundDispatchAdmission({
             admissionStore: dependencies.admissionStore,
             workPort,

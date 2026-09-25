@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
@@ -12,6 +13,7 @@ const EFFECT_DRAIN_DIAGNOSTIC_KIND = 'effect-drain';
 const CLAIM_SETTLED_DIAGNOSTIC_KIND = 'claim-settled';
 const WORK_PAGE_COUNTER_KIND = 'work-page';
 const RECIPE_RUN_RESULT_KIND = 'recipe.run';
+const INBOUND_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
 /** The ALM lane mints its agent ids with these prefixes (`full-stack-helpers.ts:838`). */
 const SENDER_AGENT_ID_PREFIX = 'alm-sender-';
 const RECEIVER_AGENT_ID_PREFIX = 'alm-receiver-';
@@ -50,8 +52,14 @@ export interface ALMObservationInboundOutcome {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
     readonly workerId: string;
+    /** The message the ingress decided on: two outcomes for one msgId are one message arriving twice. */
+    readonly msgId: string;
+    /** The carrier the message arrived on. */
+    readonly carrier: ALDeliveryCarrier;
     /** `committed`, `pending`, `unauthorized`, `rejected` or `not-handled`, as the topic emits it. */
     readonly outcome: string;
+    /** The acceptance kind, drop reason or rejection code, as the topic emits it (`duplicate`, `admitted`, …). */
+    readonly reason: string;
 }
 
 export interface ALMObservationInboundDrain {
@@ -234,15 +242,21 @@ function toInboundOutcome(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationInboundOutcome | undefined {
     const workerId = decodeText(diagnostic.detail.workerId);
+    const msgId = decodeText(diagnostic.detail.msgId);
+    const carrier = INBOUND_CARRIERS.find((candidate) => candidate === diagnostic.detail.carrier);
     const outcome = decodeText(diagnostic.detail.outcome);
+    const reason = decodeText(diagnostic.detail.reason);
     return diagnostic.detail.kind !== ADMISSION_OUTCOME_DIAGNOSTIC_KIND || workerId === undefined ||
-            outcome === undefined
+            msgId === undefined || carrier === undefined || outcome === undefined || reason === undefined
         ? undefined
         : {
             atEpochMs: diagnostic.atEpochMs,
             role: resolveALMObservationAgentRole(diagnostic.agentId),
             workerId,
-            outcome
+            msgId,
+            carrier,
+            outcome,
+            reason
         };
 }
 

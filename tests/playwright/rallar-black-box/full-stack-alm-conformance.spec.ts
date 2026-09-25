@@ -69,8 +69,9 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// Finite carrier ceiling covers the conformance recipes and connection readiness.
-const CARRIER_TEST_TIMEOUT_MS = 300_000;
+// Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
+// widest cell, rtc-with-ws-fallback in the full scope, measured at 4.8, 4.9 and 5.3 minutes.
+const CARRIER_TEST_TIMEOUT_MS = 360_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -151,9 +152,9 @@ async function runAlmConformanceScenarios(
             expect.soft(senderNavigations, 'reload replaces the actual sender main-frame document once').toBe(1);
             expect.soft(receiverNavigations, 'receiver retains its document and subscriptions').toBe(0);
         }
-        expect.soft(outcome.receiver.ok, `${scenario.scenarioId} receiver: ${outcome.receiver.summary}`)
+        expect.soft(outcome.receiver.ok, `${scenario.scenarioKey} receiver: ${outcome.receiver.summary}`)
             .toBe(true);
-        expect.soft(outcome.sender.ok, `${scenario.scenarioId} sender: ${outcome.sender.summary}`)
+        expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
             .toBe(true);
         if (scenario.scenarioId === 'delivery-lifecycle' || reload) {
             await assertScenarioIdentity(run, scenario, outcome);

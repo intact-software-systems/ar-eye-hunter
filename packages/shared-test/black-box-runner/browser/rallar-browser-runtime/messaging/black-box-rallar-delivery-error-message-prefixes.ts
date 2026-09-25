@@ -5,5 +5,7 @@
  */
 export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
     deliveryStateTimeout: 'Delivery handle',
-    scriptedPortsUnavailable: 'Scripted transport and storage ports are not installed'
+    scriptedPortsUnavailable: 'Scripted transport and storage ports are not installed',
+    /** The page cannot replay now: no connected session, or the capturing carrier no longer retains the envelope. */
+    replayUnavailable: 'Message replay unavailable'
 } as const;

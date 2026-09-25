@@ -11,7 +11,10 @@ import {
 
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    configureBrowserALRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
@@ -83,6 +86,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         qboxEngine: oldEngine,
         socket: new JsonWebSocketClient('ws://test', oldFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -123,6 +127,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         qboxEngine: freshEngine,
         socket: new JsonWebSocketClient('ws://test', freshFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -442,6 +447,7 @@ async function openRecoveryOwner(
         qboxEngine: engine,
         socket: new JsonWebSocketClient('ws://test', faults),
         clientData: { clientId: principalId, sessionId, isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

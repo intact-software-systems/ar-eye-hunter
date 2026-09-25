@@ -3,6 +3,7 @@ import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult }
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -253,6 +254,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         webRtcOverlayMulticastManager: manager,
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -316,6 +318,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         qboxEngine: runtime.engine,
         socket: new JsonWebSocketClient('ws://test', runtime.faults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -412,15 +415,16 @@ function readSettledCall<TFirst, TValue>(
     return index < 0 ? undefined : settledResults[index];
 }
 
-export function toReceiverAck(submission: ALMessage, selfPeerId: string): ALMessage {
+export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 'selfPeerId' | 'carrier'>): ALMessage {
     return newALAckControlMessage(
         { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: 'receiver', ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
             fromPeerId: 'receiver',
-            toPeerId: selfPeerId,
+            toPeerId: sender.selfPeerId,
             status: 'accepted',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            carrier: sender.carrier
         }
     );
 }
@@ -443,7 +447,7 @@ export async function expectAcknowledgedUnderHold(
     await sender.drain();
     await sender.advance(100);
     await runHoldEscalation(sender, escalation, { submission, held });
-    const ack = toReceiverAck(submission, sender.selfPeerId);
+    const ack = toReceiverAck(submission, sender);
     expect(handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
     const retried = sender.drain();
     sender.deliver(ack);
@@ -482,7 +486,7 @@ export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<
     }
     await sender.advance(deadlineMs - Date.now() + 1);
     await sender.drain();
-    const ack = toReceiverAck(submission, sender.selfPeerId);
+    const ack = toReceiverAck(submission, sender);
     sender.deliver(ack);
     await sender.settle();
 
@@ -503,7 +507,7 @@ export async function expectRefusedPastAShortDeadline(sender: HoldSender): Promi
     const deadlineMs = handle.lifecycle().expiresAtMs ?? 0;
     expect(await readRetryScheduleEndMs(sender, submission.id.msgId)).toBeGreaterThan(deadlineMs + 2_000);
     await sender.advance(deadlineMs + 2_000 - Date.now());
-    const ack = toReceiverAck(submission, sender.selfPeerId);
+    const ack = toReceiverAck(submission, sender);
     sender.deliver(ack);
     await sender.settle();
     await sender.drain();

@@ -7,17 +7,17 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle,
     ALInboundDurableEffect,
-    ALInboundDurableEffectWrite,
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
-import { computeALInboundWorkEntry } from './al-inbound-work-entry.ts';
+import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -48,6 +48,7 @@ interface PrepareALInboundDurableEffectInput {
     readonly payload: ALInboundEffectIntent['payload'];
     readonly facts: ALInboundEffectFacts;
     readonly index: number;
+    readonly carrier: ALDeliveryCarrier;
 }
 
 /** Captures shell-owned identity before the pure admission computation. */
@@ -69,7 +70,12 @@ export function prepareALInboundCommitBundle(
     const msg = read.kind === 'incoming' ? read.msg : read.snapshot.msg;
     const durableEffects = input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
-        const payload = prepareALInboundDurableEffect({ payload: effect.payload, facts, index });
+        const payload = prepareALInboundDurableEffect({
+            payload: effect.payload,
+            facts,
+            index,
+            carrier: effect.carrier
+        });
         // A repeated data admission may emit a new receipt; its work follows that control envelope's own identity.
         const effectId = payload.kind === 'send-control'
             ? `${effect.effectId}:${encodeURIComponent(payload.msg.id.msgId)}`
@@ -79,7 +85,8 @@ export function prepareALInboundCommitBundle(
             observedAtMs: facts.observedAtEpochMs,
             effectId,
             expireAtTimestamp,
-            payload
+            payload,
+            carrier: effect.carrier
         });
     });
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
@@ -158,7 +165,8 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     toPeerId: payload.toPeerId,
                     ackedMsgId: payload.ackedMsgId,
                     status: payload.status,
-                    observedAtEpochMs: facts.observedAtEpochMs
+                    observedAtEpochMs: facts.observedAtEpochMs,
+                    carrier: input.carrier
                 })
             };
         case 'send-nack':
@@ -248,6 +256,7 @@ function toDeliveryOwnerMutation(
             seq: snapshot.seq,
             msg: snapshot.msg,
             plan: snapshot.plan,
+            carrier: snapshot.carrier,
             delivery: { effectId: effect.effectId }
         },
         expireAtTimestamp

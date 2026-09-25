@@ -47,6 +47,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     let available = false;
     const delivered: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'ws',
         ...resources,
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -103,6 +104,7 @@ it('retries durable local delivery after restart with a single admission work ow
     const attempts: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
+            carrier: 'rtc',
             ...resources,
 
             planIncomingMessage: (incoming, source, observations) =>
@@ -165,6 +167,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         const deliveries: string[] = [];
         const createRuntime = () =>
             new ALInboundMessageRuntime({
+                carrier: 'ws',
                 ...resources,
                 planIncomingMessage: (incoming, _source, observations) =>
                     planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -237,6 +240,7 @@ it.each([
     });
     const deliveries: string[] = [];
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'ws',
         ...resources,
         planIncomingMessage: (incoming, _source, observations) =>
             planALMessageHandling(incoming, { ...observations, selfPeerId: 'receiver', fromPeerId: 'sender' }),
@@ -285,6 +289,7 @@ it('retains predecessor completion through the longest admitted deadline across 
     const delivered: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
+            carrier: 'rtc',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },
@@ -341,6 +346,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'ws',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
@@ -411,6 +417,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     });
     let available = false;
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'rtc',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore: store, workQueue: backend.workQueue },
@@ -480,6 +487,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
         const delivered: string[] = [];
         let available = false;
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'rtc',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: backend.workQueue },
@@ -570,6 +578,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     const createRuntime = () => {
         const engine = new InboxOutboxEngine();
         const runtime = new ALInboundMessageRuntime({
+            carrier: 'rtc',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'receiver',
                 stores: { admissionStore: store, workQueue: state.workQueue },

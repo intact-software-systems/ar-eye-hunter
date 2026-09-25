@@ -11,6 +11,7 @@ import {
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
     createALInboundAdmissionStore,
@@ -23,6 +24,7 @@ import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-messag
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
     readALInboundEffectFacts,
@@ -121,6 +123,8 @@ export interface InboundTestRuntime {
 
 export interface CreateInboundTestRuntimeInput {
     readonly stores: ALInboundRuntimeStores;
+    /** The carrier of the sources the test admits, so the runtime claims the rows they write. */
+    readonly carrier: ALDeliveryCarrier;
     readonly effectWorkerId: string;
     /** Absent leaves the runtime's own default: every planned local delivery may be dispatched. */
     readonly canDispatchMessage?: (msg: ALMessage) => boolean;
@@ -150,6 +154,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             queueEngine,
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
         }),
+        carrier: input.carrier,
         planIncomingMessage: (msg, source, observations) => {
             const plan = planInboundTestMessage(msg, source, observations);
             return input.plan?.(plan) ?? plan;
@@ -178,6 +183,8 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
 
 export interface InboundTestMessageInput {
     readonly msgId: string;
+    /** Absent sends from the fixture's own sender peer. */
+    readonly senderId?: string;
     /** Absent leaves the message unordered, so it carries no ordering track. */
     readonly seq?: number;
     /** Absent leaves the message untracked, so its admission reads no supersedence pair. */
@@ -188,7 +195,7 @@ export interface InboundTestMessageInput {
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
     const message = newALUnicastMessage(
-        INBOUND_TEST_SENDER_PEER_ID,
+        input.senderId ?? INBOUND_TEST_SENDER_PEER_ID,
         { topicId: INBOUND_TEST_ORDERING_KEY, resourceId: input.msgId, contextId: 'room' },
         INBOUND_TEST_SELF_PEER_ID,
         'chat.private-text.v1',
@@ -252,7 +259,11 @@ export function createInboundTestAdmission(stores: ALInboundRuntimeStores): ALIn
         clock: { nowMs: Date.now },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION,
         planIncomingMessage: planInboundTestMessage,
-        workPort: createTestALInboundWorkPort({ ...stores, nowMs: Date.now })
+        workPort: createTestALInboundWorkPort({
+            ...stores,
+            nowMs: Date.now,
+            carrier: toALDeliveryCarrier(INBOUND_TEST_SOURCE)
+        })
     });
     onTestFinished(() => admission.dispose());
     return admission;

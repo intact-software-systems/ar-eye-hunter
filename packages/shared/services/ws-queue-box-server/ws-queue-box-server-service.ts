@@ -53,6 +53,7 @@ import {
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
+import { resolveWsQueueBoxServerInboundRecipients } from './ws-queue-box-server-inbound-recipients.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
     WsQueueBoxServerOutboundPlanning,
@@ -224,6 +225,7 @@ export class WsQueueBoxServerService {
     ): ALInboundMessageRuntime {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
+            carrier: 'ws',
             readPendingAdmissionAuthority: (message, source) => this.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),
@@ -470,10 +472,14 @@ export class WsQueueBoxServerService {
         observations: ALMessagePlanningObservations
     ): ALMessageHandlingPlan {
         const fromPeerId = source.kind === 'trusted-server' ? message.id.senderId : source.peerId;
-        const frozenRecipients = source.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
-        const recipientPeerIds = this.targetResolution.resolveInboundRecipients(message)
-            .map((recipient) => recipient.peerId)
-            .filter((peerId) => frozenRecipients === undefined || frozenRecipients.includes(peerId));
+        const resolvedPeerIds = this.targetResolution.resolveInboundRecipients(message)
+            .map((recipient) => recipient.peerId);
+        const { recipientPeerIds, groupMemberPeerIds } = resolveWsQueueBoxServerInboundRecipients({
+            message,
+            source,
+            resolvedPeerIds,
+            serverPeerId: this.name
+        });
         return planALMessageHandling(
             message,
             {
@@ -481,7 +487,7 @@ export class WsQueueBoxServerService {
                 selfPeerId: this.name,
                 fromPeerId,
                 connectedPeerIds: recipientPeerIds,
-                groupMemberPeerIds: recipientPeerIds,
+                groupMemberPeerIds,
                 overlayNeighborPeerIds: recipientPeerIds
             },
             resolveALQosNormalizationInput(

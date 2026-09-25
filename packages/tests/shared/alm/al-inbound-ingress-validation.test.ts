@@ -11,6 +11,7 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -19,7 +20,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 describe('AL inbound canonical validation', () => {
     it('bounds retained ordered message bytes and admits the rejected identity when capacity becomes available', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         const base = directMessage();
         const payload = { typeId: 'text', resource: JSON.stringify('x'.repeat(60_000)) };
         try {
@@ -63,11 +64,11 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('does not create receipt history or repair work for an untracked control', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         const nowMs = Date.now();
         const control = newALAckControlMessage(
             { v: 2, msgId: 'receipt', senderId: 'sender', ts: nowMs },
-            { ackedMsgId: 'unknown', fromPeerId: 'sender', toPeerId: 'receiver', status: 'delivered', observedAtEpochMs: nowMs }
+            { ackedMsgId: 'unknown', fromPeerId: 'sender', toPeerId: 'receiver', status: 'delivered', observedAtEpochMs: nowMs, carrier: 'rtc' }
         );
         try {
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -84,7 +85,7 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('rejects unsupported control types before application dispatch or admission', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         try {
             const result = await fixture.runtime.admitIncomingMessage({
                 ...directMessage(),
@@ -100,7 +101,7 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('rejects a forged direct RTC origin without reserving its identity', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         const message = directMessage();
         try {
             const rejected = await fixture.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
@@ -117,7 +118,7 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('rejects malformed and oversized envelopes as values without dispatching work', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         try {
             const malformed = await fixture.runtime.admitIncomingMessage({}, { kind: 'rtc-peer', peerId: 'sender' });
             const oversized = await fixture.runtime.admitIncomingMessage({
@@ -135,7 +136,7 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('preserves the logical sender on an explicitly trusted server relay', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('ws');
         try {
             const result = await fixture.runtime.admitIncomingMessage(directMessage(), { kind: 'trusted-server' });
             expect(result.right?.kind).toBe('admitted');
@@ -147,7 +148,7 @@ describe('AL inbound canonical validation', () => {
     });
 
     it('returns a resynchronization result for an excessive gap without poisoning later admission', async () => {
-        const fixture = createFixture();
+        const fixture = createFixture('rtc');
         const message = directMessage();
         try {
             const outside = await fixture.runtime.admitIncomingMessage({
@@ -179,7 +180,7 @@ function directMessage(): ALMessage {
     };
 }
 
-function createFixture() {
+function createFixture(carrier: ALDeliveryCarrier) {
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
     const state = createInMemoryALAdmissionState();
@@ -192,6 +193,7 @@ function createFixture() {
         retention: normalizeALRuntimeStoreRetention()
     });
     const runtime = new ALInboundMessageRuntime({
+        carrier,
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             stores: { admissionStore, workQueue: state.workQueue },

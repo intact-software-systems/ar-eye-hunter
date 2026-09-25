@@ -47,7 +47,15 @@ describe('admission scalar and version decoding', () => {
 });
 
 describe('admission control decoding', () => {
-    const ack = { ackedMsgId: 'msg', fromPeerId: 'a', toPeerId: 'b', status: 'delivered', observedAtEpochMs: 7 };
+    const ack = {
+        ackedMsgId: 'msg',
+        fromPeerId: 'a',
+        toPeerId: 'b',
+        status: 'delivered',
+        observedAtEpochMs: 7,
+        carrier: 'rtc'
+    };
+    const pending = { toPeerId: 'b', status: 'delivered', localReady: false, expectedFromPeerIds: ['a'], ackedFromPeerIds: [], carrier: 'ws' };
 
     it('accepts each current stored control variant', () => {
         const cases = [
@@ -69,7 +77,7 @@ describe('admission control decoding', () => {
             { kind: 'repairs', values: [{ msgId: 'msg', fromPeerId: 'a', toPeerId: 'b', reason: 'resync', observedAtEpochMs: 7 }] },
             {
                 kind: 'pending',
-                value: { toPeerId: 'b', status: 'delivered', localReady: false, expectedFromPeerIds: ['a'], ackedFromPeerIds: [], expireAtTimestamp: 42 }
+                value: { ...pending, expireAtTimestamp: 42 }
             }
         ] as const;
         for (const value of cases) {
@@ -88,6 +96,7 @@ describe('admission control decoding', () => {
         { kind: 'acks', values: [{ ...ack, status: 'unrecognized' }] },
         { kind: 'acks', values: [{ ...ack, observedAtEpochMs: NaN }] },
         { kind: 'acks', values: [{ ...ack, unexpected: true }] },
+        { kind: 'acks', values: [{ ...ack, carrier: 'sctp' }] },
         { kind: 'acks', values: [ack, null] },
         { kind: 'acks', values: Array(1) },
         { kind: 'acks' }
@@ -98,11 +107,22 @@ describe('admission control decoding', () => {
     it('validates pending-ack state rather than only checking its discriminator', () => {
         expect(() =>
             decodeALAdmissionControlValue(
-                { kind: 'pending', value: { toPeerId: 'b', status: 'delivered', localReady: 'false', expectedFromPeerIds: ['a'], ackedFromPeerIds: [] } },
+                { kind: 'pending', value: { ...pending, localReady: 'false' } },
                 'msg',
                 'pending'
             )
         ).toThrow(TypeError);
+    });
+
+    // A row written before the carrier field existed is undecodable until its control TTL passes.
+    it('rejects an acknowledgement or a pending receipt that names no carrier', () => {
+        const { carrier: _ackCarrier, ...uncarriedAck } = ack;
+        const { carrier: _pendingCarrier, ...uncarriedPending } = pending;
+
+        expect(() => decodeALAdmissionControlValue({ kind: 'acks', values: [uncarriedAck] }, 'msg', 'acks'))
+            .toThrow(TypeError);
+        expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: uncarriedPending }, 'msg', 'pending'))
+            .toThrow(TypeError);
     });
 
     it('applies the shared bounds to persisted control collections and peer identities', () => {
@@ -111,14 +131,11 @@ describe('admission control decoding', () => {
                 {
                     kind: 'pending',
                     value: {
-                        toPeerId: 'b',
-                        status: 'delivered',
-                        localReady: false,
+                        ...pending,
                         expectedFromPeerIds: Array.from(
                             { length: AL_MESSAGE_RESOURCE_LIMITS.collectionEntries + 1 },
                             (_, index) => `peer-${index}`
-                        ),
-                        ackedFromPeerIds: []
+                        )
                     }
                 },
                 'msg',

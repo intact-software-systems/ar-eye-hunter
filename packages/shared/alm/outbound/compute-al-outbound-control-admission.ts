@@ -9,6 +9,7 @@ import type {
     ALOutboundPendingAckSnapshot
 } from '../al-runtime-state-stores.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
@@ -28,6 +29,8 @@ export type ALControlHistory =
 
 export interface ALControlAdmissionRead {
     readonly parsed: ALParsedControlMessage;
+    /** The carrier the control reached this owner on: an acknowledgement is recorded under it, whatever its sender named. */
+    readonly carrier: ALDeliveryCarrier;
     readonly targetMsgId: string;
     readonly nowMs: number;
     readonly owner?: string;
@@ -133,7 +136,10 @@ function appendControlHistory(read: ALControlAdmissionRead): ALControlHistory {
         case 'ack':
             return {
                 kind: 'acks',
-                values: appendBounded(read.history.kind === 'acks' ? read.history.values : [], read.parsed.payload)
+                values: appendBounded(
+                    read.history.kind === 'acks' ? read.history.values : [],
+                    { ...read.parsed.payload, carrier: read.carrier }
+                )
             };
         case 'nack':
             return {

@@ -1,8 +1,10 @@
+import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
@@ -10,6 +12,17 @@ export const AL_INBOUND_PROVENANCE_LIMITS = {
     /** Bounds one durable provenance row without imposing the AL wire collection limit on a room audience. */
     frozenAudienceBytes: 1024 * 1024
 } as const;
+
+/** The carrier an admitted source arrived on, and so the runtime whose work rows it owns. */
+export function toALDeliveryCarrier(source: ALInboundMessageRuntime.Source): ALDeliveryCarrier {
+    switch (source.kind) {
+        case 'rtc-peer':
+            return 'rtc';
+        case 'ws-client':
+        case 'trusted-server':
+            return 'ws';
+    }
+}
 
 export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.Source {
     const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds']);
@@ -69,6 +82,25 @@ export interface ALInboundMessageOwnerSlot {
 
 export function toALInboundMessageOwnerKey(namespace: string, msgId: string, senderId: string): string {
     return `${namespace}:msg-owner:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
+}
+
+/** One message's rows under the original sender they are tracked for, read from one session. */
+export interface ALInboundMessageRowsRead {
+    readonly database: Pick<ALAdmissionBackend, 'read'>;
+    readonly namespace: string;
+    readonly msgId: string;
+    readonly senderId: string;
+}
+
+export async function readALInboundMessageOwner(
+    read: ALInboundMessageRowsRead
+): Promise<ALInboundMessageOwner | undefined> {
+    const { namespace, msgId, senderId } = read;
+    return await read.database.read(
+        toALInboundMessageOwnerKey(namespace, msgId, senderId),
+        (value, key) =>
+            decodeALInboundMessageOwner(value, { key, namespace, expectedMsgId: msgId, expectedSenderId: senderId })
+    );
 }
 
 export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {

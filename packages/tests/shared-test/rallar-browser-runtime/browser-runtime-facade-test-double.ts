@@ -191,7 +191,9 @@ export const facadeBehavior = {
     directorAppoint: vi.fn<BlackBoxBrowserDirectorDependency['appoint']>(),
     directorResign: vi.fn<BlackBoxBrowserDirectorDependency['resign']>(),
     directorStatus: vi.fn<BlackBoxBrowserDirectorDependency['status']>(),
-    directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>()
+    directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
+    replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
+    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>()
 };
 
 const auth: BlackBoxBrowserAuthDependency = {
@@ -340,7 +342,9 @@ let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
 const deliveries: BlackBoxBrowserDeliveriesDependency = {
-    getHandle: (msgId) => deliveryRegistry.getHandle(msgId)
+    getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
+    replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
+    resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
 };
 
 /** The one session registry the facade's senders open handles in and the harness reads them back from. */
@@ -440,6 +444,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     facadeBehavior.wsMessageSend.mockImplementation(async () => openFacadeDelivery('ws', QUEUED_ADMISSION));
     facadeBehavior.wsMessageOnMessage.mockReturnValue(() => undefined);
     facadeBehavior.typedSend.mockImplementation(async () => openFacadeDelivery('ws', QUEUED_ADMISSION));
+    facadeBehavior.replayCapturedMessage.mockResolvedValue(QUEUED_ADMISSION);
 }
 
 /** Opens a handle the way the facade's sender would, in the registry the harness reads back from. */

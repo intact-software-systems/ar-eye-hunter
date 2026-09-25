@@ -4,9 +4,10 @@ import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/grou
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALBroadcastMessage, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALMulticastMessage, toALGroupTargetKey } from '@shared/al-contracts/al-contract.ts';
 import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -58,7 +59,7 @@ for (const cacheState of ['absent', 'before-presence', 'wrong-scope'] as const) 
 
             await harness.router.route(message);
 
-            assert.deepEqual(senderFrames, [JSON.stringify(message)]);
+            assert.deepEqual(senderFrames, []);
             assert.deepEqual(recipientFrames, [JSON.stringify(message)]);
             assert.deepEqual(outsiderFrames, []);
             assert.equal(harness.state.authorityReads, 1);
@@ -75,7 +76,7 @@ Deno.test('room delivery excludes revoked or expired recipients even when cache 
     for (const revocation of ['member', 'session', 'expiry'] as const) {
         const harness = createRoomDeliveryHarness();
         try {
-            const snapshot = createRoomSnapshot();
+            const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
             harness.state.current = {
                 ...snapshot,
                 members: snapshot.members.map((member): GroupMember =>
@@ -92,12 +93,14 @@ Deno.test('room delivery excludes revoked or expired recipients even when cache 
             };
             const senderFrames = addRecordingConnection(harness.server, 'alice');
             const revokedFrames = addRecordingConnection(harness.server, 'bob');
+            const remainingFrames = addRecordingConnection(harness.server, 'carol');
             const message = roomMessage();
 
             await harness.router.route(message);
 
-            assert.deepEqual(senderFrames, [JSON.stringify(message)]);
+            assert.deepEqual(senderFrames, []);
             assert.deepEqual(revokedFrames, []);
+            assert.deepEqual(remainingFrames, [JSON.stringify(message)]);
         }
         finally {
             harness.service.dispose();
@@ -315,6 +318,43 @@ Deno.test('a socket closed during an awaited handler receives no authoritative l
     }
 });
 
+Deno.test('a WS-carried room multicast queues durable delivery to the other admitted members, never its origin', async () => {
+    const harness = createRoomDeliveryHarness();
+    try {
+        const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
+        harness.state.current = snapshot;
+        harness.state.cached = snapshot;
+        harness.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+        harness.router.install();
+        const senderFrames = addRecordingConnection(harness.server, 'alice');
+        const bobFrames = addRecordingConnection(harness.server, 'bob');
+        const carolFrames = addRecordingConnection(harness.server, 'carol');
+        const message = newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'fallback-durable'), ROOM, 'chat.message.v1', {
+            text: 'over the fallback carrier'
+        }, {
+            ttlMs: 30_000,
+            orderingKey: toALGroupTargetKey(ROOM),
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ownership: 'shared',
+            overlayId: toScopedOverlayId(ROOM)
+        });
+
+        const accepted = await harness.service.acceptIncomingMessage(message, 'alice');
+        assert.deepEqual(accepted.right, { kind: 'admitted' });
+        const roomFrames = (frames: readonly string[]) => frames.filter((frame) => decodePersistedALMessage(frame).route.topicId === 'room.chat');
+        await waitForRoomFrames(() => roomFrames(bobFrames).length + roomFrames(carolFrames).length >= 2);
+
+        assert.equal((await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE').length, 1);
+        assert.deepEqual(roomFrames(bobFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
+        assert.deepEqual(roomFrames(carolFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
+        assert.deepEqual(roomFrames(senderFrames), []);
+    }
+    finally {
+        harness.service.dispose();
+    }
+});
+
 function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarness {
     const state: RoomDeliveryState = {
         current: createRoomSnapshot(),
@@ -353,6 +393,14 @@ function addRecordingConnection(server: JsonWebSocketServer, sessionId: string):
     return frames;
 }
 
+/** Admission returns before the inbound worker delivers, and the outbox worker sends on a later batch still. */
+async function waitForRoomFrames(isSettled: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 200 && !isSettled(); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+}
+
 function roomMessage(minSnapshotVersion?: number): ALMessage {
     return newALMulticastMessage('alice', newALEventRoute('room.chat', ROOM.groupId, 'room-delivery'), ROOM, 'chat.message.v1', { text: 'hello' }, {
         minSnapshotVersion,
@@ -361,12 +409,12 @@ function roomMessage(minSnapshotVersion?: number): ALMessage {
     });
 }
 
-function createRoomSnapshot(): GroupSnapshot {
-    const group = createTestGroup({ ...ROOM, snapshotVersion: 2, presenceVersion: 1, activeMemberCount: 2 });
+function createRoomSnapshot(principalIds: readonly string[] = ['alice', 'bob']): GroupSnapshot {
+    const group = createTestGroup({ ...ROOM, snapshotVersion: 2, presenceVersion: 1, activeMemberCount: principalIds.length });
     return {
         causalRevision: { groupRevision: 2, presenceRevision: 1 },
         group,
-        members: ['alice', 'bob'].map((principalId): GroupMember => ({
+        members: principalIds.map((principalId): GroupMember => ({
             ...ROOM,
             principalId,
             role: principalId === 'alice' ? 'owner' : 'member',
@@ -379,7 +427,7 @@ function createRoomSnapshot(): GroupSnapshot {
             invitedByPrincipalId: null,
             invitationExpiresAtEpochMs: null
         })),
-        activeSessions: ['alice', 'bob'].map((sessionId): GroupPresenceSession => ({
+        activeSessions: principalIds.map((sessionId): GroupPresenceSession => ({
             ...ROOM,
             principalId: sessionId,
             sessionId,
@@ -392,7 +440,7 @@ function createRoomSnapshot(): GroupSnapshot {
             disconnectedAtEpochMs: null,
             disconnectReason: null
         })),
-        memberCount: 2,
-        onlineMemberCount: 2
+        memberCount: principalIds.length,
+        onlineMemberCount: principalIds.length
     };
 }

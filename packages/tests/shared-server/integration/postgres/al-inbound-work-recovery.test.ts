@@ -53,7 +53,7 @@ describe('Postgres inbound ordered work recovery', () => {
         second.dispose();
 
         const completed = await firstStores.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(firstStore.namespace),
+            typeId: toALInboundWorkType(firstStore.namespace, 'ws'),
             status: EntityStatus.COMPLETED,
             maxToRead: 16,
             cursor: null
@@ -155,7 +155,7 @@ describe('Postgres inbound ordered work recovery', () => {
         const second = secondStores.admissionStore;
         await admit(first, createMessage('malformed', 1));
         const page = await firstStores.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(first.namespace),
+            typeId: toALInboundWorkType(first.namespace, 'ws'),
             status: EntityStatus.NEW,
             maxToRead: 16,
             cursor: null
@@ -192,7 +192,7 @@ describe('Postgres inbound ordered work recovery', () => {
  * Scoped to this namespace because a Postgres queue reports keys for the whole shared table.
  */
 async function waitForSettledInboundWork(stores: ALInboundRuntimeStores): Promise<void> {
-    const typeId = toALInboundWorkType(stores.admissionStore.namespace);
+    const typeId = toALInboundWorkType(stores.admissionStore.namespace, 'ws');
     await expect.poll(async () => {
         for (const status of NOT_COMPLETED_RETRYABLE_STATUSES) {
             const page = await stores.workQueue.readWorkPage({ typeId, status, maxToRead: 1, cursor: null });
@@ -249,6 +249,7 @@ async function createStores(): Promise<readonly [ALInboundRuntimeStores, ALInbou
 
 function createRuntime(stores: ALInboundRuntimeStores, received: string[], controls: ALMessage[] = []) {
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'ws',
         selfPeerId: 'receiver',
         stores,
 

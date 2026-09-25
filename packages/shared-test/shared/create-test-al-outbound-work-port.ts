@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundRuntimeStores,
     ALOutboundSettlementEmitter
@@ -15,6 +16,11 @@ export interface TestALOutboundWorkPortInput<TPrepared> extends ALOutboundRuntim
     readonly dequeueTypes?: ReadonlySet<string>;
     /** The already-guarded settlement sink the runtime hands its control admission; a test may drop it. */
     readonly settlements?: ALOutboundSettlementEmitter;
+}
+
+export interface TestALOutboundControlAdmissionInput<TPrepared> extends TestALOutboundWorkPortInput<TPrepared> {
+    /** The carrier the controls a test admits arrive on, as the runtime of that carrier would stamp them. */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 /**
@@ -39,11 +45,12 @@ export function createTestALOutboundWorkPort<TPrepared>(
 }
 
 export function createTestALOutboundControlAdmission<TPrepared>(
-    input: TestALOutboundWorkPortInput<TPrepared>
+    input: TestALOutboundControlAdmissionInput<TPrepared>
 ): ALOutboundControlAdmission<TPrepared> {
-    return input.admissionStore.createControlAdmission(
-        createTestALOutboundWorkPort(input),
-        { nowMs: input.nowMs },
-        input.settlements ?? (() => {})
-    );
+    return input.admissionStore.createControlAdmission({
+        port: createTestALOutboundWorkPort(input),
+        clock: { nowMs: input.nowMs },
+        settlements: input.settlements ?? (() => {}),
+        carrier: input.carrier
+    });
 }

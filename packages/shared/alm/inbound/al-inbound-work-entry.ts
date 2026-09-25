@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { AL_DELIVERY_CARRIERS } from '../../al-contracts/al-control-value-codec.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control.ts';
 import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
@@ -27,19 +28,37 @@ import { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
+    decodeALAdmissionCarrier,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type {
-    ALInboundDurableEffect,
-    ALInboundDurableEffectWrite,
-    ALPersistedInboundEffect
-} from './al-inbound-admission-store.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
+
+export interface ALInboundDurableEffectWrite {
+    readonly entry: ResourceEntry;
+    readonly effectId: string;
+    readonly payload: ALInboundDurableEffect;
+    readonly expireAtTimestamp: number;
+    /** Whose runtime claims the row: the carrier the message the effect acts on arrived on. */
+    readonly carrier: ALDeliveryCarrier;
+}
+
+export interface ALPersistedInboundEffect {
+    readonly effectId: string;
+    readonly payload: ALInboundDurableEffect;
+    readonly entry: ResourceEntry;
+    readonly attempts: number;
+    readonly retryAtMs: number;
+    readonly leaseUntilMs: number | undefined;
+    readonly expireAtTimestamp: number;
+    readonly carrier: ALDeliveryCarrier;
+}
 
 export interface ALInboundWorkEntryInput {
     readonly namespace: string;
@@ -47,10 +66,12 @@ export interface ALInboundWorkEntryInput {
     readonly payload: ALInboundDurableEffect;
     readonly observedAtMs: number;
     readonly expireAtTimestamp: number;
+    readonly carrier: ALDeliveryCarrier;
 }
 
-export function toALInboundWorkType(namespace: string): string {
-    return `AL_INBOUND:${fnv1a64(namespace)}`;
+/** The QueueBox type is the claim partition: each carrier's runtime reserves only its own type. */
+export function toALInboundWorkType(namespace: string, carrier: ALDeliveryCarrier): string {
+    return `AL_INBOUND:${carrier}:${fnv1a64(namespace)}`;
 }
 
 export function toALInboundWorkKey(namespace: string, effectId: string): Key {
@@ -68,9 +89,10 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
         effectId: input.effectId,
         payload: input.payload,
         expireAtTimestamp: input.expireAtTimestamp,
+        carrier: input.carrier,
         entry: {
             key: toALInboundWorkKey(input.namespace, input.effectId),
-            typeId: toALInboundWorkType(input.namespace),
+            typeId: toALInboundWorkType(input.namespace, input.carrier),
             resource: JSON.stringify({
                 namespace: input.namespace,
                 effectId: input.effectId,
@@ -98,10 +120,8 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
         if (stored.namespace !== namespace || effectId.length === 0) {
             throw new TypeError('Inbound work identity differs from its admission scope');
         }
-        if (
-            entry.typeId !== toALInboundWorkType(namespace) ||
-            !isKeysEqual(entry.key, toALInboundWorkKey(namespace, effectId))
-        ) {
+        const carrier = decodeALInboundWorkCarrier(entry, namespace);
+        if (!isKeysEqual(entry.key, toALInboundWorkKey(namespace, effectId))) {
             throw new TypeError('Inbound work identity differs from its queue slot');
         }
         const payload = decodeInboundDurableEffect(stored.payload);
@@ -113,8 +133,11 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
         ) {
             throw new TypeError('Pending inbound admission identity or deadline differs from its queue observation');
         }
-        if (payload.kind === 'admit-control' && effectId !== toALInboundPendingControlId(payload.msg)) {
-            throw new TypeError('Pending inbound control identity differs from its queue observation');
+        if (
+            payload.kind === 'admit-control' &&
+            (effectId !== toALInboundPendingControlId(payload.msg) || payload.carrier !== carrier)
+        ) {
+            throw new TypeError('Pending inbound control identity or carrier differs from its queue observation');
         }
         return {
             effectId,
@@ -123,12 +146,31 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             attempts: entry.dequeueAudit.attempts,
             retryAtMs: resolveALInboundWorkDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined
+            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined,
+            carrier
         };
     }
     catch (error) {
         throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
     }
+}
+
+/** The port reserves its own carrier's type alone, so a claim of the other carrier means that contract broke. */
+export function assertALInboundWorkCarrier(effect: ALPersistedInboundEffect, carrier: ALDeliveryCarrier): void {
+    if (effect.carrier !== carrier) {
+        throw new TypeError(`Inbound ${effect.carrier} work reached the ${carrier} runtime's claim`);
+    }
+}
+
+/** Both carriers' rows share one store and one key space; only the type says whose runtime claims one. */
+function decodeALInboundWorkCarrier(entry: ResourceEntry, namespace: string): ALDeliveryCarrier {
+    const carrier = AL_DELIVERY_CARRIERS.find((candidate) =>
+        entry.typeId === toALInboundWorkType(namespace, candidate)
+    );
+    if (carrier === undefined) {
+        throw new TypeError('Inbound work type names no carrier of its admission scope');
+    }
+    return carrier;
 }
 
 /** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
@@ -164,6 +206,7 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         'trackKey',
         'seq',
         'source',
+        'carrier',
         'expiresAtMs'
     ]);
     switch (effect.kind) {
@@ -184,13 +227,18 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             return { kind: effect.kind, message: decodeALInboundMessageReference(effect.message) };
         }
         case 'admit-control': {
-            decodeALAdmissionRecord(effect, ['kind', 'msg', 'expiresAtMs']);
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'carrier', 'expiresAtMs']);
             const msg = decodePersistedALMessageValue(effect.msg);
             const validated = decodeALControlMessage(msg);
             if (validated.left) {
                 throw new TypeError(validated.left.message);
             }
-            return { kind: effect.kind, msg, expiresAtMs: decodeALAdmissionNumber(effect.expiresAtMs) };
+            return {
+                kind: effect.kind,
+                msg,
+                carrier: decodeALAdmissionCarrier(effect.carrier),
+                expiresAtMs: decodeALAdmissionNumber(effect.expiresAtMs)
+            };
         }
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);
@@ -237,7 +285,8 @@ export function validateALInboundWorkWrites(
         try {
             const stored = decodeALInboundWorkEntry(effect.entry, namespace);
             if (
-                stored.effectId !== effect.effectId || !jsonEquals(stored.payload, effect.payload) ||
+                stored.effectId !== effect.effectId || stored.carrier !== effect.carrier ||
+                !jsonEquals(stored.payload, effect.payload) ||
                 stored.expireAtTimestamp !== effect.expireAtTimestamp || effect.entry.status !== EntityStatus.NEW ||
                 effect.entry.dequeueAudit.attempts !== 0 || effect.entry.dequeueAudit.startTs !== undefined ||
                 effect.entry.dequeueAudit.endTs !== undefined

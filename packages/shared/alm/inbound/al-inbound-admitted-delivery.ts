@@ -2,10 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type {
-    ALInboundAdmissionStore,
-    ALPersistedInboundEffect
-} from './al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { shouldRetryALInboundDelivery } from './al-inbound-effect-intent.ts';
 import { toALInboundDispatchEntry } from './al-inbound-message-deadline.ts';
@@ -15,6 +12,7 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
 } from './al-inbound-planner-snapshot.ts';
+import type { ALPersistedInboundEffect } from './al-inbound-work-entry.ts';
 
 export namespace ALInboundAdmittedDelivery {
     export interface Dependencies extends

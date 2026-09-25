@@ -5,6 +5,7 @@ import {
     type ALDeliveryLifecycle,
     type ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -12,6 +13,9 @@ import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDeliveryObserveInput,
+    BlackBoxRallarMessageReplayDiagnostics,
+    BlackBoxRallarMessageReplayInput,
+    BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarMessageSendInput
 } from '../black-box-rallar-operation-contracts.ts';
@@ -63,11 +67,19 @@ export class BlackBoxRallarDeliveryLedger {
         this.#input = input;
     }
 
-    sendMessage = async (send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> => {
+    sendMessage = async (
+        send: BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput
+    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics> =>
+        'replayOnCarrier' in send
+            ? await this.#replayMessage(send.replayOnCarrier)
+            : await this.#sendNewMessage(send);
+
+    async #sendNewMessage(send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> {
         const config = this.#input.requireConfig();
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
+        const snapshotFloorOption = this.#resolveSnapshotFloor(send, roomRef);
         const channel = this.#input.typedChannels.open(config, { typeId: send.typeId, topicId: send.topicId, roomRef });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
             handleId: send.handleId,
@@ -77,7 +89,7 @@ export class BlackBoxRallarDeliveryLedger {
             roomId: config.roomId,
             roomRef
         });
-        const handle = await channel.send(send.payload, toTypedSendOptions(send));
+        const handle = await channel.send(send.payload, { ...toTypedSendOptions(send), ...snapshotFloorOption });
         this.#deliveryMsgIds.set(send.handleId, handle.msgId);
         this.#dropEvictedDeliveries();
         const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });
@@ -91,7 +103,49 @@ export class BlackBoxRallarDeliveryLedger {
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
-    };
+    }
+
+    /** Re-admits the envelope an earlier send captured; the replay opens no handle of its own. */
+    async #replayMessage(replay: BlackBoxRallarMessageReplayTarget): Promise<BlackBoxRallarMessageReplayDiagnostics> {
+        const lease = this.#input.resources.lease();
+        const msgId = this.#deliveryMsgIds.get(replay.handleId);
+        if (msgId === undefined) {
+            throw new TypeError(`messages.send.replayOnCarrier names no retained handle ${replay.handleId}.`);
+        }
+        const verdict = await this.#input.deliveries.replayCapturedMessage({ msgId, carrier: replay.carrier });
+        this.#input.resources.assertCurrent(lease, 'Rallar replay completed after the runtime closed.');
+        return {
+            handleId: replay.handleId,
+            msgId,
+            carrier: replay.carrier,
+            verdict: verdict.kind,
+            reason: 'detail' in verdict ? verdict.detail : undefined
+        };
+    }
+
+    /** `aboveCurrentBy` reads the version the product would stamp by itself, so the floor sits just past it. */
+    #resolveSnapshotFloor(
+        send: BlackBoxRallarMessageSendInput,
+        roomRef: GroupRef | undefined
+    ): Readonly<{ minSnapshotVersion?: number; }> {
+        const floor = send.minSnapshotVersion;
+        if (floor === undefined) {
+            return {};
+        }
+        if ('absolute' in floor) {
+            return { minSnapshotVersion: floor.absolute };
+        }
+        const current = roomRef === undefined
+            ? undefined
+            : this.#input.deliveries.resolveRoomMinSnapshotVersion(roomRef);
+        if (current === undefined) {
+            throw new TypeError(
+                'messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; ' +
+                    `${roomRef?.groupId ?? 'the send'} has none cached.`
+            );
+        }
+        return { minSnapshotVersion: current + floor.aboveCurrentBy };
+    }
 
     readReceipts = async (
         { handleId }: BlackBoxRallarDeliveryHandleInput

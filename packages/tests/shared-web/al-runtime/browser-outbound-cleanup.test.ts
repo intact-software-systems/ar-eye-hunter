@@ -21,7 +21,7 @@ import {
 import { BROWSER_AL_RUNTIME_DB_NAME, BROWSER_AL_RUNTIME_STORE_NAME } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
-    resolveBrowserWsClientALInboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
@@ -213,11 +213,12 @@ describe('browser canonical outbound cleanup', () => {
         const expiredCount = INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE + 40;
         const session = `budget-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(session, { diagnosticsPorts });
-        const stores = resolveBrowserWsClientALInboundRuntimeStores(session);
+        const stores = resolveBrowserSessionALInboundRuntimeStores(session);
         await stores.admissionStore.ready();
         const keyStrings = new Set<string>();
         for (let index = 0; index < expiredCount; index += 1) {
             const entry = computeALInboundWorkEntry({
+                carrier: 'ws',
                 namespace: stores.admissionStore.namespace,
                 observedAtMs: nowMs - 120_000,
                 effectId: `budget-${index}`,
@@ -331,13 +332,14 @@ async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
 
 async function retainPendingForSession(sessionId: string, ttlMs: number) {
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    const stores = resolveBrowserWsClientALInboundRuntimeStores(sessionId);
+    const stores = resolveBrowserSessionALInboundRuntimeStores(sessionId);
     const store = stores.admissionStore;
     await store.ready();
     const msg = decodeALDeadlinedMessage(
         newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, sessionId, 'chat', {}, { ttlMs })
     );
     const work = computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace: store.namespace,
         effectId: toALInboundPendingAdmissionId(msg),
         payload: { kind: 'admit-message', msg, source: { kind: 'trusted-server' } },
@@ -361,6 +363,7 @@ async function retainPendingUnderNamespace(db: IDBDatabase, namespace: string, e
         newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'pending', contextId: 'room' }, 'recipient', 'chat', {}, { ttlMs: 60_000 })
     );
     const work = computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace,
         effectId,
         payload: { kind: 'admit-message', msg, source: { kind: 'trusted-server' } },

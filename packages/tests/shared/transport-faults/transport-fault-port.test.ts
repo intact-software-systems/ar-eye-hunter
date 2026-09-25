@@ -18,7 +18,8 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
         fromPeerId: 'b',
         toPeerId: 'a',
         status: 'delivered',
-        observedAtEpochMs: 1
+        observedAtEpochMs: 1,
+        carrier: 'ws'
     }
 ));
 const nackFrame = JSON.stringify(newALNackControlMessage(

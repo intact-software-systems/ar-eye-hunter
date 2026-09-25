@@ -419,6 +419,19 @@ const messagesReliabilitySchema: JsonSchema = {
 };
 const messagesScopeSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesScope };
 const messagesAckSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesAck };
+const messagesReplaySchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesReplay, {
+    handleId: stringSchema,
+    carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier }
+});
+/** Exactly one form: `absolute`, or `aboveCurrentBy` the sender's room version at send time. */
+const messagesSnapshotFloorSchema: JsonSchema = {
+    oneOf: RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesSnapshotFloor.optional.map((field) => ({
+        type: 'object',
+        required: [field],
+        properties: { [field]: { type: 'integer', minimum: 1 } },
+        additionalProperties: false
+    }))
+};
 const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
     controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
     typeId: stringSchema,
@@ -430,6 +443,21 @@ const faultActionSchema: JsonSchema = {
         strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSchema })
     ]
 };
+
+/**
+ * An ordinary send requires its carrier, type and payload; a replay names `replayOnCarrier` instead. The control
+ * validator and the page decoder refuse a replay that also names an ordinary send field.
+ */
+function toMessagesSendSchema(schema: JsonSchema): JsonSchema {
+    return {
+        ...schema,
+        required: ['kind'],
+        requiredAnyOf: RALLAR_BLACK_BOX_COMMAND_FIELDS['messages.send'].required.map((field) => ({
+            properties: [field, 'replayOnCarrier'],
+            message: `messages.send requires ${field}, unless it is a replay naming replayOnCarrier.`
+        }))
+    };
+}
 
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema>> = {
     configure: strictCommandSchema('configure', {
@@ -557,7 +585,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
             }
         ]
     },
-    'messages.send': strictCommandSchema('messages.send', {
+    'messages.send': toMessagesSendSchema(strictCommandSchema('messages.send', {
         connection: stringSchema,
         carrier: messagesCarrierSchema,
         typeId: stringSchema,
@@ -570,8 +598,10 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         ttlMs: { type: 'integer', minimum: 0 },
         orderingKey: stringSchema,
         seq: numberSchema,
-        handleId: stringSchema
-    }),
+        handleId: stringSchema,
+        minSnapshotVersion: messagesSnapshotFloorSchema,
+        replayOnCarrier: messagesReplaySchema
+    })),
     'messages.observe': strictCommandSchema('messages.observe', {
         connection: stringSchema,
         handleId: stringSchema,

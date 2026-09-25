@@ -80,7 +80,7 @@ function resolveAuthorizedRoomSessionIds(
         case 'unicast':
             return liveSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
         case 'multicast':
-            return liveSessionIds;
+            return liveSessionIds.filter((sessionId) => sessionId !== message.id.senderId);
         case 'broadcast':
             return liveSessionIds.filter((sessionId) =>
                 !targets.exceptPeerIds?.includes(sessionId) &&

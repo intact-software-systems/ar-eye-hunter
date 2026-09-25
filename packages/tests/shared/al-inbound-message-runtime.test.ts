@@ -290,7 +290,8 @@ describe('ALInboundMessageRuntime', () => {
                         status: 'subtree-complete',
                         localReady: false,
                         expectedFromPeerIds: ['peer-2'],
-                        ackedFromPeerIds: []
+                        ackedFromPeerIds: [],
+                        carrier: 'ws'
                     }
                 }
             }, {
@@ -315,7 +316,8 @@ describe('ALInboundMessageRuntime', () => {
                 fromPeerId: 'peer-2',
                 toPeerId: 'self',
                 status: 'delivered',
-                observedAtEpochMs: 1
+                observedAtEpochMs: 1,
+                carrier: 'ws'
             }
         );
         const pending = await runtime.admitIncomingMessage(control, { kind: 'ws-client', peerId: 'peer-2' });
@@ -382,7 +384,8 @@ describe('ALInboundMessageRuntime', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
@@ -447,7 +450,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
@@ -486,7 +490,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
@@ -545,7 +550,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
@@ -785,7 +791,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
@@ -842,6 +849,7 @@ function createInboundHarness(
     const controlAcceptances: ALControlAcceptance[] = [];
 
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'ws',
         selfPeerId: 'self',
 
         stores,

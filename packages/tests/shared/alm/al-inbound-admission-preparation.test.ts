@@ -133,6 +133,7 @@ describe('inbound admission preparation boundary', () => {
                 seq: 1,
                 msg: message,
                 plan: prepared.plan,
+                carrier: 'ws' as const,
                 ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
             },
             supersedence: {},
@@ -503,6 +504,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        carrier: 'ws',
         planIncomingMessage,
         dispatchInboxEntry: async () => {},
         sendControlMessages: async () => {},
