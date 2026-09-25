@@ -48,15 +48,34 @@ describe('ALM recipe identity assessment', () => {
         expect(issues.some((issue) => issue.startsWith(`${send.commandId}:`))).toBe(true);
     });
 
-    it('does not require a confirmed submission hop over ws', () => {
+    it.each(
+        [
+            ['nobody', []],
+            ['another peer', ['sender-session']],
+            ['another peer beside the receiver', ['receiver-session', 'sender-session']]
+        ] as const
+    )('rejects ws submission receipts that confirm %s instead of the receiver', (_label, confirmed) => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const sender = transcript.sender;
+        const send = sender.command('messages.send');
+        const receipts = sender.command('messages.receipts');
+        sender.replaceResult({
+            ...sender.result(receipts),
+            value: { handleId: receipts.handleId, confirmedHopPeerIds: [...confirmed], unconfirmedHopPeerIds: [] }
+        });
+        const issues = assessAlmConformanceIdentity(transcript.input());
+        expect(issues.some((issue) => issue.startsWith(`${send.commandId}:`))).toBe(true);
+    });
+
+    it('rejects ws submission receipts that still wait for a peer', () => {
         const transcript = new IdentityTranscript('lifecycle', 'ws');
         const sender = transcript.sender;
         const receipts = sender.command('messages.receipts');
         sender.replaceResult({
             ...sender.result(receipts),
-            value: { handleId: receipts.handleId, confirmedHopPeerIds: [], unconfirmedHopPeerIds: [] }
+            value: { handleId: receipts.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: ['late'] }
         });
-        expect(assessAlmConformanceIdentity(transcript.input())).toEqual([]);
+        expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
 
     it.each(['wrong-id', 'wrong-transport', 'failed-child', 'missing-child', 'duplicate-child', 'compacted', 'wrong-agent', 'wrong-run'] as const)(
@@ -558,7 +577,7 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         };
     }
     if (command.kind === 'messages.receipts') {
-        return { handleId: command.handleId, confirmedHopPeerIds: ['peer'], unconfirmedHopPeerIds: [] };
+        return { handleId: command.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: [] };
     }
     if (command.kind === 'wait' && command.absent !== true) {
         const sent = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) =>

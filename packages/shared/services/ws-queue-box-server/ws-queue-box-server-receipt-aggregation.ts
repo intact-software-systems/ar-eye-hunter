@@ -67,6 +67,8 @@ export namespace WsQueueBoxServerReceiptAggregation {
 
     export interface CountedAck {
         readonly receipt: ALReceiptPayload | undefined;
+        /** The aggregate's message deadline, which the receipt row outlives by the receipt grace. */
+        readonly deadlineAtMs: number;
     }
 }
 
@@ -135,10 +137,10 @@ export class WsQueueBoxServerReceiptAggregation {
         };
         if (next.confirmedRecipientPeerIds.length < next.expectedRecipientPeerIds.length) {
             this.#aggregates.set(key, next);
-            return Either.ofRight({ receipt: undefined });
+            return Either.ofRight({ receipt: undefined, deadlineAtMs: next.deadlineAtMs });
         }
         this.deleteAggregate(key);
-        return Either.ofRight({ receipt: toReceiptPayload(next, 'complete', nowMs) });
+        return Either.ofRight({ receipt: toReceiptPayload(next, 'complete', nowMs), deadlineAtMs: next.deadlineAtMs });
     }
 
     /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
@@ -176,9 +178,9 @@ export class WsQueueBoxServerReceiptAggregation {
             await this.#dependencies.acceptServerControl(message);
             return;
         }
-        const receipt = this.recordAck(control.payload).right?.receipt;
-        if (receipt !== undefined) {
-            await this.writeReceipt(receipt, this.#dependencies.clock.nowMs());
+        const counted = this.recordAck(control.payload).right;
+        if (counted?.receipt !== undefined) {
+            await this.writeReceipt(counted.receipt, counted.deadlineAtMs);
         }
     }
 

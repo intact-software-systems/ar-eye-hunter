@@ -36,19 +36,23 @@ function toNackWait(commandId: string, contains: string) {
     } as const;
 }
 
+async function executeSend(runtime: ReturnType<typeof createRuntimeWithSentMessage>) {
+    await runtime.execute({
+        kind: 'messages.send',
+        commandId: 'send-2',
+        connection: 'sender',
+        carrier: 'ws',
+        typeId: 'alm.conformance',
+        payload: {},
+        handleId: 'send-2',
+        timeoutMs: 1_000
+    });
+}
+
 describe('rallar-bb-test wait result references', () => {
     it('pins a wait on a value an earlier command returned, and reports the resolved match', async () => {
         const runtime = createRuntimeWithSentMessage();
-        await runtime.execute({
-            kind: 'messages.send',
-            commandId: 'send-2',
-            connection: 'sender',
-            carrier: 'ws',
-            typeId: 'alm.conformance',
-            payload: {},
-            handleId: 'send-2',
-            timeoutMs: 1_000
-        });
+        await executeSend(runtime);
         const wait = toNackWait('nack-2', '"targetMsgId":"{resultCache.send-2.value.msgId}"');
 
         runtime.recordEvent(toNackEvent('msg-1'));
@@ -73,5 +77,51 @@ describe('rallar-bb-test wait result references', () => {
             code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
             details: { reference: 'resultCache.send-9.value.msgId' }
         });
+    });
+
+    it('keeps a literal brace that opens no result reference as text to match', async () => {
+        const runtime = createRuntimeWithSentMessage();
+        await executeSend(runtime);
+        runtime.recordEvent(toNackEvent('msg-2'));
+
+        const result = await runtime.execute(
+            toNackWait('nack-literal', '{"kind":"control-admission","typeId":"al.control.nack.v1","targetMsgId":"{resultCache.send-2.value.msgId}"')
+        );
+
+        expect(result.status).toBe('ok');
+        expect((result.value as RallarBlackBoxTestWaitResultValue).match.contains)
+            .toBe('{"kind":"control-admission","typeId":"al.control.nack.v1","targetMsgId":"msg-2"');
+    });
+
+    it('refuses a wait whose reference resolves to an object', async () => {
+        const runtime = createRuntimeWithSentMessage();
+        await executeSend(runtime);
+        runtime.recordEvent(toNackEvent('msg-2'));
+
+        const result = await runtime.execute(toNackWait('nack-object', '"targetMsgId":"{resultCache.send-2.value}"'));
+
+        expect(result.status).toBe('failed');
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+            details: { reference: 'resultCache.send-2.value' }
+        });
+    });
+
+    it('resolves the reference of an absence wait before it scans the buffered events', async () => {
+        const runtime = createRuntimeWithSentMessage();
+        await executeSend(runtime);
+        runtime.recordEvent(toNackEvent('msg-2'));
+        const absent = { ...toNackWait('nack-absent', '"targetMsgId":"{resultCache.send-2.value.msgId}"'), absent: true } as const;
+
+        const violated = await runtime.execute(absent);
+        const unresolved = await runtime.execute({
+            ...absent,
+            commandId: 'nack-absent-unsent',
+            match: { ...absent.match, contains: '"targetMsgId":"{resultCache.send-9.value.msgId}"' }
+        });
+
+        expect(violated.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
+        expect((violated.value as RallarBlackBoxTestWaitResultValue).match.contains).toBe('"targetMsgId":"msg-2"');
+        expect(unresolved.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_INVALID');
     });
 });

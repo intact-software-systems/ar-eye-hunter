@@ -139,7 +139,8 @@ class GeneratedAlmPorts {
             case 'messages.receipts': {
                 const message = this.handles.get(command.handleId);
                 assert(message);
-                return { status: 'ok', value: { confirmedHopPeerIds: message.command.carrier === 'ws' ? [] : ['receiver'], unconfirmedHopPeerIds: [] } };
+                const confirmed = message.command.carrier === 'ws' ? 'receiver-stored-session' : 'receiver';
+                return { status: 'ok', value: { confirmedHopPeerIds: [confirmed], unconfirmedHopPeerIds: [] } };
             }
             case 'messages.received': {
                 const count = this.messages.filter((message) => message.command.typeId === command.typeId && message.submitted).length;
@@ -307,7 +308,7 @@ class GeneratedAlmPorts {
 
     private deliver(message: PortMessage): void {
         message.submitted = true;
-        message.state = message.command.carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
+        message.state = message.command.carrier === 'ws' && message.command.ack !== 'receiver' ? 'transport-accepted' : 'acknowledged';
         this.receiver.recordEvent({
             kind: 'message',
             connection: 'almConformanceReceiver',

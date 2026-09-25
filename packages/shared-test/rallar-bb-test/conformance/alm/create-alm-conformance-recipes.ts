@@ -500,7 +500,6 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
 function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const state = 'transport-accepted';
     const observation = `observe-${state}-1`;
-    const isWs = sender.input.carrier === 'ws';
     return [
         toSendCommand({
             ...sender,
@@ -514,8 +513,8 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
             name: 'assert-submitted-state-1',
             resultName: observation,
             field: 'state',
-            operator: isWs ? 'equals' : 'matches',
-            expected: isWs ? state : '^(transport-accepted|acknowledged)$'
+            operator: 'matches',
+            expected: '^(transport-accepted|acknowledged)$'
         }),
         toResultAssertion({
             step: sender,
@@ -528,8 +527,13 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
     ];
 }
 
-/** Receipts and the handle's release are read after the whole scenario, per D28. */
+/**
+ * Receipts and the handle's release are read after the whole scenario, per D28. A ws send confirms its one logical
+ * recipient through the server's receipt; an rtc send confirms the hops it reached. Which peer the ws receipt names is
+ * joined against the receiver's own session by `assessAlmConformanceIdentity`.
+ */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const isWs = sender.input.carrier === 'ws';
     return [
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
@@ -537,8 +541,8 @@ function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly 
             name: 'assert-confirmed-1',
             resultName: 'receipts-1',
             field: 'confirmedHopPeerIds.length',
-            operator: sender.input.carrier === 'ws' ? 'equals' : 'gt',
-            expected: 0
+            operator: isWs ? 'equals' : 'gt',
+            expected: isWs ? 1 : 0
         }),
         toResultAssertion({
             step: sender,
@@ -569,7 +573,7 @@ function toSubmittedCancellationCommands(sender: AlmConformanceStepInput): reado
             resultName: 'cancel-1',
             field: 'state',
             operator: 'matches',
-            expected: sender.input.carrier === 'ws' ? '^(cancelled|transport-accepted)$' : '^acknowledged$'
+            expected: '^acknowledged$'
         })
     ];
 }
@@ -785,7 +789,10 @@ function toOrderingResyncSenderCommands(
     return sender.input.carrier === 'ws' ? [...commands, toRelayResyncNackWait(sender)] : commands;
 }
 
-/** The send holds no obligation, so the sender refuses the NACK; the refusal still names the gapped msgId. */
+/**
+ * The sender retains the send, but the send requested no ACK, so nothing it waits on expects the relay and it refuses
+ * the NACK; the refusal still names the gapped msgId.
+ */
 function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const gappedMsgId = `{resultCache.${toCommandId(sender, 'send-2')}.value.msgId}`;
     return {

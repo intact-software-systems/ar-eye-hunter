@@ -311,6 +311,8 @@ function resultEnvelope(
                             }
                             : command.kind === 'messages.receipts'
                             ? toReceiptsFabricatedValue(command, recipe)
+                            : command.kind === 'rtc.connect'
+                            ? { sessionId: toFabricatedSessionId(recipe) }
                             : {}
                     };
                 })
@@ -322,23 +324,26 @@ function resultEnvelope(
 
 /**
  * D28: the sender's receipts are read after the whole scenario and correlated by handle id
- * (`assessAcknowledgedIdentity`). This mirrors what a real non-ws submission's receiver hop
- * actually confirms, so the fabricated evidence stays truthful rather than merely satisfying it.
+ * (`assessAcknowledgedIdentity`). A ws submission's server receipt confirms the receiver's own session as its
+ * logical recipient; a non-ws submission confirms its receiver hop.
  */
 function toReceiptsFabricatedValue(
     command: RallarBlackBoxTestMessagesReceiptsCommand,
     recipe: RallarBlackBoxTestRecipe
 ): RallarBlackBoxTestMessagesObserveResultValue {
     const send = recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) => candidate.handleId === command.handleId);
-    const confirmedOverNonWs = send !== undefined && send.carrier !== 'ws';
     return {
         handleId: command.handleId,
-        state: 'transport-accepted',
+        state: 'acknowledged',
         submitted: true,
         enqueued: true,
-        confirmedHopPeerIds: confirmedOverNonWs ? ['peer'] : [],
+        confirmedHopPeerIds: send?.carrier === 'ws' ? ['receiver-session'] : ['peer'],
         unconfirmedHopPeerIds: [],
         attempts: 1,
         reason: undefined
     };
+}
+
+function toFabricatedSessionId(recipe: RallarBlackBoxTestRecipe): string {
+    return `${recipe.metadata?.role}-session`;
 }

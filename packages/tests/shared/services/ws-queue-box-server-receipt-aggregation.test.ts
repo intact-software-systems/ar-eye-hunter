@@ -7,7 +7,12 @@ import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import { newALAckControlMessage, type ALAckPayload, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import {
+    AL_RECEIPT_DEADLINE_GRACE_MS,
+    newALAckControlMessage,
+    type ALAckPayload,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     createInMemoryALAdmissionState,
@@ -122,6 +127,27 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readSentReceipts(fixture.sockets.a)).toHaveLength(2);
     });
 
+    it('keeps a complete receipt observed early deliverable until the message deadline plus the receipt grace', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
+        const admittedAtMs = fixture.clock.nowMs;
+        await admitRoomMessage(fixture);
+        await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted']);
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
+
+        const complete = (await readReceiptMessages(fixture)).find((message) =>
+            decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase === 'complete'
+        );
+        expect(complete?.constraints?.expiresAtMs).toBe(admittedAtMs + 30_000 + AL_RECEIPT_DEADLINE_GRACE_MS);
+
+        // The row is dispatched one second past the grace counted from the observed complete, as for an origin away that long.
+        fixture.clock.nowMs += AL_RECEIPT_DEADLINE_GRACE_MS + 1_000;
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase);
+        }).toEqual(['admitted', 'complete']);
+    });
+
     it('sends the origin no acknowledgement of its own and never re-originates a receiver ACK under the origin name', async () => {
         const fixture = await createReceiptFixture({ fanout: 'forward', origin: 'local' });
         await admitRoomMessage(fixture);
@@ -210,7 +236,8 @@ describe('WS server receipt aggregate', () => {
         aggregation.recordAdmission(admission());
 
         expect(aggregation.recordAck(aggregateAck(ack)).left).toEqual({ code: 'unauthorized', message: reason });
-        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })).right).toEqual({ receipt: undefined });
+        expect(aggregation.recordAck(aggregateAck({ fromPeerId: 'b', logicalRecipientPeerId: 'b' })).right)
+            .toEqual({ receipt: undefined, deadlineAtMs: 30_000 });
     });
 
     it('refuses a repeat ACK for a counted recipient and answers complete exactly once', () => {
@@ -400,12 +427,15 @@ function receiverAck(fixture: ReceiptFixture, recipient: 'b' | 'c'): ALMessage {
 
 /** Every receipt row the service wrote to its outbox, oldest first. */
 async function readReceiptRows(fixture: ReceiptFixture): Promise<readonly ALReceiptPayload[]> {
+    return (await readReceiptMessages(fixture)).map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
+}
+
+async function readReceiptMessages(fixture: ReceiptFixture): Promise<readonly ALMessage[]> {
     const entries = await Promise.all((await fixture.outbox.getAllKeys()).map((key) => fixture.outbox.getItem(key)));
     return entries
         .flatMap((entry) => entry?.typeId === EnqueuedType.WS_OUTBOX ? [decodePersistedALMessage(entry.resource)] : [])
         .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-        .sort((left, right) => toPhaseOrder(left) - toPhaseOrder(right))
-        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
+        .sort((left, right) => toPhaseOrder(left) - toPhaseOrder(right));
 }
 
 function readSentReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {

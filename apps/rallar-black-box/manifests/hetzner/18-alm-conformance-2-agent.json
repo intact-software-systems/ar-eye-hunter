@@ -993,8 +993,8 @@
             "kind": "assert",
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-submitted-state-1",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-transport-accepted-1.value.state",
-            "operator": "equals",
-            "expected": "transport-accepted",
+            "operator": "matches",
+            "expected": "^(transport-accepted|acknowledged)$",
             "timeoutMs": 2000
           },
           {
@@ -1298,7 +1298,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-confirmed-1",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
             "operator": "equals",
-            "expected": 0,
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -1329,7 +1329,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-state-after-cancel-1",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-cancel-1.value.state",
             "operator": "matches",
-            "expected": "^(cancelled|transport-accepted)$",
+            "expected": "^acknowledged$",
             "timeoutMs": 2000
           },
           {

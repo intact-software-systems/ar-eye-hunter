@@ -217,8 +217,9 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
 `control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
-result reference. The send holds no retained obligation, so the sender refuses the NACK; the
-refusal is still the relay's verdict arriving.
+result reference. The sender retains the send, but the send requested no ACK, so nothing it waits
+on expects the relay and the sender refuses the NACK; the refusal is still the relay's verdict
+arriving.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
