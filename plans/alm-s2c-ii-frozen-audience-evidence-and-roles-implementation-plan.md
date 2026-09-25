@@ -46,6 +46,14 @@ list, maintainer-reviewed landing), plus:
   `messages.receipts`.
 - The three-agent run and manifest exist only for scenarios that declare three roles; two-agent
   scenarios keep the exactly-one-sender-one-receiver identity rule (D45).
+- Starts from merged `main` 786ced4ff (S2c-i, #591). The dead-RTC-peer fix on `claude/rtc-stale-peer-redial`
+  (a maintainer session) merges in through the base-branch sync when it lands; it touches
+  `web-rtc-connection-service.ts`, which no S2c-ii task edits.
+- `receiver` on a WS unicast stays refused `unsupported` (D42): no product consumer sends one, and
+  aggregating unicasts is out of scope until one does.
+- Acceptance and the hosted read follow D51: the local full lanes on normal pages plus the both-normal
+  hosted smoke are the acceptance evidence; the hosted full read is attempted at most twice and
+  reported, never a blocker.
 
 ### Carried from S2c-i
 
@@ -59,36 +67,38 @@ to settle or to route to the maintainer:
   correct only while RTC refuses `receiver`; Task 1's frozen audience must change the pair together.
 - **The outbox-planner audience change and the D38 durable-row receipt** (R-S2c-i-3): S2c-i aggregates
   in memory per instance only; the durable receipt row moves here, where the frozen audience rides the
-  targets (D24).
+  targets (D24). **Settled: D48 → Task 2b.**
 - **Ordering on relayed broadcasts** (maintainer design question): whether the WS server should gate
   ordering on broadcasts it only relays. Today it keeps its own ordering track and NACKs the sender
-  (R-S2c-i-4).
+  (R-S2c-i-4). **Settled: D49 — the gate stays; no task.**
 - **An admitted `resync-required` NACK does nothing at the sender.** No outbound code acts on it, so a
-  handle stays admitted for a message the relay dropped — a receipt-contract gap.
+  handle stays admitted for a message the relay dropped — a receipt-contract gap. **Settled: D50 →
+  Task 3 (evidence only).**
 - **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
-  settlement.
-- **The RTC breaker counts `refused/unsupported` as failure.**
+  settlement. **→ Task 3 (R-S2c-ii-0).**
+- **The RTC breaker counts `refused/unsupported` as failure.** **→ Task 2 (R-S2c-ii-0).**
 - **The receipt admission is invisible in diagnostics.** The origin's receipt admission emits no
   `control-admission` event, so a refused receipt leaves no trace. Emit it from
   `ALOutboundReceiptAdmission`: give it the `diagnostics` sink, and have `acceptReceipt` take the
   control message so the event carries the control's own `msgId`, with `targetMsgId` = the receipt's
-  `msgId`. Then update `runtime-diagnostic-contract.md`.
+  `msgId`. Then update `runtime-diagnostic-contract.md`. **→ Task 3 (R-S2c-ii-0).**
 - **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
-  stop being refused `unsupported` (D42, S2c-i Task 4).
+  stop being refused `unsupported` (D42, S2c-i Task 4). **Settled: stays refused (Global Constraints).**
 - **Outbox-fanned `receiver` messages keep retransmitting after `complete`** (final review m2; pre-existing on
   8d98a7d6f). In the production outbox fan-out mode (`forwardsRoomScopedMessages: false`) the server's own
   outbound runtime writes a `receiver`-mode pending row and `ack-timeout` work for the room message, but
   the receivers' ACKs feed the aggregator, never that row, so `b` and `c` keep receiving retransmissions
   after the origin's receipt reads `complete`. Suppress the dequeue-time pending row for aggregated room
   messages or let the aggregator feed it, and extend the Task 4 pin ("answers an outbox-fanned receiver
-  message with one complete row") to advance past the ack timeout.
+  message with one complete row") to advance past the ack timeout. **→ Task 2b (D48).**
 - **Receipt redelivery to a reconnecting origin in a cluster** (final review m3). The receipt row's
   deadline + grace expiry keeps it deliverable on a single instance (a no-route dequeue retries); with a
   cluster publisher the dequeue publishes once as `cluster-local-complete`, so an origin disconnected at
-  that moment never gets the receipt. Belongs with the D38 durable receipt.
+  that moment never gets the receipt. Belongs with the D38 durable receipt. **→ Task 2b (D48).**
 - **The aggregate map's next-deadline scan** (final review m1, remainder): the server now caps an
   aggregate at `WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS`, but `deleteAggregate` still rescans the map for
   the next deadline whenever an aggregate leaves (O(n) per completing ACK); a sorted deadline index removes it.
+  **→ Task 2b (R-S2c-ii-0).**
 - **Task 2c readiness notes** (informational): the harness's room-wait retry leaves
   `roomRefreshAttempts`/`roomRefreshSuccesses` at 1 however many retries ran, and the split readiness
   files import each other's types (a type-only cycle). The product defect behind the retry stays with the
@@ -212,6 +222,76 @@ the relay control admission tests.
 git commit -m "feat(alm): a receipt retry targets only the recipients still missing, through the relay tree"
 ```
 
+**Carried in (R-S2c-ii-0):**
+
+- [ ] **Step R1: RED — a relay that is itself a recipient.** Origin → relay `r` (a recipient, M7 emits
+      `r` at index 0) → child relay `c` → leaf `l`. `r`'s pending row must not complete on `c`'s
+      self-ACK; it completes only when `l`'s ACK has been forwarded per logical recipient. Expected
+      today: FAIL (the row completes on the first ACK from the last child and `l` is lost).
+- [ ] **Step R2: RED — the RTC breaker ignores typed refusals.** A `refused/unsupported` leg outcome
+      does not count toward the breaker's failure threshold (a refusal is a policy value, not a
+      transport failure); only transport failures and timeouts do. Expected today: FAIL.
+- [ ] **Step R3: GREEN** for both inside the same commit as the tree-narrowed retry.
+
+---
+
+### Task 2b: The outbox branch — frozen audience, one settlement, the durable receipt (D48)
+
+**Files:**
+
+- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts`
+  (the outbox branch's `expectedPeerIds` is the targets' frozen `recipientPeerIds` from Task 1, never the
+  locally connected set), `ws-queue-box-server-receipt-aggregation.ts` (the aggregator is the one
+  settlement authority for an aggregated room message: the dequeue-time pending row and its
+  `ack-timeout` work are not written for a message the aggregator owns, or the aggregator feeds that
+  row — choose the shape whose ownership a reader follows most directly and record it as a ruling;
+  `deleteAggregate` reads the next deadline from a sorted deadline index instead of rescanning the map),
+  `ws-queue-box-server-service.ts` (wiring only)
+- Create: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts` — the D38
+  durable receipt: the receipt's final snapshot persisted in the server's ALM pending-ACK row family,
+  keyed `(namespace, originPeerId, msgId)` (R-S2c-i-2) with the group as row content, so an origin that
+  reconnects on any instance inside the receipt window reads its `complete`/`timed-out` receipt.
+- Modify: the receipt dequeue in the WS outbox path — a receipt row addressed to an origin with no
+  route on this instance is retried through the cluster publisher until the receipt window ends,
+  never settled `cluster-local-complete` on the first miss.
+- Test: `packages/tests/shared/services/ws-queue-box-server-outbound-planning.test.ts`,
+  `packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts`, a new
+  `packages/tests/shared/services/ws-queue-box-server-receipt-row.test.ts`, the cluster pub/sub-bridge
+  pattern from `ws-outbox-owner-miss-retry.test.ts` for the reconnecting origin.
+
+**Interfaces:**
+
+- Consumes Task 1's `recipientPeerIds` / `snapshotVersion` on `multicast` targets.
+- Produces `toWsQueueBoxServerReceiptRow(receipt: ALReceiptPayload, groupRef: GroupRef): WsQueueBoxServerReceiptRow`
+  (pure), `writeWsQueueBoxServerReceiptRow(transaction, row)` and
+  `readWsQueueBoxServerReceiptRow(input: { namespace; originPeerId; msgId })` (durable, D38); the
+  client's receipt tracking (S2c-i Task 4) accepts a receipt read on reconnect exactly as one delivered
+  live (idempotent under the S2c-i redelivery rule).
+- Produces a sorted deadline index inside the aggregation (private), so `sweep(nowMs)` and
+  `deleteAggregate` are O(log n).
+
+- [ ] **Step 1: RED — no retransmission after `complete`.** In outbox fan-out mode
+      (`forwardsRoomScopedMessages: false`) a `receiver` room message whose recipients all ACK yields one
+      `complete` row and, after the clock advances past the `ack-timeout`, NO retransmission to `b` or
+      `c`. Expected today: FAIL (three retransmissions; the pin in S2c-i Task 4 never advanced the
+      clock).
+- [ ] **Step 2: RED — the outbox pending row carries the frozen audience.** A late joiner connected
+      locally at dequeue time is not in `expectedPeerIds`; the frozen `recipientPeerIds` are. Expected
+      today: FAIL (the locally connected set is merged in).
+- [ ] **Step 3: RED — a reconnecting origin reads its receipt.** The `complete` receipt is dequeued on
+      instance A while the origin is disconnected; the origin reconnects on instance B inside the
+      receipt window and its handle reads `acknowledged`. Expected today: FAIL
+      (`cluster-local-complete` on the first miss; nothing durable to read).
+- [ ] **Step 4: RED — the deadline index.** After removing the earliest of three aggregates the next
+      sweep fires at the second's deadline (pure test on the index; no map rescan path remains).
+- [ ] **Step 5: Implement; Step 6: GREEN**; the storage and operation-count pins must not move for the
+      default send and admission; run the medium-scale Postgres gate (a server control-path change);
+      commit and push.
+
+```bash
+git commit -m "feat(alm): the outbox branch freezes the audience, settles once through the aggregator, and persists the receipt (D38)"
+```
+
 ---
 
 ### Task 3: Logical evidence on the handle and the observation
@@ -234,6 +314,19 @@ handle tests, `packages/tests/shared-test/` observe-result decoder tests, the pu
 - [ ] **Step 1: RED** — a `receiver` receipt with two of three recipients confirmed reads
       `confirmedRecipientPeerIds` of length 2, `unconfirmedRecipientPeerIds` of length 1, state not
       `acknowledged`; `messages.observe` returns the four fields.
+- [ ] **Step 1b: RED — a relay's `resync-required` NACK settles the handle (D50).** A retained send that
+      receives an admitted `al.control.nack.v1` with reason `resync-required` reads a terminal
+      rejected-by-relay state (use the existing rejection settlement vocabulary; add a kind only if none
+      names a relay's refusal) with the NACK's relay peer and reason as evidence; no resend is planned.
+      Expected today: FAIL (the handle stays `admitted`).
+- [ ] **Step 1c: RED — a refused-then-retried rtc leg leaves an evidence row.** The refused leg records a
+      non-terminal, evidence-only settlement (`attempts` gains the refused leg with its typed reason)
+      and the retried leg's outcome follows it. Expected today: FAIL (no row).
+- [ ] **Step 1d: RED — the receipt admission is visible in diagnostics.** The origin's receipt admission
+      emits a `control-admission` event for `al.control.receipt.v1` (the `diagnostics` sink given to
+      `ALOutboundReceiptAdmission`; `acceptReceipt` takes the control message so the event carries the
+      control's own `msgId` with `targetMsgId` = the receipt's `msgId`); a refused receipt emits one with
+      its typed reason. Expected today: FAIL (no event). `runtime-diagnostic-contract.md` follows.
 - [ ] **Step 2: Implement; Step 3: GREEN** (public API snapshot updated deliberately); commit and push.
 
 ```bash
@@ -342,15 +435,24 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
 - READMEs (`alm/outbound/README.md:112,312-313`, `alm/inbound/README.md:39,43`), the product
   description's receipt lines, the diagnostic contract, the roadmap's S2c-ii section and the S2
   outcome marked delivered.
-- Local full-scope lane on all carriers (two-agent and three-agent); push; hosted read with
-  `RALLAR_BLACK_BOX_ALM_SCOPE=full` under the two-regime rule against S2c-i's final read; the Hetzner
+- Local full-scope lane on all carriers (two-agent and three-agent) on normal pages — the acceptance
+  evidence with the both-normal hosted smoke (D51); push; the hosted full read with
+  `RALLAR_BLACK_BOX_ALM_SCOPE=full` attempted at most twice and reported under the two-regime rule
+  (S2c-i has no usable hosted full read: both landed on slow runners), never a blocker; the Hetzner
   three-agent manifest runs under **Run Hetzner Supported Distributed Manifests** after merge (the
   plan's completion gate per CLAUDE.md).
 - PR body in the F2b shape; the full local list; the Branch Release Gate green on the final commit.
 
 ## Rulings during execution
 
-(Empty at planning time; the executor records R-S2c-ii-n here.)
+- **R-S2c-ii-0 (pre-execution, 2026-09-25).** The maintainer settled the four open questions as D48
+  (the outbox-branch receipt is Task 2b), D49 (the WS ordering gate stays), D50 (a relay's NACK is
+  evidence only, Task 3) and D51 (acceptance = local full lanes + the both-normal hosted smoke; hosted
+  full read best-effort, at most twice). The executor routed the remaining carries: the multi-level
+  relay RED and the RTC breaker's typed refusals into Task 2; the refused-then-retried evidence row and
+  the receipt `control-admission` diagnostic into Task 3; the O(n) deadline rescan into Task 2b. Two
+  defaults taken without a question: S2c-ii starts from `main` 786ced4ff and merges the dead-peer fix
+  in when it lands; `receiver` on a WS unicast stays refused.
 
 ## Self-review
 
