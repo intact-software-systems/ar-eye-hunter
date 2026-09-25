@@ -78,7 +78,11 @@ import {
 } from './overlay-multicast-contracts.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
-import { toRtcFrozenAudienceDispatchPlan, toRtcOriginFrozenMessage } from './web-rtc-overlay-frozen-audience.ts';
+import {
+    toRtcFrozenAudienceDispatchPlan,
+    toRtcFrozenAudienceRepairPlan,
+    toRtcOriginFrozenMessage
+} from './web-rtc-overlay-frozen-audience.ts';
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
@@ -509,7 +513,7 @@ export class WebRtcOverlayMulticastManager {
     private planOutgoingMessage(original: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const selfPeerId = this.connectionService.input.sessionId;
         const context = this.readOverlayContext(original);
-        const frozen = toRtcOriginFrozenMessage(original, context?.room, selfPeerId);
+        const frozen = toRtcOriginFrozenMessage(original, context, selfPeerId);
         const policy = this.readOutgoingQosPolicy(frozen, context);
         const msg = toALOutboundMessage(frozen, policy.effective);
         const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
@@ -811,8 +815,10 @@ export class WebRtcOverlayMulticastManager {
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
         if (request.requestedByPeerId) {
-            const targeted = this.planTargetedRepairDispatch(msg, request.requestedByPeerId, request.repair);
-            return targeted && toRtcFrozenAudienceDispatchPlan(targeted, this.connectionService.input.sessionId);
+            return toRtcFrozenAudienceRepairPlan(
+                this.planTargetedRepairDispatch(msg, request.requestedByPeerId, request.repair),
+                this.connectionService.input.sessionId
+            );
         }
 
         if (request.failedPeerIds.length > 0) {

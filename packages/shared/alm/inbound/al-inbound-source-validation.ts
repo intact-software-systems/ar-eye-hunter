@@ -28,7 +28,6 @@ export function toALDeliveryCarrier(source: ALInboundMessageRuntime.Source): ALD
     }
 }
 
-/** An RTC arrival's provenance: a room multicast copy carries the audience its origin froze, and its version. */
 export function toALRtcPeerSource(peerId: string, message: ALMessage | undefined): ALInboundMessageRuntime.Source {
     const frozen = resolveALFrozenMulticastAudience(message?.targets);
     return frozen === undefined
@@ -64,7 +63,6 @@ export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.S
     throw new TypeError('Persisted AL ingress source is invalid');
 }
 
-/** An RTC copy of a room multicast carries its frozen audience and that audience's snapshot version together. */
 function decodeRtcPeerSource(source: PersistedALRecord): ALInboundMessageRuntime.Source {
     const peerId = decodeALAdmissionString(source.peerId);
     if (source.groupRecipientPeerIds === undefined && source.snapshotVersion === undefined) {

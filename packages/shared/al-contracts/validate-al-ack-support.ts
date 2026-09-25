@@ -43,7 +43,6 @@ export function toALReceiverAckNormalizationInput(input: ALQosNormalizationInput
     return { ...input, capabilities: { supportedAck: AL_RECEIVER_DECLARING_ACK_ALGOS, ...input.capabilities } };
 }
 
-/** The provider of a carrier that tracks logical receipts: it declares `receiver` unless the provider names its own set. */
 export function toALReceiverAckQosInputProvider(provider: ALQosInputProvider | undefined): ALQosInputProvider {
     return {
         defaultsForMessage: (msg, context) => provider?.defaultsForMessage?.(msg, context),

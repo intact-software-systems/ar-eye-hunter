@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -20,8 +21,9 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
@@ -49,7 +51,19 @@ interface FrozenAudienceFixture {
     readonly ready: { peerIds: readonly string[]; };
 }
 
+interface FrozenAudienceFixtureInput {
+    readonly snapshot: GroupSnapshot;
+    /** The origin's overlay next hops, each with an open channel. */
+    readonly nextHopPeerIds: readonly string[];
+}
+
 const ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+const DEFAULT_FIXTURE_INPUT: FrozenAudienceFixtureInput = {
+    get snapshot() {
+        return createSnapshot(['a', 'b', 'c'], 4);
+    },
+    nextHopPeerIds: ['b', 'c']
+};
 
 describe('RTC frozen room audience', () => {
     beforeEach(() => {
@@ -109,12 +123,110 @@ describe('RTC frozen room audience', () => {
     });
 });
 
-describe('computeFrozenAudience', () => {
-    it('names every session of the identified snapshot except the origin, at that snapshot version', () => {
-        expect(computeFrozenAudience({ room: createSnapshot(['a', 'b', 'c'], 4), selfPeerId: 'a' }))
-            .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: 4 });
+describe('the origin receipt of a frozen room multicast', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('freezes only the sessions the room authority admits, never an expired lease or a removed member', async () => {
+        const fixture = createFixture({ snapshot: createSnapshotWithRefusedSessions(), nextHopPeerIds: ['b', 'c'] });
+        const message = createReceiverMulticast('authorized');
+
+        await enqueueAndDrain(fixture.manager, message);
+
+        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
+    });
+
+    it.each(
+        [
+            { ack: 'receiver', expectedPeerIds: ['b', 'c'] },
+            { ack: 'hop', expectedPeerIds: ['b'] }
+        ] as const
+    )('expects $expectedPeerIds under $ack when the tree reaches c only through b', async ({ ack, expectedPeerIds }) => {
+        const fixture = createFixture({ snapshot: createSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b'] });
+        const message = { ...createReceiverMulticast(`tree-${ack}`), qos: { ack: { algo: ack } } } as const;
+
+        await enqueueAndDrain(fixture.manager, message);
+
+        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: ack, expectedPeerIds });
+    });
+
+    it('keeps expecting the whole frozen audience after a recipient asks for a targeted repair', async () => {
+        const fixture = createFixture();
+        const message = { ...createReceiverMulticast('nack-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
+        await enqueueAndDrain(fixture.manager, message);
+
+        await fixture.manager.acceptControlMessage(newALNackControlMessage(
+            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+        ));
+        await vi.advanceTimersByTimeAsync(100);
+
+        expect(fixture.channels.b!.sent).toHaveLength(2);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
+    });
+
+    it.each([
+        { label: 'a changed payload', change: { payload: { typeId: 'chat.message.v1', resource: '{"text":"changed"}' } } },
+        { label: 'another frozen audience', change: { targets: frozenTargets(['b'], 4) } }
+    ])('refuses a re-admission that brings $label against the frozen canonical', async ({ change }) => {
+        const fixture = createFixture();
+        const message = createReceiverMulticast('canonical');
+        await enqueueAndDrain(fixture.manager, message);
+
+        const changed = await enqueueAndDrain(fixture.manager, { ...message, ...change });
+
+        expect(changed.verdict).toMatchObject({ kind: 'failed' });
+        expect(changed.reason).toContain('Stored AL admission');
     });
 });
+
+describe('computeFrozenAudience', () => {
+    it('names the authorized sessions except the origin, at the snapshot version the authority was read at', () => {
+        const room = createSnapshotWithRefusedSessions();
+        const admission = computeRtcRoomSnapshotAdmission({
+            message: createReceiverMulticast('pure'),
+            snapshot: room,
+            overlay: createOverlay(['b', 'c']),
+            selfPeerId: 'a',
+            fromPeerId: undefined,
+            recipientPeerId: undefined,
+            nowMs: Date.now()
+        });
+        if (admission.kind !== 'authorized') {
+            throw new Error('The origin must be authorized in its own room');
+        }
+
+        expect(computeFrozenAudience({ admission, selfPeerId: 'a' }))
+            .toEqual({ recipientPeerIds: ['b', 'c'], snapshotVersion: admission.snapshotVersion });
+        expect(admission.snapshotVersion).toBe(4);
+    });
+});
+
+/** Sessions a snapshot still lists but the room authority refuses: `x` has an expired lease, `y` was removed. */
+function createSnapshotWithRefusedSessions(): GroupSnapshot {
+    const snapshot = createSnapshot(['a', 'b', 'c', 'x', 'y'], 4);
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => session.sessionId === 'x' ? { ...session, expiresAtEpochMs: Date.now() } : session),
+        members: snapshot.members.map((member) => member.principalId === 'y' ? toRemovedMember(member) : member)
+    };
+}
+
+function toRemovedMember(member: GroupMember): GroupMember {
+    return { ...member, status: 'removed', left: null, removed: member.updated, banned: null };
+}
 
 function createReceiverMulticast(resourceId: string): ALMessage {
     return newALMulticastMessage(
@@ -135,14 +247,14 @@ function sentTargets(captured: CapturedChannel): readonly (ALTargets | undefined
     return captured.sent.map((message) => message.targets);
 }
 
-function createFixture(): FrozenAudienceFixture {
-    const ready = { peerIds: ['b', 'c'] as readonly string[] };
+function createFixture(input: FrozenAudienceFixtureInput = DEFAULT_FIXTURE_INPUT): FrozenAudienceFixture {
+    const ready = { peerIds: input.nextHopPeerIds };
     const channels = Object.fromEntries(['b', 'c', 'd'].map((peerId) => [peerId, createOpenChannel(peerId)]));
     const connection = createConnectionService(ready, channels);
     const groups = new LatestRepository<string, GroupSnapshot>();
-    groups.accept('room', createSnapshot(['a', 'b', 'c'], 4));
+    groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
-    overlays.accept('room', createOverlay(['b', 'c']));
+    overlays.accept('room', createOverlay(input.nextHopPeerIds));
     const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
     const manager = new WebRtcOverlayMulticastManager({
         connectionService: connection,

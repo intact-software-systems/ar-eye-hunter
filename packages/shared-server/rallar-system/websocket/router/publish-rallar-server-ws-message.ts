@@ -65,7 +65,6 @@ export async function publishRallarServerWsMessage(
 interface ResolveAuthorizedRoomSessionIdsInput {
     readonly message: ALMessage;
     readonly audience: RallarServerWsRoomAudience;
-    /** The audience the message was admitted to; absent for a publish that was never admitted. */
     readonly admittedPeerIds: readonly string[] | undefined;
     readonly nowEpochMs: number;
 }

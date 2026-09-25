@@ -1,6 +1,5 @@
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
-/** The logical recipients a room multicast was admitted for, and the room snapshot version they were read at. */
 export interface ALFrozenMulticastAudience {
     readonly recipientPeerIds: readonly string[];
     readonly snapshotVersion: number;
@@ -51,14 +50,18 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
 /**
  * The sessions an admission stamps as a room message's audience: every authorized session, narrowed to a
  * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, what the
- * admitting authority allows.
+ * admitting authority allows. The origin stays in it, as it does in an unfrozen audience, so a narrowed
+ * audience is never empty: every consumer already excludes the origin, and the handling policy reads an
+ * empty member set as unrestricted.
  */
 export function resolveALAdmittedRoomAudience(
-    targets: ALTargets | undefined,
+    message: ALMessage,
     authorizedPeerIds: readonly string[]
 ): readonly string[] {
-    const frozen = resolveALFrozenMulticastAudience(targets);
+    const frozen = resolveALFrozenMulticastAudience(message.targets);
     return frozen === undefined
         ? authorizedPeerIds
-        : authorizedPeerIds.filter((peerId) => frozen.recipientPeerIds.includes(peerId));
+        : authorizedPeerIds.filter((peerId) =>
+            peerId === message.id.senderId || frozen.recipientPeerIds.includes(peerId)
+        );
 }

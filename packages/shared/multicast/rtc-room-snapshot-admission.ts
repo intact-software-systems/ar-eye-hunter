@@ -28,10 +28,8 @@ export type RtcRoomSnapshotAdmission =
     | { readonly kind: 'not-room'; }
     | {
         readonly kind: 'authorized';
-        /** The authorized sessions, narrowed to a multicast's frozen recipients when it carries them. */
         readonly memberPeerIds: readonly string[];
         readonly forwardingPeerIds: readonly string[];
-        /** The room snapshot version this authority was read at. */
         readonly snapshotVersion: number;
     }
     | RtcRoomAuthorityDenial;
@@ -97,7 +95,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
         resolveRoomSessionDenial(authority, session.sessionId) === undefined
     ).map((session) => session.sessionId);
-    const memberPeerIds = resolveALAdmittedRoomAudience(targets, authorizedPeerIds);
+    const memberPeerIds = resolveALAdmittedRoomAudience(input.message, authorizedPeerIds);
     const memberPeerIdSet = new Set(memberPeerIds);
     const forwardingPeerIds = input.overlay?.provenance === 'server' && input.overlay.state === 'active' &&
             isSameGroupRef(input.overlay.groupRef, roomRef)

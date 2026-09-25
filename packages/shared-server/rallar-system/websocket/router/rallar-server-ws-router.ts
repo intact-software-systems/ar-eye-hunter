@@ -195,7 +195,7 @@ export class RallarServerWsRouter {
             authorized: true,
             roomAudience: {
                 recipientPeerIds: resolveALAdmittedRoomAudience(
-                    message.targets,
+                    message,
                     audience.sessions.map((session) => session.sessionId)
                 ),
                 snapshotVersion: audience.snapshotVersion

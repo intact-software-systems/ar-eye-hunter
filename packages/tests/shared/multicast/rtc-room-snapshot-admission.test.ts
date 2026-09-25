@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
@@ -133,6 +134,30 @@ describe('RTC room authority', () => {
         expect(admitted.kind).toBe('authorized');
         expect(computeRtcRoomSnapshotAdmission(input)).toEqual(admitted);
         expect(JSON.stringify(input)).toBe(before);
+    });
+
+    it('never leaves a frozen audience empty, which the handling policy would read as unrestricted', () => {
+        const frozen = {
+            ...message,
+            targets: { mode: 'multicast' as const, groupRef: roomRef, recipientPeerIds: [], snapshotVersion: 1 }
+        };
+        const input = { message: frozen, selfPeerId: 'relay', fromPeerId: 'origin', recipientPeerId: undefined, overlay: overlay(), nowMs };
+        const admission = computeRtcRoomSnapshotAdmission({ ...input, snapshot: snapshot() });
+        if (admission.kind !== 'authorized') {
+            throw new Error('A frozen copy from the origin must be authorized in the room');
+        }
+        const plan = planALMessageHandling(frozen, {
+            nowMs,
+            selfPeerId: 'relay',
+            fromPeerId: 'origin',
+            connectedPeerIds: ['origin', 'receiver', 'downstream'],
+            groupMemberPeerIds: admission.memberPeerIds,
+            overlayNeighborPeerIds: admission.forwardingPeerIds
+        });
+
+        expect(admission.memberPeerIds).toEqual(['origin']);
+        expect(plan.localDelivery.enabled).toBe(false);
+        expect(plan.forwarding.nextHopPeerIds).toEqual([]);
     });
 
     it('requires recipient membership and a permitted outgoing edge independent of diagnostics', () => {
