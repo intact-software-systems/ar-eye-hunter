@@ -324,7 +324,7 @@ function resultEnvelope(
 
 /**
  * D28: the sender's receipts are read after the whole scenario and correlated by handle id
- * (`assessAcknowledgedIdentity`). A ws submission's server receipt confirms the receiver's own session as its
+ * (`assessAlmAcknowledgedIdentity`). A ws submission's server receipt confirms the receiver's own session as its
  * logical recipient; a non-ws submission confirms its receiver hop.
  */
 function toReceiptsFabricatedValue(

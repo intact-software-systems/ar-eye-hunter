@@ -66,7 +66,7 @@ question.
 | D39 | On admitting a room broadcast the WS server returns the frozen audience to the origin as the first control, from which the origin's pending row is created; the origin identity stays `senderId` (2026-09-24).                                                                                                                                                                                                                              |
 | D40 | ACK dedup keys become `(fromPeerId, logicalRecipientPeerId)`; durable receipt rows are keyed by `(groupRef, originPeerId, msgId)`; a relay re-originates one ACK per logical recipient (2026-09-24). **Amended by S2c-i (R-S2c-i-2):** the receipt row key is `(namespace, originPeerId, msgId)`; the group is row content, not a key segment.                                                                                              |
 | D41 | `receiver` and `all-logical-recipients` are one frozen-audience algorithm under two request names; `group-leader` stays on `subtree` until A2; the three-peer scenario uses `all-logical-recipients` (2026-09-24).                                                                                                                                                                                                                          |
-| D42 | An unimplemented algorithm/target pair is a typed admission refusal `unsupported` naming the pair; the default capability set stops claiming what no provider supports; never a silent downgrade (2026-09-24).                                                                                                                                                                                                                              |
+| D42 | An unimplemented algorithm/target pair is a typed admission refusal `unsupported` naming the pair; the default capability set stops claiming what no provider supports; never a silent downgrade (2026-09-24). **Clarified by S2c-i (Task 2):** an `unsupported` first carrier hands the send to the named fallback carrier.                                                                                                                |
 | D43 | Under a frozen audience a session that leaves after admission stays in the expected set and the receipt reports it missing or partial; the live publisher no longer intersects a frozen broadcast with current membership (2026-09-24).                                                                                                                                                                                                     |
 | D44 | The ws `ordering-resync` variant asserts the receiver-side NACK/resync observation, not only one delivery (2026-09-24). **Amended by S2c-i (R-S2c-i-4):** the verdict is asserted where it is made; over ws that is the relay's NACK, witnessed at the sender.                                                                                                                                                                              |
 | D45 | The third conformance role is `recipient-b`; the identity assessment accepts one sender and N recipients where a scenario declares it; a three-agent Playwright run exists only for scenarios declaring three roles; the generator splits by scenario family before any scenario lands; Hetzner gains a three-agent entry with pattern `one-sender-two-recipients` (2026-09-24).                                                            |
@@ -633,8 +633,9 @@ and ordering-resync recipes in [rallar-bb-test](../../packages/shared-test/ralla
 1. ACK v2 with `originPeerId` and `logicalRecipientPeerId`, no dual decode (D21); the receipt control;
    `AL_ADMISSION_SCHEMA_ID` moves to `rallar-alm-2026-09-s2c` (D46); the dead ACK helpers and codecs go.
 2. `receiver` is its own algorithm; an unsupported algorithm/carrier/target pair is a typed refusal
-   (D42): RTC refuses `receiver` until S2c-ii, and a WS unicast refuses it too. The recipes and the
-   server AI publication request the algorithm they mean (R-S2c-i-1).
+   (D42): RTC refuses `receiver` until S2c-ii, and a WS unicast refuses it too. D42 forbids changing
+   the algorithm, not the carrier: a first-carrier `unsupported` hands the send to a named fallback
+   carrier. The recipes and the server AI publication request the algorithm they mean (R-S2c-i-1).
 3. Receipt rows keyed `(namespace, originPeerId, msgId)` (R-S2c-i-2); the pending snapshot carries its
    `mode`; an ACK for an already-counted peer is refused without a write; a relay that delivered locally
    ACKs for itself.
@@ -662,9 +663,11 @@ relays lose deeper recipients; the overlay manager's receipt mode holds only whi
 `receiver`; the outbox-planner audience and the durable-row receipt; whether the WS server should gate
 ordering on broadcasts it only relays (a maintainer question); an admitted `resync-required` NACK does
 nothing at the sender; the refused-then-retried rtc leg leaves no evidence row; the RTC breaker counts
-`refused/unsupported` as failure; the product's dead-RTC-peer reuse on reconnect. A WS server receipt
-states no `control-admission` diagnostic: it is visible as the inbound `admission-outcome` and the
-handle's acknowledgement settlement.
+`refused/unsupported` as failure; the product's dead-RTC-peer reuse on reconnect; the receipt
+admission's missing `control-admission` diagnostic (today a receipt is visible only as the inbound
+`admission-outcome` and the handle's acknowledgement settlement, and a refused receipt leaves no trace);
+and whether a slice aggregates WS unicasts so that `receiver` on a WS unicast can stop being refused
+`unsupported`.
 
 ### Release 3, Slice 2: outcomes
 

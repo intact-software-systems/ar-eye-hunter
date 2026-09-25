@@ -524,41 +524,118 @@ git commit -m "feat(alm): client-assigned seq and orderingKey on WS sends; order
 
 ## Rulings during execution
 
+Every ruling the controller made while executing this plan, by task, in the substance the execution
+ledger records. The four numbered rulings (R-S2c-i-1..4) change the plan or a decision; the others
+settle a question the plan left open.
+
+- **Refinement S2c-i-1 (planning).** The WS receiver ACK stays origin-addressed and the server admits it
+  as an aggregating relay hop; RTC relays keep next-hop addressing. Taken by the plan itself (see "One
+  refinement this plan takes" above), not by an execution ruling; listed here so the maintainer's review
+  finds it beside the others.
+- **Task 1.**
+  - **Receipts only from the server.** The WS client accepts an `al.control.receipt.v1` only from the
+    `trusted-server` ingress source (the server is the only receipt speaker); any other source is a typed
+    `unauthorized` rejection.
+  - **The origin of an ACK (review I1).** The relay fills `originPeerId` from its own owner row
+    (`read.owner.senderId`); the inbound control validator refuses an ACK whose `originPeerId` differs
+    from the owner's sender as a typed issue, and the origin's outbound control validator refuses an ACK
+    whose `originPeerId` is not its own peer id. All pinned.
+  - **A relay that delivered locally ACKs itself (concern 1, carried into Task 3 as M7).** It emits its
+    own ACK (`logicalRecipientPeerId` = its selfPeerId) beside the ACKs it re-originates for its
+    children, so the origin's `receiver`-mode receipt can name the relay confirmed.
+- **Task 2.**
+  - **An `unsupported` first carrier hands the send to the fallback carrier (review I1; how D42 is
+    read).** A first-carrier refusal `unsupported` is a fallback trigger when the strategy names a
+    fallback carrier: the pair "receiver on rtc" means the carrier cannot carry it, and moving to a
+    carrier that supports the algorithm is not a downgrade — D42 forbids changing the algorithm, not the
+    carrier. `computeFallbackDisposition` treats `refused/unsupported` like `no-route`/`circuit-open`;
+    the conformance-qos pin asserts the send's outcome per strategy (`rtc-with-ws-fallback` + `receiver`
+    → admitted on ws).
+  - **The server AI publication decides at the call site (concern 1).** No downgrade inside ALM (D42):
+    `rallar-server-ai-result-publication` requests `ack: 'receiver'` for room-scoped results and
+    `ack: 'none'` for `world`/`all` (there is no room audience to receipt); its tests pin both.
+  - **The RTC breaker's treatment of `refused/unsupported`** is S2c-ii's (concern 3; carried).
 - **R-S2c-i-1 (Task 2b added, 2026-09-25).** Explicit ack algorithms in recipes;
-  `RallarMessageSendBase.qos` is a real product option; the WS receiver ACK stays origin-addressed and
-  the server admits it as an aggregating relay hop (refinement S2c-i-1).
+  `RallarMessageSendBase.qos` is a real product option. (The WS receiver ACK's addressing is Refinement
+  S2c-i-1 above.)
   - **Why:** Task 2's refusal of `receiver` on the rtc carrier left the rtc/fallback recipes red and the
     server AI publication refused on `world`/`all`; no request name maps to hop. The harness exposes the
-    product's `qos.ack` override as `messages.send.qos`, the recipes request the algorithm they mean, the
-    publication decides its algorithm by scope at the call site (no downgrade inside ALM, D42).
+    product's `qos.ack` override as `messages.send.qos: { ack: { algo } }` (a typed passthrough of a
+    product option, refused on a replay per S2b's I3 rule), and the rtc/fallback recipes that need hop
+    receipts request `ack: 'receiver'` plus `qos.ack.algo: 'hop'` explicitly; the ws recipes keep
+    `receiver`, now the real logical algorithm.
   - **Changed in the plan:** Task 2b inserted after Task 2; Task 6 Step 3's rtc/fallback recipe move is
     done there (commit `07a5cd17b`). Task 6 keeps only the ws receipt pins.
+- **Task 2b.**
+  - **The product option (NEEDS_CONTEXT, option 1).** `RallarMessageSendBase` gains
+    `readonly qos?: ALQosPolicyRequest` (a caller may state its QoS request; absence is the product's
+    normalization); `sendWs` and `createRtcMessage` pass `qos: input.qos`; the harness `messages.send.qos`
+    is then a true passthrough. A harness-side provider or marker matching was rejected as a policy
+    decision far below the send.
+  - **The re-exports (review I1).** `ALQosPolicyRequest` and `ALAckMode` are re-exported type-only from
+    the entry points that export `RallarMessageSendBase` — `rallar.ts`, `rallar-core.ts` and
+    `rallar-messages.ts` — so a public option is nameable; the public API snapshot is updated
+    deliberately.
+- **Task 2c (from the Task 1 reconnect regression).** The harness RTC readiness wait retries a failed
+  room wait until its budget ends; the budget is unchanged, so a genuinely dead connection still reds at
+  30 s. The product defect — the RTC connection service reuses a dead peer on reconnect (~19 s to recover
+  when the receiver offers; `packages/shared/services/web-rtc-connection-service.ts`) — is outside ALM,
+  recorded for the maintainer as the likely root of the S2a/S2b hosted `RALLAR_BB_RTC_READY_TIMEOUT`
+  reconnect reds, and not fixed in this slice.
 - **R-S2c-i-2 (Task 3, amends D40).** The pending-ACK / receipt row key is
   `(namespace, originPeerId, msgId)`; the group is row content, not a key segment — msgIds are
   origin-unique and no group exists at every key site.
+- **Task 3.**
+  - An ACK for an already-counted peer is a typed no-write rejection.
+  - `ALOutboundAckTrackingPlan.mode` is renamed `expectedPeerIdsUpdate`, and a required
+    `mode: 'hop' | 'subtree' | 'receiver'` set from the resolved ack algorithm is added (`none` still
+    produces no pending row); the captured-policy format change rides the s2c schema id.
+  - M7 (a relay that delivered locally ACKs itself) is implemented with a RED test.
+  - A required `localRecipient` on the inbound pending row rides the s2c schema id (D3/D46).
+  - The one-field touch to `web-rtc-overlay-multicast-manager.ts` (S2c-ii-only by the Global
+    Constraints) is allowed as a field addition with no new branch.
 - **R-S2c-i-3 (Task 4, sequences D38).** The WS server's in-memory aggregation map is the only ACK
   aggregator this slice (per-instance, D37); receipts are durable `WS_OUTBOX` rows crossing the cluster;
   the outbox-planner audience change and the D38 durable-row receipt move to S2c-ii where the frozen
-  audience rides the targets (D24). `receiver` on a WS unicast is refused `unsupported` (D42).
+  audience rides the targets (D24).
+- **Task 4.**
+  - **The server's own ACK.** The server withholds its own ACK only for room-audience `receiver`
+    broadcasts it aggregates, and never forges an origin-addressed ACK when the relay-hop rule admits a
+    receiver's ACK; a `receiver` message whose logical recipient is the server keeps the server's ACK.
+  - **Receipt delivery.** Each receipt rides the same `WS_OUTBOX` + cluster-publisher path as any
+    peer-addressed control and reaches the origin on any instance.
+  - **Terminal receipts.** Accepted until the message deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`;
+    every phase keeps its final snapshot as a row within that window, so terminal receipts are
+    idempotent under redelivery and any receipt that changes nothing is a typed no-write refusal.
+  - **`receiver` on a WS unicast is refused `unsupported` (D42, review M3).** The pair cannot be
+    confirmed until a slice aggregates unicasts; carried to S2c-ii as a scope question.
 - **R-S2c-i-4 (Task 5, amends D44).** The ws `ordering-resync` variant asserts the verdict where it is
   made — the relay's NACK witnessed at the sender; "receiver-side" becomes "verdict-side".
   - **Changed in the plan:** Task 5's "receiver-side verdict, D44" reads "verdict-side" under this
     ruling: over rtc the receiver makes the verdict, over ws the WS server does and the sender witnesses
     its NACK. A receiver that sees a gap reports `outcome: 'not-handled', reason: 'resync-required'`,
-    not a reason prefixed `ordering`.
-- **Task 3.** An ACK for an already-counted peer is a typed no-write rejection;
-  `ALOutboundAckTrackingPlan.mode` renamed `expectedPeerIdsUpdate`, required `mode` added; M7 (a relay
-  that delivered locally ACKs itself) implemented; a required `localRecipient` on the inbound pending
-  row rides the s2c schema id.
-- **Task 4.** Terminal receipts accepted until deadline + grace with the final snapshot kept as a row
-  for idempotent redelivery; the server keeps its own ACK when it is the logical recipient.
-- **Task 6.** The server's `complete` receipt row expires at the aggregate's message deadline plus
-  `AL_RECEIPT_DEADLINE_GRACE_MS`, not 30 s after the server observed the complete (carried Minor m-d
-  from Task 4's review). The ws lifecycle cell's submission specimen reads `transport-accepted` or
-  `acknowledged` after the send, then its post-scenario receipts confirm exactly one logical
-  recipient; the identity assessment joins that recipient to the receiver's own session id. Because
-  the handle is `acknowledged` before the cancellation, `assert-state-after-cancel-1` keeps its
-  assertion and reads `^acknowledged$` on every carrier.
+    not a reason prefixed `ordering`. Whether the server should gate ordering on broadcasts it only
+    relays is a maintainer design question (carried).
+- **Task 5.**
+  - **The wait-reference capability.** `wait.match.contains` may carry `{resultCache.<commandId>.<path>}`
+    references, resolved once when the wait starts from the runtime's cached results; an unknown
+    reference, or one that resolves to anything but a string or number, fails the wait
+    `RALLAR_BLACK_BOX_WAIT_INVALID`. The contracts file is unchanged (`contains` is already a string).
+  - **`validateWsOrdering` stays separate from `validateWs`:** a fallback send may carry `seq` alone, and
+    its `orderingKey` defaults to the group key.
+- **Task 6.**
+  - The server's `complete` receipt row expires at the aggregate's message deadline plus
+    `AL_RECEIPT_DEADLINE_GRACE_MS`, not 30 s after the server observed the complete (carried Minor m-d
+    from Task 4's review).
+  - The ws lifecycle cell's submission specimen reads `transport-accepted` or `acknowledged` after the
+    send, then its post-scenario receipts confirm exactly one logical recipient; the identity assessment
+    joins that recipient to the receiver's own session id. Because the handle is `acknowledged` before
+    the cancellation, `assert-state-after-cancel-1` keeps its assertion and reads `^acknowledged$` on
+    every carrier.
+  - **Receipt diagnostics (concern 1).** The origin's receipt admission emits no `control-admission`
+    diagnostic (only ACK, NACK and repair controls do; a refused receipt leaves no trace). The docs
+    describe today's behaviour; emitting the diagnostic (a sink into the receipt admission, with
+    `acceptReceipt` taking the control message) is carried to S2c-ii as an evidence-surface item.
 
 ### Carried to S2c-ii
 

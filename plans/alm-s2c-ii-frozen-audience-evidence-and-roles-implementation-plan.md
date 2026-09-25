@@ -68,6 +68,13 @@ to settle or to route to the maintainer:
 - **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
   settlement.
 - **The RTC breaker counts `refused/unsupported` as failure.**
+- **The receipt admission is invisible in diagnostics.** The origin's receipt admission emits no
+  `control-admission` event, so a refused receipt leaves no trace. Emit it from
+  `ALOutboundReceiptAdmission`: give it the `diagnostics` sink, and have `acceptReceipt` take the
+  control message so the event carries the control's own `msgId`, with `targetMsgId` = the receipt's
+  `msgId`. Then update `runtime-diagnostic-contract.md`.
+- **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
+  stop being refused `unsupported` (D42, S2c-i Task 4).
 - **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
   ~835 and 878–918; a maintainer task chip).
 

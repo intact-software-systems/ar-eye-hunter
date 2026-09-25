@@ -32,6 +32,8 @@ import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const SNAPSHOT_VERSION = 7;
+/** The room message's lifetime: its deadline is this long after it was sent. */
+const ROOM_MESSAGE_LIFETIME_MS = 30_000;
 
 interface ReceiptFixture {
     readonly service: WsQueueBoxServerService;
@@ -113,7 +115,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         // c's ACK landed on another instance (D37): this instance's aggregate never counts it.
         await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual(['admitted']);
 
-        fixture.clock.nowMs += 30_000;
+        fixture.clock.nowMs += ROOM_MESSAGE_LIFETIME_MS;
         await fixture.engine.executeOnce();
 
         await expect.poll(() => readSentReceipts(fixture.sockets.a).map((receipt) => receipt.phase)).toEqual([
@@ -138,7 +140,7 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const complete = (await readReceiptMessages(fixture)).find((message) =>
             decodeALReceiptPayload(JSON.parse(message.payload.resource)).phase === 'complete'
         );
-        expect(complete?.constraints?.expiresAtMs).toBe(admittedAtMs + 30_000 + AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(complete?.constraints?.expiresAtMs).toBe(admittedAtMs + ROOM_MESSAGE_LIFETIME_MS + AL_RECEIPT_DEADLINE_GRACE_MS);
 
         // The row is dispatched one second past the grace counted from the observed complete, as for an origin away that long.
         fixture.clock.nowMs += AL_RECEIPT_DEADLINE_GRACE_MS + 1_000;
@@ -403,7 +405,7 @@ function roomMessage(nowMs: number): ALMessage {
         id: { v: 2, msgId: 'room-message-1', ts: nowMs, senderId: 'a' },
         route: { topicId: 'room.notification', resourceId: 'resource', contextId: ROOM.groupId },
         targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
-        constraints: { expiresAtMs: nowMs + 30_000 },
+        constraints: { expiresAtMs: nowMs + ROOM_MESSAGE_LIFETIME_MS },
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
         payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
     };

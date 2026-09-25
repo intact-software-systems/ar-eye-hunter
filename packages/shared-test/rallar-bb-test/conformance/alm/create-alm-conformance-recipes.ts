@@ -527,11 +527,7 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
     ];
 }
 
-/**
- * Receipts and the handle's release are read after the whole scenario, per D28. A ws send confirms its one logical
- * recipient through the server's receipt; an rtc send confirms the hops it reached. Which peer the ws receipt names is
- * joined against the receiver's own session by `assessAlmConformanceIdentity`.
- */
+/** Which peer the ws receipt confirms is joined to the receiver's own session by `assessAlmAcknowledgedIdentity`. */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const isWs = sender.input.carrier === 'ws';
     return [

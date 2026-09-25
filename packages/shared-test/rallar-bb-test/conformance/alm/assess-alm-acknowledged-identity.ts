@@ -28,7 +28,7 @@ export function assessAlmAcknowledgedIdentity(
         return [`${send.commandId}: sender receipts are missing or still wait for a peer.`];
     }
     if (send.carrier === 'ws') {
-        const receiverSessionIds = readReceiverSessionIds(receiver);
+        const receiverSessionIds = toReceiverSessionIds(receiver);
         return confirmed.length === 1 && receiverSessionIds.some((sessionId) => sessionId === confirmed[0])
             ? []
             : [`${send.commandId}: sender receipts do not confirm the receiver as the one logical recipient.`];
@@ -36,7 +36,7 @@ export function assessAlmAcknowledgedIdentity(
     return confirmed.length > 0 ? [] : [`${send.commandId}: sender receipts do not confirm an acknowledged hop.`];
 }
 
-function readReceiverSessionIds(receiver: RecordedAlmConformanceParticipant): readonly string[] {
+function toReceiverSessionIds(receiver: RecordedAlmConformanceParticipant): readonly string[] {
     return receiver.participant.recipe.commands.flatMap((command) => {
         const value = command.kind === 'rtc.connect' ? receiver.results.get(command.commandId!)?.value : undefined;
         return isJsonRecordValue(value) && typeof value.sessionId === 'string' ? [value.sessionId] : [];
