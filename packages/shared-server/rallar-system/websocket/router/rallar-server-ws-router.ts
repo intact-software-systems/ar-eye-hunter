@@ -189,11 +189,11 @@ export class RallarServerWsRouter {
                 serverSnapshotVersion: admitted.left.serverSnapshotVersion
             };
         }
-        return {
+        const audience = admitted.right!.audience;
+        return audience === undefined ? { authorized: true } : {
             authorized: true,
-            ...(admitted.right!.audience === undefined
-                ? {}
-                : { groupRecipientPeerIds: admitted.right!.audience.sessions.map((session) => session.sessionId) })
+            groupRecipientPeerIds: audience.sessions.map((session) => session.sessionId),
+            snapshotVersion: audience.snapshotVersion
         };
     }
 

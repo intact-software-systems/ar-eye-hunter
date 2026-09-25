@@ -58,9 +58,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
         // The v2 acknowledgement, the receipt control, one relayed ACK per logical recipient, and
         // the send-time QoS request check with the messages.send qos passthrough measure
-        // 275.1064453125 KiB with this exact harness. The next whole-KiB ceiling is 276; all
+        // 275.1064453125 KiB with this exact harness; the WS client's receipt admission from the
+        // server's aggregate brings it to 276.16796875 KiB. The next whole-KiB ceiling is 277; all
         // operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(276);
+        expect(result.brotliKiB).toBeLessThan(277);
     });
 });
 

@@ -114,7 +114,8 @@ function toAuthorizedRoomAudience(
         targets,
         sessions: snapshot.activeSessions.filter((session) =>
             activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs)
-        )
+        ),
+        snapshotVersion: readGroupVersion(snapshot)
     };
 }
 

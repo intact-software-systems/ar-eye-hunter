@@ -6,6 +6,9 @@ import { createWsServerTargetResolver } from '@shared-server/rallar-system/webso
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALMulticastMessage, toALGroupTargetKey } from '@shared/al-contracts/al-contract.ts';
 import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -318,7 +321,7 @@ Deno.test('a socket closed during an awaited handler receives no authoritative l
     }
 });
 
-Deno.test('a WS-carried room multicast queues durable delivery to the other admitted members, never its origin', async () => {
+Deno.test('a WS-carried receiver room multicast queues durable delivery to the other admitted members, never its origin, and answers it with receipts', async () => {
     const harness = createRoomDeliveryHarness();
     try {
         const snapshot = createRoomSnapshot(['alice', 'bob', 'carol']);
@@ -345,10 +348,22 @@ Deno.test('a WS-carried room multicast queues durable delivery to the other admi
         const roomFrames = (frames: readonly string[]) => frames.filter((frame) => decodePersistedALMessage(frame).route.topicId === 'room.chat');
         await waitForRoomFrames(() => roomFrames(bobFrames).length + roomFrames(carolFrames).length >= 2);
 
-        assert.equal((await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE').length, 1);
+        // The room message and the origin's admitted receipt: one row each.
+        assert.equal((await harness.outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE').length, 2);
         assert.deepEqual(roomFrames(bobFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
         assert.deepEqual(roomFrames(carolFrames).map((frame) => decodePersistedALMessage(frame).id), [message.id]);
         assert.deepEqual(roomFrames(senderFrames), []);
+
+        for (const recipient of ['bob', 'carol']) {
+            await harness.service.acceptIncomingMessage(receiverAck(message, recipient), recipient);
+        }
+        await waitForRoomFrames(() => readReceipts(senderFrames).length >= 2);
+        assert.deepEqual(readReceipts(senderFrames).map((receipt) => [receipt.phase, receipt.confirmedRecipientPeerIds]), [
+            ['admitted', []],
+            ['complete', ['bob', 'carol']]
+        ]);
+        assert.deepEqual(readReceipts(senderFrames)[0]?.expectedRecipientPeerIds, ['bob', 'carol']);
+        assert.equal(readReceipts(senderFrames)[0]?.snapshotVersion, 2);
     }
     finally {
         harness.service.dispose();
@@ -380,6 +395,26 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     }, { readLifecyclePolicy: () => Promise.resolve(state.policy) });
     const router = new RallarServerWsRouter(service, { authorizeRoomMessage, nowEpochMs });
     return { state, server, service, router, outbox };
+}
+
+function receiverAck(message: ALMessage, recipient: string): ALMessage {
+    return newALAckControlMessage({ v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+        ackedMsgId: message.id.msgId,
+        fromPeerId: recipient,
+        toPeerId: message.id.senderId,
+        originPeerId: message.id.senderId,
+        logicalRecipientPeerId: recipient,
+        carrier: 'ws',
+        status: 'delivered',
+        observedAtEpochMs: Date.now()
+    });
+}
+
+function readReceipts(frames: readonly string[]): readonly ALReceiptPayload[] {
+    return frames
+        .map((frame) => decodePersistedALMessage(frame))
+        .filter((frame) => frame.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((frame) => decodeALReceiptPayload(JSON.parse(frame.payload.resource)));
 }
 
 function addRecordingConnection(server: JsonWebSocketServer, sessionId: string): string[] {

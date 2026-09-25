@@ -33,7 +33,6 @@ import type {
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
-    type ALOutboundAckTrackingPlan,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
     type ALOutboundRetryTrackingPlan,
@@ -69,6 +68,10 @@ import type {
     OnInboxMessageCallback,
     OnOutboxWebSocketMessageCallback
 } from './queue-message-callbacks.ts';
+import {
+    acceptWsQueueBoxClientControlMessage,
+    toWsQueueBoxClientAckTrackingPlan
+} from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -240,7 +243,7 @@ export class WsQueueBoxClientService {
                     await this.enqueueOutboxAllIfAbsent(msgs);
                 },
                 onControlMessage: async (msg) => {
-                    await this.outboundRuntime.acceptControlMessage(msg);
+                    await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
                 },
                 diagnostics: this.dependencies.inboundDiagnostics
             }
@@ -270,7 +273,7 @@ export class WsQueueBoxClientService {
             dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
             preparedMessages: [toALOutboundTransportMessage(message)],
-            ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
+            ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
             repairTracking: {
                 enabled: normalized.effective.repair.algo !== 'none',
@@ -598,26 +601,6 @@ export class WsQueueBoxClientService {
 
     private isSocketOpen(): boolean {
         return this.socket.ws?.readyState === 1;
-    }
-
-    private toAckTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        msg: ALMessage
-    ): ALOutboundAckTrackingPlan | undefined {
-        const targets = msg.targets;
-        if (effective.ack.algo === 'none' || targets?.mode !== 'unicast') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            timeoutMs: effective.ack.opts.timeoutMs,
-            maxAttempts: effective.retry.algo === 'none'
-                ? 0
-                : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [targets.toPeerId],
-            mode: effective.ack.algo
-        };
     }
 
     private toRetryTrackingPlan(

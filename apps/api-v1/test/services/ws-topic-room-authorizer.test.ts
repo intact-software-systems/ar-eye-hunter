@@ -5,6 +5,7 @@ import type {
     RallarServerWsRoomAuthorizationInput
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
@@ -50,7 +51,11 @@ Deno.test('API room authorization reads the current scoped group snapshot', asyn
     });
 
     assertAuthorized(decision);
-    assert.deepEqual(decision.audience, { targets: message.targets, sessions: snapshot.activeSessions });
+    assert.deepEqual(decision.audience, {
+        targets: message.targets,
+        sessions: snapshot.activeSessions,
+        snapshotVersion: readGroupVersion(snapshot)
+    });
     assert.deepEqual(requestedRef, snapshot.group);
 });
 

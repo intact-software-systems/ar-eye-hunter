@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -45,6 +46,7 @@ import {
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import { ALOutboundReceiptAdmission } from './control/al-outbound-receipt-admission.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -329,6 +331,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
@@ -372,6 +375,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
             planOutgoingMessage: dependencies.planOutgoingMessage,
             planRepairMessage: dependencies.planRepairMessage,
             diagnostics: dependencies.diagnostics
+        });
+        this.receiptAdmission = new ALOutboundReceiptAdmission({
+            admissionStore: dependencies.admissionStore,
+            clock: dependencies.clock,
+            settlements
         });
         this.repairRetransmission = new ALOutboundRepairRetransmission({
             admissionStore: dependencies.admissionStore,
@@ -512,6 +520,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.work.committed();
         }
         return admitted;
+    }
+
+    /** A server receipt about a message this owner originated; it writes the receipt row, never work. */
+    async acceptReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+        await this.ready();
+        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(receipt);
     }
 
     private async commitDispatchPlan(

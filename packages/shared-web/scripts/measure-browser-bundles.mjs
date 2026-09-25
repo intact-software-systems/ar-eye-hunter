@@ -29,11 +29,12 @@ const esbuildBin = path.join(
 const entries = [
     {
         // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
-        // ACK per logical recipient measure 215.255859375 KiB. The next whole-KiB ceiling is 216.
+        // ACK per logical recipient measure 215.255859375 KiB; the WS client's receipt admission from
+        // the server's aggregate brings it to 216.73828125 KiB. The next whole-KiB ceiling is 217.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 216
+        brotliBudgetKiB: 217
     },
     {
         label: 'browser/rallar-core.ts',

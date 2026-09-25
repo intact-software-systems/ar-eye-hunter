@@ -9,6 +9,9 @@ import {
     toALGroupTargetKey,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import { newALAckControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -293,6 +296,42 @@ Deno.test('a WS-carried room multicast reaches the other admitted members live a
     }
 });
 
+Deno.test('a live-only receiver room multicast answers its origin with the admitted audience and the complete receipt', async () => {
+    const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
+    const runtime = createLiveRoomRuntime(Date.now());
+    try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.cache.observe(snapshot);
+        runtime.router.install();
+        const message = newALMulticastMessage(
+            'session-1',
+            newALEventRoute('room.chat', snapshot.group.groupId, 'receiver-1'),
+            snapshot.group,
+            'chat.message.v1',
+            { text: 'confirm me' },
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        );
+
+        assert.deepEqual((await runtime.service.acceptIncomingMessage(message, 'session-1')).right, { kind: 'admitted' });
+        const roomSends = () => runtime.sent.filter((send) => decodePersistedALMessage(send.encoded).route.topicId === 'room.chat');
+        await waitForRoomSends(() => roomSends().length >= 2);
+        for (const recipient of ['session-2', 'session-3']) {
+            await runtime.service.acceptIncomingMessage(receiverAck(message, recipient), recipient);
+        }
+        await waitForRoomSends(() => readOriginReceipts(runtime.sent).length >= 2);
+
+        assert.deepEqual(readOriginReceipts(runtime.sent).map((receipt) => [receipt.phase, receipt.confirmedRecipientPeerIds]), [
+            ['admitted', []],
+            ['complete', ['session-2', 'session-3']]
+        ]);
+        assert.deepEqual(readOriginReceipts(runtime.sent)[0]?.expectedRecipientPeerIds, ['session-2', 'session-3']);
+    }
+    finally {
+        runtime.service.dispose();
+        await runtime.manager.clear();
+    }
+});
+
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime(Date.now());
     const service = createDefaultWsQueueBoxServerService({
@@ -360,6 +399,27 @@ async function waitForRoomSends(isSettled: () => boolean): Promise<void> {
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
     await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function receiverAck(message: ALMessage, recipient: string): ALMessage {
+    return newALAckControlMessage({ v: 2, msgId: `ack-${recipient}`, senderId: recipient, ts: Date.now() }, {
+        ackedMsgId: message.id.msgId,
+        fromPeerId: recipient,
+        toPeerId: message.id.senderId,
+        originPeerId: message.id.senderId,
+        logicalRecipientPeerId: recipient,
+        carrier: 'ws',
+        status: 'delivered',
+        observedAtEpochMs: Date.now()
+    });
+}
+
+function readOriginReceipts(sent: readonly RoomLiveSend[]): readonly ALReceiptPayload[] {
+    return sent
+        .filter((send) => send.sessionId === 'session-1')
+        .map((send) => decodePersistedALMessage(send.encoded))
+        .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+        .map((message) => decodeALReceiptPayload(JSON.parse(message.payload.resource)));
 }
 
 function roomMessage(snapshot: GroupSnapshot): ALMessage {

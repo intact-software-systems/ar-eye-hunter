@@ -20,7 +20,7 @@ import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-messag
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
+import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
@@ -59,6 +59,10 @@ import {
     WsQueueBoxServerOutboundPlanning,
     type WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
+import {
+    toWsQueueBoxServerInboundPlan,
+    WsQueueBoxServerReceiptAggregation
+} from './ws-queue-box-server-receipt-aggregation.ts';
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerService {
@@ -135,6 +139,7 @@ export class WsQueueBoxServerService {
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
     private readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     private readonly outboundPlanning: WsQueueBoxServerOutboundPlanning;
+    private readonly receipts: WsQueueBoxServerReceiptAggregation;
     private readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     private readonly forwardsRoomScopedMessages: boolean;
     private inboundAuthorizer: WsServerInboundAuthorizer | undefined;
@@ -175,6 +180,14 @@ export class WsQueueBoxServerService {
             deliveryReporting: this.deliveryReporting
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
+        this.receipts = new WsQueueBoxServerReceiptAggregation({
+            serverPeerId: dependencies.name,
+            clock: this.clock,
+            newControlId: this.newControlId,
+            queueEngine: this.inboundQueueEngine,
+            enqueueOutbox: (message) => this.enqueueOutboxIfAbsent(message),
+            acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message)
+        });
         this.inboundRuntime = this.createInboundRuntime(dependencies);
         this.registerSocketIngress();
     }
@@ -237,8 +250,9 @@ export class WsQueueBoxServerService {
                 }
             },
             onControlMessage: async (message) => {
-                await this.outboundRuntime.acceptControlMessage(message);
+                await this.receipts.acceptControlMessage(message);
             },
+            relaysForPeerId: (peerId) => this.receipts.aggregatesForOrigin(peerId),
             forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
@@ -258,6 +272,7 @@ export class WsQueueBoxServerService {
         this.disposed = true;
         this.socket.removeOnMessageCallbackById(this.name);
         this.inboundRuntime.dispose();
+        this.receipts.dispose();
         this.outboundRuntime.dispose();
         this.onInboxWebSocketMessageCallbacks.clear();
         this.onAnyInboxWebSocketMessageCallbacks.clear();
@@ -394,7 +409,11 @@ export class WsQueueBoxServerService {
                 message: 'AL origin must match an authenticated live WS connection'
             });
         }
-        const protocol = validateALInboundMessage(message, { kind: 'ws-client', peerId: fromPeerId }, this.name);
+        const protocol = validateALInboundMessage(
+            message,
+            { kind: 'ws-client', peerId: fromPeerId },
+            toALInboundReceiver(this.name, (peerId) => this.receipts.aggregatesForOrigin(peerId))
+        );
         if (protocol.left) {
             return Either.ofLeft(protocol.left);
         }
@@ -415,13 +434,33 @@ export class WsQueueBoxServerService {
         if (!authorization.authorized) {
             return await this.rejectIncomingMessage(message, authorization);
         }
-        return await this.inboundRuntime.admitIncomingMessage(message, {
+        return await this.admitAuthorizedMessage(message, fromPeerId, authorization);
+    }
+
+    private async admitAuthorizedMessage(
+        message: ALMessage,
+        fromPeerId: string,
+        authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        const admitted = await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
             ...(authorization.groupRecipientPeerIds === undefined
                 ? {}
                 : { groupRecipientPeerIds: [...authorization.groupRecipientPeerIds] })
         });
+        await this.receipts.writeAdmittedReceipt({
+            message,
+            originPeerId: fromPeerId,
+            authorization,
+            qos: resolveALQosNormalizationInput(
+                message,
+                { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
+                this.qosProvider
+            ),
+            acceptance: admitted.right
+        });
+        return admitted;
     }
 
     private async rejectIncomingMessage(
@@ -480,7 +519,7 @@ export class WsQueueBoxServerService {
             resolvedPeerIds,
             serverPeerId: this.name
         });
-        return planALMessageHandling(
+        return toWsQueueBoxServerInboundPlan(planALMessageHandling(
             message,
             {
                 ...observations,
@@ -495,7 +534,7 @@ export class WsQueueBoxServerService {
                 { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
                 this.qosProvider
             )
-        );
+        ));
     }
 
     private hasInboxConsumer(message: ALMessage): boolean {
