@@ -94,7 +94,8 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
         ...validateNumberField(command, 'seq', path),
-        ...validateMessagesSnapshotFloorField(command)
+        ...validateMessagesSnapshotFloorField(command),
+        ...validateMessagesQosField(command)
     ];
 }
 
@@ -115,6 +116,45 @@ function validateMessagesSnapshotFloorField(command: RallarBlackBoxTestRecord): 
             ? []
             : [toControlCommandIssue(`${path} must name exactly one of ${fields.optional.join(', ')}.`)]),
         ...named.flatMap((key) => validateIntegerField({ record: floor, key, path, minimum: 1 }))
+    ];
+}
+
+function validateMessagesQosField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const qos = command.qos;
+    const path = 'messages.send.qos';
+    if (qos === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(qos)) {
+        return [toControlCommandIssue(`${path} must be an object.`)];
+    }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesQos;
+    return [
+        ...validateAllowedFields(qos, fields, path),
+        ...validateRequiredFields({ record: qos, fields, path, ownMessageFields: [] }),
+        ...validateMessagesQosAckField(qos)
+    ];
+}
+
+function validateMessagesQosAckField(qos: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const ack = qos.ack;
+    const path = 'messages.send.qos.ack';
+    if (ack === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(ack)) {
+        return [toControlCommandIssue(`${path} must be an object.`)];
+    }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesQosAck;
+    return [
+        ...validateAllowedFields(ack, fields, path),
+        ...validateRequiredFields({ record: ack, fields, path, ownMessageFields: [] }),
+        ...validateEnumField({
+            record: ack,
+            key: 'algo',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesQosAckAlgo
+        })
     ];
 }
 

@@ -1,3 +1,4 @@
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -24,7 +25,7 @@ type MessageSendIdentity = Pick<
 
 type MessageSendOptions = Pick<
     BlackBoxRallarMessageSendInput,
-    'roomRef' | 'scope' | 'reliability' | 'ack' | 'minSnapshotVersion'
+    'roomRef' | 'scope' | 'reliability' | 'ack' | 'minSnapshotVersion' | 'qos'
 >;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
@@ -33,6 +34,7 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
     'best-effort',
     'at-least-once'
 ];
+const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
@@ -48,7 +50,8 @@ const REPLAY_REFUSED_FIELDS = [
     'orderingKey',
     'seq',
     'handleId',
-    'minSnapshotVersion'
+    'minSnapshotVersion',
+    'qos'
 ] as const;
 
 type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
@@ -140,6 +143,7 @@ function decodeMessageSendOptions(
     const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
     const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
     const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
+    const qos = decodeMessageQos(record.qos);
     return decodeBlackBoxCommandRouting(record).flatMap(
         (issue) => Either.ofLeft(issue),
         (routing) => {
@@ -152,7 +156,16 @@ function decodeMessageSendOptions(
             if (minSnapshotVersion !== undefined && 'message' in minSnapshotVersion) {
                 return Either.ofLeft(minSnapshotVersion);
             }
-            return Either.ofRight({ ...routing, scope: knownScope, reliability: knownReliability, minSnapshotVersion });
+            if (qos !== undefined && 'message' in qos) {
+                return Either.ofLeft(qos);
+            }
+            return Either.ofRight({
+                ...routing,
+                scope: knownScope,
+                reliability: knownReliability,
+                minSnapshotVersion,
+                qos
+            });
         }
     );
 }
@@ -174,6 +187,22 @@ function decodeMessageSnapshotFloor(
         };
     }
     return keys[0] === 'absolute' ? { absolute: amount } : { aboveCurrentBy: amount };
+}
+
+/** Absent, the product normalizes the QoS the delivery options imply. */
+function decodeMessageQos(value: unknown): BlackBoxRallarMessageSendInput['qos'] | BlackBoxRallarInputIssue {
+    if (value === undefined) {
+        return undefined;
+    }
+    const qos = isBlackBoxCommandRecord(value) ? value : {};
+    const ack = isBlackBoxCommandRecord(qos.ack) ? qos.ack : {};
+    const algo = QOS_ACK_ALGOS.find((candidate) => candidate === ack.algo);
+    if (Object.keys(qos).length !== 1 || Object.keys(ack).length !== 1 || algo === undefined) {
+        return {
+            message: 'messages.send.qos must name exactly ack, with an algo of none, hop, subtree or receiver.'
+        };
+    }
+    return { ack: { algo } };
 }
 
 function decodeMessageReplayTarget(

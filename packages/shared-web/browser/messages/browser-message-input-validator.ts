@@ -4,6 +4,9 @@ import type {
     RallarRtcSendInput,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
+import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     validateRallarGroupRef,
@@ -14,6 +17,7 @@ import {
     type RallarJsonPayloadValidationResult,
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export interface ResolvedWsMessageInput<T> {
     readonly input: RallarWsSendInput<T>;
@@ -195,6 +199,7 @@ export class BrowserMessageInputValidator {
         });
         this.pushOptionalNonNegativeInteger(input.ttlHops, '$.ttlHops', issues);
         this.pushOptionalNonNegativeInteger(input.ttlMs, '$.ttlMs', issues);
+        issues.push(...validateQosRequest(input.qos));
     }
 
     private pushWsScopeIssues<T>(
@@ -287,4 +292,18 @@ function validateTopic<T>(
             '$.topicId',
             'Topic ID'
         ).issues;
+}
+
+/** The request travels inside the envelope, so it passes the check every persisted envelope's QoS passes. */
+function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly RallarValidationIssue[] {
+    if (qos === undefined) {
+        return [];
+    }
+    try {
+        assertPersistedALQos(decodePersistedALRecord(JSON.stringify(qos), 'qos'));
+        return [];
+    }
+    catch (error) {
+        return [{ path: '$.qos', code: 'invalid-qos', message: toError(error).message }];
+    }
 }

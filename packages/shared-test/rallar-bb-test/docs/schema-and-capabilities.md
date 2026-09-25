@@ -142,8 +142,8 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
-`minSnapshotVersion`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`minSnapshotVersion` and `qos`. It returns `{ handleId, msgId, carrier, status, reason? }`.
 `handleId` defaults to the command's own `commandId`, and every later delivery
 command addresses the send through that handle. Supersedence (`key`) and unicast
 targeting (`toPeerId`) are not part of this release; naming either one fails
@@ -160,11 +160,20 @@ that floor and the sender's own version. Absent, the send states no floor and th
 product stamps the sender's version. `aboveCurrentBy` fails the send when the
 sender has no cached snapshot for the room.
 
+`qos` is `{ ack: { algo } }`, where `algo` is `none`, `hop`, `subtree` or
+`receiver`, and nothing else is named. The page passes it unchanged to the
+product's typed send option `qos`, the caller's QoS request, which the envelope
+carries and which overrides the ack algorithm `ack` implies. Absent, the product
+normalizes the QoS the delivery options imply. The conformance recipes use it on
+every RTC-first send that asks for `ack: 'receiver'`: until the RTC overlay tracks
+logical receipts it refuses `receiver`, so those sends ask for `hop` by name and
+keep reading hop receipts. WS sends keep `receiver`, the logical algorithm.
+
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
-`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
-`minSnapshotVersion` are each refused beside it, by the control validator and by
+`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`minSnapshotVersion` and `qos` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the

@@ -190,6 +190,24 @@ describe('alm-conformance recipe family', () => {
         expect(admitted).toMatchObject({ timeoutMs: 3_000 });
     });
 
+    it('asks for hop by name on every RTC-first receiver send, and leaves ws sends on the logical receiver', () => {
+        const sendsOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).flatMap((recipe) =>
+                recipe.commands.flatMap((command) => command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command] : [])
+            );
+        const submission = sendsOf('rtc').find((command) => command.commandId === 'alm-rtc-delivery-lifecycle-sender-send-1');
+
+        expect(submission).toMatchObject({ ack: 'receiver', qos: { ack: { algo: 'hop' } } });
+        for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+            const receiverSends = sendsOf(carrier).filter((command) => command.ack === 'receiver');
+            expect(receiverSends.length, carrier).toBeGreaterThan(0);
+            expect(receiverSends.every((command) => command.qos?.ack.algo === 'hop'), carrier).toBe(true);
+        }
+        const wsSends = sendsOf('ws');
+        expect(wsSends.some((command) => command.ack === 'receiver')).toBe(true);
+        expect(wsSends.every((command) => command.qos === undefined)).toBe(true);
+    });
+
     it('keeps reload and ordering-resync full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))

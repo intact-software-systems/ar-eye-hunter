@@ -172,7 +172,8 @@ export class BrowserRallarMessageSender {
                 ttlMs: input.ttlMs ?? BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
                 reliability: input.reliability ?? 'at-least-once',
                 ack: input.ack ?? 'none',
-                ownership: input.ownership ?? 'shared'
+                ownership: input.ownership ?? 'shared',
+                qos: input.qos
             }
         );
 
@@ -307,6 +308,7 @@ export class BrowserRallarMessageSender {
                 reliability: input.reliability ?? 'at-least-once',
                 ack: input.ack ?? 'none',
                 ownership: input.ownership ?? 'shared',
+                qos: input.qos,
                 nextHopPeerIds: input.nextHopPeerIds,
                 overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
                 fanoutLimit: input.fanoutLimit

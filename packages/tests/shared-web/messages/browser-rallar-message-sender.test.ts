@@ -271,6 +271,40 @@ describe('Rallar message send', () => {
         ]);
     });
 
+    it('carries a typed send\'s stated QoS request on the envelope over both carriers, and none without one', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+        });
+        const qos = { ack: { algo: 'hop' } } as const;
+
+        await channel.send({ text: 'rtc hop' }, { strategy: 'rtc', ack: 'receiver', qos });
+        await channel.send({ text: 'ws hop' }, { strategy: 'ws', ack: 'receiver', qos });
+        await channel.send({ text: 'rtc default' }, { strategy: 'rtc', ack: 'receiver' });
+
+        const [rtcStated, rtcDefault] = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(rtcStated).toMatchObject({ delivery: { ack: 'receiver' }, qos });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0]).toMatchObject({ delivery: { ack: 'receiver' }, qos });
+        expect(rtcDefault.qos).toBeUndefined();
+    });
+
+    it('rejects a QoS request the envelope cannot carry before queueing', async () => {
+        await expect(
+            createFacade().messages.ws.send({
+                scope: 'all',
+                topicId: 'app.chat',
+                typeId: 'chat.message.v1',
+                payload: { text: 'unknown ack algorithm' },
+                qos: JSON.parse('{"ack":{"algo":"everyone"}}')
+            })
+        ).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [expect.objectContaining({ path: '$.qos', code: 'invalid-qos' })]
+        });
+    });
+
     it('uses roomRef scope for cached snapshotVersion on RTC room sends', async () => {
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(

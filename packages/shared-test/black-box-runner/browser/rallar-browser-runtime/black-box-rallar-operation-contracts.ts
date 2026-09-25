@@ -13,6 +13,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -289,6 +290,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly handleId: string;
     /** Absent, the product stamps the sender's own room version. */
     readonly minSnapshotVersion: BlackBoxRallarMessageSnapshotFloor | undefined;
+    /** Absent, the product normalizes the QoS the delivery options imply. */
+    readonly qos: Required<Pick<ALQosPolicyRequest, 'ack'>> | undefined;
 }
 
 /** A harness floor: `aboveCurrentBy` resolves against the sender's room version at send time. */
