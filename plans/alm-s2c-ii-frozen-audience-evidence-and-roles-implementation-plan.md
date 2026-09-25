@@ -47,6 +47,30 @@ list, maintainer-reviewed landing), plus:
 - The three-agent run and manifest exist only for scenarios that declare three roles; two-agent
   scenarios keep the exactly-one-sender-one-receiver identity rule (D45).
 
+### Carried from S2c-i
+
+Recorded by S2c-i's execution (its plan's "Rulings during execution", R-S2c-i-1..4); each is S2c-ii's
+to settle or to route to the maintainer:
+
+- **A multi-level relay loses its deeper recipients.** A relay's pending row completes on its last
+  child's first ACK, so recipients below a child relay are lost. The S2c-ii RED must include a relay
+  that is itself a recipient (M7 emits the relay itself at index 0).
+- **The overlay manager's receipt mode.** `mode: effective.ack.algo` over next-hop `expectedPeerIds` is
+  correct only while RTC refuses `receiver`; Task 1's frozen audience must change the pair together.
+- **The outbox-planner audience change and the D38 durable-row receipt** (R-S2c-i-3): S2c-i aggregates
+  in memory per instance only; the durable receipt row moves here, where the frozen audience rides the
+  targets (D24).
+- **Ordering on relayed broadcasts** (maintainer design question): whether the WS server should gate
+  ordering on broadcasts it only relays. Today it keeps its own ordering track and NACKs the sender
+  (R-S2c-i-4).
+- **An admitted `resync-required` NACK does nothing at the sender.** No outbound code acts on it, so a
+  handle stays admitted for a message the relay dropped — a receipt-contract gap.
+- **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
+  settlement.
+- **The RTC breaker counts `refused/unsupported` as failure.**
+- **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
+  ~835 and 878–918; a maintainer task chip).
+
 ---
 
 ## File structure

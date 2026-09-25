@@ -109,7 +109,7 @@ The server's independently produced `WS_OUTBOX` rows remain active canonical
 sources. Cluster notifications carry bounded key/type/deadline claims, which the
 [`QueueBoxPubSubBridge`](../../../shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts)
 checks against the retained message and identity before delivery. Publication is a
-transport action and does not confirm the logical audience.
+transport action and does not confirm the logical audience; a server receipt does (below).
 
 ## Admission and invocation paths
 
@@ -145,6 +145,31 @@ is a duplicate only when its sender, logical recipient and status all repeat; an
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
 no write and no version bump. The `acknowledgement`
 settlement carries the `mode`, so `complete` under `receiver` is logical completion.
+
+### Server receipts on WS
+
+A `receiver` room send over WS expects nobody when it is admitted
+([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)):
+the WS server freezes the audience and answers for it. Each recipient's ACK stays addressed to the
+origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
+relay hop and counts it in
+[`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
+an in-memory map per server instance. No client learns a server id. The server answers the origin with
+`al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
+socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
+frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
+message deadline naming whom it counted. Every receipt row expires at the message deadline plus
+`AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A `receiver` message addressed
+to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
+(D42) until a slice aggregates unicasts.
+
+The origin admits a receipt through
+[`ALOutboundReceiptAdmission`](./control/al-outbound-receipt-admission.ts), not through control
+admission: one conditional commit fenced on the origin's version replaces the row's expected set with
+the frozen audience and adds the recipients the receipt confirmed. A terminal receipt may overtake its
+`admitted` one; every phase leaves its final snapshot as the row until the deadline plus the grace, so a
+redelivered receipt finds nothing to move and is refused without a write, and any receipt past that
+bound is refused. A receipt writes no work and no `ack-timeout` schedule; the server's receipts own it.
 
 An RTT heartbeat is not one of these entries.
 [`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it
@@ -320,8 +345,9 @@ storage is preserved, and only ALM-owned databases are reset.
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical
 transport queues have been removed. The application-facing delivery handle
-(`packages/shared-web/browser/messages/`) observes these settlements directly;
-complete logical audience receipts remain roadmap work.
+(`packages/shared-web/browser/messages/`) observes these settlements directly. Logical
+audience receipts exist on WS room sends through the server's receipts; the frozen audience on RTC,
+and retry to the missing recipients through the tree, remain roadmap work (S2c-ii).
 [`al-storage-snapshot.test.ts`](../../../tests/shared/alm/al-storage-snapshot.test.ts)
 records what one standard supersession workload leaves in browser storage; existing
 paged due-work reads still do not establish that every backend query or cleanup path

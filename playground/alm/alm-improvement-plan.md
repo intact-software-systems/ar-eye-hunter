@@ -62,13 +62,13 @@ question.
 | D35 | S2b's acceptance follows the code: the storage reset is proven by the unit test; the `not-yet-in-sync` scenario proves NACK → sender retry → delivery after the snapshot advances, and NACK → expiry → absence; the named pins may read "unchanged, measured" (2026-09-24).                                                                                                                                                                 |
 | D36 | The `browser-ws-client` store scope becomes outbound-only; the rtc-rx inbound id is deleted; the outbound keys do not move (2026-09-24).                                                                                                                                                                                                                                                                                                    |
 | D37 | Live-only broadcast ACKs are counted in memory per instance and the completed or timed-out aggregate is written as one `WS_OUTBOX` row addressed to the origin session, so the existing cluster fanout routes it; no new pub/sub kind or server-side registry (2026-09-24).                                                                                                                                                                 |
-| D38 | The durable channel's receipt is the server's existing ALM pending-ACK row, keyed per D40; no AppInbox receipt command in S2c (2026-09-24).                                                                                                                                                                                                                                                                                                 |
+| D38 | The durable channel's receipt is the server's existing ALM pending-ACK row, keyed per D40; no AppInbox receipt command in S2c (2026-09-24). **Amended by S2c-i (R-S2c-i-3):** the WS server's per-instance in-memory aggregate answers through durable `WS_OUTBOX` receipt rows; the durable-row receipt and the outbox-planner audience move to S2c-ii (D24).                                                                              |
 | D39 | On admitting a room broadcast the WS server returns the frozen audience to the origin as the first control, from which the origin's pending row is created; the origin identity stays `senderId` (2026-09-24).                                                                                                                                                                                                                              |
-| D40 | ACK dedup keys become `(fromPeerId, logicalRecipientPeerId)`; durable receipt rows are keyed by `(groupRef, originPeerId, msgId)`; a relay re-originates one ACK per logical recipient (2026-09-24).                                                                                                                                                                                                                                        |
+| D40 | ACK dedup keys become `(fromPeerId, logicalRecipientPeerId)`; durable receipt rows are keyed by `(groupRef, originPeerId, msgId)`; a relay re-originates one ACK per logical recipient (2026-09-24). **Amended by S2c-i (R-S2c-i-2):** the receipt row key is `(namespace, originPeerId, msgId)`; the group is row content, not a key segment.                                                                                              |
 | D41 | `receiver` and `all-logical-recipients` are one frozen-audience algorithm under two request names; `group-leader` stays on `subtree` until A2; the three-peer scenario uses `all-logical-recipients` (2026-09-24).                                                                                                                                                                                                                          |
 | D42 | An unimplemented algorithm/target pair is a typed admission refusal `unsupported` naming the pair; the default capability set stops claiming what no provider supports; never a silent downgrade (2026-09-24).                                                                                                                                                                                                                              |
 | D43 | Under a frozen audience a session that leaves after admission stays in the expected set and the receipt reports it missing or partial; the live publisher no longer intersects a frozen broadcast with current membership (2026-09-24).                                                                                                                                                                                                     |
-| D44 | The ws `ordering-resync` variant asserts the receiver-side NACK/resync observation, not only one delivery (2026-09-24).                                                                                                                                                                                                                                                                                                                     |
+| D44 | The ws `ordering-resync` variant asserts the receiver-side NACK/resync observation, not only one delivery (2026-09-24). **Amended by S2c-i (R-S2c-i-4):** the verdict is asserted where it is made; over ws that is the relay's NACK, witnessed at the sender.                                                                                                                                                                              |
 | D45 | The third conformance role is `recipient-b`; the identity assessment accepts one sender and N recipients where a scenario declares it; a three-agent Playwright run exists only for scenarios declaring three roles; the generator splits by scenario family before any scenario lands; Hetzner gains a three-agent entry with pattern `one-sender-two-recipients` (2026-09-24).                                                            |
 | D46 | S2c's second schema-id bump and its server-side window are accepted under D3 as D33 is; no server-side migration (2026-09-24).                                                                                                                                                                                                                                                                                                              |
 | D47 | S2c lands as two PRs: S2c-i contract and server path (ACK v2, modes, keys, WS ingress, aggregation and the outbox row, client-assigned ordering), then S2c-ii audience, evidence, roles and the consumer proof (2026-09-24).                                                                                                                                                                                                                |
@@ -612,6 +612,60 @@ malformed until that page reloads, and the refusal is symmetric. See
 [`packages/shared/alm/inbound/README.md`](../../packages/shared/alm/inbound/README.md#store-identity-and-carrier-partition)
 "The deploy window" for the full statement.
 
+### Release 3, S2c-i: the receipt contract and the server path
+
+**Outcome:** an ACK names the message's origin and the logical recipient it speaks for; `receiver` is a
+logical ACK algorithm distinct from `hop`, and a pair no provider implements is refused `unsupported`
+rather than downgraded; a WS `receiver` room send ends `acknowledged` with its frozen audience confirmed
+by the WS server's receipt; WS sends carry client-assigned ordering.
+
+**Owners:** `al-contracts/al-control.ts` (`al.control.ack.v2`, `al.control.receipt.v1`,
+`AL_RECEIPT_DEADLINE_GRACE_MS`), [alm/outbound](../../packages/shared/alm/outbound/) (the logical
+receipt keys, the pending snapshot's `mode`, the origin's receipt admission),
+[alm/inbound](../../packages/shared/alm/inbound/) (relay re-origination per logical recipient),
+`services/ws-queue-box-server/` (ingress admission and the receipt aggregation) and the ws lifecycle
+and ordering-resync recipes in [rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
+`plans/alm-s2c-i-receipt-contract-and-server-path-implementation-plan.md`; design:
+[alm-s2c-design-addendum.md](alm-s2c-design-addendum.md) (D37–D47).
+
+**Changes:**
+
+1. ACK v2 with `originPeerId` and `logicalRecipientPeerId`, no dual decode (D21); the receipt control;
+   `AL_ADMISSION_SCHEMA_ID` moves to `rallar-alm-2026-09-s2c` (D46); the dead ACK helpers and codecs go.
+2. `receiver` is its own algorithm; an unsupported algorithm/carrier/target pair is a typed refusal
+   (D42): RTC refuses `receiver` until S2c-ii, and a WS unicast refuses it too. The recipes and the
+   server AI publication request the algorithm they mean (R-S2c-i-1).
+3. Receipt rows keyed `(namespace, originPeerId, msgId)` (R-S2c-i-2); the pending snapshot carries its
+   `mode`; an ACK for an already-counted peer is refused without a write; a relay that delivered locally
+   ACKs for itself.
+4. The WS server admits an origin-addressed receiver ACK as the aggregating relay hop, counts it in a
+   per-instance in-memory aggregate (D37), and answers the origin with `admitted`, then `complete` or
+   `timed-out`, each one durable `WS_OUTBOX` row that crosses the cluster (R-S2c-i-3). Terminal receipts
+   settle until the message deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`, and each phase keeps its final
+   snapshot as a row so redelivery is idempotent. The server's own `complete` row lives to that bound
+   however early it observed the complete.
+5. WS sends carry client-assigned `seq` and `orderingKey`; the ws `ordering-resync` variant asserts the
+   verdict where it is made, the WS server's NACK witnessed at the sender (R-S2c-i-4). The harness wait
+   gains `{resultCache.<commandId>.<path>}` references in `match.contains`.
+
+**Acceptance:** the ws lifecycle cell's submission specimen reads `acknowledged` with exactly one
+confirmed recipient, joined by the identity assessment to the receiver's own session; ws
+`ordering-resync` green; rtc/fallback cells unchanged but for the known
+`not-yet-in-sync-delivered-after-refresh` red; the medium-scale PostgreSQL gate green.
+
+**What execution found (2026-09-25):** the rulings R-S2c-i-1 to R-S2c-i-4 are recorded verbatim in the
+plan. In short: recipes name their ACK algorithm and `messages.send.qos` is the product's own option;
+the receipt row key drops the group (amends D40); the in-memory aggregate is this slice's only
+aggregator and the durable-row receipt waits for S2c-ii (sequences D38); the ws `ordering-resync`
+verdict is the relay's (amends D44). Carried to S2c-ii (its plan's "Carried from S2c-i"): multi-level
+relays lose deeper recipients; the overlay manager's receipt mode holds only while RTC refuses
+`receiver`; the outbox-planner audience and the durable-row receipt; whether the WS server should gate
+ordering on broadcasts it only relays (a maintainer question); an admitted `resync-required` NACK does
+nothing at the sender; the refused-then-retried rtc leg leaves no evidence row; the RTC breaker counts
+`refused/unsupported` as failure; the product's dead-RTC-peer reuse on reconnect. A WS server receipt
+states no `control-admission` diagnostic: it is visible as the inbound `admission-outcome` and the
+handle's acknowledgement settlement.
+
 ### Release 3, Slice 2: outcomes
 
 - **S2 One identity and receipted audiences.** S2a and S2b are concrete above; S2c carries the
@@ -837,3 +891,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-24: S2b executed on `claude/alm-s2b-one-identity` (PR #588); the three product/harness gaps
   (WS-carried multicast room routing, no plain-member snapshot-version advance, the one-retry
   `not-yet-in-sync` timing) recorded for the maintainer.
+- 2026-09-25: S2c-i executed on `claude/alm-s2c-i-receipt-contract`; rulings R-S2c-i-1 to R-S2c-i-4
+  recorded in its plan, D38, D40 and D44 annotated as amended, and the S2c-ii carries written into its
+  plan.

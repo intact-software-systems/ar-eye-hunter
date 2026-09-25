@@ -454,7 +454,7 @@ git commit -m "feat(alm): the WS server admits receiver acks, aggregates a broad
   `ordering?: { orderingKey; seq }` exactly as the multicast builder has at `:297-306` — optional because
   an unordered broadcast has domain meaning)
 - Modify: `packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts:116-118,199-205,720-759`
-  (`ordering-resync` runs over `ws` too; the receiver-side verdict, D44)
+  (`ordering-resync` runs over `ws` too; the verdict asserted where it is made, D44 as amended by R-S2c-i-4)
 - Test: `packages/tests/shared-web/messages/` (the sender's ws ordering test),
   `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` (`RallarWsSendInput` moves),
   `packages/tests/shared-test/alm-conformance-recipes.test.ts`
@@ -464,7 +464,8 @@ git commit -m "feat(alm): the WS server admits receiver acks, aggregates a broad
 - Produces `RallarWsSendInput.seq?: number` and `orderingKey?: string` (the same optional pair
   `RallarRtcSendInput` has at `:47-57`); `sendWs` threads them into `newALBroadcastMessage`.
 - Produces the `ordering-resync` ws variant: the receiver asserts, beside "exactly one delivery",
-  the receiver-side verdict — a `wait` on its own runtime diagnostic event
+  the receiver-side verdict (amended by R-S2c-i-4: over ws the verdict is the relay's NACK, witnessed
+  at the sender) — a `wait` on its own runtime diagnostic event
   (`rallar.browser.alm.inbound_diagnostics`, `payload.data.kind === 'admission-outcome'`, reason
   prefix `ordering`). Step 1 verifies the wait command's `match` contract admits a diagnostic event
   (`rallar-black-box-test-contracts.ts`, the `wait` command's `match.kind`); if it admits only
@@ -523,16 +524,46 @@ git commit -m "feat(alm): client-assigned seq and orderingKey on WS sends; order
 
 ## Rulings during execution
 
-- **R-S2c-i-1 (Task 2b added, 2026-09-25).** Task 2's refusal of `receiver` on the rtc carrier left
-  the rtc/fallback recipes red and the server AI publication refused on `world`/`all`; no request
-  name maps to hop. Controller ruling: the harness exposes the product's `qos.ack` override as
-  `messages.send.qos`, the recipes request the algorithm they mean, the publication decides its
-  algorithm by scope at the call site (no downgrade inside ALM, D42). Task 6 keeps only the ws
-  receipt pins.
+- **R-S2c-i-1 (Task 2b added, 2026-09-25).** Explicit ack algorithms in recipes;
+  `RallarMessageSendBase.qos` is a real product option; the WS receiver ACK stays origin-addressed and
+  the server admits it as an aggregating relay hop (refinement S2c-i-1).
+  - **Why:** Task 2's refusal of `receiver` on the rtc carrier left the rtc/fallback recipes red and the
+    server AI publication refused on `world`/`all`; no request name maps to hop. The harness exposes the
+    product's `qos.ack` override as `messages.send.qos`, the recipes request the algorithm they mean, the
+    publication decides its algorithm by scope at the call site (no downgrade inside ALM, D42).
   - **Changed in the plan:** Task 2b inserted after Task 2; Task 6 Step 3's rtc/fallback recipe move is
-    done here.
+    done there (commit `07a5cd17b`). Task 6 keeps only the ws receipt pins.
+- **R-S2c-i-2 (Task 3, amends D40).** The pending-ACK / receipt row key is
+  `(namespace, originPeerId, msgId)`; the group is row content, not a key segment — msgIds are
+  origin-unique and no group exists at every key site.
+- **R-S2c-i-3 (Task 4, sequences D38).** The WS server's in-memory aggregation map is the only ACK
+  aggregator this slice (per-instance, D37); receipts are durable `WS_OUTBOX` rows crossing the cluster;
+  the outbox-planner audience change and the D38 durable-row receipt move to S2c-ii where the frozen
+  audience rides the targets (D24). `receiver` on a WS unicast is refused `unsupported` (D42).
+- **R-S2c-i-4 (Task 5, amends D44).** The ws `ordering-resync` variant asserts the verdict where it is
+  made — the relay's NACK witnessed at the sender; "receiver-side" becomes "verdict-side".
+  - **Changed in the plan:** Task 5's "receiver-side verdict, D44" reads "verdict-side" under this
+    ruling: over rtc the receiver makes the verdict, over ws the WS server does and the sender witnesses
+    its NACK. A receiver that sees a gap reports `outcome: 'not-handled', reason: 'resync-required'`,
+    not a reason prefixed `ordering`.
+- **Task 3.** An ACK for an already-counted peer is a typed no-write rejection;
+  `ALOutboundAckTrackingPlan.mode` renamed `expectedPeerIdsUpdate`, required `mode` added; M7 (a relay
+  that delivered locally ACKs itself) implemented; a required `localRecipient` on the inbound pending
+  row rides the s2c schema id.
+- **Task 4.** Terminal receipts accepted until deadline + grace with the final snapshot kept as a row
+  for idempotent redelivery; the server keeps its own ACK when it is the logical recipient.
+- **Task 6.** The server's `complete` receipt row expires at the aggregate's message deadline plus
+  `AL_RECEIPT_DEADLINE_GRACE_MS`, not 30 s after the server observed the complete (carried Minor m-d
+  from Task 4's review). The ws lifecycle cell's submission specimen reads `transport-accepted` or
+  `acknowledged` after the send, then its post-scenario receipts confirm exactly one logical
+  recipient; the identity assessment joins that recipient to the receiver's own session id. Because
+  the handle is `acknowledged` before the cancellation, `assert-state-after-cancel-1` keeps its
+  assertion and reads `^acknowledged$` on every carrier.
 
-(Empty at planning time; the executor records R-S2c-i-n here.)
+### Carried to S2c-ii
+
+Recorded in `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md` under
+"Carried from S2c-i".
 
 ## Self-review
 

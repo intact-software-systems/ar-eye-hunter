@@ -207,6 +207,13 @@ every session the page opens. The event's `data` is the event itself:
   as the acknowledgement settlement on the send's handle. It is one event per
   control frame the page receives, the same cadence as `admission-outcome`,
   and rides the page's batched diagnostics like every other kind
+- A WS server receipt (`al.control.receipt.v1`, S2c-i) is not an ACK, NACK or
+  repair control: the origin's receipt admission decides it, not control
+  admission, so it states no `control-admission` event. Its arrival is the
+  inbound topic's `admission-outcome` with that `typeId`, carrier `ws` and
+  `not-handled`/`control`; its commit is visible only as the acknowledgement
+  settlement on the send's handle (`messages.receipts` reads the confirmed
+  recipients), and a refused receipt leaves no diagnostic
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
