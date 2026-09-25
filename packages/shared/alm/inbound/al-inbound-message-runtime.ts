@@ -45,7 +45,11 @@ import {
     type ALInboundClaimedControlSend,
     type ALInboundWorkSelector
 } from './read-al-inbound-work-selection.ts';
-import { toALInboundReceiver, validateALInboundMessage } from './validate-al-inbound-message.ts';
+import {
+    toALInboundReceiver,
+    validateALInboundMessage,
+    type ALInboundReceiver
+} from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -107,7 +111,7 @@ export namespace ALInboundMessageRuntime {
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
-        readonly relaysForPeerId?: (peerId: string) => boolean;
+        readonly validateRelayedAck?: ALInboundReceiver['validateRelayedAck'];
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
@@ -326,7 +330,7 @@ export class ALInboundMessageRuntime {
         const validated = validateALInboundMessage(
             msg,
             source,
-            toALInboundReceiver(this.dependencies.effectPreparation.selfPeerId, this.dependencies.relaysForPeerId)
+            toALInboundReceiver(this.dependencies.effectPreparation.selfPeerId, this.dependencies.validateRelayedAck)
         );
         if (validated.left) {
             return Either.ofLeft(validated.left);

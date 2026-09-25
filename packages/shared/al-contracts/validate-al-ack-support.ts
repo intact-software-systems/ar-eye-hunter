@@ -26,12 +26,13 @@ const AL_RECEIVER_DECLARING_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 's
 
 /**
  * One issue naming an unsupported algorithm/carrier/target pair (D42). `receiver` needs a logical audience, which
- * only a unicast addressee or a room has; a world, all or principal broadcast has none.
+ * only a unicast addressee or a room has; a world, all or principal broadcast has none. A WS unicast has an
+ * addressee but no relay that carries its receiver ACK back to the origin, so it is refused too.
  */
 export function validateALAckSupport(input: ALAckSupportInput): readonly ALQosIssue[] {
     const { algo, carrier, targets, capabilities } = input;
     const supported = capabilities.supportedAck.includes(algo) &&
-        (algo !== 'receiver' || hasLogicalReceiverAudience(targets));
+        (algo !== 'receiver' || hasLogicalReceiverAudience(targets, carrier));
     return supported
         ? []
         : [{ aspect: 'ack', detail: `ack ${algo} is unsupported for ${carrier} ${toTargetsName(targets)} targets` }];
@@ -50,7 +51,10 @@ export function toALNormalizableAckAlgos(
     return (requested ?? fallback).algo === 'receiver' ? [...supported, 'receiver'] : supported;
 }
 
-function hasLogicalReceiverAudience(targets: ALTargets | undefined): boolean {
+function hasLogicalReceiverAudience(targets: ALTargets | undefined, carrier: ALDeliveryCarrier): boolean {
+    if (targets?.mode === 'unicast') {
+        return carrier !== 'ws';
+    }
     return targets !== undefined && (targets.mode !== 'broadcast' || targets.scope === 'room');
 }
 

@@ -5,19 +5,29 @@ import {
     type ALAckPayload,
     type ALReceiptPayload
 } from '../../al-contracts/al-control.ts';
-import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import {
+    decodePersistedALMessageValue,
+    type ALMessageRejection
+} from '../../al-contracts/al-message-persistence-validation.ts';
 import {
     normalizeALQosPolicy,
     resolveALMessageExpireAtMs,
+    resolveALQosNormalizationInput,
     type ALMessageHandlingPlan,
-    type ALQosNormalizationInput
+    type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundEnqueueResult } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundDispatchPlan,
+    ALOutboundEnqueueResult,
+    ALOutboundMessageRuntime
+} from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
+import { AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS } from '../../alm/outbound/control/compute-al-outbound-receipt-admission.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
-import type { WsServerInboundAuthorization } from './ws-queue-box-server-contracts.ts';
+import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
+import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
 export namespace WsQueueBoxServerReceiptAggregation {
     /** What the server froze when it admitted a `receiver` room message: the audience its receipt answers for. */
@@ -29,18 +39,21 @@ export namespace WsQueueBoxServerReceiptAggregation {
         readonly deadlineAtMs: number;
     }
 
-    export interface Clock {
-        nowMs(): number;
-    }
-
     export interface Dependencies {
         readonly serverPeerId: string;
-        readonly clock: Clock;
+        readonly clock: ALOutboundMessageRuntime.Clock;
         readonly newControlId: () => string;
+        readonly qosProvider: ALQosInputProvider | undefined;
         /** The engine the service's queues run on; the deadline sweep rides it as one more task. */
         readonly queueEngine: InboxOutboxEngine;
-        /** One `WS_OUTBOX` row per receipt, through the service's own outbox enqueue. */
-        readonly enqueueOutbox: (message: ALMessage) => Promise<ALOutboundEnqueueResult>;
+        /**
+         * The service's outbound owner admitting one receipt as a durable `WS_OUTBOX` row, so its
+         * dequeue reaches the origin through the cluster publisher wherever the origin is connected.
+         */
+        readonly enqueueOutbox: (
+            message: ALMessage,
+            plan: ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage>
+        ) => Promise<ALOutboundEnqueueResult>;
         /** The server's own outbound owner, which answers every control addressed to the server itself. */
         readonly acceptServerControl: (message: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
     }
@@ -48,9 +61,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
     export interface AdmittedMessage {
         readonly message: ALMessage;
         readonly originPeerId: string;
-        readonly authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>;
-        /** The inbound normalization the server plans the message with. */
-        readonly qos: ALQosNormalizationInput;
+        readonly roomAudience: WsServerRoomAudience | undefined;
         readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
     }
 
@@ -65,13 +76,15 @@ interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggreg
 
 /**
  * The receipts of the `receiver` room messages this instance admitted, counted in memory (D37) and
- * answered to the origin as one outbox row per phase. An aggregate leaves the map when its audience is
- * confirmed or its deadline passes, so the map holds only messages still inside their deadline.
+ * answered to the origin as one durable outbox row per phase. It is also the server's control router:
+ * a receiver ACK relayed for an origin is counted here, every other control goes to the server's own
+ * outbound owner. An aggregate leaves the map when its audience is confirmed or its deadline passes.
  */
 export class WsQueueBoxServerReceiptAggregation {
     readonly #aggregates = new Map<string, WsQueueBoxServerReceiptAggregate>();
     readonly #dependencies: WsQueueBoxServerReceiptAggregation.Dependencies;
     readonly #sweepTaskId: string;
+    #nextDeadlineAtMs: number | undefined;
 
     constructor(dependencies: WsQueueBoxServerReceiptAggregation.Dependencies) {
         this.#dependencies = dependencies;
@@ -89,16 +102,20 @@ export class WsQueueBoxServerReceiptAggregation {
         this.#dependencies.queueEngine.excludeTask(this.#sweepTaskId);
     }
 
-    aggregatesForOrigin(peerId: string): boolean {
-        return [...this.#aggregates.values()].some((aggregate) => aggregate.originPeerId === peerId);
+    /** The typed reason a relayed receiver ACK may not count, answered at ingress; undefined when it may. */
+    validateRelayedAck(ack: ALAckPayload): ALMessageRejection | undefined {
+        const aggregate = this.#aggregates.get(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId));
+        const issues = validateWsQueueBoxServerReceiptAck(aggregate, ack, this.#dependencies.clock.nowMs());
+        return issues.length === 0 ? undefined : { code: 'unauthorized', message: issues.join('; ') };
     }
 
     /** The `admitted` receipt the origin receives at once. An empty audience is complete as it is admitted. */
     recordAdmission(admission: WsQueueBoxServerReceiptAggregation.Admission): ALReceiptPayload {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
         const aggregate = this.#aggregates.get(key) ?? { ...admission, confirmedRecipientPeerIds: [] };
-        if (aggregate.expectedRecipientPeerIds.length > 0) {
+        if (aggregate.expectedRecipientPeerIds.length > 0 && !this.#aggregates.has(key)) {
             this.#aggregates.set(key, aggregate);
+            this.#nextDeadlineAtMs = Math.min(this.#nextDeadlineAtMs ?? aggregate.deadlineAtMs, aggregate.deadlineAtMs);
         }
         return toReceiptPayload(aggregate, 'admitted', this.#dependencies.clock.nowMs());
     }
@@ -120,7 +137,7 @@ export class WsQueueBoxServerReceiptAggregation {
             this.#aggregates.set(key, next);
             return Either.ofRight({ receipt: undefined });
         }
-        this.#aggregates.delete(key);
+        this.deleteAggregate(key);
         return Either.ofRight({ receipt: toReceiptPayload(next, 'complete', nowMs) });
     }
 
@@ -129,7 +146,7 @@ export class WsQueueBoxServerReceiptAggregation {
         const receipts: ALReceiptPayload[] = [];
         for (const [key, aggregate] of this.#aggregates) {
             if (aggregate.deadlineAtMs <= nowMs) {
-                this.#aggregates.delete(key);
+                this.deleteAggregate(key);
                 receipts.push(toReceiptPayload(aggregate, 'timed-out', nowMs));
             }
         }
@@ -139,17 +156,19 @@ export class WsQueueBoxServerReceiptAggregation {
     /** A message the server admitted, or retained for admission, starts its receipt here. */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const kind = admitted.acceptance?.kind;
-        const admission = kind === 'admitted' || kind === 'pending-admission'
-            ? toWsQueueBoxServerReceiptAdmission(admitted, this.#dependencies.clock.nowMs())
-            : undefined;
+        if (admitted.roomAudience === undefined || (kind !== 'admitted' && kind !== 'pending-admission')) {
+            return;
+        }
+        const admission = this.toAdmission(admitted, admitted.roomAudience);
         if (admission !== undefined) {
-            await this.writeReceipt(this.recordAdmission(admission));
+            await this.writeReceipt(this.recordAdmission(admission), admission.deadlineAtMs);
         }
     }
 
     /**
      * A receiver ACK the server admitted as its origin's relay hop is counted here and never reaches
-     * the server's own outbound owner, which answers only the controls addressed to the server.
+     * the server's own outbound owner, which answers only the controls addressed to the server. Ingress
+     * already refused an ACK that could not count; one that loses a race to the sweep counts nothing.
      */
     async acceptControlMessage(message: ALMessage): Promise<void> {
         const control = decodeALControlMessage(message).right;
@@ -157,70 +176,94 @@ export class WsQueueBoxServerReceiptAggregation {
             await this.#dependencies.acceptServerControl(message);
             return;
         }
-        const receipt = this.recordAck(control.payload);
-        if (receipt.left) {
-            console.warn(`Refused WS receiver acknowledgement ${message.id.msgId}: ${receipt.left.message}`);
+        const receipt = this.recordAck(control.payload).right?.receipt;
+        if (receipt !== undefined) {
+            await this.writeReceipt(receipt, this.#dependencies.clock.nowMs());
         }
-        if (receipt.right?.receipt !== undefined) {
-            await this.writeReceipt(receipt.right.receipt);
+    }
+
+    /** A `receiver` room message is aggregated; a message without a deadline answers within its ACK timeout. */
+    private toAdmission(
+        admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
+        roomAudience: WsServerRoomAudience
+    ): WsQueueBoxServerReceiptAggregation.Admission | undefined {
+        const { message, originPeerId } = admitted;
+        const { serverPeerId, qosProvider, clock } = this.#dependencies;
+        const qos = resolveALQosNormalizationInput(
+            message,
+            { selfPeerId: serverPeerId, fromPeerId: originPeerId, direction: 'inbound' },
+            qosProvider
+        );
+        const effective = normalizeALQosPolicy(message, qos).effective;
+        return effective.ack.algo !== 'receiver' ? undefined : {
+            msgId: message.id.msgId,
+            originPeerId,
+            expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
+            snapshotVersion: roomAudience.snapshotVersion,
+            deadlineAtMs: resolveALMessageExpireAtMs(message, effective) ?? clock.nowMs() + effective.ack.opts.timeoutMs
+        };
+    }
+
+    private deleteAggregate(key: string): void {
+        this.#aggregates.delete(key);
+        let nextDeadlineAtMs: number | undefined;
+        for (const aggregate of this.#aggregates.values()) {
+            nextDeadlineAtMs = Math.min(nextDeadlineAtMs ?? aggregate.deadlineAtMs, aggregate.deadlineAtMs);
         }
+        this.#nextDeadlineAtMs = nextDeadlineAtMs;
     }
 
     private hasDueAggregate(): boolean {
-        const deadlines = [...this.#aggregates.values()].map((aggregate) => aggregate.deadlineAtMs);
-        const nextDeadlineAtMs = deadlines.length === 0 ? undefined : Math.min(...deadlines);
-        this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, nextDeadlineAtMs);
-        return nextDeadlineAtMs !== undefined && nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
+        this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, this.#nextDeadlineAtMs);
+        return this.#nextDeadlineAtMs !== undefined && this.#nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
     }
 
     private async writeTimedOutReceipts(): Promise<void> {
-        for (const receipt of this.sweep(this.#dependencies.clock.nowMs())) {
-            await this.writeReceipt(receipt);
+        const nowMs = this.#dependencies.clock.nowMs();
+        for (const receipt of this.sweep(nowMs)) {
+            await this.writeReceipt(receipt, nowMs);
         }
     }
 
-    private async writeReceipt(receipt: ALReceiptPayload): Promise<void> {
+    /** A receipt row outlives its message by the grace the origin keeps its receipt row for. */
+    private async writeReceipt(receipt: ALReceiptPayload, deadlineAtMs: number): Promise<void> {
         const id = {
             v: 2 as const,
             msgId: this.#dependencies.newControlId(),
             senderId: this.#dependencies.serverPeerId,
             ts: receipt.observedAtEpochMs
         };
-        await this.#dependencies.enqueueOutbox(newALReceiptControlMessage(id, receipt));
+        const expiresAtMs = Math.max(deadlineAtMs, receipt.observedAtEpochMs) + AL_OUTBOUND_TERMINAL_RECEIPT_GRACE_MS;
+        const message = decodePersistedALMessageValue({
+            ...newALReceiptControlMessage(id, receipt),
+            constraints: { expiresAtMs }
+        });
+        await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
     }
 }
 
 /**
- * Under `receiver` the server is no logical recipient and never acknowledges on its own: the receipt
- * speaks for the audience, and a relay row would re-originate the receivers' ACKs as the origin.
+ * The server withholds its own ACK only for a `receiver` room message it aggregates: there the receipt
+ * speaks for the audience, and a relay row would re-originate the receivers' ACKs as the origin. A
+ * `receiver` message the server receives for itself keeps its ACK.
  */
-export function toWsQueueBoxServerInboundPlan(plan: ALMessageHandlingPlan): ALMessageHandlingPlan {
-    return plan.ack.algo === 'receiver'
-        ? { ...plan, ack: { enabled: false, algo: plan.ack.algo, deferred: false } }
-        : plan;
+export function toWsQueueBoxServerInboundPlan(
+    plan: ALMessageHandlingPlan,
+    source: ALInboundMessageRuntime.Source
+): ALMessageHandlingPlan {
+    const aggregated = plan.ack.algo === 'receiver' && source.kind === 'ws-client' &&
+        source.groupRecipientPeerIds !== undefined;
+    return aggregated ? { ...plan, ack: { enabled: false, algo: plan.ack.algo, deferred: false } } : plan;
 }
 
 /**
- * A `receiver` message the router authorized with a room audience is aggregated. The frozen audience
- * is that authorized audience less the origin and the target's own exclusions; a message without a
- * deadline answers within its ACK timeout.
+ * A receipt is a durable outbox row: its immediate phase resolves nobody, and its dequeue reaches the
+ * origin's socket on this instance or, through the cluster publisher, on another.
  */
-function toWsQueueBoxServerReceiptAdmission(
-    admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
-    nowMs: number
-): WsQueueBoxServerReceiptAggregation.Admission | undefined {
-    const { groupRecipientPeerIds, snapshotVersion } = admitted.authorization;
-    const effective = normalizeALQosPolicy(admitted.message, admitted.qos).effective;
-    if (groupRecipientPeerIds === undefined || snapshotVersion === undefined || effective.ack.algo !== 'receiver') {
-        return undefined;
-    }
-    return {
-        msgId: admitted.message.id.msgId,
-        originPeerId: admitted.originPeerId,
-        expectedRecipientPeerIds: toFrozenAudience(admitted.message, admitted.originPeerId, groupRecipientPeerIds),
-        snapshotVersion,
-        deadlineAtMs: resolveALMessageExpireAtMs(admitted.message, effective) ?? nowMs + effective.ack.opts.timeoutMs
-    };
+function toWsQueueBoxServerReceiptDispatchPlan(
+    message: ALMessage
+): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
+    return { msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] };
 }
 
 /** Every reason this ACK may not count; an absent aggregate makes the rest moot. */
@@ -233,6 +276,9 @@ function validateWsQueueBoxServerReceiptAck(
         return ['AL acknowledgement names no receipt this server aggregates'];
     }
     const issues: string[] = [];
+    if (ack.toPeerId !== ack.originPeerId) {
+        issues.push('AL acknowledgement is not addressed to the origin it names');
+    }
     if (ack.fromPeerId !== ack.logicalRecipientPeerId) {
         issues.push('AL acknowledgement speaks for another recipient than its sender');
     }

@@ -26,6 +26,7 @@ interface ReceiptTrackingFixture {
 
 describe('WS client receipt tracking for a receiver room send', () => {
     afterEach(() => {
+        vi.useRealTimers();
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         TestWebSocket.instances.length = 0;
@@ -49,7 +50,8 @@ describe('WS client receipt tracking for a receiver room send', () => {
 
         await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
 
-        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b', 'c'] });
+        // The complete aggregate ends the row: the server's receipts own its schedule, and nothing is left to wait for.
+        expect(await readReceipt(fixture)).toBeUndefined();
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             msgId: 'room-message-1',
             carrier: 'ws',
@@ -60,12 +62,17 @@ describe('WS client receipt tracking for a receiver room send', () => {
         });
     });
 
-    it('settles a timed-out aggregate incomplete, naming the missing recipient, and ends the receipt', async () => {
+    it('settles a timed-out aggregate at the message deadline, naming the missing recipient, and ends the receipt', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000_000);
         const fixture = await createReceiptTrackingFixture();
-        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        const message = roomMessage();
+        await fixture.service.enqueueOutboxIfAbsent(message);
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        // The server sweeps the aggregate once the message deadline has passed; its receipt arrives after it.
+        vi.setSystemTime(message.constraints!.expiresAtMs! + 50);
 
-        await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']));
+        expect((await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']))).left).toBeUndefined();
 
         expect(await readReceipt(fixture)).toBeUndefined();
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
@@ -88,6 +95,64 @@ describe('WS client receipt tracking for a receiver room send', () => {
         expect(acknowledgements()).toHaveLength(1);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: 'unsent-message' }))
             .toBeUndefined();
+    });
+});
+
+describe('WS client receipt admission edges', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it('acknowledges an empty admitted audience at once and writes no receipt row', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', [], 'room-message-1', []));
+
+        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
+            expect.objectContaining({ confirmedHopPeerIds: [], unconfirmedHopPeerIds: [], complete: true })
+        ]);
+    });
+
+    it('settles a complete aggregate that overtook its admitted receipt, and the late admitted receipt moves nothing', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        const acknowledgements = () => fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+
+        expect(acknowledgements()).toEqual([
+            expect.objectContaining({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true })
+        ]);
+        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
+    });
+
+    it('refuses a terminal aggregate about a message this origin never sent', async () => {
+        const fixture = await createReceiptTrackingFixture();
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']));
+
+        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([]);
+    });
+
+    it('reads afresh after a version conflict and refuses once the conflicts outlast its attempts', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+        const commit = vi.spyOn(fixture.outboundStores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+
+        expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'] });
+        commit.mockResolvedValue('conflict');
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c']));
+
+        expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: [] });
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement' && settlement.complete)).toEqual([]);
     });
 });
 
@@ -129,14 +194,15 @@ function roomMessage(): ALMessage {
 function receiptMessage(
     phase: ALReceiptPayload['phase'],
     confirmedRecipientPeerIds: readonly string[],
-    msgId = 'room-message-1'
+    msgId = 'room-message-1',
+    expectedRecipientPeerIds: readonly string[] = ['b', 'c']
 ): ALMessage {
     return newALReceiptControlMessage(
         { v: 2, msgId: `receipt-${phase}`, senderId: 'server', ts: Date.now() },
         {
             msgId,
             originPeerId: 'self',
-            expectedRecipientPeerIds: ['b', 'c'],
+            expectedRecipientPeerIds,
             confirmedRecipientPeerIds,
             snapshotVersion: 7,
             phase,

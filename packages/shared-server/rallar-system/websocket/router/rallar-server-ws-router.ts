@@ -192,8 +192,10 @@ export class RallarServerWsRouter {
         const audience = admitted.right!.audience;
         return audience === undefined ? { authorized: true } : {
             authorized: true,
-            groupRecipientPeerIds: audience.sessions.map((session) => session.sessionId),
-            snapshotVersion: audience.snapshotVersion
+            roomAudience: {
+                recipientPeerIds: audience.sessions.map((session) => session.sessionId),
+                snapshotVersion: audience.snapshotVersion
+            }
         };
     }
 

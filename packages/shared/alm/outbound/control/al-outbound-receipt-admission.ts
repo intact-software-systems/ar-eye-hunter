@@ -4,7 +4,7 @@ import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../a
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
-    toALOutboundReceiptMutation,
+    toALOutboundReceiptMutations,
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
@@ -45,21 +45,19 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         });
         const candidate = computeALOutboundReceiptAdmission({ ...surface, receipt, nowMs: clock.nowMs() });
         const issues = validateALOutboundReceiptAdmission(candidate);
-        if (issues.length > 0 || candidate.write === undefined || surface.stored === undefined) {
+        if (issues.length > 0 || candidate.write === undefined) {
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
         const status = await admissionStore.commitBundle({
             senderId: receipt.originPeerId,
             expectedVersion: surface.clientRecord?.version,
-            mutations: [toALOutboundReceiptMutation(candidate.write, receipt, surface.stored.reference.expiresAtMs)],
+            mutations: toALOutboundReceiptMutations(candidate.write, receipt),
             durableEffects: []
         });
         if (status === 'committed') {
             this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.write, receipt));
             return { kind: 'committed' };
         }
-        return status === 'conflict'
-            ? 'conflict'
-            : { kind: 'rejected', reason: 'AL receipt arrived after its message deadline' };
+        return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };
     }
 }

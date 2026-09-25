@@ -5,7 +5,10 @@ import { newALAckControlMessage, newALNackControlMessage, newALReceiptControlMes
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundReceiver, validateALInboundMessage } from '@shared/alm/inbound/validate-al-inbound-message.ts';
 
-const SERVER = toALInboundReceiver('server', (peerId) => peerId === 'origin');
+const SERVER = toALInboundReceiver(
+    'server',
+    (ack) => ack.originPeerId === 'origin' ? undefined : { code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' }
+);
 
 describe('inbound control addressing', () => {
     it('admits a receiver ACK addressed to an origin the WS server relays for', () => {
@@ -14,10 +17,10 @@ describe('inbound control addressing', () => {
         expect(validated.left).toBeUndefined();
     });
 
-    it('refuses a receiver ACK for an origin the server does not relay for', () => {
+    it('answers a receiver ACK the server cannot count with the relay rejection', () => {
         const validated = validateALInboundMessage(receiverAck('stranger'), fromClient('recipient'), SERVER);
 
-        expect(validated.left).toEqual({ code: 'unauthorized', message: 'Control is addressed to another local receiver' });
+        expect(validated.left).toEqual({ code: 'unauthorized', message: 'AL acknowledgement names no receipt this server aggregates' });
     });
 
     it('keeps next-hop addressing for every other control and carrier', () => {

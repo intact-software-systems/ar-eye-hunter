@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALControlMessage,
     toALControlRecipientPeerId,
+    type ALAckPayload,
     type ALParsedControlMessage
 } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
@@ -12,17 +13,22 @@ import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 export interface ALInboundReceiver {
     readonly selfPeerId: string;
     /**
-     * An origin this runtime relays for: a receiver's ACK addressed to it is admitted here as its
-     * aggregating relay hop. The WS server answers for the origins whose broadcasts it aggregates.
+     * Why a receiver's ACK addressed to its origin may not be admitted here as that origin's aggregating
+     * relay hop; undefined admits it. The WS server answers for the broadcasts it aggregates.
      */
-    readonly relaysForPeerId: (peerId: string) => boolean;
+    readonly validateRelayedAck: (ack: ALAckPayload) => ALMessageRejection | undefined;
 }
+
+const NOT_THIS_RECEIVER: ALMessageRejection = {
+    code: 'unauthorized',
+    message: 'Control is addressed to another local receiver'
+};
 
 export function toALInboundReceiver(
     selfPeerId: string,
-    relaysForPeerId: ((peerId: string) => boolean) | undefined
+    validateRelayedAck: ALInboundReceiver['validateRelayedAck'] | undefined
 ): ALInboundReceiver {
-    return { selfPeerId, relaysForPeerId: relaysForPeerId ?? (() => false) };
+    return { selfPeerId, validateRelayedAck: validateRelayedAck ?? (() => NOT_THIS_RECEIVER) };
 }
 
 export function validateALInboundMessage(
@@ -71,11 +77,10 @@ function validateALInboundControlAddress(
     if (control.type === 'receipt' && source.kind !== 'trusted-server') {
         return { code: 'unauthorized', message: 'AL receipt control comes only from the trusted server' };
     }
-    const recipientPeerId = toALControlRecipientPeerId(control);
-    if (recipientPeerId === receiver.selfPeerId) {
+    if (toALControlRecipientPeerId(control) === receiver.selfPeerId) {
         return undefined;
     }
-    return control.type === 'ack' && source.kind === 'ws-client' && receiver.relaysForPeerId(recipientPeerId)
-        ? undefined
-        : { code: 'unauthorized', message: 'Control is addressed to another local receiver' };
+    return control.type === 'ack' && source.kind === 'ws-client'
+        ? receiver.validateRelayedAck(control.payload)
+        : NOT_THIS_RECEIVER;
 }

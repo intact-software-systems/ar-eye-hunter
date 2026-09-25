@@ -89,9 +89,8 @@ export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => v
 export type WsServerInboundAuthorization =
     | Readonly<{
         authorized: true;
-        groupRecipientPeerIds?: readonly string[];
-        /** The room snapshot version the audience was read at; absent when no snapshot resolved one. */
-        snapshotVersion?: number;
+        /** Absent when the authorizer resolved no room audience: the target resolver owns delivery. */
+        roomAudience?: WsServerRoomAudience;
     }>
     | Readonly<{
         authorized: false;
@@ -101,6 +100,12 @@ export type WsServerInboundAuthorization =
         sendNack: boolean;
         serverSnapshotVersion?: number;
     }>;
+
+/** The authorized room sessions, read at one snapshot version. */
+export interface WsServerRoomAudience {
+    readonly recipientPeerIds: readonly string[];
+    readonly snapshotVersion: number;
+}
 
 export interface WsServerInboundAuthorizer {
     authorize(message: ALMessage): Promise<WsServerInboundAuthorization>;

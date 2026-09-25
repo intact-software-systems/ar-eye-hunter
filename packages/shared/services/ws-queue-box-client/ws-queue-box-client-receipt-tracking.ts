@@ -8,9 +8,10 @@ import type {
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
 
 /**
- * The receipt a WS send tracks. A unicast expects its addressee; a `receiver` room send expects
- * nobody yet, because the server's `admitted` receipt names the frozen audience the row is created
- * from. Any other room send tracks no receipt on WS.
+ * The receipt a WS send tracks. A unicast expects its addressee as its hop (`receiver` on a WS
+ * unicast is refused at admission); a `receiver` room send expects nobody yet, because the server's
+ * `admitted` receipt names the frozen audience the row is created from. Any other room send tracks
+ * no receipt on WS.
  */
 export function toWsQueueBoxClientAckTrackingPlan(
     effective: ALQosEffectivePolicy,

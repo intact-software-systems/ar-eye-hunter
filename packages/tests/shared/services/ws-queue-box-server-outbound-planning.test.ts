@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -37,15 +37,23 @@ describe('WS server outbound planning', () => {
             queueEngine: new InboxOutboxEngine(),
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: context.id }],
-                resolveGroupRecipients: () => [],
+                resolveGroupRecipients: () => [{ peerId: 'peer', connectionId: context.id }],
                 resolveBroadcastRecipients: () => [],
                 resolvePeerIdForConnection: () => 'peer'
             }
         });
         onTestFinished(() => service.dispose());
-        const message = newALUnicastMessage(
+        const message = newALMulticastMessage(
             'server',
-            { topicId: 'chat', contextId: 'direct', resourceId: 'receipt-mode' },
+            { topicId: 'room.chat', contextId: 'room', resourceId: 'receipt-mode' },
+            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, qos: { ack: { algo: 'receiver' }, durability: { algo: 'volatile' } } }
+        );
+        const unicast = newALUnicastMessage(
+            'server',
+            { topicId: 'chat', contextId: 'direct', resourceId: 'receipt-unicast' },
             'peer',
             'chat.message.v1',
             {},
@@ -53,6 +61,11 @@ describe('WS server outbound planning', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
+        expect((await service.enqueueOutboxIfAbsent(unicast)).verdict).toMatchObject({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'ack receiver is unsupported for ws unicast targets'
+        });
 
         expect(await store.readReceiptState({ originPeerId: 'server', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['peer'], ackedPeerIds: [] });

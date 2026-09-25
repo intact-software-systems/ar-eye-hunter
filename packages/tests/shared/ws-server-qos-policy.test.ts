@@ -373,6 +373,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 reliability: 'at-least-once' as const,
                 ack: 'receiver' as const
             },
+            // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
+            qos: { ack: { algo: 'hop' as const } },
             constraints: {
                 expiresAtMs
             }

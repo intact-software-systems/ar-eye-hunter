@@ -29,7 +29,7 @@ export namespace ALInboundMessageAdmission {
             | 'forwardMessage'
             | 'canForwardMessage'
             | 'readPendingAdmissionAuthority'
-            | 'relaysForPeerId'
+            | 'validateRelayedAck'
         > {
         readonly workPort: ALWorkQueuePort;
     }
@@ -186,7 +186,7 @@ export class ALInboundMessageAdmission {
         const validation = validateALInboundMessage(
             pending.msg,
             authority.source,
-            toALInboundReceiver(this.dependencies.effectPreparation.selfPeerId, this.dependencies.relaysForPeerId)
+            toALInboundReceiver(this.dependencies.effectPreparation.selfPeerId, this.dependencies.validateRelayedAck)
         );
         if (validation.left) {
             return { outcome: { kind: 'non-retryable', reason: validation.left.message }, wroteWork: false };

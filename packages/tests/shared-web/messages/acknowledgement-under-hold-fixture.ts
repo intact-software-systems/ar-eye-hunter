@@ -313,7 +313,9 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
         ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
             ttlMs
         }),
-        delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
+        qos: { ack: { algo: 'hop' } }
     };
 }
 

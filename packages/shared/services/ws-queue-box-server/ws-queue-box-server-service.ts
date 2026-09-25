@@ -139,6 +139,7 @@ export class WsQueueBoxServerService {
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
     private readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     private readonly outboundPlanning: WsQueueBoxServerOutboundPlanning;
+    /** Counts relayed receiver ACKs and routes every other control to the server's own outbound owner. */
     private readonly receipts: WsQueueBoxServerReceiptAggregation;
     private readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     private readonly forwardsRoomScopedMessages: boolean;
@@ -184,8 +185,9 @@ export class WsQueueBoxServerService {
             serverPeerId: dependencies.name,
             clock: this.clock,
             newControlId: this.newControlId,
+            qosProvider: dependencies.qosProvider,
             queueEngine: this.inboundQueueEngine,
-            enqueueOutbox: (message) => this.enqueueOutboxIfAbsent(message),
+            enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message)
         });
         this.inboundRuntime = this.createInboundRuntime(dependencies);
@@ -252,7 +254,7 @@ export class WsQueueBoxServerService {
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
-            relaysForPeerId: (peerId) => this.receipts.aggregatesForOrigin(peerId),
+            validateRelayedAck: (ack) => this.receipts.validateRelayedAck(ack),
             forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
@@ -412,7 +414,7 @@ export class WsQueueBoxServerService {
         const protocol = validateALInboundMessage(
             message,
             { kind: 'ws-client', peerId: fromPeerId },
-            toALInboundReceiver(this.name, (peerId) => this.receipts.aggregatesForOrigin(peerId))
+            toALInboundReceiver(this.name, (ack) => this.receipts.validateRelayedAck(ack))
         );
         if (protocol.left) {
             return Either.ofLeft(protocol.left);
@@ -445,19 +447,14 @@ export class WsQueueBoxServerService {
         const admitted = await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
-            ...(authorization.groupRecipientPeerIds === undefined
+            ...(authorization.roomAudience === undefined
                 ? {}
-                : { groupRecipientPeerIds: [...authorization.groupRecipientPeerIds] })
+                : { groupRecipientPeerIds: [...authorization.roomAudience.recipientPeerIds] })
         });
         await this.receipts.writeAdmittedReceipt({
             message,
             originPeerId: fromPeerId,
-            authorization,
-            qos: resolveALQosNormalizationInput(
-                message,
-                { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
-                this.qosProvider
-            ),
+            roomAudience: authorization.roomAudience,
             acceptance: admitted.right
         });
         return admitted;
@@ -519,22 +516,25 @@ export class WsQueueBoxServerService {
             resolvedPeerIds,
             serverPeerId: this.name
         });
-        return toWsQueueBoxServerInboundPlan(planALMessageHandling(
-            message,
-            {
-                ...observations,
-                selfPeerId: this.name,
-                fromPeerId,
-                connectedPeerIds: recipientPeerIds,
-                groupMemberPeerIds,
-                overlayNeighborPeerIds: recipientPeerIds
-            },
-            resolveALQosNormalizationInput(
+        return toWsQueueBoxServerInboundPlan(
+            planALMessageHandling(
                 message,
-                { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
-                this.qosProvider
-            )
-        ));
+                {
+                    ...observations,
+                    selfPeerId: this.name,
+                    fromPeerId,
+                    connectedPeerIds: recipientPeerIds,
+                    groupMemberPeerIds,
+                    overlayNeighborPeerIds: recipientPeerIds
+                },
+                resolveALQosNormalizationInput(
+                    message,
+                    { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
+                    this.qosProvider
+                )
+            ),
+            source
+        );
     }
 
     private hasInboxConsumer(message: ALMessage): boolean {
@@ -662,11 +662,9 @@ export class WsQueueBoxServerService {
         if (expiresAtMs !== undefined && expiresAtMs <= this.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
+        const audience = authority.roomAudience?.recipientPeerIds;
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
-            .filter((peerId) =>
-                peerId !== fromPeerId &&
-                (authority.groupRecipientPeerIds === undefined || authority.groupRecipientPeerIds.includes(peerId))
-            );
+            .filter((peerId) => peerId !== fromPeerId && (audience === undefined || audience.includes(peerId)));
 
         if (nextHopPeerIds.length === 0) {
             return Promise.resolve();
@@ -708,7 +706,8 @@ export class WsQueueBoxServerService {
                 ? { kind: 'retry', retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS }
                 : { kind: 'rejected' };
         }
-        if (source.kind !== 'ws-client' || authority.groupRecipientPeerIds === undefined) {
+        const audience = authority.roomAudience?.recipientPeerIds;
+        if (source.kind !== 'ws-client' || audience === undefined) {
             return { kind: 'authorized', source };
         }
         const captured = source.groupRecipientPeerIds;
@@ -716,9 +715,7 @@ export class WsQueueBoxServerService {
             kind: 'authorized',
             source: {
                 ...source,
-                groupRecipientPeerIds: authority.groupRecipientPeerIds.filter((peerId) =>
-                    captured === undefined || captured.includes(peerId)
-                )
+                groupRecipientPeerIds: audience.filter((peerId) => captured === undefined || captured.includes(peerId))
             }
         };
     }

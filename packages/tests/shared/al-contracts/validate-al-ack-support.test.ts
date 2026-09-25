@@ -40,10 +40,19 @@ describe('validateALAckSupport', () => {
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws world targets' }]);
     });
 
-    it('admits receiver on room and unicast targets where the capabilities declare it', () => {
-        for (const targets of [roomBroadcastTargets, roomMulticastTargets, { mode: 'unicast', toPeerId: 'peer' } as const]) {
+    it('admits receiver on room targets where the capabilities declare it', () => {
+        for (const targets of [roomBroadcastTargets, roomMulticastTargets]) {
             expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets, capabilities: receiverCapabilities })).toEqual([]);
         }
+    });
+
+    it('refuses receiver on a WS unicast, whose receiver ACK no relay carries back to the origin (D42)', () => {
+        const unicast: ALTargets = { mode: 'unicast', toPeerId: 'peer' };
+
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: unicast, capabilities: receiverCapabilities }))
+            .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws unicast targets' }]);
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets: unicast, capabilities: receiverCapabilities }))
+            .toEqual([]);
     });
 
     it('refuses receiver wherever the capabilities do not declare it, naming the carrier and targets', () => {
