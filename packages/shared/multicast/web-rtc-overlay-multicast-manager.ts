@@ -4,6 +4,7 @@ import {
     ALMessageHandlingPlan,
     ALQosEffectivePolicy,
     ALQosInputProvider,
+    ALQosNormalizationInput,
     ALQosNormalizationResult,
     normalizeALQosPolicy,
     planALMessageHandling,
@@ -76,13 +77,16 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
+import { isRtcEnqueueBreakerSuccess } from './rtc-enqueue-breaker-outcome.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
 import {
+    toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenAudienceRepairPlan,
     toRtcOriginFrozenMessage
 } from './web-rtc-overlay-frozen-audience.ts';
+import { planRtcFailedPeerRepair, toRtcRetriedCopyRetransmission } from './web-rtc-overlay-missing-recipient-repair.ts';
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
@@ -227,23 +231,13 @@ export class WebRtcOverlayMulticastManager {
                     )
                 );
             },
-            (results) => results.every(WebRtcOverlayMulticastManager.isSuccessfulProtectedEnqueueResult)
+            (results) => results.every(isRtcEnqueueBreakerSuccess)
         );
 
         return either.fold(
             (error) => msgs.map((msg) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(msg, error)),
             (value) => value
         );
-    }
-
-    private static isSuccessfulProtectedEnqueueResult(
-        value: ALOutboundEnqueueResult
-    ): boolean {
-        const verdict = value.verdict;
-        return verdict.kind !== 'failed' &&
-            !(verdict.kind === 'refused' && verdict.reason !== 'unauthorized') &&
-            !(verdict.kind === 'unroutable' &&
-                (verdict.reason === 'rate-limited' || verdict.reason === 'circuit-open'));
     }
 
     private static toCircuitBreakerResult(
@@ -284,58 +278,74 @@ export class WebRtcOverlayMulticastManager {
         msg: ALMessage,
         fromPeerId?: PeerId
     ): Promise<readonly ResourceEntry[]> {
+        const forwarding = this.planForwarding(msg, fromPeerId);
+        return forwarding === undefined
+            ? []
+            : (await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding)).entries;
+    }
+
+    async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
+        await this.outboundRuntime.retransmitAdmittedMessage(
+            toRtcRetriedCopyRetransmission(copy, this.planForwarding(copy.msg, copy.fromPeerId))
+        );
+    }
+
+    private planForwarding(
+        msg: ALMessage,
+        fromPeerId: PeerId | undefined
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
         if (!msg.targets) {
-            return [];
+            return undefined;
         }
 
         if (msg.targets.mode === 'unicast') {
-            return [];
+            return undefined;
         }
 
         const source = fromPeerId === undefined ? undefined : { kind: 'rtc-peer' as const, peerId: fromPeerId };
         const admissionPlan = this.planIncomingMessage(msg, source);
         if (admissionPlan.dropReason) {
-            return [];
+            return undefined;
         }
         const context = this.readOverlayContext(msg);
         if (!context) {
-            return [];
+            return undefined;
         }
 
-        const multicaster = this.getOrCreateMulticaster(context.overlayId);
-        const dispatchPlan = multicaster.createForwardingPlan(
-            msg,
-            context,
-            {
-                fromPeerId,
-                qos: resolveALQosNormalizationInput(
-                    msg,
-                    {
-                        direction: 'outbound',
-                        selfPeerId: this.connectionService.input.sessionId,
-                        fromPeerId,
-                        connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
-                        groupMemberPeerIds: readGroupMemberSessionIds(context.room),
-                        overlayNeighborPeerIds: context.overlay.nextHopSessionIds
-                    },
-                    this.qosProvider
-                )
-            }
+        const dispatchPlan = this.getOrCreateMulticaster(context.overlayId).createForwardingPlan(msg, context, {
+            fromPeerId,
+            qos: this.readForwardingQosInput(msg, context, fromPeerId)
+        });
+        const planned = this.planOutboundDispatch(
+            toALOutboundMessage(msg, dispatchPlan.handlingPlan.effective),
+            dispatchPlan
         );
+        return {
+            ...planned,
+            preparedMessages: planned.preparedMessages.map((prepared) => ({
+                ...prepared,
+                ingressPeerId: fromPeerId ?? null
+            }))
+        };
+    }
 
-        const message = toALOutboundMessage(msg, dispatchPlan.handlingPlan.effective);
-        const planned = this.planOutboundDispatch(message, dispatchPlan);
-        const admitted = await this.outboundRuntime.enqueueIfAbsent(
-            message,
+    private readForwardingQosInput(
+        msg: ALMessage,
+        context: OverlayMulticasterContext,
+        fromPeerId: PeerId | undefined
+    ): ALQosNormalizationInput {
+        return resolveALQosNormalizationInput(
+            msg,
             {
-                ...planned,
-                preparedMessages: planned.preparedMessages.map((prepared) => ({
-                    ...prepared,
-                    ingressPeerId: fromPeerId ?? null
-                }))
-            }
+                direction: 'outbound',
+                selfPeerId: this.connectionService.input.sessionId,
+                fromPeerId,
+                connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
+                groupMemberPeerIds: readGroupMemberSessionIds(context.room),
+                overlayNeighborPeerIds: context.overlay.nextHopSessionIds
+            },
+            this.qosProvider
         );
-        return admitted.entries;
     }
 
     planIncomingMessage(
@@ -518,7 +528,7 @@ export class WebRtcOverlayMulticastManager {
         const msg = toALOutboundMessage(frozen, policy.effective);
         const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, context));
-        return toRtcFrozenAudienceDispatchPlan(plan, selfPeerId);
+        return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
     }
 
     private planOriginatingDispatch(
@@ -822,7 +832,12 @@ export class WebRtcOverlayMulticastManager {
         }
 
         if (request.failedPeerIds.length > 0) {
-            return this.planAlternateParentRepairDispatch(msg, request);
+            return planRtcFailedPeerRepair({
+                msg,
+                request,
+                selfPeerId: this.connectionService.input.sessionId,
+                planOutgoingMessage: (repairMsg) => this.planOutgoingMessage(repairMsg)
+            });
         }
 
         return undefined;
@@ -881,44 +896,6 @@ export class WebRtcOverlayMulticastManager {
                 'replace'
             ),
             repairTracking: repair
-        };
-    }
-
-    private planAlternateParentRepairDispatch(
-        msg: ALMessage,
-        request: ALOutboundRepairRequest
-    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
-        if (!msg.targets || msg.targets.mode === 'unicast') {
-            return undefined;
-        }
-
-        const excludedPeerIds = new Set([
-            ...(msg.diagnostics?.visitedPeerIds ?? []),
-            ...request.failedPeerIds
-        ]);
-        const repairMsg: ALMessage = {
-            ...msg,
-            diagnostics: {
-                ...msg.diagnostics,
-                visitedPeerIds: [...excludedPeerIds]
-            }
-        };
-
-        const dispatchPlan = this.planOutgoingMessage(repairMsg);
-        if (dispatchPlan.preparedMessages.length === 0) {
-            return undefined;
-        }
-
-        return {
-            ...dispatchPlan,
-            msg,
-            ackTracking: dispatchPlan.ackTracking
-                ? {
-                    ...dispatchPlan.ackTracking,
-                    expectedPeerIdsUpdate: 'replace'
-                }
-                : undefined,
-            repairTracking: request.repair
         };
     }
 }

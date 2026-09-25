@@ -296,7 +296,7 @@ export type ALInboundDurableEffect =
         kind: 'forward-message';
         message: ALInboundMessageReference;
         fromPeerId: string;
-        plan: ALMessageHandlingPlan;
+        retryPeerIds?: readonly string[];
     }>
     | Readonly<{
         kind: 'release-buffered';

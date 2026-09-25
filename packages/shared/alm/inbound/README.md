@@ -109,11 +109,21 @@ The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
 content, not a key segment, because message ids are origin-unique and no
 group exists at every key site (R-S2c-i-2, amending D40; see the outbound
-README). A relay's inbound `pending` row carries a required
-`localRecipient`: a relay that delivered locally ACKs for itself as well as
-for its subtree.
+README). A relay's inbound `pending` row tracks the child hops it forwarded
+to (S2c-ii). Every child ACK it admits is relayed upward at once as a
+`forwarded` ACK for the recipient it names, so a far recipient is never lost
+behind a relay whose row already completed. A child hop completes only on its
+own `delivered` ACK (a leaf) or its `subtree-complete` terminal ACK (a relay).
+Once this peer is ready and every child hop completed, the relay sends its
+own terminal `subtree-complete` ACK, naming itself, last; the parent reads it
+as the end of the subtree. The row stays until it expires, so a child ACK
+that arrives after completion is still relayed, and a retried copy of the
+message is answered from it: a completed row sends its terminal ACK again, an
+incomplete one forwards the copy only to the child hops still owed, and a
+peer with no row sends its own `delivered` ACK again. No retried copy is
+delivered locally twice.
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c-ii'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.

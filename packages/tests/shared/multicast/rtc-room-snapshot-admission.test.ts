@@ -8,7 +8,10 @@ import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import {
+    computeRtcRoomSnapshotAdmission,
+    toRtcRoomSnapshotHandlingPlan
+} from '@shared/multicast/rtc-room-snapshot-admission.ts';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
@@ -136,28 +139,34 @@ describe('RTC room authority', () => {
         expect(JSON.stringify(input)).toBe(before);
     });
 
-    it('never leaves a frozen audience empty, which the handling policy would read as unrestricted', () => {
+    it('forwards a frozen copy over the current tree but delivers it only inside the frozen audience', () => {
         const frozen = {
             ...message,
-            targets: { mode: 'multicast' as const, groupRef: roomRef, recipientPeerIds: [], snapshotVersion: 1 }
+            targets: { mode: 'multicast' as const, groupRef: roomRef, recipientPeerIds: ['receiver'], snapshotVersion: 1 }
         };
         const input = { message: frozen, selfPeerId: 'relay', fromPeerId: 'origin', recipientPeerId: undefined, overlay: overlay(), nowMs };
         const admission = computeRtcRoomSnapshotAdmission({ ...input, snapshot: snapshot() });
         if (admission.kind !== 'authorized') {
             throw new Error('A frozen copy from the origin must be authorized in the room');
         }
-        const plan = planALMessageHandling(frozen, {
-            nowMs,
-            selfPeerId: 'relay',
-            fromPeerId: 'origin',
-            connectedPeerIds: ['origin', 'receiver', 'downstream'],
-            groupMemberPeerIds: admission.memberPeerIds,
-            overlayNeighborPeerIds: admission.forwardingPeerIds
-        });
+        const plan = toRtcRoomSnapshotHandlingPlan(
+            planALMessageHandling(frozen, {
+                nowMs,
+                selfPeerId: 'relay',
+                fromPeerId: 'origin',
+                connectedPeerIds: ['origin', 'receiver', 'downstream'],
+                groupMemberPeerIds: admission.memberPeerIds,
+                overlayNeighborPeerIds: admission.forwardingPeerIds
+            }),
+            admission,
+            'origin'
+        );
 
-        expect(admission.memberPeerIds).toEqual(['origin']);
+        // `relay` joined after the freeze: it is a hop of the current tree, never a logical recipient.
+        expect(admission.memberPeerIds).toEqual(['origin', 'relay', 'receiver', 'downstream']);
+        expect(admission.deliversLocally).toBe(false);
         expect(plan.localDelivery.enabled).toBe(false);
-        expect(plan.forwarding.nextHopPeerIds).toEqual([]);
+        expect(plan.forwarding.nextHopPeerIds).toEqual(['downstream']);
     });
 
     it('requires recipient membership and a permitted outgoing edge independent of diagnostics', () => {

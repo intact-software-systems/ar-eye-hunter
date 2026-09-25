@@ -23,6 +23,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'dispatchInboxEntry'
             | 'canDispatchMessage'
             | 'forwardMessage'
+            | 'forwardRetriedCopy'
             | 'clock'
             | 'effectPreparation'
         > {}
@@ -43,6 +44,15 @@ export interface ALInboundDeliveryReadiness {
      * without a stored surface of its own.
      */
     readonly observed: ALInboundDeliveryObservation | undefined;
+}
+
+/** One forward row as it runs: the forward its admission wrote, or a retried copy owed to `retryPeerIds` only. */
+interface ALInboundAdmittedForward {
+    readonly observed: ALInboundDeliveryObservation;
+    readonly fromPeerId: string;
+    readonly retryPeerIds: readonly string[] | undefined;
+    readonly attemptIdentity: string;
+    readonly expireAtTimestamp: number;
 }
 
 const NOT_READY: ALInboundDeliveryReadiness = { ready: false, observed: undefined };
@@ -181,11 +191,13 @@ export class ALInboundAdmittedDelivery {
                     'A control send runs in the control round of its batch, not in delivery'
                 );
             case 'forward-message':
-                return await this.forwardAdmittedMessage(
-                    observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs),
-                    effect.payload.fromPeerId,
-                    effect.expireAtTimestamp
-                );
+                return await this.forwardAdmittedMessage({
+                    observed: observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs),
+                    fromPeerId: effect.payload.fromPeerId,
+                    retryPeerIds: effect.payload.retryPeerIds,
+                    attemptIdentity: effect.effectId,
+                    expireAtTimestamp: effect.expireAtTimestamp
+                });
             case 'release-buffered':
                 return await this.releaseBufferedMessage(
                     { trackKey: effect.payload.trackKey, seq: effect.payload.seq, effectId: effect.effectId },
@@ -266,24 +278,25 @@ export class ALInboundAdmittedDelivery {
             : 'dispatch';
     }
 
-    private async forwardAdmittedMessage(
-        observed: ALInboundDeliveryObservation,
-        fromPeerId: string,
-        expireAtTimestamp: number
-    ): Promise<'completed' | 'retry'> {
-        const { msg, plan } = observed;
+    private async forwardAdmittedMessage(forward: ALInboundAdmittedForward): Promise<'completed' | 'retry'> {
+        const { msg, plan } = forward.observed;
         if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
         }
-        if (expireAtTimestamp <= this.dependencies.clock.nowMs()) {
+        if (forward.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
-        if (!plan.dropReason && plan.forwarding.enabled) {
-            const forwarded = await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
-            if (forwarded === 'retry') {
-                return 'retry';
-            }
+        if (plan.dropReason || !plan.forwarding.enabled) {
+            return 'completed';
         }
-        return 'completed';
+        const forwarded = forward.retryPeerIds === undefined
+            ? await this.dependencies.forwardMessage?.(msg, forward.fromPeerId, plan)
+            : await this.dependencies.forwardRetriedCopy?.({
+                msg,
+                fromPeerId: forward.fromPeerId,
+                toPeerIds: forward.retryPeerIds,
+                attemptIdentity: forward.attemptIdentity
+            });
+        return forwarded === 'retry' ? 'retry' : 'completed';
     }
 }

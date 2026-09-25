@@ -133,6 +133,9 @@ export class WebRtcRxStreamerService {
                 forwardMessage: async (msg, fromPeerId) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
                 },
+                forwardRetriedCopy: async (copy) => {
+                    await this.multicast.forwardRetriedCopy(copy);
+                },
                 diagnostics: dependencies.inboundDiagnostics
             }
         );

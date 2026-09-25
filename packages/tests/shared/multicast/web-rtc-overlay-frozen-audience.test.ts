@@ -4,66 +4,30 @@ import {
     describe,
     expect,
     it,
-    onTestFinished,
     vi
 } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
-import {
-    createDefaultALOutboundDequeueResilience,
-    createDefaultALOutboundRuntimeResources
-} from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
-import type { GroupMember, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
-import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
-import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
-import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
-import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
-import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import {
+    createOriginOverlay,
+    createOriginReceiverMulticast,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    enqueueAndDrain,
+    readSentTargets,
+    toOriginFrozenTargets,
+    type RtcOriginOverlayFixture
+} from './rtc-origin-overlay-fixture.ts';
 
-interface CapturedChannel {
-    readonly channel: QRtcDataChannel;
-    readonly sent: ALMessage[];
+function createFixture(
+    input = { snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] }
+): RtcOriginOverlayFixture {
+    return createRtcOriginOverlayFixture(input);
 }
-
-interface FrozenAudienceFixture {
-    readonly manager: WebRtcOverlayMulticastManager;
-    readonly resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
-    readonly groups: LatestRepository<string, GroupSnapshot>;
-    readonly overlays: LatestRepository<string, OverlayInfo>;
-    readonly channels: Readonly<Record<string, CapturedChannel>>;
-    readonly ready: { peerIds: readonly string[]; };
-}
-
-interface FrozenAudienceFixtureInput {
-    readonly snapshot: GroupSnapshot;
-    /** The origin's overlay next hops, each with an open channel. */
-    readonly nextHopPeerIds: readonly string[];
-}
-
-const ROOM: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const DEFAULT_FIXTURE_INPUT: FrozenAudienceFixtureInput = {
-    get snapshot() {
-        return createSnapshot(['a', 'b', 'c'], 4);
-    },
-    nextHopPeerIds: ['b', 'c']
-};
 
 describe('RTC frozen room audience', () => {
     beforeEach(() => {
@@ -76,48 +40,51 @@ describe('RTC frozen room audience', () => {
         vi.useRealTimers();
     });
 
-    it('freezes the audience at admission and keeps expecting it after a later join and leave', async () => {
+    it('freezes the audience at admission and keeps expecting it after a later join and leave, the joiner only a hop', async () => {
         const fixture = createFixture();
-        const message = createReceiverMulticast('frozen');
+        const message = createOriginReceiverMulticast('frozen');
 
         const admitted = await enqueueAndDrain(fixture.manager, message);
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
-        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
-        expect(sentTargets(fixture.channels.c!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
+        expect(readSentTargets(fixture.channels.c!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
 
-        fixture.groups.accept('room', createSnapshot(['a', 'b', 'c', 'd'], 5));
-        fixture.groups.accept('room', createSnapshot(['a', 'b', 'd'], 6));
-        fixture.overlays.accept('room', createOverlay(['b', 'd']));
+        fixture.groups.accept('room', createOriginSnapshot(['a', 'b', 'c', 'd'], 5));
+        fixture.groups.accept('room', createOriginSnapshot(['a', 'b', 'd'], 6));
+        fixture.overlays.accept('room', createOriginOverlay(['b', 'd']));
         fixture.ready.peerIds = ['b', 'd'];
         await vi.advanceTimersByTimeAsync(10_000);
 
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
-        expect(fixture.channels.d!.sent).toEqual([]);
+        // The joiner is a hop of the current tree, so the retry may pass through it, but only as the frozen copy.
+        expect(fixture.channels.d!.sent.length).toBeGreaterThan(0);
+        expect(new Set(readSentTargets(fixture.channels.d!).map((targets) => JSON.stringify(targets))))
+            .toEqual(new Set([JSON.stringify(toOriginFrozenTargets(['b', 'c'], 4))]));
     });
 
     it('re-admits the unfrozen original as the duplicate of its frozen canonical', async () => {
         const fixture = createFixture();
-        const message = createReceiverMulticast('resent');
+        const message = createOriginReceiverMulticast('resent');
 
         await enqueueAndDrain(fixture.manager, message);
-        fixture.groups.accept('room', createSnapshot(['a', 'b', 'c', 'd'], 5));
+        fixture.groups.accept('room', createOriginSnapshot(['a', 'b', 'c', 'd'], 5));
         const resent = await enqueueAndDrain(fixture.manager, message);
 
         expect(resent.verdict.kind).toBe('duplicate');
-        expect(resent.message.targets).toEqual(frozenTargets(['b', 'c'], 4));
+        expect(resent.message.targets).toEqual(toOriginFrozenTargets(['b', 'c'], 4));
     });
 
     it('keeps a hop receipt on the next hops the plan reaches', async () => {
         const fixture = createFixture();
-        const message = { ...createReceiverMulticast('hop'), qos: { ack: { algo: 'hop' } } } as const;
+        const message = { ...createOriginReceiverMulticast('hop'), qos: { ack: { algo: 'hop' } } } as const;
 
         await enqueueAndDrain(fixture.manager, message);
 
-        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'hop', expectedPeerIds: ['b', 'c'] });
     });
@@ -136,11 +103,11 @@ describe('the origin receipt of a frozen room multicast', () => {
 
     it('freezes only the sessions the room authority admits, never an expired lease or a removed member', async () => {
         const fixture = createFixture({ snapshot: createSnapshotWithRefusedSessions(), nextHopPeerIds: ['b', 'c'] });
-        const message = createReceiverMulticast('authorized');
+        const message = createOriginReceiverMulticast('authorized');
 
         await enqueueAndDrain(fixture.manager, message);
 
-        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
     });
@@ -151,19 +118,19 @@ describe('the origin receipt of a frozen room multicast', () => {
             { ack: 'hop', expectedPeerIds: ['b'] }
         ] as const
     )('expects $expectedPeerIds under $ack when the tree reaches c only through b', async ({ ack, expectedPeerIds }) => {
-        const fixture = createFixture({ snapshot: createSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b'] });
-        const message = { ...createReceiverMulticast(`tree-${ack}`), qos: { ack: { algo: ack } } } as const;
+        const fixture = createFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b'] });
+        const message = { ...createOriginReceiverMulticast(`tree-${ack}`), qos: { ack: { algo: ack } } } as const;
 
         await enqueueAndDrain(fixture.manager, message);
 
-        expect(sentTargets(fixture.channels.b!)).toEqual([frozenTargets(['b', 'c'], 4)]);
+        expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: ack, expectedPeerIds });
     });
 
     it('keeps expecting the whole frozen audience after a recipient asks for a targeted repair', async () => {
         const fixture = createFixture();
-        const message = { ...createReceiverMulticast('nack-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
+        const message = { ...createOriginReceiverMulticast('nack-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
         await enqueueAndDrain(fixture.manager, message);
 
         await fixture.manager.acceptControlMessage(newALNackControlMessage(
@@ -179,10 +146,10 @@ describe('the origin receipt of a frozen room multicast', () => {
 
     it.each([
         { label: 'a changed payload', change: { payload: { typeId: 'chat.message.v1', resource: '{"text":"changed"}' } } },
-        { label: 'another frozen audience', change: { targets: frozenTargets(['b'], 4) } }
+        { label: 'another frozen audience', change: { targets: toOriginFrozenTargets(['b'], 4) } }
     ])('refuses a re-admission that brings $label against the frozen canonical', async ({ change }) => {
         const fixture = createFixture();
-        const message = createReceiverMulticast('canonical');
+        const message = createOriginReceiverMulticast('canonical');
         await enqueueAndDrain(fixture.manager, message);
 
         const changed = await enqueueAndDrain(fixture.manager, { ...message, ...change });
@@ -196,9 +163,9 @@ describe('computeFrozenAudience', () => {
     it('names the authorized sessions except the origin, at the snapshot version the authority was read at', () => {
         const room = createSnapshotWithRefusedSessions();
         const admission = computeRtcRoomSnapshotAdmission({
-            message: createReceiverMulticast('pure'),
+            message: createOriginReceiverMulticast('pure'),
             snapshot: room,
-            overlay: createOverlay(['b', 'c']),
+            overlay: createOriginOverlay(['b', 'c']),
             selfPeerId: 'a',
             fromPeerId: undefined,
             recipientPeerId: undefined,
@@ -216,7 +183,7 @@ describe('computeFrozenAudience', () => {
 
 /** Sessions a snapshot still lists but the room authority refuses: `x` has an expired lease, `y` was removed. */
 function createSnapshotWithRefusedSessions(): GroupSnapshot {
-    const snapshot = createSnapshot(['a', 'b', 'c', 'x', 'y'], 4);
+    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'x', 'y'], 4);
     return {
         ...snapshot,
         activeSessions: snapshot.activeSessions.map((session) => session.sessionId === 'x' ? { ...session, expiresAtEpochMs: Date.now() } : session),
@@ -226,134 +193,4 @@ function createSnapshotWithRefusedSessions(): GroupSnapshot {
 
 function toRemovedMember(member: GroupMember): GroupMember {
     return { ...member, status: 'removed', left: null, removed: member.updated, banned: null };
-}
-
-function createReceiverMulticast(resourceId: string): ALMessage {
-    return newALMulticastMessage(
-        'a',
-        { topicId: 'chat', resourceId, contextId: 'room' },
-        ROOM,
-        'chat.message.v1',
-        { text: resourceId },
-        { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000 }
-    );
-}
-
-function frozenTargets(recipientPeerIds: readonly string[], snapshotVersion: number): ALTargets {
-    return { mode: 'multicast', groupRef: ROOM, recipientPeerIds, snapshotVersion };
-}
-
-function sentTargets(captured: CapturedChannel): readonly (ALTargets | undefined)[] {
-    return captured.sent.map((message) => message.targets);
-}
-
-function createFixture(input: FrozenAudienceFixtureInput = DEFAULT_FIXTURE_INPUT): FrozenAudienceFixture {
-    const ready = { peerIds: input.nextHopPeerIds };
-    const channels = Object.fromEntries(['b', 'c', 'd'].map((peerId) => [peerId, createOpenChannel(peerId)]));
-    const connection = createConnectionService(ready, channels);
-    const groups = new LatestRepository<string, GroupSnapshot>();
-    groups.accept('room', input.snapshot);
-    const overlays = new LatestRepository<string, OverlayInfo>();
-    overlays.accept('room', createOverlay(input.nextHopPeerIds));
-    const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
-    const manager = new WebRtcOverlayMulticastManager({
-        connectionService: connection,
-        groupCache: groups,
-        overlayCache: overlays,
-        multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
-        qosProvider: undefined,
-        outboundDiagnostics: undefined,
-        outboundSettlements: undefined,
-        outboundRuntime: resources,
-        circuitBreaker: toCircuitBreaker(),
-        rateLimiter: toRateLimiter(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
-    });
-    onTestFinished(() => manager.dispose());
-    return { manager, resources, groups, overlays, channels, ready };
-}
-
-async function enqueueAndDrain(
-    manager: WebRtcOverlayMulticastManager,
-    message: ALMessage
-): Promise<ALOutboundEnqueueResult> {
-    const result = await manager.enqueueIfAbsent(message);
-    await vi.advanceTimersByTimeAsync(0);
-    return result;
-}
-
-function createSnapshot(sessionIds: readonly string[], snapshotVersion: number): GroupSnapshot {
-    const snapshot = createGroupSnapshotFixture({ ...ROOM, sessionIds });
-    return {
-        ...snapshot,
-        group: { ...snapshot.group, snapshotVersion },
-        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 600_000 }))
-    };
-}
-
-function createOverlay(nextHopSessionIds: readonly string[]): OverlayInfo {
-    return {
-        sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
-        provenance: 'server',
-        state: 'active',
-        overlayId: 'room',
-        groupRef: ROOM,
-        topology: 'tree',
-        name: 'Room',
-        createdByClientId: 'a',
-        createdAtEpochMs: 1,
-        nextHopSessionIds,
-        degreeLimit: 3,
-        overlayVersion: 1,
-        updatedAtEpochMs: 1
-    };
-}
-
-function createConnectionService(
-    ready: { readonly peerIds: readonly string[]; },
-    channels: Readonly<Record<string, CapturedChannel>>
-): WebRtcConnectionService {
-    const connection = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
-        sessionId: 'a',
-        token: 'test-token',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'test',
-        faultPort: createPassThroughTransportFaultPort(),
-        rtcSignalingTopicId: 'rtc-signaling'
-    });
-    vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
-    vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {
-        const channel = ready.peerIds.includes(peerId) ? channels[peerId]?.channel : undefined;
-        return channel === undefined ? undefined : {
-            peerId,
-            connection: channel.peerConnection,
-            channel,
-            channels: new Map([['reliable', channel]]),
-            media: new QRtcMediaChannel(channel.peerConnection, { peerId })
-        };
-    });
-    return connection;
-}
-
-function createOpenChannel(peerId: string): CapturedChannel {
-    const peerConnection = new QRtcPeerConnection({ send: async () => undefined }, {
-        sessionId: 'a',
-        peerSessionId: peerId,
-        token: 'test-token',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        isPolite: false
-    });
-    const channel = new QRtcDataChannel(peerConnection, {
-        faultPort: createPassThroughTransportFaultPort(),
-        peerId,
-        dataChannelName: 'test'
-    });
-    const health = channel.readHealth();
-    const sent: ALMessage[] = [];
-    vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
-    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
-        sent.push(decodePersistedALMessageValue(message));
-        return { status: 'sent', bufferedAmount: 0 };
-    });
-    return { channel, sent };
 }

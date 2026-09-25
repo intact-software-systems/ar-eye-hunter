@@ -137,6 +137,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             orderingTrackKey: control.payload.orderingKey,
             missingSeqs: control.payload.missingSeqs ?? [],
             failedPeerIds: [],
+            completedHopPeerIds: [],
             repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
         });
         return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;

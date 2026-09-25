@@ -353,7 +353,6 @@ describe('IndexedDB AL runtime stores', () => {
                                 toPeerId: 'upstream',
                                 status: 'subtree-complete',
                                 localReady: false,
-                                localRecipient: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
                                 ackedFromPeerIds: [],
                                 carrier: 'ws'

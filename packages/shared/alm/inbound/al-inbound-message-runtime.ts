@@ -92,6 +92,14 @@ export namespace ALInboundMessageRuntime {
         readonly ownsQueueEngine: boolean;
     }
 
+    /** A retried copy of an admitted message, owed to these child hops only, sent as its own attempt. */
+    export interface RetriedCopy {
+        readonly msg: ALMessage;
+        readonly fromPeerId: string;
+        readonly toPeerIds: readonly string[];
+        readonly attemptIdentity: string;
+    }
+
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
@@ -113,6 +121,8 @@ export namespace ALInboundMessageRuntime {
             fromPeerId: string,
             plan: ALMessageHandlingPlan
         ) => Promise<void | 'completed' | 'retry'>;
+        /** Absence means a retried copy of an admitted message is never forwarded again. */
+        readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */

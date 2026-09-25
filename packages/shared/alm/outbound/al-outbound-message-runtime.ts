@@ -108,6 +108,8 @@ export interface ALOutboundRepairRequest {
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
     readonly failedPeerIds: readonly string[];
+    /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
+    readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingSeqs: readonly number[];
 }
@@ -244,6 +246,13 @@ export interface ALOutboundEnqueueResult {
 }
 
 export namespace ALOutboundMessageRuntime {
+    /** An admitted message sent again with this plan, as one repair attempt of its own identity. */
+    export interface Retransmission<TPrepared> {
+        readonly msg: ALMessage;
+        readonly plan: ALOutboundDispatchPlan<TPrepared>;
+        readonly attemptIdentity: string;
+    }
+
     export type PendingAdmissionAuthority =
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
@@ -477,6 +486,24 @@ export class ALOutboundMessageRuntime<TPrepared> {
             options: { explicitPlan: dispatchPlan !== undefined }
         });
         return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
+    }
+
+    async retransmitAdmittedMessage(
+        retransmission: ALOutboundMessageRuntime.Retransmission<TPrepared>
+    ): Promise<ALOutboundEnqueueResult> {
+        await this.ready();
+        if (this.disposed) {
+            return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
+        }
+        const computed = await this.commitDispatchPlan({
+            msg: retransmission.msg,
+            planner: () => retransmission.plan,
+            intent: 'repair',
+            phase: 'immediate',
+            origin: 'repair',
+            options: { attemptIdentity: retransmission.attemptIdentity }
+        });
+        return ALOutboundMessageRuntime.toEnqueueResult(computed, retransmission.msg);
     }
 
     /** The messages of one sender admitted as one commit, each planned as `enqueueIfAbsent` plans it; one result per message, in order. */

@@ -9,7 +9,10 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundRepairRequest
 } from './al-outbound-message-runtime.ts';
-import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
+import {
+    isALOutboundReceiptComplete,
+    toALOutboundCompletedHopPeerIds
+} from './transition-al-outbound-pending-ack.ts';
 
 interface ALOutboundRetransmitOptions {
     readonly attemptIdentity: string;
@@ -132,7 +135,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
         const repairedPlan = this.dependencies.planRepairMessage
-            ? await this.dependencies.planRepairMessage(msg, { ...request, repair })
+            ? await this.dependencies.planRepairMessage(msg, { ...request, completedHopPeerIds: [], repair })
             : plan;
         if (repairedPlan?.dropReason) {
             console.warn(`Skipping outbound repair dispatch: ${repairedPlan.dropReason}`);
@@ -169,6 +172,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             ? await this.dependencies.planRepairMessage(msg, {
                 ...request,
                 failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
+                completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
             : plan;

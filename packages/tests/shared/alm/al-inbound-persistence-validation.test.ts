@@ -191,7 +191,6 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
-                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
                     expireAtTimestamp: input.expireAtTimestamp,
@@ -482,6 +481,7 @@ describe('inbound admission persisted values', () => {
 
     it.each([
         { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', plan: {} },
+        { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', retryPeerIds: [''] },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
         { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v2', resource: '{}' } } }
@@ -512,7 +512,6 @@ describe('inbound admission persisted values', () => {
                 payload: {
                     kind: 'forward-message',
                     message: toMessageReference(message),
-                    plan: planMessage(message),
                     fromPeerId: 'sender'
                 }
             }
@@ -800,7 +799,6 @@ describe('inbound admission persisted values', () => {
                             toPeerId: 'upstream',
                             status: 'subtree-complete',
                             localReady: false,
-                            localRecipient: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
                             expireAtTimestamp: Date.now() + 60_000,
@@ -852,7 +850,6 @@ describe('inbound admission persisted values', () => {
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: false,
-                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: []
                 }
@@ -901,8 +898,11 @@ describe('inbound admission persisted values', () => {
             kind: 'committed',
             acceptance: { handled: true }
         });
-        expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(false);
-        expect((await readIncoming(store, message)).acks).toHaveLength(256);
+        // The completed row stays until it expires, so a child ACK that arrives after completion is still relayed.
+        expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(true);
+        const incoming = await readIncoming(store, message);
+        expect(incoming.pendingAck?.ackedFromPeerIds).toHaveLength(256);
+        expect(incoming.acks).toHaveLength(256);
     });
 
     it('round-trips the local-delivery reference and retains the message once', async () => {
@@ -965,7 +965,6 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
-                        localRecipient: false,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
                         expireAtTimestamp,
@@ -996,7 +995,7 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
-            status: 'accepted',
+            status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
         }

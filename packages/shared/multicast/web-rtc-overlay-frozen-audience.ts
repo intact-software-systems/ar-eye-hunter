@@ -4,6 +4,7 @@ import {
     toALFrozenMulticastMessage,
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
@@ -71,4 +72,34 @@ export function toRtcFrozenAudienceRepairPlan(
     selfPeerId: string
 ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
     return plan === undefined ? undefined : toRtcFrozenAudienceDispatchPlan(plan, selfPeerId);
+}
+
+/**
+ * An origin alone in its room freezes an empty audience. Its `receiver` send has no copy to plan, yet
+ * it is admitted: the receipt of zero recipients is complete at once, as the WS server answers it.
+ */
+export function toRtcEmptyAudienceDispatchPlan(
+    plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
+    effective: ALQosEffectivePolicy
+): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+    const frozen = resolveALFrozenMulticastAudience(plan.msg.targets);
+    if (
+        frozen?.recipientPeerIds.length !== 0 || effective.ack.algo !== 'receiver' ||
+        (plan.dropReasonCode !== 'no-route' && plan.dropReasonCode !== 'planner-drop')
+    ) {
+        return plan;
+    }
+    return {
+        dropReasonCode: undefined,
+        persist: true,
+        msg: plan.msg,
+        preparedMessages: [],
+        ackTracking: {
+            enabled: true,
+            timeoutMs: effective.ack.opts.timeoutMs,
+            maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
+            expectedPeerIds: [],
+            mode: 'receiver'
+        }
+    };
 }

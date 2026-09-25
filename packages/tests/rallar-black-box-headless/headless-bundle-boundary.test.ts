@@ -61,9 +61,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // 275.1064453125 KiB with this exact harness; the WS client's receipt admission from the
         // server's aggregate brings it to 276.16796875 KiB, and the rest of S2c-i to 276.7197265625 KiB.
         // S2c-ii's frozen audience at RTC admission (the freeze, its ingress check and provenance) measures
-        // 277.2451171875 KiB. The next whole-KiB ceiling is 278; all operator dependency exclusions above
-        // remain enforced.
-        expect(result.brotliKiB).toBeLessThan(278);
+        // 277.2451171875 KiB, and its retry through the relay tree (the missing-recipient repair, the
+        // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. The next whole-KiB ceiling
+        // is 279; all operator dependency exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(279);
     });
 });
 

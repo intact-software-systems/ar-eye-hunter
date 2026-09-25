@@ -140,11 +140,26 @@ A receipt row is keyed by its origin and message id
 store namespace never collide on a message id. Its `mode` is the send's resolved ack algorithm
 and types its peer lists: next hops under `hop` and `subtree`, logical recipients under
 `receiver`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
-`receiver`, its sender otherwise, so a hop ACK never stands in for a logical recipient. A control
+`receiver`, its sender under `hop`, and under `subtree` its sender only on that hop's own
+completion ACK (a leaf's `delivered`, a relay's terminal `subtree-complete`), never on a
+`forwarded` ACK the hop relays for a recipient below it -- so a hop ACK never stands in for a
+logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
 the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
 no write and no version bump. The `acknowledgement`
-settlement carries the `mode`, so `complete` under `receiver` is logical completion.
+settlement carries the `mode`, so `complete` under `receiver` is logical completion. A
+`receiver` room send frozen to an empty audience (an origin alone in its room) is admitted and
+states a complete `acknowledgement` settlement at its commit, with no receipt row, as the WS
+server answers an empty audience.
+
+When an `ack-timeout` retries a `receiver` receipt, the repair request carries the hops whose
+subtree the ACK history shows complete (`completedHopPeerIds`). The RTC origin of a frozen
+multicast retries only through the next hops that may still lead to a missing recipient: a
+missing recipient that is a direct hop, and every hop whose subtree has not completed; a
+completed hop never gets a copy (D25). Every other retry re-plans around the failed hops
+through an alternate parent. `retransmitAdmittedMessage` sends an admitted message again as a
+repair attempt of its own identity; a relay uses it to pass a retried copy on to the child hops
+it still waits on.
 
 ### Server receipts on WS
 
@@ -346,8 +361,8 @@ Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical
 transport queues have been removed. The application-facing delivery handle
 (`packages/shared-web/browser/messages/`) observes these settlements directly. Logical
-audience receipts exist on WS room sends through the server's receipts; the frozen audience on RTC,
-and retry to the missing recipients through the tree, remain roadmap work (S2c-ii).
+audience receipts exist on WS room sends through the server's receipts, and on RTC room sends
+through the frozen audience and the retry to the missing recipients through the tree (S2c-ii).
 [`al-storage-snapshot.test.ts`](../../../tests/shared/alm/al-storage-snapshot.test.ts)
 records what one standard supersession workload leaves in browser storage; existing
 paged due-work reads still do not establish that every backend query or cleanup path
