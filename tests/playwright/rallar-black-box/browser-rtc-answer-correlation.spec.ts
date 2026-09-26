@@ -57,8 +57,22 @@ for (const descriptionType of ['offer', 'answer'] as const) {
     }, testInfo) => {
         await page.goto('/');
         const fixturePath = path.resolve('tests/playwright/rallar-black-box/browser-rtc-answer-correlation-fixture.ts');
-        const result = await page.evaluate(async ({ moduleUrl, descriptionType }) => {
+        const peerModulePath = path.resolve('packages/shared/webrtc/qrtc-peer-connection.ts');
+        const result = await page.evaluate(async ({ moduleUrl, peerModuleUrl, descriptionType }) => {
             const fixture: typeof import('./browser-rtc-answer-correlation-fixture.ts') = await import(moduleUrl);
+            const { QRtcPeerConnection }: typeof import('../../../packages/shared/webrtc/qrtc-peer-connection.ts') =
+                await import(peerModuleUrl);
+            const handleSignal = QRtcPeerConnection.prototype.handleSignal;
+            let pendingSignals = 0;
+            QRtcPeerConnection.prototype.handleSignal = async function (signal) {
+                pendingSignals++;
+                try {
+                    await handleSignal.call(this, signal);
+                }
+                finally {
+                    pendingSignals--;
+                }
+            };
             const peers = new Set<RTCPeerConnection>();
             const channels = new Set<RTCDataChannel>();
             const nativeApply = RTCPeerConnection.prototype.setRemoteDescription;
@@ -103,6 +117,8 @@ for (const descriptionType of ['offer', 'answer'] as const) {
                 const allChannelsClosingAtDeadline = [...channels].every((channel) =>
                     channel.readyState === 'closing' || channel.readyState === 'closed'
                 );
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                const pendingSignalsBeforeNativeRelease = pendingSignals;
                 descriptionRelease.abort();
                 await Promise.all([...channels].map(async (channel) => {
                     if (channel.readyState !== 'closed') {
@@ -118,6 +134,7 @@ for (const descriptionType of ['offer', 'answer'] as const) {
                     peersAtDeadline,
                     allPeersClosedAtDeadline,
                     allChannelsClosingAtDeadline,
+                    pendingSignalsBeforeNativeRelease,
                     peersAfterLateCompletion: peers.size,
                     allPeersClosedAfterLateCompletion: [...peers].every((peer) => peer.signalingState === 'closed'),
                     allChannelsClosedAfterLateCompletion: [...channels].every((channel) =>
@@ -128,12 +145,13 @@ for (const descriptionType of ['offer', 'answer'] as const) {
             }
             finally {
                 descriptionRelease.abort();
+                QRtcPeerConnection.prototype.handleSignal = handleSignal;
                 RTCPeerConnection.prototype.setRemoteDescription = nativeApply;
                 RTCPeerConnection.prototype.createDataChannel = nativeCreateChannel;
                 RTCDataChannel.prototype.send = nativeSend;
                 await Promise.allSettled([...peers].map(async (peer) => peer.close()));
             }
-        }, { moduleUrl: `/@fs${fixturePath}`, descriptionType });
+        }, { moduleUrl: `/@fs${fixturePath}`, peerModuleUrl: `/@fs${peerModulePath}`, descriptionType });
         const observationPath = testInfo.outputPath('native-deadline-observation.json');
         await writeFile(observationPath, JSON.stringify(result, null, 2));
         await testInfo.attach('native-deadline-observation', {
@@ -146,6 +164,7 @@ for (const descriptionType of ['offer', 'answer'] as const) {
             peersAtDeadline: descriptionType === 'offer' ? 2 : 4,
             allPeersClosedAtDeadline: true,
             allChannelsClosingAtDeadline: true,
+            pendingSignalsBeforeNativeRelease: 0,
             peersAfterLateCompletion: descriptionType === 'offer' ? 2 : 4,
             allPeersClosedAfterLateCompletion: true,
             allChannelsClosedAfterLateCompletion: true,

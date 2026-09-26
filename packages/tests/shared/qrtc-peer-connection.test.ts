@@ -92,6 +92,7 @@ describe('QRtcPeerConnection', () => {
         const { peer, native, sentSignals } = createPeerFixture(true);
         const started = Promise.withResolvers<void>();
         const retiredOperation = Promise.withResolvers<void>();
+        onTestFinished(() => retiredOperation.resolve());
         const remainPending = async () => {
             started.resolve();
             await retiredOperation.promise;
@@ -188,6 +189,7 @@ describe('QRtcPeerConnection', () => {
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const setRemoteDescription = native.setRemoteDescription.bind(native);
+        onTestFinished(() => release.resolve());
         vi.spyOn(native, 'setRemoteDescription').mockImplementationOnce(async (description) => {
             started.resolve();
             await release.promise;
@@ -226,8 +228,12 @@ describe('QRtcPeerConnection', () => {
         if (!(replacement instanceof SimulatedNativeRtcPeerConnection)) {
             throw new Error('Expected replacement native peer');
         }
-        release.resolve();
-        await Promise.all([applying, queued, queuedNegotiation]);
+        let retiredCallsSettled = false;
+        const retiredCalls = Promise.all([applying, queued, queuedNegotiation]).then(() => {
+            retiredCallsSettled = true;
+        });
+        await vi.waitFor(() => expect(retiredCallsSettled).toBe(true));
+        await retiredCalls;
         expect(replacement.receivedDescriptions).toEqual([]);
         expect(replacement.receivedCandidates).toEqual([]);
         expect(sentSignals).toHaveLength(1);
@@ -241,6 +247,14 @@ describe('QRtcPeerConnection', () => {
             }
         });
         expect(replacement.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'replacement-answer' }]);
+        release.resolve();
+        await vi.waitFor(() => expect(native.receivedDescriptions).toHaveLength(1));
+        expect(replacement.signalingState).toBe('stable');
+        expect(replacement.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'replacement-answer' }]);
+        expect(sentSignals).toMatchObject([
+            { signalType: 'Offer', offerId: 'offer-1' },
+            { signalType: 'Offer', offerId: 'offer-2' }
+        ]);
     });
 
     it('drops deferred outbound candidates from a retired native peer', async () => {
@@ -319,6 +333,32 @@ describe('QRtcPeerConnection', () => {
         expect(native.receivedDescriptions).toEqual([]);
         await peer.handleSignal(answer);
         expect(native.receivedDescriptions).toEqual([{ type: 'answer', sdp: 'matching-answer' }]);
+    });
+
+    it('observes a late native rejection after the retired caller has settled', async () => {
+        const { peer, native } = createPeerFixture(true);
+        await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
+        const started = Promise.withResolvers<void>();
+        const application = Promise.withResolvers<void>();
+        onTestFinished(() => application.resolve());
+        vi.spyOn(native, 'setRemoteDescription').mockImplementationOnce(() => {
+            started.resolve();
+            return application.promise;
+        });
+        const applying = peer.handleSignal({
+            signalType: 'Answer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'answer', sdp: 'retired-answer' }, candidate: null }
+        });
+        await started.promise;
+        peer.reset();
+        await applying;
+        peer.connect();
+        application.reject(new Error('Closed native connection'));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(peer.status.pc?.signalingState).toBe('stable');
+        expect(peer.readDiagnostics().inboundSignalingErrorCount).toBe(0);
     });
 
     it('negotiates offers, forwards ICE candidates, and dispatches remote events', async () => {
@@ -793,15 +833,13 @@ describe('QRtcPeerConnection', () => {
     it('stops reporting to the session reset closed, even for a hop still in flight', async () => {
         const runtime = installNativeRtcRuntime();
         onTestFinished(() => runtime.dispose());
-        let failSend: (error: Error) => void = () => {};
-        const pendingSend = new Promise<void>((_resolve, reject) => {
-            failSend = reject;
-        });
+        const pendingSend = Promise.withResolvers<void>();
+        onTestFinished(() => pendingSend.resolve());
         let sendCalls = 0;
         const signaler: QRtcSignalingSender = {
             send: () => {
                 sendCalls += 1;
-                return pendingSend;
+                return pendingSend.promise;
             }
         };
         const peer = new QRtcPeerConnection(signaler, createPeerInput(true), new DeterministicRtcOfferIds());
@@ -815,7 +853,7 @@ describe('QRtcPeerConnection', () => {
         await vi.waitFor(() => expect(sendCalls).toBe(1));
 
         peer.reset();
-        failSend(new Error('signaling closed with the session'));
+        pendingSend.reject(new Error('signaling closed with the session'));
         await negotiation;
 
         // The hop did fail -- the counter proves it -- but the callbacks belonged to a closed session.
