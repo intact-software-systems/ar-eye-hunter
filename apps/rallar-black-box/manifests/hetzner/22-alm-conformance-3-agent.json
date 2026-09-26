@@ -852,7 +852,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"msgId\":\"alm-rtc-unknown-ack-version-retired-ack-1\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-unknown-ack-version-retired-ack-{resultCache.alm-rtc-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
             },
             "timeoutMs": 27000
           },
@@ -1335,7 +1335,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"msgId\":\"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
             },
             "timeoutMs": 27000
           },
@@ -2207,10 +2207,18 @@
             "connection": "almConformanceReceiver",
             "carrier": "rtc",
             "typeId": "al.control.ack.v1",
-            "msgId": "alm-rtc-unknown-ack-version-retired-ack-1",
+            "msgId": "alm-rtc-unknown-ack-version-retired-ack-{resultCache.alm-rtc-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "ackedMsgId": "{resultCache.alm-rtc-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "toPeerId": "{resultCache.alm-rtc-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}",
             "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-unknown-ack-version-recipient-b-assert-control-admitted-1",
+            "source": "resultCache.alm-rtc-unknown-ack-version-recipient-b-unknown-ack-version-1.value.verdict",
+            "operator": "equals",
+            "expected": "admitted",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -2376,10 +2384,18 @@
             "connection": "almConformanceReceiver",
             "carrier": "rtc",
             "typeId": "al.control.ack.v1",
-            "msgId": "alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1",
+            "msgId": "alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "ackedMsgId": "{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "toPeerId": "{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}",
             "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-assert-control-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-unknown-ack-version-1.value.verdict",
+            "operator": "equals",
+            "expected": "admitted",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",

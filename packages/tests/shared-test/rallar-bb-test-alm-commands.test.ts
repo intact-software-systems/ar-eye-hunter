@@ -578,6 +578,7 @@ describe('ALM browser adapter execution', () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createAlmBrowserRuntimeFake(captures) });
         const answer = {
             ...RAW_CONTROL_COMMAND,
+            msgId: 'retired-ack-{resultCache.alm-send.value.msgId}',
             ackedMsgId: '{resultCache.alm-send.value.msgId}',
             toPeerId: 'origin-{resultCache.alm-send.value.carrier}'
         };
@@ -589,7 +590,11 @@ describe('ALM browser adapter execution', () => {
         });
 
         expect(resolved.ok, resolved.error?.message).toBe(true);
-        expect(captures.submitControl[0]).toMatchObject({ ackedMsgId: 'msg-1', toPeerId: 'origin-ws' });
+        expect(captures.submitControl[0]).toMatchObject({
+            msgId: 'retired-ack-msg-1',
+            ackedMsgId: 'msg-1',
+            toPeerId: 'origin-ws'
+        });
 
         const unresolved = await createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
@@ -886,7 +891,8 @@ describe('ALM browser adapter execution', () => {
         { field: 'confirmedRecipientPeerIds', value: [7] },
         { field: 'unconfirmedRecipientPeerIds', value: undefined },
         { field: 'attemptOutcomes', value: ['delivered'] },
-        { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1' } },
+        { field: 'relayRejection', value: { relay: 'trusted-server' } },
+        { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
         { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } }
     ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({

@@ -12,7 +12,7 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import { toCommittedControlAdmissionWait } from '../alm-conformance-message-commands.ts';
+import { toCommittedControlAdmissionWait, toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
     toAudiencePayload,
@@ -123,7 +123,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
         toControlAdmissionOutcomeWait(sender, {
             name: 'unknown-ack-version-refused',
-            controlMsgId: toRetiredAckMsgId(sender),
+            controlMsgId: toRetiredAckMsgId(sender, `{resultCache.${toCommandId(sender, 'send-1')}.value.msgId}`),
             controlTypeId: RETIRED_ACK_TYPE_ID,
             contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"',
             timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
@@ -140,9 +140,12 @@ export const receiptedAudience: readonly AlmConformanceScenarioDefinition[] = [
     frozenAudienceMembership
 ];
 
-/** Authored, so the refusal the origin states names this control and no raw ACK of another carrier. */
-function toRetiredAckMsgId(step: AlmConformanceStepInput): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-retired-ack-1`;
+/**
+ * Authored, so the refusal the origin states names this control and no raw ACK of another carrier, and suffixed with
+ * the msgId of the send it answers, so a re-run on a page whose store survived is admitted again, never a duplicate.
+ */
+function toRetiredAckMsgId(step: AlmConformanceStepInput, ackedMsgId: string): string {
+    return `alm-${step.input.carrier}-${step.scenarioKey}-retired-ack-${ackedMsgId}`;
 }
 
 function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceReceiptRoles {
@@ -231,18 +234,27 @@ function toUnknownAckVersionRecipientCommands(
         absent: false
     });
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
+    const control = 'unknown-ack-version-1';
     return [
         arrival,
         {
             kind: 'messages.control',
-            commandId: toCommandId(recipient, 'unknown-ack-version-1'),
+            commandId: toCommandId(recipient, control),
             connection: recipient.input.receiverConnection,
             carrier: 'rtc',
             typeId: RETIRED_ACK_TYPE_ID,
-            msgId: toRetiredAckMsgId(recipient),
+            msgId: toRetiredAckMsgId(recipient, `{${event}.data.msgId}`),
             ackedMsgId: `{${event}.data.msgId}`,
             toPeerId: `{${event}.senderId}`,
             timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, recipient.input.deadlineMs)
-        }
+        },
+        toResultAssertion({
+            step: recipient,
+            name: 'assert-control-admitted-1',
+            resultName: control,
+            field: 'verdict',
+            operator: 'equals',
+            expected: 'admitted'
+        })
     ];
 }

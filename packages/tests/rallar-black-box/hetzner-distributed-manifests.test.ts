@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import {
     describe,
     expect,
@@ -22,7 +23,11 @@ import type {
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestWaitMatch
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -147,6 +152,20 @@ function toManifestCommands(manifest: RallarBlackBoxDistributedRunManifest): rea
         ]);
 
     return manifest.recipes.flatMap((selection) => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
+}
+
+/**
+ * `match` is shadowed when an event that satisfies `other` always satisfies it too: every other criterion is the same,
+ * its `contains` is a substring of the other's, and its `equals` is the other's.
+ */
+function isWaitMatchShadowedBy(match: RallarBlackBoxTestWaitMatch, other: RallarBlackBoxTestWaitMatch): boolean {
+    const otherFields = new Map(Object.entries(other));
+    return Object.entries(match).every(([field, value]) => {
+        const otherValue = otherFields.get(field);
+        return field === 'contains'
+            ? typeof otherValue === 'string' && otherValue.includes(String(value))
+            : otherValue !== undefined && isDeepStrictEqual(value, otherValue);
+    });
 }
 
 describe('Hetzner distributed manifest catalog', () => {
@@ -1079,17 +1098,30 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
     });
 
-    it('scopes every positive wait of the 3-agent ALM recipes to one scenario, since a wait also matches past events', () => {
+    it('leaves no positive wait of the 3-agent ALM recipes matchable by an event another wait awaits, since a wait also matches past events', () => {
         const manifest = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'))!.manifest;
         for (const selection of manifest.recipes) {
-            const matches = ((selection.recipe?.commands ?? []) as readonly (ManifestCommand & { absent?: boolean; match?: object; })[])
+            const matches = ((selection.recipe?.commands ?? []) as readonly (ManifestCommand & { absent?: boolean; match?: RallarBlackBoxTestWaitMatch; })[])
                 .filter((command) => command.kind === 'wait' && command.absent !== true)
-                .map((command) => JSON.stringify(command.match));
-            const shadowed = matches.filter((match, index) => matches.some((other, otherIndex) => otherIndex !== index && other.includes(match.slice(1, -1))));
+                .map((command) => command.match ?? {});
+            const shadowed = matches.filter((match, index) => matches.some((other, otherIndex) => otherIndex !== index && isWaitMatchShadowedBy(match, other)));
 
             expect(shadowed, selection.role).toEqual([]);
         }
+    });
+
+    it('reads a wait as shadowed when every event another wait awaits also satisfies it', () => {
+        const topic = 'rallar.browser.alm.inbound_diagnostics';
+        const refusal: RallarBlackBoxTestWaitMatch = { kind: 'diagnostic', topic, contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"' };
+
+        expect(isWaitMatchShadowedBy({ ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' }, refusal)).toBe(true);
+        expect(isWaitMatchShadowedBy({ kind: 'diagnostic', topic }, refusal)).toBe(true);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [1] } })).toBe(true);
+        expect(isWaitMatchShadowedBy(refusal, { ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' })).toBe(false);
+        expect(isWaitMatchShadowedBy({ ...refusal, topic: 'other' }, refusal)).toBe(false);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [2] } })).toBe(false);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event' })).toBe(false);
     });
 
     it('keeps every identity of the 3-agent ALM manifest apart from the 2-agent one, so both can run in one profile', () => {

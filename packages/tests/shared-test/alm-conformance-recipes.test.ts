@@ -672,8 +672,8 @@ describe('alm-conformance recipe family', () => {
 
             expect(rtc.arrival).not.toBe(fallback.arrival);
             expect(rtc.controlMsgId).not.toBe(fallback.controlMsgId);
-            expect(rtc.refusal).toContain(`"msgId":"${rtc.controlMsgId}"`);
-            expect(fallback.refusal).toContain(`"msgId":"${fallback.controlMsgId}"`);
+            expect(rtc.refusal).toContain('"msgId":"alm-rtc-unknown-ack-version-retired-ack-');
+            expect(fallback.refusal).toContain('"msgId":"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-');
         });
 
         it('holds the ACK of recipient-b until the retried copy arrives over RTC, and proves over ws that no copy is retried', () => {
@@ -687,25 +687,34 @@ describe('alm-conformance recipe family', () => {
             }
         });
 
-        it('answers the send with a raw retired ACK over the rtc leg and waits for the origin to refuse it unsupported', () => {
+        it('answers the send with a raw retired ACK over the rtc leg, admitted, and waits for the origin to refuse it unsupported', () => {
             const scenario = receiptedOf('rtc-with-ws-fallback', 'unknown-ack-version');
+            const arrival = '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload';
             expect(bodyOf(scenario.recipientB)).toMatchObject([
                 { kind: 'wait', commandId: 'alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1' },
                 {
                     kind: 'messages.control',
+                    commandId: 'alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-unknown-ack-version-1',
                     carrier: 'rtc',
                     typeId: 'al.control.ack.v1',
-                    msgId: 'alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1',
-                    ackedMsgId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}',
-                    toPeerId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}'
+                    msgId: `alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-${arrival}.data.msgId}`,
+                    ackedMsgId: `${arrival}.data.msgId}`,
+                    toPeerId: `${arrival}.senderId}`
+                },
+                {
+                    kind: 'assert',
+                    source: 'resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-unknown-ack-version-1.value.verdict',
+                    operator: 'equals',
+                    expected: 'admitted'
                 }
             ]);
             expect(scenario.sender.commands).toContainEqual(expect.objectContaining({
                 kind: 'wait',
                 match: expect.objectContaining({
                     topic: INBOUND_DIAGNOSTICS_TOPIC,
-                    contains: '"msgId":"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1","typeId":"al.control.ack.v1",' +
-                        '"carrier":"rtc","outcome":"rejected","reason":"unsupported"'
+                    contains: '"msgId":"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-' +
+                        '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-send-1.value.msgId}",' +
+                        '"typeId":"al.control.ack.v1","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
                 })
             }));
         });

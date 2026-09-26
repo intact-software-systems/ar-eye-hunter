@@ -64,9 +64,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // 277.2451171875 KiB, and its retry through the relay tree (the missing-recipient repair, the
         // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. Its logical evidence (the
         // recipient lists, the hop view, the trusted relay rejection and the observation decoders) measures
-        // 279.2412109375 KiB. The next whole-KiB ceiling is 280; all operator dependency exclusions above
-        // remain enforced.
-        expect(result.brotliKiB).toBeLessThan(280);
+        // 279.2412109375 KiB. Its closing harness checks (a raw control that resolves its own msgId from an earlier
+        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. The next
+        // whole-KiB ceiling is 281; all operator dependency exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(281);
     });
 });
 
