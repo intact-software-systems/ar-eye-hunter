@@ -142,7 +142,26 @@ Recorded by S2c-ii's execution, for the maintainer or a later slice:
 - **Cluster delivery ignores the outbox audience** (Task 2b re-review N2-m1): with the pub/sub bridge
   registered every instance delivers a dequeued room message to the room's current sessions; stated as
   a known limitation in the outbound README.
-- **The dead-RTC-peer reconnect race** (the maintainer's chip).
+- **The dead-RTC-peer reconnect race** (the maintainer's chip, PR #593).
+- **The RTC heartbeat frames reaching AL admission** (Task 7 diagnosis): the rx streamer should skip
+  `type === 'ping'` frames before admission and log the decoder reason beside the code — the
+  `Rejected RTC message malformed` noise (on main too) would hide a real frozen-audience rejection.
+- **A lane cell failing loudly when a page's events go silent while its stats continue** (Task 7
+  diagnosis): a hot reload of the served page stopped the event capture and produced a false
+  "acknowledged with 0 received" shape.
+- **Under `subtree`, a lost terminal ACK from a hop that is still present is never recovered** (round-2
+  review, Minor 1): the alternate-parent retry re-plans around every unfinished hop and the merge keeps
+  them expected, so the receipt expires though every recipient delivered; the suggested shape re-sends
+  the retried copy to every unfinished hop still present and ready, as the `receiver` repair does.
+- **A relay's own alternate-parent retry keeps its failed children under `subtree`** (round-2 review,
+  Nit 1): bounded extra traffic up to the attempt cap; truth is unaffected; to be stated in the
+  outbound README.
+- **A lost former-parent release re-opens the unconfirmed delivered relay** (round-2 review, Nit 2):
+  the release is sent once, on the re-parenting duplicate.
+- **The `hop`-mode retry still replaces its expected hops** (round 2, concern 2): a retry that completes
+  the receipt at dispatch deletes the row without a settlement there (pre-existing on main).
+- **A both-normal hosted full read** (D51): both S2c-ii full reads landed on slow runners (72012a632
+  mixed regime; a7f2f0f8e slow throughout), as both S2c-i reads did.
 
 ---
 
