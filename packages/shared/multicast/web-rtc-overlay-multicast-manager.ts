@@ -269,7 +269,7 @@ export class WebRtcOverlayMulticastManager {
         msg: ALMessage,
         verdict: Extract<ALDeliveryAdmissionVerdict, { kind: 'unroutable' | 'failed'; }>
     ): ALOutboundEnqueueResult {
-        return { verdict, message: msg, entries: [], reason: verdict.detail };
+        return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
@@ -278,7 +278,7 @@ export class WebRtcOverlayMulticastManager {
             reason: 'disposed',
             detail: 'RTC overlay multicast manager is disposed.'
         };
-        return { verdict, message: msg, entries: [], reason: verdict.detail };
+        return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
 
     async forwardIfRequired(

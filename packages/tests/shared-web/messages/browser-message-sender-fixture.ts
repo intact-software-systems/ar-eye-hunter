@@ -8,6 +8,7 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { vi, type Mock } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -63,5 +64,10 @@ export function createBrowserMessageSenderFixture(
 }
 
 export function toQueuedMessageAdmission(message: ALMessage): ALOutboundEnqueueResult {
-    return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }, message, entries: [] };
+    return {
+        verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
+        message,
+        entries: [],
+        trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+    };
 }

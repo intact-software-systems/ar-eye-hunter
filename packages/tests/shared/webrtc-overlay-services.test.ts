@@ -721,7 +721,8 @@ describe('WebRtc overlay services', () => {
                     verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
                     message: msg,
                     entries: [],
-                    reason: refusedDetail
+                    reason: refusedDetail,
+                    trackedReceiptAlgo: 'none'
                 }))
         );
         onTestFinished(() => enqueueSpy.mockRestore());

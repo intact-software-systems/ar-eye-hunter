@@ -23,7 +23,14 @@ export function createMessageDelivery(
         delivery: ack === 'none' ? undefined : { reliability: 'at-least-once', ack }
     }, carrier);
     if (verdict) {
-        registry.record({ kind: 'admission', msgId: handle.msgId, carrier, atMs: Date.now(), verdict });
+        registry.record({
+            kind: 'admission',
+            msgId: handle.msgId,
+            carrier,
+            atMs: Date.now(),
+            verdict,
+            trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+        });
     }
     return { handle, registry };
 }

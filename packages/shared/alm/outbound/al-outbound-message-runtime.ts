@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
@@ -255,6 +255,8 @@ export interface ALOutboundEnqueueResult {
     readonly entry?: ResourceEntry;
     readonly entries: readonly ResourceEntry[];
     readonly reason?: string;
+    /** The receipt this carrier tracks for what it admitted; `none` for a verdict that admitted nothing (R-S3a-4). */
+    readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
 export namespace ALOutboundMessageRuntime {
@@ -597,7 +599,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             message: computed.msg ?? msg,
             entry: computed.entries[0],
             entries: computed.entries,
-            reason: computed.reason
+            reason: computed.reason,
+            trackedReceiptAlgo: computed.trackedReceiptAlgo
         };
     }
 
@@ -606,7 +609,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             verdict: { kind: 'skipped', reason: 'disposed', detail: 'Outbound runtime is disposed.' },
             message: msg,
             entries: [],
-            reason: 'Outbound runtime is disposed.'
+            reason: 'Outbound runtime is disposed.',
+            trackedReceiptAlgo: 'none'
         };
     }
 

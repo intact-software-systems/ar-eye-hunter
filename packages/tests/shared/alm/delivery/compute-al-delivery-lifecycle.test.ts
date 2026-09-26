@@ -1,4 +1,5 @@
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     AL_DELIVERY_STATES,
@@ -37,7 +38,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'admitted', durable: true, queuedAttempts })
+                toAdmissionSettlement(previous, { kind: 'admitted', durable: true, queuedAttempts })
             );
 
             expect(next.state).toBe(expectedState);
@@ -49,7 +50,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'admitted', durable, queuedAttempts: 1 })
+                toAdmissionSettlement(previous, { kind: 'admitted', durable, queuedAttempts: 1 })
             );
 
             expect(next.evidence.admittedDurable).toBe(durable);
@@ -57,14 +58,14 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
 
         it.each([{}])('duplicate verdict states no durability of its own', () => {
             const previous = createLifecycle(ackMode);
-            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous.msgId, { kind: 'duplicate' }));
+            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous, { kind: 'duplicate' }));
 
             expect(next.evidence.admittedDurable).toBeUndefined();
         });
 
         it.each([{}])('duplicate verdict moves to accepted and records admittedAtMs', () => {
             const previous = createLifecycle(ackMode);
-            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous.msgId, { kind: 'duplicate' }));
+            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous, { kind: 'duplicate' }));
 
             expect(next.state).toBe('accepted');
             expect(next.evidence.admittedAtMs).toBe(AT_MS);
@@ -73,7 +74,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
 
         it.each([{}])('pending verdict leaves a freshly submitted lifecycle unchanged', () => {
             const previous = createLifecycle(ackMode);
-            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous.msgId, { kind: 'pending' }));
+            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous, { kind: 'pending' }));
 
             expect(next.state).toBe('submitted');
             expect(next.evidence).toEqual(previous.evidence);
@@ -83,7 +84,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'catching up' })
+                toAdmissionSettlement(previous, { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'catching up' })
             );
 
             expect(next.state).toBe('pending-authority');
@@ -94,7 +95,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, {
+                toAdmissionSettlement(previous, {
                     kind: 'refused',
                     reason: 'unauthorized',
                     detail: 'sender is not a group member'
@@ -109,7 +110,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'unroutable', reason: 'no-route', detail: 'no rtc peers' })
+                toAdmissionSettlement(previous, { kind: 'unroutable', reason: 'no-route', detail: 'no rtc peers' })
             );
 
             expect(next.state).toBe('submitted');
@@ -135,7 +136,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'unroutable', reason, detail: `${reason}-detail` })
+                toAdmissionSettlement(previous, { kind: 'unroutable', reason, detail: `${reason}-detail` })
             );
 
             expect(next.evidence.attempts.map((attempt) => attempt.unroutableReason)).toEqual([reason]);
@@ -162,7 +163,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind, detail: `${kind}-detail` })
+                toAdmissionSettlement(previous, { kind, detail: `${kind}-detail` })
             );
 
             expect(next.state).toBe(kind);
@@ -178,7 +179,7 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(
                 previous,
-                toAdmissionSettlement(previous.msgId, { kind: 'skipped', reason, detail: 'owner disposed before admitting' })
+                toAdmissionSettlement(previous, { kind: 'skipped', reason, detail: 'owner disposed before admitting' })
             );
 
             expect(next.state).toBe('failed');
@@ -372,10 +373,8 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
 
     describe('acknowledgement settlement', () => {
         it.each([true, false])('replaces the hop lists and moves to acknowledged only when complete=%s', (complete) => {
-            const admitted = computeALDeliveryLifecycle(
-                createLifecycle(ackMode),
-                toAdmissionSettlement(MSG_ID, { kind: 'duplicate' })
-            );
+            const opened = createLifecycle(ackMode);
+            const admitted = computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, { kind: 'duplicate' }));
             const next = computeALDeliveryLifecycle(admitted, {
                 kind: 'acknowledgement',
                 msgId: admitted.msgId,
@@ -485,13 +484,14 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
 
 describe('pending verdict against an already pending-authority lifecycle', () => {
     it('keeps the lifecycle at pending-authority', () => {
+        const opened = createLifecycle('receiver');
         const deferred = computeALDeliveryLifecycle(
-            createLifecycle('receiver'),
-            toAdmissionSettlement(MSG_ID, { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'catching up' })
+            opened,
+            toAdmissionSettlement(opened, { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'catching up' })
         );
         expect(deferred.state).toBe('pending-authority');
 
-        const next = computeALDeliveryLifecycle(deferred, toAdmissionSettlement(MSG_ID, { kind: 'pending' }));
+        const next = computeALDeliveryLifecycle(deferred, toAdmissionSettlement(deferred, { kind: 'pending' }));
 
         expect(next.state).toBe('pending-authority');
     });
@@ -696,7 +696,7 @@ describe('carrier refusal handed to the fallback carrier', () => {
             detail: 'ack receiver is unsupported for rtc multicast targets'
         });
         const retried = computeALDeliveryLifecycle(refused, {
-            ...toAdmissionSettlement(MSG_ID, { kind: 'admitted', durable: true, queuedAttempts: 1 }),
+            ...toAdmissionSettlement(refused, { kind: 'admitted', durable: true, queuedAttempts: 1 }),
             carrier: 'ws'
         });
 
@@ -772,15 +772,16 @@ describe('transport-accepted terminality', () => {
     });
 
     it.each([
-        { receiptAlgo: 'none' as const, expectedTerminal: true },
-        { receiptAlgo: 'hop' as const, expectedTerminal: false },
-        { receiptAlgo: 'subtree' as const, expectedTerminal: false },
-        { receiptAlgo: 'receiver' as const, expectedTerminal: false }
+        { ackMode: 'none' as const, receiptAlgo: 'none' as const, expectedTerminal: true },
+        { ackMode: 'none' as const, receiptAlgo: 'hop' as const, expectedTerminal: false },
+        { ackMode: 'none' as const, receiptAlgo: 'subtree' as const, expectedTerminal: false },
+        { ackMode: 'none' as const, receiptAlgo: 'receiver' as const, expectedTerminal: false },
+        { ackMode: 'receiver' as const, receiptAlgo: 'none' as const, expectedTerminal: true }
     ])(
-        'ends at transport-accepted only when the tracked receipt is none (got $receiptAlgo)',
-        ({ receiptAlgo, expectedTerminal }) => {
+        'ends at transport-accepted only when the tracked receipt is none (ackMode $ackMode, receiptAlgo $receiptAlgo)',
+        ({ ackMode, receiptAlgo, expectedTerminal }) => {
             const lifecycle = {
-                ...createLifecycle('none'),
+                ...createLifecycle(ackMode),
                 state: 'transport-accepted' as const,
                 receiptAlgo
             };
@@ -789,6 +790,95 @@ describe('transport-accepted terminality', () => {
         }
     );
 });
+
+describe('the receipt the admitting carrier tracks (R-S3a-4)', () => {
+    const ADMITTED: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: true, queuedAttempts: 1 };
+
+    it('settles to a weaker tracked receipt, records the downgrade and ends at transport-accepted', () => {
+        const opened = { ...createLifecycle('none'), receiptAlgo: 'hop' as const };
+
+        const admitted = computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, ADMITTED, 'none'));
+        const sent = toSentLifecycle(admitted);
+
+        expect(admitted.receiptAlgo).toBe('none');
+        expect(admitted.evidence.receiptDowngrade).toEqual({ requested: 'hop', tracked: 'none' });
+        expect(sent.state).toBe('transport-accepted');
+        expect(isALDeliveryTerminal(sent)).toBe(true);
+    });
+
+    it.each([
+        { resolved: 'receiver' as const, tracked: 'subtree' as const },
+        { resolved: 'subtree' as const, tracked: 'hop' as const }
+    ])('records a downgrade from $resolved to $tracked and stays open for the tracked receipt', ({ resolved, tracked }) => {
+        const opened = { ...createLifecycle('receiver'), receiptAlgo: resolved };
+
+        const sent = toSentLifecycle(computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, ADMITTED, tracked)));
+
+        expect(sent).toMatchObject({ state: 'transport-accepted', receiptAlgo: tracked });
+        expect(sent.evidence.receiptDowngrade).toEqual({ requested: resolved, tracked });
+        expect(isALDeliveryTerminal(sent)).toBe(false);
+    });
+
+    it.each(['none', 'hop', 'subtree', 'receiver'] as const)(
+        'records no downgrade when the carrier tracks the resolved receipt (%s)',
+        (algo) => {
+            const opened = { ...createLifecycle('receiver'), receiptAlgo: algo };
+
+            const admitted = computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, ADMITTED, algo));
+
+            expect(admitted.receiptAlgo).toBe(algo);
+            expect(admitted.evidence.receiptDowngrade).toBeUndefined();
+        }
+    );
+
+    it('applies the tracked receipt of a duplicate admission', () => {
+        const opened = { ...createLifecycle('receiver'), receiptAlgo: 'hop' as const };
+
+        const duplicate = computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, { kind: 'duplicate' }, 'none'));
+
+        expect(duplicate.receiptAlgo).toBe('none');
+        expect(duplicate.evidence.receiptDowngrade).toEqual({ requested: 'hop', tracked: 'none' });
+    });
+
+    it('ignores the tracked receipt of a verdict that admitted nothing', () => {
+        const opened = { ...createLifecycle('receiver'), receiptAlgo: 'hop' as const };
+
+        const unroutable = computeALDeliveryLifecycle(
+            opened,
+            toAdmissionSettlement(opened, { kind: 'unroutable', reason: 'no-route', detail: 'no rtc peers' }, 'none')
+        );
+
+        expect(unroutable.receiptAlgo).toBe('hop');
+        expect(unroutable.evidence.receiptDowngrade).toBeUndefined();
+    });
+
+    it('keeps the first downgrade when a later admission tracks the same weaker receipt', () => {
+        const opened = { ...createLifecycle('receiver'), receiptAlgo: 'hop' as const };
+        const admitted = computeALDeliveryLifecycle(opened, toAdmissionSettlement(opened, ADMITTED, 'none'));
+
+        const duplicate = computeALDeliveryLifecycle(admitted, toAdmissionSettlement(admitted, { kind: 'duplicate' }, 'none'));
+
+        expect(duplicate.evidence.receiptDowngrade).toEqual({ requested: 'hop', tracked: 'none' });
+    });
+
+    it('starts with no downgrade', () => {
+        expect(createLifecycle('receiver').evidence.receiptDowngrade).toBeUndefined();
+    });
+});
+
+function toSentLifecycle(admitted: ALDeliveryLifecycle): ALDeliveryLifecycle {
+    const opened = computeALDeliveryLifecycle(admitted, toAttemptStartedSettlement('attempt-1'));
+    return computeALDeliveryLifecycle(
+        opened,
+        toAttemptSettledSettlement({
+            attemptId: 'attempt-1',
+            outcome: 'sent',
+            submissionAttempted: true,
+            willRetry: false,
+            detail: undefined
+        })
+    );
+}
 
 describe('attempt-settled failed/no-targets alongside another sent hop (ruling R3)', () => {
     it('leaves transport-accepted and settles both rows when another hop already carried the message', () => {
@@ -1031,9 +1121,10 @@ function toCancelledSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind:
 }
 
 function toQueuedLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
+    const opened = createLifecycle(ackMode);
     return computeALDeliveryLifecycle(
-        createLifecycle(ackMode),
-        toAdmissionSettlement(MSG_ID, { kind: 'admitted', durable: true, queuedAttempts: 1 })
+        opened,
+        toAdmissionSettlement(opened, { kind: 'admitted', durable: true, queuedAttempts: 1 })
     );
 }
 
@@ -1076,11 +1167,13 @@ function expectSameIdentity(next: ALDeliveryLifecycle, previous: ALDeliveryLifec
     expect(next.expiresAtMs).toBe(previous.expiresAtMs);
 }
 
+/** By default the carrier tracks the receipt the lifecycle resolved, so the admission downgrades nothing. */
 function toAdmissionSettlement(
-    msgId: string,
-    verdict: ALDeliveryAdmissionVerdict
+    previous: ALDeliveryLifecycle,
+    verdict: ALDeliveryAdmissionVerdict,
+    trackedReceiptAlgo: ALAckAlgo = previous.receiptAlgo
 ): Extract<ALDeliverySettlement, Readonly<{ kind: 'admission'; }>> {
-    return { kind: 'admission', msgId, carrier: 'rtc', atMs: AT_MS, verdict };
+    return { kind: 'admission', msgId: previous.msgId, carrier: 'rtc', atMs: AT_MS, verdict, trackedReceiptAlgo };
 }
 
 function toAttemptStartedSettlement(

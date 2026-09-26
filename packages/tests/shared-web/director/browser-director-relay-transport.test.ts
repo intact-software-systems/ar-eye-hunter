@@ -43,7 +43,8 @@ describe('director delivery admission', () => {
             carrier: 'rtc',
             msgId: rtc.handle.msgId,
             atMs: Date.now(),
-            verdict: state === 'queued' ? { kind: 'admitted', durable: true, queuedAttempts: 1 } : { kind: 'superseded', detail: 'Newer state' }
+            verdict: state === 'queued' ? { kind: 'admitted', durable: true, queuedAttempts: 1 } : { kind: 'superseded', detail: 'Newer state' },
+            trackedReceiptAlgo: rtc.handle.lifecycle().receiptAlgo
         });
         expect(await sending).toEqual({ status: 'sent', rtc: rtc.handle });
         expect(ws).not.toHaveBeenCalled();

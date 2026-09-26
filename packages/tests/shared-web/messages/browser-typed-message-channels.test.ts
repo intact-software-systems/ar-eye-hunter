@@ -573,7 +573,8 @@ function mockRtcNoRoute(): void {
             verdict: { kind: 'unroutable' as const, reason: 'no-route' as const, detail: `No outbound transport route for message ${message.id.msgId}` },
             message,
             entries: [],
-            reason: `No outbound transport route for message ${message.id.msgId}`
+            reason: `No outbound transport route for message ${message.id.msgId}`,
+            trackedReceiptAlgo: 'none'
         }));
 }
 

@@ -114,7 +114,14 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
             expiresAtMs: undefined,
             submittedAtMs: 0
         }),
-        { kind: 'admission', msgId: message.id.msgId, carrier: 'ws', atMs: 0, verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 } }
+        {
+            kind: 'admission',
+            msgId: message.id.msgId,
+            carrier: 'ws',
+            atMs: 0,
+            verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
+            trackedReceiptAlgo: 'receiver'
+        }
     );
 }
 

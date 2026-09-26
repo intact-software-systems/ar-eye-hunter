@@ -1,5 +1,6 @@
 import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -404,7 +405,13 @@ function resetCallRtcDoubles(): void {
     mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
+        async (message) => ({
+            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.rtcRxStreamer
@@ -414,7 +421,13 @@ function resetCallRtcDoubles(): void {
 
 function resetCallWsDoubles(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
+        async (message) => ({
+            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox

@@ -84,7 +84,8 @@ export class ALOutboundMessageEffects<TPrepared> {
         this.dependencies.settlements({
             kind: 'admission',
             msgId: pending.message.msgId,
-            verdict: result.computed.verdict
+            verdict: result.computed.verdict,
+            trackedReceiptAlgo: result.computed.trackedReceiptAlgo
         });
         return { status: 'completed' };
     }
@@ -359,7 +360,8 @@ function computeALOutboundRetainedAdmissionSkip(
             settlement: {
                 kind: 'admission',
                 msgId: input.msgId,
-                verdict: { kind: 'deferred', reason: 'not-yet-in-sync', detail: authority.reason }
+                verdict: { kind: 'deferred', reason: 'not-yet-in-sync', detail: authority.reason },
+                trackedReceiptAlgo: 'none'
             }
         };
     }
@@ -380,7 +382,8 @@ function toALOutboundRetainedAdmissionSkipSettlement(
         ? {
             kind: 'admission',
             msgId: input.msgId,
-            verdict: { kind: 'refused', reason: 'unauthorized', detail: input.authority.reason }
+            verdict: { kind: 'refused', reason: 'unauthorized', detail: input.authority.reason },
+            trackedReceiptAlgo: 'none'
         }
         : undefined;
 }

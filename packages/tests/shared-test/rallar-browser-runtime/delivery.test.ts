@@ -33,6 +33,7 @@ import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import {
     computeOutboundTestAdmission,
@@ -631,7 +632,7 @@ function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
     const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message): Promise<ALOutboundEnqueueResult> => {
         const verdict = await admission.promise;
-        return { message, verdict, entries: [] };
+        return { message, verdict, entries: [], trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message) };
     });
     facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     return admission;
@@ -849,6 +850,7 @@ it.each(
         vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
             message,
             entries: [],
+            trackedReceiptAlgo: 'none',
             verdict: state === 'rejected'
                 ? { kind: 'refused', reason: 'unsupported', detail: 'Admission refused.' }
                 : { kind: 'failed', detail: 'Admission failed.' }

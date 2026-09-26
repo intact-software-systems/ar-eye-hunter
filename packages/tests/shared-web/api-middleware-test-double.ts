@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
@@ -91,7 +92,8 @@ function createWebSocketQueueBoxDouble(
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })),
         readHealth: vi.fn(() => ({
             sessionId,
@@ -167,7 +169,8 @@ function createRtcRxStreamerDouble(
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })),
         onInboxMessageDo: vi.fn(() => rtcRxStreamer),
         removeInboxMessageCallback: vi.fn(() => true),

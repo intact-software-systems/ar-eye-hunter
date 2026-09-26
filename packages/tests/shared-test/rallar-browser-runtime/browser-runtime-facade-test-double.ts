@@ -467,7 +467,14 @@ export function openFacadeDelivery(
         delivery: { ack: 'receiver', reliability: 'at-least-once' }
     }, carrier);
     if (verdict) {
-        deliveryRegistry.record({ kind: 'admission', msgId: handle.msgId, carrier, atMs: Date.now(), verdict });
+        deliveryRegistry.record({
+            kind: 'admission',
+            msgId: handle.msgId,
+            carrier,
+            atMs: Date.now(),
+            verdict,
+            trackedReceiptAlgo: handle.lifecycle().receiptAlgo
+        });
     }
     return handle;
 }

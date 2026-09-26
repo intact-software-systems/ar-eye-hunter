@@ -96,6 +96,7 @@ describe('Rallar Game Authority browser client', () => {
                 carrier: 'ws',
                 msgId: delivery.handle.msgId,
                 atMs: Date.now(),
+                trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo,
                 verdict: state === 'queued'
                     ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
                     : state === 'rejected'
@@ -137,6 +138,7 @@ describe('Rallar Game Authority browser client', () => {
                 carrier: 'rtc',
                 msgId: delivery.handle.msgId,
                 atMs: Date.now(),
+                trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo,
                 verdict: state === 'queued'
                     ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
                     : state === 'rejected'
@@ -215,7 +217,8 @@ describe('Rallar Game Authority browser client', () => {
             carrier: 'ws',
             msgId: delivery.handle.msgId,
             atMs: Date.now(),
-            verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }
+            verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
+            trackedReceiptAlgo: delivery.handle.lifecycle().receiptAlgo
         });
 
         expect(await sending).toMatchObject({ status: 'sent', raw: delivery.handle });

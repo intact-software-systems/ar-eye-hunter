@@ -1,6 +1,7 @@
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     isALDeliveryTerminal,
@@ -147,7 +148,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
                 'rtc'
             );
 
-            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS, 'hop'));
             harness.registry.record(toAttemptStartedSettlement('msg-1', START_MS));
             harness.registry.record(toAttemptSentSettlement('msg-1', START_MS));
 
@@ -607,13 +608,15 @@ function toBestEffortTestMessage(msgId: string): ALMessage {
     };
 }
 
-function toAdmittedSettlement(msgId: string, atMs: number): ALDeliverySettlement {
+/** By default the carrier tracks the receiver receipt `toTestMessage` asks for. */
+function toAdmittedSettlement(msgId: string, atMs: number, trackedReceiptAlgo: ALAckAlgo = 'receiver'): ALDeliverySettlement {
     return {
         kind: 'admission',
         msgId,
         carrier: 'rtc',
         atMs,
-        verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }
+        verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 },
+        trackedReceiptAlgo
     };
 }
 

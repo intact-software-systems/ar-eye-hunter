@@ -132,7 +132,8 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
                 verdict,
                 message,
                 entries: [],
-                reason: 'admission-under-test'
+                reason: 'admission-under-test',
+                trackedReceiptAlgo: 'none'
             };
         });
         let wakes = 0;
@@ -174,7 +175,8 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
                 verdict,
                 message,
                 entries: [],
-                reason: 'admission-under-test'
+                reason: 'admission-under-test',
+                trackedReceiptAlgo: 'none'
             };
         });
         let wakes = 0;
@@ -198,7 +200,8 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
                 verdict,
                 message,
                 entries: [],
-                reason: 'newer-signal-won'
+                reason: 'newer-signal-won',
+                trackedReceiptAlgo: 'none'
             };
         });
         let wakes = 0;

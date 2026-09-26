@@ -585,7 +585,7 @@ function toALOutboundVerdictComputed<TPrepared>(
     verdict: ALDeliveryAdmissionVerdict,
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
-    return { ...fields, verdict };
+    return { ...fields, verdict, trackedReceiptAlgo: 'none' };
 }
 
 /** Members read the version of the sender one after another, so a version that moved between them splits the group. */

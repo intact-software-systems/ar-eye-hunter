@@ -2,6 +2,7 @@ import type * as MiddlewareModule from '@shared-web/browser/connection/initialis
 import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -142,7 +143,8 @@ describe('Rallar message send', () => {
                 },
                 message,
                 entries: [],
-                reason: 'Skipping RTC outbound dispatch without planned transport messages'
+                reason: 'Skipping RTC outbound dispatch without planned transport messages',
+                trackedReceiptAlgo: 'none'
             })
         );
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
@@ -208,7 +210,8 @@ describe('Rallar message send', () => {
                 status: 'enqueued',
                 verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];
@@ -360,7 +363,8 @@ describe('Rallar message send', () => {
                 status: 'accepted',
                 verdict: { kind: 'admitted' as const, durable: false, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];
@@ -428,7 +432,8 @@ describe('Rallar message send', () => {
                 status: 'enqueued',
                 verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];

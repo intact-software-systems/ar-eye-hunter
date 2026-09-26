@@ -83,6 +83,8 @@ export type ALDeliverySettlement =
         carrier: ALDeliveryCarrier;
         atMs: number;
         verdict: ALDeliveryAdmissionVerdict;
+        /** The receipt the carrier tracks for what it admitted; `none` for a verdict that admitted nothing (R-S3a-4). */
+        trackedReceiptAlgo: ALAckAlgo;
     }>
     /** A carrier refused admission and the strategy hands the send to its fallback carrier: evidence, never the verdict. */
     | Readonly<{
@@ -203,6 +205,12 @@ export type ALDeliveryRelayRejection =
     | Readonly<{ relay: 'trusted-server'; reason: 'resync-required'; }>
     | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required'; }>;
 
+/** The receipt the send's policy asked for, and the weaker one the admitting carrier tracks instead (R-S3a-4). */
+export interface ALDeliveryReceiptDowngrade {
+    readonly requested: ALAckAlgo;
+    readonly tracked: ALAckAlgo;
+}
+
 export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly submittedAtMs: number;
     /** Undefined until an `admitted` or `duplicate` verdict. */
@@ -211,10 +219,13 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
     /**
-     * Undefined unless a hop refused the message. An ACK-tracked send then reads `rejected`; a best-effort send
-     * keeps its terminal `transport-accepted`, and this field is the only sign of the refusal (R-S2c-ii-5a).
+     * Undefined unless a hop refused the message. A receipt-tracked send (`receiptAlgo !== 'none'`) then reads
+     * `rejected`; a receipt-less one keeps its terminal `transport-accepted`, and this field is the only sign of
+     * the refusal (R-S2c-ii-5a).
      */
     readonly relayRejection: ALDeliveryRelayRejection | undefined;
+    /** Undefined unless the admitting carrier tracks a weaker receipt than the send's policy asked for. */
+    readonly receiptDowngrade: ALDeliveryReceiptDowngrade | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;
 }
@@ -223,7 +234,10 @@ export interface ALDeliveryLifecycle {
     readonly msgId: string;
     readonly typeId: string;
     readonly ackMode: ALAckMode;
-    /** The receipt the send's effective policy tracks; `none` makes `transport-accepted` terminal. */
+    /**
+     * The receipt the send's effective policy tracks, replaced at admission by the one the carrier tracks
+     * (R-S3a-4); `none` makes `transport-accepted` terminal.
+     */
     readonly receiptAlgo: ALAckAlgo;
     /** Undefined only for a message without a deadline; every browser send carries one. */
     readonly expiresAtMs: number | undefined;
@@ -274,6 +288,7 @@ export function createInitialALDeliveryLifecycle(
             confirmedRecipientPeerIds: [],
             unconfirmedRecipientPeerIds: [],
             relayRejection: undefined,
+            receiptDowngrade: undefined,
             reason: undefined
         },
         lateSettlementCount: 0
@@ -282,16 +297,19 @@ export function createInitialALDeliveryLifecycle(
 
 /**
  * `transport-accepted` is terminal only for a best-effort send (`ackMode === 'none'`).
- * For a caller that knows only the wire mode.
+ * For a caller that knows only the wire mode; it approximates the handle, whose `receiptAlgo` a `qos.ack`
+ * override or the admitting carrier's tracked receipt can move away from the wire mode.
  */
 export function isALDeliveryTerminalState(state: ALDeliveryState, ackMode: ALAckMode): boolean {
-    return AL_DELIVERY_TERMINAL_STATES.includes(state) ||
-        (state === 'transport-accepted' && ackMode === 'none');
+    return isTerminalDeliveryState(state, ackMode !== 'none');
 }
 
 export function isALDeliveryTerminal(lifecycle: ALDeliveryLifecycle): boolean {
-    return AL_DELIVERY_TERMINAL_STATES.includes(lifecycle.state) ||
-        (lifecycle.state === 'transport-accepted' && lifecycle.receiptAlgo === 'none');
+    return isTerminalDeliveryState(lifecycle.state, lifecycle.receiptAlgo !== 'none');
+}
+
+function isTerminalDeliveryState(state: ALDeliveryState, tracksReceipt: boolean): boolean {
+    return AL_DELIVERY_TERMINAL_STATES.includes(state) || (state === 'transport-accepted' && !tracksReceipt);
 }
 
 export function isALDeliveryAdmitted(lifecycle: ALDeliveryLifecycle): boolean {

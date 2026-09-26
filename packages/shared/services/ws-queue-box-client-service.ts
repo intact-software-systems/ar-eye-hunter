@@ -474,7 +474,8 @@ export class WsQueueBoxClientService {
                 verdict,
                 message,
                 entries: [],
-                reason: verdict.detail
+                reason: verdict.detail,
+                trackedReceiptAlgo: 'none'
             }));
         }
 

@@ -384,7 +384,7 @@ function createAggregation(enqueued: ALMessage[] = []): WsQueueBoxServerReceiptA
         queueEngine: new InboxOutboxEngine(),
         enqueueOutbox: async (message) => {
             enqueued.push(message);
-            return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [] };
+            return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [], trackedReceiptAlgo: 'receiver' };
         },
         acceptServerControl: async () => ({ kind: 'not-handled' }),
         acceptServerReceipt: async () => ({ kind: 'not-handled' })
