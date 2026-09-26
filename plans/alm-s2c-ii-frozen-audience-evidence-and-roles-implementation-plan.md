@@ -627,6 +627,15 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   `refused/unsupported` naming the bound, so `rtc-with-ws-fallback` delivers over WS (whose audience
   rides beside the message) and `rtc` alone settles with the typed reason, never `failed`; the bound
   is the documented RTC room limit.
+- **R-S2c-ii-14 (final fix-wave re-review, 2026-09-26; a second scoped round after the final review,
+  taken because a Blocking false `acknowledged` on the live `group-leader` path cannot ship).** (a) Under
+  `subtree` the alternate-parent retry keeps every unfinished hop expected — it adds hops and never
+  drops an unfinished one — so a replacement hop that already held the copy cannot answer for the
+  dropped hop's subtree; a hop's completion ACK sent in answer to a retried copy counts only for that
+  hop. This also removes the pre-existing case where a replacing retry completed the receipt at
+  dispatch and deleted the row without a settlement. (b) Under `receiver` a recipient that delivered
+  always ends confirmed whatever re-parenting did: its own recipient ACK reaches the origin through
+  whichever parent it holds, and the origin counts by `logicalRecipientPeerId`.
 
 ## Self-review
 
