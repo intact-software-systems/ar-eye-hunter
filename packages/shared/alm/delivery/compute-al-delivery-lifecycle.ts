@@ -4,6 +4,7 @@ import {
     type ALDeliveryCarrier,
     type ALDeliveryEvidence,
     type ALDeliveryLifecycle,
+    type ALDeliveryRefusalReason,
     type ALDeliverySettlement,
     type ALDeliveryState,
     type ALDeliveryUnroutableReason
@@ -13,6 +14,7 @@ type ALDeliveryAdmissionSettlement = Extract<ALDeliverySettlement, Readonly<{ ki
 type ALDeliveryAttemptStartedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'attempt-started'; }>>;
 type ALDeliveryAttemptSettledSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'attempt-settled'; }>>;
 type ALDeliveryAcknowledgementSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'acknowledgement'; }>>;
+type ALDeliveryRelayRejectedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'relay-rejected'; }>>;
 
 export function computeALDeliveryLifecycle(
     previous: ALDeliveryLifecycle,
@@ -24,11 +26,22 @@ export function computeALDeliveryLifecycle(
     switch (settlement.kind) {
         case 'admission':
             return toAdmissionLifecycle(previous, settlement);
+        case 'carrier-refused':
+            return toAdmissionAttemptLifecycle(previous, {
+                carrier: settlement.carrier,
+                atMs: settlement.atMs,
+                detail: settlement.detail,
+                outcome: 'refused',
+                unroutableReason: undefined,
+                refusalReason: settlement.reason
+            });
         case 'attempt-started':
         case 'attempt-settled':
             return toAttemptLifecycle(previous, settlement);
         case 'acknowledgement':
             return toAcknowledgementLifecycle(previous, settlement);
+        case 'relay-rejected':
+            return toRelayRejectedLifecycle(previous, settlement);
         case 'attempts-exhausted':
             return toReasonedLifecycle(previous, 'failed', settlement.detail);
         case 'expired':
@@ -110,11 +123,13 @@ function toAdmissionLifecycle(
         case 'refused':
             return toReasonedLifecycle(previous, 'rejected', verdict.detail);
         case 'unroutable':
-            return toUnroutableAdmissionLifecycle(previous, {
+            return toAdmissionAttemptLifecycle(previous, {
                 carrier: settlement.carrier,
                 atMs: settlement.atMs,
                 detail: verdict.detail,
-                reason: verdict.reason
+                outcome: 'unroutable',
+                unroutableReason: verdict.reason,
+                refusalReason: undefined
             });
         case 'superseded':
         case 'expired':
@@ -139,7 +154,22 @@ function toAcknowledgementLifecycle(
     settlement: ALDeliveryAcknowledgementSettlement
 ): ALDeliveryLifecycle {
     const evidence = toAcknowledgementEvidence(previous.evidence, settlement);
-    return settlement.complete ? { ...previous, state: 'acknowledged', evidence } : { ...previous, evidence };
+    return isAcknowledged(settlement) ? { ...previous, state: 'acknowledged', evidence } : { ...previous, evidence };
+}
+
+/** Under `receiver` only logical completeness acknowledges: every expected recipient confirmed. */
+function isAcknowledged(settlement: ALDeliveryAcknowledgementSettlement): boolean {
+    return settlement.mode === 'receiver'
+        ? settlement.complete && settlement.unconfirmedRecipientPeerIds.length === 0
+        : settlement.complete;
+}
+
+function toRelayRejectedLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryRelayRejectedSettlement
+): ALDeliveryLifecycle {
+    const rejected = toReasonedLifecycle(previous, 'rejected', settlement.detail);
+    return { ...rejected, evidence: { ...rejected.evidence, relayRejection: settlement.relayRejection } };
 }
 
 function toReasonedLifecycle(
@@ -168,27 +198,30 @@ function toAdmittedLifecycle(
     };
 }
 
-interface UnroutableAdmission {
+interface AdmissionAttempt {
     readonly carrier: ALDeliveryCarrier;
     readonly atMs: number;
     readonly detail: string;
-    readonly reason: ALDeliveryUnroutableReason;
+    readonly outcome: 'unroutable' | 'refused';
+    readonly unroutableReason: ALDeliveryUnroutableReason | undefined;
+    readonly refusalReason: ALDeliveryRefusalReason | undefined;
 }
 
 /** The reducer's own synthetic attempt row for a carrier admission that never reached the transport. */
-function toUnroutableAdmissionLifecycle(
+function toAdmissionAttemptLifecycle(
     previous: ALDeliveryLifecycle,
-    admission: UnroutableAdmission
+    admission: AdmissionAttempt
 ): ALDeliveryLifecycle {
     const attempt: ALDeliveryAttempt = {
         attemptId: `admission:${admission.carrier}:${admission.atMs}`,
         carrier: admission.carrier,
         startedAtMs: admission.atMs,
         settledAtMs: admission.atMs,
-        outcome: 'unroutable',
+        outcome: admission.outcome,
         submissionAttempted: false,
         detail: admission.detail,
-        unroutableReason: admission.reason
+        unroutableReason: admission.unroutableReason,
+        refusalReason: admission.refusalReason
     };
     return {
         ...previous,
@@ -211,7 +244,8 @@ function toStartedAttemptLifecycle(
         outcome: undefined,
         submissionAttempted: false,
         detail: undefined,
-        unroutableReason: undefined
+        unroutableReason: undefined,
+        refusalReason: undefined
     };
     return {
         ...previous,
@@ -275,7 +309,8 @@ function toSettledAttempt(
         outcome: settlement.outcome,
         submissionAttempted: settlement.submissionAttempted,
         detail: settlement.detail,
-        unroutableReason: existing?.unroutableReason
+        unroutableReason: existing?.unroutableReason,
+        refusalReason: existing?.refusalReason
     };
 }
 
@@ -285,7 +320,11 @@ function toAcknowledgementEvidence(
 ): ALDeliveryEvidence {
     return {
         ...evidence,
+        receiptMode: settlement.mode,
         confirmedHopPeerIds: [...settlement.confirmedHopPeerIds],
-        unconfirmedHopPeerIds: [...settlement.unconfirmedHopPeerIds]
+        unconfirmedHopPeerIds: [...settlement.unconfirmedHopPeerIds],
+        expectedRecipientPeerIds: [...settlement.expectedRecipientPeerIds],
+        confirmedRecipientPeerIds: [...settlement.confirmedRecipientPeerIds],
+        unconfirmedRecipientPeerIds: [...settlement.unconfirmedRecipientPeerIds]
     };
 }

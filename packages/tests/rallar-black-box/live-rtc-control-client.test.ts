@@ -10,12 +10,16 @@ import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
-/** Spreads a real delivery observation, then explicitly named contamination the producer never emits. */
+/**
+ * Spreads a real delivery observation, then explicitly named contamination the producer never emits.
+ * An undefined field is dropped, as the JSON from the page drops it (a send with no receipt has no receiptMode).
+ */
 function toDeliveryObservationFixture(
     observation: BlackBoxRallarDeliveryObservation,
     contamination: Readonly<LiveRtcJsonRecord> = {}
 ) {
-    return normalizeJson({ ...observation, ...contamination });
+    const fields = Object.entries({ ...observation, ...contamination }).filter(([, value]) => value !== undefined);
+    return normalizeJson(Object.fromEntries(fields));
 }
 
 describe('live RTC control client', () => {
@@ -198,6 +202,10 @@ describe('live RTC control client', () => {
                             submitted: false,
                             confirmedHopPeerIds: [],
                             unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
                             attempts: 1,
                             backpressured: false,
                             enqueued: false
@@ -303,6 +311,10 @@ describe('live RTC control client', () => {
                             submitted: false,
                             confirmedHopPeerIds: [],
                             unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
                             attempts: 1,
                             backpressured: false,
                             enqueued: true
@@ -407,6 +419,10 @@ describe('live RTC control client', () => {
                         submitted: false,
                         confirmedHopPeerIds: [],
                         unconfirmedHopPeerIds: [],
+                        receiptMode: undefined,
+                        expectedRecipientPeerIds: [],
+                        confirmedRecipientPeerIds: [],
+                        unconfirmedRecipientPeerIds: [],
                         attempts: 1,
                         backpressured: false,
                         enqueued: false
@@ -427,6 +443,9 @@ describe('live RTC control client', () => {
                         submitted: false,
                         confirmedHopPeerIds: [],
                         unconfirmedHopPeerIds: [],
+                        expectedRecipientPeerIds: [],
+                        confirmedRecipientPeerIds: [],
+                        unconfirmedRecipientPeerIds: [],
                         attempts: 1,
                         backpressured: false,
                         enqueued: false
@@ -464,6 +483,10 @@ describe('live RTC control client', () => {
                             submitted: false,
                             confirmedHopPeerIds: [],
                             unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
                             attempts: 1,
                             backpressured: false,
                             enqueued: true
@@ -653,6 +676,10 @@ describe('live RTC control client', () => {
                                 submitted: true,
                                 confirmedHopPeerIds: [],
                                 unconfirmedHopPeerIds: [],
+                                receiptMode: undefined,
+                                expectedRecipientPeerIds: [],
+                                confirmedRecipientPeerIds: [],
+                                unconfirmedRecipientPeerIds: [],
                                 attempts: 1,
                                 backpressured: false,
                                 enqueued: true
@@ -711,6 +738,10 @@ describe('live RTC control client', () => {
                             submitted: false,
                             confirmedHopPeerIds: [],
                             unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
                             attempts: 1,
                             backpressured: false,
                             enqueued: true

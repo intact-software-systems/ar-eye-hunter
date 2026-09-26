@@ -332,13 +332,18 @@ function toReceiptsFabricatedValue(
     recipe: RallarBlackBoxTestRecipe
 ): RallarBlackBoxTestMessagesObserveResultValue {
     const send = recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) => candidate.handleId === command.handleId);
+    const confirmed = send?.carrier === 'ws' ? ['receiver-session'] : ['peer'];
     return {
         handleId: command.handleId,
         state: 'acknowledged',
         submitted: true,
         enqueued: true,
-        confirmedHopPeerIds: send?.carrier === 'ws' ? ['receiver-session'] : ['peer'],
+        receiptMode: send?.carrier === 'ws' ? 'receiver' : 'hop',
+        confirmedHopPeerIds: confirmed,
         unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: confirmed,
+        confirmedRecipientPeerIds: confirmed,
+        unconfirmedRecipientPeerIds: [],
         attempts: 1,
         reason: undefined
     };

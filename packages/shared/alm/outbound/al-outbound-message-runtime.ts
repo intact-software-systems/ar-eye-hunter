@@ -1,5 +1,4 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -395,7 +394,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.receiptAdmission = new ALOutboundReceiptAdmission({
             admissionStore: dependencies.admissionStore,
             clock: dependencies.clock,
-            settlements
+            settlements,
+            diagnostics: dependencies.diagnostics
         });
         this.repairRetransmission = new ALOutboundRepairRetransmission({
             admissionStore: dependencies.admissionStore,
@@ -556,10 +556,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return admitted;
     }
 
-    /** A server receipt about a message this owner originated; it writes the receipt row, never work. */
-    async acceptReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    /** A server receipt control about a message this owner originated; it writes the receipt row, never work. */
+    async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
-        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(receipt);
+        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(control);
     }
 
     private async commitDispatchPlan(

@@ -93,6 +93,28 @@ describe('typed message fallback identity', () => {
         expect(fixture.attempts[0].message.delivery?.ack).toBe('receiver');
     });
 
+    it('records the refused rtc leg as an evidence row that the retried ws leg follows', async () => {
+        const detail = 'ack receiver is unsupported for rtc multicast targets';
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
+
+        const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(lifecycle.state).toBe('queued');
+        expect(lifecycle.evidence.attempts).toEqual([expect.objectContaining({
+            carrier: 'rtc',
+            outcome: 'refused',
+            refusalReason: 'unsupported',
+            submissionAttempted: false,
+            detail: expect.stringContaining('unsupported')
+        })]);
+        fixture.settlements.ws({ kind: 'attempt-started', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'ws-attempt' });
+        expect(handle.lifecycle().evidence.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc', 'ws']);
+    });
+
     it('expires a send whose unsupported first carrier hands over after the deadline', async () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,

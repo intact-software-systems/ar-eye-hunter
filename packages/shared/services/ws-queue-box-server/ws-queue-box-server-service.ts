@@ -192,7 +192,7 @@ export class WsQueueBoxServerService {
             queueEngine: this.inboundQueueEngine,
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message),
-            acceptServerReceipt: (receipt) => this.outboundRuntime.acceptReceipt(receipt)
+            acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
         });
         this.inboundRuntime = this.createInboundRuntime(dependencies);
         this.registerSocketIngress();

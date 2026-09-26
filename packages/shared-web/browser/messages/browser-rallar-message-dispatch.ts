@@ -1,7 +1,11 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -13,6 +17,14 @@ import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 interface CapturedMessageAdmission {
     readonly message: ALMessage;
     readonly verdict: ALDeliveryAdmissionVerdict;
+}
+
+/** The verdict of one carrier leg and what the strategy does next with it. */
+interface CarrierAdmission {
+    readonly msgId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict;
+    readonly fallback: ReturnType<typeof computeFallbackDisposition>;
 }
 
 export namespace BrowserRallarMessageDispatch {
@@ -71,45 +83,32 @@ export class BrowserRallarMessageDispatch {
         }
         this.input.deliveries.updateDeadline(result.message);
         const sink = lifetime.settlements[delivery.carrier];
-        const fallback = delivery.canFallback
-            ? computeFallbackDisposition(result.verdict, result.message.constraints?.expiresAtMs, this.input.nowMs())
-            : 'stop';
-        // A refusal the fallback carrier takes over is not the message's verdict: `rejected` would be terminal.
-        if (fallback === 'stop' || result.verdict.kind !== 'refused') {
-            sink({
-                kind: 'admission',
-                msgId: delivery.message.id.msgId,
-                carrier: delivery.carrier,
-                atMs: this.input.nowMs(),
-                verdict: result.verdict
-            });
-        }
+        const admission: CarrierAdmission = {
+            msgId: delivery.message.id.msgId,
+            carrier: delivery.carrier,
+            verdict: result.verdict,
+            fallback: delivery.canFallback
+                ? computeFallbackDisposition(
+                    result.verdict,
+                    result.message.constraints?.expiresAtMs,
+                    this.input.nowMs()
+                )
+                : 'stop'
+        };
+        sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
-        if (fallback === 'retry') {
+        if (admission.fallback === 'retry') {
             await this.writeCapturedMessage({
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
                 message: result.message,
                 canFallback: false
             }, lifetime);
+            return;
         }
-        else if (fallback === 'expired') {
-            sink({
-                kind: 'expired',
-                msgId: delivery.message.id.msgId,
-                carrier: delivery.carrier,
-                atMs: this.input.nowMs(),
-                detail: 'Message deadline elapsed before fallback.'
-            });
-        }
-        else if (result.verdict.kind === 'unroutable') {
-            sink({
-                kind: 'attempts-exhausted',
-                msgId: delivery.message.id.msgId,
-                carrier: delivery.carrier,
-                atMs: this.input.nowMs(),
-                detail: result.verdict.detail
-            });
+        const end = toCarrierAdmissionEndSettlement(admission, this.input.nowMs());
+        if (end) {
+            sink(end);
         }
     }
 
@@ -165,6 +164,28 @@ export function computeFallbackDisposition(
         return 'stop';
     }
     return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
+}
+
+/** A refusal the fallback carrier takes over is evidence of the refused leg, not the verdict: `rejected` is terminal. */
+function toCarrierAdmissionSettlement(admission: CarrierAdmission, atMs: number): ALDeliverySettlement {
+    const { msgId, carrier, verdict } = admission;
+    return admission.fallback !== 'stop' && verdict.kind === 'refused'
+        ? { kind: 'carrier-refused', msgId, carrier, atMs, reason: verdict.reason, detail: verdict.detail }
+        : { kind: 'admission', msgId, carrier, atMs, verdict };
+}
+
+/** What ends a leg no fallback continues: the deadline it reached first, or no carrier left to route it. */
+function toCarrierAdmissionEndSettlement(
+    admission: CarrierAdmission,
+    atMs: number
+): ALDeliverySettlement | undefined {
+    const { msgId, carrier, verdict } = admission;
+    if (admission.fallback === 'expired') {
+        return { kind: 'expired', msgId, carrier, atMs, detail: 'Message deadline elapsed before fallback.' };
+    }
+    return verdict.kind === 'unroutable'
+        ? { kind: 'attempts-exhausted', msgId, carrier, atMs, detail: verdict.detail }
+        : undefined;
 }
 
 function isFallbackVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {

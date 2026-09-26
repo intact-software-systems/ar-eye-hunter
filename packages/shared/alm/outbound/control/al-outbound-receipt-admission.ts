@@ -1,6 +1,11 @@
-import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
-import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../al-outbound-message-runtime.ts';
+import type {
+    ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettlementEmitter
+} from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
@@ -8,11 +13,13 @@ import {
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
+import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly settlements: ALOutboundSettlementEmitter;
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
 }
 
 /**
@@ -29,7 +36,22 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         this.dependencies = dependencies;
     }
 
-    async admit(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    /** The receipt control message itself, so its verdict is stated under the id of that control. */
+    async admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+        const decoded = decodeALControlMessage(control).right;
+        if (decoded?.type !== 'receipt') {
+            return { kind: 'not-handled' };
+        }
+        const admitted = await this.admitReceipt(decoded.payload);
+        writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
+            control,
+            targetMsgId: decoded.payload.msgId,
+            admitted
+        });
+        return admitted;
+    }
+
+    private async admitReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
         for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
             const result = await this.admitOnce(receipt);
             if (result !== 'conflict') {

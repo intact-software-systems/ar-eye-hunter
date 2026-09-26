@@ -111,6 +111,29 @@ export function toALOutboundAckRetryScheduleEndTimestamp(
     return Math.min(snapshot.deadlineAtMs + snapshot.timeoutMs * remainingTimeoutWindows, messageExpiresAtMs);
 }
 
+/**
+ * The acknowledgement a receipt row states. Its peers are next hops under `hop` and `subtree` and
+ * logical recipients under `receiver`; the origin tracks no second set, so the hop and recipient lists
+ * name the same peers in every mode.
+ */
+export function toALOutboundAcknowledgementFact(
+    snapshot: ALOutboundPendingAckSnapshot,
+    complete: boolean
+): ALOutboundSettlementFact {
+    const unconfirmed = snapshot.expectedPeerIds.filter((peerId) => !snapshot.ackedPeerIds.includes(peerId));
+    return {
+        kind: 'acknowledgement',
+        msgId: snapshot.msgId,
+        mode: snapshot.mode,
+        confirmedHopPeerIds: snapshot.ackedPeerIds,
+        unconfirmedHopPeerIds: unconfirmed,
+        expectedRecipientPeerIds: snapshot.expectedPeerIds,
+        confirmedRecipientPeerIds: snapshot.ackedPeerIds,
+        unconfirmedRecipientPeerIds: unconfirmed,
+        complete
+    };
+}
+
 export function isALOutboundReceiptComplete(
     pending: ALOutboundPendingAckSnapshot
 ): boolean {
@@ -135,6 +158,9 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
         mode: 'receiver',
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: [],
+        confirmedRecipientPeerIds: [],
+        unconfirmedRecipientPeerIds: [],
         complete: true
     };
 }

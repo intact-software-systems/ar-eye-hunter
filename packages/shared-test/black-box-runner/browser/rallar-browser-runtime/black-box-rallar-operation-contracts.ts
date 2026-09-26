@@ -17,6 +17,7 @@ import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
+    ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -329,12 +330,10 @@ export interface BlackBoxRallarMessageSendDiagnostics {
     readonly reason: string | undefined;
 }
 
-export interface BlackBoxRallarDeliveryObservation {
+export interface BlackBoxRallarDeliveryObservation extends ALDeliveryReceiptEvidence {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
-    readonly confirmedHopPeerIds: readonly string[];
-    readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */

@@ -1,4 +1,5 @@
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
+import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import {
     AL_DELIVERY_STATES,
     type ALDeliveryAdmissionVerdict,
@@ -136,6 +137,9 @@ const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'rtc',
     'rtc-with-ws-fallback'
 ];
+
+/** Keyed by every receipt mode, so a new mode fails to compile here instead of decoding as an invalid result. */
+const ALM_RECEIPT_MODES: Readonly<Record<ALReceiptMode, true>> = { hop: true, subtree: true, receiver: true };
 
 /** Keyed by every verdict kind, so a new kind fails to compile here instead of decoding as an invalid result. */
 const ALM_ADMISSION_VERDICT_KINDS: Readonly<Record<ALDeliveryAdmissionVerdict['kind'], true>> = {
@@ -575,8 +579,12 @@ function decodeAlmDeliveryResultValue(
         state: requireAlmDeliveryState(record, path, 'state'),
         submitted: requireAlmBooleanField(record, path, 'submitted'),
         enqueued: requireAlmBooleanField(record, path, 'enqueued'),
+        receiptMode: readAlmReceiptModeField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
+        expectedRecipientPeerIds: requireAlmStringListField(record, path, 'expectedRecipientPeerIds'),
+        confirmedRecipientPeerIds: requireAlmStringListField(record, path, 'confirmedRecipientPeerIds'),
+        unconfirmedRecipientPeerIds: requireAlmStringListField(record, path, 'unconfirmedRecipientPeerIds'),
         attempts: requireAlmNumberField(record, path, 'attempts'),
         reason: readAlmOptionalStringField(record, path, 'reason')
     };
@@ -656,6 +664,18 @@ function readAlmOptionalStringField(
         return value;
     }
     throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+}
+
+/** Absent until a receipt settles: a send that tracks no receipt never names a mode. */
+function readAlmReceiptModeField(record: RallarBlackBoxTestRecord, path: string): ALReceiptMode | undefined {
+    const value = record.receiptMode;
+    if (value === undefined) {
+        return undefined;
+    }
+    if (typeof value === 'string' && Object.hasOwn(ALM_RECEIPT_MODES, value)) {
+        return value as ALReceiptMode;
+    }
+    throw toAlmInvalidRuntimeResultError(`${path}.receiptMode`);
 }
 
 function requireAlmNumberField(

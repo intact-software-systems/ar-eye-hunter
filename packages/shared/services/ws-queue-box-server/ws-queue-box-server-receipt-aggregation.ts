@@ -70,7 +70,7 @@ export namespace WsQueueBoxServerReceiptAggregation {
          * as the origin admits it (D38, D48). An outbox-fanned message's row is the one the server's
          * `ack-timeout` retries, so a complete receipt ends its retransmission on every instance.
          */
-        readonly acceptServerReceipt: (receipt: ALReceiptPayload) => Promise<ALOutboundControlAdmissionResult>;
+        readonly acceptServerReceipt: (control: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
     }
 
     export interface AdmittedMessage {
@@ -273,7 +273,7 @@ export class WsQueueBoxServerReceiptAggregation {
         await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
         // Two commits: a crash between them leaves the server row unsettled, which costs only retransmissions its budget bounds.
         if (receipt.phase !== 'admitted') {
-            await this.#dependencies.acceptServerReceipt(receipt);
+            await this.#dependencies.acceptServerReceipt(message);
         }
     }
 }

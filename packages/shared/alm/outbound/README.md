@@ -133,7 +133,9 @@ the deadline still commits and states its `acknowledgement` settlement, and an A
 deadline is refused. The receipt is gone by then, and control admission's validation refuses an
 ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
-reasons) for every control it decides.
+reasons) for every control it decides. A committed `resync-required` NACK is a relay's refusal of a
+retained send (D50): it states a `relay-rejected` settlement naming the relay, which ends the handle
+`rejected`, and plans no resend; the receipt row is left as it was.
 
 A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
@@ -217,6 +219,14 @@ the frozen audience and adds the recipients the receipt confirmed. A terminal re
 `admitted` one; every phase leaves its final snapshot as the row until the deadline plus the grace, so a
 redelivered receipt finds nothing to move and is refused without a write, and any receipt past that
 bound is refused. A receipt writes no work and no `ack-timeout` schedule; the server's receipts own it.
+`acceptReceipt` takes the receipt control message itself and records its verdict as the same
+`control-admission` diagnostic, under the control's own id with the receipt's message as
+`targetMsgId`, whether it commits or is refused.
+
+Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`:
+the row's peers as the hop lists and again as the expected, confirmed and unconfirmed recipient lists.
+The origin tracks one peer set, so the two agree in every mode; under `receiver` they are the frozen
+logical audience, and the handle reads `acknowledged` only once every expected recipient is confirmed.
 
 An RTT heartbeat is not one of these entries.
 [`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it

@@ -51,6 +51,6 @@ export async function acceptWsQueueBoxClientControlMessage<TPrepared>(
 ): Promise<ALOutboundControlAdmissionResult> {
     const control = decodeALControlMessage(msg).right;
     return control?.type === 'receipt'
-        ? await outboundRuntime.acceptReceipt(control.payload)
+        ? await outboundRuntime.acceptReceipt(msg)
         : await outboundRuntime.acceptControlMessage(msg);
 }

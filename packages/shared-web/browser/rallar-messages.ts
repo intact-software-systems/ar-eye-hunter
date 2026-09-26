@@ -35,5 +35,7 @@ export type {
     ALDeliveryAttempt,
     ALDeliveryEvidence,
     ALDeliveryLifecycle,
+    ALDeliveryReceiptEvidence,
+    ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

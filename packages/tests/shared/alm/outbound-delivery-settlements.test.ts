@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
@@ -251,6 +251,9 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             mode: 'hop',
             confirmedHopPeerIds: ['peer-1'],
             unconfirmedHopPeerIds: ['peer-2'],
+            expectedRecipientPeerIds: ['peer-1', 'peer-2'],
+            confirmedRecipientPeerIds: ['peer-1'],
+            unconfirmedRecipientPeerIds: ['peer-2'],
             complete: false
         },
         {
@@ -261,10 +264,60 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             mode: 'hop',
             confirmedHopPeerIds: ['peer-1', 'peer-2'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['peer-1', 'peer-2'],
+            confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         }
     ]);
 });
+
+it.each(BACKEND_KINDS)(
+    'settles a retained send its relay refuses with a resync-required NACK as rejected by that relay, with no resend, over %s',
+    async (kind) => {
+        const settlements: ALDeliverySettlement[] = [];
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createStores(kind),
+            carrier: 'rtc',
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: planSend(trackAcks(['peer-1'])),
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.kind));
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const message = createOutboundMessage('msg-relay-resync');
+        await enqueueOutboundOrThrow(runtime, message);
+        const settledBefore = settlements.length;
+
+        const admitted = await runtime.acceptControlMessage(newALNackControlMessage(
+            { v: 2, msgId: 'control-resync', ts: 1, senderId: 'peer-1' },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'peer-1',
+                toPeerId: 'self',
+                reason: 'resync-required',
+                observedAtEpochMs: 1
+            }
+        ));
+        await runOutboundWorkTask(runtime);
+
+        expect(admitted.kind).toBe('committed');
+        expect(settlements.slice(settledBefore)).toEqual([{
+            kind: 'relay-rejected',
+            msgId: message.id.msgId,
+            carrier: 'rtc',
+            atMs: expect.any(Number),
+            relayRejection: { relayPeerId: 'peer-1', reason: 'resync-required' },
+            detail: expect.stringContaining('peer-1')
+        }]);
+        const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toQueuedLifecycle(message));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relayPeerId: 'peer-1', reason: 'resync-required' });
+        expect(sent).toEqual(['send']);
+    }
+);
 
 it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline over %s', async (kind) => {
     const settlements: ALDeliverySettlement[] = [];

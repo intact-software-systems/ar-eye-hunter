@@ -623,6 +623,9 @@ function toAcknowledgementSettlement(msgId: string, atMs: number): ALDeliverySet
         mode: 'hop',
         confirmedHopPeerIds: ['peer-1'],
         unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: ['peer-1'],
+        confirmedRecipientPeerIds: ['peer-1'],
+        unconfirmedRecipientPeerIds: [],
         complete: true
     };
 }

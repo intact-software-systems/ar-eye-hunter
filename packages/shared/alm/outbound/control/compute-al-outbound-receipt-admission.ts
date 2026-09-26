@@ -5,7 +5,10 @@ import type { ALOutboundAdmissionMutation } from '../admission/al-outbound-admis
 import type { ALOutboundVersionedClientRecord } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
-import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
+import {
+    isALOutboundReceiptComplete,
+    toALOutboundAcknowledgementFact
+} from '../transition-al-outbound-pending-ack.ts';
 
 /** What one origin holds about the message a receipt names, read in one session. */
 export interface ALOutboundReceiptAdmissionSurface {
@@ -102,15 +105,10 @@ export function toALOutboundReceiptSettlement(
     write: ALOutboundReceiptWrite,
     receipt: ALReceiptPayload
 ): ALOutboundSettlementFact {
-    const { value } = write;
-    return {
-        kind: 'acknowledgement',
-        msgId: value.msgId,
-        mode: value.mode,
-        confirmedHopPeerIds: value.ackedPeerIds,
-        unconfirmedHopPeerIds: value.expectedPeerIds.filter((peerId) => !value.ackedPeerIds.includes(peerId)),
-        complete: receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(value)
-    };
+    return toALOutboundAcknowledgementFact(
+        write.value,
+        receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value)
+    );
 }
 
 /**

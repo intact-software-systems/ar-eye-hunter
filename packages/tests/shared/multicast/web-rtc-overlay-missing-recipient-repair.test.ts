@@ -102,8 +102,15 @@ describe('the RTC origin retry of a receiver receipt', () => {
 
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toBeUndefined();
-        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1))
-            .toMatchObject({ mode: 'receiver', complete: true, unconfirmedHopPeerIds: [] });
+        const settled = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1);
+        expect(settled).toMatchObject({
+            mode: 'receiver',
+            complete: true,
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['r', 'b', 'c'],
+            unconfirmedRecipientPeerIds: []
+        });
+        expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['b', 'c', 'r']);
     });
 
     it('never counts the terminal ACK of a relay outside the frozen audience as a logical confirmation', async () => {
@@ -171,6 +178,9 @@ describe('the RTC origin retry of a receiver receipt', () => {
                 mode: 'receiver',
                 confirmedHopPeerIds: [],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: [],
+                confirmedRecipientPeerIds: [],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             })
         ]);

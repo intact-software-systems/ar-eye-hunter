@@ -46,7 +46,7 @@ import {
 import {
     computeALOutboundControlAdmission,
     controlTargetMsgId,
-    toALOutboundAcknowledgementSettlement,
+    toALOutboundControlSettlement,
     type ALControlAdmissionCandidate,
     type ALControlAdmissionRead
 } from '../compute-al-outbound-control-admission.ts';
@@ -131,9 +131,9 @@ export class ALOutboundControlAdmission<TPrepared> {
             return { kind: 'rejected', reason: workIssues.map((issue) => issue.message).join('; ') };
         }
         if (await this.writeControlAdmission(computed, effects)) {
-            const acknowledgement = toALOutboundAcknowledgementSettlement(computed);
-            if (acknowledgement) {
-                this.settlements(acknowledgement);
+            const settlement = toALOutboundControlSettlement(computed);
+            if (settlement) {
+                this.settlements(settlement);
             }
             return { kind: 'committed' };
         }

@@ -119,6 +119,8 @@ export type {
     ALDeliveryAttempt,
     ALDeliveryEvidence,
     ALDeliveryLifecycle,
+    ALDeliveryReceiptEvidence,
+    ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

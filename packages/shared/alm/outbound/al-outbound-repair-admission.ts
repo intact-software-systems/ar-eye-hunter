@@ -26,6 +26,7 @@ import type {
     ALOutboundControlAdmissionResult,
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
+import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
@@ -75,32 +76,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
             ? await this.dependencies.controlAdmission.admit(msg)
             : { kind: 'not-handled' };
-        this.emitControlAdmission(msg, control, admitted);
+        writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
+            control: msg,
+            targetMsgId: controlTargetMsgId(control),
+            admitted
+        });
         if (admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
         }
         return admitted;
-    }
-
-    /** Every carrier discards this verdict, so the diagnostics sink is the only place it is kept. */
-    private emitControlAdmission(
-        msg: ALMessage,
-        control: ALPeerControlMessage,
-        admitted: ALOutboundControlAdmissionResult
-    ): void {
-        try {
-            this.dependencies.diagnostics?.({
-                kind: 'control-admission',
-                msgId: msg.id.msgId,
-                typeId: msg.payload.typeId,
-                targetMsgId: controlTargetMsgId(control),
-                outcome: admitted.kind,
-                reason: admitted.kind === 'rejected' ? admitted.reason : 'none'
-            });
-        }
-        catch (error) {
-            console.error('AL outbound runtime diagnostics sink failed', error);
-        }
     }
 
     /** A retained control admission owes the same post-commit retry schedule the direct path writes. */

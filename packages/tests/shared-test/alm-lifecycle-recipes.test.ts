@@ -64,6 +64,10 @@ describe('ALM lifecycle recipe evidence', () => {
             enqueued: true,
             confirmedHopPeerIds: ['receiver'],
             unconfirmedHopPeerIds: [],
+            receiptMode: undefined,
+            expectedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: [],
             attempts: 1,
             reason: undefined
         };

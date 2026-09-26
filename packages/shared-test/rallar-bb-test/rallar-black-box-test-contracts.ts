@@ -4,6 +4,7 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
+    ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
@@ -967,13 +968,11 @@ export interface RallarBlackBoxTestMessagesReplayResultValue {
     readonly reason?: string;
 }
 
-export interface RallarBlackBoxTestMessagesObserveResultValue {
+export interface RallarBlackBoxTestMessagesObserveResultValue extends ALDeliveryReceiptEvidence {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
     readonly enqueued: boolean;
-    readonly confirmedHopPeerIds: readonly string[];
-    readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
     readonly reason: string | undefined;
 }

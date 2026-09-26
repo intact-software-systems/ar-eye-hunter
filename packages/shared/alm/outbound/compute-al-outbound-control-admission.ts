@@ -20,7 +20,8 @@ import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts'
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
-    isALOutboundReceiptComplete
+    isALOutboundReceiptComplete,
+    toALOutboundAcknowledgementFact
 } from './transition-al-outbound-pending-ack.ts';
 
 export type ALControlHistory =
@@ -96,23 +97,27 @@ export function computeALOutboundControlAdmission(
 }
 
 /**
- * The receipt a committed control moved, as the delivery fact its owner states. A control that
- * changed no receipt states nothing: the acknowledgement it carried was already counted.
+ * The delivery fact a committed control states: the `resync-required` refusal of the message by a
+ * relay (D50), or the receipt the control moved. A control that changed no receipt states nothing: the
+ * acknowledgement it carried was already counted.
  */
-export function toALOutboundAcknowledgementSettlement(
+export function toALOutboundControlSettlement(
     candidate: ALControlAdmissionCandidate
 ): ALOutboundSettlementFact | undefined {
+    const { parsed, targetMsgId } = candidate.read;
+    if (parsed.type === 'nack' && parsed.payload.reason === 'resync-required') {
+        const relayPeerId = parsed.payload.fromPeerId;
+        return {
+            kind: 'relay-rejected',
+            msgId: targetMsgId,
+            relayRejection: { relayPeerId, reason: 'resync-required' },
+            detail: `Relay ${relayPeerId} refused the message: resync-required.`
+        };
+    }
     const snapshot = resolveAcceptedReceipt(candidate);
-    return snapshot === undefined ? undefined : {
-        kind: 'acknowledgement',
-        msgId: candidate.read.targetMsgId,
-        mode: snapshot.mode,
-        confirmedHopPeerIds: snapshot.ackedPeerIds,
-        unconfirmedHopPeerIds: snapshot.expectedPeerIds.filter(
-            (peerId) => !snapshot.ackedPeerIds.includes(peerId)
-        ),
-        complete: isALOutboundReceiptComplete(snapshot)
-    };
+    return snapshot === undefined
+        ? undefined
+        : toALOutboundAcknowledgementFact(snapshot, isALOutboundReceiptComplete(snapshot));
 }
 
 export function controlTargetMsgId(parsed: ALParsedControlMessage): string {

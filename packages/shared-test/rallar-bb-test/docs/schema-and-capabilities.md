@@ -242,9 +242,18 @@ its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`,
-`reason`, `backpressured`, and `enqueued`. The peer lists describe hop
-acknowledgements, not logical recipients. `backpressured` is true when a carrier
+`submitted`, `attempts`, `receiptMode`, `confirmedHopPeerIds`,
+`unconfirmedHopPeerIds`, `expectedRecipientPeerIds`, `confirmedRecipientPeerIds`,
+`unconfirmedRecipientPeerIds`, `reason`, `backpressured`, and `enqueued`.
+`receiptMode` is the latest receipt's mode (`hop`, `subtree` or `receiver`),
+absent until a receipt settles. Under `receiver` the receipt counts the frozen
+logical audience: `expectedRecipientPeerIds` is that audience (never the
+origin), and `acknowledged` means every one of them confirmed; an origin alone
+in its room is acknowledged at admission with all three lists empty. The origin
+tracks no hop set of its own under `receiver`, so the hop lists name the same
+peers. Under `hop` and `subtree` the recipient lists equal the hop lists. A
+relay's admitted `resync-required` NACK ends a retained send `rejected`, its
+`reason` naming the relay. `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
 had no peer; `enqueued` is true once a durable admission put the message in a
 carrier queue.

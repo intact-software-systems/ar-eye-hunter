@@ -75,6 +75,10 @@ const DELIVERY_OBSERVATION = {
     enqueued: true,
     confirmedHopPeerIds: ['bob-session'],
     unconfirmedHopPeerIds: [],
+    receiptMode: 'receiver',
+    expectedRecipientPeerIds: ['bob-session', 'carol-session'],
+    confirmedRecipientPeerIds: ['bob-session'],
+    unconfirmedRecipientPeerIds: ['carol-session'],
     attempts: 2,
     reason: 'hop evidence retained'
 };
@@ -446,6 +450,10 @@ describe('ALM browser adapter execution', () => {
             enqueued: true,
             confirmedHopPeerIds: ['bob-session'],
             unconfirmedHopPeerIds: [],
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: ['bob-session', 'carol-session'],
+            confirmedRecipientPeerIds: ['bob-session'],
+            unconfirmedRecipientPeerIds: ['carol-session'],
             attempts: 2,
             reason: 'hop evidence retained'
         });
@@ -770,6 +778,34 @@ describe('ALM browser adapter execution', () => {
         expect(result.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
             message: 'The page runtime returned no usable storage.counters result.byOwner.al-work.'
+        });
+    });
+
+    it.each([
+        { field: 'receiptMode', value: 'server' },
+        { field: 'expectedRecipientPeerIds', value: 'bob-session' },
+        { field: 'confirmedRecipientPeerIds', value: [7] },
+        { field: 'unconfirmedRecipientPeerIds', value: undefined }
+    ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({ ...DELIVERY_OBSERVATION, [field]: value })
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-malformed-recipients',
+            handleId: 'handle-1',
+            state: ['acknowledged'],
+            timeoutMs: 2_500
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: `The page runtime returned no usable delivery observation.${field}.`
         });
     });
 

@@ -47,8 +47,12 @@ export function toDeliveryObservation(
         handleId,
         state: lifecycle?.state ?? 'unobservable',
         submitted: attempts.some((attempt) => attempt.submissionAttempted),
+        receiptMode: lifecycle?.evidence.receiptMode,
         confirmedHopPeerIds: lifecycle?.evidence.confirmedHopPeerIds ?? [],
         unconfirmedHopPeerIds: lifecycle?.evidence.unconfirmedHopPeerIds ?? [],
+        expectedRecipientPeerIds: lifecycle?.evidence.expectedRecipientPeerIds ?? [],
+        confirmedRecipientPeerIds: lifecycle?.evidence.confirmedRecipientPeerIds ?? [],
+        unconfirmedRecipientPeerIds: lifecycle?.evidence.unconfirmedRecipientPeerIds ?? [],
         attempts: attempts.length,
         reason: lifecycle?.evidence.reason,
         backpressured: attempts.some((attempt) =>

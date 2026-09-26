@@ -192,8 +192,8 @@ every session the page opens. The event's `data` is the event itself:
   `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome` and
-  `reason`: one event for every inbound ACK, NACK or repair control the
-  outbound owner decides, recorded when it decides it. Every carrier discards
+  `reason`: one event for every inbound ACK, NACK, repair or receipt control
+  the outbound owner decides, recorded when it decides it. Every carrier discards
   that verdict: the inbound topic's `admission-outcome` for the same control
   reads `not-handled`/`control` whatever the outbound owner answered, so this
   event is the only record of it. `msgId` is the control's own id, the join key
@@ -207,13 +207,19 @@ every session the page opens. The event's `data` is the event itself:
   as the acknowledgement settlement on the send's handle. It is one event per
   control frame the page receives, the same cadence as `admission-outcome`,
   and rides the page's batched diagnostics like every other kind
-- A WS server receipt (`al.control.receipt.v1`, S2c-i) is not an ACK, NACK or
-  repair control: the origin's receipt admission decides it, not control
-  admission, so it states no `control-admission` event. Its arrival is the
-  inbound topic's `admission-outcome` with that `typeId`, carrier `ws` and
-  `not-handled`/`control`; its commit is visible only as the acknowledgement
-  settlement on the send's handle (`messages.receipts` reads the confirmed
-  recipients), and a refused receipt leaves no diagnostic
+- A WS server receipt (`al.control.receipt.v1`) is decided by the origin's
+  receipt admission, not control admission, and states the same
+  `control-admission` event: `msgId` is the receipt control's own id,
+  `typeId` is `al.control.receipt.v1`, and `targetMsgId` is the sent message
+  the receipt names. `outcome` is `committed` when the receipt moved the
+  origin's receipt row, or `rejected` with its reasons — a receipt that moves
+  nothing reads `AL receipt moves no receipt of its message`, and one about a
+  message the origin never sent reads `AL receipt names no retained outbound
+  message of its origin`. Its arrival is also the inbound topic's
+  `admission-outcome` with that `typeId`, carrier `ws` and
+  `not-handled`/`control`, joined by `msgId`; a committed receipt is also
+  the acknowledgement settlement on the send's handle (`messages.receipts`
+  reads the logical recipients)
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
