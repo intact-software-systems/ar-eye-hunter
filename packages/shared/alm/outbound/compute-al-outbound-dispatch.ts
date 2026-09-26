@@ -13,13 +13,13 @@ import type {
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
+    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
-import { toALOutboundTrackedReceiptAlgo } from './to-al-outbound-tracked-receipt-algo.ts';
 import {
     toALOutboundAckRetryScheduleEndTimestamp,
     toALOutboundEmptyAudienceReceipt,
@@ -42,7 +42,7 @@ export interface ALOutboundComputedDto<TPrepared> {
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
     readonly entries: readonly ResourceEntry[];
-    /** What an admitted plan or a duplicate's original tracks; `none` for a verdict that admitted nothing. */
+    /** What an admitted plan, or the original of a duplicate, tracks; `none` for a verdict that admitted nothing. */
     readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
@@ -118,6 +118,14 @@ function toALOutboundComputedResult<TPrepared>(
     entries: readonly ResourceEntry[] = []
 ): ALOutboundComputedDto<TPrepared> {
     return { verdict, reason, entries, trackedReceiptAlgo: 'none' };
+}
+
+/**
+ * The receipt an admission tracks: the ack tracking the plan of its carrier wrote, `none` when it wrote none.
+ * The WS client writes none for a `hop` or `subtree` room send, so its handle must not wait for one (R-S3a-4).
+ */
+function toALOutboundTrackedReceiptAlgo(ackTracking: ALOutboundAckTrackingPlan | null | undefined): ALAckAlgo {
+    return ackTracking?.enabled === true ? ackTracking.mode : 'none';
 }
 
 /** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */
