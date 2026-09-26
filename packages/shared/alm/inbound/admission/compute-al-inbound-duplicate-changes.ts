@@ -38,7 +38,8 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * ACK when its subtree completed, or the copy onward to the child hops it still waits on. A sibling sender
  * gets the terminal ACK of this peer at once, so its own row completes whatever the visited exclusion
  * missed (R-S2c-ii-8c). The origin, or any sender once the recorded parent left, becomes the parent of
- * the row, and is answered in full (R-S2c-ii-12).
+ * the row, and is answered in full (R-S2c-ii-12); a former parent still present then gets the sibling
+ * answer (R-S2c-ii-14).
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -69,7 +70,25 @@ export function computeALInboundDuplicateChanges(
         return { mutations: [], effects: [toRepeatedAck(read, toSibling)] };
     }
     const reparented = { ...pendingAck, toPeerId: read.fromPeerId };
-    return { mutations: [toReparentedRowMutation(read, reparented)], effects: toParentAnswer(read, reparented) };
+    return {
+        mutations: [toReparentedRowMutation(read, reparented)],
+        effects: [
+            ...toParentAnswer(read, reparented),
+            ...(input.recordedParentPresent ? [toFormerParentRelease(read, pendingAck)] : [])
+        ]
+    };
+}
+
+/**
+ * A former parent that is still present waits on this peer as its child, which now answers another parent:
+ * it gets the sibling answer, so its own row completes and its own delivery is still confirmed (R-S2c-ii-14).
+ */
+function toFormerParentRelease(read: ALInboundMessageReadDto, pendingAck: ALPendingAckSnapshot): ALInboundEffectIntent {
+    return toRepeatedAck(read, {
+        toPeerId: pendingAck.toPeerId,
+        logicalRecipient: { kind: 'self' },
+        status: pendingAck.status
+    });
 }
 
 /**

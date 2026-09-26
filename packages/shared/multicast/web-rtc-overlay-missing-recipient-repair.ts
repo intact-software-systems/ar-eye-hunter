@@ -3,6 +3,7 @@ import {
     resolveALFrozenMulticastAudience,
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALAckAlgo } from '../al-contracts/al-policy.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -174,9 +175,21 @@ function planRtcAlternateParentRepair(
         msg,
         ackTracking: dispatchPlan.ackTracking === undefined
             ? undefined
-            : { ...dispatchPlan.ackTracking, expectedPeerIdsUpdate: 'replace' },
+            : {
+                ...dispatchPlan.ackTracking,
+                expectedPeerIdsUpdate: toRtcRetryExpectedPeerIdsUpdate(dispatchPlan.ackTracking.mode)
+            },
         repairTracking: request.repair
     };
+}
+
+/**
+ * A `subtree` retry, re-routed or targeted, adds its new hops and never drops an unfinished one: a new hop
+ * answers only for its own part, so its completion cannot stand in for the subtree of a hop it routed
+ * around (R-S2c-ii-14). Every other mode replaces the hops it expects.
+ */
+export function toRtcRetryExpectedPeerIdsUpdate(mode: ALAckAlgo): 'merge' | 'replace' {
+    return mode === 'subtree' ? 'merge' : 'replace';
 }
 
 /** A transport copy addresses exactly one next hop. */

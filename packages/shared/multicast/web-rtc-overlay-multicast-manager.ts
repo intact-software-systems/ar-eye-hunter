@@ -91,6 +91,7 @@ import {
 import {
     planRtcFailedPeerRepair,
     toRtcRetriedCopyRetransmission,
+    toRtcRetryExpectedPeerIdsUpdate,
     toRtcTargetedRepairCopy
 } from './web-rtc-overlay-missing-recipient-repair.ts';
 
@@ -884,7 +885,7 @@ export class WebRtcOverlayMulticastManager {
             ackTracking: toRtcAckTrackingPlan(
                 normalized.effective,
                 [peerId],
-                'replace'
+                toRtcRetryExpectedPeerIdsUpdate(normalized.effective.ack.algo)
             ),
             repairTracking: repair
         };

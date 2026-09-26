@@ -8,7 +8,7 @@ import {
 } from 'vitest';
 
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 
 import {
     createOriginOverlay,
@@ -182,7 +182,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
         expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['c', 'd']);
     });
 
-    it('never lets a subtree receipt read complete while the leaf behind the re-parented relay is silent', async () => {
+    it('never lets a subtree receipt read complete while the leaf behind the re-parented relay is silent, nor for the departed hop', async () => {
         const message = createOriginSubtreeMulticast('parent-left-subtree');
         const chain = await createChainAfterParentLeft(message);
 
@@ -202,7 +202,14 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
         for (const control of await chain.c.readSent('a')) {
             await chain.origin.manager.acceptControlMessage(control);
         }
-        expect(readLastAcknowledgement(chain.origin)).toMatchObject({ mode: 'subtree', complete: true });
+        // `c` now completes its own hop, but the retry keeps the departed `r` expected: its subtree was never
+        // confirmed by the hop that owned it, so the receipt times out as on main (R-S2c-ii-14).
+        expect(readLastAcknowledgement(chain.origin)).toMatchObject({
+            mode: 'subtree',
+            complete: false,
+            confirmedHopPeerIds: ['c'],
+            unconfirmedHopPeerIds: ['r']
+        });
     });
 
     it('answers a sibling at once while the recorded parent stays, and re-parents to it once the parent left', async () => {
@@ -237,6 +244,180 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
         expect(readAckTuples(await c.readSent('r'))).toEqual([]);
     });
 });
+
+describe('the RTC subtree retry keeps every unfinished hop expected (R-S2c-ii-14)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('never completes through a new hop that relays to a subtree it does not own (P4)', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const r = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c', 'b'] });
+        const b = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const c = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['r', 'b', 'd'] });
+        const message = createOriginSubtreeMulticast('new-hop-relays');
+        await enqueueAndDrain(origin.manager, message);
+        await r.receive(origin.channels.r!.sent[0]!, 'a');
+        // The copies r -> b and c -> d are lost, and the overlay of the origin gains b before its timeout.
+        await c.receive((await r.readSent('c'))[0]!, 'r');
+        await retryThroughNewHop(origin, 'b');
+
+        await b.receive(origin.channels.b!.sent.at(-1)!, 'a');
+        await c.receive((await b.readSent('c')).at(-1)!, 'b');
+        for (const control of await c.readSent('b')) {
+            await b.receive(control, 'c');
+        }
+        await acceptAtOrigin(origin, await b.readSent('a'));
+
+        await expectSubtreeIncompleteUntilExhausted(origin, message);
+    });
+
+    it('never completes through a new hop that answers the retried copy for itself alone (P5)', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const r = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c', 'b'] });
+        const b = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'r'] });
+        const c = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['r', 'b', 'd'] });
+        const message = createOriginSubtreeMulticast('new-hop-leaf');
+        await enqueueAndDrain(origin.manager, message);
+        await r.receive(origin.channels.r!.sent[0]!, 'a');
+        // Only c -> d is lost: b is a leaf that already delivered the copy r sent it.
+        await c.receive((await r.readSent('c'))[0]!, 'r');
+        await b.receive((await r.readSent('b'))[0]!, 'r');
+        await retryThroughNewHop(origin, 'b');
+
+        await b.receive(origin.channels.b!.sent.at(-1)!, 'a');
+        expect(readAckTuples(await b.readSent('a'))).toEqual([['b', 'delivered']]);
+        await acceptAtOrigin(origin, await b.readSent('a'));
+
+        await expectSubtreeIncompleteUntilExhausted(origin, message);
+    });
+
+    it('keeps the receipt row of a mesh whose unfinished hop the retry routes around (P3)', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r', 'b'] });
+        const r = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const b = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const c = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['r', 'b', 'd'] });
+        const message = createOriginSubtreeMulticast('mesh-routed-around');
+        await enqueueAndDrain(origin.manager, message);
+        await r.receive(origin.channels.r!.sent[0]!, 'a');
+        await b.receive(origin.channels.b!.sent[0]!, 'a');
+        // Both relays own c; c records r as its parent and its copy to d is lost, so only b completes.
+        await c.receive((await r.readSent('c'))[0]!, 'r');
+        await c.receive((await b.readSent('c'))[0]!, 'b');
+        for (const control of await c.readSent('b')) {
+            await b.receive(control, 'c');
+        }
+        await acceptAtOrigin(origin, await b.readSent('a'));
+
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'subtree', expectedPeerIds: ['r', 'b'], ackedPeerIds: ['b'] });
+        await expectSubtreeIncompleteUntilExhausted(origin, message);
+    });
+});
+
+describe('the RTC subtree targeted repair keeps every unfinished hop expected (R-S2c-ii-14)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('adds the requester to the hops a subtree receipt expects, never replacing the others with it', async () => {
+        const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
+        const message = { ...createOriginSubtreeMulticast('targeted-repair'), qos: { repair: { algo: 'retransmit' } } } as const;
+        await enqueueAndDrain(origin.manager, message);
+
+        await origin.manager.acceptControlMessage(newALNackControlMessage(
+            { v: 2, msgId: 'nack-from-b', senderId: 'b', ts: Date.now() },
+            { msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'a', reason: 'gap', observedAtEpochMs: Date.now() }
+        ));
+        await vi.advanceTimersByTimeAsync(100);
+
+        expect(origin.channels.b!.sent).toHaveLength(2);
+        expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'subtree', expectedPeerIds: ['b', 'c'] });
+    });
+});
+
+describe('a relay re-parented away from a live parent (R-S2c-ii-14)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('lets the former parent, no longer a hop of the origin, still confirm itself under receiver', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r'] });
+        const r = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'c'] });
+        const c = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['a', 'r', 'd'] });
+        const d = createRtcRelayOverlayFixture({ selfPeerId: 'd', snapshot, neighbourPeerIds: ['c'] });
+        const message = createOriginReceiverMulticast('live-parent');
+        await enqueueAndDrain(origin.manager, message);
+        await r.receive(origin.channels.r!.sent[0]!, 'a');
+        // The copy c -> d is lost; r stays in the room but the origin's tree now reaches c directly.
+        await c.receive((await r.readSent('c'))[0]!, 'r');
+        origin.overlays.accept('room', createOriginOverlay(['c']));
+        origin.ready.peerIds = ['c'];
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+
+        await c.receive(origin.channels.c!.sent.at(-1)!, 'a');
+        await d.receive((await c.readSent('d')).at(-1)!, 'c');
+        for (const control of await d.readSent('c')) {
+            await c.receive(control, 'd');
+        }
+        for (const control of await c.readSent('r')) {
+            await r.receive(control, 'c');
+        }
+        await acceptAtOrigin(origin, [...await c.readSent('a'), ...await r.readSent('a')]);
+
+        const settled = readLastAcknowledgement(origin);
+        expect(settled).toMatchObject({ mode: 'receiver', complete: true, unconfirmedRecipientPeerIds: [] });
+        expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['c', 'd', 'r']);
+    });
+});
+
+/** The overlay of the origin gains `peerId` as a next hop, and the ack timeout retries through it. */
+async function retryThroughNewHop(origin: RtcOriginOverlayFixture, peerId: string): Promise<void> {
+    origin.overlays.accept('room', createOriginOverlay(['r', peerId]));
+    origin.ready.peerIds = ['r', peerId];
+    await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+    expect(origin.channels[peerId]!.sent).toHaveLength(1);
+}
+
+async function acceptAtOrigin(origin: RtcOriginOverlayFixture, controls: readonly ALMessage[]): Promise<void> {
+    for (const control of controls) {
+        await origin.manager.acceptControlMessage(control);
+    }
+}
+
+/** `d` never received the message, so no settlement may read the subtree complete, up to the last retry. */
+async function expectSubtreeIncompleteUntilExhausted(origin: RtcOriginOverlayFixture, message: ALMessage): Promise<void> {
+    expect(await origin.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+        .toMatchObject({ mode: 'subtree', expectedPeerIds: expect.arrayContaining(['r']) });
+    await vi.advanceTimersByTimeAsync(20 * ACK_TIMEOUT_MS);
+    const acknowledgements = origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+    expect(acknowledgements.some((settlement) => settlement.complete)).toBe(false);
+}
 
 interface RelayChain {
     readonly origin: RtcOriginOverlayFixture;

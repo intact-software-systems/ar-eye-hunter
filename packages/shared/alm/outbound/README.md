@@ -173,7 +173,12 @@ missing recipient that is a direct hop, and every hop whose subtree has not comp
 completed hop never gets a copy (D25). The hop view is the origin's own (`OverlayTree`: its next
 hops and those whose completion ACK arrived; R-S2c-ii-3): no browser peer holds the tree beyond its
 own hops, so with several relay hops outstanding the retry over-approximates, never to a completed
-hop. Every other retry re-plans around the failed hops through an alternate parent.
+hop. Every other retry re-plans around the failed hops through an alternate parent. Under `subtree`
+that retry, and a targeted repair to a requester, add their hops to the expected set and never drop an
+unfinished one (R-S2c-ii-14): a new hop that already holds the copy answers for its own part only, a
+leaf re-acknowledging or a relay giving the sibling answer, so its completion cannot stand in for the
+subtree of the hop the retry routed around. An unfinished hop that left stays expected, and the
+receipt times out rather than reading complete. Every other mode replaces the hops it expects.
 `retransmitAdmittedMessage` sends an admitted message again as a repair attempt of its own identity;
 a relay uses it to pass a retried copy on to the child hops it still waits on (the inbound README
 covers the relay's side: which children it owns, and why its row always completes).

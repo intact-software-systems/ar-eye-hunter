@@ -133,7 +133,10 @@ retried copy of the message is answered from it
   copy onward to the child hops it still waits on, and its terminal ACK only
   once its subtree completed (R-S2c-ii-12). The origin is nobody's child, so
   its copy never comes from a sibling; a retried copy is forwarded as planned
-  against the peer that sent it, not the first arrival;
+  against the peer that sent it, not the first arrival. A former parent that
+  is still present gets the sibling answer at once: it no longer waits on this
+  peer, so its own row completes and, under `receiver`, its own delivery is
+  still confirmed by its terminal ACK (R-S2c-ii-14);
 - from a sibling, a sender that does not own this peer while the recorded
   parent is still present, the relay answers with its own terminal ACK at
   once, so the sibling's row completes whatever the visited exclusion missed
