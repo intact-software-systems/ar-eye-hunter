@@ -64,7 +64,8 @@ async function admitOverRtc(stores: ALInboundRuntimeStores, msg: ALMessage): Pro
         read,
         plan: planner(msg, RTC_ARRIVAL, computeALInboundPlanningObservations(read)),
         facts: readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION),
-        canForward: true
+        canForward: true,
+        recordedParentPresent: true
     });
     expect(await admissionStore.commitBundle(bundle)).toBe('committed');
 }

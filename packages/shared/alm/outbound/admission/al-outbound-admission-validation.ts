@@ -48,6 +48,24 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
     };
 }
 
+/**
+ * A sent message keeps the policy of its first dispatch, except the next hops of its acknowledgement: a
+ * retry that re-plans the receipt records the hops of the local view it planned over, so a settlement
+ * names the hops of the latest tree, never those of a tree that has changed since.
+ */
+export function toALOutboundSentPolicy<TPrepared>(
+    stored: ALOutboundCapturedPolicy | undefined,
+    plan: ALOutboundDispatchPlan<TPrepared>
+): ALOutboundCapturedPolicy {
+    if (stored === undefined) {
+        return captureALOutboundPolicy(plan);
+    }
+    const tracking = plan.ackTracking;
+    return tracking?.expectedPeerIdsUpdate === 'replace' && stored.ackTracking
+        ? { ...stored, ackTracking: { ...stored.ackTracking, nextHopPeerIds: tracking.nextHopPeerIds } }
+        : stored;
+}
+
 export function applyALOutboundCapturedPolicy<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     policy: ALOutboundCapturedPolicy

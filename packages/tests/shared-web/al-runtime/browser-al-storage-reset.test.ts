@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 
+import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_SCHEMA_KEY,
@@ -11,13 +12,24 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 
 const STORE_NAME = 'entries';
-/** The schema identity S2c replaced: a store written at it holds v1 ACK history without origin or recipient. */
+/** The schema identity S2c-ii replaced: a store written at it holds relay rows that still carry `localRecipient`. */
 const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-s2c';
-/** The S2b session inbound namespace, spelled out so the test pins the stored key, not today's helper. */
-const S2B_SESSION_INBOUND_NAMESPACE = 'browser:browser-session-inbound:session-1:inbound:admission';
+/** The session inbound namespace, spelled out so the test pins the stored key, not today's helper. */
+const SESSION_INBOUND_NAMESPACE = 'browser:browser-session-inbound:session-1:inbound:admission';
+/** A relay pending row as S2c-ii writes it. */
+const S2C_II_PENDING = {
+    toPeerId: 'parent',
+    status: 'subtree-complete',
+    localReady: true,
+    expectedFromPeerIds: ['child'],
+    ackedFromPeerIds: [],
+    carrier: 'rtc'
+};
+/** The same row as S2c wrote it: S2c-ii removed `localRecipient`, the shape that forced the bump. */
+const S2C_PENDING_VALUE = { kind: 'pending', value: { ...S2C_II_PENDING, localRecipient: true } };
 
 describe('browser ALM storage schema identity reset', () => {
-    it('resets the S2b database once and recreates it at the S2c schema identity', async () => {
+    it('resets the S2c database once and recreates it at the S2c-ii schema identity', async () => {
         const dbName = `al-storage-reset-schema-id-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
@@ -66,8 +78,12 @@ describe('browser ALM storage schema identity reset', () => {
         }
     });
 
-    it('drops an S2b ACK history row without origin or logical recipient instead of decoding it', async () => {
-        const dbName = `al-storage-reset-ack-history-${crypto.randomUUID()}`;
+    it('drops an S2c relay pending row that still carries localRecipient instead of decoding it', async () => {
+        // Today's decoder refuses the S2c row for its `localRecipient` alone: that is why the schema identity moved.
+        expect(decodeALAdmissionControlValue({ kind: 'pending', value: S2C_II_PENDING }, 'msg-1', 'pending').value)
+            .toEqual(S2C_II_PENDING);
+        expect(() => decodeALAdmissionControlValue(S2C_PENDING_VALUE, 'msg-1', 'pending')).toThrow();
+        const dbName = `al-storage-reset-pending-row-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
             storeName: STORE_NAME,
@@ -75,20 +91,10 @@ describe('browser ALM storage schema identity reset', () => {
             onStorageReset: assertNoStorageReset
         });
         await putRow(oldDb, {
-            key: `${S2B_SESSION_INBOUND_NAMESPACE}:control:acks:msg-1:sender`,
-            value: {
-                kind: 'acks',
-                values: [{
-                    ackedMsgId: 'msg-1',
-                    fromPeerId: 'child',
-                    toPeerId: 'session-1',
-                    status: 'delivered',
-                    observedAtEpochMs: 1,
-                    carrier: 'rtc'
-                }]
-            },
+            key: `${SESSION_INBOUND_NAMESPACE}:control:pending:msg-1:sender`,
+            value: S2C_PENDING_VALUE,
             expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-            writeToken: 's2b-writer',
+            writeToken: 's2c-writer',
             revision: 1
         });
         oldDb.close();

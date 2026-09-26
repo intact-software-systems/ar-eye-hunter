@@ -53,7 +53,7 @@ import {
     isSameGroupRef,
     toScopedOverlayId
 } from '../api/api-type-utils.ts';
-import { readGroupMemberSessionIds } from '../api/group-client-views.ts';
+import { isSessionInGroup, readGroupMemberSessionIds } from '../api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
@@ -61,6 +61,7 @@ import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exceptio
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/queue-box-utilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
@@ -81,6 +82,7 @@ import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import {
+    computeRtcFrozenAudienceRefusal,
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
     toRtcFrozenAudienceRepairPlan,
@@ -292,6 +294,14 @@ export class WebRtcOverlayMulticastManager {
         await this.outboundRuntime.retransmitAdmittedMessage(
             toRtcRetriedCopyRetransmission(copy, this.planForwarding(copy.msg, copy.fromPeerId))
         );
+    }
+
+    /** A peer is present while it is a member of the room of the message and ready on this lane. */
+    isRoomPeerPresent(msg: ALMessage, peerId: string): boolean {
+        const groupRef = readALTargetGroupRef(msg);
+        const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
+        return snapshot !== undefined && isSessionInGroup(snapshot, peerId) &&
+            this.connectionService.readyPeerIdsForLane().includes(peerId);
     }
 
     private planForwarding(
@@ -531,6 +541,7 @@ export class WebRtcOverlayMulticastManager {
         const policy = this.readOutgoingQosPolicy(frozen, context);
         const msg = toALOutboundMessage(frozen, policy.effective);
         const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
+            .flatMap((refusal) => Either.ofLeft(refusal), computeRtcFrozenAudienceRefusal)
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, context));
         return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
     }

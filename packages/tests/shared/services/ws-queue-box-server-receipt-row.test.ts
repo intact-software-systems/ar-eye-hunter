@@ -20,7 +20,7 @@ import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbou
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
-import { toWsQueueBoxServerReceiptRepublishDelayMs } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
+import { computeWsQueueBoxServerReceiptRepublishDelayMs } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -99,11 +99,11 @@ describe('WS server receipt row across a cluster', () => {
     it('publishes a receipt again after as long as it has already waited, and a last time just before it expires', () => {
         const receipt = receiptMessage({ observedAtEpochMs: 100_000, expiresAtMs: 200_000 });
 
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 100_000)).toBe(1_000);
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 104_000)).toBe(4_000);
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 150_000)).toBe(AL_RECEIPT_DEADLINE_GRACE_MS);
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 180_000)).toBe(19_000);
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 199_000)).toBe(1_000);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 100_000)).toBe(1_000);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 104_000)).toBe(4_000);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 150_000)).toBe(AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 180_000)).toBe(19_000);
+        expect(computeWsQueueBoxServerReceiptRepublishDelayMs(receipt, 199_000)).toBe(1_000);
     });
 });
 

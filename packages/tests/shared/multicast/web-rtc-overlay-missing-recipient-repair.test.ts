@@ -10,6 +10,7 @@ import {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { computeMissingRecipientRepair } from '@shared/multicast/web-rtc-overlay-missing-recipient-repair.ts';
 
 import {
@@ -25,8 +26,8 @@ import {
 import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 const ACK_TIMEOUT_MS = 2_000;
-/** The default `at-least-once` retry budget of a receipt. */
-const RETRY_BUDGET = 3;
+/** The default `at-least-once` retry budget of a receipt, read from the policy the origin plans with. */
+const RETRY_BUDGET = normalizeALQosPolicy(createOriginReceiverMulticast('budget')).effective.retry.opts.maxAttempts;
 
 describe('computeMissingRecipientRepair', () => {
     it('addresses a missing direct recipient and every hop whose subtree has not completed', () => {
@@ -148,6 +149,33 @@ describe('the RTC origin retry of a receiver receipt', () => {
             confirmedRecipientPeerIds: ['b', 'r'],
             unconfirmedRecipientPeerIds: [],
             complete: true
+        });
+    });
+
+    it('names the next hops of the retried tree at settlement, never a hop that left before the retry', async () => {
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'r', 'c'], 4), nextHopPeerIds: ['r'] });
+        const message = createOriginReceiverMulticast('retried-tree');
+        await enqueueAndDrain(fixture.manager, message);
+        fixture.groups.accept('room', createOriginSnapshot(['a', 'c'], 5));
+        fixture.overlays.accept('room', createOriginOverlay(['c']));
+        fixture.ready.peerIds = ['c'];
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS + 100);
+        expect(fixture.channels.c!.sent).toHaveLength(1);
+
+        await acknowledgeAtOrigin(fixture.manager, {
+            msgId: message.id.msgId,
+            fromPeerId: 'c',
+            logicalRecipientPeerId: 'c',
+            status: 'delivered'
+        });
+
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            mode: 'receiver',
+            confirmedHopPeerIds: ['c'],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['c'],
+            unconfirmedRecipientPeerIds: ['r'],
+            complete: false
         });
     });
 

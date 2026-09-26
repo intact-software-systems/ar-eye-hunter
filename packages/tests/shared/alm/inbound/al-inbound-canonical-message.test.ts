@@ -314,6 +314,7 @@ async function admitMessage(
         read,
         plan: planIncomingMessage(msg, source, computeALInboundPlanningObservations(read)),
         canForward: false,
+        recordedParentPresent: true,
         facts: readALInboundEffectFacts(nowMs, {
             selfPeerId: 'receiver',
             newControlId: crypto.randomUUID.bind(crypto),

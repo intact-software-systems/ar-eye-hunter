@@ -125,6 +125,8 @@ export namespace ALInboundMessageRuntime {
         readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
+        /** Absence means no relay here ever loses its recorded parent, so only the origin re-parents a row. */
+        readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;

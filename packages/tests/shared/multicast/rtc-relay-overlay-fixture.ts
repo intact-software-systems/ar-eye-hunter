@@ -30,6 +30,8 @@ export interface RtcRelayOverlayFixtureInput {
 export interface RtcRelayOverlayFixture {
     receive(message: ALMessage, fromPeerId: string): Promise<void>;
     readSent(peerId: string): Promise<readonly ALMessage[]>;
+    /** Replaces the room this relay sees, as a membership change reaches it. */
+    acceptSnapshot(snapshot: GroupSnapshot): void;
 }
 
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
@@ -90,6 +92,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         readSent: async (peerId) => {
             await waitForALInboundWork();
             return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
-        }
+        },
+        acceptSnapshot: (snapshot) => groups.accept('room', snapshot)
     };
 }

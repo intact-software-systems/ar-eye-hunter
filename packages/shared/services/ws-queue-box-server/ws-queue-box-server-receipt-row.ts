@@ -15,7 +15,7 @@ export function isWsQueueBoxServerReceiptRow(message: ALMessage): boolean {
  * past a last publication one second before the row expires at its deadline plus that grace. An origin
  * that reconnects on any instance up to that last publication therefore receives it.
  */
-export function toWsQueueBoxServerReceiptRepublishDelayMs(message: ALMessage, nowMs: number): number {
+export function computeWsQueueBoxServerReceiptRepublishDelayMs(message: ALMessage, nowMs: number): number {
     const waitedMs = Math.min(
         AL_RECEIPT_DEADLINE_GRACE_MS,
         Math.max(WS_QUEUE_BOX_SERVER_RECEIPT_REPUBLISH_MIN_MS, nowMs - message.id.ts)

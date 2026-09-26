@@ -31,20 +31,18 @@ export interface PlanRtcFailedPeerRepairInput {
     readonly msg: ALMessage;
     readonly request: ALOutboundRepairRequest;
     readonly selfPeerId: string;
-    readonly planOutgoingMessage: (msg: ALMessage) => RtcDispatchPlan;
+    readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
 }
 
-type RtcDispatchPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage>;
-
 export interface ToRtcTargetedRepairCopyInput {
-    readonly dispatch: RtcDispatchPlan;
+    readonly dispatch: ALOutboundDispatchPlan<ALOutboundTransportMessage>;
     readonly msg: ALMessage;
     readonly peerId: string;
     readonly selfPeerId: string;
 }
 
 interface RtcMissingRecipientRepairInput {
-    readonly outgoing: RtcDispatchPlan;
+    readonly outgoing: ALOutboundDispatchPlan<ALOutboundTransportMessage>;
     readonly ackTracking: ALOutboundAckTrackingPlan;
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
@@ -53,6 +51,9 @@ interface RtcMissingRecipientRepairInput {
 /**
  * The next hops a retry still owes (D25): a missing recipient that is a direct hop, and every hop whose
  * subtree has not completed, since a missing recipient may sit behind it. A completed hop never gets a copy.
+ * A hop outside the frozen audience never reads complete: its terminal ACK confirms no expected recipient,
+ * so the origin refuses it and it never enters the ACK history. Every retry therefore resends to such a
+ * hop, and the receipt retry budget alone bounds how often.
  */
 export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepairInput): OverlayRepairPlan {
     const confirmed = new Set(input.confirmed);
@@ -71,7 +72,9 @@ export function computeMissingRecipientRepair(input: ComputeMissingRecipientRepa
  * missing recipients, through the tree over the current room; every other retry re-plans around the
  * failed hops through an alternate parent.
  */
-export function planRtcFailedPeerRepair(input: PlanRtcFailedPeerRepairInput): RtcDispatchPlan | undefined {
+export function planRtcFailedPeerRepair(
+    input: PlanRtcFailedPeerRepairInput
+): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
     const frozen = resolveALFrozenMulticastAudience(input.msg.targets);
     const outgoing = input.request.trigger === 'ack-timeout' && frozen !== undefined &&
             input.msg.id.senderId === input.selfPeerId
@@ -85,10 +88,10 @@ export function planRtcFailedPeerRepair(input: PlanRtcFailedPeerRepairInput): Rt
 /** A retried copy a relay still owes: the forwarding plan narrowed to the child hops its row waits on. */
 export function toRtcRetriedCopyRetransmission(
     copy: ALInboundMessageRuntime.RetriedCopy,
-    forwarding: RtcDispatchPlan | undefined
+    forwarding: ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined
 ): ALOutboundMessageRuntime.Retransmission<ALOutboundTransportMessage> {
     const owed = new Set(copy.toPeerIds);
-    const plan: RtcDispatchPlan = forwarding === undefined
+    const plan: ALOutboundDispatchPlan<ALOutboundTransportMessage> = forwarding === undefined
         ? {
             dropReason: `No RTC forwarding route for the retried copy of ${copy.msg.id.msgId}`,
             dropReasonCode: 'no-route',
@@ -103,11 +106,6 @@ export function toRtcRetriedCopyRetransmission(
     return { msg: plan.msg, plan, attemptIdentity: copy.attemptIdentity };
 }
 
-/**
- * A hop outside the frozen audience never reads complete here: its terminal ACK confirms no expected
- * recipient, so the origin refuses it and it never enters the ACK history. Every retry therefore resends
- * to such a hop, and the receipt retry budget alone bounds how often.
- */
 /**
  * The copy a targeted repair resends to one peer: the copy the repaired dispatch addresses to it, so the
  * siblings of that peer stay visited and it never owns them. A peer the dispatch no longer addresses gets a
@@ -130,7 +128,9 @@ export function toRtcTargetedRepairCopy(input: ToRtcTargetedRepairCopyInput): AL
     });
 }
 
-function toMissingRecipientRepairPlan(input: RtcMissingRecipientRepairInput): RtcDispatchPlan | undefined {
+function toMissingRecipientRepairPlan(
+    input: RtcMissingRecipientRepairInput
+): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
     const { outgoing, request, frozen } = input;
     if (outgoing.dropReason) {
         return outgoing;
@@ -154,7 +154,9 @@ function toMissingRecipientRepairPlan(input: RtcMissingRecipientRepairInput): Rt
     };
 }
 
-function planRtcAlternateParentRepair(input: PlanRtcFailedPeerRepairInput): RtcDispatchPlan | undefined {
+function planRtcAlternateParentRepair(
+    input: PlanRtcFailedPeerRepairInput
+): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
     const { msg, request } = input;
     if (!msg.targets || msg.targets.mode === 'unicast') {
         return undefined;

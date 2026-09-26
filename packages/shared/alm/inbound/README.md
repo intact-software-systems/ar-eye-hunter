@@ -120,19 +120,39 @@ delivers locally or counts as a recipient -- ends its subtree with
 `subtree-complete`, never `delivered` (R-S2c-ii-4). The row stays until it
 expires, so a child ACK that arrives after completion is still relayed, and a
 retried copy of the message is answered from it
-([`computeALInboundDuplicateEffects`](./admission/compute-al-inbound-duplicate-effects.ts)):
+([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
 
 - from the relay's recorded parent, the relay sends again one `forwarded` ACK
   per recipient it already relayed, since any of them may be the one the
   origin lost, then its terminal ACK when its subtree completed or the copy
   onward to the child hops it still waits on (R-S2c-ii-4);
-- from any other sender, which only relayed to a hop another parent already
-  owns, the relay answers with its own terminal ACK at once (R-S2c-ii-8c);
+- from the origin, or from any sender that is not one of its child hops once
+  the recorded parent left (no longer a member of the room, or no longer
+  reachable), the relay writes that sender as the parent of its row and
+  answers it as it would its recorded parent: every relayed ACK again, the
+  copy onward to the child hops it still waits on, and its terminal ACK only
+  once its subtree completed (R-S2c-ii-12). The origin is nobody's child, so
+  its copy never comes from a sibling; a retried copy is forwarded as planned
+  against the peer that sent it, not the first arrival;
+- from a sibling, a sender that does not own this peer while the recorded
+  parent is still present, the relay answers with its own terminal ACK at
+  once, so the sibling's row completes whatever the visited exclusion missed
+  (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
 - a peer with no relay row sends its own ACK again.
 
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by
 the attempt cap.
+
+**Who may confirm a recipient over RTC.** Over WS a session speaks only for
+itself (S2c-i). Over RTC the origin counts an admitted `forwarded` ACK for any
+member of the frozen audience it has not counted yet, whichever authenticated
+peer of the room relayed it: a relay is trusted to speak for the recipients
+below it, which relaying cannot avoid. A dishonest room member can therefore
+confirm a recipient that never delivered, as it could also withhold the copy.
+The origin does not trust a relay beyond that: a hop completes only on its
+own terminal ACK, a relay's own terminal names itself, and a session outside
+the frozen audience is never counted as a recipient.
 
 **Which children a relay owns (R-S2c-ii-8, 8a).** A relay's children are its
 next hops minus its sender and minus the sender's forwarding set, the siblings

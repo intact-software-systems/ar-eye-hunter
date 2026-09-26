@@ -10,7 +10,7 @@ import type {
     ALOutboundDurableEffectWrite,
     ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
     ALOutboundDispatchPhase,
@@ -395,7 +395,7 @@ function toSentMessageMutation<TPrepared>(
     return {
         kind: 'set-sent-message',
         reference: toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg),
-        policy: read.storedMessage?.policy ?? captureALOutboundPolicy(read.plan),
+        policy: toALOutboundSentPolicy(read.storedMessage?.policy, read.plan),
         creationExpiry: read.creationExpiry,
         snapshot: {
             msgId: read.msg.id.msgId,

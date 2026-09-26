@@ -45,7 +45,7 @@ import {
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
 } from './al-inbound-delivery-mutations.ts';
-import { computeALInboundDuplicateEffects } from './compute-al-inbound-duplicate-effects.ts';
+import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
@@ -57,6 +57,8 @@ export interface ComputeALInboundAdmissionInput {
     readonly read: ALInboundAdmissionRead;
     readonly plan: ALMessageHandlingPlan;
     readonly canForward: boolean;
+    /** Whether the parent a relay row of this message records is still a member of the room and reachable. */
+    readonly recordedParentPresent: boolean;
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -138,14 +140,13 @@ export function computeALInboundAdmission(
     input: ComputeALInboundAdmissionInput
 ): ALInboundCommitBundle {
     const finalRead = computeALInboundMessageRead(input.read, input.plan);
-    const changes = computeALInboundAdmissionChanges(finalRead, input.canForward, input.facts.selfPeerId);
+    const changes = computeALInboundAdmissionChanges(finalRead, input);
     return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
 }
 
 function computeALInboundAdmissionChanges(
     read: ALInboundMessageReadDto,
-    canForward: boolean,
-    selfPeerId: string
+    input: ComputeALInboundAdmissionInput
 ): ALInboundAdmissionChanges {
     const controls: ALInboundControlEffectInput = {
         msg: read.msg,
@@ -154,17 +155,18 @@ function computeALInboundAdmissionChanges(
         fromPeerId: read.fromPeerId
     };
     if (read.plan.dropReason) {
+        const duplicate = computeALInboundDuplicateChanges(read, {
+            selfPeerId: input.facts.selfPeerId,
+            recordedParentPresent: input.recordedParentPresent
+        });
         return {
             read,
-            mutations: [],
-            effects: [
-                ...toALInboundNegativeControlEffects(controls),
-                ...computeALInboundDuplicateEffects(read, selfPeerId)
-            ]
+            mutations: duplicate.mutations,
+            effects: [...toALInboundNegativeControlEffects(controls), ...duplicate.effects]
         };
     }
 
-    const shouldForward = canForward && read.plan.forwarding.enabled;
+    const shouldForward = input.canForward && read.plan.forwarding.enabled;
     const acknowledgements = computeIncomingAcknowledgements(read, shouldForward);
     return {
         read,

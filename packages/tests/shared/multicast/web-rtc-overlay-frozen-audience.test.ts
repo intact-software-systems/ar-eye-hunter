@@ -161,6 +161,55 @@ describe('the origin receipt of a frozen room multicast', () => {
     });
 });
 
+describe('the RTC room bound on a frozen audience (R-S2c-ii-13)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it.each(['none', 'hop', 'receiver'] as const)(
+        'refuses a %s send to a room of 300 sessions as unsupported, naming the bound and sending nothing',
+        async (ack) => {
+            const fixture = createFixture({ snapshot: createOriginSnapshot(toRoomSessionIds(300), 4), nextHopPeerIds: ['b', 'c'] });
+            const message = { ...createOriginReceiverMulticast(`oversize-${ack}`), qos: { ack: { algo: ack } } } as const;
+
+            const admitted = await enqueueAndDrain(fixture.manager, message);
+
+            expect(admitted.verdict).toEqual({
+                kind: 'refused',
+                reason: 'unsupported',
+                detail: 'RTC room multicast audience of 299 recipients exceeds the RTC room limit of 256'
+            });
+            expect(fixture.channels.b!.sent).toEqual([]);
+            expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+                .toBeUndefined();
+        }
+    );
+
+    it.each(['none', 'hop', 'receiver'] as const)('still admits a %s send to a room of 257 sessions', async (ack) => {
+        const fixture = createFixture({ snapshot: createOriginSnapshot(toRoomSessionIds(257), 4), nextHopPeerIds: ['b', 'c'] });
+        const message = { ...createOriginReceiverMulticast(`at-bound-${ack}`), qos: { ack: { algo: ack } } } as const;
+
+        const admitted = await enqueueAndDrain(fixture.manager, message);
+
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted' });
+        expect(fixture.channels.b!.sent).toHaveLength(1);
+        expect(fixture.channels.b!.sent[0]!.targets).toMatchObject({ recipientPeerIds: expect.any(Array) });
+        expect((fixture.channels.b!.sent[0]!.targets as { recipientPeerIds: readonly string[]; }).recipientPeerIds)
+            .toHaveLength(256);
+    });
+});
+
+/** The origin `a`, its two next hops, and filler sessions up to `count`. */
+function toRoomSessionIds(count: number): readonly string[] {
+    return ['a', 'b', 'c', ...Array.from({ length: count - 3 }, (_, index) => `s${index}`)];
+}
+
 describe('computeFrozenAudience', () => {
     it('names the authorized sessions except the origin, at the snapshot version the authority was read at', () => {
         const room = createSnapshotWithRefusedSessions();

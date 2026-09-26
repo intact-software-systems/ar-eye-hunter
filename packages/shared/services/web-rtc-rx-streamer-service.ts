@@ -136,6 +136,7 @@ export class WebRtcRxStreamerService {
                 forwardRetriedCopy: async (copy) => {
                     await this.multicast.forwardRetriedCopy(copy);
                 },
+                isRoomPeerPresent: (msg, peerId) => this.multicast.isRoomPeerPresent(msg, peerId),
                 diagnostics: dependencies.inboundDiagnostics
             }
         );

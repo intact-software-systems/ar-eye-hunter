@@ -9,8 +9,8 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 import {
-    isWsQueueBoxServerReceiptRow,
-    toWsQueueBoxServerReceiptRepublishDelayMs
+    computeWsQueueBoxServerReceiptRepublishDelayMs,
+    isWsQueueBoxServerReceiptRow
 } from './ws-queue-box-server-receipt-row.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
@@ -74,7 +74,7 @@ export class WsQueueBoxServerClusterPublication {
         return originIsHere ? { status: 'sent', submissionAttempted: true } : {
             status: 'not-ready',
             submissionAttempted: false,
-            retryAfterMs: toWsQueueBoxServerReceiptRepublishDelayMs(message, this.#dependencies.clock.nowMs()),
+            retryAfterMs: computeWsQueueBoxServerReceiptRepublishDelayMs(message, this.#dependencies.clock.nowMs()),
             reason: 'WS receipt origin has no session on this instance'
         };
     }

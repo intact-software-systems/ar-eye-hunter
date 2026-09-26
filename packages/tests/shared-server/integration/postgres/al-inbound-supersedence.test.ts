@@ -185,5 +185,5 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
         newControlId: crypto.randomUUID.bind(crypto),
         createInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });
-    return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false }) };
+    return { read, plan, bundle: computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true }) };
 }

@@ -145,7 +145,9 @@ with its source (`ALOutboundControlSource`), and trust follows the source, never
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
 without an expected peer (every other check stands), and stated as a server relay that is never named.
 Every other control, the WS server's own included, arrives as `peer` and must come from an expected
-receipt peer or the unicast addressee. A retained control keeps its source for its replay.
+receipt peer or the unicast addressee. Over RTC a `forwarded` ACK from any peer of the room confirms
+the frozen recipient it names: RTC relays are trusted to speak for the recipients below them (see
+the inbound README). A retained control keeps its source for its replay.
 
 A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
@@ -198,6 +200,13 @@ both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
   sessions that authority admits (active members with live leases) minus itself, at the admission's
   `snapshotVersion` (R-S2c-ii-2). Every later attempt and every stored row keeps that audience, whatever
   the room has become.
+- **The RTC room limit (R-S2c-ii-13).** The RTC frozen audience rides on the wire, where one
+  collection holds at most `AL_MESSAGE_RESOURCE_LIMITS.collectionEntries` (256) ids, so an RTC room
+  multicast reaches rooms of at most 257 sessions, the origin included. A larger audience is refused as
+  `refused/unsupported`, naming the bound, in every ack mode and before anything is persisted or sent
+  (`computeRtcFrozenAudienceRefusal`). That is the refusal a fallback takes over: `rtc-with-ws-fallback`
+  delivers over WS, whose audience travels off the wire (below), and `rtc` alone settles `rejected`
+  with the typed reason, never `failed`.
 - The WS server freezes a room message at its admission stamp from the sessions it authorizes. A
   multicast an RTC origin froze that falls back to WS keeps its frozen set narrowed to the sessions the
   server authorizes: a frozen audience narrows what the admitting authority allows and never widens it,

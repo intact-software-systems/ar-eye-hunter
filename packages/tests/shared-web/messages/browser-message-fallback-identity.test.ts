@@ -1,6 +1,8 @@
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { RallarTypedMessageChannel } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { computeRtcFrozenAudienceRefusal } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 import {
     afterEach,
     beforeEach,
@@ -91,6 +93,42 @@ describe('typed message fallback identity', () => {
         // The fallback carries the same envelope, algorithm included: only the carrier changes.
         expect(fixture.attempts.map((attempt) => attempt.message)).toEqual(carriers.map(() => fixture.attempts[0].message));
         expect(fixture.attempts[0].message.delivery?.ack).toBe('receiver');
+    });
+
+    it.each(
+        [
+            ['rtc-with-ws-fallback', 'none', ['rtc', 'ws'], 'queued'],
+            ['rtc-with-ws-fallback', 'receiver', ['rtc', 'ws'], 'queued'],
+            ['rtc-with-ws-fallback', 'group-leader', ['rtc', 'ws'], 'queued'],
+            ['rtc', 'none', ['rtc'], 'rejected'],
+            ['rtc', 'receiver', ['rtc'], 'rejected'],
+            ['rtc', 'group-leader', ['rtc'], 'rejected']
+        ] as const
+    )('moves a %s send with ack %s whose RTC room exceeds the wire audience bound (R-S2c-ii-13)', async (strategy, ack, carriers, state) => {
+        const audience = { recipientPeerIds: Array.from({ length: 299 }, (_, index) => `s${index}`), snapshotVersion: 4 };
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) =>
+                computeRtcFrozenAudienceRefusal(toALFrozenMulticastMessage(msg, audience)).fold(
+                    (refusal) => ({ ...refusal, preparedMessages: [] }),
+                    () => {
+                        throw new Error('A room of 300 sessions must exceed the RTC room limit');
+                    }
+                )
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack });
+
+        const { lifecycle } = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        const detail = 'RTC room multicast audience of 299 recipients exceeds the RTC room limit of 256';
+        expect(lifecycle.state).toBe(state);
+        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(carriers);
+        // Alone, the refusal is the verdict; with a fallback it is the evidence row of the refused RTC leg.
+        expect(lifecycle.evidence).toMatchObject(
+            state === 'rejected'
+                ? { reason: detail }
+                : { attempts: [{ carrier: 'rtc', outcome: 'refused', refusalReason: 'unsupported', detail }] }
+        );
     });
 
     it('records the refused rtc leg as an evidence row that the retried ws leg follows', async () => {
