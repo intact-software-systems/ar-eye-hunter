@@ -114,7 +114,8 @@ export type {
 } from '@shared-web/browser/rallar.ts';
 
 export type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-export type { ALQosPolicyRequest, ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+export type { ALDurabilityAlgo, ALQosPolicyRequest, ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+export type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 export type {
     ALDeliveryAttempt,
     ALDeliveryEvidence,

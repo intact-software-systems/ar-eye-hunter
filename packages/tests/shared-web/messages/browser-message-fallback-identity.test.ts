@@ -347,7 +347,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
         originalRoom: admission.originalRoom,
         attempts: admission.attempts,
         settlements: epoch.settlements,
-        channel: channels.channel<{ action: string; }>({ topicId: 'room.ready', typeId: 'ready' })
+        channel: channels.channel<{ action: string; }>({ topicId: 'room.ready', typeId: 'ready', purpose: 'notification' })
     };
 }
 

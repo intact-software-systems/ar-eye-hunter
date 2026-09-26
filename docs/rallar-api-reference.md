@@ -611,12 +611,19 @@ interface ChatMessage {
 
 const chat = rallar.messages.channel<ChatMessage>({
     topicId: 'room.chat',
-    typeId: 'chat.message.v1'
+    typeId: 'chat.message.v1',
+    purpose: 'notification'
 });
 
 chat.onWs((payload) => console.log(payload.text));
 await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.group });
 ```
+
+`purpose` is required: `command` asks the addressed receiver, `notification`
+the room's frozen audience; both are at-least-once, receipted, volatile and
+30 s by default, and every send option overrides its default.
+`durability: 'local-outbox'` or `'local-inbox'` opts the channel into browser
+storage.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and

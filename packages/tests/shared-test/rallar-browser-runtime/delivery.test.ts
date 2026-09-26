@@ -98,7 +98,9 @@ function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined): Delivery
 
 function sendThroughProductionSender(maxPayloadBytes: number): void {
     const sender = createBrowserMessageSenderFixture(maxPayloadBytes, facade.deliveries).sender;
-    facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+    facade.behavior.typedSend.mockImplementation(async (payload) =>
+        await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }, undefined)
+    );
 }
 
 /** One live send per registry entry, so the send before them is the oldest one the registry evicts. */
@@ -301,7 +303,7 @@ it('observes a retained pending admission without storage reads and wakes on the
         return result;
     });
     facade.behavior.typedSend.mockImplementation(async (payload, options) =>
-        await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', topicId: 'room.conformance', payload })
+        await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', topicId: 'room.conformance', payload }, undefined)
     );
     await runtime.connect(connection);
     const sending = runtime.sendMessage({ ...send, timeoutMs: 37, ttlMs: 60_000 });
@@ -631,7 +633,7 @@ function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
         const verdict = await admission.promise;
         return { message, verdict, entries: [] };
     });
-    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     return admission;
 }
 
@@ -813,7 +815,7 @@ it('deducts sender connection time from the RTC admission deadline', async () =>
     const connection = Promise.withResolvers<typeof fixture.middleware>();
     fixture.connect.mockReturnValue(connection.promise);
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockReturnValue(new Promise(() => undefined));
-    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     let settled = false;
     const running = native.send({ payload: true, ttlMs: 60_000 }, 1_037);
     void running.then(() => {
@@ -853,7 +855,7 @@ it.each(
         }));
     }
     facade.behavior.typedSend.mockImplementation(async (payload, options) => {
-        const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload });
+        const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload }, undefined);
         await handle.wait({ until: ['queued'], timeoutMs: 100 });
         if (state === 'transport-accepted') {
             fixture.registry.record({ kind: 'attempt-started', carrier: 'rtc', msgId: handle.msgId, atMs: Date.now(), attemptId: 'attempt-1' });

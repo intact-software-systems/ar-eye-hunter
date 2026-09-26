@@ -83,7 +83,12 @@ describe('director receipt output', () => {
         });
 
         expect(await transport.sendRoomEnvelope(receiptInput)).toEqual({ status: 'sent', receipt: receipt.handle });
-        expect(room.open).toHaveBeenCalledWith({ topicId: 'room.director', typeId: 'output', roomRef: current.roomRef });
+        expect(room.open).toHaveBeenCalledWith({
+            topicId: 'room.director',
+            typeId: 'output',
+            roomRef: current.roomRef,
+            purpose: 'notification'
+        });
         expect(room.send).toHaveBeenCalledWith(
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
             { strategy: 'rtc-with-ws-fallback', reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 30_000 }

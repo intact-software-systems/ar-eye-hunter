@@ -24,10 +24,10 @@ describe('message handle admission', () => {
         const sending = path === 'unicast'
             ? fixture.sender.sendWsUnicast({ peerId: 'peer', typeId: 'app.ready', payload, route: { topicId: 'app.ready', contextId: 'all' } })
             : path === 'fallback'
-            ? fixture.sender.sendTyped({ typeId: 'app.ready', payload })
+            ? fixture.sender.sendTyped({ typeId: 'app.ready', payload }, undefined)
             : path === 'rtc'
-            ? fixture.sender.sendRtc({ typeId: 'app.ready', payload })
-            : fixture.sender.sendWs({ typeId: 'app.ready', payload });
+            ? fixture.sender.sendRtc({ typeId: 'app.ready', payload }, undefined)
+            : fixture.sender.sendWs({ typeId: 'app.ready', payload }, undefined);
         payload.text = 'x'.repeat(100);
         connection.resolve(fixture.middleware);
         const handle = await sending;
@@ -45,7 +45,7 @@ describe('message handle admission', () => {
             return admission.promise;
         };
         let handle: RallarMessageHandle | undefined;
-        const sending = fixture.sender[carrier === 'rtc' ? 'sendRtc' : 'sendWs']({ typeId: 'room.ready', payload: true }).then((value) => {
+        const sending = fixture.sender[carrier === 'rtc' ? 'sendRtc' : 'sendWs']({ typeId: 'room.ready', payload: true }, undefined).then((value) => {
             handle = value;
         });
         try {
@@ -78,7 +78,7 @@ describe('message handle admission', () => {
             });
             return toQueuedMessageAdmission(message);
         };
-        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
+        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true }, undefined);
         expect((await handle.wait()).lifecycle).toMatchObject({
             state: 'transport-accepted',
             evidence: { attempts: [{ attemptId: 'sync', outcome: 'sent' }] }
@@ -95,7 +95,7 @@ describe('message handle admission', () => {
             envelope = message;
             return admission.promise;
         };
-        const pendingHandle = fixture.sender.sendWs({ typeId: 'room.ready', payload: true, ttlMs: 60_000 });
+        const pendingHandle = fixture.sender.sendWs({ typeId: 'room.ready', payload: true, ttlMs: 60_000 }, undefined);
         let handle: RallarMessageHandle | undefined;
         void pendingHandle.then((value) => {
             handle = value;
@@ -116,18 +116,18 @@ describe('message handle admission', () => {
 
     it('returns a rejected handle for an oversized serializable payload', async () => {
         const fixture = createBrowserMessageSenderFixture(8);
-        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: { text: 'too large' } });
+        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: { text: 'too large' } }, undefined);
         expect(handle.lifecycle()).toMatchObject({ state: 'rejected', evidence: { reason: 'Payload exceeds 8 bytes.' } });
     });
 
     it('still throws validation when the payload cannot form an envelope', async () => {
         const fixture = createBrowserMessageSenderFixture(8);
-        await expect(fixture.sender.sendWs({ typeId: 'room.ready', payload: 1n })).rejects.toSatisfy(isRallarValidationError);
+        await expect(fixture.sender.sendWs({ typeId: 'room.ready', payload: 1n }, undefined)).rejects.toSatisfy(isRallarValidationError);
     });
 
     it('returns an unobservable handle without admitting through middleware replaced before sender continuation', async () => {
         const fixture = createBrowserMessageSenderFixture();
-        const sending = fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
+        const sending = fixture.sender.sendWs({ typeId: 'room.ready', payload: true }, undefined);
         fixture.replaceTransport();
         const handle = await sending;
         await vi.waitFor(() => expect(handle.lifecycle().state).toBe('unobservable'), { timeout: 100 });
@@ -138,7 +138,7 @@ describe('message handle admission', () => {
         fixture.middleware.middleware.qboxEngine.wake = () => {
             throw new Error('Queue wake failed');
         };
-        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
+        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true }, undefined);
         await vi.waitFor(() => expect(handle.lifecycle()).toMatchObject({ state: 'failed', evidence: { reason: 'Queue wake failed' } }), { timeout: 100 });
     });
 
@@ -147,7 +147,24 @@ describe('message handle admission', () => {
         fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async () => {
             throw new Error('Storage unavailable');
         };
-        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true });
+        const handle = await fixture.sender.sendWs({ typeId: 'room.ready', payload: true }, undefined);
         expect((await handle.wait()).lifecycle).toMatchObject({ state: 'failed', evidence: { reason: 'Storage unavailable' } });
+    });
+
+    it('keeps the director relay\'s WS unicast purpose-free and best-effort until S3c (D53, D60)', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const envelope = vi.spyOn(fixture.middleware.middleware.webSocketQueueBox, 'enqueueOutboxIfAbsent');
+
+        await fixture.sender.sendWsUnicast({
+            peerId: 'director',
+            typeId: 'director.intent.v1',
+            payload: { intent: 'pickup' },
+            route: { topicId: 'director.intent', contextId: 'room' }
+        });
+
+        const message = envelope.mock.calls[0][0];
+        expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'director' });
+        expect(message.delivery).toBeUndefined();
+        expect(message.qos).toBeUndefined();
     });
 });

@@ -76,6 +76,16 @@ question.
 | D49 | The WS server keeps its ordering gate on broadcasts it only relays: one relay-side verdict (NACK to the sender, no relay) protects every fan-out recipient; R-S2c-i-4's relay-side `ordering-resync` assertion stands; no receiver-side ordering change in S2c-ii (2026-09-25).                                                                                                                                                             |
 | D50 | An admitted `resync-required` NACK settles the origin's handle as rejected by the relay with the NACK as evidence — evidence only, no resend; resend semantics belong to an ordering slice (2026-09-25). **Refined by S2c-ii (R-S2c-ii-5a):** a best-effort send keeps its terminal `transport-accepted`, the rejection only as evidence.                                                                                                   |
 | D51 | S2c-ii's acceptance is the local full lanes on normal pages plus the both-normal hosted smoke; the hosted full read is attempted at most twice and reported under the two-regime rule, never a completion blocker (2026-09-25). **As applied:** two- and three-agent full lanes on every carrier, the named rtc/fallback `received-1` red the only one allowed.                                                                             |
+| D52 | S3: a typed channel definition declares `purpose: 'command' \| 'notification'` (required; every in-repo caller updated in S3a) and the purpose fixes the D2 default — at-least-once, receipted, volatile, 30 s; `realtime` is refused at a typed channel and the colliding `'realtime'` typed-send strategy is retired.                                                                                                                     |
+| D53 | S3: `receiver` on a WS unicast addressed to a session is supported — the logical audience is that one session, the server aggregates a one-member audience and the receiver's own ACK is the receipt. Amends the scope of D42 and D49, not their reasoning.                                                                                                                                                                                 |
+| D54 | S3: each outbound carrier runtime holds a memory and an IndexedDB store pair and routes each admission by its effective durability; the inbound session store stays one per backend shared by both carriers (D20), routed by the receiving channel's declared durability (default volatile). Durability is decoupled from retry.                                                                                                            |
+| D55 | S3: the zero-IndexedDB volatile pin is zero `al-admission` operations and zero non-probe `al-work` operations over a reset window per volatile scenario, with the durable owners' idle `work-page` probes counted and reported beside it. A literal total zero (lazy owner start and stop) belongs to I2.                                                                                                                                   |
+| D56 | S3: delivery-level fallback for `rtc-with-ws-fallback` triggers on the declared retryable outcomes — an RTC attempt settled `not-ready` for three consecutive attempts (a named constant), `unroutable/rate-limited`, the `not-yet-in-sync` retry budget exhausted, and the new `receipt-exhausted` settlement — re-admitting the same envelope on WS within the unchanged deadline after cancelling the RTC work.                          |
+| D57 | S3: Relic commands move to a `command` channel addressed to the server through a new `server` target kind (envelope version bump), the id learned from the WS connection state; the receipt is the server's own ACK as the logical recipient; the UI shows the delivery outcome and the applied snapshot's arrival; the correlated application reply stays I1's. The REST route stays for one release.                                      |
+| D58 | S3: server-originated outbox publishes freeze the room's current sessions at publish, carry the server peer id as sender, and feed a server settlement sink; cluster delivery honours the carried admission audience (the S2c-ii carried limitation is fixed in S3c because the receipt is wrong without it).                                                                                                                               |
+| D59 | S3 owns the volatile store's per-session count and byte bound, a typed `refused/capacity` admission verdict and that bound as the first `overloaded` producer for the congestion aspect; track, intake, age budgets and fairness stay V1's.                                                                                                                                                                                                 |
+| D60 | S3: all AR Eye Hunter match intents (pickup, match start, combat) move from the realtime targeted lane to one `command` channel unicast to the director over `rtc-with-ws-fallback` with the director's receipt; the realtime first leg is removed for intents.                                                                                                                                                                             |
+| D61 | S3c owns S2's undelivered Relic row — per-session confirmation visible in server diagnostics — as part of the snapshot move, since it needs the same server settlement sink.                                                                                                                                                                                                                                                                |
 
 ### Standing direction
 
@@ -106,11 +116,11 @@ layer.
 A typed channel definition declares its purpose; the purpose fixes the defaults; a send may
 override them per call.
 
-| Purpose        | Default policy                                                                                                                           | Completion and recovery                                                                                                                           |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `realtime`     | Best-effort, volatile, freshness-first, no logical receipt. Stays on the existing direct `rallar.realtime.room` lane.                    | Replace obsolete queued values by semantic key; drop expired values.                                                                              |
-| `command`      | At-least-once, volatile, 30 s deadline, receipt from the addressed receiver, 2 s ACK timeout, three receipt retries.                     | Retry within the deadline; a separate application reply establishes completion of the action.                                                     |
-| `notification` | At-least-once, volatile, 30 s deadline, receipt from the complete intended audience frozen at admission, no room-wide readiness barrier. | Track every required recipient; retry only missing recipients; expose partial confirmation. One silent browser does not block delivery to others. |
+| Purpose        | Default policy                                                                                                                                                                     | Completion and recovery                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `realtime`     | Best-effort, volatile, freshness-first, no logical receipt. Stays on the existing direct `rallar.realtime.room` lane; the typed-send strategy named `'realtime'` is retired (D52). | Replace obsolete queued values by semantic key; drop expired values.                                                                              |
+| `command`      | At-least-once, volatile, 30 s deadline, receipt from the addressed receiver, 2 s ACK timeout, three receipt retries.                                                               | Retry within the deadline; a separate application reply establishes completion of the action.                                                     |
+| `notification` | At-least-once, volatile, 30 s deadline, receipt from the complete intended audience frozen at admission, no room-wide readiness barrier.                                           | Track every required recipient; retry only missing recipients; expose partial confirmation. One silent browser does not block delivery to others. |
 
 Durability (`local-outbox`, `local-inbox`) is an explicit per-channel choice. Reliable volatile
 delivery survives a dropped connection while its runtime lives; crash survival requires the durable
@@ -243,8 +253,8 @@ stall segment is uninstrumented on the server side.
 
 Sixteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
 not on each other. Release 2, F2b, S1, F2c and S2 are delivered. S2 split into three PRs, S2a, S2b
-and S2c (D18), and S2c into S2c-i and S2c-ii (D47); each section below names its plan. S3 and later
-releases are named by outcome with exit evidence.
+and S2c (D18), and S2c into S2c-i and S2c-ii (D47); each section below names its plan. S3 is planned as three PRs (S3a,
+S3b, S3c; D52–D61); later releases are named by outcome with exit evidence.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
 | ------------- | ----------------------------------------------------- | ------ | -------------------------- |
@@ -779,13 +789,31 @@ dead-RTC-peer reconnect race (a maintainer chip).
   is already implemented on both sides
   (`packages/shared/alm/inbound/al-inbound-effect-intent.ts`,
   `packages/shared/alm/outbound/al-outbound-repair-admission.ts`); S2b owes it a scenario, not code.
-- **S3 Defaults, fallback, volatile path, consumer proofs.** Purpose at the channel with the D2
-  default; carrier-aware capabilities installed in the browser composition; one memory and one
-  IndexedDB backend per carrier runtime with each channel routed to one; fallback on a declared
-  retryable outcome or receipt timeout within the deadline; aggregate memory, track, and intake
-  budgets; zero AL-owned IndexedDB operations proven per volatile scenario. The authority client
-  awaits receipts and consumes the handle; Relic snapshots move to the durable outbox with
-  receipts. **Carried in from F2:** delivery-level fallback for `rtc-with-ws-fallback` — today the carrier falls back only when the RTC admission itself is refused (`no-route`, `circuit-open`); an admitted RTC send that is later dropped, rejected `not-yet-in-sync`, or never receipted is never retried over WS. The rule above (a declared retryable outcome or a receipt timeout within the deadline) needs S1's handle first.
+- **S3 Defaults, fallback, volatile path, consumer proofs** — planned as three PRs (S3a purpose and the
+  volatile default, S3b fallback within the deadline, S3c consumer proofs and the volatile bound) from
+  [alm-s3-design-proposal.md](alm-s3-design-proposal.md), decisions D52–D61. A typed channel declares
+  `purpose: 'command' | 'notification'` and the purpose fixes the D2 default: at-least-once, receipted,
+  volatile, 30 s (D52); `receiver` on a WS unicast addressed to a session is supported (D53); each
+  outbound carrier runtime holds a memory and an IndexedDB store pair and routes each admission by its
+  effective durability, the inbound session store stays one per backend shared by both carriers (D54);
+  the volatile proof is zero `al-admission` and zero non-probe `al-work` IndexedDB operations per
+  volatile scenario with the durable owners' idle probes reported beside it (D55); delivery-level
+  fallback for `rtc-with-ws-fallback` on the declared retryable outcomes — `not-ready` for three
+  consecutive RTC attempts, `rate-limited`, the `not-yet-in-sync` budget exhausted, and the new
+  `receipt-exhausted` settlement — within the unchanged deadline (D56); the S3 share of budgets is the
+  volatile store's per-session count and byte bound with a typed `refused/capacity` verdict and the
+  first `overloaded` producer, the rest is V1's (D59). Consumer proofs: all AR Eye Hunter match intents
+  become a `command` channel unicast to the director with the director's receipt (D60); Relic commands
+  move to a `command` channel addressed to the server through a new `server` target kind (D57) and
+  Relic snapshots to the durable outbox with receipts — a server-originated publish freezing the room
+  at publish, the server peer id as sender, a server settlement sink for per-session confirmation in
+  server diagnostics (S2's undelivered Relic row, D61), and cluster delivery honouring the carried
+  audience (D58). **Carried in from F2, as the survey found it:** the carrier falls back at admission
+  only — on `no-route`, `circuit-open` and `refused/unsupported`; `rate-limited` fails the handle; a
+  dropped RTC send maps to `not-ready` and retries on RTC until the deadline; a `not-yet-in-sync` NACK
+  retries on RTC; and receipt-budget exhaustion states no settlement, so the handle reads `expired`
+  only at the deadline. The "authority client" named earlier has no app caller: AR Eye Hunter's
+  commands are director-relay intents on the non-ALM realtime targeted lane.
 
 ### Releases 4 to 7: outcomes and exit evidence
 
@@ -892,10 +920,10 @@ Finding identifiers are the audit's; PC numbers are the product description's co
 
 | Requirement                            | State                                                                                        | Release           |
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------- |
-| F1 reliable receipts                   | Open: public result is an admission snapshot; `receiver` normalizes to `hop`.                | S1, S2, S3        |
+| F1 reliable receipts                   | Open: the default typed send is `ack: 'none'` and ends at `transport-accepted` (S3a).        | S1, S2, S3        |
 | F2 bounded trusted ingress             | Resolved.                                                                                    | done              |
 | F3 room authority                      | Partial: floors and no-floor server authorization exist; frozen audience and fencing remain. | S2, R2            |
-| F4 one fallback lifecycle              | Open: same envelope, carrier-scoped inbound stores.                                          | S2, S3            |
+| F4 one fallback lifecycle              | Open: admission-time fallback only; post-admission outcomes never reach WS (S3b).            | S2, S3            |
 | F5 volatile path                       | Open: every typed send persists by default.                                                  | S3, V1            |
 | F6 admission work                      | Partial: exact observation CAS exists; two dequeue owners and whole-store reads remain.      | F2, R1            |
 | F7 durable ownership                   | Partial: outbound canonical; inbound copies; two server consumers.                           | F2                |
@@ -954,9 +982,9 @@ Read this roadmap, then the open pull request's Goal, Acceptance, Validation, an
 sections, then run `npm run pr:delivery -- status`. The S2 outcome is delivered (S2a, S2b, S2c-i
 and S2c-ii, the last from branch `claude/alm-s2c-ii-frozen-audience` with its plan
 `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md`); the earlier ticked
-plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. The next slice is not planned yet: its
-inputs are the "Carried out of S2c-ii" list in the S2c-ii plan and the S3 items in this roadmap. Start
-it from merged `main` on a new branch. Recover the current owner, entry,
+plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. S3 is in design on branch
+`claude/alm-s3-defaults-fallback-volatile` (draft PR #597): [alm-s3-design-proposal.md](alm-s3-design-proposal.md)
+holds the survey, the three-PR shape and the decisions D52–D61; the S3a plan follows on that branch. Recover the current owner, entry,
 dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
 navigation map. When a release completes, move the next two slices into the concrete horizon here
 and leave the rest outcome-shaped. Do not add pull request status prose to this document.
@@ -991,5 +1019,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-25: S2c-i merged as 786ced4ff (#591); the four open S2c-ii questions settled as D48–D51 and
   the S2c-ii plan amended (Task 2b, Task 3, Task 7, the carried list).
 - 2026-09-26: S2c-ii executed on `claude/alm-s2c-ii-frozen-audience` (PR #595); rulings R-S2c-ii-0 to
+- 2026-09-26: S3 designed from `alm-s3-design-proposal.md` after S2c-ii merged (#595): decisions D52–D61, the S3 bullet rewritten from the code survey (the carried-in fallback text, the authority client, the per-carrier backends), matrix rows F1 and F4 restated, the `realtime` purpose row notes the retired strategy name.
   R-S2c-ii-11 recorded in its plan; the S2c-ii section added, the S2 outcome marked delivered, and
   D25, D38, D43, D45, D46, D50 and D51 annotated as applied, amended or extended.
