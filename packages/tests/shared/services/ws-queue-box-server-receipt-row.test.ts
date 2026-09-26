@@ -88,8 +88,10 @@ describe('WS server receipt row across a cluster', () => {
         expect(origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             msgId: 'room-message-1',
             mode: 'receiver',
-            confirmedHopPeerIds: ['b', 'c'],
+            confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['b', 'c'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
     });

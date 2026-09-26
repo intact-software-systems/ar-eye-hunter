@@ -2,9 +2,7 @@ import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
-    ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
-    ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
@@ -948,39 +946,6 @@ export interface RallarBlackBoxTestAssertResultValue {
     readonly actual?: unknown;
     readonly exists: boolean;
     readonly passed: boolean;
-}
-
-export interface RallarBlackBoxTestMessagesSendResultValue {
-    readonly handleId: string;
-    readonly msgId?: string;
-    readonly carrier: RallarBlackBoxTestMessagesCarrier;
-    readonly status: ALDeliveryState;
-    readonly reason?: string;
-}
-
-/** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
-export interface RallarBlackBoxTestMessagesReplayResultValue {
-    readonly handleId: string;
-    readonly msgId: string;
-    readonly carrier: ALDeliveryCarrier;
-    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
-    /** The verdict's own detail; absent for `admitted`, `duplicate` and `pending`, which carry none. */
-    readonly reason?: string;
-}
-
-export interface RallarBlackBoxTestMessagesObserveResultValue extends ALDeliveryReceiptEvidence {
-    readonly handleId: string;
-    readonly state: ALDeliveryState;
-    readonly submitted: boolean;
-    readonly enqueued: boolean;
-    readonly attempts: number;
-    readonly reason: string | undefined;
-}
-
-export interface RallarBlackBoxTestStorageCountersResultValue {
-    readonly total: number;
-    readonly byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;
-    readonly byKind: Readonly<Record<string, number>>;
 }
 
 export type RallarBlackBoxTestEventKind =

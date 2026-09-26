@@ -21,7 +21,8 @@ import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
-    toALOutboundAcknowledgementFact
+    toALOutboundAcknowledgementFact,
+    toALOutboundCompletedHopPeerIds
 } from './transition-al-outbound-pending-ack.ts';
 
 export type ALControlHistory =
@@ -29,8 +30,15 @@ export type ALControlHistory =
     | Readonly<{ kind: 'nacks'; values: readonly ALNackPayload[]; }>
     | Readonly<{ kind: 'repairs'; values: readonly ALRepairPayload[]; }>;
 
+/**
+ * Who handed this control to its outbound owner: the trusted server of a WS client, which speaks for the
+ * relay it is and never relays a peer NACK, or a peer. Trust follows the source, never the carrier.
+ */
+export type ALOutboundControlSource = 'trusted-server' | 'peer';
+
 export interface ALControlAdmissionRead {
     readonly parsed: ALPeerControlMessage;
+    readonly source: ALOutboundControlSource;
     /** The carrier the control reached this owner on: an acknowledgement is recorded under it, whatever its sender named. */
     readonly carrier: ALDeliveryCarrier;
     readonly targetMsgId: string;
@@ -104,20 +112,36 @@ export function computeALOutboundControlAdmission(
 export function toALOutboundControlSettlement(
     candidate: ALControlAdmissionCandidate
 ): ALOutboundSettlementFact | undefined {
-    const { parsed, targetMsgId } = candidate.read;
-    if (parsed.type === 'nack' && parsed.payload.reason === 'resync-required') {
-        const relayPeerId = parsed.payload.fromPeerId;
-        return {
-            kind: 'relay-rejected',
-            msgId: targetMsgId,
-            relayRejection: { relayPeerId, reason: 'resync-required' },
-            detail: `Relay ${relayPeerId} refused the message: resync-required.`
-        };
+    const { read, history } = candidate;
+    if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'resync-required') {
+        return toRelayRejectedFact(read, read.parsed.payload);
     }
     const snapshot = resolveAcceptedReceipt(candidate);
-    return snapshot === undefined
-        ? undefined
-        : toALOutboundAcknowledgementFact(snapshot, isALOutboundReceiptComplete(snapshot));
+    return snapshot === undefined ? undefined : toALOutboundAcknowledgementFact({
+        receipt: snapshot,
+        hops: {
+            nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
+            completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
+        },
+        complete: isALOutboundReceiptComplete(snapshot)
+    });
+}
+
+function toRelayRejectedFact(read: ALControlAdmissionRead, nack: ALNackPayload): ALOutboundSettlementFact {
+    const reason = 'resync-required';
+    return read.source === 'trusted-server'
+        ? {
+            kind: 'relay-rejected',
+            msgId: read.targetMsgId,
+            relayRejection: { relay: 'trusted-server', reason },
+            detail: `The server relay refused the message: ${reason}.`
+        }
+        : {
+            kind: 'relay-rejected',
+            msgId: read.targetMsgId,
+            relayRejection: { relay: 'peer', peerId: nack.fromPeerId, reason },
+            detail: `Hop ${nack.fromPeerId} refused the message: ${reason}.`
+        };
 }
 
 export function controlTargetMsgId(parsed: ALParsedControlMessage): string {
@@ -215,6 +239,8 @@ function toRepairHintEffect(
     };
 }
 
+/** A `resync-required` refusal ends the receipt too (D50): the hop will refuse every resend of the message. */
 function isTerminalNack(nack: ALNackPayload): boolean {
-    return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale';
+    return nack.reason === 'expired' || nack.reason === 'unauthorized' || nack.reason === 'stale' ||
+        nack.reason === 'resync-required';
 }

@@ -135,7 +135,7 @@ export type ALDeliverySettlement =
         unconfirmedRecipientPeerIds: readonly string[];
         complete: boolean;
     }>
-    /** An admitted relay NACK refused the message (D50): terminal evidence, and no resend follows it. */
+    /** A hop refused the message with an admitted NACK (D50): terminal evidence, and no resend follows it. */
     | Readonly<{
         kind: 'relay-rejected';
         msgId: string;
@@ -180,8 +180,10 @@ export interface ALDeliveryAttempt {
 }
 
 /**
- * What the latest receipt stated. Under `receiver` the origin tracks logical recipients only, so its hop
- * lists name the same peers; under `hop` and `subtree` the recipient lists are the hop lists.
+ * What the latest receipt stated. Under `hop` and `subtree` the recipient lists are the hop lists. Under
+ * `receiver` the recipient lists count the frozen logical audience, and the hop lists are the local hop
+ * view of the origin: the confirmed hops are the next hops whose own completion ACK arrived, and the
+ * unconfirmed hops are the remaining next hops the dispatch sent through. A WS origin names no hop.
  */
 export interface ALDeliveryReceiptEvidence {
     /** Undefined until a receipt settles; a send that tracks no receipt never has one. */
@@ -193,11 +195,13 @@ export interface ALDeliveryReceiptEvidence {
     readonly unconfirmedRecipientPeerIds: readonly string[];
 }
 
-/** The relay whose admitted NACK refused the message, and the reason it gave (D50). */
-export interface ALDeliveryRelayRejection {
-    readonly relayPeerId: string;
-    readonly reason: 'resync-required';
-}
+/**
+ * The hop whose admitted NACK refused the message, and the reason it gave (D50). A trusted server relay
+ * is never named: no client learns a server id.
+ */
+export type ALDeliveryRelayRejection =
+    | Readonly<{ relay: 'trusted-server'; reason: 'resync-required'; }>
+    | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required'; }>;
 
 export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly submittedAtMs: number;
@@ -206,7 +210,7 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     /** Undefined until an `admitted` verdict: a duplicate states nothing about the durability of the original. */
     readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
-    /** Undefined unless a relay refused the message. */
+    /** Undefined unless a hop refused the message. */
     readonly relayRejection: ALDeliveryRelayRejection | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;

@@ -8,6 +8,22 @@ import type {
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
 
+/**
+ * What one peer knows of the relay tree: its own next hops, and those whose subtree completed (a leaf
+ * that delivered, or a relay whose terminal ACK arrived). No peer sees the tree beyond its own hops.
+ */
+export interface OverlayTree {
+    readonly nextHopPeerIds: readonly string[];
+    readonly completedHopPeerIds: readonly string[];
+}
+
+/** A receipt row as far as its acknowledgement states it, with the local hop view of its origin. */
+export interface ToALOutboundAcknowledgementFactInput {
+    readonly receipt: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'mode' | 'expectedPeerIds' | 'ackedPeerIds'>;
+    readonly hops: OverlayTree;
+    readonly complete: boolean;
+}
+
 export interface TrackALOutboundPendingAckSnapshotInput {
     readonly msgId: string;
     readonly current: ALOutboundPendingAckSnapshot | undefined;
@@ -112,25 +128,26 @@ export function toALOutboundAckRetryScheduleEndTimestamp(
 }
 
 /**
- * The acknowledgement a receipt row states. Its peers are next hops under `hop` and `subtree` and
- * logical recipients under `receiver`; the origin tracks no second set, so the hop and recipient lists
- * name the same peers in every mode.
+ * The acknowledgement a receipt row states. Under `hop` and `subtree` the row counts next hops, so its
+ * peers are both the hop and the recipient lists. Under `receiver` the row counts logical recipients,
+ * and the hop lists come from the hop view alone: the completed hops, and the next hops still open.
  */
-export function toALOutboundAcknowledgementFact(
-    snapshot: ALOutboundPendingAckSnapshot,
-    complete: boolean
-): ALOutboundSettlementFact {
-    const unconfirmed = snapshot.expectedPeerIds.filter((peerId) => !snapshot.ackedPeerIds.includes(peerId));
+export function toALOutboundAcknowledgementFact(input: ToALOutboundAcknowledgementFactInput): ALOutboundSettlementFact {
+    const { receipt, hops } = input;
+    const unconfirmed = receipt.expectedPeerIds.filter((peerId) => !receipt.ackedPeerIds.includes(peerId));
+    const receiverHops = receipt.mode === 'receiver';
     return {
         kind: 'acknowledgement',
-        msgId: snapshot.msgId,
-        mode: snapshot.mode,
-        confirmedHopPeerIds: snapshot.ackedPeerIds,
-        unconfirmedHopPeerIds: unconfirmed,
-        expectedRecipientPeerIds: snapshot.expectedPeerIds,
-        confirmedRecipientPeerIds: snapshot.ackedPeerIds,
+        msgId: receipt.msgId,
+        mode: receipt.mode,
+        confirmedHopPeerIds: receiverHops ? hops.completedHopPeerIds : receipt.ackedPeerIds,
+        unconfirmedHopPeerIds: receiverHops
+            ? hops.nextHopPeerIds.filter((peerId) => !hops.completedHopPeerIds.includes(peerId))
+            : unconfirmed,
+        expectedRecipientPeerIds: receipt.expectedPeerIds,
+        confirmedRecipientPeerIds: receipt.ackedPeerIds,
         unconfirmedRecipientPeerIds: unconfirmed,
-        complete
+        complete: input.complete
     };
 }
 
@@ -152,15 +169,9 @@ export function toALOutboundEmptyAudienceReceipt<TPrepared>(
     if (plan.dropReason || plan.ackTracking?.mode !== 'receiver' || frozen?.recipientPeerIds.length !== 0) {
         return undefined;
     }
-    return {
-        kind: 'acknowledgement',
-        msgId: plan.msg.id.msgId,
-        mode: 'receiver',
-        confirmedHopPeerIds: [],
-        unconfirmedHopPeerIds: [],
-        expectedRecipientPeerIds: [],
-        confirmedRecipientPeerIds: [],
-        unconfirmedRecipientPeerIds: [],
+    return toALOutboundAcknowledgementFact({
+        receipt: { msgId: plan.msg.id.msgId, mode: 'receiver', expectedPeerIds: [], ackedPeerIds: [] },
+        hops: { nextHopPeerIds: [], completedHopPeerIds: [] },
         complete: true
-    };
+    });
 }

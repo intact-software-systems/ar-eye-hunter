@@ -51,6 +51,7 @@ describe('outbound control version candidate', () => {
         });
         const read = freezeValues<ALControlAdmissionRead>({
             parsed: parsePeerControl(control),
+            source: 'peer',
             carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
@@ -98,6 +99,7 @@ describe('outbound control version candidate', () => {
         });
         const readAt = (nowMs: number): ALControlAdmissionRead => ({
             parsed: parsePeerControl(ack),
+            source: 'peer',
             carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs,
@@ -162,10 +164,10 @@ describe('outbound control version candidate', () => {
             return await write(apply);
         });
         // The changed version is a conflict, so the admission retains replayable work instead of committing.
-        expect(await controlAdmission.admit(control)).toEqual({ kind: 'pending-control' });
+        expect(await controlAdmission.admit(control, 'peer')).toEqual({ kind: 'pending-control' });
         expect(injected).toBe(true);
         expect(await backend.read(`${namespace}:control:nacks:${message.id.msgId}`, (value) => value)).toBeUndefined();
-        expect(await controlAdmission.admit(control)).toEqual({ kind: 'committed' });
+        expect(await controlAdmission.admit(control, 'peer')).toEqual({ kind: 'committed' });
         expect(await backend.read(`${namespace}:version:self`, (value) => value)).toEqual({ senderId: 'self', version: 3 });
     });
 });

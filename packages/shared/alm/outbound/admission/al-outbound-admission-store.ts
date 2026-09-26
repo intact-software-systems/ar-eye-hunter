@@ -46,6 +46,7 @@ import {
     type ALOutboundPendingAdmission,
     type RetainALOutboundPendingAdmissionInput
 } from '../al-outbound-pending-admission.ts';
+import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputeIntent } from '../compute-al-outbound-dispatch.ts';
 import {
     ALOutboundControlAdmission,
@@ -189,6 +190,7 @@ export type ALOutboundDurableEffect<TPrepared> =
     | Readonly<{
         kind: 'admit-control';
         msg: ALMessage;
+        source: ALOutboundControlSource;
         expiresAtMs: number;
     }>
     | Readonly<{

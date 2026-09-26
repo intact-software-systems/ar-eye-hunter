@@ -207,6 +207,8 @@ describe('live RTC control client', () => {
                             confirmedRecipientPeerIds: [],
                             unconfirmedRecipientPeerIds: [],
                             attempts: 1,
+                            attemptOutcomes: [],
+                            relayRejection: undefined,
                             backpressured: false,
                             enqueued: false
                         },
@@ -316,6 +318,8 @@ describe('live RTC control client', () => {
                             confirmedRecipientPeerIds: [],
                             unconfirmedRecipientPeerIds: [],
                             attempts: 1,
+                            attemptOutcomes: [],
+                            relayRejection: undefined,
                             backpressured: false,
                             enqueued: true
                         },
@@ -424,6 +428,8 @@ describe('live RTC control client', () => {
                         confirmedRecipientPeerIds: [],
                         unconfirmedRecipientPeerIds: [],
                         attempts: 1,
+                        attemptOutcomes: [],
+                        relayRejection: undefined,
                         backpressured: false,
                         enqueued: false
                     })
@@ -488,6 +494,8 @@ describe('live RTC control client', () => {
                             confirmedRecipientPeerIds: [],
                             unconfirmedRecipientPeerIds: [],
                             attempts: 1,
+                            attemptOutcomes: [],
+                            relayRejection: undefined,
                             backpressured: false,
                             enqueued: true
                         },
@@ -681,6 +689,8 @@ describe('live RTC control client', () => {
                                 confirmedRecipientPeerIds: [],
                                 unconfirmedRecipientPeerIds: [],
                                 attempts: 1,
+                                attemptOutcomes: [],
+                                relayRejection: undefined,
                                 backpressured: false,
                                 enqueued: true
                             }
@@ -743,6 +753,8 @@ describe('live RTC control client', () => {
                             confirmedRecipientPeerIds: [],
                             unconfirmedRecipientPeerIds: [],
                             attempts: 1,
+                            attemptOutcomes: [],
+                            relayRejection: undefined,
                             backpressured: false,
                             enqueued: true
                         },

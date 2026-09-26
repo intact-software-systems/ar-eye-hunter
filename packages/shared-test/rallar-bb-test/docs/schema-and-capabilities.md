@@ -217,9 +217,9 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
 `control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
-result reference. The sender retains the send, but the send requested no ACK, so nothing it waits
-on expects the relay and the sender refuses the NACK; the refusal is still the relay's verdict
-arriving.
+result reference. The sender admits that NACK as the word of its trusted server and states the
+relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
+handle is already `transport-accepted` and keeps that state.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
@@ -242,18 +242,31 @@ its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `receiptMode`, `confirmedHopPeerIds`,
-`unconfirmedHopPeerIds`, `expectedRecipientPeerIds`, `confirmedRecipientPeerIds`,
-`unconfirmedRecipientPeerIds`, `reason`, `backpressured`, and `enqueued`.
-`receiptMode` is the latest receipt's mode (`hop`, `subtree` or `receiver`),
-absent until a receipt settles. Under `receiver` the receipt counts the frozen
-logical audience: `expectedRecipientPeerIds` is that audience (never the
-origin), and `acknowledged` means every one of them confirmed; an origin alone
-in its room is acknowledged at admission with all three lists empty. The origin
-tracks no hop set of its own under `receiver`, so the hop lists name the same
-peers. Under `hop` and `subtree` the recipient lists equal the hop lists. A
-relay's admitted `resync-required` NACK ends a retained send `rejected`, its
-`reason` naming the relay. `backpressured` is true when a carrier
+`submitted`, `attempts`, `attemptOutcomes`, `relayRejection`, `receiptMode`,
+`confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
+`confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
+`backpressured`, and `enqueued`. `attempts` counts every attempt row,
+including a carrier admission that never reached the transport: an `unroutable`
+leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
+the outcome of every settled row in attempt order. `receiptMode` is the latest
+receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
+settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
+Under `receiver` the recipient lists count the frozen logical audience:
+`expectedRecipientPeerIds` is that audience (never the origin), and
+`acknowledged` means every one of them confirmed; an origin alone in its room is
+acknowledged at admission with all three lists empty. The hop lists are then the
+local hop view of the origin: `confirmedHopPeerIds` are the next hops whose own
+completion ACK arrived, `unconfirmedHopPeerIds` the rest of the next hops the
+send went through. A relay in front of a recipient is a confirmed hop while the
+recipient is a confirmed recipient. A WS origin names no hop, so both hop lists are
+empty there. `relayRejection` is present once a hop refused a retained send with
+an admitted `resync-required` NACK: `{ relay: 'peer', peerId }` for an RTC hop or
+an addressee, or `{ relay: 'trusted-server' }` for the WS server, which is never
+named. The rejection ends the send `rejected` and its receipt with it, so a
+multi-recipient receipt keeps the recipient evidence it had at that moment. A send
+that tracks no receipt is already `transport-accepted`, which is terminal for it,
+when the NACK arrives: it keeps that state, and the rejection lands as evidence
+only, in `relayRejection`. `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
 had no peer; `enqueued` is true once a durable admission put the message in a
 carrier queue.

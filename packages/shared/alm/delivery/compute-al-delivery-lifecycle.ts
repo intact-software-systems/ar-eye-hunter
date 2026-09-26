@@ -28,12 +28,11 @@ export function computeALDeliveryLifecycle(
             return toAdmissionLifecycle(previous, settlement);
         case 'carrier-refused':
             return toAdmissionAttemptLifecycle(previous, {
+                outcome: 'refused',
                 carrier: settlement.carrier,
                 atMs: settlement.atMs,
                 detail: settlement.detail,
-                outcome: 'refused',
-                unroutableReason: undefined,
-                refusalReason: settlement.reason
+                reason: settlement.reason
             });
         case 'attempt-started':
         case 'attempt-settled':
@@ -95,6 +94,13 @@ function toTerminalLifecycle(
             lateSettlementCount
         };
     }
+    if (settlement.kind === 'relay-rejected') {
+        return {
+            ...previous,
+            evidence: { ...previous.evidence, relayRejection: settlement.relayRejection },
+            lateSettlementCount
+        };
+    }
     return { ...previous, lateSettlementCount };
 }
 
@@ -124,12 +130,11 @@ function toAdmissionLifecycle(
             return toReasonedLifecycle(previous, 'rejected', verdict.detail);
         case 'unroutable':
             return toAdmissionAttemptLifecycle(previous, {
+                outcome: 'unroutable',
                 carrier: settlement.carrier,
                 atMs: settlement.atMs,
                 detail: verdict.detail,
-                outcome: 'unroutable',
-                unroutableReason: verdict.reason,
-                refusalReason: undefined
+                reason: verdict.reason
             });
         case 'superseded':
         case 'expired':
@@ -198,14 +203,16 @@ function toAdmittedLifecycle(
     };
 }
 
-interface AdmissionAttempt {
+interface AdmissionAttemptFacts {
     readonly carrier: ALDeliveryCarrier;
     readonly atMs: number;
     readonly detail: string;
-    readonly outcome: 'unroutable' | 'refused';
-    readonly unroutableReason: ALDeliveryUnroutableReason | undefined;
-    readonly refusalReason: ALDeliveryRefusalReason | undefined;
 }
+
+/** A carrier admission that never reached the transport, with the reason its own outcome states. */
+type AdmissionAttempt =
+    | AdmissionAttemptFacts & Readonly<{ outcome: 'unroutable'; reason: ALDeliveryUnroutableReason; }>
+    | AdmissionAttemptFacts & Readonly<{ outcome: 'refused'; reason: ALDeliveryRefusalReason; }>;
 
 /** The reducer's own synthetic attempt row for a carrier admission that never reached the transport. */
 function toAdmissionAttemptLifecycle(
@@ -220,8 +227,8 @@ function toAdmissionAttemptLifecycle(
         outcome: admission.outcome,
         submissionAttempted: false,
         detail: admission.detail,
-        unroutableReason: admission.unroutableReason,
-        refusalReason: admission.refusalReason
+        unroutableReason: admission.outcome === 'unroutable' ? admission.reason : undefined,
+        refusalReason: admission.outcome === 'refused' ? admission.reason : undefined
     };
     return {
         ...previous,

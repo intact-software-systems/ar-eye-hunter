@@ -20,7 +20,7 @@ import type {
     ALOutboundRepairRequest,
     ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
-import { controlTargetMsgId } from './compute-al-outbound-control-admission.ts';
+import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -67,14 +67,17 @@ export class ALOutboundRepairAdmission<TPrepared> {
         this.admissionStore = dependencies.admissionStore;
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+    async acceptControlMessage(
+        msg: ALMessage,
+        source: ALOutboundControlSource
+    ): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALPeerControlMessage(msg);
         if (decoded.left) {
             return { kind: 'not-handled' };
         }
         const control = decoded.right!;
         const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
-            ? await this.dependencies.controlAdmission.admit(msg)
+            ? await this.dependencies.controlAdmission.admit(msg, source)
             : { kind: 'not-handled' };
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control: msg,

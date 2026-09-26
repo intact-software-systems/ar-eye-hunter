@@ -83,7 +83,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             durableEffects: []
         });
         if (status === 'committed') {
-            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.write, receipt));
+            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.read, candidate.write));
             return { kind: 'committed' };
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };

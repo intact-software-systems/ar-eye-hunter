@@ -14,6 +14,9 @@ import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
 
+/** What the strategy does after one carrier leg: hand the send to the fallback carrier, stop, or expire it. */
+export type BrowserFallbackDisposition = 'retry' | 'stop' | 'expired';
+
 interface CapturedMessageAdmission {
     readonly message: ALMessage;
     readonly verdict: ALDeliveryAdmissionVerdict;
@@ -24,7 +27,7 @@ interface CarrierAdmission {
     readonly msgId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict;
-    readonly fallback: ReturnType<typeof computeFallbackDisposition>;
+    readonly fallback: BrowserFallbackDisposition;
 }
 
 export namespace BrowserRallarMessageDispatch {
@@ -159,7 +162,7 @@ export function computeFallbackDisposition(
     verdict: ALDeliveryAdmissionVerdict,
     expiresAtMs: number | undefined,
     nowMs: number
-): 'retry' | 'stop' | 'expired' {
+): BrowserFallbackDisposition {
     if (!isFallbackVerdict(verdict)) {
         return 'stop';
     }

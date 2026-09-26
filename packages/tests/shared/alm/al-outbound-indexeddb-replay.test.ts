@@ -108,6 +108,7 @@ describe('outbound IndexedDB durable queue replay', () => {
                     timeoutMs: msg.route.resourceId === 'complete' ? 100 : 60_000,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1', 'peer-2'],
+                    nextHopPeerIds: ['peer-1', 'peer-2'],
                     mode: 'hop'
                 }
             }),
@@ -119,19 +120,22 @@ describe('outbound IndexedDB durable queue replay', () => {
             await runOutboundWorkTask(runtime1);
             const respondents = msg.route.resourceId === 'complete' ? ['peer-1', 'peer-2'] : ['peer-1'];
             for (const fromPeerId of respondents) {
-                await runtime1.acceptControlMessage(newALAckControlMessage(
-                    { v: 2, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
-                    {
-                        ackedMsgId: msg.id.msgId,
-                        originPeerId: 'self',
-                        logicalRecipientPeerId: fromPeerId,
-                        fromPeerId,
-                        toPeerId: 'self',
-                        status: 'accepted',
-                        observedAtEpochMs: Date.now(),
-                        carrier: 'ws'
-                    }
-                ));
+                await runtime1.acceptControlMessage(
+                    newALAckControlMessage(
+                        { v: 2, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
+                        {
+                            ackedMsgId: msg.id.msgId,
+                            originPeerId: 'self',
+                            logicalRecipientPeerId: fromPeerId,
+                            fromPeerId,
+                            toPeerId: 'self',
+                            status: 'accepted',
+                            observedAtEpochMs: Date.now(),
+                            carrier: 'ws'
+                        }
+                    ),
+                    'peer'
+                );
                 await runOutboundWorkTask(runtime1);
             }
         }

@@ -391,7 +391,7 @@ export class WebRtcOverlayMulticastManager {
             return;
         }
 
-        await this.outboundRuntime.acceptControlMessage(msg);
+        await this.outboundRuntime.acceptControlMessage(msg, 'peer');
     }
 
     private readOverlayContext(

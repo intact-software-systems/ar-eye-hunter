@@ -13,6 +13,7 @@ const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     timeoutMs: 2_000,
     maxAttempts: 3,
     expectedPeerIds: ['r1', 'r2'],
+    nextHopPeerIds: ['r1', 'r2'],
     mode: 'receiver'
 };
 

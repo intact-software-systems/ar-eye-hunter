@@ -133,9 +133,16 @@ the deadline still commits and states its `acknowledgement` settlement, and an A
 deadline is refused. The receipt is gone by then, and control admission's validation refuses an
 ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
-reasons) for every control it decides. A committed `resync-required` NACK is a relay's refusal of a
-retained send (D50): it states a `relay-rejected` settlement naming the relay, which ends the handle
-`rejected`, and plans no resend; the receipt row is left as it was.
+reasons) for every control it decides. A committed `resync-required` NACK is a hop's refusal of a
+retained send (D50): it states a `relay-rejected` settlement, which ends the handle `rejected`, and
+like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends the message. A
+multi-recipient receipt therefore keeps the recipient evidence it had at the rejection: later ACKs
+find no row. Every control arrives with its source (`ALOutboundControlSource`), and trust follows the
+source, never the carrier. A WS client hands its server's controls over as `trusted-server`: the
+server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
+without an expected peer (every other check stands), and stated as a server relay that is never named.
+Every other control, the WS server's own included, arrives as `peer` and must come from an expected
+receipt peer or the unicast addressee. A retained control keeps its source for its replay.
 
 A receipt row is keyed by its origin and message id
 (`toALOutboundPendingAckKey({ namespace, originPeerId, msgId })`), so origins that share one
@@ -223,10 +230,14 @@ bound is refused. A receipt writes no work and no `ack-timeout` schedule; the se
 `control-admission` diagnostic, under the control's own id with the receipt's message as
 `targetMsgId`, whether it commits or is refused.
 
-Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`:
-the row's peers as the hop lists and again as the expected, confirmed and unconfirmed recipient lists.
-The origin tracks one peer set, so the two agree in every mode; under `receiver` they are the frozen
-logical audience, and the handle reads `acknowledged` only once every expected recipient is confirmed.
+Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`.
+Under `hop` and `subtree` the row counts next hops, so its peers are both the hop lists and the
+expected, confirmed and unconfirmed recipient lists. Under `receiver` the row counts the frozen logical
+audience, the handle reads `acknowledged` only once every expected recipient is confirmed, and the hop
+lists are the local hop view (`OverlayTree`): the next hops the captured ack plan names
+(`nextHopPeerIds`), of which those whose own completion ACK is in the ACK history are confirmed. A relay
+in front of a recipient is therefore a confirmed hop while the recipient is a confirmed recipient. A WS
+client names no hop; at the WS server each recipient session is its own hop, complete once confirmed.
 
 An RTT heartbeat is not one of these entries.
 [`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it

@@ -54,6 +54,8 @@ export function toDeliveryObservation(
         confirmedRecipientPeerIds: lifecycle?.evidence.confirmedRecipientPeerIds ?? [],
         unconfirmedRecipientPeerIds: lifecycle?.evidence.unconfirmedRecipientPeerIds ?? [],
         attempts: attempts.length,
+        attemptOutcomes: attempts.flatMap((attempt) => attempt.outcome === undefined ? [] : [attempt.outcome]),
+        relayRejection: lifecycle?.evidence.relayRejection,
         reason: lifecycle?.evidence.reason,
         backpressured: attempts.some((attempt) =>
             attempt.unroutableReason !== undefined && BACKPRESSURE_ADMISSION_REASONS.includes(attempt.unroutableReason)

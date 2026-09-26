@@ -80,6 +80,8 @@ const DELIVERY_OBSERVATION = {
     confirmedRecipientPeerIds: ['bob-session'],
     unconfirmedRecipientPeerIds: ['carol-session'],
     attempts: 2,
+    attemptOutcomes: ['refused', 'sent'],
+    relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
     reason: 'hop evidence retained'
 };
 
@@ -455,6 +457,8 @@ describe('ALM browser adapter execution', () => {
             confirmedRecipientPeerIds: ['bob-session'],
             unconfirmedRecipientPeerIds: ['carol-session'],
             attempts: 2,
+            attemptOutcomes: ['refused', 'sent'],
+            relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
             reason: 'hop evidence retained'
         });
         expect(topicsOf(runtime.state())).toEqual(
@@ -785,7 +789,10 @@ describe('ALM browser adapter execution', () => {
         { field: 'receiptMode', value: 'server' },
         { field: 'expectedRecipientPeerIds', value: 'bob-session' },
         { field: 'confirmedRecipientPeerIds', value: [7] },
-        { field: 'unconfirmedRecipientPeerIds', value: undefined }
+        { field: 'unconfirmedRecipientPeerIds', value: undefined },
+        { field: 'attemptOutcomes', value: ['delivered'] },
+        { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1' } },
+        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } }
     ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {

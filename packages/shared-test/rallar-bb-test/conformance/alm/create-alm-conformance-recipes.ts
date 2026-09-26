@@ -527,16 +527,21 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
     ];
 }
 
-/** Which peer the ws receipt confirms is joined to the receiver's own session by `assessAlmAcknowledgedIdentity`. */
+/**
+ * A ws receipt confirms logical recipients and names no hop, so its recipient lists are read; an rtc receipt
+ * confirms hops. Which peer the ws receipt confirms is joined to the session of the receiver by
+ * `assessAlmAcknowledgedIdentity`.
+ */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const isWs = sender.input.carrier === 'ws';
+    const peerLists = isWs ? 'RecipientPeerIds' : 'HopPeerIds';
     return [
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
             step: sender,
             name: 'assert-confirmed-1',
             resultName: 'receipts-1',
-            field: 'confirmedHopPeerIds.length',
+            field: `confirmed${peerLists}.length`,
             operator: isWs ? 'equals' : 'gt',
             expected: isWs ? 1 : 0
         }),
@@ -544,7 +549,7 @@ function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly 
             step: sender,
             name: 'assert-unconfirmed-1',
             resultName: 'receipts-1',
-            field: 'unconfirmedHopPeerIds.length',
+            field: `unconfirmed${peerLists}.length`,
             operator: 'equals',
             expected: 0
         }),
@@ -786,8 +791,9 @@ function toOrderingResyncSenderCommands(
 }
 
 /**
- * The sender retains the send, but the send requested no ACK, so nothing it waits on expects the relay and it refuses
- * the NACK; the refusal still names the gapped msgId.
+ * The sender admits the NACK as the word of its trusted server (R-S2c-ii-5) and states the rejection by the relay;
+ * the send requested no ACK, so its handle is already transport-accepted and keeps that state. The diagnostic
+ * names the gapped msgId either way.
  */
 function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const gappedMsgId = `{resultCache.${toCommandId(sender, 'send-2')}.value.msgId}`;

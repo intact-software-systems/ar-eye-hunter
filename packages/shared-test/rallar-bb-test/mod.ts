@@ -1,4 +1,5 @@
 export * from './advanced-diagnostic-handoff.ts';
+export * from './alm/rallar-black-box-alm-result-values.ts';
 export * from './assert/assert-value-operators.ts';
 export * from './black-box-runner-adapter.ts';
 export * from './browser-control-agent-config.ts';

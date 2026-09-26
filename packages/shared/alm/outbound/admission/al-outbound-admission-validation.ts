@@ -59,7 +59,8 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
             ? {
                 ...policy.ackTracking,
                 expectedPeerIds: plan.ackTracking?.expectedPeerIds ?? [],
-                expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate
+                expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
+                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? []
             }
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
@@ -112,6 +113,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             'timeoutMs',
             'maxAttempts',
             'expectedPeerIds',
+            'nextHopPeerIds',
             'mode'
         ], ['expectedPeerIdsUpdate']);
         requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
@@ -121,6 +123,10 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             throw new TypeError('Captured acknowledgement peers are missing');
         }
         requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
+        if (!Array.isArray(ack.nextHopPeerIds)) {
+            throw new TypeError('Captured acknowledgement next hops are missing');
+        }
+        requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
         if (
             ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
             ack.expectedPeerIdsUpdate !== 'replace'

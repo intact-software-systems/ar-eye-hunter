@@ -345,7 +345,8 @@ describe('PostgreSQL outbound admission', () => {
                     observedAtEpochMs: 1,
                     carrier: 'ws'
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(acceptance).toEqual({ kind: 'committed' });

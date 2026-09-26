@@ -11,14 +11,16 @@ export function toRtcAckTrackingPlan(
         return undefined;
     }
 
+    const nextHopPeerIds = [...new Set(expectedPeerIds)];
     return {
         enabled: true,
         timeoutMs: effective.ack.opts.timeoutMs,
         maxAttempts: effective.retry.algo === 'none'
             ? 0
             : effective.retry.opts.maxAttempts,
-        expectedPeerIds: [...new Set(expectedPeerIds)],
+        expectedPeerIds: nextHopPeerIds,
         expectedPeerIdsUpdate,
+        nextHopPeerIds,
         mode: effective.ack.algo
     };
 }

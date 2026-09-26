@@ -26,6 +26,7 @@ export function toWsQueueBoxClientAckTrackingPlan(
         timeoutMs: effective.ack.opts.timeoutMs,
         maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
         expectedPeerIds: receiptAudience,
+        nextHopPeerIds: receiptAudience,
         mode: effective.ack.algo
     };
 }
@@ -41,9 +42,9 @@ function toReceiptAudience(
 }
 
 /**
- * A control the WS client admitted from its server: a receipt moves the origin's receipt row, every
- * other control goes to the outbound owner's control admission. Only the trusted server reaches here
- * with a receipt; ingress validation refused it from any other source.
+ * A control the WS client admitted from its server: a receipt moves the receipt row of the origin, and
+ * every other control goes to control admission as the word of the trusted server. The WS server never
+ * relays a peer NACK, so a NACK here is the verdict of the server itself as the relay.
  */
 export async function acceptWsQueueBoxClientControlMessage<TPrepared>(
     outboundRuntime: ALOutboundMessageRuntime<TPrepared>,
@@ -52,5 +53,5 @@ export async function acceptWsQueueBoxClientControlMessage<TPrepared>(
     const control = decodeALControlMessage(msg).right;
     return control?.type === 'receipt'
         ? await outboundRuntime.acceptReceipt(msg)
-        : await outboundRuntime.acceptControlMessage(msg);
+        : await outboundRuntime.acceptControlMessage(msg, 'trusted-server');
 }

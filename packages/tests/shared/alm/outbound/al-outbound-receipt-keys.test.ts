@@ -59,8 +59,8 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             settlements: (fact) => settlements.push(fact)
         });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'))).toEqual({ kind: 'committed' });
-        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({ kind: 'committed' });
+        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
+        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
 
         expect(await stores.admissionStore.readReceiptState({ originPeerId: ORIGIN, msgId: MSG_ID }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['r1', 'r2'], ackedPeerIds: ['r1', 'r2'] });
@@ -68,12 +68,15 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             kind: 'acknowledgement',
             msgId: MSG_ID,
             mode: 'receiver',
-            confirmedHopPeerIds: ['r1', 'r2'],
+            // The relay forwards ACKs it speaks for others: they confirm recipients, never the relay as a hop.
+            confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['r1', 'r2'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
 
-        const repeat = await control.admit(relayAck('r1', 'ack-r1-repeat'));
+        const repeat = await control.admit(relayAck('r1', 'ack-r1-repeat'), 'peer');
         expect(repeat.kind).toBe('rejected');
         expect(repeat.kind === 'rejected' && repeat.reason).toContain('already admitted');
     });
@@ -84,7 +87,7 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
 
         // A hop ACK names the hop itself; under `receiver` it is never a logical confirmation.
-        const hop = await control.admit(relayAck(RELAY, 'ack-hop'));
+        const hop = await control.admit(relayAck(RELAY, 'ack-hop'), 'peer');
 
         expect(hop).toEqual({
             kind: 'rejected',
@@ -105,9 +108,9 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
             settlements: (fact) => settlements.push(fact)
         });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'))).toEqual({ kind: 'committed' });
+        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
         // Not a duplicate (another recipient), but the hop is already counted: refused without a write.
-        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({
+        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({
             kind: 'rejected',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
@@ -124,13 +127,13 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         await seedObligation(stores.admissionStore, { mode: 'receiver', expectedPeerIds: ['r1', 'r2'] });
         const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
 
-        expect(await control.admit(relayAck('r1', 'ack-r1'))).toEqual({ kind: 'committed' });
+        expect(await control.admit(relayAck('r1', 'ack-r1'), 'peer')).toEqual({ kind: 'committed' });
         // Another relay's ACK for `r1` is not a duplicate by key, but `r1` is already counted.
-        expect(await control.admit(relayAck('r1', 'ack-r1-other-relay', 'other-relay'))).toEqual({
+        expect(await control.admit(relayAck('r1', 'ack-r1-other-relay', 'other-relay'), 'peer')).toEqual({
             kind: 'rejected',
             reason: expect.stringContaining(ALREADY_COUNTED)
         });
-        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({ kind: 'committed' });
+        expect(await control.admit(relayAck('r2', 'ack-r2'), 'peer')).toEqual({ kind: 'committed' });
     });
 
     it('keeps two origins\' pending rows for one msgId apart in one namespace', async () => {

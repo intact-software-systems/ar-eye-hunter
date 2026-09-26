@@ -61,7 +61,7 @@ describe('ALM recipe identity assessment', () => {
         const receipts = sender.command('messages.receipts');
         sender.replaceResult({
             ...sender.result(receipts),
-            value: { handleId: receipts.handleId, confirmedHopPeerIds: [...confirmed], unconfirmedHopPeerIds: [] }
+            value: { handleId: receipts.handleId, confirmedRecipientPeerIds: [...confirmed], unconfirmedRecipientPeerIds: [] }
         });
         const issues = assessAlmConformanceIdentity(transcript.input());
         expect(issues.some((issue) => issue.startsWith(`${send.commandId}:`))).toBe(true);
@@ -73,7 +73,11 @@ describe('ALM recipe identity assessment', () => {
         const receipts = sender.command('messages.receipts');
         sender.replaceResult({
             ...sender.result(receipts),
-            value: { handleId: receipts.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: ['late'] }
+            value: {
+                handleId: receipts.handleId,
+                confirmedRecipientPeerIds: ['receiver-session'],
+                unconfirmedRecipientPeerIds: ['late']
+            }
         });
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
@@ -577,7 +581,13 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         };
     }
     if (command.kind === 'messages.receipts') {
-        return { handleId: command.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: [] };
+        return {
+            handleId: command.handleId,
+            confirmedHopPeerIds: ['receiver-session'],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['receiver-session'],
+            unconfirmedRecipientPeerIds: []
+        };
     }
     if (command.kind === 'wait' && command.absent !== true) {
         const sent = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) =>

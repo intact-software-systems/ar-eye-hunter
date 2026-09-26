@@ -1286,7 +1286,7 @@
           {
             "kind": "assert",
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-confirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 1,
             "timeoutMs": 2000
@@ -1294,7 +1294,7 @@
           {
             "kind": "assert",
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-unconfirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000

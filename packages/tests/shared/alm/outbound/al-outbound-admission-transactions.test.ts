@@ -254,7 +254,7 @@ it('reads a control decision surface from one readonly transaction before its wr
     );
 
     const recorded = recordIndexedDbTransactions();
-    expect((await control.admit(ack)).kind).toBe('committed');
+    expect((await control.admit(ack, 'peer')).kind).toBe('committed');
 
     expect(recorded.modes()).toEqual(COMMITTING_ADMISSION_TRANSACTIONS);
 });

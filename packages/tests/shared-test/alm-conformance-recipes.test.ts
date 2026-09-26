@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import type { RallarBlackBoxTestStorageCountersResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
@@ -14,8 +15,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
-    RallarBlackBoxTestRtcConnectCommand,
-    RallarBlackBoxTestStorageCountersResultValue
+    RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

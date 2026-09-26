@@ -215,7 +215,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     reason: 'gap',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
         releaseClaim.resolve();
 
@@ -361,7 +362,8 @@ describe('AL outbound durable effect lifecycle', () => {
                             observedAtEpochMs: 1,
                             carrier: 'ws'
                         }
-                    )
+                    ),
+                    'peer'
                 );
             }
 
@@ -384,6 +386,7 @@ describe('AL outbound durable effect lifecycle', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 },
                 repairTracking: {
@@ -452,7 +455,8 @@ describe('AL outbound durable effect lifecycle', () => {
                             observedAtEpochMs: 1,
                             carrier: 'ws'
                         }
-                    )
+                    ),
+                    'peer'
                 )
             ).toEqual({ kind: 'committed' });
             return 'conflict';
@@ -474,6 +478,7 @@ describe('AL outbound durable effect lifecycle', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 },
                 repairTracking: {
@@ -590,7 +595,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     reason: 'gap',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(handled).toEqual({ kind: 'not-handled' });
@@ -628,7 +634,8 @@ describe('AL outbound durable effect lifecycle', () => {
                     reason: 'expired',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(accepted).toEqual({ kind: 'pending-control' });

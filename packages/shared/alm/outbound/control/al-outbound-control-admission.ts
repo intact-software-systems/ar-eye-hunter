@@ -48,7 +48,8 @@ import {
     controlTargetMsgId,
     toALOutboundControlSettlement,
     type ALControlAdmissionCandidate,
-    type ALControlAdmissionRead
+    type ALControlAdmissionRead,
+    type ALOutboundControlSource
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
@@ -62,6 +63,8 @@ export type ALOutboundControlAdmissionResult =
 export interface ALOutboundPendingControl {
     readonly kind: 'admit-control';
     readonly msg: ALMessage;
+    /** Kept with the retained control, so its replay trusts exactly what its first admission trusted. */
+    readonly source: ALOutboundControlSource;
     readonly expiresAtMs: number;
 }
 
@@ -108,13 +111,13 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.carrier = input.carrier;
     }
 
-    async admit(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+    async admit(msg: ALMessage, source: ALOutboundControlSource): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALPeerControlMessage(msg);
         if (decoded.left) {
             return { kind: 'not-handled' };
         }
         const nowMs = this.clock.nowMs();
-        const read = await this.readControlAdmission(decoded.right!, nowMs);
+        const read = await this.readControlAdmission({ parsed: decoded.right!, source, nowMs });
         const computed = computeALOutboundControlAdmission(read, this.retention);
         const issues = validateALOutboundControlAdmission(computed);
         if (issues.length > 0) {
@@ -137,7 +140,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             }
             return { kind: 'committed' };
         }
-        await this.retainPendingControl(msg, nowMs);
+        await this.retainPendingControl(msg, source, nowMs);
         return { kind: 'pending-control' };
     }
 
@@ -172,7 +175,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         if (payload.expiresAtMs <= this.clock.nowMs()) {
             return { outcome: { status: 'completed' }, committed: false };
         }
-        const result = await this.admit(payload.msg);
+        const result = await this.admit(payload.msg, payload.source);
         return {
             outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
             committed: result.kind === 'committed'
@@ -282,9 +285,9 @@ export class ALOutboundControlAdmission<TPrepared> {
     }
 
     private async readControlAdmission(
-        parsed: ALPeerControlMessage,
-        nowMs: number
+        arrival: Pick<ALControlAdmissionRead, 'parsed' | 'source' | 'nowMs'>
     ): Promise<ALControlAdmissionRead> {
+        const { parsed, source, nowMs } = arrival;
         const targetMsgId = controlTargetMsgId(parsed);
         // The owner key gates the rest of the surface, so this callback awaits inside itself and
         // spends a microtask turn a chain handed the session directly would not. A control
@@ -296,6 +299,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             );
             return {
                 parsed,
+                source,
                 carrier: this.carrier,
                 targetMsgId,
                 nowMs,
@@ -388,12 +392,12 @@ export class ALOutboundControlAdmission<TPrepared> {
         );
     }
 
-    private async retainPendingControl(msg: ALMessage, nowMs: number): Promise<void> {
+    private async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {
         const expiresAtMs = toExpireAtTimestampFromNow(this.retention.durableEffectTtlMs, nowMs);
         await this.port.retainIfAbsent(computeALOutboundWorkEntry({
             namespace: this.namespace,
             effectId: toALOutboundPendingControlId(msg),
-            payload: { kind: 'admit-control', msg, expiresAtMs },
+            payload: { kind: 'admit-control', msg, source, expiresAtMs },
             observedAtMs: nowMs,
             retryAtMs: nowMs,
             expireAtTimestamp: expiresAtMs

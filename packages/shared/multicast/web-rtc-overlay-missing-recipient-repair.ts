@@ -11,15 +11,7 @@ import type {
     ALOutboundRepairRequest
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
-
-/**
- * What one peer knows of the relay tree: its own next hops, and those whose subtree completed (a leaf
- * that delivered, or a relay whose terminal ACK arrived). No peer sees the tree beyond its own hops.
- */
-export interface OverlayTree {
-    readonly nextHopPeerIds: readonly string[];
-    readonly completedHopPeerIds: readonly string[];
-}
+import type { OverlayTree } from '../alm/outbound/transition-al-outbound-pending-ack.ts';
 
 export interface OverlayRepairPlan {
     readonly nextHopPeerIds: readonly string[];

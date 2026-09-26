@@ -100,15 +100,24 @@ export function toALOutboundReceiptMutation(
     };
 }
 
-/** The receipt as the delivery fact its commit states; a `timed-out` aggregate never completes it. */
+/**
+ * The receipt as the delivery fact its commit states; a `timed-out` aggregate never completes it. Its hops
+ * are the next hops the sent message named: none at a WS client, whose one hop is its unnamed server, and
+ * at the WS server the recipient sessions themselves, each complete once the receipt confirms it.
+ */
 export function toALOutboundReceiptSettlement(
-    write: ALOutboundReceiptWrite,
-    receipt: ALReceiptPayload
+    read: ALOutboundReceiptAdmissionRead,
+    write: ALOutboundReceiptWrite
 ): ALOutboundSettlementFact {
-    return toALOutboundAcknowledgementFact(
-        write.value,
-        receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value)
-    );
+    const nextHopPeerIds = read.stored?.policy.ackTracking?.nextHopPeerIds ?? [];
+    return toALOutboundAcknowledgementFact({
+        receipt: write.value,
+        hops: {
+            nextHopPeerIds,
+            completedHopPeerIds: nextHopPeerIds.filter((peerId) => write.value.ackedPeerIds.includes(peerId))
+        },
+        complete: read.receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value)
+    });
 }
 
 /**

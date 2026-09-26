@@ -16,7 +16,9 @@ import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
+    ALDeliveryAttemptOutcome,
     ALDeliveryCarrier,
+    ALDeliveryEvidence,
     ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -330,11 +332,14 @@ export interface BlackBoxRallarMessageSendDiagnostics {
     readonly reason: string | undefined;
 }
 
-export interface BlackBoxRallarDeliveryObservation extends ALDeliveryReceiptEvidence {
+export interface BlackBoxRallarDeliveryObservation
+    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
     readonly attempts: number;
+    /** The outcome of every settled attempt in attempt order, a refused or unroutable admission leg included. */
+    readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
     readonly backpressured: boolean;

@@ -113,6 +113,43 @@ describe('the RTC origin retry of a receiver receipt', () => {
         expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['b', 'c', 'r']);
     });
 
+    it('names the relay as its confirmed hop and the recipient behind it as its confirmed recipient (R-S2c-ii-6)', async () => {
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'r', 'b'], 4), nextHopPeerIds: ['r'] });
+        const message = createOriginReceiverMulticast('hop-and-recipient');
+        await enqueueAndDrain(fixture.manager, message);
+        const acknowledgements = () => fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+
+        await acknowledgeAtOrigin(fixture.manager, {
+            msgId: message.id.msgId,
+            fromPeerId: 'r',
+            logicalRecipientPeerId: 'b',
+            status: 'forwarded'
+        });
+        expect(acknowledgements().at(-1)).toMatchObject({
+            mode: 'receiver',
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: ['r'],
+            expectedRecipientPeerIds: ['r', 'b'],
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: ['r'],
+            complete: false
+        });
+
+        await acknowledgeAtOrigin(fixture.manager, {
+            msgId: message.id.msgId,
+            fromPeerId: 'r',
+            logicalRecipientPeerId: 'r',
+            status: 'subtree-complete'
+        });
+        expect(acknowledgements().at(-1)).toMatchObject({
+            confirmedHopPeerIds: ['r'],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['b', 'r'],
+            unconfirmedRecipientPeerIds: [],
+            complete: true
+        });
+    });
+
     it('never counts the terminal ACK of a relay outside the frozen audience as a logical confirmation', async () => {
         const fixture = createRtcOriginOverlayFixture({
             snapshot: createOriginSnapshot(['a', 'b'], 4),

@@ -44,6 +44,7 @@ import {
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral
 } from './al-outbound-work-entry.ts';
+import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from './control/al-outbound-receipt-admission.ts';
@@ -78,6 +79,11 @@ export interface ALOutboundAckTrackingPlan {
     readonly expectedPeerIds: readonly string[];
     /** How a re-plan updates a retained receipt's expected set; absent merges. */
     readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
+    /**
+     * The next hops this dispatch sends through: the local hop view a `receiver` receipt states beside its
+     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names no hop.
+     */
+    readonly nextHopPeerIds: readonly string[];
     /** The send's resolved ack algorithm: what the receipt it tracks counts. */
     readonly mode: ALReceiptMode;
 }
@@ -542,13 +548,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return results.map((result, index) => ALOutboundMessageRuntime.toEnqueueResult(result.computed, msgs[index]!));
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+    /** The source decides trust: only the trusted server of a WS client speaks for a relay it does not name. */
+    async acceptControlMessage(
+        msg: ALMessage,
+        source: ALOutboundControlSource
+    ): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
         if (this.disposed) {
             return { kind: 'not-handled' };
         }
 
-        const admitted = await this.repairAdmission.acceptControlMessage(msg);
+        const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
             this.work.committed();

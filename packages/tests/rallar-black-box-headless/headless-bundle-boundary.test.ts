@@ -62,9 +62,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // server's aggregate brings it to 276.16796875 KiB, and the rest of S2c-i to 276.7197265625 KiB.
         // S2c-ii's frozen audience at RTC admission (the freeze, its ingress check and provenance) measures
         // 277.2451171875 KiB, and its retry through the relay tree (the missing-recipient repair, the
-        // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. The next whole-KiB ceiling
-        // is 279; all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(279);
+        // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. Its logical evidence (the
+        // recipient lists, the hop view, the trusted relay rejection and the observation decoders) measures
+        // 279.2412109375 KiB. The next whole-KiB ceiling is 280; all operator dependency exclusions above
+        // remain enforced.
+        expect(result.brotliKiB).toBeLessThan(280);
     });
 });
 

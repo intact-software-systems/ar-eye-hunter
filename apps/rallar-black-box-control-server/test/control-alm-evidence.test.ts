@@ -1,11 +1,11 @@
 import { assert, assertEquals } from '@std/assert';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
+import type { RallarBlackBoxTestMessagesObserveResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
-    RallarBlackBoxTestMessagesObserveResultValue,
     RallarBlackBoxTestMessagesReceiptsCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
@@ -324,8 +324,8 @@ function resultEnvelope(
 
 /**
  * D28: the sender's receipts are read after the whole scenario and correlated by handle id
- * (`assessAlmAcknowledgedIdentity`). A ws submission's server receipt confirms the receiver's own session as its
- * logical recipient; a non-ws submission confirms its receiver hop.
+ * (`assessAlmAcknowledgedIdentity`). A ws submission names no hop: its server receipt confirms the session of the
+ * receiver as its logical recipient. A non-ws submission confirms its receiver hop.
  */
 function toReceiptsFabricatedValue(
     command: RallarBlackBoxTestMessagesReceiptsCommand,
@@ -339,12 +339,14 @@ function toReceiptsFabricatedValue(
         submitted: true,
         enqueued: true,
         receiptMode: send?.carrier === 'ws' ? 'receiver' : 'hop',
-        confirmedHopPeerIds: confirmed,
+        confirmedHopPeerIds: send?.carrier === 'ws' ? [] : confirmed,
         unconfirmedHopPeerIds: [],
         expectedRecipientPeerIds: confirmed,
         confirmedRecipientPeerIds: confirmed,
         unconfirmedRecipientPeerIds: [],
         attempts: 1,
+        attemptOutcomes: ['sent'],
+        relayRejection: undefined,
         reason: undefined
     };
 }

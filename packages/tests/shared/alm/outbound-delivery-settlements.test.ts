@@ -118,7 +118,7 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
 }
 
 function trackAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
-    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds, mode: 'hop' };
+    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds, nextHopPeerIds: expectedPeerIds, mode: 'hop' };
 }
 
 it.each(BACKEND_KINDS)(
@@ -226,19 +226,22 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
     await enqueueOutboundOrThrow(runtime, message);
 
     for (const fromPeerId of ['peer-1', 'peer-2']) {
-        const admitted = await runtime.acceptControlMessage(newALAckControlMessage(
-            { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
-            {
-                ackedMsgId: message.id.msgId,
-                originPeerId: 'self',
-                logicalRecipientPeerId: fromPeerId,
-                fromPeerId,
-                toPeerId: 'self',
-                status: 'accepted',
-                observedAtEpochMs: 1,
-                carrier: 'ws'
-            }
-        ));
+        const admitted = await runtime.acceptControlMessage(
+            newALAckControlMessage(
+                { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+                {
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: fromPeerId,
+                    fromPeerId,
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
+                }
+            ),
+            'peer'
+        );
         expect(admitted.kind).toBe('committed');
     }
 
@@ -281,7 +284,7 @@ it.each(BACKEND_KINDS)(
             stores: createStores(kind),
             carrier: 'rtc',
             settlements: (settlement) => settlements.push(settlement),
-            planOutgoingMessage: planSend(trackAcks(['peer-1'])),
+            planOutgoingMessage: planSend({ ...trackAcks(['peer-1']), timeoutMs: ACK_TIMEOUT_WINDOW_MS }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.kind));
                 return { status: 'sent', submissionAttempted: true };
@@ -291,16 +294,22 @@ it.each(BACKEND_KINDS)(
         await enqueueOutboundOrThrow(runtime, message);
         const settledBefore = settlements.length;
 
-        const admitted = await runtime.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'control-resync', ts: 1, senderId: 'peer-1' },
-            {
-                msgId: message.id.msgId,
-                fromPeerId: 'peer-1',
-                toPeerId: 'self',
-                reason: 'resync-required',
-                observedAtEpochMs: 1
-            }
-        ));
+        const admitted = await runtime.acceptControlMessage(
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-resync', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: message.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'resync-required',
+                    observedAtEpochMs: 1
+                }
+            ),
+            'peer'
+        );
+        // Past two acknowledgement windows: a receipt the rejection left open would be retried by now.
+        await new Promise((resolve) => setTimeout(resolve, 2 * ACK_TIMEOUT_WINDOW_MS + 30));
+        await runOutboundWorkTask(runtime);
         await runOutboundWorkTask(runtime);
 
         expect(admitted.kind).toBe('committed');
@@ -309,12 +318,12 @@ it.each(BACKEND_KINDS)(
             msgId: message.id.msgId,
             carrier: 'rtc',
             atMs: expect.any(Number),
-            relayRejection: { relayPeerId: 'peer-1', reason: 'resync-required' },
-            detail: expect.stringContaining('peer-1')
+            relayRejection: { relay: 'peer', peerId: 'peer-1', reason: 'resync-required' },
+            detail: 'Hop peer-1 refused the message: resync-required.'
         }]);
         const lifecycle = settlements.reduce(computeALDeliveryLifecycle, toQueuedLifecycle(message));
         expect(lifecycle.state).toBe('rejected');
-        expect(lifecycle.evidence.relayRejection).toEqual({ relayPeerId: 'peer-1', reason: 'resync-required' });
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'peer', peerId: 'peer-1', reason: 'resync-required' });
         expect(sent).toEqual(['send']);
     }
 );
@@ -582,6 +591,7 @@ it('states no expiry when a row that expires on its own budget reaches it', asyn
             timeoutMs: ACK_TIMEOUT_WINDOW_MS,
             maxAttempts: 100,
             expectedPeerIds: ['peer-1'],
+            nextHopPeerIds: ['peer-1'],
             mode: 'hop'
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
@@ -806,6 +816,7 @@ it('completes an ack-timeout effect for a cancelled message without retrying it'
             timeoutMs: ACK_TIMEOUT_WINDOW_MS,
             maxAttempts: 100,
             expectedPeerIds: ['peer-1'],
+            nextHopPeerIds: ['peer-1'],
             mode: 'hop'
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })

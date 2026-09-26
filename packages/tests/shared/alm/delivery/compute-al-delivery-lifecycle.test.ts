@@ -634,20 +634,54 @@ describe('logical recipient evidence', () => {
 });
 
 describe('relay rejection (D50)', () => {
-    it('settles a queued send as rejected by the relay, naming the relay and the NACK reason', () => {
+    it.each(
+        [
+            { relay: 'peer', peerId: 'relay-1', reason: 'resync-required' },
+            { relay: 'trusted-server', reason: 'resync-required' }
+        ] as const
+    )('settles a queued send as rejected by a $relay relay, with that relay as its evidence', (relayRejection) => {
         const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
             kind: 'relay-rejected',
             msgId: MSG_ID,
             carrier: 'rtc',
             atMs: AT_MS,
-            relayRejection: { relayPeerId: 'relay-1', reason: 'resync-required' },
-            detail: 'Relay relay-1 refused the message: resync-required.'
+            relayRejection,
+            detail: 'The relay refused the message: resync-required.'
         });
 
         expect(next.state).toBe('rejected');
         expect(isALDeliveryTerminal(next)).toBe(true);
-        expect(next.evidence.relayRejection).toEqual({ relayPeerId: 'relay-1', reason: 'resync-required' });
-        expect(next.evidence.reason).toBe('Relay relay-1 refused the message: resync-required.');
+        expect(next.evidence.relayRejection).toEqual(relayRejection);
+        expect(next.evidence.reason).toBe('The relay refused the message: resync-required.');
+    });
+});
+
+describe('a late relay rejection', () => {
+    it('lands as evidence on a best-effort send already terminal at transport-accepted, never reopening it', () => {
+        const sent = computeALDeliveryLifecycle(
+            computeALDeliveryLifecycle(createLifecycle('none'), toAttemptStartedSettlement('attempt-1')),
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-1',
+                outcome: 'sent',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: undefined
+            })
+        );
+
+        const next = computeALDeliveryLifecycle(sent, {
+            kind: 'relay-rejected',
+            msgId: MSG_ID,
+            carrier: 'ws',
+            atMs: AT_MS,
+            relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
+            detail: 'The server relay refused the message: resync-required.'
+        });
+
+        expect(next.state).toBe('transport-accepted');
+        expect(next.lateSettlementCount).toBe(1);
+        expect(next.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
+        expect(next.evidence.reason).toBeUndefined();
     });
 });
 

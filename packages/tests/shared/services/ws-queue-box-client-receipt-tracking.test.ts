@@ -61,8 +61,11 @@ describe('WS client receipt tracking for a receiver room send', () => {
             msgId: 'room-message-1',
             carrier: 'ws',
             mode: 'receiver',
-            confirmedHopPeerIds: ['b', 'c'],
+            // A WS origin names no hop: its one hop is its server, which no client learns.
+            confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['b', 'c'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
     });
@@ -82,8 +85,8 @@ describe('WS client receipt tracking for a receiver room send', () => {
         expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b'] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             mode: 'receiver',
-            confirmedHopPeerIds: ['b'],
-            unconfirmedHopPeerIds: ['c'],
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: [],
             expectedRecipientPeerIds: ['b', 'c'],
             confirmedRecipientPeerIds: ['b'],
             unconfirmedRecipientPeerIds: ['c'],
@@ -143,7 +146,7 @@ describe('WS client receipt admission edges', () => {
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
 
         expect(acknowledgements()).toEqual([
-            expect.objectContaining({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true })
+            expect.objectContaining({ confirmedRecipientPeerIds: ['b', 'c'], unconfirmedRecipientPeerIds: [], complete: true })
         ]);
         expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
     });
@@ -171,7 +174,7 @@ describe('WS client receipt admission edges', () => {
 
             const acknowledgements = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
             expect(acknowledgements).toHaveLength(settled);
-            expect(acknowledgements.at(-1)).toMatchObject({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true });
+            expect(acknowledgements.at(-1)).toMatchObject({ confirmedRecipientPeerIds: ['b', 'c'], unconfirmedRecipientPeerIds: [], complete: true });
             expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
         }
     );
