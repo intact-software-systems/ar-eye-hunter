@@ -615,6 +615,18 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   and confirmed recipient lists, reads "acknowledged by all N" or "waiting for k of N" in a new
   "Match delivery" diagnostics row; the authority client keeps `ack: 'receiver'` and pins that a
   command resolves on admission.
+- **R-S2c-ii-12 (final review, 2026-09-26; amends 8c).** The immediate `subtree-complete` answer to a
+  duplicate is only for a sibling, a non-parent sender that does not own the peer. A duplicate from
+  the origin, or from any sender once the recorded parent has left, re-parents the relay row to that
+  sender and is answered as the recorded parent would be: the relayed ACKs re-sent, the owed children
+  forwarded to, the terminal ACK only once the subtree is complete. Without this a relay that left
+  mid-message made the origin mark its child complete under `receiver` and read `acknowledged`
+  under `subtree` although a grandchild never acknowledged.
+- **R-S2c-ii-13 (final review, 2026-09-26).** The RTC origin's on-wire frozen audience is bounded by the
+  256-entry collection limit: a room multicast whose frozen audience exceeds it is a typed
+  `refused/unsupported` naming the bound, so `rtc-with-ws-fallback` delivers over WS (whose audience
+  rides beside the message) and `rtc` alone settles with the typed reason, never `failed`; the bound
+  is the documented RTC room limit.
 
 ## Self-review
 
