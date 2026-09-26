@@ -31,8 +31,9 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
     scenarioKey: `cross-carrier-duplicate-${order}`,
     tags: FULL_TAGS,
     carriers: FALLBACK_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
-    toReceiverCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
+    toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
 }));
 
 /**

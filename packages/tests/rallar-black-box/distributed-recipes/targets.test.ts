@@ -418,6 +418,45 @@ describe('distributed recipes targets', () => {
         expect(validateDistributedRunManifest(manifest)).toEqual([]);
     });
 
+    it('maps one sender and two distinguishable recipients for the three-agent ALM pattern (D45)', () => {
+        const manifest = createDistributedRunManifest({
+            distributedRunId: 'dist-3',
+            controlRunId: 'run-3',
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group'
+            },
+            recipes: ['one', 'two', 'three'].map((suffix) => ({
+                ...recipe,
+                itemId: `health-${suffix}`,
+                recipe: { ...recipe.recipe, recipeId: `health-${suffix}` }
+            })),
+            targetAgentIds: ['agent-a', 'agent-b', 'agent-c'],
+            targetPolicyMode: 'role-map',
+            rolePattern: 'one-sender-two-recipients',
+            ackTimeoutMs: 5_000,
+            barrier: { enabled: true, timeoutMs: 5_000 },
+            startMode: 'manual',
+            expectedParticipantCount: 3,
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
+        });
+
+        expect(manifest.targetPolicy).toMatchObject({
+            mode: 'role-map',
+            expectedParticipantCount: 3,
+            roles: { sender: ['agent-a'], receiver: ['agent-b'], 'recipient-b': ['agent-c'] }
+        });
+        expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver', 'recipient-b']);
+        expect(manifest.roleAssignments.map((assignment) => [assignment.agentId, assignment.role])).toEqual([
+            ['agent-a', 'sender'],
+            ['agent-b', 'receiver'],
+            ['agent-c', 'recipient-b']
+        ]);
+        expect(validateDistributedRunManifest(manifest)).toEqual([]);
+    });
+
     it('writes every manifest author setting explicitly', () => {
         const manifest = createDistributedRunManifest({
             distributedRunId: 'dist-explicit',

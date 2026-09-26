@@ -25,6 +25,11 @@ export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
         description: 'First target is sender, remaining targets are receivers.'
     },
     {
+        value: 'one-sender-two-recipients',
+        label: 'One sender, two recipients',
+        description: 'First target is sender, second is receiver, third is recipient-b.'
+    },
+    {
         value: 'three-browser-matrix',
         label: 'Three-browser matrix',
         description: 'First target publishes, second relays, third and later observe.'
@@ -75,6 +80,13 @@ export function toRolesForPattern(
             receiver: agentIds.slice(1)
         };
     }
+    if (pattern === 'one-sender-two-recipients') {
+        return {
+            sender: agentIds.slice(0, 1),
+            receiver: agentIds.slice(1, 2),
+            'recipient-b': agentIds.slice(2, 3)
+        };
+    }
     return {
         publisher: agentIds.slice(0, 1),
         relay: agentIds.slice(1, 2),
@@ -93,6 +105,8 @@ export function toRecipeRoleForPattern(
     if (pattern === 'sender-receiver' || pattern === 'one-sender-many-receivers') {
         return recipeIndex === 0 ? 'sender' : 'receiver';
     }
-    const roles = ['publisher', 'relay', 'observer'];
+    const roles = pattern === 'one-sender-two-recipients'
+        ? ['sender', 'receiver', 'recipient-b']
+        : ['publisher', 'relay', 'observer'];
     return roles[Math.min(recipeIndex, roles.length - 1)];
 }

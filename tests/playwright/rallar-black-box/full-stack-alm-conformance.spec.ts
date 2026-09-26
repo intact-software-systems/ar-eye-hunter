@@ -11,6 +11,8 @@ import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type { CreateAlmConformanceRecipesInput } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     decodeALMObservationPageDiagnosticsFile,
     type ALMObservationPageDiagnosticsFile
@@ -26,6 +28,8 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
+    isThreeAgentScenario,
+    toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
@@ -36,8 +40,15 @@ import {
     uniqueSuffix,
     type ControlRunSnapshot,
     type RecipePairOutcome,
-    type TwoAgentRun
+    type RecipeRunOutcome,
+    type TwoAgentRun,
+    type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
+import {
+    createThreeAgentRun,
+    runRecipeTrioOnThreeAgents,
+    type ThreeAgentRun
+} from './full-stack-three-agent-run.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
@@ -47,6 +58,17 @@ interface ObservationCell {
     readonly carrier: AlmConformanceCarrier;
     readonly cellOutcome: ALMObservationCellOutcome;
 }
+
+interface ScenarioRoleEvidence {
+    readonly role: AlmConformanceRole;
+    readonly agent: TwoAgentRunParticipant;
+    readonly outcome: RecipeRunOutcome;
+}
+
+type ScenarioSelectionInput = Pick<
+    CreateAlmConformanceRecipesInput,
+    'group' | 'senderConnection' | 'receiverConnection'
+>;
 
 interface ObservationFiles {
     readonly testInfo: TestInfo;
@@ -112,6 +134,27 @@ test.describe('ALM conformance lane', () => {
                 await run.close();
             }
         });
+
+        test(`three-agent family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+            test.skip(
+                selectScenarios(toPlanningSelection(), carrier, 'three-agent').length === 0,
+                `no ${scope} ALM scenario over ${carrier} declares three roles`
+            );
+            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+
+            const run = await createThreeAgentRun({
+                browser,
+                request,
+                testInfo,
+                runId: `alm-${carrier}-three-agent-${uniqueSuffix()}`
+            });
+            try {
+                await runThreeAgentScenarios(run, carrier);
+            }
+            finally {
+                await run.close();
+            }
+        });
     }
 });
 
@@ -120,7 +163,7 @@ async function runAlmConformanceScenarios(
     run: TwoAgentRun,
     carrier: AlmConformanceCarrier
 ): Promise<void> {
-    for (const scenario of selectScenarios(run, carrier)) {
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'two-agent')) {
         let senderNavigations = 0;
         let receiverNavigations = 0;
         const onSenderNavigation = (frame: Frame): void => {
@@ -156,34 +199,64 @@ async function runAlmConformanceScenarios(
             .toBe(true);
         expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
             .toBe(true);
-        if (scenario.scenarioId === 'delivery-lifecycle' || reload) {
-            await assertScenarioIdentity(run, scenario, outcome);
+        if (hasIdentityEvidence(scenario)) {
+            await assertScenarioIdentity(run, scenario, [
+                { role: 'sender', agent: run.sender, outcome: outcome.sender },
+                { role: 'receiver', agent: run.receiver, outcome: outcome.receiver }
+            ]);
         }
     }
+}
+
+async function runThreeAgentScenarios(
+    run: ThreeAgentRun,
+    carrier: AlmConformanceCarrier
+): Promise<void> {
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'three-agent')) {
+        if (scenario.recipientB === undefined) {
+            throw new Error(`${scenario.scenarioKey} declares three roles without a recipient-b recipe.`);
+        }
+        const outcome = await runRecipeTrioOnThreeAgents(run, { ...scenario, recipientB: scenario.recipientB });
+        for (const role of ['receiver', 'recipientB', 'sender'] as const) {
+            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
+        }
+        if (hasIdentityEvidence(scenario)) {
+            await assertScenarioIdentity(run, scenario, [
+                { role: 'sender', agent: run.sender, outcome: outcome.sender },
+                { role: 'receiver', agent: run.receiver, outcome: outcome.receiver },
+                { role: 'recipient-b', agent: run.recipientB, outcome: outcome.recipientB }
+            ]);
+        }
+    }
+}
+
+function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
+    return scenario.scenarioId === 'delivery-lifecycle' || scenario.scenarioId === 'delivery-reload';
 }
 
 async function assertScenarioIdentity(
     run: TwoAgentRun,
     scenario: AlmConformanceScenario,
-    outcome: RecipePairOutcome
+    evidence: readonly ScenarioRoleEvidence[]
 ): Promise<void> {
     const snapshot = await run.readSnapshot();
     const issues = assessAlmConformanceIdentity({
         runId: run.runId,
-        participants: (['sender', 'receiver'] as const).map((role) => {
-            const commandId = outcome[role].commandId;
-            const recorded = snapshot.results?.find((result) => result.commandId === commandId);
+        roles: scenario.roles,
+        participants: evidence.flatMap(({ role, agent, outcome }) => {
+            const recipe = toAlmConformanceRoleRecipe(scenario, role);
+            const recorded = snapshot.results?.find((result) => result.commandId === outcome.commandId);
             const decoded = parseControlClientMessage(recorded);
-            return {
+            return recipe === undefined ? [] : [{
                 role,
-                agentId: run[role].agentId,
-                recipe: scenario[role],
-                commandId,
+                agentId: agent.agentId,
+                recipe,
+                commandId: outcome.commandId,
                 result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
-            };
+            }];
         })
     });
-    expect.soft(issues, 'ALM actual sender/receiver identity evidence').toEqual([]);
+    expect.soft(issues, 'ALM actual identity evidence for every declared role').toEqual([]);
 }
 
 /** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
@@ -206,21 +279,35 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
     return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
 }
 
+/** A scenario runs on the two-agent run unless it declares three roles (D45). */
 function selectScenarios(
-    run: TwoAgentRun,
-    carrier: AlmConformanceCarrier
+    selection: ScenarioSelectionInput,
+    carrier: AlmConformanceCarrier,
+    family: 'two-agent' | 'three-agent'
 ): readonly AlmConformanceScenario[] {
     return createAlmConformanceRecipes({
-        group: run.group,
+        ...selection,
         carrier,
         typeId: CONFORMANCE_TYPE_ID,
-        senderConnection: run.sender.connection,
-        receiverConnection: run.receiver.connection,
         deadlineMs: CONFORMANCE_DEADLINE_MS
     }).filter((scenario) =>
+        isThreeAgentScenario(scenario) === (family === 'three-agent') &&
         (scope === 'full' || scenario.tags.includes('smoke')) &&
         !skippedScenarioIds.includes(scenario.scenarioId)
     );
+}
+
+function toRunSelection(run: TwoAgentRun): ScenarioSelectionInput {
+    return { group: run.group, senderConnection: run.sender.connection, receiverConnection: run.receiver.connection };
+}
+
+/** Only the roles decide the selection, so a placeholder group and connections plan a cell before its agents open. */
+function toPlanningSelection(): ScenarioSelectionInput {
+    return {
+        group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
+        senderConnection: 'planning-sender',
+        receiverConnection: 'planning-receiver'
+    };
 }
 
 /** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */

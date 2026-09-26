@@ -21,8 +21,9 @@ export const orderingResync: AlmConformanceScenarioDefinition = {
     scenarioKey: 'ordering-resync',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toOrderingResyncSenderCommands,
-    toReceiverCommands: toOrderingResyncReceiverCommands
+    toRecipientCommands: toOrderingResyncReceiverCommands
 };
 
 /** Over ws the WS server is the relay that refuses the gapped send, so its NACK is the verdict, witnessed at the sender. */

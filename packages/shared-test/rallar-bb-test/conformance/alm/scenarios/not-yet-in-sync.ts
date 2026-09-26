@@ -32,8 +32,9 @@ export const notYetInSync: readonly AlmConformanceScenarioDefinition[] = NOT_YET
     scenarioKey: `not-yet-in-sync-${variant}`,
     tags: FULL_TAGS,
     carriers: RTC_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: (sender: AlmConformanceStepInput) => toNotYetInSyncSenderCommands(sender, variant),
-    toReceiverCommands: (receiver: AlmConformanceStepInput) => toNotYetInSyncReceiverCommands(receiver, variant)
+    toRecipientCommands: (receiver: AlmConformanceStepInput) => toNotYetInSyncReceiverCommands(receiver, variant)
 }));
 
 /**

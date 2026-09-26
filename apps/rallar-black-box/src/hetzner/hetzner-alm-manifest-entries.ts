@@ -4,6 +4,7 @@ import {
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
+    isThreeAgentScenario,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
@@ -84,7 +85,9 @@ function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScena
             receiverConnection: ALM_CONFORMANCE_RECEIVER_CONNECTION,
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         })
-    ).filter((scenario) => !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey));
+    ).filter((scenario) =>
+        !isThreeAgentScenario(scenario) && !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey)
+    );
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL.
     return [
         ...scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload'),

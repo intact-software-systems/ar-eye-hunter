@@ -385,6 +385,49 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
 
+    it('accepts one sender and two declared recipients, each with exactly one complete envelope (D45)', () => {
+        expect(assessAlmConformanceIdentity(new IdentityTranscript('lifecycle').threeRoleInput())).toEqual([]);
+    });
+
+    it('rejects a run that declares recipient-b but carries no recipient-b envelope', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity(transcript.threeRoleInput([transcript.receiver])))
+            .toEqual(['recipient-b: a declared role needs exactly one envelope.']);
+    });
+
+    it('rejects a declared recipient-b whose envelope is missing authored command evidence', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const recipientB = transcript.recipientB();
+        recipientB.results.pop();
+        const issues = assessAlmConformanceIdentity(transcript.threeRoleInput([transcript.receiver, recipientB]));
+        expect(issues.some((issue) => issue.startsWith('recipient-b:'))).toBe(true);
+    });
+
+    it('rejects a recipient-b envelope in a run that declares only the sender and the receiver', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity({ ...transcript.threeRoleInput(), roles: ['sender', 'receiver'] }))
+            .toEqual(['recipient-b: the run does not declare this role.']);
+    });
+
+    it('rejects two envelopes for one declared recipient role and one agent standing in for two roles', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const input = transcript.threeRoleInput([transcript.receiver, transcript.recipientB(), transcript.recipientB()]);
+        const twice = {
+            ...input,
+            participants: input.participants.map((participant, index) => index === 3 ? { ...participant, agentId: 'other' } : participant)
+        };
+        expect(assessAlmConformanceIdentity(twice)).toEqual(['recipient-b: a declared role needs exactly one envelope.']);
+        const shared = transcript.threeRoleInput();
+        expect(
+            assessAlmConformanceIdentity({
+                ...shared,
+                participants: shared.participants.map((participant) =>
+                    participant.role === 'recipient-b' ? { ...participant, agentId: 'receiver' } : participant
+                )
+            })
+        ).toEqual(['ALM identity assessment requires one distinct agent per role.']);
+    });
+
     it.each(['missing', 'mismatched', 'duplicate'] as const)('rejects %s authored checkpoint contracts', (defect) => {
         const transcript = new IdentityTranscript('reload');
         const input = transcript.input();
@@ -408,7 +451,7 @@ describe('ALM recipe identity assessment', () => {
 
 namespace IdentityTranscript {
     export type Kind = 'lifecycle' | 'reload' | 'combined';
-    export type Role = 'sender' | 'receiver';
+    export type Role = 'sender' | 'receiver' | 'recipient-b';
 }
 
 class IdentityTranscript {
@@ -422,7 +465,21 @@ class IdentityTranscript {
     }
 
     input(): AlmConformanceIdentityInput {
-        return { runId: 'run', participants: [this.sender.participant(), this.receiver.participant()] };
+        return { runId: 'run', roles: ['sender', 'receiver'], participants: [this.sender.participant(), this.receiver.participant()] };
+    }
+
+    /** A second recipient under its own agent, running what the receiver runs. */
+    recipientB(): ParticipantTranscript {
+        const recipe = this.receiver.recipe;
+        return new ParticipantTranscript('recipient-b', { ...recipe, recipeId: `${recipe.recipeId}-b` }, this.sender.recipe);
+    }
+
+    threeRoleInput(recipients: readonly ParticipantTranscript[] = [this.receiver, this.recipientB()]): AlmConformanceIdentityInput {
+        return {
+            runId: 'run',
+            roles: ['sender', 'receiver', 'recipient-b'],
+            participants: [this.sender, ...recipients].map((participant) => participant.participant())
+        };
     }
 }
 

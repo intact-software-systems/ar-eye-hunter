@@ -61,8 +61,8 @@ Fields that stay optional, each absent only with the stated meaning:
   many agents the policy resolves.
 - `roleAssignmentPolicy`: absent when roles come from `targetPolicy.roles` or
   `roleAssignments`. When present it writes `mode: "ordered-targets"`, a
-  `pattern` (`all-agents`, `sender-receiver`, `one-sender-many-receivers`, or
-  `three-browser-matrix`), and `orderBy: "agent-id"`.
+  `pattern` (`all-agents`, `sender-receiver`, `one-sender-many-receivers`,
+  `one-sender-two-recipients`, or `three-browser-matrix`), and `orderBy: "agent-id"`.
 
 The schema rejects every other field as `Unexpected property.`, including the
 removed `secretRefs` (manifest and recipe selection),

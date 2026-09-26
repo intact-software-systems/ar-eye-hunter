@@ -23,8 +23,9 @@ export const deliveryLifecycle: AlmConformanceScenarioDefinition = {
     scenarioKey: 'delivery-lifecycle',
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toDeliveryLifecycleSenderCommands,
-    toReceiverCommands: toDeliveryLifecycleReceiverCommands
+    toRecipientCommands: toDeliveryLifecycleReceiverCommands
 };
 
 /** Each retained specimen explicitly releases its own hold; recipe failure uses runtime cleanup. */

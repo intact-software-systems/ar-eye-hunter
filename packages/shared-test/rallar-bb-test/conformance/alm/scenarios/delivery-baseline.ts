@@ -21,8 +21,9 @@ export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     scenarioKey: 'delivery-baseline',
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toDeliveryBaselineSenderCommands,
-    toReceiverCommands: toDeliveryBaselineReceiverCommands
+    toRecipientCommands: toDeliveryBaselineReceiverCommands
 };
 
 function toDeliveryBaselineSenderCommands(

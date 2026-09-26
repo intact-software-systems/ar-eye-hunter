@@ -32,8 +32,9 @@ export const deadlineExpiry: AlmConformanceScenarioDefinition = {
     scenarioKey: 'deadline-expiry',
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toDeadlineExpirySenderCommands,
-    toReceiverCommands: toDeadlineExpiryReceiverCommands
+    toRecipientCommands: toDeadlineExpiryReceiverCommands
 };
 
 function toDeadlineExpiryReceiverCommands(

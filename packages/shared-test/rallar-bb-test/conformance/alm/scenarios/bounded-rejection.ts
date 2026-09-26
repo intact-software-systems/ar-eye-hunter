@@ -31,8 +31,9 @@ export const boundedRejection: AlmConformanceScenarioDefinition = {
     scenarioKey: 'bounded-rejection',
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toBoundedRejectionSenderCommands,
-    toReceiverCommands: toBoundedRejectionReceiverCommands
+    toRecipientCommands: toBoundedRejectionReceiverCommands
 };
 
 function toBoundedRejectionReceiverCommands(

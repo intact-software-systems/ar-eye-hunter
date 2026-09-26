@@ -217,6 +217,14 @@ for (const wrongIdentity of [false, true]) {
     });
 }
 
+Deno.test('three-role ALM assessment accepts a complete recipient-b envelope (D45)', () => {
+    assertEquals(toThreeRoleLifecycleOutcome(undefined), { state: 'passed', ok: true });
+});
+
+Deno.test('three-role ALM assessment rejects a malformed recipient-b envelope (D45)', () => {
+    assertEquals(toThreeRoleLifecycleOutcome('controller-03'), { state: 'failed', ok: false });
+});
+
 Deno.test('independent local ALM roots keep actual child evidence only within normal finite limits', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ runtimeRetentionBounds: { commands: 1, results: 1 } }));
     service.receiveClientEnvelope(toRegisterEnvelope());
@@ -261,6 +269,56 @@ function toLifecycleManifest() {
                 }
             };
         })
+    };
+}
+
+/** Stages, releases and starts the three-role run, then answers each root with its own recipe evidence. */
+function toThreeRoleLifecycleOutcome(malformedAgentId: string | undefined) {
+    const manifest = toThreeRoleLifecycleManifest();
+    const runId = manifest.controlRunId;
+    const agents = ['controller-01', 'controller-02', 'controller-03'];
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
+    agents.forEach((agentId) => service.receiveClientEnvelope(toRegisterEnvelope({ runId, agentId, identity: toFleetIdentity(agentId, manifest.group) })));
+    assertRight(service.createDistributedRun(manifest));
+    assertRight(service.stageDistributedRun(manifest.distributedRunId));
+    const acknowledgeDispatched = () =>
+        agents.flatMap((agentId) => service.takeDispatchableCommands(runId, agentId))
+            .forEach((command) => service.receiveClientEnvelope(resultEnvelope(command)));
+    acknowledgeDispatched();
+    acknowledgeDispatched();
+    assertRight(service.startDistributedRun(manifest.distributedRunId));
+    agents.forEach((agentId) => {
+        const [root] = service.takeDispatchableCommands(runId, agentId);
+        assert(root?.command.kind === 'recipe.run' && root.command.recipe, `${agentId} must start its role recipe`);
+        const recipe = root.command.recipe;
+        service.receiveClientEnvelope(resultEnvelope(root, agentId === malformedAgentId ? { ...recipe, commands: [] } : recipe));
+    });
+    const completed = service.snapshotDistributedRun(manifest.distributedRunId);
+    return { state: completed?.state, ok: completed?.rollup.ok };
+}
+
+/** The lifecycle manifest with a third agent that runs what the receiver runs, as the declared `recipient-b`. */
+function toThreeRoleLifecycleManifest() {
+    const manifest = toLifecycleManifest();
+    const receiver = manifest.recipes.find((selection) => selection.role === 'receiver')!;
+    const recipientB = {
+        ...receiver,
+        recipeId: 'alm-conformance-recipient-b',
+        role: 'recipient-b',
+        recipe: { ...receiver.recipe!, recipeId: 'alm-conformance-recipient-b', metadata: { profile: 'alm-conformance', role: 'recipient-b' } }
+    };
+    return {
+        ...manifest,
+        recipes: [...manifest.recipes, recipientB],
+        targetPolicy: {
+            mode: 'role-map' as const,
+            expectedParticipantCount: 3,
+            roles: { sender: ['controller-01'], receiver: ['controller-02'], 'recipient-b': ['controller-03'] }
+        },
+        roleAssignments: [
+            ...manifest.roleAssignments,
+            { role: 'recipient-b', agentId: 'controller-03', recipeIds: [], variables: {} }
+        ]
     };
 }
 

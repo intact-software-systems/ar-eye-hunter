@@ -10,6 +10,7 @@ import {
 } from './alm-conformance-budgets.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
+import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
@@ -37,8 +38,11 @@ export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
     /** Every recipe, command, handle and type id the pair mints derives from it; distinct per recipe pair. */
     readonly scenarioKey: string;
+    readonly roles: readonly AlmConformanceRole[];
     readonly sender: RallarBlackBoxTestRecipe;
     readonly receiver: RallarBlackBoxTestRecipe;
+    /** The second recipient's recipe; undefined exactly when `roles` does not declare `recipient-b`. */
+    readonly recipientB: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
 }
 
@@ -79,25 +83,40 @@ export function createAlmConformanceRecipes(
         .map((definition) => toAlmConformanceScenario(input, definition));
 }
 
+/** Three agents run only the scenarios that declare three roles; every other scenario runs on two (D45). */
+export function isThreeAgentScenario(scenario: AlmConformanceScenario): boolean {
+    return scenario.roles.length === 3;
+}
+
+export function toAlmConformanceRoleRecipe(
+    scenario: AlmConformanceScenario,
+    role: AlmConformanceRole
+): RallarBlackBoxTestRecipe | undefined {
+    return role === 'recipient-b' ? scenario.recipientB : scenario[role];
+}
+
 function toAlmConformanceScenario(
     input: CreateAlmConformanceRecipesInput,
     definition: AlmConformanceScenarioDefinition
 ): AlmConformanceScenario {
-    const { scenarioId, scenarioKey } = definition;
-    const sender: AlmConformanceStepInput = { input, scenarioId, scenarioKey, role: 'sender' };
-    const receiver: AlmConformanceStepInput = { input, scenarioId, scenarioKey, role: 'receiver' };
+    const toRoleRecipe = (role: AlmConformanceRole): RallarBlackBoxTestRecipe => {
+        const step: AlmConformanceStepInput = {
+            input,
+            scenarioId: definition.scenarioId,
+            scenarioKey: definition.scenarioKey,
+            role
+        };
+        const commands = role === 'sender' ? definition.toSenderCommands(step) : definition.toRecipientCommands(step);
+        return toAlmConformanceRecipe({ ...step, commands });
+    };
     return {
-        scenarioId,
-        scenarioKey,
+        scenarioId: definition.scenarioId,
+        scenarioKey: definition.scenarioKey,
+        roles: definition.roles,
         tags: definition.tags,
-        sender: toAlmConformanceRecipe({
-            ...sender,
-            commands: definition.toSenderCommands(sender)
-        }),
-        receiver: toAlmConformanceRecipe({
-            ...receiver,
-            commands: definition.toReceiverCommands(receiver)
-        })
+        sender: toRoleRecipe('sender'),
+        receiver: toRoleRecipe('receiver'),
+        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined
     };
 }
 

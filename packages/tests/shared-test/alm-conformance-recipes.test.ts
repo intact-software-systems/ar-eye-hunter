@@ -9,6 +9,7 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
+    toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
@@ -145,6 +146,18 @@ describe('alm-conformance recipe family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
                 .toEqual(SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]));
+        }
+    });
+
+    it('declares the sender and receiver roles on every scenario; none declares recipient-b yet (D45)', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                expect(scenario.roles, scenario.scenarioKey).toEqual(['sender', 'receiver']);
+                expect(scenario.recipientB, scenario.scenarioKey).toBeUndefined();
+                expect(toAlmConformanceRoleRecipe(scenario, 'sender')).toBe(scenario.sender);
+                expect(toAlmConformanceRoleRecipe(scenario, 'receiver')).toBe(scenario.receiver);
+                expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBeUndefined();
+            }
         }
     });
 

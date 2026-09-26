@@ -38,8 +38,9 @@ export const deliveryReload: AlmConformanceScenarioDefinition = {
     scenarioKey: 'delivery-reload',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
+    roles: ['sender', 'receiver'],
     toSenderCommands: toDeliveryReloadSenderCommands,
-    toReceiverCommands: toDeliveryReloadReceiverCommands
+    toRecipientCommands: toDeliveryReloadReceiverCommands
 };
 
 export function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint {

@@ -2,12 +2,14 @@ import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 
 export interface CreateAlmConformanceRecipesInput {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly carrier: AlmConformanceCarrier;
     readonly typeId: string;
     readonly senderConnection: string;
+    /** Every recipient role's recipe uses it; each agent names its own connections, so recipients share the label. */
     readonly receiverConnection: string;
     readonly deadlineMs: number;
 }
@@ -21,8 +23,6 @@ export type AlmConformanceScenarioId =
     | 'delivery-reload'
     | 'not-yet-in-sync'
     | 'ordering-resync';
-
-export type AlmConformanceRole = 'sender' | 'receiver';
 
 export type AlmConformanceTag = 'smoke' | 'full';
 
@@ -42,8 +42,11 @@ export interface AlmConformanceScenarioDefinition {
     readonly scenarioKey: string;
     readonly tags: readonly AlmConformanceTag[];
     readonly carriers: readonly AlmConformanceCarrier[];
+    /** Every scenario declares the sender and the receiver; a three-agent scenario adds `recipient-b` (D45). */
+    readonly roles: readonly AlmConformanceRole[];
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
-    readonly toReceiverCommands: (receiver: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+    /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */
+    readonly toRecipientCommands: (recipient: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];
