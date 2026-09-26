@@ -49,7 +49,7 @@ describe('RTC scoped snapshot-floor admission', () => {
     });
 
     it.each(['missing-room', 'expired-session', 'removed-overlay'] as const)(
-        'still rejects origin %s authority when the receiver floor is higher',
+        'classifies origin %s authority before applying the receiver floor',
         async (failure) => {
             const sender = new RtcEndpointFixture('sender', 'receiver');
             endpoints.push(sender);
@@ -71,9 +71,9 @@ describe('RTC scoped snapshot-floor admission', () => {
                 sender.overlays.set(key, { ...sender.overlays.read(key)!, state: 'removed' });
             }
             expect((await sender.multicast.enqueueIfAbsent(roomMessage(2))).verdict).toMatchObject(
-                failure === 'expired-session'
-                    ? { kind: 'refused', reason: 'unauthorized' }
-                    : { kind: 'unroutable', reason: 'no-route' }
+                failure === 'missing-room'
+                    ? { kind: 'deferred', reason: 'not-yet-in-sync' }
+                    : { kind: 'refused', reason: 'unauthorized' }
             );
             expect(sender.sent).toEqual([]);
         }

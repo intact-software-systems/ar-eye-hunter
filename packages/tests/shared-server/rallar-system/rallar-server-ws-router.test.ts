@@ -674,7 +674,7 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
@@ -688,7 +688,7 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
         ]);
@@ -714,7 +714,7 @@ describe('RallarServerWsRouter', () => {
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
         ]);
-        expect(readChatRecipients(fixture)).toEqual(expected);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(expected);
     });
 
     it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {

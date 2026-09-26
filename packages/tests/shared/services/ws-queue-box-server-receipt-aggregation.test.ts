@@ -429,6 +429,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         server.addConnection(new ConnectionContext({ id: peerId, socket }));
     }
     const engine = new InboxOutboxEngine();
+    engine.start();
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const settlements: ALDeliverySettlement[] = [];
@@ -468,6 +469,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     });
     onTestFinished(() => {
         service.dispose();
+        engine.stop();
         vi.restoreAllMocks();
     });
     return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
@@ -479,14 +481,19 @@ async function createRemoteOriginInstance(local: WsQueueBoxServerService, outbox
     const origin = new SimulatedWebSocket('ws://a-on-remote');
     await origin.open();
     server.addConnection(new ConnectionContext({ id: 'a', socket: origin }));
+    const engine = new InboxOutboxEngine();
+    engine.start();
     const remote = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
         name: 'remote-server',
-        queueEngine: new InboxOutboxEngine(),
+        queueEngine: engine,
         targetResolver: { resolvePeerRecipients: (peerId) => peerId === 'a' ? [{ peerId, connectionId: 'a' }] : [] }
     });
-    onTestFinished(() => remote.dispose());
+    onTestFinished(() => {
+        remote.dispose();
+        engine.stop();
+    });
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     const bus: QueueBoxPubSubBridge = {
         subscribe: async (_channel, subscriber) => {
