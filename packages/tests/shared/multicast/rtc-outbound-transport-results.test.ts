@@ -23,6 +23,7 @@ import {
 import {
     peekOutboundWorkReadyAt
 } from '../alm/outbound-runtime-test-fixture.ts';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -305,7 +306,7 @@ describe('RTC outbound transport results', () => {
         });
     });
 
-    it('admits a receiver ack on an RTC unicast and routes a room multicast by its overlay, refusing neither', async () => {
+    it('admits a receiver ack on an RTC unicast and defers a room multicast without room authority', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
@@ -320,7 +321,7 @@ describe('RTC outbound transport results', () => {
         });
 
         expect(unicast.verdict).toMatchObject({ kind: 'admitted' });
-        expect(multicast.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        expect(multicast.verdict).toMatchObject({ kind: 'deferred', reason: 'not-yet-in-sync' });
     });
 
     it('resubmits an ACK a one-shot drop fault dropped, and keeps it on the page only while a held fault is armed', async () => {
@@ -377,7 +378,7 @@ function createChannel(
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peer.connect();
     const channel = new QRtcDataChannel(peer, { faultPort, peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);

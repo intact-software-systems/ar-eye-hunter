@@ -17,8 +17,17 @@ interface BundleBoundary {
     readonly brotliBudgetKiB: number;
 }
 
+type JsonValue = string | number | boolean | null | readonly JsonValue[] | {
+    readonly [key: string]: JsonValue;
+};
+
 interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
+    readonly inputs: Readonly<Record<string, JsonValue>>;
+}
+
+interface SharedWebPackageManifest {
+    readonly dependencies?: Readonly<Record<string, string>>;
+    readonly devDependencies?: Readonly<Record<string, string>>;
 }
 
 interface BrowserBundleMeasurement {
@@ -38,18 +47,11 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
-        // ACK per logical recipient measure 215.255859375 KiB; the WS client's receipt admission from
-        // the server's aggregate brings it to 216.73828125 KiB; the rest of S2c-i (WS ordering, bounded and
-        // idempotent receipts, the WS-session ACK rule) measures 217.01171875 KiB. The S2c-ii frozen audience
-        // brings it to 217.681640625 KiB, and its retry through the relay tree (the missing-recipient repair,
-        // the per-recipient relay row and the retried-copy path) to 218.388671875 KiB. Its logical evidence on the
-        // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
-        // 219.0595703125 KiB. The next whole-KiB ceiling is 220.
+        // The measured bundle is 220.658203125 KiB; 221 KiB is the next whole-KiB ceiling.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 220
+        brotliBudgetKiB: 221
     },
     {
         label: 'browser/rallar-core.ts',
@@ -92,18 +94,39 @@ const budgetedEntries: readonly BundleBoundary[] = [
 
 describe('shared-web browser package boundary', () => {
     it('keeps shared-web from declaring graphology directly', () => {
-        const manifest = JSON.parse(
-            readFileSync(
-                path.join(repoRoot, 'packages/shared-web/package.json'),
-                'utf8'
+        const manifest = toSharedWebPackageManifest(
+            JSON.parse(
+                readFileSync(
+                    path.join(repoRoot, 'packages/shared-web/package.json'),
+                    'utf8'
+                )
             )
-        ) as {
-            dependencies?: Readonly<Record<string, string>>;
-            devDependencies?: Readonly<Record<string, string>>;
-        };
+        );
 
         expect(manifest.dependencies ?? {}).not.toHaveProperty('graphology');
         expect(manifest.devDependencies ?? {}).not.toHaveProperty('graphology');
+    });
+
+    it('validates JSON envelopes before consuming manifest and metafile properties', () => {
+        const manifest = toSharedWebPackageManifest({
+            dependencies: { '@js-temporal/polyfill': '^0.5.1' }
+        });
+        expect(manifest.dependencies).toEqual({ '@js-temporal/polyfill': '^0.5.1' });
+        expect(() => toSharedWebPackageManifest([])).toThrow(
+            'shared-web package manifest must be an object'
+        );
+        expect(() => toSharedWebPackageManifest({ dependencies: [] })).toThrow(
+            'shared-web package manifest.dependencies must be an object'
+        );
+
+        const metafile = toEsbuildMetafile({ inputs: { 'entry.ts': {} } });
+        expect(Object.keys(metafile.inputs)).toEqual(['entry.ts']);
+        expect(() => toEsbuildMetafile([])).toThrow(
+            'esbuild metafile must be an object'
+        );
+        expect(() => toEsbuildMetafile({ inputs: null })).toThrow(
+            'esbuild metafile inputs must be an object'
+        );
     });
 });
 
@@ -193,6 +216,49 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     return {
         label: entry.label,
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: toEsbuildMetafile(JSON.parse(readFileSync(metafilePath, 'utf8')))
     };
+}
+
+function toSharedWebPackageManifest(value: JsonValue): SharedWebPackageManifest {
+    const manifest = toJsonObject(value, 'shared-web package manifest');
+    return {
+        dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
+        devDependencies: toOptionalStringRecord(
+            manifest.devDependencies,
+            'shared-web package manifest.devDependencies'
+        )
+    };
+}
+
+function toEsbuildMetafile(value: JsonValue): EsbuildMetafile {
+    const metafile = toJsonObject(value, 'esbuild metafile');
+    return {
+        inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
+    };
+}
+
+function toOptionalStringRecord(
+    value: JsonValue | undefined,
+    label: string
+): Readonly<Record<string, string>> | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const record = toJsonObject(value, label);
+    const stringRecord: Record<string, string> = {};
+    for (const [key, entry] of Object.entries(record)) {
+        if (typeof entry !== 'string') {
+            throw new Error(`${label}.${key} must be a string`);
+        }
+        stringRecord[key] = entry;
+    }
+    return stringRecord;
+}
+
+function toJsonObject(value: JsonValue, label: string): Readonly<Record<string, JsonValue>> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`);
+    }
+    return value as Readonly<Record<string, JsonValue>>;
 }

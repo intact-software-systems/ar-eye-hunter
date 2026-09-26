@@ -556,7 +556,6 @@ describe('inbound durable effect worker lifecycle', () => {
     it('announces the upward ACK an acknowledgement writes even when it completes nothing', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         });
         const controls: ALMessage[] = [];
@@ -573,9 +572,7 @@ describe('inbound durable effect worker lifecycle', () => {
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
 
-        // The same retained row the committing admission above claims, behind the page the bootstrap
-        // batch already read. No engine round is ever driven here, so only a commit's own
-        // announcement can bring the batch that would claim it.
+        // Retained work behind the bootstrap page is discovered by the runtime-owned engine.
         const forwarded = computeALInboundWorkEntry({
             carrier: 'ws',
             namespace: resources.admissionStore.namespace,
@@ -700,7 +697,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
     });
 
-    it('dispatches a replayed admission in the batch its own commit schedules', async () => {
+    it('dispatches a replayed admission through its running owner after its commit', async () => {
         const fixture = createInboundTestRuntime({
             carrier: 'ws',
             stores: createInboundTestStores({
@@ -710,6 +707,8 @@ describe('inbound durable effect worker lifecycle', () => {
             }),
             effectWorkerId: 'al-inbound:replayed-dispatch'
         });
+        fixture.queueEngine.start();
+        onTestFinished(() => fixture.queueEngine.stop());
         await fixture.runtime.ready();
         setNextInboundCommitConflicted(fixture.stores.admissionStore);
 
@@ -719,17 +718,13 @@ describe('inbound durable effect worker lifecycle', () => {
         );
 
         expect(acceptance.right).toEqual({ kind: 'pending-admission' });
-        // The replay runs inside a claim of the page that batch already read, so the dispatch it
-        // commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the dispatch.
+        // The replay announces its successor; the running engine completes the preserved rotation.
         await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
     });
 
-    it('sends the control a replayed admission commits in the batch its own commit schedules', async () => {
+    it('sends a replayed control through its running owner after its commit', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            queueEngine: new InboxOutboxEngine(),
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         });
         const controls: ALMessage[] = [];
@@ -758,10 +753,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         await runtime.ready();
 
-        // The replay runs inside a claim of the page that batch already read, so the acknowledgement
-        // it commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the send.
+        // The replay announces committed control work; the running engine completes its fair rotation.
         await expect.poll(() => controls.map((control) => control.payload.typeId)).toHaveLength(1);
     });
 

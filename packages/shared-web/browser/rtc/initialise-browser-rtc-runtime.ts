@@ -133,9 +133,9 @@ export async function initialiseRtcConnectionService(
                 ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
                 enabled: true
             },
-            maxPeerConnections: input.maxPeerConnections,
-            faultPort: input.faultPort
-        }
+            maxPeerConnections: input.maxPeerConnections
+        },
+        { faultPort: input.faultPort, createOfferId: () => crypto.randomUUID() }
     );
 
     rtcQBox.setInboundPeerCreationPolicy(() => ({

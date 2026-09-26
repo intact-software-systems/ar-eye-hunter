@@ -4,6 +4,11 @@ export interface LiveRtcJsonRecord {
     [key: string]: RtcBaselineJson;
 }
 
+export function toLiveRtcRuntimeEvent(payload: RtcBaselineJson | undefined): LiveRtcJsonRecord {
+    const envelope = jsonRecord(payload) ?? {};
+    return typeof envelope.kind === 'string' ? envelope : jsonRecord(envelope.payload) ?? envelope;
+}
+
 export function jsonRecord(
     value: RtcBaselineJson | undefined
 ): LiveRtcJsonRecord | null {

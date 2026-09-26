@@ -139,6 +139,11 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly persist: boolean;
     readonly preparedMessages: readonly TPrepared[];
     readonly ackTracking?: ALOutboundAckTrackingPlan;
+    /**
+     * Independent current-hop observations for planners whose default receipt policy may change on replay.
+     * Absent means the planner supplies only ackTracking; no extra topology observation is available.
+     */
+    readonly receiptNextHopPeerIds?: readonly string[];
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;

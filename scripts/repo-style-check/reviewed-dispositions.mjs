@@ -331,7 +331,7 @@ export const reviewedDispositions = Object.freeze([
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
         rule: 'boundary.unknown',
-        symbol: 'decodeRtcSignalingPayload'
+        symbol: 'decodeRtcSignal'
     }),
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
@@ -671,6 +671,70 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 105
+    }),
+    // These reviewed owners keep one policy codec, one optimistic admission
+    // lifecycle, one RTC carrier coordinator, and one peer receive lifecycle
+    // respectively. Storage, frozen-audience policy, native submission and
+    // heartbeat implementation already have direct named owners; splitting the
+    // remaining coordination by metric would scatter the same causal path.
+    // The exact caps below cover cohesion/separation review, not exception-tier growth.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-validation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-dispatch-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    Object.freeze({
+        path: 'packages/shared/multicast/web-rtc-overlay-multicast-manager.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 123
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 53
+    }),
+    // Promise rejection reasons are untrusted exception-boundary values. Both
+    // owners normalize them through the canonical toError before returning
+    // settlement evidence; no unknown reason is used as domain state.
+    Object.freeze({
+        path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/browser-alm-mixed-workload-settlement.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Lane waiting owns channel open/abort/failure translation beside its
+    // connection-service caller. These exact sibling service/policy clusters
+    // expose distinct direct entry owners, not fragments of that wait flow.
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.directory-density',
+        symbol: 'services',
+        maximumMagnitude: 21
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:web',
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'packages/shared/services',
+        rule: 'layout.feature-prefix-cluster',
+        symbol: 'prefix:webrtc',
+        maximumMagnitude: 5
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions

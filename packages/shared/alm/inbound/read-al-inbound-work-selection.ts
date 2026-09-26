@@ -126,7 +126,6 @@ interface ALInboundRotationPage {
     readSelection(port: ALWorkQueuePort, pageSize: number): Promise<ALInboundWorkSelection>;
     /** Drops the held page, so the round that follows reads a fresh one. */
     forgetSelection(pending: Promise<ALInboundWorkSelection>): void;
-    restartScan(): void;
 }
 
 interface ALInboundWorkSelectorDependencies {
@@ -146,7 +145,7 @@ export interface ALInboundWorkSelector {
      * What this batch's own eligibility read observed for the row it claimed, so the delivery that
      * follows re-reads none of it. Absent for a row the batch claimed without reading a surface for
      * it, for a row the read cleared that the port did not reserve, and for every row once the next
-     * page or a restarted scan replaces this one.
+     * page replaces this one.
      */
     getDeliveryObservation(effectId: string): ALInboundDeliveryObservation | undefined;
     /**
@@ -157,11 +156,9 @@ export interface ALInboundWorkSelector {
     getUnreservedDue(): readonly ALInboundDeferredEffect[];
     /**
      * The `send-control` rows the selection of this batch reserved, in run order. Every selection returns a
-     * fresh array, so its identity names the batch; a restarted scan replaces it with an empty one.
+     * fresh array, so its identity names the batch even when new work is committed meanwhile.
      */
     getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
-    /** A commit writes new work behind the rotation; the next page read starts over. */
-    restartScan(): void;
 }
 
 /** Reads message eligibility before reservation so waiting work does not spend processing attempts. */
@@ -327,12 +324,7 @@ export function createALInboundWorkSelector(
         },
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         getUnreservedDue: () => unreservedDue,
-        getClaimedControlSends: () => claimedControlSends,
-        restartScan: () => {
-            page.restartScan();
-            claimedObservations = new Map();
-            claimedControlSends = [];
-        }
+        getClaimedControlSends: () => claimedControlSends
     };
 }
 
@@ -506,10 +498,6 @@ function createALInboundRotationPage(
             if (observed === pending) {
                 observed = undefined;
             }
-        },
-        restartScan: () => {
-            scan = SCAN_START;
-            observed = undefined;
         }
     };
 }

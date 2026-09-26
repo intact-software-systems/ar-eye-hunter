@@ -23,10 +23,11 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createAcceptedGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
+import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -56,6 +57,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         const rejectedPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.NON_RETRYABLE,
@@ -132,7 +134,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
-        expect(delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
+        await expect.poll(() => delivered).toEqual(offsetMs < 0 ? ['specific', 'wildcard'] : ['specific']);
     });
 
     it('retries an ordinary consumer failure and completes after the consumer succeeds', async () => {
@@ -151,6 +153,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(message, 'peer-1');
 
+        await waitForOwnedQueueWork(fixture.stores.workQueue);
         const retryPage = await fixture.stores.workQueue.readWorkPage({
             typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.RETRY,
@@ -233,8 +236,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(message, 'peer-1');
         await fixture.receive(message, 'peer-1');
 
-        expect(delivered).toEqual([message.id.msgId]);
-        expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
+        await expect.poll(() => delivered).toEqual([message.id.msgId]);
+        await expect.poll(async () => (await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
             type: 'ack',
             payload: expect.objectContaining({ ackedMsgId: message.id.msgId, toPeerId: 'peer-1', status: 'delivered' })
         });
@@ -298,7 +301,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
         await fixture.receive(createUnicast({ acknowledge: false, exclusive: true }), 'peer-1');
 
-        expect(delivered).toEqual([specific ? 'specific' : 'catch-all']);
+        await expect.poll(() => delivered).toEqual([specific ? 'specific' : 'catch-all']);
     });
 
     it('receives an ordered gap through the channel, emits repair controls, then releases local delivery', async () => {
@@ -315,7 +318,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(second, 'peer-1');
 
         expect(delivered).toEqual([]);
-        expect(
+        await expect.poll(async () =>
             (await fixture.outbound()).flatMap((message) => {
                 const control = shared.parseALControlMessage(message);
                 return control ? [control.type] : [];
@@ -571,15 +574,18 @@ class RtcReceiveFixture {
         roomAuthorityRefresh?: shared.WebRtcRxStreamerService.Input['roomAuthorityRefresh']
     ) {
         this.stores = stores;
-        this.connection = createNativeRtcConnectionFixture({
-            sessionId: 'self',
-            token: 'test-token',
-            faultPort: createPassThroughTransportFaultPort(),
-            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc-signaling'
-        }, this.nativeRuntime);
-        const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
+        this.connection = createNativeRtcConnectionFixture(
+            {
+                sessionId: 'self',
+                token: 'test-token',
+                iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+                dataChannelName: 'test',
+                rtcSignalingTopicId: 'rtc-signaling'
+            },
+            this.nativeRuntime,
+            createPassThroughTransportFaultPort()
+        );
+        const snapshot = createAcceptedGroupSnapshotFixture(['self', 'peer-1', 'peer-2', 'peer-3']);
         this.groups.accept('group-1', {
             ...snapshot,
             activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))

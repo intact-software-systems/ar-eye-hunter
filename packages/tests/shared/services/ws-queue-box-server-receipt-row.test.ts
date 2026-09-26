@@ -143,6 +143,7 @@ interface CreateClusterInstanceInput {
 async function createClusterInstance(input: CreateClusterInstanceInput): Promise<ClusterInstance> {
     const server = new JsonWebSocketServer();
     const engine = new InboxOutboxEngine();
+    engine.start();
     const openRecipients = () =>
         [...server.connections.values()].filter((connection) => connection.isOpen).map((connection) => ({
             peerId: connection.id,
@@ -170,7 +171,10 @@ async function createClusterInstance(input: CreateClusterInstanceInput): Promise
             await service.enqueueOutboxIfAbsent(message);
         }
     });
-    onTestFinished(() => service.dispose());
+    onTestFinished(() => {
+        service.dispose();
+        engine.stop();
+    });
     await installQueueBoxPubSubBridge({ wsQBoxServerService: service, bridge: input.bus, channel: 'ws', publisherId: input.publisherId });
     return { service, engine, server };
 }

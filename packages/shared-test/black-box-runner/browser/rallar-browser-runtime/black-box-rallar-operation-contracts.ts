@@ -54,6 +54,7 @@ import type {
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
+import type { BlackBoxRtcCausalState } from './read-black-box-rtc-causal-state.ts';
 
 export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc' | 'messages.ws';
 
@@ -419,6 +420,7 @@ export interface BlackBoxRallarHealthDiagnostics {
     readonly session?: AuthSession;
     readonly health: readonly RallarRealtimeLaneHealth[];
     readonly rtcDiagnostics?: RallarRtcDiagnostics;
+    readonly rtcCausalState?: BlackBoxRtcCausalState;
     readonly rtcDiagnosticsError?: BlackBoxRallarSerializedError;
     readonly crdt?: BlackBoxRallarCrdtRuntimeSummary;
     readonly director?: BlackBoxRallarDirectorRelaySummary;

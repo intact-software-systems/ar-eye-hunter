@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -16,12 +14,15 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
@@ -45,6 +46,7 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
     readonly sendCalls: readonly object[][];
@@ -130,7 +132,7 @@ describe('WebRtc overlay services', () => {
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connection,
             groupCache: groups,
-            overlayCache: createReadableCache({ 'group-1': context.overlay }),
+            overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
@@ -275,7 +277,6 @@ describe('WebRtc overlay services', () => {
 
     it('skips outbound messages without targets or next hop', async () => {
         const warnings = captureWarnings();
-
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
@@ -316,9 +317,7 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
-    it('skips multicast sends when overlay context is missing', async () => {
-        const warnings = captureWarnings();
-
+    it('defers multicast sends while room authority is missing', async () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
@@ -353,12 +352,9 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            verdict: { kind: 'unroutable', reason: 'no-route' },
+            verdict: { kind: 'deferred', reason: 'not-yet-in-sync' },
             entries: []
         });
-        expect(warnings).toContain(
-            'No GroupSnapshot found for overlayId/groupId group-1'
-        );
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
@@ -370,7 +366,7 @@ describe('WebRtc overlay services', () => {
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
-            overlayCache: createReadableCache({ 'group-1': context.overlay }),
+            overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -437,7 +433,7 @@ describe('WebRtc overlay services', () => {
                 'workspace-b-room': workspaceB.room
             }),
             overlayCache: createReadableCache({
-                'shared-room': workspaceB.overlay
+                [toScopedOverlayId(workspaceB.room.group)]: workspaceB.overlay
             }),
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
@@ -475,9 +471,7 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
-    it('rejects a bare overlay fallback when its groupRef belongs to another workspace', async () => {
-        const warnings = captureWarnings();
-
+    it('rejects a cached overlay whose groupRef belongs to another workspace', async () => {
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
             'peer-b': {
@@ -507,7 +501,7 @@ describe('WebRtc overlay services', () => {
                 'workspace-b-room': workspaceB.room
             }),
             overlayCache: createReadableCache({
-                'shared-room': {
+                [toScopedOverlayId(workspaceB.room.group)]: {
                     ...workspaceA.overlay,
                     groupRef: workspaceA.room.group
                 }
@@ -541,13 +535,10 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            verdict: { kind: 'unroutable', reason: 'no-route' },
+            verdict: { kind: 'refused', reason: 'unauthorized' },
             entries: []
         });
         expect(channel.sendCalls).toEqual([]);
-        expect(warnings).toContainEqual(
-            expect.stringContaining('does not match scoped target')
-        );
     });
 
     it('returns a canonical fact for volatile immediate sends after channel submission', async () => {
@@ -889,7 +880,7 @@ describe('WebRtc overlay services', () => {
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
             groupCache: createReadableCache({ 'group-1': context.room }),
-            overlayCache: createReadableCache({ 'group-1': context.overlay }),
+            overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -1038,9 +1029,9 @@ function createConnectionService(
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
-        faultPort: createPassThroughTransportFaultPort(),
+
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => {
         const channel = peersById[peerId]?.channel;
@@ -1065,7 +1056,7 @@ function createOpenRtcChannel(): CapturedRtcChannel {
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(peerConnection, { faultPort: createPassThroughTransportFaultPort(), peerId: 'peer-1', dataChannelName: 'test' });
     const health = channel.readHealth();
     const sendCalls: object[][] = [];
@@ -1142,7 +1133,11 @@ function createOverlayContext(
     return {
         nowMs: Date.now(),
         overlayId: groupId,
-        room: { ...room, activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 })) },
+        room: {
+            ...room,
+            group: { ...room.group, acceptedLayoutIdentity: { ...room.causalRevision, version: 1, state: 'active' } },
+            activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+        },
         overlay
     };
 }

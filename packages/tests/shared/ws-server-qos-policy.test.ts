@@ -583,7 +583,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(msg, 'conn-1');
 
         expect(localDeliveries).toBe(0);
-        expect(socket.sent).toHaveLength(1);
+        await expect.poll(() => socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
     });
@@ -615,7 +615,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await socket.receive(msg, 'conn-1');
 
-        expect(socket.sent).toHaveLength(2);
+        await expect.poll(() => socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
             'conn-2',
             'conn-3'
@@ -691,7 +691,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(msg, 'conn-1');
         await socket.receive(msg, 'conn-1');
 
-        expect(received).toEqual([msg.id.msgId]);
+        await expect.poll(() => received).toEqual([msg.id.msgId]);
     });
 
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
@@ -765,7 +765,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(seq2, 'conn-1');
 
         expect(deliveredTexts).toEqual([]);
-        expect(socket.sent).toHaveLength(2);
+        await expect.poll(() => socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.data.payload.typeId).sort()).toEqual([
             shared.AL_CONTROL_NACK_TYPE_ID,
             shared.AL_CONTROL_REPAIR_TYPE_ID

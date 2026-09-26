@@ -97,7 +97,7 @@ export class SimulatedRtcSender implements RTCRtpSender {
         transactionId: 'simulated-sender'
     };
 
-    constructor(track: MediaStreamTrack) {
+    constructor(track: MediaStreamTrack | null) {
         this.currentTrack = track;
     }
 
@@ -121,13 +121,61 @@ export class SimulatedRtcSender implements RTCRtpSender {
     }
 }
 
+export class SimulatedRtcReceiver implements RTCRtpReceiver {
+    readonly track: MediaStreamTrack;
+    readonly transport = null;
+    jitterBufferTarget: number | null = null;
+    transform: RTCRtpReceiver['transform'] = null;
+
+    constructor(track: MediaStreamTrack) {
+        this.track = track;
+    }
+
+    getContributingSources(): RTCRtpContributingSource[] {
+        return [];
+    }
+    getSynchronizationSources(): RTCRtpSynchronizationSource[] {
+        return [];
+    }
+    getParameters(): RTCRtpReceiveParameters {
+        return { codecs: [], headerExtensions: [], rtcp: {} };
+    }
+    async getStats(): Promise<RTCStatsReport> {
+        return new Map();
+    }
+}
+
+export class SimulatedRtcTransceiver implements RTCRtpTransceiver {
+    readonly mid = null;
+    readonly currentDirection = null;
+    readonly receiver: RTCRtpReceiver;
+    readonly sender: RTCRtpSender;
+    direction: RTCRtpTransceiverDirection = 'sendrecv';
+    stopped = false;
+    codecs: readonly RTCRtpCodec[] = [];
+
+    constructor(sender: RTCRtpSender, track: MediaStreamTrack) {
+        this.sender = sender;
+        this.receiver = new SimulatedRtcReceiver(track);
+    }
+
+    stop(): void {
+        this.stopped = true;
+    }
+    setCodecPreferences(codecs: RTCRtpCodec[]): void {
+        this.codecs = [...codecs];
+    }
+}
+
 export class SimulatedNativeMediaPeerConnection extends SimulatedNativeRtcPeerConnection {
     private readonly senders: SimulatedRtcSender[] = [];
+    private readonly transceivers: SimulatedRtcTransceiver[] = [];
 
     override addTrack(track: MediaStreamTrack, ...streams: MediaStream[]): RTCRtpSender {
         const sender = new SimulatedRtcSender(track);
         sender.setStreams(...streams);
         this.senders.push(sender);
+        this.transceivers.push(new SimulatedRtcTransceiver(sender, track));
         return sender;
     }
     override removeTrack(sender: RTCRtpSender): void {
@@ -138,6 +186,26 @@ export class SimulatedNativeMediaPeerConnection extends SimulatedNativeRtcPeerCo
     }
     override getSenders(): RTCRtpSender[] {
         return [...this.senders];
+    }
+    override getTransceivers(): SimulatedRtcTransceiver[] {
+        return [...this.transceivers];
+    }
+    override addTransceiver(
+        trackOrKind?: string | MediaStreamTrack,
+        init: RTCRtpTransceiverInit = {}
+    ): RTCRtpTransceiver {
+        const track = trackOrKind === 'audio' || trackOrKind === 'video'
+            ? new SimulatedMediaTrack(trackOrKind)
+            : trackOrKind;
+        if (!track || typeof track === 'string') {
+            throw new Error('Expected an audio/video kind or media track');
+        }
+        const sender = new SimulatedRtcSender(typeof trackOrKind === 'string' ? null : track);
+        const transceiver = new SimulatedRtcTransceiver(sender, track);
+        transceiver.direction = init.direction ?? 'sendrecv';
+        this.senders.push(sender);
+        this.transceivers.push(transceiver);
+        return transceiver;
     }
 }
 

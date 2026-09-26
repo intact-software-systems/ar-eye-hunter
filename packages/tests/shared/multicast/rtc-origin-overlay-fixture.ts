@@ -145,7 +145,11 @@ export function createOriginSnapshot(sessionIds: readonly string[], snapshotVers
     const snapshot = createGroupSnapshotFixture({ ...ORIGIN_ROOM, sessionIds });
     return {
         ...snapshot,
-        group: { ...snapshot.group, snapshotVersion },
+        group: {
+            ...snapshot.group,
+            snapshotVersion,
+            acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' }
+        },
         activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 600_000 }))
     };
 }
@@ -177,9 +181,8 @@ function createConnectionService(
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
-        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
-    });
+    }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: crypto.randomUUID.bind(crypto) });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {
         const channel = ready.peerIds.includes(peerId) ? channels[peerId]?.channel : undefined;
@@ -201,7 +204,7 @@ function createOpenChannel(peerId: string): CapturedChannel {
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, { createOfferId: crypto.randomUUID.bind(crypto) });
     const channel = new QRtcDataChannel(peerConnection, {
         faultPort: createPassThroughTransportFaultPort(),
         peerId,

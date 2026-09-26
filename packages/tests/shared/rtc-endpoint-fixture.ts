@@ -1,5 +1,5 @@
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { vi } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
@@ -8,6 +8,7 @@ import {
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -20,7 +21,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { WebRtcConnectionService, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     createDefaultWebRtcRxStreamerService,
     WebRtcRxStreamerService
@@ -32,8 +33,7 @@ import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
-import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
-import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { waitForOwnedQueueWork } from './wait-for-owned-queue-work.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -47,13 +47,14 @@ export class RtcEndpointFixture {
     readonly outbound = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeALOutboundTransportMessage
     });
+    readonly inbound = createDefaultInMemoryALInboundRuntimeStores();
     readonly delivered: ALMessage[] = [];
     readonly sent: ALMessage[] = [];
-    readonly peer: QRtcPeerDto;
+    readonly peer: WebRtcConnectionService.Peer;
     readonly multicast: WebRtcOverlayMulticastManager;
     readonly streamer: WebRtcRxStreamerService;
     private readonly messageCallbacks = new Map<string, RtcMessageCallbackRegistry>();
-    readonly peers = new Map<string, QRtcPeerDto>();
+    readonly peers = new Map<string, WebRtcConnectionService.Peer>();
     readonly received: ALMessage[] = [];
     private readonly pendingDeliveries: Promise<void>[] = [];
 
@@ -68,9 +69,9 @@ export class RtcEndpointFixture {
             token: 'fixture-token',
             iceCandidates,
             dataChannelName: 'test',
-            faultPort: createPassThroughTransportFaultPort(),
+
             rtcSignalingTopicId: 'rtc'
-        });
+        }, { faultPort: createPassThroughTransportFaultPort(), createOfferId: new DeterministicRtcOfferIds().createOfferId });
         for (const peerId of typeof peerIds === 'string' ? [peerIds] : peerIds) {
             const peer = createPeer(sessionId, peerId);
             this.peers.set(peerId, peer);
@@ -96,7 +97,7 @@ export class RtcEndpointFixture {
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
             sessionId,
-            inboundStores: createDefaultInMemoryALInboundRuntimeStores(),
+            inboundStores: this.inbound,
             nowEpochMs: Date.now,
             heartbeat: { maxMissedPings: 5, pingFrequencyMsecs: 5000 }
         });
@@ -132,8 +133,9 @@ export class RtcEndpointFixture {
 
     async waitForDeliveries(): Promise<void> {
         do {
+            await waitForOwnedQueueWork(this.inbound.workQueue);
+            await waitForOwnedQueueWork(this.outbound.workQueue);
             await Promise.all(this.pendingDeliveries.splice(0));
-            await waitForALInboundWork();
         }
         while (this.pendingDeliveries.length > 0);
     }
@@ -141,16 +143,17 @@ export class RtcEndpointFixture {
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
         this.received.push(message);
         await this.messageCallbacks.get(senderId)!.receive(message);
-        // A reply the received message triggers is enqueued by the callback above without being
-        // awaited; this settles that owner's batch before the caller observes the outcome.
-        await settleCommittedOutboundBatch();
+        await waitForOwnedQueueWork(this.inbound.workQueue);
+        await waitForOwnedQueueWork(this.outbound.workQueue);
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {
         const snapshot = createGroupSnapshotFixture({ ...ref, sessionIds });
+        const causalRevision = { groupRevision: version, presenceRevision: version };
         this.groups.set(toScopedOverlayId(ref), {
             ...snapshot,
-            group: { ...snapshot.group, snapshotVersion: version },
+            causalRevision,
+            group: { ...snapshot.group, snapshotVersion: version, acceptedLayoutIdentity: { ...causalRevision, version, state: 'active' } },
             activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
         });
     }
@@ -205,14 +208,14 @@ function createRtcMessageCallbackRegistry(channel: QRtcDataChannel): RtcMessageC
     };
 }
 
-function createPeer(sessionId: string, peerId: string): QRtcPeerDto {
+function createPeer(sessionId: string, peerId: string): WebRtcConnectionService.Peer {
     const connection = new QRtcPeerConnection({ send: async () => undefined }, {
         sessionId,
         peerSessionId: peerId,
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     const channel = new QRtcDataChannel(connection, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'test' });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new QRtcMediaChannel(connection, { peerId }) };
 }
