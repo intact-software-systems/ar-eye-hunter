@@ -72,10 +72,19 @@ release contract. The mixed-workload artifact is v4; it retains partial results
 and settles all started operations before closing their browser contexts. Old
 artifacts remain historical evidence, not inputs requiring migration.
 
-The next two useful outcomes are conflict resolution with affected semantic
-tests/typechecks, then independent review and the necessary browser correctness
-proof of that reconciled runtime. Historical source-specific observations below
-remain evidence of their own runtime only.
+The rebase onto `d8e72dca5ba53a8f6de48a67c41c02fe5bd1282d` is published in
+PR #566. Affected semantic tests/typechecks and independent review are complete;
+the review corrections preserve one-transaction control batching and settle
+mixed workloads before browser cleanup. The next two useful outcomes are closing
+the remaining delivery gates, then the necessary source-labelled browser
+correctness/retention proof of this reconciled runtime. Historical observations
+below remain evidence of their own runtime only.
+
+The current bundle measurements are 220.6582 KiB for the facade and 281.5518 KiB
+for headless, exceeding their unchanged strict limits. Approval for ceilings of
+`<221 KiB` and `<282 KiB` has been requested but not received. Do not treat earlier
+source-specific budget approvals as authorization or mark this PR ready while
+these checks fail.
 
 Task 24's single producer and recorder completed before this rebase. Reconnect
 cycle 3 failed readiness and retained only cycle-0 heap. The terminal causal cuts
@@ -92,10 +101,10 @@ carrying forward the earlier implementation's review result. Native timing and
 the complete RTC proof remain required; a green lifecycle test group is not an
 RTC-B06 observation.
 
-The local synthetic latency diagnostic remains uncommitted and intentionally RED.
-Keep it as diagnostic evidence, not a shipping regression with private batch
-expectations. Behavior-named tests own the scan-progress and notification
-contracts independently of its imposed costs.
+The local synthetic latency diagnostic is preserved in the pre-rebase stash and
+remains intentionally RED. Keep it as diagnostic evidence, not a shipping
+regression with private batch expectations. Behavior-named tests own the
+scan-progress and notification contracts independently of its imposed costs.
 
 Wider integration validation exposed RTC/WS fixture-completion and caller-owned
 engine-startup defects. The correction waits for actual delivery or durable
@@ -608,7 +617,7 @@ and test usages remain its only consumers.
 
 - `packages/tests/shared/alm/al-inbound-pending-admission.test.ts`
 - `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
-- `packages/tests/shared/alm/inbound/al-inbound-work-selector.test.ts`
+- `packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts`
 - `packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts`
 - `packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts`
 - `packages/tests/shared/alm/work/al-work-handler.test.ts`
@@ -698,7 +707,7 @@ and test usages remain its only consumers.
 Run the focused tests above together with:
 
 ```sh
-npx vitest run packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-work-selector.test.ts packages/tests/shared/alm/work/al-work-handler.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts
+npx vitest run packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts packages/tests/shared/alm/work/al-work-handler.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts
 npx vitest run packages/tests/shared/webrtc/ws-rtc-control-handoff-latency.test.ts -t 'hands RTC admission past a full control page'
 npx tsc -p packages/shared/tsconfig.json --noEmit
 node scripts/check-tests-typecheck.mjs

@@ -20,6 +20,7 @@ import {
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { RetryableConflictError } from '@shared/resilience/TryWith.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
@@ -242,7 +243,7 @@ it('settles every control handoff before rejecting a batch and wakes its late re
         createControlMessage('late-control')
     ]).then(
         () => ({ error: undefined, retainedAtSettlement: retained }),
-        (error: unknown) => ({ error, retainedAtSettlement: retained })
+        (error: unknown) => ({ error: toError(error), retainedAtSettlement: retained })
     );
     await laterEntered.promise;
     releaseLater.resolve();

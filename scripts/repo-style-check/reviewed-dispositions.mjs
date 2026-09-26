@@ -702,6 +702,19 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 53
     }),
+    // Promise rejection reasons are untrusted exception-boundary values. Both
+    // owners normalize them through the canonical toError before returning
+    // settlement evidence; no unknown reason is used as domain state.
+    Object.freeze({
+        path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/browser-alm-mixed-workload-settlement.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Lane waiting owns channel open/abort/failure translation beside its
     // connection-service caller. These exact sibling service/policy clusters
     // expose distinct direct entry owners, not fragments of that wait flow.
