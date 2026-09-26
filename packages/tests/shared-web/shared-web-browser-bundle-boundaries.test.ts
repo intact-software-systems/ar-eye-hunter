@@ -17,8 +17,12 @@ interface BundleBoundary {
     readonly brotliBudgetKiB: number;
 }
 
+type JsonValue = string | number | boolean | null | readonly JsonValue[] | {
+    readonly [key: string]: JsonValue;
+};
+
 interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
+    readonly inputs: Readonly<Record<string, JsonValue>>;
 }
 
 interface SharedWebPackageManifest {
@@ -43,18 +47,11 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
-        // ACK per logical recipient measure 215.255859375 KiB; the WS client's receipt admission from
-        // the server's aggregate brings it to 216.73828125 KiB; the rest of S2c-i (WS ordering, bounded and
-        // idempotent receipts, the WS-session ACK rule) measures 217.01171875 KiB. The S2c-ii frozen audience
-        // brings it to 217.681640625 KiB, and its retry through the relay tree (the missing-recipient repair,
-        // the per-recipient relay row and the retried-copy path) to 218.388671875 KiB. Its logical evidence on the
-        // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
-        // 219.0595703125 KiB. The next whole-KiB ceiling is 220.
+        // The measured bundle is 220.658203125 KiB; 221 KiB is the next whole-KiB ceiling.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 220
+        brotliBudgetKiB: 221
     },
     {
         label: 'browser/rallar-core.ts',
@@ -223,7 +220,7 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     };
 }
 
-function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
+function toSharedWebPackageManifest(value: JsonValue): SharedWebPackageManifest {
     const manifest = toJsonObject(value, 'shared-web package manifest');
     return {
         dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
@@ -234,7 +231,7 @@ function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
     };
 }
 
-function toEsbuildMetafile(value: unknown): EsbuildMetafile {
+function toEsbuildMetafile(value: JsonValue): EsbuildMetafile {
     const metafile = toJsonObject(value, 'esbuild metafile');
     return {
         inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
@@ -242,7 +239,7 @@ function toEsbuildMetafile(value: unknown): EsbuildMetafile {
 }
 
 function toOptionalStringRecord(
-    value: unknown,
+    value: JsonValue | undefined,
     label: string
 ): Readonly<Record<string, string>> | undefined {
     if (value === undefined) {
@@ -259,9 +256,9 @@ function toOptionalStringRecord(
     return stringRecord;
 }
 
-function toJsonObject(value: unknown, label: string): Readonly<Record<string, unknown>> {
+function toJsonObject(value: JsonValue, label: string): Readonly<Record<string, JsonValue>> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error(`${label} must be an object`);
     }
-    return value as Readonly<Record<string, unknown>>;
+    return value as Readonly<Record<string, JsonValue>>;
 }

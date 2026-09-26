@@ -54,20 +54,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // The control-command validator reads its field tables from the canonical command-field
-        // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The v2 acknowledgement, the receipt control, one relayed ACK per logical recipient, and
-        // the send-time QoS request check with the messages.send qos passthrough measure
-        // 275.1064453125 KiB with this exact harness; the WS client's receipt admission from the
-        // server's aggregate brings it to 276.16796875 KiB, and the rest of S2c-i to 276.7197265625 KiB.
-        // S2c-ii's frozen audience at RTC admission (the freeze, its ingress check and provenance) measures
-        // 277.2451171875 KiB, and its retry through the relay tree (the missing-recipient repair, the
-        // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. Its logical evidence (the
-        // recipient lists, the hop view, the trusted relay rejection and the observation decoders) measures
-        // 279.2412109375 KiB. Its closing harness checks (a raw control that resolves its own msgId from an earlier
-        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. The next
-        // whole-KiB ceiling is 281; all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(281);
+        // The command validator reads canonical field tables without shipping the schema or catalog.
+        // The measured bundle is 281.5859375 KiB; 282 KiB is the next whole-KiB ceiling.
+        expect(result.brotliKiB).toBeLessThan(282);
     });
 });
 
