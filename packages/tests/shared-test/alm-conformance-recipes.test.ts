@@ -6,10 +6,10 @@ import {
 
 import type { RallarBlackBoxTestStorageCountersResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
-    type AlmConformanceScenario,
-    type CreateAlmConformanceRecipesInput
+    type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -114,7 +114,40 @@ function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): reado
     );
 }
 
+const SCENARIO_KEYS_BY_CARRIER = {
+    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync'],
+    rtc: [
+        'bounded-rejection',
+        'deadline-expiry',
+        'delivery-baseline',
+        'delivery-lifecycle',
+        'delivery-reload',
+        'ordering-resync',
+        'not-yet-in-sync-delivered-after-refresh',
+        'not-yet-in-sync-expires'
+    ],
+    'rtc-with-ws-fallback': [
+        'bounded-rejection',
+        'deadline-expiry',
+        'delivery-baseline',
+        'delivery-lifecycle',
+        'delivery-reload',
+        'ordering-resync',
+        'cross-carrier-duplicate-rtc-then-ws',
+        'cross-carrier-duplicate-ws-then-rtc',
+        'not-yet-in-sync-delivered-after-refresh',
+        'not-yet-in-sync-expires'
+    ]
+} as const;
+
 describe('alm-conformance recipe family', () => {
+    it('generates the pinned recipe list for every carrier, in scenario order', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            expect(toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
+                .toEqual(SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]));
+        }
+    });
+
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));

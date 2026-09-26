@@ -5,10 +5,8 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import {
-    createAlmConformanceRecipes,
-    type CreateAlmConformanceRecipesInput
-} from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 
 const MINIMUM_DEADLINE_MS = 17_000;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
