@@ -104,7 +104,8 @@ function toAlmConformanceScenario(
             input,
             scenarioId: definition.scenarioId,
             scenarioKey: definition.scenarioKey,
-            role
+            role,
+            roles: definition.roles
         };
         const commands = role === 'sender' ? definition.toSenderCommands(step) : definition.toRecipientCommands(step);
         return toAlmConformanceRecipe({ ...step, commands });

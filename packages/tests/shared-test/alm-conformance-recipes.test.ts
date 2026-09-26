@@ -6,7 +6,9 @@ import {
 
 import type { RallarBlackBoxTestStorageCountersResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -159,6 +161,24 @@ describe('alm-conformance recipe family', () => {
                 expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBeUndefined();
             }
         }
+    });
+
+    it('lets the sender connect only once every declared recipient is ready, so its audience never freezes short', () => {
+        const readinessOf = (roles: readonly AlmConformanceRole[], role: AlmConformanceRole) =>
+            toConnectCommand({ input: toConformanceInput('rtc'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role, roles })
+                .readiness?.minReadyPeers;
+        const threeRoles = ['sender', 'receiver', 'recipient-b'] as const;
+
+        expect(readinessOf(['sender', 'receiver'], 'sender')).toBe(1);
+        expect(readinessOf(['sender', 'receiver'], 'receiver')).toBe(1);
+        expect(readinessOf(threeRoles, 'sender')).toBe(2);
+        // A recipient of three arms its faults right after it connects; the sender starts only after that connect.
+        expect(readinessOf(threeRoles, 'receiver')).toBeUndefined();
+        expect(readinessOf(threeRoles, 'recipient-b')).toBeUndefined();
+        expect(
+            toConnectCommand({ input: toConformanceInput('ws'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role: 'sender', roles: threeRoles })
+                .readiness
+        ).toBeUndefined();
     });
 
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
@@ -385,7 +405,8 @@ describe('alm-conformance recipe family', () => {
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
-                contains: '"typeId":"al.control.nack.v1","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}"'
+                contains: '"typeId":"al.control.nack.v1","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
+                    '"outcome":"committed"'
             },
             timeoutMs: 27_000
         }]);

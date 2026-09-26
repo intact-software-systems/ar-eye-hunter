@@ -42,6 +42,13 @@ interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
     readonly state: 'admitted' | ALDeliveryState;
 }
 
+interface AlmConformanceControlAdmissionWaitInput {
+    readonly step: AlmConformanceMessageStepInput;
+    readonly name: string;
+    /** The control that answers the send of `step.index`. */
+    readonly controlTypeId: string;
+}
+
 interface AlmConformanceResultAssertionInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
@@ -51,6 +58,7 @@ interface AlmConformanceResultAssertionInput {
     readonly expected: string | number | boolean;
 }
 
+const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const STORAGE_COUNTERS_TIMEOUT_MS = 3_000;
 const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 
@@ -158,6 +166,28 @@ export function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): Ral
         connection: receipts.input.senderConnection,
         handleId: toSendHandleId(receipts),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receipts.input.deadlineMs)
+    };
+}
+
+/**
+ * The `control-admission` event in which the origin commits a control that answers one of its sends, matched in its
+ * emitted key order (`typeId`, `targetMsgId`, `outcome`). The verdict is local to the origin, so the wait polls no
+ * other page.
+ */
+export function toCommittedControlAdmissionWait(
+    { step, name, controlTypeId }: AlmConformanceControlAdmissionWaitInput
+): RallarBlackBoxTestCommand {
+    const targetMsgId = `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
+    return {
+        kind: 'wait',
+        commandId: toCommandId(step, name),
+        match: {
+            kind: 'diagnostic',
+            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+            payloadPath: 'data',
+            contains: `"typeId":"${controlTypeId}","targetMsgId":"${targetMsgId}","outcome":"committed"`
+        },
+        timeoutMs: step.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
     };
 }
 

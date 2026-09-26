@@ -87,14 +87,16 @@ async function openRecipientB(input: CreateThreeAgentRunInput, run: TwoAgentRun)
         runId: input.runId,
         agentId,
         groupId: run.group.groupId,
-        connection: run.receiver.connection
+        connection: run.receiver.connection,
+        diagnosticsRole: 'recipient-b'
     });
     return {
         agentId,
         actor: config.userC.actor,
         connection: run.receiver.connection,
         context: opened.context,
-        page: opened.page
+        page: opened.page,
+        diagnostics: opened.diagnostics
     };
 }
 

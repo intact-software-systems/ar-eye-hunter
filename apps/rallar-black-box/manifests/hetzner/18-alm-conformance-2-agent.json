@@ -1430,7 +1430,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.nack.v1\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\""
+              "contains": "\"typeId\":\"al.control.nack.v1\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\""
             },
             "timeoutMs": 27000
           },

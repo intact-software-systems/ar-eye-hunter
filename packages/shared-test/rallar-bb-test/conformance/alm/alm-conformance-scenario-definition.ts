@@ -31,6 +31,8 @@ export interface AlmConformanceStepInput {
     readonly scenarioId: AlmConformanceScenarioId;
     readonly scenarioKey: string;
     readonly role: AlmConformanceRole;
+    /** Every role the scenario declares, which decides how many ready peers each connect waits for. */
+    readonly roles: readonly AlmConformanceRole[];
 }
 
 export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {

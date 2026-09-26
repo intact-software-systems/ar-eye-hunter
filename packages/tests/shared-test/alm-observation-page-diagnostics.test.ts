@@ -55,4 +55,10 @@ describe('decodeALMObservationPageDiagnosticsFile', () => {
             stack: 'ReferenceError: rallar is not defined\n at index.html:1:1'
         });
     });
+
+    it('keeps the page records of the second recipient of a three-agent cell (D45)', () => {
+        const record = { agentId: 'alm-recipient-b-w0-fixture', role: 'recipient-b', atMs: 12, kind: 'console-error', message: 'x' };
+
+        expect(decodeALMObservationPageDiagnosticsFile({ records: [record], droppedCount: 0 }).right?.records).toEqual([record]);
+    });
 });

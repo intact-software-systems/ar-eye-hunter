@@ -8,6 +8,7 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -560,7 +561,7 @@ export async function openBrowserControlAgent(
         groupId: string;
         connection?: string;
         /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
-        diagnosticsRole?: 'sender' | 'receiver';
+        diagnosticsRole?: AlmConformanceRole;
     }>
 ): Promise<
     Readonly<{
@@ -616,7 +617,7 @@ export async function openBrowserControlAgent(
 
 function toPageDiagnosticsCapture(
     page: Page,
-    input: Readonly<{ agentId: string; diagnosticsRole?: 'sender' | 'receiver'; }>
+    input: Readonly<{ agentId: string; diagnosticsRole?: AlmConformanceRole; }>
 ): PageDiagnosticsCapture | undefined {
     return input.diagnosticsRole === undefined
         ? undefined

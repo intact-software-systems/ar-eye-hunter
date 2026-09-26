@@ -251,7 +251,10 @@ class GeneratedAlmPorts {
         });
     }
 
-    /** The first hop refuses a send past the repair window: over WS the relay NACKs the sender, over RTC the receiver refuses it. */
+    /**
+     * The first hop refuses a send past the repair window: over WS the relay NACKs the sender, which commits it as the
+     * word of its trusted server (R-S2c-ii-5); over RTC the receiver refuses it.
+     */
     private refuseGappedSend(message: PortMessage): void {
         if (message.command.carrier === 'ws') {
             this.sender.recordEvent({
@@ -263,8 +266,8 @@ class GeneratedAlmPorts {
                         msgId: `${message.msgId}-nack`,
                         typeId: 'al.control.nack.v1',
                         targetMsgId: message.msgId,
-                        outcome: 'rejected',
-                        reason: 'AL repair sender has no retained outbound obligation'
+                        outcome: 'committed',
+                        reason: 'none'
                     }
                 }
             });

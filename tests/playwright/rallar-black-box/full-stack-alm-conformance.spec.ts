@@ -52,8 +52,14 @@ import {
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
+/** A three-role scenario runs on its own three agents (D45), so each family records its own cell. */
+type ScenarioFamily = 'two-agent' | 'three-agent';
+
 interface ObservationCell {
     readonly run: TwoAgentRun;
+    readonly family: ScenarioFamily;
+    /** Every page of the run, whose captured page diagnostics the cell records. */
+    readonly participants: readonly TwoAgentRunParticipant[];
     readonly testInfo: TestInfo;
     readonly carrier: AlmConformanceCarrier;
     readonly cellOutcome: ALMObservationCellOutcome;
@@ -72,7 +78,7 @@ type ScenarioSelectionInput = Pick<
 
 interface ObservationFiles {
     readonly testInfo: TestInfo;
-    readonly carrier: AlmConformanceCarrier;
+    readonly fileName: string;
     readonly regime: ALMObservationRegime;
     readonly snapshot: ControlRunSnapshot;
     /** Undefined only when neither agent page ever attached a diagnostics capture. */
@@ -127,6 +133,8 @@ test.describe('ALM conformance lane', () => {
             finally {
                 await recordObservation({
                     run,
+                    family: 'two-agent',
+                    participants: [run.sender, run.receiver],
                     testInfo,
                     carrier,
                     cellOutcome: toCellOutcome(testInfo, scenarioFailed)
@@ -148,10 +156,23 @@ test.describe('ALM conformance lane', () => {
                 testInfo,
                 runId: `alm-${carrier}-three-agent-${uniqueSuffix()}`
             });
+            let scenarioFailed = false;
             try {
                 await runThreeAgentScenarios(run, carrier);
             }
+            catch (scenarioError) {
+                scenarioFailed = true;
+                throw scenarioError;
+            }
             finally {
+                await recordObservation({
+                    run,
+                    family: 'three-agent',
+                    participants: [run.sender, run.receiver, run.recipientB],
+                    testInfo,
+                    carrier,
+                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                });
                 await run.close();
             }
         });
@@ -283,7 +304,7 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
 function selectScenarios(
     selection: ScenarioSelectionInput,
     carrier: AlmConformanceCarrier,
-    family: 'two-agent' | 'three-agent'
+    family: ScenarioFamily
 ): readonly AlmConformanceScenario[] {
     return createAlmConformanceRecipes({
         ...selection,
@@ -316,24 +337,26 @@ async function recordObservation(
 ): Promise<void> {
     try {
         const snapshot = await cell.run.readSnapshot();
-        const pageDiagnosticsFile = toRunPageDiagnosticsFile(cell.run, snapshot);
+        const pageDiagnosticsFile = toRunPageDiagnosticsFile(cell.participants, snapshot);
         const regime = toObservationRegime({
             snapshot,
             carrier: cell.carrier,
             cellOutcome: cell.cellOutcome,
             pageDiagnosticsFile: toDecodedPageDiagnosticsFile(pageDiagnosticsFile)
         });
+        const fileName = toObservationFileName(cell.carrier, cell.family, cell.testInfo.retry);
         await writeObservationFiles({
             testInfo: cell.testInfo,
-            carrier: cell.carrier,
+            fileName,
             regime,
             snapshot,
             pageDiagnosticsFile
         });
         if (cell.cellOutcome === 'failed') {
-            await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
+            await attachRunSnapshot(snapshot, cell.testInfo, `alm-${fileName}.json`);
         }
-        console.info(toALMObservationRegimeSummary(regime));
+        const summary = toALMObservationRegimeSummary(regime);
+        console.info(cell.family === 'two-agent' ? summary : `${summary} family=${cell.family}`);
     }
     catch (observationError) {
         console.warn('Failed to record the ALM conformance observation', {
@@ -363,10 +386,10 @@ function toObservationRegime(
 
 /** `undefined` only for a run whose participants never opened a real page (never happens on this lane). */
 function toRunPageDiagnosticsFile(
-    run: TwoAgentRun,
+    participants: readonly TwoAgentRunParticipant[],
     snapshot: ControlRunSnapshot
 ): PageDiagnosticsFile | undefined {
-    const captures = [run.sender.diagnostics, run.receiver.diagnostics].filter(isPresentCapture);
+    const captures = participants.map((participant) => participant.diagnostics).filter(isPresentCapture);
     return captures.length === 0
         ? undefined
         : toPageDiagnosticsFile(captures, toPageDiagnosticsReferenceEpochMs(snapshot, captures));
@@ -406,7 +429,7 @@ async function writeObservationFiles(
         OBSERVATION_DIRECTORY_NAME
     );
     await mkdir(directory, { recursive: true });
-    const fileName = toObservationFileName(observation.carrier, observation.testInfo.retry);
+    const { fileName } = observation;
     await writeFile(
         path.join(directory, `${fileName}.json`),
         toJsonText(observation.regime),
@@ -426,9 +449,13 @@ async function writeObservationFiles(
     }
 }
 
-/** An unsuffixed name would let a retried cell overwrite the first attempt's regime and snapshot. */
-function toObservationFileName(carrier: AlmConformanceCarrier, retry: number): string {
-    return retry === 0 ? `${carrier}-${scope}` : `${carrier}-${scope}-retry${retry}`;
+/**
+ * An unsuffixed name would let a retried cell overwrite the regime and snapshot of the first attempt, or the
+ * three-agent cell overwrite the two-agent one.
+ */
+function toObservationFileName(carrier: AlmConformanceCarrier, family: ScenarioFamily, retry: number): string {
+    const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
+    return retry === 0 ? cell : `${cell}-retry${retry}`;
 }
 
 /** Kept for a failed cell's convenience: the snapshot is one click away in the Playwright report. */

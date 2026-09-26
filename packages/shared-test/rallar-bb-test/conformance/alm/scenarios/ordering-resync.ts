@@ -4,16 +4,18 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
+import {
+    toAdmissionCommands,
+    toCommittedControlAdmissionWait,
+    toSendCommand
+} from '../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toCommandId } from '../alm-conformance-step-identities.ts';
 
-const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const RESYNC_GAP_SEQ = 300;
 
 export const orderingResync: AlmConformanceScenarioDefinition = {
@@ -52,22 +54,15 @@ function toOrderingResyncSenderCommands(
 
 /**
  * The sender admits the NACK as the word of its trusted server (R-S2c-ii-5) and states the rejection by the relay;
- * the send requested no ACK, so its handle is already transport-accepted and keeps that state. The diagnostic
- * names the gapped msgId either way.
+ * the send requested no ACK, so its handle is already transport-accepted and keeps that state. The verdict must be
+ * `committed`: a refused NACK would mean the trusted-relay rule no longer holds.
  */
 function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    const gappedMsgId = `{resultCache.${toCommandId(sender, 'send-2')}.value.msgId}`;
-    return {
-        kind: 'wait',
-        commandId: toCommandId(sender, 'relay-resync-nack'),
-        match: {
-            kind: 'diagnostic',
-            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
-            payloadPath: 'data',
-            contains: `"typeId":"${AL_CONTROL_NACK_TYPE_ID}","targetMsgId":"${gappedMsgId}"`
-        },
-        timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
-    };
+    return toCommittedControlAdmissionWait({
+        step: { ...sender, index: 2 },
+        name: 'relay-resync-nack',
+        controlTypeId: AL_CONTROL_NACK_TYPE_ID
+    });
 }
 
 /** Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44). */

@@ -13,6 +13,12 @@ Every cell — one carrier per cell, pass or fail — writes these files into th
 | `test-results/alm-observation/<carrier>-<scope>-snapshot.json`         | The cell's complete control run snapshot.                    |
 | `test-results/alm-observation/<carrier>-<scope>-page-diagnostics.json` | The lane's raw `pageerror`/console capture (Task 7b, below). |
 
+A three-agent cell (the `three-agent family over <carrier>` test, which runs only the scenarios that
+declare `recipient-b`, D45) writes the same three files as `<carrier>-<scope>-three-agent*.json`, and
+its job log line ends in `family=three-agent`. Its page-diagnostics file carries all three pages, with
+role `sender`, `receiver` or `recipient-b`. The snapshot decoder attributes only the `alm-sender-` and
+`alm-receiver-` agent ids, so the inbound events of the `recipient-b` page read `unattributed`.
+
 They live beside the per-test output directories rather than inside one, because Playwright deletes
 a passing test's own directory at the end of the run. A failed cell additionally attaches its
 snapshot to the Playwright report, which is where it has always been; a green cell used to leave no
@@ -122,7 +128,7 @@ records what the runner was doing while the cell ran:
   raised nothing. Otherwise `{ outcome: 'captured', counts, dropped, first }`: `counts` is the number
   of `pageerror`, `console-error` (`consoleError`) and `console-warning` (`consoleWarning`) records;
   `dropped` is how many more the lane's 200-per-page cap discarded; `first` is the earliest 20 records
-  across both agent pages, each `{ agentId, role, atMs, kind, message, stack? }` with `atMs` relative
+  across the agent pages, each `{ agentId, role, atMs, kind, message, stack? }` with `atMs` relative
   to the cell's first control event when the snapshot decoded, else the earlier page's own creation.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 

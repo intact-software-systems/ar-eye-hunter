@@ -92,14 +92,23 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
         rallar: { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
         timeoutMs: CONNECT_TIMEOUT_MS,
-        ...(input.carrier === 'ws' ? {} : {
+        ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {
             readiness: {
-                minReadyPeers: 1,
+                minReadyPeers: step.roles.length - 1,
                 timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
                 intervalMs: CONNECT_READINESS_INTERVAL_MS
             }
         })
     };
+}
+
+/**
+ * The sender waits for every recipient, so the audience it freezes never misses one. In a three-agent scenario the
+ * recipients do not wait: each one arms its own faults right after it connects, and the sender starts only after
+ * that connect (D45).
+ */
+function waitsForReadyPeers(step: AlmConformanceStepInput): boolean {
+    return step.role === 'sender' || !step.roles.includes('recipient-b');
 }
 
 export function toStatsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
