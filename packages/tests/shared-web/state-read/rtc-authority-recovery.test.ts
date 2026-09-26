@@ -441,6 +441,19 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 expect(receiver.delivered).toEqual([]);
                 return;
             }
+            expect(receiver.admissions).toContainEqual(expect.objectContaining({
+                kind: 'admission-outcome',
+                msgId: replacement.id.msgId,
+                outcome: 'committed'
+            }));
+            if (scenario === 'ordinary-ordered') {
+                expect(receiver.admissions).toContainEqual(expect.objectContaining({
+                    kind: 'admission-outcome',
+                    msgId: old.id.msgId,
+                    outcome: 'committed'
+                }));
+            }
+            await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
             expect(receiver.delivered.map((message) => message.id.msgId))
                 .toEqual(scenario === 'ordinary-ordered' ? [old.id.msgId, replacement.id.msgId] : [replacement.id.msgId]);
             expect(receiver.delivered.at(-1)).toMatchObject({
