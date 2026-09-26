@@ -123,9 +123,11 @@ class GeneratedAlmPorts {
                 if (message && command.state.length === 1 && command.state[0] === 'expired') {
                     message.state = 'expired';
                 }
+                // Only a send that opted into a durability is enqueued; the default is volatile.
+                const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile';
                 return {
                     status: 'ok',
-                    value: { handleId: command.handleId, state: message?.state ?? 'unobservable', enqueued: true, submitted: message?.submitted ?? false }
+                    value: { handleId: command.handleId, state: message?.state ?? 'unobservable', enqueued, submitted: message?.submitted ?? false }
                 };
             }
             case 'messages.cancel': {
