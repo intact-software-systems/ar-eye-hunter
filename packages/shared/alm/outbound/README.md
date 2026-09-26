@@ -174,9 +174,21 @@ an in-memory map per server instance. No client learns a server id. The server a
 socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
 frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
 message deadline naming whom it counted. Every receipt row expires at the message deadline plus
-`AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A `receiver` message addressed
+`AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row whose origin has no
+session on the instance that dequeues it is not settled by its first cluster publication: its send
+([`WsQueueBoxServerClusterPublication`](../../services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts))
+publishes it again, each wait as long as the receipt has waited, until the origin has a session there or
+the row expires, so an origin that reconnects on any instance inside that window receives it. A `receiver` message addressed
 to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
 (D42) until a slice aggregates unicasts.
+
+In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
+sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
+(D38): the durable receipt. The aggregator is its one settlement authority. The server admits each
+terminal receipt it writes through the same receipt admission as the origin, so a `complete` receipt
+leaves that row complete and its `ack-timeout` stops retransmitting, on whichever instance claims it.
+A multicast that carries a frozen audience (`recipientPeerIds`, D24) is sent to that audience only and
+its pending row expects exactly it, never a session that joined after the freeze.
 
 The origin admits a receipt through
 [`ALOutboundReceiptAdmission`](./control/al-outbound-receipt-admission.ts), not through control

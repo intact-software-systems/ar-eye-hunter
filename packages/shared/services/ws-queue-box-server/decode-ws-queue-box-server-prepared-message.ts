@@ -15,9 +15,9 @@ export function decodeWsQueueBoxServerPreparedMessage(value: unknown, msg: ALMes
             message
         };
     }
-    if (prepared.kind === 'cluster-local-complete') {
+    if (prepared.kind === 'cluster-local-complete' || prepared.kind === 'cluster-receipt') {
         decodeALAdmissionRecord(value, ['kind', 'message']);
-        return { kind: 'cluster-local-complete', message };
+        return { kind: prepared.kind, message };
     }
     throw new TypeError('Persisted WS outbound prepared message kind is invalid');
 }

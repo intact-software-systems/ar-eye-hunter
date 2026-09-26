@@ -7,6 +7,7 @@ import {
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -24,6 +25,7 @@ import type {
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
+import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export type WsQueueBoxServerPreparedMessage =
@@ -35,6 +37,11 @@ export type WsQueueBoxServerPreparedMessage =
     }>
     | Readonly<{
         kind: 'cluster-local-complete';
+        message: ALOutboundTransportMessage;
+    }>
+    | Readonly<{
+        /** A receipt whose origin has no session here: sent here once it has one, published to the cluster until then. */
+        kind: 'cluster-receipt';
         message: ALOutboundTransportMessage;
     }>;
 
@@ -85,8 +92,9 @@ export class WsQueueBoxServerOutboundPlanning {
             return refusal.left;
         }
 
+        const resolveRecipients = phase === 'dequeue' || !persist;
         return this.validateMessage(message, {
-            resolveRecipients: phase === 'dequeue' || !persist,
+            resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered
         }).fold(
@@ -97,14 +105,12 @@ export class WsQueueBoxServerOutboundPlanning {
                 dropReasonCode: undefined,
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
-                    ? [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }]
-                    : recipients.map((recipient) => ({
-                        kind: 'recipient',
-                        peerId: recipient.peerId,
-                        connectionId: recipient.connectionId,
-                        message: toALOutboundTransportMessage(message)
-                    })),
-                ackTracking: toAckTrackingPlan(normalized.effective, recipients),
+                    ? toClusterPreparedMessages(message, recipients)
+                    : toRecipientPreparedMessages(message, recipients),
+                ackTracking: toAckTrackingPlan(
+                    normalized.effective,
+                    resolveRecipients ? toExpectedPeerIds(message, recipients) : []
+                ),
                 repairTracking: toRepairTrackingPlan(normalized.effective),
                 supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message)
             })
@@ -126,15 +132,10 @@ export class WsQueueBoxServerOutboundPlanning {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
-            preparedMessages: recipients.map((recipient) => ({
-                kind: 'recipient',
-                peerId: recipient.peerId,
-                connectionId: recipient.connectionId,
-                message: toALOutboundTransportMessage(message)
-            })),
+            preparedMessages: toRecipientPreparedMessages(message, recipients),
             ackTracking: toAckTrackingPlan(
                 this.normalizePolicy(message).effective,
-                recipients,
+                recipients.map((recipient) => recipient.peerId),
                 'replace'
             ),
             repairTracking: request.repair
@@ -163,7 +164,10 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const recipients = this.#targetResolution.resolveOutboundRecipients(message);
+        const recipients = toFrozenAudienceRecipients(
+            message,
+            this.#targetResolution.resolveOutboundRecipients(message)
+        );
         if (recipients.length > 0) {
             return Either.ofRight(recipients);
         }
@@ -208,9 +212,60 @@ function toNoRouteDispatchPlan(
     return { msg: message, dropReason, dropReasonCode: 'no-route', persist: false, preparedMessages: [] };
 }
 
+/**
+ * A multicast frozen at admission goes to the audience it was frozen to, never to a session that
+ * joined the room after it (D24, D43); any other message goes to every recipient resolved now.
+ */
+function toFrozenAudienceRecipients(
+    message: ALMessage,
+    resolved: readonly WsServerResolvedRecipient[]
+): readonly WsServerResolvedRecipient[] {
+    const frozen = resolveALFrozenMulticastAudience(message.targets);
+    return frozen === undefined
+        ? resolved
+        : resolved.filter((recipient) => frozen.recipientPeerIds.includes(recipient.peerId));
+}
+
+/** A frozen multicast expects its whole frozen audience, connected here or not; any other message its recipients here. */
+function toExpectedPeerIds(message: ALMessage, recipients: readonly WsServerResolvedRecipient[]): readonly string[] {
+    const frozen = resolveALFrozenMulticastAudience(message.targets);
+    return frozen === undefined
+        ? recipients.map((recipient) => recipient.peerId)
+        : frozen.recipientPeerIds.filter((peerId) => peerId !== message.id.senderId);
+}
+
+function toRecipientPreparedMessages(
+    message: ALMessage,
+    recipients: readonly WsServerResolvedRecipient[]
+): readonly WsQueueBoxServerPreparedMessage[] {
+    return recipients.map((recipient) => ({
+        kind: 'recipient',
+        peerId: recipient.peerId,
+        connectionId: recipient.connectionId,
+        message: toALOutboundTransportMessage(message)
+    }));
+}
+
+/**
+ * With a cluster publisher the dequeue publishes the row and completes, except for a receipt: it goes to
+ * its origin's session here, or repeats its cluster publication until the origin has a session here or
+ * the row expires.
+ */
+function toClusterPreparedMessages(
+    message: ALMessage,
+    recipients: readonly WsServerResolvedRecipient[]
+): readonly WsQueueBoxServerPreparedMessage[] {
+    if (!isWsQueueBoxServerReceiptRow(message)) {
+        return [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }];
+    }
+    return recipients.length > 0
+        ? toRecipientPreparedMessages(message, recipients)
+        : [{ kind: 'cluster-receipt', message: toALOutboundTransportMessage(message) }];
+}
+
 function toAckTrackingPlan(
     effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
-    recipients: readonly WsServerResolvedRecipient[],
+    expectedPeerIds: readonly string[],
     expectedPeerIdsUpdate?: 'merge' | 'replace'
 ): ALOutboundAckTrackingPlan | undefined {
     if (effective.ack.algo === 'none') {
@@ -220,7 +275,7 @@ function toAckTrackingPlan(
         enabled: true,
         timeoutMs: effective.ack.opts.timeoutMs,
         maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
-        expectedPeerIds: [...new Set(recipients.map((recipient) => recipient.peerId))],
+        expectedPeerIds: [...new Set(expectedPeerIds)],
         expectedPeerIdsUpdate,
         mode: effective.ack.algo
     };

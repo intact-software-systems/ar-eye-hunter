@@ -38,6 +38,8 @@ const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1'
 const SNAPSHOT_VERSION = 7;
 /** The room message's lifetime: its deadline is this long after it was sent. */
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
+/** The ack timeout an at-least-once message resolves to: the server's own retry window. */
+const ROOM_MESSAGE_ACK_TIMEOUT_MS = 2_000;
 
 interface ReceiptFixture {
     readonly service: WsQueueBoxServerService;
@@ -251,10 +253,10 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readSentReceipts(fixture.sockets.a)).toEqual([]);
     });
 
-    it('answers an outbox-fanned receiver message with one complete row, not one per aggregator', async () => {
+    it('answers an outbox-fanned receiver message with one complete row and never retransmits it once complete', async () => {
         const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
         await admitRoomMessage(fixture);
-        await expect.poll(() => fixture.sockets.c.sent.length).toBeGreaterThan(0);
+        await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
 
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
         await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
@@ -265,6 +267,14 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         const receipts = await readReceiptRows(fixture);
         expect(receipts.filter((receipt) => receipt.phase === 'complete')).toHaveLength(1);
         expect(receipts.map((receipt) => receipt.phase)).toEqual(['admitted', 'complete']);
+
+        // Past the ack timeout a server still expecting b and c would send them the message again.
+        fixture.clock.nowMs += ROOM_MESSAGE_ACK_TIMEOUT_MS + 1_000;
+        for (let pass = 0; pass < 12; pass += 1) {
+            await fixture.engine.executeOnce();
+        }
+        expect(readRoomMessageCopies(fixture.sockets.b)).toBe(1);
+        expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
 });
 
@@ -348,7 +358,8 @@ function createAggregation(enqueued: ALMessage[] = []): WsQueueBoxServerReceiptA
             enqueued.push(message);
             return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }, message, entries: [] };
         },
-        acceptServerControl: async () => ({ kind: 'not-handled' })
+        acceptServerControl: async () => ({ kind: 'not-handled' }),
+        acceptServerReceipt: async () => ({ kind: 'not-handled' })
     });
     onTestFinished(() => aggregation.dispose());
     return aggregation;
@@ -511,6 +522,10 @@ async function readReceiptMessages(fixture: ReceiptFixture): Promise<readonly AL
         .flatMap((entry) => entry?.typeId === EnqueuedType.WS_OUTBOX ? [decodePersistedALMessage(entry.resource)] : [])
         .filter((message) => message.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
         .sort((left, right) => toPhaseOrder(left) - toPhaseOrder(right));
+}
+
+function readRoomMessageCopies(socket: SimulatedWebSocket): number {
+    return socket.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === 'room-message-1').length;
 }
 
 function readSentReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
