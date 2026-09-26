@@ -109,7 +109,7 @@ export class WsQueueBoxServerOutboundPlanning {
                     : toRecipientPreparedMessages(message, recipients),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
-                    resolveRecipients ? toExpectedPeerIds(message, recipients) : []
+                    resolveRecipients ? toExpectedPeerIds(message, recipients, normalized.effective) : []
                 ),
                 repairTracking: toRepairTrackingPlan(normalized.effective),
                 supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message)
@@ -164,7 +164,7 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const recipients = toFrozenAudienceRecipients(
+        const recipients = toAdmittedAudienceRecipients(
             message,
             this.#targetResolution.resolveOutboundRecipients(message)
         );
@@ -213,25 +213,41 @@ function toNoRouteDispatchPlan(
 }
 
 /**
- * A multicast frozen at admission goes to the audience it was frozen to, never to a session that
- * joined the room after it (D24, D43); any other message goes to every recipient resolved now.
+ * The audience a room message was admitted to, when it carries one: a multicast's frozen recipients, or
+ * the recipients the router stamped on a room broadcast it fanned out through the outbox.
  */
-function toFrozenAudienceRecipients(
+function resolveAdmittedAudience(message: ALMessage): readonly string[] | undefined {
+    const targets = message.targets;
+    return targets?.mode === 'broadcast'
+        ? targets.recipientPeerIds
+        : resolveALFrozenMulticastAudience(targets)?.recipientPeerIds;
+}
+
+/**
+ * A message admitted to an audience goes to that audience, never to a session that joined the room
+ * after it (D24, D43); any other message goes to every recipient resolved now.
+ */
+function toAdmittedAudienceRecipients(
     message: ALMessage,
     resolved: readonly WsServerResolvedRecipient[]
 ): readonly WsServerResolvedRecipient[] {
-    const frozen = resolveALFrozenMulticastAudience(message.targets);
-    return frozen === undefined
-        ? resolved
-        : resolved.filter((recipient) => frozen.recipientPeerIds.includes(recipient.peerId));
+    const audience = resolveAdmittedAudience(message);
+    return audience === undefined ? resolved : resolved.filter((recipient) => audience.includes(recipient.peerId));
 }
 
-/** A frozen multicast expects its whole frozen audience, connected here or not; any other message its recipients here. */
-function toExpectedPeerIds(message: ALMessage, recipients: readonly WsServerResolvedRecipient[]): readonly string[] {
-    const frozen = resolveALFrozenMulticastAudience(message.targets);
-    return frozen === undefined
-        ? recipients.map((recipient) => recipient.peerId)
-        : frozen.recipientPeerIds.filter((peerId) => peerId !== message.id.senderId);
+/**
+ * A `receiver` receipt counts logical recipients, so a message admitted to an audience expects all of it,
+ * connected here or not; every other receipt counts the hops this instance sends to.
+ */
+function toExpectedPeerIds(
+    message: ALMessage,
+    recipients: readonly WsServerResolvedRecipient[],
+    effective: ReturnType<typeof normalizeALQosPolicy>['effective']
+): readonly string[] {
+    const audience = resolveAdmittedAudience(message);
+    return effective.ack.algo === 'receiver' && audience !== undefined
+        ? audience.filter((peerId) => peerId !== message.id.senderId)
+        : recipients.map((recipient) => recipient.peerId);
 }
 
 function toRecipientPreparedMessages(

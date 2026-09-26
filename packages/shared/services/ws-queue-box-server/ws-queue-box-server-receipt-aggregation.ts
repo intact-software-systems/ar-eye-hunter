@@ -271,6 +271,7 @@ export class WsQueueBoxServerReceiptAggregation {
             constraints: { expiresAtMs }
         });
         await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
+        // Two commits: a crash between them leaves the server row unsettled, which costs only retransmissions its budget bounds.
         if (receipt.phase !== 'admitted') {
             await this.#dependencies.acceptServerReceipt(receipt);
         }

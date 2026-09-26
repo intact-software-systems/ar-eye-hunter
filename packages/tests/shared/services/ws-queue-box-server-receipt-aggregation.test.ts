@@ -19,12 +19,16 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS,
     WsQueueBoxServerReceiptAggregation
@@ -51,6 +55,8 @@ interface ReceiptFixture {
     readonly remoteOrigin: SimulatedWebSocket | undefined;
     /** What the server's own outbound owner stated about the messages it originated. */
     readonly settlements: ALDeliverySettlement[];
+    /** The server's own outbound admission store, where its pending row for a fanned-out message lives. */
+    readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
 }
 
 interface ReceiptFixtureOptions {
@@ -276,6 +282,28 @@ describe('WS server receipt aggregation for receiver acknowledgements', () => {
         expect(readRoomMessageCopies(fixture.sockets.b)).toBe(1);
         expect(readRoomMessageCopies(fixture.sockets.c)).toBe(1);
     });
+
+    it('reports a terminal receipt the server pending row could not take once its admission attempts ran out', async () => {
+        const fixture = await createReceiptFixture({ fanout: 'outbox', origin: 'local' });
+        await admitRoomMessage(fixture);
+        await expect.poll(() => readRoomMessageCopies(fixture.sockets.c)).toBe(1);
+        const commitBundle = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
+        // Only the receipt admission writes a lone pending row with no work: every one of its attempts conflicts.
+        vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementation(async (bundle) =>
+            bundle.durableEffects.length === 0 && bundle.mutations.every((mutation) => mutation.kind === 'set-pending-ack')
+                ? 'conflict'
+                : await commitBundle(bundle)
+        );
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'b'), 'b');
+        await fixture.service.acceptIncomingMessage(receiverAck(fixture, 'c'), 'c');
+
+        expect(warn).toHaveBeenCalledWith(
+            'AL complete receipt for room-message-1 of origin a left its receipt row unmoved: ' +
+                'AL receipt kept conflicting with the origin version'
+        );
+    });
 });
 
 describe('WS server receipt aggregate', () => {
@@ -404,6 +432,12 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
     const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs)));
     const settlements: ALDeliverySettlement[] = [];
+    const nowMs = () => clock.nowMs;
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), nowMs)
+    });
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
@@ -415,6 +449,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
         inboundStores: { admissionStore: createTestInboundStore(admission, clock), workQueue: admission.workQueue },
+        outboundStores,
         outboundSettlements: (settlement) => settlements.push(settlement)
     });
     const remoteOrigin = options.origin === 'remote' ? await createRemoteOriginInstance(service, outbox) : undefined;
@@ -435,7 +470,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         service.dispose();
         vi.restoreAllMocks();
     });
-    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements };
+    return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
 }
 
 /** A second instance holding the origin's live socket; the two meet only through the shared outbox and the bus. */

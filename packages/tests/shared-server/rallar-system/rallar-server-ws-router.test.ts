@@ -640,7 +640,12 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('keeps a session that leaves the room after admission in the live-only audience it was admitted to (D43)', async () => {
-        const fixture = createAudienceRouter(['peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2']);
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
         const message = createReceiverRoomBroadcast('left-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
@@ -649,7 +654,12 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
-        const fixture = createAudienceRouter(['peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2', 'peer-3'], ['peer-3']);
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            disconnectedSessionIds: ['peer-3'],
+            fanout: 'live-only'
+        });
         const message = createReceiverRoomBroadcast('disconnected-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
@@ -664,7 +674,12 @@ describe('RallarServerWsRouter', () => {
         { frozen: ['peer-2'], expected: ['peer-2'], label: 'honours a frozen audience narrower than the room' },
         { frozen: ['peer-2', 'stranger'], expected: ['peer-2'], label: 'trims a frozen audience naming a non-member' }
     ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, expected }) => {
-        const fixture = createAudienceRouter(['peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2', 'peer-3']);
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('fell-back'),
             targets: { mode: 'multicast', groupRef: AUDIENCE_ROOM, recipientPeerIds: frozen, snapshotVersion: 3 }
@@ -676,6 +691,23 @@ describe('RallarServerWsRouter', () => {
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
         ]);
         expect(readChatRecipients(fixture)).toEqual(expected);
+    });
+
+    it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-4'],
+            disconnectedSessionIds: [],
+            fanout: 'outbox'
+        });
+        const message = createReceiverRoomBroadcast('outbox-admitted-audience');
+
+        await fixture.sockets['peer-1']!.receive(message);
+
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'peer-1', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['peer-2'], ackedPeerIds: [] });
+        expect(fixture.sockets['peer-4']!.sent.filter((sent) => sent.payload.typeId === 'chat.message.v1')).toEqual([]);
     });
 
     it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
@@ -1063,6 +1095,15 @@ const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspac
 interface AudienceRouterFixture {
     readonly router: RallarServerWsRouter;
     readonly sockets: Readonly<Record<string, RouterIngressWebSocket>>;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+}
+
+interface AudienceRouterInput {
+    readonly admittedSessionIds: readonly string[];
+    readonly currentSessionIds: readonly string[];
+    readonly disconnectedSessionIds: readonly string[];
+    /** `outbox`: the room topic leaves through the server's own outbound owner, to every session connected here. */
+    readonly fanout: 'live-only' | 'outbox';
 }
 
 /**
@@ -1070,24 +1111,25 @@ interface AudienceRouterFixture {
  * later authorization, which the route makes at dispatch, sees `currentSessionIds`, and by then the
  * sockets of `disconnectedSessionIds` have closed.
  */
-function createAudienceRouter(
-    admittedSessionIds: readonly string[],
-    currentSessionIds: readonly string[],
-    disconnectedSessionIds: readonly string[] = []
-): AudienceRouterFixture {
+function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture {
+    const { admittedSessionIds, currentSessionIds, disconnectedSessionIds } = input;
     const server = new JsonWebSocketServer();
-    const sockets = Object.fromEntries(['peer-1', 'peer-2', 'peer-3'].map((sessionId) => [sessionId, new RouterIngressWebSocket()]));
+    const sockets = Object.fromEntries(
+        ['peer-1', 'peer-2', 'peer-3', 'peer-4'].map((sessionId) => [sessionId, new RouterIngressWebSocket()])
+    );
     for (const [sessionId, socket] of Object.entries(sockets)) {
         server.addConnection(new ConnectionContext({ id: sessionId, socket }));
     }
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
-        outbox: new InMemoryQueueBox(new Map()),
+        outbox: outboundStores.workQueue,
+        outboundStores,
         socket: server,
         name: 'server-1',
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
-            resolveBroadcastRecipients: () => []
+            resolveBroadcastRecipients: () => input.fanout === 'outbox' ? Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId })) : []
         }
     });
     onTestFinished(() => service.dispose());
@@ -1112,8 +1154,8 @@ function createAudienceRouter(
             };
         }
     });
-    router.install();
-    return { router, sockets };
+    router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
+    return { router, sockets, outboundStores };
 }
 
 function createReceiverRoomBroadcast(resourceId: string): ALMessage {

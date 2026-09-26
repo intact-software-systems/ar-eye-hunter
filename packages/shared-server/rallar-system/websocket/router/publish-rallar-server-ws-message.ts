@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
     hasALDeliveryDurableWork,
     type ALDeliveryAdmissionVerdict
@@ -37,7 +38,7 @@ export async function publishRallarServerWsMessage(
                 entries: []
             };
         case 'outbox': {
-            const result = await input.service.enqueueOutboxIfAbsent(input.message);
+            const result = await input.service.enqueueOutboxIfAbsent(toAdmittedAudienceMessage(input));
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
@@ -98,6 +99,32 @@ function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSessionIdsI
                 !targets.exceptPeerIds?.includes(sessionId) &&
                 (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
             );
+    }
+}
+
+/**
+ * An admitted room message leaves through the outbox carrying the sessions the live branch would address:
+ * the server's own outbound owner then sends to that audience and its pending row expects it, never the
+ * sessions that happen to be connected to the instance that dequeues it (D24, D43).
+ */
+function toAdmittedAudienceMessage(input: PublishRallarServerWsMessageInput): ALMessage {
+    const { message, audience, admittedPeerIds } = input;
+    if (audience === undefined || admittedPeerIds === undefined) {
+        return message;
+    }
+    const recipientPeerIds = resolveAuthorizedRoomSessionIds({
+        message,
+        audience,
+        admittedPeerIds,
+        nowEpochMs: input.nowEpochMs
+    });
+    switch (message.targets?.mode) {
+        case 'multicast':
+            return toALFrozenMulticastMessage(message, { recipientPeerIds, snapshotVersion: audience.snapshotVersion });
+        case 'broadcast':
+            return { ...message, targets: { ...message.targets, recipientPeerIds } };
+        default:
+            return message;
     }
 }
 

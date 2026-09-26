@@ -177,8 +177,9 @@ message deadline naming whom it counted. Every receipt row expires at the messag
 `AL_RECEIPT_DEADLINE_GRACE_MS`, however early the server observed it. A receipt row whose origin has no
 session on the instance that dequeues it is not settled by its first cluster publication: its send
 ([`WsQueueBoxServerClusterPublication`](../../services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts))
-publishes it again, each wait as long as the receipt has waited, until the origin has a session there or
-the row expires, so an origin that reconnects on any instance inside that window receives it. A `receiver` message addressed
+publishes it again, each wait as long as the receipt has waited and the last one a second before the row
+expires, until the origin has a session there or the row expires, so an origin that reconnects on any
+instance inside that window receives it. A `receiver` message addressed
 to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
 (D42) until a slice aggregates unicasts.
 
@@ -187,8 +188,23 @@ sends the room message and keeps a `receiver` pending row for it, keyed by the o
 (D38): the durable receipt. The aggregator is its one settlement authority. The server admits each
 terminal receipt it writes through the same receipt admission as the origin, so a `complete` receipt
 leaves that row complete and its `ack-timeout` stops retransmitting, on whichever instance claims it.
-A multicast that carries a frozen audience (`recipientPeerIds`, D24) is sent to that audience only and
-its pending row expects exactly it, never a session that joined after the freeze.
+That row is not the origin's kept final snapshot: once complete, the next `ack-timeout` deletes it,
+and nothing reads it after that. The router stamps the audience it admitted on the message it fans out
+(a multicast's frozen `recipientPeerIds` and `snapshotVersion`, a room broadcast's `recipientPeerIds`),
+so the server sends to that audience only and a `receiver` row expects exactly it, never a session that
+joined after admission (D24, D43). Running out of receipt-admission attempts is reported as a warning
+naming the message and its origin.
+
+Known limitations:
+
+- An origin whose socket was half-open when its receipt was written to it never gets that receipt; a
+  socket write counts as delivery.
+- Nothing tells the publishing instance that another one delivered a receipt, so a receipt whose origin
+  is connected elsewhere, or whose row another instance claimed first (the WS namespace is shared across
+  the cluster), is published until its row expires: 8 publications for a 30 s message, 26 for a 10 min
+  one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
+- On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
+  non-retryable, so a receipt row it claims stops being published.
 
 The origin admits a receipt through
 [`ALOutboundReceiptAdmission`](./control/al-outbound-receipt-admission.ts), not through control

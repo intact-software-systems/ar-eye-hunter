@@ -10,6 +10,7 @@ import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-co
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
     newALAckControlMessage,
+    newALReceiptControlMessage,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -50,8 +51,12 @@ describe('WS server receipt row across a cluster', () => {
         TestWebSocket.instances.length = 0;
     });
 
-    it('reaches an origin that reconnects on another instance inside the receipt window, and its handle reads acknowledged', async () => {
+    it.each([
+        ['just after the complete receipt was dequeued', 5_000],
+        ['at the deadline plus the receipt grace less five seconds', ROOM_MESSAGE_LIFETIME_MS + AL_RECEIPT_DEADLINE_GRACE_MS - 5_000]
+    ])('reaches an origin that reconnects on another instance %s, and its handle reads acknowledged', async (_moment, reconnectAfterMs) => {
         const clock = installClock();
+        const sentAtMs = clock.nowMs;
         const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
         const bus = createBridgeBus();
         const local = await createClusterInstance({ name: 'server', outbox, bus, publisherId: 'local' });
@@ -69,18 +74,17 @@ describe('WS server receipt row across a cluster', () => {
         await sockets.a.receiveClose(1001, 'origin went away');
         await local.service.acceptIncomingMessage(receiverAck('b', clock.nowMs), 'b');
         await local.service.acceptIncomingMessage(receiverAck('c', clock.nowMs), 'c');
-        for (let pass = 0; pass < 4; pass += 1) {
-            await local.engine.executeOnce();
-        }
-
+        await advanceClusterClock({ clock, instance: local, untilMs: sentAtMs + reconnectAfterMs, until: () => false });
         const reconnected = await connect(remote, 'a');
-        clock.nowMs += 5_000;
-        await expect.poll(async () => {
-            await local.engine.executeOnce();
-            return readSentReceipts(reconnected).map((receipt) => receipt.phase);
-        }).toContain('complete');
+        await advanceClusterClock({
+            clock,
+            instance: local,
+            untilMs: sentAtMs + ROOM_MESSAGE_LIFETIME_MS + AL_RECEIPT_DEADLINE_GRACE_MS,
+            until: () => readSentReceipts(reconnected).some((receipt) => receipt.phase === 'complete')
+        });
         await relayFrames(reconnected, origin);
 
+        expect(readSentReceipts(reconnected).map((receipt) => receipt.phase)).toContain('complete');
         expect(origin.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
             msgId: 'room-message-1',
             mode: 'receiver',
@@ -90,15 +94,34 @@ describe('WS server receipt row across a cluster', () => {
         });
     });
 
-    it('publishes a receipt again after as long as it has already waited, from one second up to the receipt grace', () => {
-        const receipt = receiverAck('b', 100_000);
+    it('publishes a receipt again after as long as it has already waited, and a last time just before it expires', () => {
+        const receipt = receiptMessage({ observedAtEpochMs: 100_000, expiresAtMs: 200_000 });
 
         expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 100_000)).toBe(1_000);
         expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 104_000)).toBe(4_000);
-        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 100_000 + 10 * AL_RECEIPT_DEADLINE_GRACE_MS))
-            .toBe(AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 150_000)).toBe(AL_RECEIPT_DEADLINE_GRACE_MS);
+        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 180_000)).toBe(19_000);
+        expect(toWsQueueBoxServerReceiptRepublishDelayMs(receipt, 199_000)).toBe(1_000);
     });
 });
+
+interface AdvanceClusterClockInput {
+    readonly clock: { nowMs: number; };
+    readonly instance: ClusterInstance;
+    readonly untilMs: number;
+    /** Stops early, at the moment the awaited delivery happened. */
+    readonly until: () => boolean;
+}
+
+/** Moves the clock in half-second steps, giving the instance's work every due turn on the way. */
+async function advanceClusterClock(input: AdvanceClusterClockInput): Promise<void> {
+    while (input.clock.nowMs < input.untilMs && !input.until()) {
+        input.clock.nowMs = Math.min(input.clock.nowMs + 500, input.untilMs);
+        for (let pass = 0; pass < 3; pass += 1) {
+            await input.instance.engine.executeOnce();
+        }
+    }
+}
 
 function installClock(): { nowMs: number; } {
     const clock = { nowMs: Date.now() };
@@ -220,6 +243,24 @@ function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
             observedAtEpochMs: nowMs
         }
     );
+}
+
+function receiptMessage(input: Readonly<{ observedAtEpochMs: number; expiresAtMs: number; }>): ALMessage {
+    return {
+        ...newALReceiptControlMessage(
+            { v: 2, msgId: 'receipt-complete', senderId: 'server', ts: input.observedAtEpochMs },
+            {
+                msgId: 'room-message-1',
+                originPeerId: 'a',
+                expectedRecipientPeerIds: ['b', 'c'],
+                confirmedRecipientPeerIds: ['b', 'c'],
+                snapshotVersion: SNAPSHOT_VERSION,
+                phase: 'complete',
+                observedAtEpochMs: input.observedAtEpochMs
+            }
+        ),
+        constraints: { expiresAtMs: input.expiresAtMs }
+    };
 }
 
 function readRoomMessageCopies(socket: SimulatedWebSocket): number {

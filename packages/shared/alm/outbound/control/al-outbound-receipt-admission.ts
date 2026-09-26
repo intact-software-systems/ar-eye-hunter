@@ -16,8 +16,10 @@ export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
 }
 
 /**
- * The origin's side of a server receipt: one conditional commit fenced on the origin's version. A
- * conflict starts a fresh read; the few attempts bound a receipt racing the origin's own writes.
+ * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
+ * an outbox-fanned message. One conditional commit fenced on the origin's version; a conflict starts a
+ * fresh read, and the few attempts bound a receipt racing the origin's own writes. Running out of them
+ * is reported, since the row then keeps waiting on acknowledgements the receipt already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
     private static readonly MAX_ATTEMPTS = 3;
@@ -34,7 +36,11 @@ export class ALOutboundReceiptAdmission<TPrepared> {
                 return result;
             }
         }
-        return { kind: 'rejected', reason: 'AL receipt kept conflicting with the origin version' };
+        const reason = 'AL receipt kept conflicting with the origin version';
+        console.warn(
+            `AL ${receipt.phase} receipt for ${receipt.msgId} of origin ${receipt.originPeerId} left its receipt row unmoved: ${reason}`
+        );
+        return { kind: 'rejected', reason };
     }
 
     private async admitOnce(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
