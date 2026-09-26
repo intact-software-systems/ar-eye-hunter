@@ -9,6 +9,7 @@ import type {
     RallarTypedWsSendOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { BrowserTypedChannelPolicy } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
@@ -39,13 +40,14 @@ export class BrowserTypedMessageChannels {
 
     private createChannel<T>(definition: RallarTypedMessageChannelDefinition): RallarTypedMessageChannel<T> {
         const route = { topicId: definition.topicId, typeId: definition.typeId };
+        const policy: BrowserTypedChannelPolicy = { purpose: definition.purpose, durability: definition.durability };
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
-                await this.input.sender.sendTyped({ ...options, ...route, payload }, definition),
+                await this.input.sender.sendTyped({ ...options, ...route, payload }, policy),
             sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
-                await this.input.sender.sendRtc({ ...options, ...route, payload }, definition),
+                await this.input.sender.sendRtc({ ...options, ...route, payload }, policy),
             sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
-                await this.input.sender.sendWs({ ...options, ...route, payload }, definition),
+                await this.input.sender.sendWs({ ...options, ...route, payload }, policy),
             onRtc: (handler) =>
                 this.input.rtc.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);

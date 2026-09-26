@@ -8,7 +8,11 @@ import {
 } from 'vitest';
 
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import {
+    createRallarFacade,
+    type RallarRoomMessageChannelDefinition,
+    type RallarTypedMessageChannelDefinition
+} from '@shared-web/browser/rallar.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -492,6 +496,37 @@ describe('Rallar typed message channel', () => {
                     ]
                 })
             );
+    });
+
+    it('fixes the channel policy at creation, so a definition changed afterwards changes nothing', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const facade = createFacade();
+        const channelDefinition: RallarTypedMessageChannelDefinition = {
+            topicId: 'room.command',
+            typeId: 'room.command.v1',
+            purpose: 'command'
+        };
+        const roomDefinition: RallarRoomMessageChannelDefinition = {
+            topicId: 'room.command',
+            typeId: 'room.command.v1',
+            roomId: 'room-1',
+            purpose: 'command',
+            durability: 'local-outbox'
+        };
+        const channel = facade.messages.channel<ChatMessage>(channelDefinition);
+        const room = facade.messages.room<ChatMessage>(roomDefinition);
+        // A JavaScript caller can write anything onto the object it passed in.
+        Object.assign(channelDefinition, { purpose: 'notification' });
+        Object.assign(roomDefinition, { purpose: 'bogus', durability: 'forever' });
+
+        await channel.sendRtc({ text: 'channel' }, { roomId: 'room-1', resourceId: 'purpose-fixed-1' });
+        await room.sendRtc({ text: 'room' }, { resourceId: 'purpose-fixed-2' });
+
+        const [channelMessage, roomMessage] = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(channelMessage.delivery?.ack).toBe('receiver');
+        expect(channelMessage.qos?.durability).toEqual({ algo: 'volatile' });
+        expect(roomMessage.delivery?.ack).toBe('receiver');
+        expect(roomMessage.qos?.durability).toEqual({ algo: 'local-outbox' });
     });
 
     it('retires the realtime send strategy', async () => {

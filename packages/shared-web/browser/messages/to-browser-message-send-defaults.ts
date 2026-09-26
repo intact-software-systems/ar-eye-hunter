@@ -1,10 +1,16 @@
-import type {
-    RallarMessageSendBase,
-    RallarTypedMessageChannelDefinition
-} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageSendBase } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
-import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import {
+    resolveALChannelSendDefaults,
+    type ALChannelPurpose
+} from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
+
+/** A typed channel's send policy, copied once from its validated definition when the channel is created. */
+export interface BrowserTypedChannelPolicy {
+    readonly purpose: ALChannelPurpose;
+    readonly durability: ALDurabilityAlgo | undefined;
+}
 
 export interface BrowserMessageSendDefaults {
     readonly ttlMs: number;
@@ -16,7 +22,7 @@ export interface BrowserMessageSendDefaults {
 export interface ToBrowserMessageSendDefaultsInput {
     readonly send: Pick<RallarMessageSendBase<never>, 'ttlMs' | 'reliability' | 'ack' | 'qos'>;
     /** Undefined for a lane send (`messages.rtc.send`, `messages.ws.send`), which keeps today's defaults. */
-    readonly channel: RallarTypedMessageChannelDefinition | undefined;
+    readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly hasLogicalAudience: boolean;
     readonly laneTtlMs: number;
 }

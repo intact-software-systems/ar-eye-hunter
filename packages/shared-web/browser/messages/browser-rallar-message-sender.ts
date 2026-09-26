@@ -5,11 +5,13 @@ import type {
 import type {
     RallarMessageHandle,
     RallarRtcSendInput,
-    RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendStrategy,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { toBrowserMessageSendDefaults } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
+import {
+    toBrowserMessageSendDefaults,
+    type BrowserTypedChannelPolicy
+} from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     newALRoute,
@@ -42,7 +44,7 @@ interface CreateWsMessageInput<T> {
     readonly room: string | GroupRef | undefined;
     readonly payloadValidation: CapturedMessagePayload;
     readonly session: AuthSession;
-    readonly channel: RallarTypedMessageChannelDefinition | undefined;
+    readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
 interface CreateRtcMessageInput<T> {
@@ -50,7 +52,7 @@ interface CreateRtcMessageInput<T> {
     readonly payloadValidation: CapturedMessagePayload;
     readonly target: ResolvedRtcMessageTarget;
     readonly session: AuthSession;
-    readonly channel: RallarTypedMessageChannelDefinition | undefined;
+    readonly channel: BrowserTypedChannelPolicy | undefined;
 }
 
 export namespace BrowserRallarMessageSender {
@@ -134,7 +136,7 @@ export class BrowserRallarMessageSender {
 
     public async sendRtc<T>(
         input: RallarRtcSendInput<T>,
-        channel: RallarTypedMessageChannelDefinition | undefined
+        channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const target = this.resolveRtcMessageTarget(input, []);
         const payloadValidation = this.capturePayload(input.payload);
@@ -157,7 +159,7 @@ export class BrowserRallarMessageSender {
 
     public async sendWs<T>(
         input: RallarWsSendInput<T>,
-        channel: RallarTypedMessageChannelDefinition | undefined
+        channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const room = input.roomRef ??
             input.roomId ??
@@ -192,7 +194,7 @@ export class BrowserRallarMessageSender {
 
     public async sendTyped<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
-        channel: RallarTypedMessageChannelDefinition | undefined
+        channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         switch (input.strategy ?? 'rtc-with-ws-fallback') {
             case 'ws':
@@ -215,7 +217,7 @@ export class BrowserRallarMessageSender {
     private async sendRoomWithFallback<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
         firstCarrier: 'rtc' | 'ws',
-        channel: RallarTypedMessageChannelDefinition | undefined
+        channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const target = this.resolveRtcMessageTarget(input, validateRoomFallbackInput(input));
         throwIfMessageIssues(
