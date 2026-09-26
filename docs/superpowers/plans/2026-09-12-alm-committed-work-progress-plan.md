@@ -1877,6 +1877,46 @@ weakening current room authorization, frozen audiences, receipts, or lease check
 failure is explicitly classified. No runtime behavior change is selected by this
 fixture diagnosis alone.
 
+## Current execution after the retained E3-memory failure (2026-09-27)
+
+The current PR #566 source incorporated approved strict browser bundle ceilings
+`<221 KiB` for the facade and `<282 KiB` for headless, plus a test-only wait for
+committed ordinary-ordered receiver work. One fresh E3-memory `retention-100`
+warmup on the preceding source `140c549977fdfa6e3ef1f275a72f318bf282a9fa`
+failed at reconnect cycle 43 after preserving checkpoints 0, 10, 20, 30 and
+40. It was recorded as the first failed result, not a valid RTC-B06 primary or
+a cycle-100 memory verdict. Its truncated control-event tail cannot prove that
+an absent event never ran.
+
+The retained trace showed C's current answer admitted but its native
+`setRemoteDescription` attempt still unsettled after the peer timeout and
+close. The existing peer owner now settles callers awaiting retired native
+signaling on reset, and its pre-existing peer-identity guard protects
+replacement state from late completion. Focused unit and Chromium tests,
+deterministic cancellation/identity-guard mutations, and independent reviews
+support this correction; they do not establish the 100-cycle outcome. No new
+QueueBox, retry, admission fence, lock, timer, dependency, migration or legacy
+path was introduced.
+
+The next two concrete slices are:
+
+1. Finish isolated whole-branch validation and publish the reviewed commits in
+   the existing draft PR. Investigate any exact failing test before changing
+   behavior; do not rebase merely because `main` has moved while GitHub still
+   reports the PR mergeable.
+2. Bound the browser-control polling cost before another long retention run.
+   The current client polls growing whole-run snapshots for each command and
+   the previous reconnect intervals increased with cycle count; this is a
+   plausible performance explanation, **not a measured cause**. Measure the
+   existing path under representative result counts and select only a focused
+   correction supported by those timings. Preserve the 100 cycles, original
+   deadlines and failure recording. If polling is not material, do not change
+   it; proceed to one fresh source-labelled RTC-B06 observation and retain its
+   first outcome.
+
+No later E4/ranking or Phase 1 completion can be claimed from the failed E3
+attempt. The long capture remains required after these two slices.
+
 ## Later outcomes, not additional speculative implementation slices
 
 - Prove actual data-channel readiness, existing ALM conformance, ordinary RTC
