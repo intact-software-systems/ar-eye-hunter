@@ -80,6 +80,7 @@ import {
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
+import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 import {
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
@@ -475,6 +476,11 @@ export class WebRtcOverlayMulticastManager {
         msg: ALMessage
     ): OverlayMulticastDispatchPlan {
         const handlingPlan = this.planIncomingMessage(msg);
+        const visitedPeerIds = toRtcTransportVisitedPeerIds({
+            visitedPeerIds: msg.diagnostics?.visitedPeerIds,
+            selfPeerId: this.connectionService.input.sessionId,
+            nextHopPeerIds: handlingPlan.forwarding.nextHopPeerIds
+        });
 
         return {
             handlingPlan,
@@ -485,7 +491,8 @@ export class WebRtcOverlayMulticastManager {
                 forwarding: {
                     ...msg.forwarding,
                     nextHopPeerIds: [peerId]
-                }
+                },
+                diagnostics: { ...msg.diagnostics, visitedPeerIds }
             }))
         };
     }
@@ -866,6 +873,14 @@ export class WebRtcOverlayMulticastManager {
                     forwarding: {
                         ...msg.forwarding,
                         nextHopPeerIds: [peerId]
+                    },
+                    diagnostics: {
+                        ...msg.diagnostics,
+                        visitedPeerIds: toRtcTransportVisitedPeerIds({
+                            visitedPeerIds: msg.diagnostics?.visitedPeerIds,
+                            selfPeerId: this.connectionService.input.sessionId,
+                            nextHopPeerIds: [peerId]
+                        })
                     }
                 })
             ],

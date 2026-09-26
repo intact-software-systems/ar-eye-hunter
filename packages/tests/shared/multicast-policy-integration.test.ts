@@ -112,7 +112,8 @@ describe('multicast QoS integration', () => {
             if (authority === 'current') {
                 expect(connectionService.sendByPeerId.get('peer-2')?.[0]).toMatchObject({
                     constraints: { ttlHops: 2 },
-                    diagnostics: { visitedPeerIds: ['self'] }
+                    // The copy names its sender and the hops this dispatch addresses (R-S2c-ii-8).
+                    diagnostics: { visitedPeerIds: ['self', 'peer-2'] }
                 });
             }
         }
@@ -242,7 +243,8 @@ describe('multicast QoS integration', () => {
         expect(plan.transportMessages[0].constraints?.ttlHops).toBe(1);
         expect(plan.transportMessages[0].diagnostics?.visitedPeerIds).toEqual([
             'peer-3',
-            'self'
+            'self',
+            'peer-2'
         ]);
         expect(plan.transportMessages[0].forwarding?.nextHopPeerIds).toEqual([
             'peer-2'
