@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import {
     describe,
     expect,
@@ -22,7 +23,11 @@ import type {
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestWaitMatch
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -42,6 +47,8 @@ interface ManifestCommand {
     }>;
     readonly count?: number;
     readonly ack?: string;
+    readonly request?: Readonly<{ method?: string; path?: string; }>;
+    readonly handleId?: string;
     readonly qos?: Readonly<{ ack?: Readonly<{ algo?: string; }>; }>;
     readonly durationMs?: number;
     readonly intervalMs?: number;
@@ -147,6 +154,20 @@ function toManifestCommands(manifest: RallarBlackBoxDistributedRunManifest): rea
     return manifest.recipes.flatMap((selection) => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
 }
 
+/**
+ * `match` is shadowed when an event that satisfies `other` always satisfies it too: every other criterion is the same,
+ * its `contains` is a substring of the other's, and its `equals` is the other's.
+ */
+function isWaitMatchShadowedBy(match: RallarBlackBoxTestWaitMatch, other: RallarBlackBoxTestWaitMatch): boolean {
+    const otherFields = new Map(Object.entries(other));
+    return Object.entries(match).every(([field, value]) => {
+        const otherValue = otherFields.get(field);
+        return field === 'contains'
+            ? typeof otherValue === 'string' && otherValue.includes(String(value))
+            : otherValue !== undefined && isDeepStrictEqual(value, otherValue);
+    });
+}
+
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {
         const catalog = createHetznerDistributedManifestCatalog();
@@ -184,7 +205,8 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
-            'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
+            'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
         ]);
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -239,6 +261,14 @@ describe('Hetzner distributed manifest catalog', () => {
                     { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
                 ]);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
+            }
+            else if (entry.filePath.endsWith('/22-alm-conformance-3-agent.json')) {
+                expect(manifest.targetPolicy).toMatchObject({
+                    mode: 'role-map',
+                    expectedParticipantCount: 3,
+                    roles: { sender: ['controller-01'], receiver: ['controller-02'], 'recipient-b': ['controller-03'] }
+                });
+                expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver', 'recipient-b']);
             }
             else if (
                 entry.filePath.includes('rtc-messages-principal-') ||
@@ -1044,6 +1074,75 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
+    it('adds the ALM conformance 3-agent manifest with one sender and two recipients, pinning each receipt (D45)', () => {
+        const entry = createHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'));
+
+        expect(entry?.agentCount).toBe(3);
+        expect(entry?.mainline).toBe(false);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
+        expect(entry?.manifest.metadata).toMatchObject({ family: 'alm-conformance', scenarios: ['receipted-audience'] });
+        const sender = entry?.manifest.recipes.find((selection) => selection.role === 'sender')?.recipe;
+        // An empty checkpoint list would read as a paired reload run of two roots, which the control server refuses.
+        expect(sender?.metadata).not.toHaveProperty('almReloadCheckpoints');
+        const pinnedHandles = (sender?.metadata?.almReceiptRoles as readonly Readonly<{ handleId: string; }>[] | undefined)
+            ?.map((pin) => pin.handleId);
+        expect(pinnedHandles).toEqual([
+            'alm-ws-aggregated-receipt-send-1',
+            'alm-ws-missing-recipient-retry-send-1',
+            'alm-ws-frozen-audience-membership-send-1',
+            ...['rtc', 'rtc-with-ws-fallback'].flatMap((carrier) =>
+                ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+                    .map((key) => `alm-${carrier}-${key}-send-1`)
+            )
+        ]);
+    });
+
+    it('leaves no positive wait of the 3-agent ALM recipes matchable by an event another wait awaits, since a wait also matches past events', () => {
+        const manifest = createHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'))!.manifest;
+        for (const selection of manifest.recipes) {
+            const matches = ((selection.recipe?.commands ?? []) as readonly (ManifestCommand & { absent?: boolean; match?: RallarBlackBoxTestWaitMatch; })[])
+                .filter((command) => command.kind === 'wait' && command.absent !== true)
+                .map((command) => command.match ?? {});
+            const shadowed = matches.filter((match, index) => matches.some((other, otherIndex) => otherIndex !== index && isWaitMatchShadowedBy(match, other)));
+
+            expect(shadowed, selection.role).toEqual([]);
+        }
+    });
+
+    it('reads a wait as shadowed when every event another wait awaits also satisfies it', () => {
+        const topic = 'rallar.browser.alm.inbound_diagnostics';
+        const refusal: RallarBlackBoxTestWaitMatch = { kind: 'diagnostic', topic, contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"' };
+
+        expect(isWaitMatchShadowedBy({ ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' }, refusal)).toBe(true);
+        expect(isWaitMatchShadowedBy({ kind: 'diagnostic', topic }, refusal)).toBe(true);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [1] } })).toBe(true);
+        expect(isWaitMatchShadowedBy(refusal, { ...refusal, contains: '"carrier":"rtc","outcome":"rejected"' })).toBe(false);
+        expect(isWaitMatchShadowedBy({ ...refusal, topic: 'other' }, refusal)).toBe(false);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event', equals: { n: [2] } })).toBe(false);
+        expect(isWaitMatchShadowedBy({ kind: 'event', equals: { n: [1] } }, { kind: 'event' })).toBe(false);
+    });
+
+    it('keeps every identity of the 3-agent ALM manifest apart from the 2-agent one, so both can run in one profile', () => {
+        const catalog = createHetznerDistributedManifestCatalog();
+        const identitiesOf = (fileName: string) => {
+            const manifest = catalog.find((candidate) => candidate.filePath.endsWith(fileName))!.manifest;
+            return new Set([
+                ...manifest.recipes.map((selection) => selection.recipe?.recipeId ?? ''),
+                ...toManifestCommands(manifest).flatMap((command) => [
+                    command.commandId ?? '',
+                    ...(command.kind === 'http.request' ? [JSON.stringify(command.request)] : []),
+                    ...(command.handleId === undefined ? [] : [command.handleId])
+                ])
+            ]);
+        };
+        const threeAgent = identitiesOf('/22-alm-conformance-3-agent.json');
+        const shared = [...identitiesOf('/18-alm-conformance-2-agent.json')].filter((identity) => threeAgent.has(identity));
+
+        expect(shared).toEqual([]);
+    });
+
     it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
         const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
@@ -1097,9 +1196,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 
-        // Until the RTC overlay tracks logical receipts, the rtc and fallback recipes' receiver sends ask for hop by
-        // name (the fallback recipe's cross-carrier envelope included, whichever carrier it starts on); the WS recipes
-        // keep receiver.
+        // The RTC overlay tracks logical receipts, so every carrier's receiver send asks for receiver by its own name.
         const receiverSends = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'messages.send' && command.ack === 'receiver');
         const algoByCarrier = (carrier: string) => [
@@ -1111,9 +1208,9 @@ describe('Hetzner distributed manifest catalog', () => {
                     .map((command) => command.qos?.ack?.algo)
             )
         ];
-        expect(algoByCarrier('ws')).toEqual([undefined]);
-        expect(algoByCarrier('rtc')).toEqual(['hop']);
-        expect(algoByCarrier('rtc-with-ws-fallback')).toEqual(['hop']);
+        for (const carrier of ['ws', 'rtc', 'rtc-with-ws-fallback']) {
+            expect(algoByCarrier(carrier), carrier).toEqual([undefined]);
+        }
     });
 
     it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {

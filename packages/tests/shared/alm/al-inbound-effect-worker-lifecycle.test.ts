@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     planALMessageHandling,
@@ -553,7 +553,7 @@ describe('inbound durable effect worker lifecycle', () => {
         releaseSend.resolve();
     });
 
-    it('leaves retained control work unclaimed when the acknowledgement it admitted wrote no row', async () => {
+    it('announces the upward ACK an acknowledgement writes even when it completes nothing', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: new InboxOutboxEngine(),
@@ -604,8 +604,8 @@ describe('inbound durable effect worker lifecycle', () => {
             'chat',
             {}
         );
-        // Two peers owe this obligation, so one peer's acknowledgement completes none of it and the
-        // commit that admits it moves the acknowledgement history and writes no work row.
+        // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
+        // passes the recipient it names upward at once, and that row is work the commit announces.
         await seedTrackedAcknowledgement(resources.admissionStore, tracked, ['sender', 'second-peer']);
         const ack = newALAckControlMessage({ v: 2, msgId: 'partial-ack', ts: 1, senderId: 'sender' }, {
             ackedMsgId: tracked.id.msgId,
@@ -623,8 +623,12 @@ describe('inbound durable effect worker lifecycle', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(acceptance.right).toEqual({ kind: 'control', handled: true });
-        expect(controls).toEqual([]);
-        expect((await resources.workQueue.getItem(forwarded.entry.key))?.status).toBe(EntityStatus.NEW);
+        await expect.poll(() =>
+            controls.map((control) => {
+                const parsed = parseALControlMessage(control);
+                return parsed?.type === 'ack' ? [parsed.payload.logicalRecipientPeerId, parsed.payload.status] : [];
+            }).toSorted()
+        ).toEqual([['receiver', 'accepted'], ['sender', 'forwarded']]);
     });
 
     it('leaves retained work unclaimed when the conflicted admission it retained had already expired', async () => {
@@ -1177,7 +1181,6 @@ async function seedTrackedAcknowledgement(
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
-                    localRecipient: false,
                     expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
                     expireAtTimestamp,

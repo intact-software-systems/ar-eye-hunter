@@ -33,6 +33,8 @@ export interface ALOutboundCapturedPolicy {
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
+    /** Kept only for a message a server admitted to an audience; absent for every other message. */
+    readonly admittedAudience?: readonly string[];
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -41,8 +43,27 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         ackTracking: plan.ackTracking ?? null,
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
-        supersedenceTracking: plan.supersedenceTracking ?? null
+        supersedenceTracking: plan.supersedenceTracking ?? null,
+        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience })
     };
+}
+
+/**
+ * A sent message keeps the policy of its first dispatch, except the next hops of its acknowledgement: a
+ * retry that re-plans the receipt records the hops of the local view it planned over, so a settlement
+ * names the hops of the latest tree, never those of a tree that has changed since.
+ */
+export function toALOutboundSentPolicy<TPrepared>(
+    stored: ALOutboundCapturedPolicy | undefined,
+    plan: ALOutboundDispatchPlan<TPrepared>
+): ALOutboundCapturedPolicy {
+    if (stored === undefined) {
+        return captureALOutboundPolicy(plan);
+    }
+    const tracking = plan.ackTracking;
+    return tracking?.expectedPeerIdsUpdate === 'replace' && stored.ackTracking
+        ? { ...stored, ackTracking: { ...stored.ackTracking, nextHopPeerIds: tracking.nextHopPeerIds } }
+        : stored;
 }
 
 export function applyALOutboundCapturedPolicy<TPrepared>(
@@ -56,12 +77,14 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
             ? {
                 ...policy.ackTracking,
                 expectedPeerIds: plan.ackTracking?.expectedPeerIds ?? [],
-                expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate
+                expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
+                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? []
             }
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
         repairTracking: policy.repairTracking ?? undefined,
-        supersedenceTracking: policy.supersedenceTracking ?? undefined
+        supersedenceTracking: policy.supersedenceTracking ?? undefined,
+        admittedAudience: policy.admittedAudience
     };
 }
 
@@ -97,7 +120,8 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ]);
+    ], ['admittedAudience']);
+    requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (typeof policy.persist !== 'boolean') {
         throw new TypeError('Captured outbound persistence policy is invalid');
     }
@@ -107,6 +131,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             'timeoutMs',
             'maxAttempts',
             'expectedPeerIds',
+            'nextHopPeerIds',
             'mode'
         ], ['expectedPeerIdsUpdate']);
         requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
@@ -116,6 +141,10 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
             throw new TypeError('Captured acknowledgement peers are missing');
         }
         requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
+        if (!Array.isArray(ack.nextHopPeerIds)) {
+            throw new TypeError('Captured acknowledgement next hops are missing');
+        }
+        requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
         if (
             ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
             ack.expectedPeerIdsUpdate !== 'replace'

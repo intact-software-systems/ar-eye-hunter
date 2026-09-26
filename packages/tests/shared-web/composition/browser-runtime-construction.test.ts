@@ -115,6 +115,9 @@ describe('browser runtime construction', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['second-hop'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['second-hop'],
+            confirmedRecipientPeerIds: ['second-hop'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
         expect(secondHandle.lifecycle().state).toBe('acknowledged');
@@ -126,6 +129,9 @@ describe('browser runtime construction', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['first-hop'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['first-hop'],
+            confirmedRecipientPeerIds: ['first-hop'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
         expect(firstHandle.lifecycle().state).toBe('acknowledged');
@@ -155,6 +161,9 @@ describe('browser runtime construction', () => {
                 mode: 'hop',
                 confirmedHopPeerIds: ['sibling-hop'],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['sibling-hop'],
+                confirmedRecipientPeerIds: ['sibling-hop'],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             });
             return runtime.middleware.middleware;
@@ -217,6 +226,9 @@ describe('browser runtime construction', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['stale'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['stale'],
+            confirmedRecipientPeerIds: ['stale'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
         expect(handle.lifecycle().state).toBe('queued');
@@ -229,6 +241,9 @@ describe('browser runtime construction', () => {
                 mode: 'hop',
                 confirmedHopPeerIds: ['current'],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['current'],
+                confirmedRecipientPeerIds: ['current'],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             });
             expect(handle.lifecycle().state).toBe('acknowledged');
@@ -270,6 +285,9 @@ describe('browser runtime construction', () => {
                 mode: 'hop',
                 confirmedHopPeerIds: ['current'],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['current'],
+                confirmedRecipientPeerIds: ['current'],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             });
             return runtime.middleware.middleware;
@@ -300,6 +318,9 @@ describe('browser runtime construction', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['failed'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['failed'],
+            confirmedRecipientPeerIds: ['failed'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
         expect(handle.lifecycle().state).toBe('queued');
@@ -312,6 +333,9 @@ describe('browser runtime construction', () => {
                 mode: 'hop',
                 confirmedHopPeerIds: ['retry'],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['retry'],
+                confirmedRecipientPeerIds: ['retry'],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             });
             return runtime.middleware.middleware;

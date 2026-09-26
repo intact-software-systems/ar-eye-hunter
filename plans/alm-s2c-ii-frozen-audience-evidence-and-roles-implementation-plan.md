@@ -46,6 +46,14 @@ list, maintainer-reviewed landing), plus:
   `messages.receipts`.
 - The three-agent run and manifest exist only for scenarios that declare three roles; two-agent
   scenarios keep the exactly-one-sender-one-receiver identity rule (D45).
+- Starts from merged `main` 786ced4ff (S2c-i, #591). The dead-RTC-peer fix on `claude/rtc-stale-peer-redial`
+  (a maintainer session) merges in through the base-branch sync when it lands; it touches
+  `web-rtc-connection-service.ts`, which no S2c-ii task edits.
+- `receiver` on a WS unicast stays refused `unsupported` (D42): no product consumer sends one, and
+  aggregating unicasts is out of scope until one does.
+- Acceptance and the hosted read follow D51: the local full lanes on normal pages plus the both-normal
+  hosted smoke are the acceptance evidence; the hosted full read is attempted at most twice and
+  reported, never a blocker.
 
 ### Carried from S2c-i
 
@@ -54,47 +62,106 @@ to settle or to route to the maintainer:
 
 - **A multi-level relay loses its deeper recipients.** A relay's pending row completes on its last
   child's first ACK, so recipients below a child relay are lost. The S2c-ii RED must include a relay
-  that is itself a recipient (M7 emits the relay itself at index 0).
+  that is itself a recipient (M7 emits the relay itself at index 0). **Landed: Task 2 (10b3c03bb,
+  c91fd3197) — a relay forwards each far ACK as it arrives and ends with its own `subtree-complete`
+  (R-S2c-ii-3, R-S2c-ii-4).**
 - **The overlay manager's receipt mode.** `mode: effective.ack.algo` over next-hop `expectedPeerIds` is
   correct only while RTC refuses `receiver`; Task 1's frozen audience must change the pair together.
+  **Landed: Task 1 (514c440d1, 2bf752ddf) — under `receiver` the origin's row expects the frozen
+  recipients; `hop` and `subtree` keep next hops.**
 - **The outbox-planner audience change and the D38 durable-row receipt** (R-S2c-i-3): S2c-i aggregates
   in memory per instance only; the durable receipt row moves here, where the frozen audience rides the
-  targets (D24).
+  targets (D24). **Settled: D48 → Task 2b. Landed: be4b745b9, db8e878e7 (the audience rides beside
+  the message as `admittedAudience`).**
 - **Ordering on relayed broadcasts** (maintainer design question): whether the WS server should gate
   ordering on broadcasts it only relays. Today it keeps its own ordering track and NACKs the sender
-  (R-S2c-i-4).
+  (R-S2c-i-4). **Settled: D49 — the gate stays; no task, no code.**
 - **An admitted `resync-required` NACK does nothing at the sender.** No outbound code acts on it, so a
-  handle stays admitted for a message the relay dropped — a receipt-contract gap.
+  handle stays admitted for a message the relay dropped — a receipt-contract gap. **Settled: D50 →
+  Task 3 (evidence only). Landed: 7ee546efe, 7dd902db8 (R-S2c-ii-5, R-S2c-ii-5a).**
 - **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
-  settlement.
-- **The RTC breaker counts `refused/unsupported` as failure.**
+  settlement. **→ Task 3 (R-S2c-ii-0). Landed: 7ee546efe (the `carrier-refused` attempt row).**
+- **The RTC breaker counts `refused/unsupported` as failure.** **→ Task 2 (R-S2c-ii-0). Landed:
+  10b3c03bb, 3f9ee87d7 (`is-rtc-enqueue-breaker-success.ts`).**
 - **The receipt admission is invisible in diagnostics.** The origin's receipt admission emits no
   `control-admission` event, so a refused receipt leaves no trace. Emit it from
   `ALOutboundReceiptAdmission`: give it the `diagnostics` sink, and have `acceptReceipt` take the
   control message so the event carries the control's own `msgId`, with `targetMsgId` = the receipt's
-  `msgId`. Then update `runtime-diagnostic-contract.md`.
+  `msgId`. Then update `runtime-diagnostic-contract.md`. **→ Task 3 (R-S2c-ii-0). Landed: 7ee546efe
+  (`write-al-outbound-control-admission-diagnostic.ts`), documented in the diagnostic contract.**
 - **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
-  stop being refused `unsupported` (D42, S2c-i Task 4).
+  stop being refused `unsupported` (D42, S2c-i Task 4). **Settled: stays refused (Global Constraints);
+  no code.**
 - **Outbox-fanned `receiver` messages keep retransmitting after `complete`** (final review m2; pre-existing on
   8d98a7d6f). In the production outbox fan-out mode (`forwardsRoomScopedMessages: false`) the server's own
   outbound runtime writes a `receiver`-mode pending row and `ack-timeout` work for the room message, but
   the receivers' ACKs feed the aggregator, never that row, so `b` and `c` keep receiving retransmissions
   after the origin's receipt reads `complete`. Suppress the dequeue-time pending row for aggregated room
   messages or let the aggregator feed it, and extend the Task 4 pin ("answers an outbox-fanned receiver
-  message with one complete row") to advance past the ack timeout.
+  message with one complete row") to advance past the ack timeout. **→ Task 2b (D48). Landed: be4b745b9 — the
+  aggregator feeds the server's own row, so its `ack-timeout` stops at `complete`.**
 - **Receipt redelivery to a reconnecting origin in a cluster** (final review m3). The receipt row's
   deadline + grace expiry keeps it deliverable on a single instance (a no-route dequeue retries); with a
   cluster publisher the dequeue publishes once as `cluster-local-complete`, so an origin disconnected at
-  that moment never gets the receipt. Belongs with the D38 durable receipt.
+  that moment never gets the receipt. Belongs with the D38 durable receipt. **→ Task 2b (D48). Landed:
+  be4b745b9, d2c48626a — republished until one second before the row expires; the remaining limits
+  are listed in the outbound README.**
 - **The aggregate map's next-deadline scan** (final review m1, remainder): the server now caps an
   aggregate at `WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS`, but `deleteAggregate` still rescans the map for
   the next deadline whenever an aggregate leaves (O(n) per completing ACK); a sorted deadline index removes it.
+  **→ Task 2b (R-S2c-ii-0). Landed: be4b745b9 (`ws-queue-box-server-receipt-deadline-index.ts`).**
 - **Task 2c readiness notes** (informational): the harness's room-wait retry leaves
   `roomRefreshAttempts`/`roomRefreshSuccesses` at 1 however many retries ran, and the split readiness
   files import each other's types (a type-only cycle). The product defect behind the retry stays with the
-  maintainer (next item).
+  maintainer (next item). **Not addressed in S2c-ii; still informational, for the next harness slice.**
 - **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
-  ~835 and 878–918; a maintainer task chip).
+  ~835 and 878–918; a maintainer task chip). **Not S2c-ii's: the maintainer's a4b4e7233 (a fresh peer
+  for a closed SCTP association) is in this branch's base, and a hosted rtc smoke on this branch still
+  showed a reconnect readiness race (run 36206031954); carried out below.**
+
+### Carried out of S2c-ii
+
+Recorded by S2c-ii's execution, for the maintainer or a later slice:
+
+- **Scenario 5 and a harness-pinnable relay** (R-S2c-ii-10): under `tree` the middle of a three-session
+  path is a hash of the session ids, and only the group owner can override the topology; a harness
+  that can place a relay lets `receiver-distinct-from-hop` run.
+- **Publishing `nextHopsBySessionId` to browsers** (R-S2c-ii-3): a true tree would let the origin's
+  retry stop over-approximating while several relay hops are outstanding.
+- **A topology-config bound for the visited cap** (R-S2c-ii-8a/8c): the 64-entry cap is pinned against
+  today's overlay degree limit only; a configured degree above it costs redundant relays.
+- **Measuring the RTC per-copy byte cost and the relay-row retention**: the visited list's ~117 B /
+  ~2.5 KB per copy is an estimate, and the relay row stays until the message expires.
+- **The `acknowledgement-under-transport-hold` wall-clock flake**: recorded, not diagnosed.
+- **The stale-snapshot reopen** (Task 6 review): `onSnapshot` has no revision check, so a stale active
+  snapshot can reopen an ended match; pre-existing, and Task 6 makes it no likelier.
+- **A durable `tests/playwright` tsconfig in `npm run typecheck`**: the Playwright specs are type-checked
+  by nothing today.
+- **The receipt-less RTC send refusing its receiver hop's NACK** (R-S2c-ii-5a): the NACK arrives from a
+  `peer` source, and the trusted-relay rule covers only the server.
+- **Cluster delivery ignores the outbox audience** (Task 2b re-review N2-m1): with the pub/sub bridge
+  registered every instance delivers a dequeued room message to the room's current sessions; stated as
+  a known limitation in the outbound README.
+- **The dead-RTC-peer reconnect race** (the maintainer's chip, PR #593).
+- **The RTC heartbeat frames reaching AL admission** (Task 7 diagnosis): the rx streamer should skip
+  `type === 'ping'` frames before admission and log the decoder reason beside the code — the
+  `Rejected RTC message malformed` noise (on main too) would hide a real frozen-audience rejection.
+- **A lane cell failing loudly when a page's events go silent while its stats continue** (Task 7
+  diagnosis): a hot reload of the served page stopped the event capture and produced a false
+  "acknowledged with 0 received" shape.
+- **Under `subtree`, a lost terminal ACK from a hop that is still present is never recovered** (round-2
+  review, Minor 1): the alternate-parent retry re-plans around every unfinished hop and the merge keeps
+  them expected, so the receipt expires though every recipient delivered; the suggested shape re-sends
+  the retried copy to every unfinished hop still present and ready, as the `receiver` repair does.
+- **A relay's own alternate-parent retry keeps its failed children under `subtree`** (round-2 review,
+  Nit 1): bounded extra traffic up to the attempt cap; truth is unaffected; to be stated in the
+  outbound README.
+- **A lost former-parent release re-opens the unconfirmed delivered relay** (round-2 review, Nit 2):
+  the release is sent once, on the re-parenting duplicate.
+- **The `hop`-mode retry still replaces its expected hops** (round 2, concern 2): a retry that completes
+  the receipt at dispatch deletes the row without a settlement there (pre-existing on main).
+- **A both-normal hosted full read** (D51): both S2c-ii full reads landed on slow runners (72012a632
+  mixed regime; a7f2f0f8e slow throughout), as both S2c-i reads did.
 
 ---
 
@@ -212,6 +279,76 @@ the relay control admission tests.
 git commit -m "feat(alm): a receipt retry targets only the recipients still missing, through the relay tree"
 ```
 
+**Carried in (R-S2c-ii-0):**
+
+- [ ] **Step R1: RED — a relay that is itself a recipient.** Origin → relay `r` (a recipient, M7 emits
+      `r` at index 0) → child relay `c` → leaf `l`. `r`'s pending row must not complete on `c`'s
+      self-ACK; it completes only when `l`'s ACK has been forwarded per logical recipient. Expected
+      today: FAIL (the row completes on the first ACK from the last child and `l` is lost).
+- [ ] **Step R2: RED — the RTC breaker ignores typed refusals.** A `refused/unsupported` leg outcome
+      does not count toward the breaker's failure threshold (a refusal is a policy value, not a
+      transport failure); only transport failures and timeouts do. Expected today: FAIL.
+- [ ] **Step R3: GREEN** for both inside the same commit as the tree-narrowed retry.
+
+---
+
+### Task 2b: The outbox branch — frozen audience, one settlement, the durable receipt (D48)
+
+**Files:**
+
+- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts`
+  (the outbox branch's `expectedPeerIds` is the targets' frozen `recipientPeerIds` from Task 1, never the
+  locally connected set), `ws-queue-box-server-receipt-aggregation.ts` (the aggregator is the one
+  settlement authority for an aggregated room message: the dequeue-time pending row and its
+  `ack-timeout` work are not written for a message the aggregator owns, or the aggregator feeds that
+  row — choose the shape whose ownership a reader follows most directly and record it as a ruling;
+  `deleteAggregate` reads the next deadline from a sorted deadline index instead of rescanning the map),
+  `ws-queue-box-server-service.ts` (wiring only)
+- Create: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts` — the D38
+  durable receipt: the receipt's final snapshot persisted in the server's ALM pending-ACK row family,
+  keyed `(namespace, originPeerId, msgId)` (R-S2c-i-2) with the group as row content, so an origin that
+  reconnects on any instance inside the receipt window reads its `complete`/`timed-out` receipt.
+- Modify: the receipt dequeue in the WS outbox path — a receipt row addressed to an origin with no
+  route on this instance is retried through the cluster publisher until the receipt window ends,
+  never settled `cluster-local-complete` on the first miss.
+- Test: `packages/tests/shared/services/ws-queue-box-server-outbound-planning.test.ts`,
+  `packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts`, a new
+  `packages/tests/shared/services/ws-queue-box-server-receipt-row.test.ts`, the cluster pub/sub-bridge
+  pattern from `ws-outbox-owner-miss-retry.test.ts` for the reconnecting origin.
+
+**Interfaces:**
+
+- Consumes Task 1's `recipientPeerIds` / `snapshotVersion` on `multicast` targets.
+- Produces `toWsQueueBoxServerReceiptRow(receipt: ALReceiptPayload, groupRef: GroupRef): WsQueueBoxServerReceiptRow`
+  (pure), `writeWsQueueBoxServerReceiptRow(transaction, row)` and
+  `readWsQueueBoxServerReceiptRow(input: { namespace; originPeerId; msgId })` (durable, D38); the
+  client's receipt tracking (S2c-i Task 4) accepts a receipt read on reconnect exactly as one delivered
+  live (idempotent under the S2c-i redelivery rule).
+- Produces a sorted deadline index inside the aggregation (private), so `sweep(nowMs)` and
+  `deleteAggregate` are O(log n).
+
+- [ ] **Step 1: RED — no retransmission after `complete`.** In outbox fan-out mode
+      (`forwardsRoomScopedMessages: false`) a `receiver` room message whose recipients all ACK yields one
+      `complete` row and, after the clock advances past the `ack-timeout`, NO retransmission to `b` or
+      `c`. Expected today: FAIL (three retransmissions; the pin in S2c-i Task 4 never advanced the
+      clock).
+- [ ] **Step 2: RED — the outbox pending row carries the frozen audience.** A late joiner connected
+      locally at dequeue time is not in `expectedPeerIds`; the frozen `recipientPeerIds` are. Expected
+      today: FAIL (the locally connected set is merged in).
+- [ ] **Step 3: RED — a reconnecting origin reads its receipt.** The `complete` receipt is dequeued on
+      instance A while the origin is disconnected; the origin reconnects on instance B inside the
+      receipt window and its handle reads `acknowledged`. Expected today: FAIL
+      (`cluster-local-complete` on the first miss; nothing durable to read).
+- [ ] **Step 4: RED — the deadline index.** After removing the earliest of three aggregates the next
+      sweep fires at the second's deadline (pure test on the index; no map rescan path remains).
+- [ ] **Step 5: Implement; Step 6: GREEN**; the storage and operation-count pins must not move for the
+      default send and admission; run the medium-scale Postgres gate (a server control-path change);
+      commit and push.
+
+```bash
+git commit -m "feat(alm): the outbox branch freezes the audience, settles once through the aggregator, and persists the receipt (D38)"
+```
+
 ---
 
 ### Task 3: Logical evidence on the handle and the observation
@@ -234,6 +371,19 @@ handle tests, `packages/tests/shared-test/` observe-result decoder tests, the pu
 - [ ] **Step 1: RED** — a `receiver` receipt with two of three recipients confirmed reads
       `confirmedRecipientPeerIds` of length 2, `unconfirmedRecipientPeerIds` of length 1, state not
       `acknowledged`; `messages.observe` returns the four fields.
+- [ ] **Step 1b: RED — a relay's `resync-required` NACK settles the handle (D50).** A retained send that
+      receives an admitted `al.control.nack.v1` with reason `resync-required` reads a terminal
+      rejected-by-relay state (use the existing rejection settlement vocabulary; add a kind only if none
+      names a relay's refusal) with the NACK's relay peer and reason as evidence; no resend is planned.
+      Expected today: FAIL (the handle stays `admitted`).
+- [ ] **Step 1c: RED — a refused-then-retried rtc leg leaves an evidence row.** The refused leg records a
+      non-terminal, evidence-only settlement (`attempts` gains the refused leg with its typed reason)
+      and the retried leg's outcome follows it. Expected today: FAIL (no row).
+- [ ] **Step 1d: RED — the receipt admission is visible in diagnostics.** The origin's receipt admission
+      emits a `control-admission` event for `al.control.receipt.v1` (the `diagnostics` sink given to
+      `ALOutboundReceiptAdmission`; `acceptReceipt` takes the control message so the event carries the
+      control's own `msgId` with `targetMsgId` = the receipt's `msgId`); a refused receipt emits one with
+      its typed reason. Expected today: FAIL (no event). `runtime-diagnostic-contract.md` follows.
 - [ ] **Step 2: Implement; Step 3: GREEN** (public API snapshot updated deliberately); commit and push.
 
 ```bash
@@ -342,15 +492,169 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
 - READMEs (`alm/outbound/README.md:112,312-313`, `alm/inbound/README.md:39,43`), the product
   description's receipt lines, the diagnostic contract, the roadmap's S2c-ii section and the S2
   outcome marked delivered.
-- Local full-scope lane on all carriers (two-agent and three-agent); push; hosted read with
-  `RALLAR_BLACK_BOX_ALM_SCOPE=full` under the two-regime rule against S2c-i's final read; the Hetzner
+- Local full-scope lane on all carriers (two-agent and three-agent) on normal pages — the acceptance
+  evidence with the both-normal hosted smoke (D51); push; the hosted full read with
+  `RALLAR_BLACK_BOX_ALM_SCOPE=full` attempted at most twice and reported under the two-regime rule
+  (S2c-i has no usable hosted full read: both landed on slow runners), never a blocker; the Hetzner
   three-agent manifest runs under **Run Hetzner Supported Distributed Manifests** after merge (the
   plan's completion gate per CLAUDE.md).
 - PR body in the F2b shape; the full local list; the Branch Release Gate green on the final commit.
 
 ## Rulings during execution
 
-(Empty at planning time; the executor records R-S2c-ii-n here.)
+- **R-S2c-ii-0 (pre-execution, 2026-09-25).** The maintainer settled the four open questions as D48
+  (the outbox-branch receipt is Task 2b), D49 (the WS ordering gate stays), D50 (a relay's NACK is
+  evidence only, Task 3) and D51 (acceptance = local full lanes + the both-normal hosted smoke; hosted
+  full read best-effort, at most twice). The executor routed the remaining carries: the multi-level
+  relay RED and the RTC breaker's typed refusals into Task 2; the refused-then-retried evidence row and
+  the receipt `control-admission` diagnostic into Task 3; the O(n) deadline rescan into Task 2b. Two
+  defaults taken without a question: S2c-ii starts from `main` 786ced4ff and merges the dead-peer fix
+  in when it lands; `receiver` on a WS unicast stays refused.
+- **R-S2c-ii-1 (Task 1, 2026-09-25).** `recipientPeerIds` and `snapshotVersion` are optional
+  _together_ on a `multicast`: absence means "not yet frozen", a distinct domain state, exactly like a
+  broadcast's `recipientPeerIds?`. `assertPersistedALTargets` enforces both-or-neither, a unique id
+  list and `snapshotVersion ≥ 1`. The carriers freeze inside: the RTC origin at its first
+  `planOutgoingMessage`, the WS server at its admission stamp; RTC peer ingress refuses an unfrozen
+  multicast with a typed issue; an RTC-frozen multicast that falls back to WS keeps its frozen set
+  intersected with the audience the server authorizes (a client can never widen); the two authority
+  checks accept exactly the unfrozen → frozen change. The `rtc-peer` source keeps the WS name
+  `groupRecipientPeerIds?` and gains `snapshotVersion?`, both-or-neither. Why: `newALMulticastMessage`
+  builds messages before any snapshot exists and the shared decoder runs before the freeze at four
+  sites, so a required pair was unbuildable.
+- **R-S2c-ii-2 (Task 1 review, 2026-09-25).** The RTC origin freezes the audience from the sessions
+  the room authority admits — active members with live leases at the snapshot — minus itself, the same
+  audience the WS stamp freezes; the frozen `snapshotVersion` is the admission's `snapshotVersion`; an
+  empty authorized ∩ frozen set means nobody, never "no filter"; the per-hop member set (origin
+  included) and the frozen recipients (origin-free) are different objects. Amends the brief's "every
+  session in the identified snapshot".
+- **R-S2c-ii-3 (Task 2, 2026-09-26).** No `OverlayTree` exists and a browser peer holds only its own
+  next hops, so the tree is the node's _local_ hop view `{ nextHopPeerIds, completedHopPeerIds }`; a
+  hop is complete on its `delivered` self-ACK (a leaf) or its `subtree-complete`; the pure
+  `computeMissingRecipientRepair` returns the missing direct recipients plus every incomplete hop
+  (the over-approximation while several relay hops are outstanding is accepted — D25's narrowing means
+  never to a complete hop). Relays stream far ACKs upward as `forwarded` as they arrive and emit their
+  own `subtree-complete` _last_ as the end marker (M7 kept; a non-recipient relay's terminal ACK never
+  counts, M5). A retried duplicate re-emits the peer's own ACK and is forwarded only to the
+  still-incomplete child hops, with no second local delivery. Publishing `nextHopsBySessionId` to
+  browsers (a true tree) is a possible later slice. Dispatch rulings applied with it: a session outside
+  the frozen audience may forward but never delivers locally or counts; an origin alone in its room
+  completes its `receiver` send at commit with an empty expected set on both carriers; the RTC breaker
+  ignores typed `refused/unsupported` leg outcomes.
+- **R-S2c-ii-4 (Task 2 review, 2026-09-26).** The inbound pending row's `localRecipient` became dead once
+  a relay's terminal ACK always names the relay, and the repo forbids both dead fields and the dual
+  decode that ignoring it would be (D21), so the schema id moves to `rallar-alm-2026-09-s2c-ii`: one
+  more browser-database reset under D3 and server `pending` rows undecodable for their TTL; D46 is
+  extended to this bump. On a retried copy a relay re-sends one `forwarded` ACK per recipient it
+  already relayed beside its terminal ACK, so a lost relay-to-origin ACK is recoverable whether or
+  not the terminal ACK was lost too; a leaf or relay with local delivery off ends its subtree with
+  `subtree-complete`, never `delivered`; a hop outside the frozen audience never reads complete at
+  the origin, so every retry resends to it, bounded by the attempt cap (a stated invariant).
+- **R-S2c-ii-5 (Task 3 review, 2026-09-26; D50 scope).** Trust for a relay rejection is keyed on the
+  source, never the carrier: a `resync-required` NACK admitted from a `trusted-server` source carries a
+  trusted-relay fact, the validator skips only the expected-peer check for it, and the `relay-rejected`
+  settlement requires only the retained sent row — so the WS server's ordering NACK (D49) and any
+  retained room multicast settle on every carrier. `relayRejection` names a trusted-server relay or a
+  peer relay with its id, never a server peer id (refinement S2c-i-1). `resync-required` is a terminal
+  NACK: a `relay-rejected` row ends and is not retransmitted; a multi-recipient receipt's evidence
+  freezes at the rejection.
+- **R-S2c-ii-6 (Task 3 review, 2026-09-26; hop lists under `receiver`).** The origin's hop lists come
+  from its local hop view (R-S2c-ii-3): `confirmedHopPeerIds` = the completed hops,
+  `unconfirmedHopPeerIds` = next hops minus completed hops, so with a relay in front of a recipient
+  the hop list names the relay while the recipient list names the recipient (Task 5 scenario 5). Under
+  `hop`/`subtree` the hop lists equal the recipient lists.
+- **R-S2c-ii-5a (Task 3 fix round, 2026-09-26).** A best-effort send (`ackMode: 'none'`) is terminal at
+  `transport-accepted` by lifecycle design, so a later trusted-relay `resync-required` NACK lands as
+  evidence only (`relayRejection` set, the state unchanged); an ACK-tracked send reads `rejected` end
+  to end. D50 asked for evidence; overriding a terminal best-effort state would change the lifecycle
+  semantics. Carry: a receipt-less RTC send still refuses its receiver hop's NACK (a `peer` source; the
+  trusted-relay rule covers only the server).
+- **R-S2c-ii-7 (Task 4, 2026-09-26).** The Hetzner three-agent entry `22-alm-conformance-3-agent.json`
+  (catalog entry, ordered-list line, generated JSON) moves from Task 4 into Task 5: with no three-role
+  scenario yet the combined recipe has no connect prologue and would always fail the identity
+  assessment; the `one-sender-two-recipients` role pattern lands in Task 4 and is tested directly.
+- **R-S2c-ii-8 (Task 5 → Task 5a, 2026-09-26).** The first three-peer RTC run deadlocked: in a
+  three-session star every recipient is the other's next hop, so each relayed the copy to the other
+  and waited for that child's `subtree-complete` before its own terminal ACK, and the origin never
+  received a receipt. A relay's owned children are its next hops minus its sender and minus the
+  sender's forwarding set (the siblings that already hold the message from the same sender); in a
+  star a recipient owns no children and acknowledges itself `delivered`; in a tree a relay still owns
+  its descendants; a peer that is both sibling and descendant is not owned. The same exclusion
+  governs the retry/duplicate forward and the relay pending row's expected set.
+- **Task 5 scenario rulings (2026-09-26).** Over ws scenario 2 asserts today's live-only behaviour:
+  the receipt ends `timed-out` naming `recipient-b` unconfirmed (the WS server has no retry in
+  live-only fanout; outbox mode and rtc carry the retry proof). Scenario 4 runs over rtc and fallback
+  through a new `messages.control` raw harness command and asserts the origin's `admission-outcome`
+  `rejected/unsupported`; the WS server's refusal stays a unit pin. Scenario 3 keeps the leave half
+  (D43); the joiner half is the Task 1/2b late-joiner pins. Scenario 5 asserts the shape over the
+  tree topology: exactly one recipient is the origin's hop while both recipients are confirmed.
+- **R-S2c-ii-8a (Task 5a, 2026-09-26).** Every RTC transport copy names only its one addressee in
+  `forwarding.nextHopPeerIds` and ingress refuses anything wider, so the sender's forwarding set rides
+  on `diagnostics.visitedPeerIds` instead: each copy carries the visited set plus the sender plus the
+  dispatch's next hops, and `resolveNextHopPeerIds` already drops visited peers, which yields
+  R-S2c-ii-8 with no wire or ingress change. The visited set is routing input (as the alternate-parent
+  repair already treats it); its 64-entry cap is pinned against the overlay degree limit so it can
+  never truncate a star's forwarding set.
+- **R-S2c-ii-8c (Task 5a review, 2026-09-26; supersedes 8b).** Termination never depends on the
+  visited exclusion: a peer that already holds a relay row and receives a duplicate copy from a
+  sender that is not its recorded parent re-emits its terminal ACK to that sender too, so an
+  over-approximated owner's row still completes and the 64-entry visited cap can never deadlock (past
+  the cap the cost is redundant relays). A targeted repair copy inherits the repaired dispatch's own
+  copy for that peer, so a requester never owns its siblings. Unicast copies carry no visited list. The
+  per-copy byte cost on RTC is about 117 B for a three-session star and at most about 2.5 KB; no
+  envelope limit is reachable.
+- **R-S2c-ii-9 (Task 5 → Task 5b, 2026-09-26).** Since R-S2c-ii-8 a star recipient owns no downstream
+  hop, and `planRepair` attached an `al.control.repair.v1` retransmit request to every ACK, so the
+  origin retransmitted to a recipient it had already counted. A peer attaches a repair request to its
+  ACK only for owned children that are still missing; a peer that owns no children never does — the
+  retry is the origin's decision from its receipt.
+- **R-S2c-ii-10 (Task 5, 2026-09-26).** Scenario 5 (`receiver-distinct-from-hop`) is deferred: the
+  topology override needs the group owner, and under `tree` the middle of a three-session path is a
+  hash of the session ids (the origin is the middle about one time in three), so no lane run can pin
+  a relay deterministically. The hop-versus-recipient property stays proven by the relay-in-front-of-b
+  unit pin (R-S2c-ii-6); a harness-pinnable relay is a later harness slice. Also accepted: scenario 2
+  over ws asserts the `timed-out` receipt with `recipient-b` unconfirmed; scenario 4 runs over rtc and
+  fallback only through the new `messages.control` raw command; scenario 3 keeps the leave half; the
+  test-contracts file grew twelve lines for `messages.control` because moving the type out creates a
+  type-only import cycle.
+- **R-S2c-ii-9a (Task 5b review, 2026-09-26).** With repair requests limited to owned children, an
+  RTC origin whose plan has nothing to send because it owns no child settles `unroutable/no-route`
+  instead of `skipped/planner-drop` (room members but no overlay next hop; a frozen audience that has
+  since left). Accepted as the more honest verdict: the fallback carrier then falls back to WS, `rtc`
+  alone settles `attempts-exhausted`, and a re-planned queued entry retries within the existing
+  attempt cap. An origin alone in its room and a normal send are unchanged.
+- **R-S2c-ii-11 (Task 6, 2026-09-26).** No match-end output existed (the kind and its receiving branch
+  did, nothing published it), the director's room envelope also carries heartbeats, snapshots and
+  high-rate player state, and the named projection files show the best-effort capability report. So:
+  `sendOutput` and `publishEvent` gain an optional `ack: 'all-logical-recipients'` that sends the
+  output as one room send over `rtc-with-ws-fallback`, `at-least-once`, and returns the handle as
+  `receipt`, while everything else keeps the best-effort path; `director-match-started` requests the
+  receipt and the director now publishes `director-match-ended` with the receipt when its own tick
+  finishes the match (the receiving branch applies it idempotently beside the reliable snapshot); a
+  new `matchDelivery` arena state, projected by a pure `toMatchDelivery` from the handle's expected
+  and confirmed recipient lists, reads "acknowledged by all N" or "waiting for k of N" in a new
+  "Match delivery" diagnostics row; the authority client keeps `ack: 'receiver'` and pins that a
+  command resolves on admission.
+- **R-S2c-ii-12 (final review, 2026-09-26; amends 8c).** The immediate `subtree-complete` answer to a
+  duplicate is only for a sibling, a non-parent sender that does not own the peer. A duplicate from
+  the origin, or from any sender once the recorded parent has left, re-parents the relay row to that
+  sender and is answered as the recorded parent would be: the relayed ACKs re-sent, the owed children
+  forwarded to, the terminal ACK only once the subtree is complete. Without this a relay that left
+  mid-message made the origin mark its child complete under `receiver` and read `acknowledged`
+  under `subtree` although a grandchild never acknowledged.
+- **R-S2c-ii-13 (final review, 2026-09-26).** The RTC origin's on-wire frozen audience is bounded by the
+  256-entry collection limit: a room multicast whose frozen audience exceeds it is a typed
+  `refused/unsupported` naming the bound, so `rtc-with-ws-fallback` delivers over WS (whose audience
+  rides beside the message) and `rtc` alone settles with the typed reason, never `failed`; the bound
+  is the documented RTC room limit.
+- **R-S2c-ii-14 (final fix-wave re-review, 2026-09-26; a second scoped round after the final review,
+  taken because a Blocking false `acknowledged` on the live `group-leader` path cannot ship).** (a) Under
+  `subtree` the alternate-parent retry keeps every unfinished hop expected — it adds hops and never
+  drops an unfinished one — so a replacement hop that already held the copy cannot answer for the
+  dropped hop's subtree; a hop's completion ACK sent in answer to a retried copy counts only for that
+  hop. This also removes the pre-existing case where a replacing retry completed the receipt at
+  dispatch and deleted the row without a settlement. (b) Under `receiver` a recipient that delivered
+  always ends confirmed whatever re-parenting did: its own recipient ACK reaches the origin through
+  whichever parent it holds, and the origin counts by `logicalRecipientPeerId`.
 
 ## Self-review
 

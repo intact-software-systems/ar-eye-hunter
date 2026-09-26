@@ -101,6 +101,7 @@ export type {
     RallarDiagnosticsPorts,
     RallarDiagnosticsPortsInput,
     RallarDirectorAppointOptions,
+    RallarDirectorOutputOptions,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle,
@@ -267,10 +268,12 @@ export type {
 export const rallar: RallarFacade = createRallarFacade();
 
 export type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-export type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+export type { ALQosPolicyRequest, ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 export type {
     ALDeliveryAttempt,
     ALDeliveryEvidence,
     ALDeliveryLifecycle,
+    ALDeliveryReceiptEvidence,
+    ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

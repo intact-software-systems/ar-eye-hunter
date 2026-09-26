@@ -1,19 +1,17 @@
 import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
-
-/**
- * The lane sets this at capture time
- * (`tests/playwright/rallar-black-box/start-page-diagnostics-capture.ts`), never guessed from an
- * agent id the way `ALMObservationAgentRole` is.
- */
-export type ALMObservationPageRole = 'sender' | 'receiver';
+import { isAlmConformanceRole, type AlmConformanceRole } from './alm-conformance-roles.ts';
 
 export type ALMObservationPageDiagnosticKind = 'pageerror' | 'console-error' | 'console-warning';
 
 /** One page-level error or console line the lane captured directly from an agent's Playwright page. */
 export interface ALMObservationPageDiagnosticRecord {
     readonly agentId: string;
-    readonly role: ALMObservationPageRole;
+    /**
+     * The lane sets this at capture time (`tests/playwright/rallar-black-box/start-page-diagnostics-capture.ts`),
+     * never guessed from an agent id the way `ALMObservationAgentRole` is.
+     */
+    readonly role: AlmConformanceRole;
     readonly atMs: number;
     readonly kind: ALMObservationPageDiagnosticKind;
     readonly message: string;
@@ -67,16 +65,12 @@ function toPageDiagnosticRecord(
     const message = decodeMessage(entry.message);
     const stack = decodeText(entry.stack);
     if (
-        agentId === undefined || !isPageRole(role) || atMs === undefined ||
+        agentId === undefined || role === undefined || !isAlmConformanceRole(role) || atMs === undefined ||
         !isPageDiagnosticKind(kind) || message === undefined
     ) {
         return undefined;
     }
     return { agentId, role, atMs, kind, message, ...(stack === undefined ? {} : { stack }) };
-}
-
-function isPageRole(value: string | undefined): value is ALMObservationPageRole {
-    return value === 'sender' || value === 'receiver';
 }
 
 function isPageDiagnosticKind(value: string | undefined): value is ALMObservationPageDiagnosticKind {

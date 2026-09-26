@@ -58,7 +58,12 @@ export interface ALInboundRuntimeStores {
 
 export namespace ALInboundMessageRuntime {
     export type Source =
-        | { readonly kind: 'rtc-peer'; readonly peerId: string; }
+        | {
+            readonly kind: 'rtc-peer';
+            readonly peerId: string;
+            readonly groupRecipientPeerIds?: readonly string[];
+            readonly snapshotVersion?: number;
+        }
         | { readonly kind: 'ws-client'; readonly peerId: string; readonly groupRecipientPeerIds?: readonly string[]; }
         | { readonly kind: 'trusted-server'; };
 
@@ -87,6 +92,14 @@ export namespace ALInboundMessageRuntime {
         readonly ownsQueueEngine: boolean;
     }
 
+    /** A retried copy of an admitted message, owed to these child hops only, sent as its own attempt. */
+    export interface RetriedCopy {
+        readonly msg: ALMessage;
+        readonly fromPeerId: string;
+        readonly toPeerIds: readonly string[];
+        readonly attemptIdentity: string;
+    }
+
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
@@ -108,8 +121,12 @@ export namespace ALInboundMessageRuntime {
             fromPeerId: string,
             plan: ALMessageHandlingPlan
         ) => Promise<void | 'completed' | 'retry'>;
+        /** Absence means a retried copy of an admitted message is never forwarded again. */
+        readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
+        /** Absence means no relay here ever loses its recorded parent, so only the origin re-parents a row. */
+        readonly isRoomPeerPresent?: (msg: ALMessage, peerId: string) => boolean;
         /** Absence means this runtime relays origin-addressed controls for no peer. */
         readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
@@ -383,9 +400,9 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageRuntime.Acceptance> {
         const admitted = await this.controlAdmission.admit(msg, source);
-        // A control the runtime does not handle or rejects, and one whose commit wrote no work row,
-        // have nothing for the worker to claim; only retained work and a written row announce one.
-        if (admitted.kind === 'pending-control' || (admitted.kind === 'committed' && admitted.wroteWork)) {
+        // A control the runtime does not handle or rejects has nothing for the worker to claim; retained work
+        // and a commit, which always relays at least the recipient the acknowledgement names, announce one.
+        if (admitted.kind === 'pending-control' || admitted.kind === 'committed') {
             this.commitWork();
         }
         if (admitted.kind === 'pending-control') {

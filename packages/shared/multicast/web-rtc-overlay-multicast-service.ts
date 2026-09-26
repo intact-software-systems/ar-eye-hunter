@@ -1,5 +1,4 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import { planALMessageHandling, type ALQosNormalizationInput } from '../al-contracts/al-policy.ts';
 import type { PeerId } from '../api/api-config.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
@@ -10,6 +9,7 @@ import type {
     WebRtcOverlayMulticaster
 } from './overlay-multicast-contracts.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
     public readonly overlayId: string;
@@ -81,12 +81,11 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
         nextHopPeerIds: readonly PeerId[],
         isForward: boolean
     ): readonly ALMessage[] {
-        const visited = msg.diagnostics?.visitedPeerIds ?? [];
-        const selfPeerId = this.connectionService.input.sessionId;
-        const visitedPeerIds =
-            isForward && !visited.includes(selfPeerId) && visited.length < AL_MESSAGE_RESOURCE_LIMITS.visitedPeers
-                ? [...visited, selfPeerId]
-                : visited;
+        const visitedPeerIds = toRtcTransportVisitedPeerIds({
+            visitedPeerIds: msg.diagnostics?.visitedPeerIds,
+            selfPeerId: this.connectionService.input.sessionId,
+            nextHopPeerIds
+        });
         const ttlHops = isForward && msg.constraints?.ttlHops !== undefined
             ? msg.constraints.ttlHops - 1
             : msg.constraints?.ttlHops;

@@ -44,7 +44,7 @@ describe('inbound admission preparation boundary', () => {
     it.each(['msgId', 'senderId', 'dedup', 'ordering'] as const)('rejects a candidate with original observations from another %s scope', async (scope) => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
-        const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
         const observations = {
             ...bundle.observations,
             ...(scope === 'msgId' ? { msgId: 'other-message' } : {}),
@@ -98,14 +98,14 @@ describe('inbound admission preparation boundary', () => {
             throw new Error('Admission computation must not read the clock');
         });
 
-        const first = computeALInboundAdmission({ ...prepared, canForward: false });
+        const first = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
         vi.spyOn(Date, 'now').mockReturnValue(200);
-        const second = computeALInboundAdmission({ ...prepared, canForward: false });
+        const second = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
 
         expect(second).toEqual(first);
+        // The ACK alone: this multicast leaf owns no child, so it never asks its sender to retransmit (R-S2c-ii-9).
         expect(first.durableEffects.map((effect) => effect.payload.kind)).toEqual([
             'dispatch-local',
-            'send-control',
             'send-control'
         ]);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
@@ -192,7 +192,7 @@ describe('inbound admission preparation boundary', () => {
             forwarding: { ...prepared.plan.forwarding, enabled: true, nextHopPeerIds: ['peer-b'] }
         };
         const deadline = admittedAtMs + Math.min(callerTtlMs ?? 1_000, 1_000);
-        const bundle = computeALInboundAdmission({ ...prepared, plan, canForward: true });
+        const bundle = computeALInboundAdmission({ ...prepared, plan, canForward: true, recordedParentPresent: true });
         const dispatch = bundle.durableEffects.find((effect) => effect.payload.kind === 'dispatch-local');
         const forward = bundle.durableEffects.find((effect) => effect.payload.kind === 'forward-message');
         const buffered = bundle.mutations.find((mutation) => mutation.kind === 'set-buffered');
@@ -244,12 +244,12 @@ describe('inbound admission preparation boundary', () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const message = { ...createMessage(2), constraints: { expiresAtMs: admittedAtMs + 1_000 } };
         const waiting = await readAdmission({ store: stores.admissionStore, message });
-        expect(await stores.admissionStore.commitBundle(computeALInboundAdmission({ ...waiting, canForward: false })))
+        expect(await stores.admissionStore.commitBundle(computeALInboundAdmission({ ...waiting, canForward: false, recordedParentPresent: true })))
             .toBe('committed');
 
         vi.setSystemTime(admittedAtMs + 500);
         const predecessor = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
-        const bundle = computeALInboundAdmission({ ...predecessor, canForward: false });
+        const bundle = computeALInboundAdmission({ ...predecessor, canForward: false, recordedParentPresent: true });
         const release = bundle.durableEffects.find((effect) => effect.payload.kind === 'release-buffered');
 
         expect(release).toBeDefined();
@@ -264,7 +264,7 @@ describe('inbound admission preparation boundary', () => {
         expect(decodeALMessageValue(message).right).toBeDefined();
         const prepared = await readAdmission({ store: stores.admissionStore, message });
         const plan = withFreshnessPolicy(prepared.plan);
-        const candidate = computeALInboundAdmission({ ...prepared, plan, canForward: false });
+        const candidate = computeALInboundAdmission({ ...prepared, plan, canForward: false, recordedParentPresent: true });
         expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
 
         const runtime = new ALInboundMessageRuntime({
@@ -306,7 +306,12 @@ describe('inbound admission preparation boundary', () => {
             }
             const message = toMessageWithEnvelopeSize(createMessage(10), AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes - 8 * 130_000);
             const prepared = await readAdmission({ store: stores.admissionStore, message });
-            const candidate = computeALInboundAdmission({ ...prepared, plan: withFreshnessPolicy(prepared.plan), canForward: false });
+            const candidate = computeALInboundAdmission({
+                ...prepared,
+                plan: withFreshnessPolicy(prepared.plan),
+                canForward: false,
+                recordedParentPresent: true
+            });
             expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
 
             freshnessEnabled = true;
@@ -341,7 +346,7 @@ describe('inbound admission preparation boundary', () => {
             groupRecipientPeerIds: ['receiver', 'peer-b']
         };
         const prepared = await readAdmission({ store: stores.admissionStore, message, source, nowMs: admittedAtMs });
-        const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
         const ownerMutation = bundle.mutations.find((mutation) => mutation.kind === 'set-msg-owner');
         if (!ownerMutation) {
             throw new Error('Admission must compute the message provenance before writing');
@@ -445,7 +450,7 @@ describe('inbound admission preparation boundary', () => {
     it('materializes controls through the strict canonical decoder', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
-        const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false, recordedParentPresent: true });
         const controls = bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [decodeALControlMessage(effect.payload.msg)] : []);
 
         expect(controls.length).toBeGreaterThan(0);

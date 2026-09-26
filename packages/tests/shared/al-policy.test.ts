@@ -305,6 +305,48 @@ describe('AL QoS policy', () => {
         expect(leaf.ack).toMatchObject({ enabled: true, algo: 'receiver', deferred: false });
     });
 
+    it.each([
+        { label: 'a star recipient whose siblings the sender already addressed', neighbours: ['a', 'c'], repairs: false },
+        { label: 'a leaf with no neighbour but its sender', neighbours: ['a'], repairs: false },
+        { label: 'a relay whose owned child it cannot reach', neighbours: ['a', 'c', 'd'], repairs: true }
+    ])('asks its sender to retransmit only as $label: $repairs', ({ neighbours, repairs }) => {
+        const msg = {
+            ...newALMulticastMessage('a', { topicId: 'chat', resourceId: 'owned', contextId: 'group-1' }, groupRef('group-1'), 'chat.v1', {}, {
+                reliability: 'at-least-once',
+                ack: 'all-logical-recipients',
+                qos: { repair: { algo: 'retransmit' } }
+            }),
+            diagnostics: { visitedPeerIds: ['a', 'b', 'c'] }
+        };
+
+        const plan = planALMessageHandling(msg, {
+            nowMs: 0,
+            selfPeerId: 'b',
+            fromPeerId: 'a',
+            connectedPeerIds: ['a', 'c'],
+            groupMemberPeerIds: ['a', 'b', 'c', 'd'],
+            overlayNeighborPeerIds: neighbours
+        });
+
+        // The retry of a counted recipient is the decision of the origin, never of a peer that owns no child.
+        expect(plan.forwarding.enabled).toBe(false);
+        expect(plan.repair.enabled).toBe(repairs);
+    });
+
+    it('never asks for a retransmit as the addressee of a unicast', () => {
+        const msg = {
+            ...newALUnicastMessage('a', { topicId: 'tasks', resourceId: 'job', contextId: 'queue' }, 'b', 'tasks.v1', {}, {
+                qos: { repair: { algo: 'retransmit' } }
+            }),
+            forwarding: { nextHopPeerIds: ['b'] }
+        };
+
+        const plan = planALMessageHandling(msg, { nowMs: 0, selfPeerId: 'b', fromPeerId: 'a', connectedPeerIds: ['a'] });
+
+        expect(plan.localDelivery.enabled).toBe(true);
+        expect(plan.repair.enabled).toBe(false);
+    });
+
     it('drops duplicate messages before delivery or forwarding', () => {
         const msg = newALUnicastMessage(
             'sender-3',

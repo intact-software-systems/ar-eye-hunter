@@ -23,6 +23,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'dispatchInboxEntry'
             | 'canDispatchMessage'
             | 'forwardMessage'
+            | 'forwardRetriedCopy'
             | 'clock'
             | 'effectPreparation'
         > {}
@@ -43,6 +44,15 @@ export interface ALInboundDeliveryReadiness {
      * without a stored surface of its own.
      */
     readonly observed: ALInboundDeliveryObservation | undefined;
+}
+
+/** One forward row as it runs: the forward its admission wrote, or a retried copy owed to `retryPeerIds` only. */
+interface ALInboundAdmittedForward {
+    readonly observed: ALInboundDeliveryObservation;
+    readonly fromPeerId: string;
+    readonly retryPeerIds: readonly string[] | undefined;
+    readonly attemptIdentity: string;
+    readonly expireAtTimestamp: number;
 }
 
 const NOT_READY: ALInboundDeliveryReadiness = { ready: false, observed: undefined };
@@ -81,7 +91,11 @@ export class ALInboundAdmittedDelivery {
         if (payload.kind === 'release-buffered') {
             return await this.readBufferedReleaseReadiness(payload.trackKey, payload.seq, nowMs);
         }
-        const observed = await this.readStoredDeliveryObservation(payload.message, nowMs);
+        const observed = await this.readStoredDeliveryObservation(
+            payload.message,
+            nowMs,
+            payload.kind === 'forward-message' && payload.retryPeerIds !== undefined ? payload.fromPeerId : undefined
+        );
         if (shouldRetryALInboundDelivery(observed.plan)) {
             return NOT_READY;
         }
@@ -113,11 +127,13 @@ export class ALInboundAdmittedDelivery {
     /**
      * The surface a dispatch or a forward decides on: the one retained message and the stored
      * planning state it is planned against, from one read session. A missing retained copy is
-     * storage corruption, not a retry.
+     * storage corruption, not a retry. A retried copy is planned against the peer that sent it,
+     * which a re-parented relay row names in place of the first arrival (R-S2c-ii-12).
      */
     private async readStoredDeliveryObservation(
         reference: ALInboundMessageReference,
-        nowMs: number
+        nowMs: number,
+        retriedFromPeerId: string | undefined
     ): Promise<ALInboundDeliveryObservation> {
         const read = await this.admissionStore.readDeliverySurface(reference, nowMs);
         if (read === undefined) {
@@ -126,12 +142,15 @@ export class ALInboundAdmittedDelivery {
                 new TypeError('Inbound message owner row is missing')
             );
         }
+        const source = retriedFromPeerId === undefined || read.source.kind === 'trusted-server'
+            ? read.source
+            : { ...read.source, peerId: retriedFromPeerId };
         return {
             msg: read.msg,
-            source: read.source,
+            source,
             plan: this.dependencies.planIncomingMessage(
                 read.msg,
-                read.source,
+                source,
                 computeALInboundStoredPlanningObservations(read)
             )
         };
@@ -173,7 +192,7 @@ export class ALInboundAdmittedDelivery {
                 throw new NonRetryableException('Pending control admission must run before admitted delivery');
             case 'dispatch-local':
                 return await this.dispatchAdmittedMessage(
-                    observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs),
+                    observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs, undefined),
                     effect.expireAtTimestamp
                 );
             case 'send-control':
@@ -181,11 +200,17 @@ export class ALInboundAdmittedDelivery {
                     'A control send runs in the control round of its batch, not in delivery'
                 );
             case 'forward-message':
-                return await this.forwardAdmittedMessage(
-                    observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs),
-                    effect.payload.fromPeerId,
-                    effect.expireAtTimestamp
-                );
+                return await this.forwardAdmittedMessage({
+                    observed: observed ?? await this.readStoredDeliveryObservation(
+                        effect.payload.message,
+                        nowMs,
+                        effect.payload.retryPeerIds === undefined ? undefined : effect.payload.fromPeerId
+                    ),
+                    fromPeerId: effect.payload.fromPeerId,
+                    retryPeerIds: effect.payload.retryPeerIds,
+                    attemptIdentity: effect.effectId,
+                    expireAtTimestamp: effect.expireAtTimestamp
+                });
             case 'release-buffered':
                 return await this.releaseBufferedMessage(
                     { trackKey: effect.payload.trackKey, seq: effect.payload.seq, effectId: effect.effectId },
@@ -207,7 +232,7 @@ export class ALInboundAdmittedDelivery {
             return 'retry';
         }
         return await this.dispatchAdmittedMessage(
-            await this.readStoredDeliveryObservation(release.message, this.dependencies.clock.nowMs()),
+            await this.readStoredDeliveryObservation(release.message, this.dependencies.clock.nowMs(), undefined),
             expireAtTimestamp
         );
     }
@@ -266,24 +291,25 @@ export class ALInboundAdmittedDelivery {
             : 'dispatch';
     }
 
-    private async forwardAdmittedMessage(
-        observed: ALInboundDeliveryObservation,
-        fromPeerId: string,
-        expireAtTimestamp: number
-    ): Promise<'completed' | 'retry'> {
-        const { msg, plan } = observed;
+    private async forwardAdmittedMessage(forward: ALInboundAdmittedForward): Promise<'completed' | 'retry'> {
+        const { msg, plan } = forward.observed;
         if (this.shutdown.signal.aborted || shouldRetryALInboundDelivery(plan)) {
             return 'retry';
         }
-        if (expireAtTimestamp <= this.dependencies.clock.nowMs()) {
+        if (forward.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
             throw new NonRetryableException('Inbound message expired before forwarding');
         }
-        if (!plan.dropReason && plan.forwarding.enabled) {
-            const forwarded = await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
-            if (forwarded === 'retry') {
-                return 'retry';
-            }
+        if (plan.dropReason || !plan.forwarding.enabled) {
+            return 'completed';
         }
-        return 'completed';
+        const forwarded = forward.retryPeerIds === undefined
+            ? await this.dependencies.forwardMessage?.(msg, forward.fromPeerId, plan)
+            : await this.dependencies.forwardRetriedCopy?.({
+                msg,
+                fromPeerId: forward.fromPeerId,
+                toPeerIds: forward.retryPeerIds,
+                attemptIdentity: forward.attemptIdentity
+            });
+        return forwarded === 'retry' ? 'retry' : 'completed';
     }
 }

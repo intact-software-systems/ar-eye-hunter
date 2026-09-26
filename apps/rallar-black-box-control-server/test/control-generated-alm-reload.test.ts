@@ -139,8 +139,18 @@ class GeneratedAlmPorts {
             case 'messages.receipts': {
                 const message = this.handles.get(command.handleId);
                 assert(message);
-                const confirmed = message.command.carrier === 'ws' ? 'receiver-stored-session' : 'receiver';
-                return { status: 'ok', value: { confirmedHopPeerIds: [confirmed], unconfirmedHopPeerIds: [] } };
+                // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
+                const isWs = message.command.carrier === 'ws';
+                const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
+                return {
+                    status: 'ok',
+                    value: {
+                        confirmedHopPeerIds: isWs ? [] : [confirmed],
+                        unconfirmedHopPeerIds: [],
+                        confirmedRecipientPeerIds: [confirmed],
+                        unconfirmedRecipientPeerIds: []
+                    }
+                };
             }
             case 'messages.received': {
                 const count = this.messages.filter((message) => message.command.typeId === command.typeId && message.submitted).length;
@@ -241,7 +251,10 @@ class GeneratedAlmPorts {
         });
     }
 
-    /** The first hop refuses a send past the repair window: over WS the relay NACKs the sender, over RTC the receiver refuses it. */
+    /**
+     * The first hop refuses a send past the repair window: over WS the relay NACKs the sender, which commits it as the
+     * word of its trusted server (R-S2c-ii-5); over RTC the receiver refuses it.
+     */
     private refuseGappedSend(message: PortMessage): void {
         if (message.command.carrier === 'ws') {
             this.sender.recordEvent({
@@ -253,8 +266,8 @@ class GeneratedAlmPorts {
                         msgId: `${message.msgId}-nack`,
                         typeId: 'al.control.nack.v1',
                         targetMsgId: message.msgId,
-                        outcome: 'rejected',
-                        reason: 'AL repair sender has no retained outbound obligation'
+                        outcome: 'committed',
+                        reason: 'none'
                     }
                 }
             });

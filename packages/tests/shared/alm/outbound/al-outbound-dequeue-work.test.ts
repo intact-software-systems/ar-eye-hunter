@@ -12,8 +12,15 @@ import {
     type ALMessage
 } from '@shared/mod.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
@@ -22,7 +29,8 @@ import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     drainEngine,
-    peekOutboundWorkReadyAt
+    peekOutboundWorkReadyAt,
+    runOutboundWorkTask
 } from '../outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -154,6 +162,48 @@ describe('AL outbound dequeue work', () => {
         expect(retried?.status).toBe(EntityStatus.RETRY);
         expect(retried?.dequeueAudit.attempts).toBe(1);
         expect((await outbox.getItem(failed.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
+    });
+
+    it('retries a dequeue re-planned to no-route only up to the work attempt cap, then ends it', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const outbox = createOutboxQueue();
+        const runtime = createDefaultOutboundTestRuntime({
+            outbox,
+            dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+            // The RTC origin that owns no child re-plans a queued send to no-route (R-S2c-ii-9a).
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReason: 'No outbound transport route',
+                dropReasonCode: 'no-route',
+                persist: false,
+                preparedMessages: []
+            }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        });
+        const stranded = newALUnicastMessage(
+            'server',
+            { topicId: 'chat', resourceId: 'stranded', contextId: 'conversation-1' },
+            'peer-1',
+            'chat.private-text.v1',
+            { text: 'stranded' },
+            { ttlMs: 3_600_000 }
+        );
+        const queued = QueueBoxUtilities.toResourceEntryFromMsg(stranded, DEQUEUE_TYPE);
+        await outbox.enqueueIfAbsent(queued);
+        await runtime.ready();
+
+        // Each round passes the longest retry delay and the breaker opening, so only the cap can stop it.
+        for (let round = 0; round < 2 * DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; round += 1) {
+            vi.setSystemTime(Date.now() + DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxDelayMs + 1_000);
+            await runOutboundWorkTask(runtime);
+        }
+
+        const ended = await outbox.getItem(queued.key);
+        expect(ended?.dequeueAudit.attempts).toBe(DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts);
+        expect([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED]).not.toContain(ended?.status);
     });
 
     it('charges the dequeue breaker for the rejections the work handler swallows', async () => {

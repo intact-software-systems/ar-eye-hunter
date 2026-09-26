@@ -107,6 +107,7 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'policy',
         'preparedMessages',
         'msg',
+        'source',
         'expiresAtMs'
     ]);
     switch (payload.kind) {
@@ -146,13 +147,16 @@ function decodeALOutboundPendingControl(
     value: unknown,
     effectId: string
 ): Extract<ALOutboundDurableEffect<never>, { kind: 'admit-control'; }> {
-    const pending = decodeALAdmissionRecord(value, ['kind', 'msg', 'expiresAtMs']);
+    const pending = decodeALAdmissionRecord(value, ['kind', 'msg', 'source', 'expiresAtMs']);
     const msg = decodePersistedALMessageValue(pending.msg);
     const expiresAtMs = decodeALAdmissionNumber(pending.expiresAtMs);
     if (effectId !== toALOutboundPendingControlId(msg)) {
         throw new TypeError('Pending outbound control identity differs from its queue observation');
     }
-    return { kind: 'admit-control', msg, expiresAtMs };
+    if (pending.source !== 'trusted-server' && pending.source !== 'peer') {
+        throw new TypeError('Pending outbound control source is invalid');
+    }
+    return { kind: 'admit-control', msg, source: pending.source, expiresAtMs };
 }
 
 function decodeALOutboundPendingAdmission<TPrepared>(

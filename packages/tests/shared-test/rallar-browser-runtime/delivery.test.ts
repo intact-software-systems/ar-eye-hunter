@@ -78,8 +78,14 @@ const unknownObservation = {
     state: 'unobservable',
     submitted: false,
     attempts: 0,
+    attemptOutcomes: [],
+    relayRejection: undefined,
     confirmedHopPeerIds: [],
     unconfirmedHopPeerIds: [],
+    receiptMode: undefined,
+    expectedRecipientPeerIds: [],
+    confirmedRecipientPeerIds: [],
+    unconfirmedRecipientPeerIds: [],
     reason: undefined,
     backpressured: false,
     enqueued: false
@@ -134,8 +140,14 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         state: 'queued',
         submitted: false,
         attempts: 0,
+        attemptOutcomes: [],
+        relayRejection: undefined,
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
+        receiptMode: undefined,
+        expectedRecipientPeerIds: [],
+        confirmedRecipientPeerIds: [],
+        unconfirmedRecipientPeerIds: [],
         reason: undefined,
         backpressured: false,
         enqueued: true
@@ -156,6 +168,30 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
     expect(await runtime.observeDelivery({ ...query, state: ['transport-accepted'], timeoutMs: 100 })).toMatchObject({
         state: 'transport-accepted',
         submitted: true,
+        attempts: 1,
+        attemptOutcomes: ['sent']
+    });
+    delivery.registry.record({
+        kind: 'acknowledgement',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        mode: 'receiver',
+        confirmedHopPeerIds: ['peer-1', 'peer-2'],
+        unconfirmedHopPeerIds: ['peer-3'],
+        expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
+        unconfirmedRecipientPeerIds: ['peer-3'],
+        complete: false
+    });
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        state: 'transport-accepted',
+        confirmedHopPeerIds: ['peer-1', 'peer-2'],
+        unconfirmedHopPeerIds: ['peer-3'],
+        receiptMode: 'receiver',
+        expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        confirmedRecipientPeerIds: ['peer-1', 'peer-2'],
+        unconfirmedRecipientPeerIds: ['peer-3'],
         attempts: 1
     });
     delivery.registry.record({
@@ -163,16 +199,30 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
-        mode: 'hop',
-        confirmedHopPeerIds: ['peer-1'],
-        unconfirmedHopPeerIds: ['peer-2'],
+        mode: 'receiver',
+        confirmedHopPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        confirmedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        unconfirmedRecipientPeerIds: [],
         complete: true
     });
     expect(await runtime.readReceipts(query)).toMatchObject({
         state: 'acknowledged',
-        confirmedHopPeerIds: ['peer-1'],
-        unconfirmedHopPeerIds: ['peer-2'],
-        attempts: 1
+        confirmedRecipientPeerIds: ['peer-1', 'peer-2', 'peer-3'],
+        unconfirmedRecipientPeerIds: []
+    });
+    delivery.registry.record({
+        kind: 'relay-rejected',
+        msgId: delivery.msgId,
+        carrier: 'ws',
+        atMs: Date.now(),
+        relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
+        detail: 'The server relay refused the message: resync-required.'
+    });
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        state: 'acknowledged',
+        relayRejection: { relay: 'trusted-server', reason: 'resync-required' }
     });
     expect(events).toEqual(before);
 });

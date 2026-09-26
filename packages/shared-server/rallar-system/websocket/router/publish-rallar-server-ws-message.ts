@@ -37,7 +37,7 @@ export async function publishRallarServerWsMessage(
                 entries: []
             };
         case 'outbox': {
-            const result = await input.service.enqueueOutboxIfAbsent(input.message);
+            const result = await input.service.enqueueOutboxIfAbsent(input.message, toAdmittedAudience(input));
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
@@ -46,9 +46,12 @@ export async function publishRallarServerWsMessage(
         case 'live-only': {
             const result = input.service.sendToTargetsWithResult(
                 input.message,
-                input.audience === undefined
-                    ? undefined
-                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs),
+                input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
+                    message: input.message,
+                    audience: input.audience,
+                    admittedPeerIds: input.admittedPeerIds,
+                    nowEpochMs: input.nowEpochMs
+                }),
                 input.admittedPeerIds
             );
             if (result.status === 'no-recipients') {
@@ -59,11 +62,20 @@ export async function publishRallarServerWsMessage(
     }
 }
 
-function resolveAuthorizedRoomSessionIds(
-    message: ALMessage,
-    audience: RallarServerWsRoomAudience,
-    nowEpochMs: number
-): readonly string[] {
+interface ResolveAuthorizedRoomSessionIdsInput {
+    readonly message: ALMessage;
+    readonly audience: RallarServerWsRoomAudience;
+    readonly admittedPeerIds: readonly string[] | undefined;
+    readonly nowEpochMs: number;
+}
+
+/**
+ * An admitted message goes to the audience it was admitted to, not to the room as it is now: a session that
+ * left after admission stays addressed and its receipt reports it missing (D43). Socket liveness stays the
+ * send-time decision, so a disconnected session is not sent to and simply never confirms.
+ */
+function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSessionIdsInput): readonly string[] {
+    const { message, audience, nowEpochMs } = input;
     // A handler may change targets after authorization. Never reuse that authority
     // for a different scope or exclusions, or fall back to a cached audience.
     if (
@@ -72,21 +84,34 @@ function resolveAuthorizedRoomSessionIds(
     ) {
         return [];
     }
-    const liveSessionIds = audience.sessions
+    const addressedSessionIds = input.admittedPeerIds ?? audience.sessions
         .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
         .map((session) => session.sessionId);
     const targets = audience.targets;
     switch (targets.mode) {
         case 'unicast':
-            return liveSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
+            return addressedSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
         case 'multicast':
-            return liveSessionIds.filter((sessionId) => sessionId !== message.id.senderId);
+            return addressedSessionIds.filter((sessionId) => sessionId !== message.id.senderId);
         case 'broadcast':
-            return liveSessionIds.filter((sessionId) =>
+            return addressedSessionIds.filter((sessionId) =>
                 !targets.exceptPeerIds?.includes(sessionId) &&
                 (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
             );
     }
+}
+
+/**
+ * The sessions the live branch would address, handed to the outbox beside the message: the server's own
+ * outbound owner sends to that audience and its pending row expects it, never the sessions that happen to
+ * be connected to the instance that dequeues it (D24, D43). The wire message stays as the origin sent it,
+ * so a room larger than the collection limit still fans out.
+ */
+function toAdmittedAudience(input: PublishRallarServerWsMessageInput): readonly string[] | undefined {
+    const { message, audience, admittedPeerIds } = input;
+    return audience === undefined || admittedPeerIds === undefined
+        ? undefined
+        : resolveAuthorizedRoomSessionIds({ message, audience, admittedPeerIds, nowEpochMs: input.nowEpochMs });
 }
 
 function toLivePublishResult(

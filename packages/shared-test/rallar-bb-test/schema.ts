@@ -421,7 +421,7 @@ const messagesScopeSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX
 const messagesAckSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesAck };
 const messagesReplaySchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesReplay, {
     handleId: stringSchema,
-    carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier }
+    carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg }
 });
 /** Exactly one form: `absolute`, or `aboveCurrentBy` the sender's room version at send time. */
 const messagesSnapshotFloorSchema: JsonSchema = {
@@ -628,6 +628,14 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
     'messages.receipts': strictCommandSchema('messages.receipts', {
         connection: stringSchema,
         handleId: stringSchema
+    }),
+    'messages.control': strictCommandSchema('messages.control', {
+        connection: stringSchema,
+        carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg },
+        typeId: stringSchema,
+        msgId: stringSchema,
+        ackedMsgId: stringSchema,
+        toPeerId: stringSchema
     }),
     'fault.inject': {
         oneOf: ['ws', 'rtc'].map((carrier) =>

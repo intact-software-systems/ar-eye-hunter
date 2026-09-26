@@ -28,6 +28,7 @@ import { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
+    decodeALAdmissionArray,
     decodeALAdmissionCarrier,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
@@ -36,7 +37,6 @@ import {
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
-import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
@@ -201,7 +201,7 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
     const effect = decodeALAdmissionRecord(value, ['kind'], [
         'msg',
         'message',
-        'plan',
+        'retryPeerIds',
         'fromPeerId',
         'trackKey',
         'seq',
@@ -250,12 +250,14 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             return { kind: effect.kind, msg };
         }
         case 'forward-message': {
-            decodeALAdmissionRecord(effect, ['kind', 'message', 'fromPeerId', 'plan']);
+            decodeALAdmissionRecord(effect, ['kind', 'message', 'fromPeerId'], ['retryPeerIds']);
             return {
                 kind: effect.kind,
                 message: decodeALInboundMessageReference(effect.message),
                 fromPeerId: decodeALAdmissionString(effect.fromPeerId),
-                plan: decodeALInboundPlan(effect.plan)
+                ...(effect.retryPeerIds === undefined
+                    ? {}
+                    : { retryPeerIds: decodeALAdmissionArray(effect.retryPeerIds, decodeALAdmissionString) })
             };
         }
         case 'release-buffered':

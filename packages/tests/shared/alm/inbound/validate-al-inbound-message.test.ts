@@ -75,6 +75,33 @@ describe('inbound control addressing', () => {
     });
 });
 
+describe('inbound frozen room audience', () => {
+    const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+    const multicast: ALMessage = {
+        id: { v: 2, msgId: 'room-message', senderId: 'origin', ts: 1 },
+        route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
+        targets: { mode: 'multicast', groupRef: room },
+        payload: { typeId: 'chat', resource: '{}' }
+    };
+    const frozen: ALMessage = {
+        ...multicast,
+        targets: { mode: 'multicast', groupRef: room, recipientPeerIds: ['receiver'], snapshotVersion: 4 }
+    };
+    const receiver = toALInboundReceiver('receiver', undefined);
+
+    it('refuses an RTC peer copy of a room multicast whose origin froze no audience', () => {
+        expect(validateALInboundMessage(multicast, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toEqual({
+            code: 'malformed',
+            message: 'RTC room multicast carries no frozen audience'
+        });
+    });
+
+    it('admits a frozen RTC copy, and an unfrozen one from a WS session the server freezes at admission', () => {
+        expect(validateALInboundMessage(frozen, { kind: 'rtc-peer', peerId: 'relay' }, receiver).left).toBeUndefined();
+        expect(validateALInboundMessage(multicast, fromClient('origin'), SERVER).left).toBeUndefined();
+    });
+});
+
 function fromClient(peerId: string): ALInboundMessageRuntime.Source {
     return { kind: 'ws-client', peerId };
 }

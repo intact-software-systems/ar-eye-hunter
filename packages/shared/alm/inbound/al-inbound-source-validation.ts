@@ -1,6 +1,10 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
+    decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
@@ -24,15 +28,27 @@ export function toALDeliveryCarrier(source: ALInboundMessageRuntime.Source): ALD
     }
 }
 
+export function toALRtcPeerSource(peerId: string, message: ALMessage | undefined): ALInboundMessageRuntime.Source {
+    const frozen = resolveALFrozenMulticastAudience(message?.targets);
+    return frozen === undefined
+        ? { kind: 'rtc-peer', peerId }
+        : {
+            kind: 'rtc-peer',
+            peerId,
+            groupRecipientPeerIds: frozen.recipientPeerIds,
+            snapshotVersion: frozen.snapshotVersion
+        };
+}
+
 export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.Source {
-    const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds']);
+    const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds', 'snapshotVersion']);
     if (
         source.kind === 'trusted-server' && source.peerId === undefined &&
-        source.groupRecipientPeerIds === undefined
+        source.groupRecipientPeerIds === undefined && source.snapshotVersion === undefined
     ) {
         return { kind: 'trusted-server' };
     }
-    if (source.kind === 'ws-client') {
+    if (source.kind === 'ws-client' && source.snapshotVersion === undefined) {
         return {
             kind: 'ws-client',
             peerId: decodeALAdmissionString(source.peerId),
@@ -41,10 +57,31 @@ export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.S
                 : { groupRecipientPeerIds: decodeFrozenGroupAudience(source.groupRecipientPeerIds) })
         };
     }
-    if (source.kind === 'rtc-peer' && source.groupRecipientPeerIds === undefined) {
-        return { kind: source.kind, peerId: decodeALAdmissionString(source.peerId) };
+    if (source.kind === 'rtc-peer') {
+        return decodeRtcPeerSource(source);
     }
     throw new TypeError('Persisted AL ingress source is invalid');
+}
+
+function decodeRtcPeerSource(source: PersistedALRecord): ALInboundMessageRuntime.Source {
+    const peerId = decodeALAdmissionString(source.peerId);
+    if (source.groupRecipientPeerIds === undefined && source.snapshotVersion === undefined) {
+        return { kind: 'rtc-peer', peerId };
+    }
+    return {
+        kind: 'rtc-peer',
+        peerId,
+        groupRecipientPeerIds: decodeFrozenGroupAudience(source.groupRecipientPeerIds),
+        snapshotVersion: decodeFrozenSnapshotVersion(source.snapshotVersion)
+    };
+}
+
+function decodeFrozenSnapshotVersion(value: unknown): number {
+    const snapshotVersion = decodeALAdmissionNumber(value);
+    if (snapshotVersion < 1) {
+        throw new TypeError('Stored frozen group audience snapshot version is invalid');
+    }
+    return snapshotVersion;
 }
 
 function decodeFrozenGroupAudience(value: unknown): readonly string[] {

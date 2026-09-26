@@ -222,6 +222,7 @@ describe('ALOutboundMessageRuntime', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 }
             })
@@ -233,19 +234,22 @@ describe('ALOutboundMessageRuntime', () => {
         const nextMessage = createOutboundMessage('next-message-for-same-sender');
         const plan = (msg: ALMessage) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] });
         const beforeAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
-        await runtime.acceptControlMessage(newALAckControlMessage(
-            { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
-            {
-                ackedMsgId: msg.id.msgId,
-                originPeerId: 'self',
-                logicalRecipientPeerId: 'peer-1',
-                fromPeerId: 'peer-1',
-                toPeerId: 'self',
-                status: 'accepted',
-                observedAtEpochMs: 1,
-                carrier: 'ws'
-            }
-        ));
+        await runtime.acceptControlMessage(
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'peer-1',
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
+                }
+            ),
+            'peer'
+        );
         const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
         expect(afterAck.clientRecord?.senderId).toBe('self');
         expect(afterAck.clientRecord).not.toEqual(beforeAck.clientRecord);
@@ -257,19 +261,22 @@ describe('ALOutboundMessageRuntime', () => {
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
-        await runtime.acceptControlMessage(newALAckControlMessage(
-            { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
-            {
-                ackedMsgId: msg.id.msgId,
-                originPeerId: 'self',
-                logicalRecipientPeerId: 'peer-1',
-                fromPeerId: 'peer-1',
-                toPeerId: 'self',
-                status: 'accepted',
-                observedAtEpochMs: 2,
-                carrier: 'ws'
-            }
-        ));
+        await runtime.acceptControlMessage(
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'peer-1',
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 2,
+                    carrier: 'ws'
+                }
+            ),
+            'peer'
+        );
         const afterLateAck = await admissionStore.readOutgoingMessage({
             msg: nextMessage,
             planner: plan,
@@ -679,6 +686,7 @@ describe('ALOutboundMessageRuntime', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 },
                 repairTracking: {
@@ -734,7 +742,7 @@ describe('ALOutboundMessageRuntime', () => {
                 dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-                ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], mode: 'receiver' },
+                ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], nextHopPeerIds: ['r1', 'r2'], mode: 'receiver' },
                 repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
             }),
             planRepairMessage: async (msg, request) => {
@@ -747,19 +755,22 @@ describe('ALOutboundMessageRuntime', () => {
 
         // One relay confirms `r1`; the receipt's retry targets are the logical recipients left.
         expect(
-            await runtime.acceptControlMessage(newALAckControlMessage(
-                { v: 2, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
-                {
-                    ackedMsgId: msg.id.msgId,
-                    fromPeerId: 'relay',
-                    toPeerId: 'self',
-                    originPeerId: 'self',
-                    logicalRecipientPeerId: 'r1',
-                    carrier: 'ws',
-                    status: 'delivered',
-                    observedAtEpochMs: Date.now()
-                }
-            ))
+            await runtime.acceptControlMessage(
+                newALAckControlMessage(
+                    { v: 2, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
+                    {
+                        ackedMsgId: msg.id.msgId,
+                        fromPeerId: 'relay',
+                        toPeerId: 'self',
+                        originPeerId: 'self',
+                        logicalRecipientPeerId: 'r1',
+                        carrier: 'ws',
+                        status: 'delivered',
+                        observedAtEpochMs: Date.now()
+                    }
+                ),
+                'peer'
+            )
         ).toEqual({ kind: 'committed' });
         await vi.advanceTimersByTimeAsync(102);
 
@@ -787,6 +798,7 @@ describe('ALOutboundMessageRuntime', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 }
             }),
@@ -859,7 +871,8 @@ describe('ALOutboundMessageRuntime', () => {
                     expectedSeq: 1,
                     missingSeqs: [1]
                 }
-            )
+            ),
+            'peer'
         );
 
         await expect.poll(() => sent.map((entry) => entry.msgId)).toEqual([
@@ -905,7 +918,8 @@ describe('ALOutboundMessageRuntime', () => {
                     observedAtEpochMs: 1,
                     serverSnapshotVersion: 3
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(sent).toEqual([
@@ -975,7 +989,8 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
         await vi.advanceTimersByTimeAsync(50);
         await vi.advanceTimersByTimeAsync(1);
@@ -1023,7 +1038,8 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
         await runtime.acceptControlMessage(
             newALNackControlMessage(
@@ -1035,7 +1051,8 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'not-yet-in-sync',
                     observedAtEpochMs: 2
                 }
-            )
+            ),
+            'peer'
         );
         await vi.advanceTimersByTimeAsync(50);
         await vi.advanceTimersByTimeAsync(1);
@@ -1089,13 +1106,13 @@ describe('ALOutboundMessageRuntime', () => {
             );
 
         await enqueueOutboundOrThrow(runtime, msg);
-        await runtime.acceptControlMessage(nack());
-        await runtime.acceptControlMessage(nack());
-        await runtime.acceptControlMessage(nack());
+        await runtime.acceptControlMessage(nack(), 'peer');
+        await runtime.acceptControlMessage(nack(), 'peer');
+        await runtime.acceptControlMessage(nack(), 'peer');
         await vi.advanceTimersByTimeAsync(50);
         await vi.advanceTimersByTimeAsync(1);
 
-        await runtime.acceptControlMessage(nack(2));
+        await runtime.acceptControlMessage(nack(2), 'peer');
         await vi.advanceTimersByTimeAsync(50);
         await vi.advanceTimersByTimeAsync(1);
 
@@ -1263,6 +1280,7 @@ describe('ALOutboundMessageRuntime', () => {
                     timeoutMs: 100,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 },
                 repairTracking: {
@@ -1287,19 +1305,22 @@ describe('ALOutboundMessageRuntime', () => {
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;
-        await runtime.acceptControlMessage(newALAckControlMessage(
-            { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
-            {
-                ackedMsgId: msg.id.msgId,
-                originPeerId: 'self',
-                logicalRecipientPeerId: 'peer-1',
-                fromPeerId: 'peer-1',
-                toPeerId: 'self',
-                status: 'accepted',
-                observedAtEpochMs: 1,
-                carrier: 'ws'
-            }
-        ));
+        await runtime.acceptControlMessage(
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'peer-1',
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
+                }
+            ),
+            'peer'
+        );
         sendCompleted.resolve();
         await enqueue;
         await vi.advanceTimersByTimeAsync(200);
@@ -1385,7 +1406,8 @@ describe('ALOutboundMessageRuntime', () => {
                     reason: 'gap',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
 
         await expect.poll(() => sent.length).toBe(2);

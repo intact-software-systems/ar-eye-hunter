@@ -179,7 +179,9 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const stored = senderId ? await this.readStoredMessage(session, msgId) : undefined;
         const sentSnapshot = await this.readCanonicalSentMessage(session, msgId, stored);
         const msg = sentSnapshot?.msg;
-        const plan = msg && stored ? applyALOutboundCapturedPolicy(planner(msg), stored.policy) : undefined;
+        const plan = msg && stored
+            ? applyALOutboundCapturedPolicy(planner(msg, stored.policy.admittedAudience), stored.policy)
+            : undefined;
         if (msg && plan) {
             requireALOutboundPlannedMessage(msg, plan.msg);
         }
@@ -350,7 +352,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         stored: ALStoredOutboundMessage | undefined
     ): ALOutboundDispatchPlan<TPrepared> {
         const { msg, planner, intent } = input;
-        const selected = planner(canonical ?? msg);
+        const selected = planner(canonical ?? msg, stored?.policy.admittedAudience);
         requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
         const planned = canonical ? { ...selected, msg: canonical } : selected;
         const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;

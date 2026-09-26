@@ -220,7 +220,7 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
             sendInput: (input) => this.egress.sendInput(input),
             sendIntent: (intent) => this.directorRelay.sendIntent(intent),
             publishSnapshot: (snapshot, options) => this.egress.publishSnapshot(snapshot, options),
-            publishEvent: (event) => this.directorRelay.publishEvent(event),
+            publishEvent: (event, options) => this.directorRelay.publishEvent(event, options),
             requestSync: (payload) => this.directorRelay.requestSync(payload),
             onPresence: (handler) => this.routing.onPresence(handler),
             onStatus: (handler) => this.status.onStatus(handler)

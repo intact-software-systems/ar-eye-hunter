@@ -1,6 +1,11 @@
-import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
-import type { ALOutboundMessageRuntime, ALOutboundSettlementEmitter } from '../al-outbound-message-runtime.ts';
+import type {
+    ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettlementEmitter
+} from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 import {
     computeALOutboundReceiptAdmission,
@@ -8,16 +13,20 @@ import {
     toALOutboundReceiptSettlement,
     validateALOutboundReceiptAdmission
 } from './compute-al-outbound-receipt-admission.ts';
+import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly clock: ALOutboundMessageRuntime.Clock;
     readonly settlements: ALOutboundSettlementEmitter;
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
 }
 
 /**
- * The origin's side of a server receipt: one conditional commit fenced on the origin's version. A
- * conflict starts a fresh read; the few attempts bound a receipt racing the origin's own writes.
+ * A server receipt moving a receipt row: at the origin, and at the WS server for its own pending row of
+ * an outbox-fanned message. One conditional commit fenced on the origin's version; a conflict starts a
+ * fresh read, and the few attempts bound a receipt racing the origin's own writes. Running out of them
+ * is reported, since the row then keeps waiting on acknowledgements the receipt already counted.
  */
 export class ALOutboundReceiptAdmission<TPrepared> {
     private static readonly MAX_ATTEMPTS = 3;
@@ -27,14 +36,33 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         this.dependencies = dependencies;
     }
 
-    async admit(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    /** The receipt control message itself, so its verdict is stated under the id of that control. */
+    async admit(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+        const decoded = decodeALControlMessage(control).right;
+        if (decoded?.type !== 'receipt') {
+            return { kind: 'not-handled' };
+        }
+        const admitted = await this.admitReceipt(decoded.payload);
+        writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
+            control,
+            targetMsgId: decoded.payload.msgId,
+            admitted
+        });
+        return admitted;
+    }
+
+    private async admitReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
         for (let attempt = 0; attempt < ALOutboundReceiptAdmission.MAX_ATTEMPTS; attempt += 1) {
             const result = await this.admitOnce(receipt);
             if (result !== 'conflict') {
                 return result;
             }
         }
-        return { kind: 'rejected', reason: 'AL receipt kept conflicting with the origin version' };
+        const reason = 'AL receipt kept conflicting with the origin version';
+        console.warn(
+            `AL ${receipt.phase} receipt for ${receipt.msgId} of origin ${receipt.originPeerId} left its receipt row unmoved: ${reason}`
+        );
+        return { kind: 'rejected', reason };
     }
 
     private async admitOnce(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult | 'conflict'> {
@@ -55,7 +83,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             durableEffects: []
         });
         if (status === 'committed') {
-            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.write, receipt));
+            this.dependencies.settlements(toALOutboundReceiptSettlement(candidate.read, candidate.write));
             return { kind: 'committed' };
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };

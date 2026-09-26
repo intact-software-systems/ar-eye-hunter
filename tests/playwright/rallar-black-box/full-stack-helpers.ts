@@ -8,6 +8,7 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -152,6 +153,11 @@ export interface RecipePairOutcome {
 export interface RecipePair {
     readonly sender: RallarBlackBoxTestRecipe;
     readonly receiver: RallarBlackBoxTestRecipe;
+}
+
+/** A recipient recipe whose connect barrier has released; its outcome settles when the recipe does. */
+export interface StartedRecipientRun {
+    readonly outcome: Promise<RecipeRunOutcome>;
 }
 
 interface ControlResult {
@@ -555,7 +561,7 @@ export async function openBrowserControlAgent(
         groupId: string;
         connection?: string;
         /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
-        diagnosticsRole?: 'sender' | 'receiver';
+        diagnosticsRole?: AlmConformanceRole;
     }>
 ): Promise<
     Readonly<{
@@ -611,7 +617,7 @@ export async function openBrowserControlAgent(
 
 function toPageDiagnosticsCapture(
     page: Page,
-    input: Readonly<{ agentId: string; diagnosticsRole?: 'sender' | 'receiver'; }>
+    input: Readonly<{ agentId: string; diagnosticsRole?: AlmConformanceRole; }>
 ): PageDiagnosticsCapture | undefined {
     return input.diagnosticsRole === undefined
         ? undefined
@@ -746,17 +752,27 @@ export async function runRecipePairOnTwoAgents(
         ]);
         return { sender, receiver };
     }
-    const connectCommandId = requireConnectCommandId(recipes.receiver);
-    const receiverRun = runRecipeOnAgent(run, run.receiver, recipes.receiver);
-    await waitForReceiverConnectBarrier(run, {
-        connectCommandId,
-        runCommandId: toRecipeRunCommandId(recipes.receiver)
-    });
+    const receiverRun = await startRecipientRecipeRun(run, run.receiver, recipes.receiver);
     const [sender, receiver] = await Promise.all([
         runRecipeOnAgent(run, run.sender, recipes.sender),
-        receiverRun
+        receiverRun.outcome
     ]);
     return { sender, receiver };
+}
+
+/** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
+export async function startRecipientRecipeRun(
+    run: TwoAgentRun,
+    agent: TwoAgentRunParticipant,
+    recipe: RallarBlackBoxTestRecipe
+): Promise<StartedRecipientRun> {
+    const connectCommandId = requireConnectCommandId(recipe);
+    const outcome = runRecipeOnAgent(run, agent, recipe);
+    await waitForReceiverConnectBarrier(run, {
+        connectCommandId,
+        runCommandId: toRecipeRunCommandId(recipe)
+    });
+    return { outcome };
 }
 
 export async function selectControlRunInManager(

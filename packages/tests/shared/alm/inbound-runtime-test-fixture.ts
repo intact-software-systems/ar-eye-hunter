@@ -249,7 +249,7 @@ export async function readInboundTestAdmission(
     const read = await readInboundTestDecisionSurface(admissionStore, msg, nowMs);
     const plan = planInboundTestMessage(msg, INBOUND_TEST_SOURCE, computeALInboundPlanningObservations(read));
     const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
-    return computeALInboundAdmission({ read, plan, facts, canForward: false });
+    return computeALInboundAdmission({ read, plan, facts, canForward: false, recordedParentPresent: true });
 }
 
 /** The admission the runtime composes, over the caller's own stores, so a pin can drive it directly. */

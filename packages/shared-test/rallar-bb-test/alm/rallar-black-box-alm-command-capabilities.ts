@@ -36,7 +36,9 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Observe ALM Send',
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
-            'The in-page handle projects admission, carrier attempts and hop acknowledgements; a lost handle is unobservable.',
+            'The in-page handle projects admission, carrier attempts with their attemptOutcomes, a relayRejection, and the ' +
+            'latest receipt: its receiptMode, the hop lists, and expectedRecipientPeerIds, confirmedRecipientPeerIds and ' +
+            'unconfirmedRecipientPeerIds beside them; a lost handle is unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -85,9 +87,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
     {
         kind: 'messages.receipts',
         title: 'Read ALM Receipts',
-        description:
-            'Reads the in-page lifecycle observation for a messages.send handle, including confirmedHopPeerIds, ' +
-            'unconfirmedHopPeerIds, attempts, submission facts and reason. Unknown handles are unobservable.',
+        description: 'Reads the in-page lifecycle observation for a messages.send handle, including receiptMode, ' +
+            'confirmedHopPeerIds, unconfirmedHopPeerIds, expectedRecipientPeerIds, confirmedRecipientPeerIds, ' +
+            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, relayRejection, submission facts and reason. ' +
+            'Unknown handles are unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -96,6 +99,25 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             kind: 'messages.receipts',
             commandId: 'read-alm-receipts',
             handleId: 'alm-send-1'
+        }
+    },
+    {
+        kind: 'messages.control',
+        title: 'Submit Raw ALM Control',
+        description: 'Harness-only: submits, as msgId, the ACK of ackedMsgId to its sender toPeerId under an ' +
+            'al.control.* typeId, through the carrier admission a product control takes; returns the carrier verdict.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['control msgId and carrier admission verdict'],
+        example: {
+            kind: 'messages.control',
+            commandId: 'submit-unknown-ack-version',
+            carrier: 'rtc',
+            typeId: 'al.control.ack.v1',
+            msgId: 'retired-ack-1',
+            ackedMsgId: 'received-msg-id',
+            toPeerId: 'origin-session-id'
         }
     },
     {

@@ -162,7 +162,6 @@ describe('PostgreSQL inbound admission', () => {
                             toPeerId: 'peer-1',
                             status: 'subtree-complete',
                             localReady: false,
-                            localRecipient: false,
                             expectedFromPeerIds: ['peer-2'],
                             ackedFromPeerIds: [],
                             carrier: 'ws'
@@ -346,7 +345,8 @@ describe('PostgreSQL outbound admission', () => {
                     observedAtEpochMs: 1,
                     carrier: 'ws'
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(acceptance).toEqual({ kind: 'committed' });

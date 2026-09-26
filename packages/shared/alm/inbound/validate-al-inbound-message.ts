@@ -5,6 +5,7 @@ import {
     type ALAckPayload,
     type ALParsedControlMessage
 } from '../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -51,6 +52,12 @@ export function validateALInboundMessage(
     }
     if (msg.targets?.mode === 'multicast' && msg.targets.membershipEpoch !== undefined) {
         return Either.ofLeft({ code: 'unsupported', message: 'Authoritative membership fencing is not implemented' });
+    }
+    if (
+        source.kind === 'rtc-peer' && msg.targets?.mode === 'multicast' &&
+        !resolveALFrozenMulticastAudience(msg.targets)
+    ) {
+        return Either.ofLeft({ code: 'malformed', message: 'RTC room multicast carries no frozen audience' });
     }
     if (msg.payload.typeId.startsWith('al.control.')) {
         const control = decodeALControlMessage(msg);

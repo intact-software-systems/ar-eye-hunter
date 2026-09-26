@@ -61,7 +61,6 @@ describe('admission control decoding', () => {
         toPeerId: 'b',
         status: 'delivered',
         localReady: false,
-        localRecipient: false,
         expectedFromPeerIds: ['a'],
         ackedFromPeerIds: [],
         carrier: 'ws'
@@ -124,11 +123,9 @@ describe('admission control decoding', () => {
         ).toThrow(TypeError);
     });
 
-    it('rejects a pending receipt that does not say whether the relay is a logical recipient', () => {
-        const { localRecipient: _localRecipient, ...unflagged } = pending;
-
-        expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: unflagged }, 'msg', 'pending'))
-            .toThrow(TypeError);
+    // S2c-ii retired the relay recipient flag: the terminal ACK always names the relay, so a row carrying it is from before.
+    it('rejects a pending receipt written before S2c-ii, which still carries the relay recipient flag', () => {
+        expect(() => decodeALAdmissionControlValue({ kind: 'pending', value: { ...pending, localRecipient: true } }, 'msg', 'pending')).toThrow(TypeError);
     });
 
     // A row written before the carrier field existed is undecodable until its control TTL passes.

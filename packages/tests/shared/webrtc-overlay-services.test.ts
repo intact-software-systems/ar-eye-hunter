@@ -170,7 +170,7 @@ describe('WebRtc overlay services', () => {
         }
     });
 
-    it('keeps originating multicast copies transport-ready without mutating visited hops or ttl', () => {
+    it('keeps originating copies transport-ready, naming the sender and its addressed hops as visited, ttl unchanged', () => {
         const connectionService = createConnectionService(['peer-1', 'peer-2']);
         const service = new WebRtcOverlayMulticastService(
             'group-1',
@@ -217,7 +217,8 @@ describe('WebRtc overlay services', () => {
 
         for (const transportMessage of plan.transportMessages) {
             expect(transportMessage.constraints?.ttlHops).toBe(3);
-            expect(transportMessage.diagnostics?.visitedPeerIds).toEqual(['peer-z']);
+            // Each copy names every hop of the dispatch, so no recipient relays to a sibling (R-S2c-ii-8).
+            expect(transportMessage.diagnostics?.visitedPeerIds).toEqual(['peer-z', 'self', 'peer-1', 'peer-2']);
             expect(transportMessage.forwarding?.overlayId).toBe('group-1');
             expect(transportMessage.forwarding?.nextHopPeerIds).toHaveLength(1);
         }

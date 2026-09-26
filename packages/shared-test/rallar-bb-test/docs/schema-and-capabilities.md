@@ -201,6 +201,85 @@ replay carrier's settlements land on the earlier handle, so a later
 perform (no connected session, or the capturing carrier no longer retains the
 envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 
+`messages.control` is a harness capability, not a product path. It names `carrier`
+(`ws` or `rtc`), `typeId` (an `al.control.*` id), `msgId`, `ackedMsgId` and `toPeerId`,
+and optionally `connection`. The page builds, under the authored `msgId`, the ACK
+envelope its own session would send for `ackedMsgId` to `toPeerId`, that message's
+sender, and swaps in `typeId`, so the addressee's admission outcome names this one
+control, and so a recipe can send a control version its addressee does not support.
+The envelope goes through the carrier admission a product control takes. It returns
+`{ msgId, typeId, carrier, verdict, reason? }`: the control's own msgId and that
+carrier's verdict, which says only whether this page's carrier took the control:
+`admitted`, or another admission verdict such as `duplicate` for a msgId this page's
+store already holds. The addressee records its own `admission-outcome` for the control, which is
+the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId` and
+`toPeerId` may name `{resultCache.<commandId>.<path>}` tokens, the same tokens a
+`wait` resolves in `contains`, such as
+`{resultCache.<wait>.value.event.payload.senderId}` of an earlier message wait. A
+token no earlier command returned fails the command as invalid input. A page with
+no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
+
+The `receipted-audience` conformance scenarios run on three agents: `sender`,
+`receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
+sender reads its receipt only after the scenario window, never by polling
+`acknowledged`, and pins the state the handle ended in (`acknowledged` for a receipt
+that completes, `expired` for one that ends timed out), the receipt mode and the
+length of each recipient list. Every send payload names its carrier, and the raw ACK
+of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
+runs every carrier on one page never matches an earlier carrier's event. Its
+recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
+receipt confirms and leaves unconfirmed. The identity assessment joins each list to
+the sessions of those roles after the run.
+
+- `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
+  waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
+  first receipt frame, the `admitted` one, and the `acknowledged` read proves the
+  `complete` one.
+- `missing-recipient-retry`: `recipient-b` holds its ACK back with a fault it keeps
+  armed until it is released. A one-shot `drop` would not lose the ACK: the RTC
+  channel settles a dropped frame `not-ready` and its sender resubmits it 50 ms
+  later.
+  - Over `rtc` and `rtc-with-ws-fallback`, `recipient-b` releases the ACK only once
+    the origin's retried copy reaches it as a duplicate. The receiver proves no
+    retried copy ever reaches it, and the receipt confirms both recipients.
+  - Over `ws` the room topic fans out live-only, so the WS server keeps no copy to
+    retry. `recipient-b` proves no copy is retried, and the short-lived send's
+    receipt ends timed out: the handle reads `expired`, with the receiver confirmed
+    and `recipient-b` unconfirmed.
+- `unknown-ack-version` (`rtc`, `rtc-with-ws-fallback`): `recipient-b` answers the
+  send with a raw `al.control.ack.v1` through `messages.control` and asserts its own
+  carrier took it (`verdict` `admitted`), and the sender waits for its own
+  `admission-outcome` of that authored msgId refusing it `rejected`/`unsupported`.
+  The authored msgId is the carrier and scenario followed by the msgId of the send it
+  answers, which both pages read from their own result cache, so a re-run on a page
+  whose store survived submits a new control rather than a `duplicate`. Over `ws` the
+  WS server refuses that frame before any relay, which stays a unit pin of the
+  server.
+- `frozen-audience-membership`: `recipient-b` holds its ACK back and closes its
+  connection once the send reaches it, which clears the fault. The receipt keeps it
+  expected and reports it unconfirmed (D43), and the handle reads `expired`.
+  `recipient-b` reconnects only after the send has expired, as the same session.
+
+A fifth scenario, a relay in front of `recipient-b` whose hop list names the relay
+while the recipient list names `recipient-b`, is deferred (R-S2c-ii-10): only the
+group owner can override the topology, and under `tree` which of three sessions sits
+in the middle is a hash of their ids, so no run can pin the relay. A unit pin proves
+the hop-versus-recipient property until the harness can place a relay.
+
+The local lane runs these scenarios as the `three-agent family over <carrier>` test,
+three pages in one run. The Hetzner manifest
+`22-alm-conformance-3-agent.json` (pattern `one-sender-two-recipients`) runs every
+carrier's scenarios in one combined recipe per role. Nothing in that combined recipe
+orders `recipient-b` arming its ACK hold for the next scenario before the sender's
+next send. `recipient-b` arms it once its previous scenario's absence window has
+ended, a window that started at the arrival; the sender sends once its own window,
+which started at its admission a little earlier, and its receipt read and asserts
+are done. The margin is the sender's extra local steps against the arrival latency,
+milliseconds rather than a barrier. The local lane runs each scenario with its own
+connect, and there the hold lands seconds before the send. A lost race on Hetzner
+reddens the scenario (an ACK that should have been held confirms `recipient-b`); it
+never makes one green.
+
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
 refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
@@ -217,9 +296,9 @@ Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
 `control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
-result reference. The sender retains the send, but the send requested no ACK, so nothing it waits
-on expects the relay and the sender refuses the NACK; the refusal is still the relay's verdict
-arriving.
+result reference. The sender admits that NACK as the word of its trusted server and states the
+relay rejection (`relayRejection: { relay: 'trusted-server' }`); the send requested no ACK, so its
+handle is already `transport-accepted` and keeps that state.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
@@ -242,9 +321,31 @@ its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`,
-`reason`, `backpressured`, and `enqueued`. The peer lists describe hop
-acknowledgements, not logical recipients. `backpressured` is true when a carrier
+`submitted`, `attempts`, `attemptOutcomes`, `relayRejection`, `receiptMode`,
+`confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
+`confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
+`backpressured`, and `enqueued`. `attempts` counts every attempt row,
+including a carrier admission that never reached the transport: an `unroutable`
+leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
+the outcome of every settled row in attempt order. `receiptMode` is the latest
+receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
+settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
+Under `receiver` the recipient lists count the frozen logical audience:
+`expectedRecipientPeerIds` is that audience (never the origin), and
+`acknowledged` means every one of them confirmed; an origin alone in its room is
+acknowledged at admission with all three lists empty. The hop lists are then the
+local hop view of the origin: `confirmedHopPeerIds` are the next hops whose own
+completion ACK arrived, `unconfirmedHopPeerIds` the rest of the next hops the
+send went through. A relay in front of a recipient is a confirmed hop while the
+recipient is a confirmed recipient. A WS origin names no hop, so both hop lists are
+empty there. `relayRejection` is present once a hop refused a retained send with
+an admitted `resync-required` NACK: `{ relay: 'peer', peerId }` for an RTC hop or
+an addressee, or `{ relay: 'trusted-server' }` for the WS server, which is never
+named. The rejection ends the send `rejected` and its receipt with it, so a
+multi-recipient receipt keeps the recipient evidence it had at that moment. A send
+that tracks no receipt is already `transport-accepted`, which is terminal for it,
+when the NACK arrives: it keeps that state, and the rejection lands as evidence
+only, in `relayRejection`. `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
 had no peer; `enqueued` is true once a durable admission put the message in a
 carrier queue.

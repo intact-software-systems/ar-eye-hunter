@@ -26,6 +26,7 @@ import {
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -36,7 +37,11 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    createScriptedTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -300,32 +305,48 @@ describe('RTC outbound transport results', () => {
         });
     });
 
-    it.each(['unicast', 'multicast'] as const)(
-        'refuses a receiver ack on %s targets as unsupported until the overlay tracks logical receipts',
-        async (mode) => {
-            const channel = createChannel();
-            const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
-            const manager = createManager([channel], resources);
-            onTestFinished(() => manager.dispose());
-            const message = createMessage('receiver');
-            const targets = mode === 'unicast'
-                ? message.targets
-                : { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } } as const;
+    it('admits a receiver ack on an RTC unicast and routes a room multicast by its overlay, refusing neither', async () => {
+        const channel = createChannel();
+        const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const message = { ...createMessage('receiver'), delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
 
-            const result = await enqueueRtcAndDrain(manager, {
-                ...message,
-                targets,
-                delivery: { reliability: 'at-least-once', ack: 'receiver' }
-            });
+        const unicast = await enqueueRtcAndDrain(manager, message);
+        const multicast = await enqueueRtcAndDrain(manager, {
+            ...message,
+            id: { ...message.id, msgId: 'receiver-multicast' },
+            targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } }
+        });
 
-            expect(result.verdict).toEqual({
-                kind: 'refused',
-                reason: 'unsupported',
-                detail: `ack receiver is unsupported for rtc ${mode} targets`
-            });
-            expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
-        }
-    );
+        expect(unicast.verdict).toMatchObject({ kind: 'admitted' });
+        expect(multicast.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+    });
+
+    it('resubmits an ACK a one-shot drop fault dropped, and keeps it on the page only while a held fault is armed', async () => {
+        const faults = createScriptedTransportFaultPort();
+        const channel = createChannel({}, 'peer-1', faults);
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const dropAck = { faultId: 'drop-ack', carrier: 'rtc', match: { controlType: 'ack', typeId: undefined, msgId: undefined } } as const;
+
+        faults.inject({ ...dropAck, action: 'drop', remaining: 1 });
+        await enqueueRtcAndDrain(manager, createAck('once-dropped'));
+        expect(native.sent).toEqual([]);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(native.sent.map((frame) => JSON.parse(String(frame)).id.msgId)).toEqual(['once-dropped']);
+
+        faults.inject({ ...dropAck, action: 'drop', remaining: 'until-cleared' });
+        await enqueueRtcAndDrain(manager, createAck('held'));
+        await vi.advanceTimersByTimeAsync(500);
+        expect(native.sent).toHaveLength(1);
+        faults.inject({ ...dropAck, action: 'drop', remaining: 0 });
+        await vi.advanceTimersByTimeAsync(50);
+        expect(native.sent.map((frame) => JSON.parse(String(frame)).id.msgId)).toEqual(['once-dropped', 'held']);
+    });
 
     it('reports admission without claiming a transport send while the channel is closed', async () => {
         const channel = createChannel();
@@ -345,7 +366,11 @@ function attemptSettlements(): readonly Extract<ALDeliverySettlement, { kind: 'a
     return settlements.filter((settlement) => settlement.kind === 'attempt-settled');
 }
 
-function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId = 'peer-1'): QRtcDataChannel {
+function createChannel(
+    flowControl: RtcDataChannelFlowControlPolicy = {},
+    peerId = 'peer-1',
+    faultPort: TransportFaultPort = createPassThroughTransportFaultPort()
+): QRtcDataChannel {
     const peer = new QRtcPeerConnection({ send: async () => {} }, {
         sessionId: 'self',
         peerSessionId: peerId,
@@ -354,7 +379,7 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId
         isPolite: false
     });
     peer.connect();
-    const channel = new QRtcDataChannel(peer, { faultPort: createPassThroughTransportFaultPort(), peerId, dataChannelName: 'alm', flowControl });
+    const channel = new QRtcDataChannel(peer, { faultPort, peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);
     onTestFinished(() => {
         peer.reset();
@@ -411,4 +436,17 @@ function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
         { text: 'hello' },
         { ttlMs, qos: { durability: { algo: 'volatile' } } }
     );
+}
+
+function createAck(msgId: string): ALMessage {
+    return newALAckControlMessage({ v: 2, msgId, senderId: 'self', ts: Date.now() }, {
+        ackedMsgId: `${msgId}-acked`,
+        fromPeerId: 'self',
+        toPeerId: 'peer-1',
+        originPeerId: 'peer-1',
+        logicalRecipientPeerId: 'self',
+        carrier: 'rtc',
+        status: 'delivered',
+        observedAtEpochMs: Date.now()
+    });
 }

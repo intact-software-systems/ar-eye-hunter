@@ -555,6 +555,7 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
         deliveries: {
             getHandle: (msgId) => browserDeliveryComposition.deliveries.getHandle(msgId),
             replayCapturedMessage: () => Promise.reject(new Error('This fixture never replays a message.')),
+            submitRawControl: () => Promise.reject(new Error('This fixture never submits a raw control.')),
             resolveRoomMinSnapshotVersion: () => {
                 throw new Error('This fixture never states a snapshot floor.');
             }

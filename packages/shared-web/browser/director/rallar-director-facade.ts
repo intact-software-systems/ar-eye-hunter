@@ -72,7 +72,14 @@ export interface RallarDirectorRelaySendResult {
     readonly status: RallarDirectorRelaySendStatus;
     readonly rtc?: RallarTargetedSendResult | RallarMessageHandle;
     readonly ws?: RallarMessageHandle;
+    /** The one carrier-neutral handle of an output sent with a logical receipt request. */
+    readonly receipt?: RallarMessageHandle;
     readonly reason?: string;
+}
+
+/** An output sent with these options asks every frozen room recipient to confirm it. */
+export interface RallarDirectorOutputOptions {
+    readonly ack: 'all-logical-recipients';
 }
 
 export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> {
@@ -103,7 +110,7 @@ export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput
 export interface RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> {
     status(): RallarDirectorStatus;
     sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
-    sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
+    sendOutput(output: TOutput, options?: RallarDirectorOutputOptions): Promise<RallarDirectorRelaySendResult>;
     sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
     sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
     requestSync<TPayload>(payload?: TPayload): Promise<RallarDirectorRelaySendResult>;

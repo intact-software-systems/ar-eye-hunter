@@ -12,6 +12,7 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -638,6 +639,102 @@ describe('RallarServerWsRouter', () => {
         ]);
     });
 
+    it('keeps a session that leaves the room after admission in the live-only audience it was admitted to (D43)', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const message = createReceiverRoomBroadcast('left-after-admission');
+
+        await fixture.sockets['peer-1']!.receive(message);
+
+        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
+    });
+
+    it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            disconnectedSessionIds: ['peer-3'],
+            fanout: 'live-only'
+        });
+        const message = createReceiverRoomBroadcast('disconnected-after-admission');
+
+        await fixture.sockets['peer-1']!.receive(message);
+
+        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
+            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
+        ]);
+    });
+
+    it.each([
+        { frozen: ['peer-2'], expected: ['peer-2'], label: 'honours a frozen audience narrower than the room' },
+        { frozen: ['peer-2', 'stranger'], expected: ['peer-2'], label: 'trims a frozen audience naming a non-member' }
+    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, expected }) => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('fell-back'),
+            targets: { mode: 'multicast', groupRef: AUDIENCE_ROOM, recipientPeerIds: frozen, snapshotVersion: 3 }
+        };
+
+        await fixture.sockets['peer-1']!.receive(message);
+
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
+            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
+        ]);
+        expect(readChatRecipients(fixture)).toEqual(expected);
+    });
+
+    it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2'],
+            currentSessionIds: ['peer-1', 'peer-2', 'peer-4'],
+            disconnectedSessionIds: [],
+            fanout: 'outbox'
+        });
+        const message = createReceiverRoomBroadcast('outbox-admitted-audience');
+
+        await fixture.sockets['peer-1']!.receive(message);
+
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'peer-1', msgId: message.id.msgId }))
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['peer-2'], ackedPeerIds: [] });
+        expect(fixture.sockets['peer-4']!.sent.filter((sent) => sent.payload.typeId === 'chat.message.v1')).toEqual([]);
+    });
+
+    it.each(
+        [
+            { ack: 'best-effort', delivery: { reliability: 'best-effort', ack: 'none' }, qos: undefined },
+            { ack: 'hop', delivery: undefined, qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } } },
+            { ack: 'receiver', delivery: { reliability: 'at-least-once', ack: 'receiver' }, qos: undefined }
+        ] as const
+    )('admits and delivers an outbox-fanned $ack room broadcast to a room larger than the wire collection limit', async ({ delivery, qos }) => {
+        const sessionIds = Array.from({ length: 300 }, (_, index) => `session-${String(index).padStart(3, '0')}`);
+        const fixture = createLargeOutboxRoom(sessionIds);
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('large-room'),
+            id: { v: 2, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            delivery,
+            qos
+        };
+
+        await fixture.router.route(message, { kind: 'ws-client', peerId: sessionIds[0]!, groupRecipientPeerIds: sessionIds });
+
+        await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
+            sessionIds.length
+        );
+        const delivered = Object.values(fixture.sockets).flatMap((socket) => socket.sent.filter((sent) => sent.id.msgId === 'large-room-1'));
+        expect(delivered.every((sent) => sent.targets?.mode === 'broadcast' && sent.targets.recipientPeerIds === undefined)).toBe(true);
+    });
+
     it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
         const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
         const message = newALBroadcastMessage(
@@ -1016,6 +1113,132 @@ function createIngressRouter(
     });
     onTestFinished(() => service.dispose());
     return { router: new RallarServerWsRouter(service, options), service, socket };
+}
+
+const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+
+interface AudienceRouterFixture {
+    readonly router: RallarServerWsRouter;
+    readonly sockets: Readonly<Record<string, RouterIngressWebSocket>>;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+}
+
+interface AudienceRouterInput {
+    readonly admittedSessionIds: readonly string[];
+    readonly currentSessionIds: readonly string[];
+    readonly disconnectedSessionIds: readonly string[];
+    /** `outbox`: the room topic leaves through the server's own outbound owner, to every session connected here. */
+    readonly fanout: 'live-only' | 'outbox';
+}
+
+/**
+ * One connection per session, named by its session id. Admission authorizes `admittedSessionIds`; every
+ * later authorization, which the route makes at dispatch, sees `currentSessionIds`, and by then the
+ * sockets of `disconnectedSessionIds` have closed.
+ */
+function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture {
+    const { admittedSessionIds, currentSessionIds, disconnectedSessionIds } = input;
+    const server = new JsonWebSocketServer();
+    const sockets = Object.fromEntries(
+        ['peer-1', 'peer-2', 'peer-3', 'peer-4'].map((sessionId) => [sessionId, new RouterIngressWebSocket()])
+    );
+    for (const [sessionId, socket] of Object.entries(sockets)) {
+        server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    }
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: outboundStores.workQueue,
+        outboundStores,
+        socket: server,
+        name: 'server-1',
+        targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
+            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
+            resolveBroadcastRecipients: () => input.fanout === 'outbox' ? Object.keys(sockets).map((peerId) => ({ peerId, connectionId: peerId })) : []
+        }
+    });
+    onTestFinished(() => service.dispose());
+    let authorizations = 0;
+    const router = new RallarServerWsRouter(service, {
+        nowEpochMs: () => 1,
+        authorizeRoomMessage: ({ message }) => {
+            authorizations += 1;
+            if (authorizations === 2) {
+                for (const sessionId of disconnectedSessionIds) {
+                    sockets[sessionId]!.readyState = WebSocket.CLOSED;
+                }
+            }
+            const sessionIds = authorizations === 1 ? admittedSessionIds : currentSessionIds;
+            return message.targets === undefined ? false : {
+                authorized: true,
+                audience: {
+                    targets: message.targets,
+                    sessions: sessionIds.map((sessionId) => createGroupPresenceRecord('room-1', sessionId, 3)),
+                    snapshotVersion: 3
+                }
+            };
+        }
+    });
+    router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
+    return { router, sockets, outboundStores };
+}
+
+/** A room of `sessionIds`, each connected here, whose room topic fans out through the server outbox. */
+function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRouterFixture, 'outboundStores'> {
+    const server = new JsonWebSocketServer();
+    const sockets = Object.fromEntries(sessionIds.map((sessionId) => [sessionId, new RouterIngressWebSocket()]));
+    for (const [sessionId, socket] of Object.entries(sockets)) {
+        server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    }
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: outboundStores.workQueue,
+        outboundStores,
+        socket: server,
+        name: 'server-1',
+        targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
+            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
+            resolveBroadcastRecipients: () => sessionIds.map((peerId) => ({ peerId, connectionId: peerId }))
+        }
+    });
+    onTestFinished(() => service.dispose());
+    const router = new RallarServerWsRouter(service, {
+        nowEpochMs: () => 1,
+        authorizeRoomMessage: ({ message }) =>
+            message.targets === undefined ? false : {
+                authorized: true,
+                audience: {
+                    targets: message.targets,
+                    sessions: sessionIds.map((sessionId) => createGroupPresenceRecord('room-1', sessionId, 3)),
+                    snapshotVersion: 3
+                }
+            }
+    });
+    router.install().defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+    return { router, sockets };
+}
+
+function createReceiverRoomBroadcast(resourceId: string): ALMessage {
+    return {
+        ...newALBroadcastMessage('peer-1', newALRoute('room.chat', 'room-1', resourceId), 'room', 'chat.message.v1', {}, {
+            groupRef: AUDIENCE_ROOM
+        }),
+        delivery: { reliability: 'at-least-once', ack: 'receiver' }
+    };
+}
+
+function readChatRecipients(fixture: AudienceRouterFixture): readonly string[] {
+    return Object.entries(fixture.sockets)
+        .filter(([, socket]) => socket.sent.some((sent) => sent.payload.typeId === 'chat.message.v1'))
+        .map(([sessionId]) => sessionId);
+}
+
+function readReceipts(socket: RouterIngressWebSocket): readonly ALReceiptPayload[] {
+    return socket.sent.flatMap((sent) => {
+        const control = parseALControlMessage(sent);
+        return control?.type === 'receipt' ? [control.payload] : [];
+    });
 }
 
 class RouterIngressWebSocket extends EventTarget implements WebSocket {

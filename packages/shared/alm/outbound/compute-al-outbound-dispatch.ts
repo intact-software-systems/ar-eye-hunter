@@ -10,13 +10,18 @@ import type {
     ALOutboundDurableEffectWrite,
     ALOutboundMessageReadDto
 } from './admission/al-outbound-admission-store.ts';
-import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
-import type { ALOutboundDispatchPhase, ALOutboundDispatchPlan } from './al-outbound-message-runtime.ts';
+import type {
+    ALOutboundDispatchPhase,
+    ALOutboundDispatchPlan,
+    ALOutboundSettlementFact
+} from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     toALOutboundAckRetryScheduleEndTimestamp,
+    toALOutboundEmptyAudienceReceipt,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
 
@@ -297,7 +302,28 @@ function appendSupersedenceMutations<TPrepared>(
  * same message, or a named `replacesMsgId` another message already replaced, states nothing new.
  * A predecessor that is both the latest and the named `replacesMsgId` has its row written twice.
  */
-export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
+export interface ALOutboundCommitSettlementsInput<TPrepared> {
+    readonly bundle: ALOutboundCommitBundle<TPrepared>;
+    readonly msg: ALMessage;
+    readonly plan: ALOutboundDispatchPlan<TPrepared>;
+    readonly intent: ALOutboundComputeIntent;
+}
+
+/** What a committed dispatch states at once: each message it superseded, and a receipt nobody is left to confirm. */
+export function toALOutboundCommitSettlements<TPrepared>(
+    input: ALOutboundCommitSettlementsInput<TPrepared>
+): readonly ALOutboundSettlementFact[] {
+    const superseded = toALOutboundSupersededMsgIds(input.bundle).map((msgId): ALOutboundSettlementFact => ({
+        kind: 'superseded',
+        msgId,
+        replacementMsgId: input.msg.id.msgId,
+        detail: 'A newer message replaced this one at its admission.'
+    }));
+    const receipt = input.intent === 'enqueue' ? toALOutboundEmptyAudienceReceipt(input.plan) : undefined;
+    return receipt === undefined ? superseded : [...superseded, receipt];
+}
+
+function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
     const latest = bundle.mutations.find((mutation) => mutation.kind === 'set-supersedence-latest');
     if (!latest || latest.expected?.latestMsgId === latest.value.latestMsgId) {
         return [];
@@ -369,7 +395,7 @@ function toSentMessageMutation<TPrepared>(
     return {
         kind: 'set-sent-message',
         reference: toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg),
-        policy: read.storedMessage?.policy ?? captureALOutboundPolicy(read.plan),
+        policy: toALOutboundSentPolicy(read.storedMessage?.policy, read.plan),
         creationExpiry: read.creationExpiry,
         snapshot: {
             msgId: read.msg.id.msgId,

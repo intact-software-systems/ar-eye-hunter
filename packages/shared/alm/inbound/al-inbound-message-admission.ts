@@ -28,6 +28,7 @@ export namespace ALInboundMessageAdmission {
             | 'planIncomingMessage'
             | 'forwardMessage'
             | 'canForwardMessage'
+            | 'isRoomPeerPresent'
             | 'readPendingAdmissionAuthority'
             | 'readRelayedAckRejection'
         > {
@@ -106,7 +107,9 @@ export class ALInboundMessageAdmission {
         }
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(admitted) ?? true);
-        const computed = computeALInboundAdmission({ read, plan, canForward, facts });
+        const recordedParentPresent = read.pendingAck === undefined ||
+            (this.dependencies.isRoomPeerPresent?.(admitted, read.pendingAck.toPeerId) ?? true);
+        const computed = computeALInboundAdmission({ read, plan, canForward, recordedParentPresent, facts });
         const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);

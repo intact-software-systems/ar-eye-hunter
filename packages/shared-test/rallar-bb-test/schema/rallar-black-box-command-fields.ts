@@ -114,6 +114,10 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'messages.cancel': { required: ['handleId'], optional: ['connection'] },
     'messages.received': { required: ['typeId', 'count', 'windowMs'], optional: ['connection', 'msgId', 'absent'] },
     'messages.receipts': { required: ['handleId'], optional: ['connection'] },
+    'messages.control': {
+        required: ['carrier', 'typeId', 'msgId', 'ackedMsgId', 'toPeerId'],
+        optional: ['connection']
+    },
     'fault.inject': { required: ['faultId', 'carrier', 'match', 'action', 'remaining'], optional: [] },
     'storage.counters': { required: [], optional: ['reset'] },
     'agent.reload': { required: ['readyTimeoutMs'], optional: [] },
@@ -284,7 +288,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
-    messagesReplayCarrier: ['ws', 'rtc'],
+    /** One carrier leg: the carrier a replay or a raw control is admitted on. */
+    messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc'],
     faultControlType: ['ack', 'nack', 'repair']
 } as const;

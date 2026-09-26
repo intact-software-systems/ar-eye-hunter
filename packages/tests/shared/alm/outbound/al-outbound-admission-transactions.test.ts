@@ -68,7 +68,7 @@ const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 
 /** Rewrites the route of `bad-ack` only, which the admission read refuses as a changed authority. */
 const AUTHORITY_BREAKING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => {
-    const plan = CONTROL_PLANNER(msg);
+    const plan = CONTROL_PLANNER(msg, undefined);
     return msg.id.msgId === 'bad-ack'
         ? { ...plan, msg: { ...plan.msg, route: { ...plan.msg.route, topicId: 'rewritten' } } }
         : plan;
@@ -254,7 +254,7 @@ it('reads a control decision surface from one readonly transaction before its wr
     );
 
     const recorded = recordIndexedDbTransactions();
-    expect((await control.admit(ack)).kind).toBe('committed');
+    expect((await control.admit(ack, 'peer')).kind).toBe('committed');
 
     expect(recorded.modes()).toEqual(COMMITTING_ADMISSION_TRANSACTIONS);
 });
@@ -329,7 +329,7 @@ describe('control sends committed as one outbound admission', () => {
                 if (msg.id.msgId === 'throwing-ack') {
                     throw new Error('The planner is broken for this message');
                 }
-                return CONTROL_PLANNER(msg);
+                return CONTROL_PLANNER(msg, undefined);
             });
 
             const good = createAcknowledgement('good-ack');
@@ -351,7 +351,7 @@ describe('control sends committed as one outbound admission', () => {
                 if (msg.id.msgId === 'throwing-ack') {
                     throw new Error('The planner is broken for this message');
                 }
-                return CONTROL_PLANNER(msg);
+                return CONTROL_PLANNER(msg, undefined);
             }, sentTexts);
             // A few idle engine passes, so the owner remembers storage answering "no work".
             await new Promise((resolve) => setTimeout(resolve, IDLE_OWNER_SETTLE_MS));
@@ -393,7 +393,7 @@ async function createControlSendRuntime(
         : createTransactionBackend('control-sends');
     const runtime = createDefaultOutboundTestRuntime({
         stores: { admissionStore: createTransactionAdmissionStore(backend), workQueue: backend.workQueue },
-        planOutgoingMessage: planner,
+        planOutgoingMessage: (msg) => planner(msg, undefined),
         sendPreparedMessage: async (prepared) => {
             sentTexts.push(String(prepared.text));
             return { status: 'sent' as const, submissionAttempted: true };

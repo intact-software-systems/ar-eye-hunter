@@ -1,3 +1,4 @@
+import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type {
     PageDiagnosticCaptureRecord,
     PageDiagnosticKind,
@@ -6,7 +7,7 @@ import type {
 
 export interface PageDiagnosticsFileRecord {
     readonly agentId: string;
-    readonly role: 'sender' | 'receiver';
+    readonly role: AlmConformanceRole;
     readonly atMs: number;
     readonly kind: PageDiagnosticKind;
     readonly message: string;

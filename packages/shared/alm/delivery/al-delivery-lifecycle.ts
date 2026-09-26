@@ -38,7 +38,7 @@ export const AL_DELIVERY_ADMITTED_STATES: readonly ALDeliveryState[] = AL_DELIVE
 
 export type ALDeliveryCarrier = 'rtc' | 'ws';
 
-/** What one carrier's attempt settled to; the seven transport outcomes plus a refused admission. */
+/** What one carrier attempt settled to; the seven transport outcomes plus an unroutable or refused admission. */
 export type ALDeliveryAttemptOutcome =
     | 'sent'
     | 'not-ready'
@@ -47,10 +47,13 @@ export type ALDeliveryAttemptOutcome =
     | 'cancelled'
     | 'expired'
     | 'superseded'
-    | 'unroutable';
+    | 'unroutable'
+    | 'refused';
 
 /** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
 export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
+
+export type ALDeliveryRefusalReason = 'unauthorized' | 'malformed' | 'oversized' | 'unsupported';
 
 export type ALDeliveryAdmissionVerdict =
     | Readonly<{ kind: 'admitted'; durable: boolean; queuedAttempts: number; }>
@@ -58,11 +61,7 @@ export type ALDeliveryAdmissionVerdict =
     /** A retained admission conflict: the owner replays it; the handle stays `submitted`. */
     | Readonly<{ kind: 'pending'; }>
     | Readonly<{ kind: 'deferred'; reason: 'not-yet-in-sync'; detail: string; }>
-    | Readonly<{
-        kind: 'refused';
-        reason: 'unauthorized' | 'malformed' | 'oversized' | 'unsupported';
-        detail: string;
-    }>
+    | Readonly<{ kind: 'refused'; reason: ALDeliveryRefusalReason; detail: string; }>
     | Readonly<{
         kind: 'unroutable';
         reason: ALDeliveryUnroutableReason;
@@ -84,6 +83,15 @@ export type ALDeliverySettlement =
         carrier: ALDeliveryCarrier;
         atMs: number;
         verdict: ALDeliveryAdmissionVerdict;
+    }>
+    /** A carrier refused admission and the strategy hands the send to its fallback carrier: evidence, never the verdict. */
+    | Readonly<{
+        kind: 'carrier-refused';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        reason: ALDeliveryRefusalReason;
+        detail: string;
     }>
     /** The sender's strategy has no carrier left to try after an `unroutable` verdict. */
     | Readonly<{
@@ -121,7 +129,20 @@ export type ALDeliverySettlement =
         mode: ALReceiptMode;
         confirmedHopPeerIds: readonly string[];
         unconfirmedHopPeerIds: readonly string[];
+        /** Under `hop` and `subtree` the recipient lists are the hop lists. */
+        expectedRecipientPeerIds: readonly string[];
+        confirmedRecipientPeerIds: readonly string[];
+        unconfirmedRecipientPeerIds: readonly string[];
         complete: boolean;
+    }>
+    /** A hop refused the message with an admitted NACK (D50): terminal evidence, and no resend follows it. */
+    | Readonly<{
+        kind: 'relay-rejected';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        relayRejection: ALDeliveryRelayRejection;
+        detail: string;
     }>
     | Readonly<{
         kind: 'expired';
@@ -154,17 +175,46 @@ export interface ALDeliveryAttempt {
     readonly detail: string | undefined;
     /** Undefined on a carrier attempt: only an `unroutable` admission row states a reason. */
     readonly unroutableReason: ALDeliveryUnroutableReason | undefined;
+    /** Undefined but on the row of a refused admission the fallback carrier took over. */
+    readonly refusalReason: ALDeliveryRefusalReason | undefined;
 }
 
-export interface ALDeliveryEvidence {
+/**
+ * What the latest receipt stated. Under `hop` and `subtree` the recipient lists are the hop lists. Under
+ * `receiver` the recipient lists count the frozen logical audience, and the hop lists are the local hop
+ * view of the origin: the confirmed hops are the next hops whose own completion ACK arrived, and the
+ * unconfirmed hops are the remaining next hops the dispatch sent through. A WS origin names no hop.
+ */
+export interface ALDeliveryReceiptEvidence {
+    /** Undefined until a receipt settles; a send that tracks no receipt never has one. */
+    readonly receiptMode: ALReceiptMode | undefined;
+    readonly confirmedHopPeerIds: readonly string[];
+    readonly unconfirmedHopPeerIds: readonly string[];
+    readonly expectedRecipientPeerIds: readonly string[];
+    readonly confirmedRecipientPeerIds: readonly string[];
+    readonly unconfirmedRecipientPeerIds: readonly string[];
+}
+
+/**
+ * The hop whose admitted NACK refused the message, and the reason it gave (D50). A trusted server relay
+ * is never named: no client learns a server id.
+ */
+export type ALDeliveryRelayRejection =
+    | Readonly<{ relay: 'trusted-server'; reason: 'resync-required'; }>
+    | Readonly<{ relay: 'peer'; peerId: string; reason: 'resync-required'; }>;
+
+export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly submittedAtMs: number;
     /** Undefined until an `admitted` or `duplicate` verdict. */
     readonly admittedAtMs: number | undefined;
     /** Undefined until an `admitted` verdict: a duplicate states nothing about the durability of the original. */
     readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
-    readonly confirmedHopPeerIds: readonly string[];
-    readonly unconfirmedHopPeerIds: readonly string[];
+    /**
+     * Undefined unless a hop refused the message. An ACK-tracked send then reads `rejected`; a best-effort send
+     * keeps its terminal `transport-accepted`, and this field is the only sign of the refusal (R-S2c-ii-5a).
+     */
+    readonly relayRejection: ALDeliveryRelayRejection | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;
 }
@@ -213,8 +263,13 @@ export function createInitialALDeliveryLifecycle(
             admittedAtMs: undefined,
             admittedDurable: undefined,
             attempts: [],
+            receiptMode: undefined,
             confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: [],
+            relayRejection: undefined,
             reason: undefined
         },
         lateSettlementCount: 0

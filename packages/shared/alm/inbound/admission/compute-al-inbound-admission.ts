@@ -1,3 +1,4 @@
+import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
@@ -17,10 +18,10 @@ import type {
 import {
     toALInboundAckEffect,
     toALInboundBufferedReleaseEffects,
-    toALInboundCompletedAckRecipients,
     toALInboundForwardingEffects,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
+    toALInboundUpwardAcks,
     type ALInboundControlEffectInput,
     type ALInboundEffectIntent
 } from '../al-inbound-effect-intent.ts';
@@ -44,6 +45,7 @@ import {
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
 } from './al-inbound-delivery-mutations.ts';
+import { computeALInboundDuplicateChanges } from './compute-al-inbound-duplicate-changes.ts';
 
 interface ALInboundAdmissionChanges {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
@@ -55,6 +57,8 @@ export interface ComputeALInboundAdmissionInput {
     readonly read: ALInboundAdmissionRead;
     readonly plan: ALMessageHandlingPlan;
     readonly canForward: boolean;
+    /** Whether the parent a relay row of this message records is still a member of the room and reachable. */
+    readonly recordedParentPresent: boolean;
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -125,7 +129,6 @@ interface InboundAcknowledgementChanges {
 
 interface InboundPendingAckInput {
     readonly msgId: string;
-    readonly hadPending: boolean;
     readonly expireAtTimestamp: number | undefined;
     readonly nowMs: number;
     readonly senderId: string;
@@ -137,13 +140,13 @@ export function computeALInboundAdmission(
     input: ComputeALInboundAdmissionInput
 ): ALInboundCommitBundle {
     const finalRead = computeALInboundMessageRead(input.read, input.plan);
-    const changes = computeALInboundAdmissionChanges(finalRead, input.canForward);
+    const changes = computeALInboundAdmissionChanges(finalRead, input);
     return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
 }
 
 function computeALInboundAdmissionChanges(
     read: ALInboundMessageReadDto,
-    canForward: boolean
+    input: ComputeALInboundAdmissionInput
 ): ALInboundAdmissionChanges {
     const controls: ALInboundControlEffectInput = {
         msg: read.msg,
@@ -152,14 +155,18 @@ function computeALInboundAdmissionChanges(
         fromPeerId: read.fromPeerId
     };
     if (read.plan.dropReason) {
+        const duplicate = computeALInboundDuplicateChanges(read, {
+            selfPeerId: input.facts.selfPeerId,
+            recordedParentPresent: input.recordedParentPresent
+        });
         return {
             read,
-            mutations: [],
-            effects: toALInboundNegativeControlEffects(controls)
+            mutations: duplicate.mutations,
+            effects: [...toALInboundNegativeControlEffects(controls), ...duplicate.effects]
         };
     }
 
-    const shouldForward = canForward && read.plan.forwarding.enabled;
+    const shouldForward = input.canForward && read.plan.forwarding.enabled;
     const acknowledgements = computeIncomingAcknowledgements(read, shouldForward);
     return {
         read,
@@ -245,7 +252,7 @@ function computeIncomingAcknowledgements(
                 ackedMsgId: read.msg.id.msgId,
                 originPeerId: read.msg.id.senderId,
                 logicalRecipient: { kind: 'self' },
-                status: shouldForward ? 'forwarded' : 'delivered',
+                status: toImmediateAckStatus(plan, shouldForward),
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
             })]
@@ -254,18 +261,15 @@ function computeIncomingAcknowledgements(
     const transition = trackALPendingAckSnapshot({
         msgId: read.msg.id.msgId,
         current: read.pendingAck,
-        acks: read.acks,
         toPeerId: plan.ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
-        localRecipient: plan.localDelivery.enabled || plan.localDelivery.deferred,
         expireAtTimestamp,
         carrier: toALDeliveryCarrier(read.source)
     });
     const changes = toAckTransitionChanges(transition, {
         msgId: read.msg.id.msgId,
         senderId: read.msg.id.senderId,
-        hadPending: read.pendingAck !== undefined,
         expireAtTimestamp,
         nowMs: read.nowMs,
         retention: read.retention,
@@ -281,6 +285,14 @@ function computeIncomingAcknowledgements(
             toControlOwnerMutation(read, transition.pending.expireAtTimestamp)
         ]
     };
+}
+
+/** A peer that delivers nothing, being outside the frozen audience, ends its own empty subtree instead. */
+function toImmediateAckStatus(plan: ALMessageHandlingPlan, shouldForward: boolean): ALAckStatus {
+    if (shouldForward) {
+        return 'forwarded';
+    }
+    return plan.localDelivery.enabled || plan.localDelivery.deferred ? 'delivered' : 'subtree-complete';
 }
 
 function toControlOwnerMutation(
@@ -332,13 +344,11 @@ function computeBufferedAcknowledgements(
     }
     const transition = markALPendingAckLocalReadySnapshot({
         msgId: read.snapshot.msg.id.msgId,
-        current: read.pendingAck,
-        acks: read.acks
+        current: read.pendingAck
     });
     return toAckTransitionChanges(transition, {
         msgId: read.snapshot.msg.id.msgId,
         senderId: read.snapshot.msg.id.senderId,
-        hadPending: read.pendingAck !== undefined,
         expireAtTimestamp,
         nowMs: read.nowMs,
         retention: read.retention,
@@ -362,32 +372,27 @@ function toAckTransitionChanges(
                 input.nowMs
             )
         }]
-        : input.hadPending
-        ? [{ kind: 'delete-control-pending', msgId: input.msgId, senderId: input.senderId }]
         : [];
     return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, input) };
 }
 
-/** The origin is the tracked message's own sender, never what a child's ACK claimed. */
+/** The origin is the tracked message sender, never what a child ACK claimed. */
 function toCompletedAckEffects(
     transition: ALPendingAckTransition,
     input: InboundPendingAckInput
 ): readonly ALInboundEffectIntent[] {
-    const completed = transition.completed;
-    if (!completed) {
+    const pending = transition.pending;
+    if (pending === undefined) {
         return [];
     }
-    return toALInboundCompletedAckRecipients(
-        transition.completedRecipientPeerIds,
-        transition.completedLocalRecipient
-    ).map((logicalRecipient) =>
+    return toALInboundUpwardAcks(transition).map((upward) =>
         toALInboundAckEffect({
-            toPeerId: completed.toPeerId,
-            ackedMsgId: completed.msgId,
+            toPeerId: pending.toPeerId,
+            ackedMsgId: input.msgId,
             originPeerId: input.senderId,
-            logicalRecipient,
-            status: completed.status,
-            expireAtTimestamp: completed.expireAtTimestamp ?? input.expireAtTimestamp,
+            logicalRecipient: upward.logicalRecipient,
+            status: upward.status,
+            expireAtTimestamp: pending.expireAtTimestamp ?? input.expireAtTimestamp,
             carrier: input.carrier
         })
     );

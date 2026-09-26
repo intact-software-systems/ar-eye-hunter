@@ -191,7 +191,6 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
-                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
                     expireAtTimestamp: input.expireAtTimestamp,
@@ -242,6 +241,57 @@ describe('inbound admission persisted values', () => {
         });
 
         await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it.each([
+        { kind: 'rtc-peer', peerId: message.id.senderId, snapshotVersion: 4 },
+        { kind: 'rtc-peer', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 0 },
+        { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 4 }
+    ])('rejects a snapshot version without a valid RTC frozen audience beside it on $kind provenance', async (source) => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source,
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('retains the frozen audience and its snapshot version on RTC provenance', async () => {
+        const { backend, store } = createFixture();
+        const source = { kind: 'rtc-peer', peerId: 'relay', groupRecipientPeerIds: ['receiver', 'other'], snapshotVersion: 4 };
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source,
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({ source });
+    });
+
+    it('refuses an RTC frozen audience over the provenance byte limit', async () => {
+        const { backend, store } = createFixture();
+        const groupRecipientPeerIds = Array.from({ length: 80_000 }, (_, index) => `room-peer-${index}`);
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: 'relay', groupRecipientPeerIds, snapshotVersion: 4 },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toMatchObject({
+            name: 'ALAdmissionCorruptionError',
+            cause: expect.objectContaining({ message: 'Stored frozen group audience exceeds the provenance byte limit' })
+        });
     });
 
     it('retains a frozen group audience larger than the wire collection limit', async () => {
@@ -431,6 +481,7 @@ describe('inbound admission persisted values', () => {
 
     it.each([
         { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', plan: {} },
+        { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', retryPeerIds: [''] },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
         { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v2', resource: '{}' } } }
@@ -461,7 +512,6 @@ describe('inbound admission persisted values', () => {
                 payload: {
                     kind: 'forward-message',
                     message: toMessageReference(message),
-                    plan: planMessage(message),
                     fromPeerId: 'sender'
                 }
             }
@@ -749,7 +799,6 @@ describe('inbound admission persisted values', () => {
                             toPeerId: 'upstream',
                             status: 'subtree-complete',
                             localReady: false,
-                            localRecipient: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
                             expireAtTimestamp: Date.now() + 60_000,
@@ -801,7 +850,6 @@ describe('inbound admission persisted values', () => {
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: false,
-                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: []
                 }
@@ -850,8 +898,11 @@ describe('inbound admission persisted values', () => {
             kind: 'committed',
             acceptance: { handled: true }
         });
-        expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(false);
-        expect((await readIncoming(store, message)).acks).toHaveLength(256);
+        // The completed row stays until it expires, so a child ACK that arrives after completion is still relayed.
+        expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(true);
+        const incoming = await readIncoming(store, message);
+        expect(incoming.pendingAck?.ackedFromPeerIds).toHaveLength(256);
+        expect(incoming.acks).toHaveLength(256);
     });
 
     it('round-trips the local-delivery reference and retains the message once', async () => {
@@ -914,7 +965,6 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
-                        localRecipient: false,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
                         expireAtTimestamp,
@@ -945,7 +995,7 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
-            status: 'accepted',
+            status: 'delivered',
             observedAtEpochMs: 1,
             carrier: 'ws'
         }

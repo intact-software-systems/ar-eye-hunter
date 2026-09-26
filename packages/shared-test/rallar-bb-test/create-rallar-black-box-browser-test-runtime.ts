@@ -97,6 +97,7 @@ class BrowserCommandAdapter {
             case 'messages.cancel':
             case 'messages.received':
             case 'messages.receipts':
+            case 'messages.control':
             case 'fault.inject':
             case 'storage.counters':
             case 'agent.reload':

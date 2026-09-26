@@ -8,6 +8,7 @@ import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
+import { toALRtcPeerSource } from '../alm/inbound/al-inbound-source-validation.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
@@ -132,6 +133,10 @@ export class WebRtcRxStreamerService {
                 forwardMessage: async (msg, fromPeerId) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
                 },
+                forwardRetriedCopy: async (copy) => {
+                    await this.multicast.forwardRetriedCopy(copy);
+                },
+                isRoomPeerPresent: (msg, peerId) => this.multicast.isRoomPeerPresent(msg, peerId),
                 diagnostics: dependencies.inboundDiagnostics
             }
         );
@@ -168,10 +173,7 @@ export class WebRtcRxStreamerService {
             return;
         }
         const message = decodeALMessageValue(value).right;
-        const source: ALInboundMessageRuntime.Source = {
-            kind: 'rtc-peer',
-            peerId: peer.peerId
-        };
+        const source = toALRtcPeerSource(peer.peerId, message);
         const acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
         if (acceptance.left) {
             console.warn('Rejected RTC message', acceptance.left.code);

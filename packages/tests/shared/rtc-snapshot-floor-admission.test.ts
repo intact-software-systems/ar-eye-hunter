@@ -3,6 +3,7 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     afterEach,
@@ -271,9 +272,11 @@ describe('RTC scoped snapshot-floor admission', () => {
     });
 });
 
+/** An origin's room multicast as its RTC copies carry it: with the audience it froze at admission. */
 function roomMessage(minSnapshotVersion: number | undefined): ALMessage {
-    return newALMulticastMessage('sender', { topicId: 'data', contextId: 'room', resourceId: 'record' }, room, 'data', { value: 1 }, {
+    const message = newALMulticastMessage('sender', { topicId: 'data', contextId: 'room', resourceId: 'record' }, room, 'data', { value: 1 }, {
         minSnapshotVersion,
         qos: { durability: { algo: 'volatile' } }
     });
+    return toALFrozenMulticastMessage(message, { recipientPeerIds: ['relay', 'receiver'], snapshotVersion: 1 });
 }

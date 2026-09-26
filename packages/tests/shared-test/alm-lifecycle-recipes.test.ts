@@ -1,11 +1,9 @@
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { describe, expect, it } from 'vitest';
 
+import type { RallarBlackBoxTestMessagesObserveResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesObserveResultValue
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 type LifecycleCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
@@ -62,14 +60,20 @@ describe('ALM lifecycle recipe evidence', () => {
             state: 'acknowledged',
             submitted: true,
             enqueued: true,
-            confirmedHopPeerIds: ['receiver'],
+            confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: ['receiver'],
+            confirmedRecipientPeerIds: ['receiver'],
+            unconfirmedRecipientPeerIds: [],
             attempts: 1,
+            attemptOutcomes: [],
+            relayRejection: undefined,
             reason: undefined
         };
         const confirmsOne = await runSubmissionReceipts(sender, acknowledged);
         expect(confirmsOne.filter((result) => !result.ok).map((result) => result.commandId)).toEqual([]);
-        const confirmsNobody = await runSubmissionReceipts(sender, { ...acknowledged, confirmedHopPeerIds: [] });
+        const confirmsNobody = await runSubmissionReceipts(sender, { ...acknowledged, confirmedRecipientPeerIds: [] });
         expect(confirmsNobody.filter((result) => !result.ok).map((result) => result.commandId))
             .toEqual(['alm-ws-delivery-lifecycle-sender-assert-confirmed-1']);
     });

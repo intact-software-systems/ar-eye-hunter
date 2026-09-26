@@ -9,6 +9,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarGameHostAppointResult } from '@shared-web/game/director/rallar-game-director-appointment-contracts.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
@@ -17,6 +18,7 @@ import type { ArenaLinkState, ArenaPresenceNotice } from '../squadLink.ts';
 import type {
     ArenaEvent,
     ArenaMatchDurationMs,
+    ArenaMatchLifecycleMessage,
     ArenaSnapshot,
     PickupAccepted,
     PickupIntent,
@@ -45,6 +47,17 @@ export type DirectorAttemptSource = 'manual' | 'auto';
 export interface CapabilityDelivery {
     readonly state: 'pending' | 'confirmed' | 'failed' | 'expired' | 'superseded' | 'cancelled' | 'unobservable';
     readonly evidence: ALDeliveryState;
+    readonly reason: string | undefined;
+}
+
+/** The logical receipt of the latest match lifecycle output this director published. */
+export interface MatchDelivery {
+    readonly output: ArenaMatchLifecycleMessage['kind'];
+    readonly state: ALDeliveryState;
+    /** Undefined until the first receipt settles. */
+    readonly receiptMode: ALReceiptMode | undefined;
+    readonly expectedRecipientPeerIds: readonly string[];
+    readonly confirmedRecipientPeerIds: readonly string[];
     readonly reason: string | undefined;
 }
 
@@ -121,6 +134,8 @@ export interface ArenaConnection {
     readonly directorStatus: RallarDirectorStatus;
     readonly rtcLanes: readonly RtcLaneStatus[];
     readonly directorAttempt: DirectorAttemptState;
+    /** Undefined until this director publishes a match lifecycle output in the current network generation. */
+    readonly matchDelivery: MatchDelivery | undefined;
     readonly gameDiagnostics?: RallarGameDiagnostics;
     readonly transportDiagnostics: ArenaTransportDiagnostics;
     readonly httpDiagnostics: ArenaHttpDiagnostics;

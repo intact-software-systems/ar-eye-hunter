@@ -1,11 +1,13 @@
 import type { ConsoleMessage, Page } from '@playwright/test';
 
+import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+
 export type PageDiagnosticKind = 'pageerror' | 'console-error' | 'console-warning';
 
 /** Still on absolute wall-clock time; `toPageDiagnosticsFile` relocates it against the cell's reference. */
 export interface PageDiagnosticCaptureRecord {
     readonly agentId: string;
-    readonly role: 'sender' | 'receiver';
+    readonly role: AlmConformanceRole;
     readonly atEpochMs: number;
     readonly kind: PageDiagnosticKind;
     readonly message: string;
@@ -14,7 +16,7 @@ export interface PageDiagnosticCaptureRecord {
 
 export interface PageDiagnosticsCapture {
     readonly agentId: string;
-    readonly role: 'sender' | 'receiver';
+    readonly role: AlmConformanceRole;
     readonly pageCreatedAtEpochMs: number;
     records(): readonly PageDiagnosticCaptureRecord[];
     droppedCount(): number;
@@ -35,7 +37,7 @@ const CONSOLE_MESSAGE_KINDS: Readonly<Record<string, PageDiagnosticKind>> = {
  */
 export function startPageDiagnosticsCapture(
     page: Page,
-    input: Readonly<{ agentId: string; role: 'sender' | 'receiver'; }>
+    input: Readonly<{ agentId: string; role: AlmConformanceRole; }>
 ): PageDiagnosticsCapture {
     const pageCreatedAtEpochMs = Date.now();
     const records: PageDiagnosticCaptureRecord[] = [];

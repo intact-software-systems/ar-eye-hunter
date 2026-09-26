@@ -6,10 +6,10 @@ import {
 
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
-    type AlmConformanceScenario,
-    type CreateAlmConformanceRecipesInput
+    type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -28,7 +28,8 @@ const CARRIER_SCENARIO_IDS = {
         'delivery-baseline',
         'delivery-lifecycle',
         'delivery-reload',
-        'ordering-resync'
+        'ordering-resync',
+        ...Array.from({ length: 3 }, () => 'receipted-audience' as const)
     ],
     rtc: [
         'bounded-rejection',
@@ -38,7 +39,8 @@ const CARRIER_SCENARIO_IDS = {
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync',
-        'not-yet-in-sync'
+        'not-yet-in-sync',
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ],
     'rtc-with-ws-fallback': [
         'bounded-rejection',
@@ -50,7 +52,8 @@ const CARRIER_SCENARIO_IDS = {
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
-        'not-yet-in-sync'
+        'not-yet-in-sync',
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ]
 } as const;
 

@@ -197,7 +197,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send' }],
-                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], mode: 'hop' }
+                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' }
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -205,19 +205,22 @@ it.each(['memory', 'indexeddb'] as const)(
         await runtime.enqueueIfAbsent(message);
 
         for (const fromPeerId of ['peer-1', 'peer-2']) {
-            await runtime.acceptControlMessage(newALAckControlMessage(
-                { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
-                {
-                    ackedMsgId: message.id.msgId,
-                    originPeerId: 'self',
-                    logicalRecipientPeerId: fromPeerId,
-                    fromPeerId,
-                    toPeerId: 'self',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                }
-            ));
+            await runtime.acceptControlMessage(
+                newALAckControlMessage(
+                    { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+                    {
+                        ackedMsgId: message.id.msgId,
+                        originPeerId: 'self',
+                        logicalRecipientPeerId: fromPeerId,
+                        fromPeerId,
+                        toPeerId: 'self',
+                        status: 'accepted',
+                        observedAtEpochMs: 1,
+                        carrier: 'ws'
+                    }
+                ),
+                'peer'
+            );
         }
 
         const verdict = { kind: 'control-admission', typeId: AL_CONTROL_ACK_TYPE_ID, targetMsgId: message.id.msgId };

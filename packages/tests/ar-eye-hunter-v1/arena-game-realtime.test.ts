@@ -420,9 +420,10 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const eventDone = Promise.withResolvers<void>();
         const publishedSnapshots: ArenaSnapshot[] = [];
-        mockMatch.publishEvent.mockImplementationOnce(() => {
+        mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
-            return eventDone.promise;
+            await eventDone.promise;
+            return { status: 'sent' };
         });
         mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
             publishedSnapshots.push(snapshot);
@@ -464,9 +465,10 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const publishedSnapshots: string[] = [];
         let networkEnabled = true;
-        mockMatch.publishEvent.mockImplementationOnce(() => {
+        mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
-            return eventDone.promise;
+            await eventDone.promise;
+            return { status: 'sent' };
         });
         mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
             publishedSnapshots.push(snapshot.roomId ?? '');

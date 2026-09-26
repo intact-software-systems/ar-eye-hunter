@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AL_RECEIPT_DEADLINE_GRACE_MS, newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeDiagnosticsEvent,
+    ALOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
@@ -22,6 +26,7 @@ interface ReceiptTrackingFixture {
     readonly service: WsQueueBoxClientService;
     readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly settlements: ALDeliverySettlement[];
+    readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
 }
 
 describe('WS client receipt tracking for a receiver room send', () => {
@@ -56,8 +61,11 @@ describe('WS client receipt tracking for a receiver room send', () => {
             msgId: 'room-message-1',
             carrier: 'ws',
             mode: 'receiver',
-            confirmedHopPeerIds: ['b', 'c'],
+            // A WS origin names no hop: its one hop is its server, which no client learns.
+            confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['b', 'c'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
     });
@@ -76,8 +84,12 @@ describe('WS client receipt tracking for a receiver room send', () => {
 
         expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: ['b', 'c'], ackedPeerIds: ['b'] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
-            confirmedHopPeerIds: ['b'],
-            unconfirmedHopPeerIds: ['c'],
+            mode: 'receiver',
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['b', 'c'],
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: ['c'],
             complete: false
         });
     });
@@ -114,7 +126,14 @@ describe('WS client receipt admission edges', () => {
 
         expect(await readReceipt(fixture)).toMatchObject({ expectedPeerIds: [], ackedPeerIds: [] });
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
-            expect.objectContaining({ confirmedHopPeerIds: [], unconfirmedHopPeerIds: [], complete: true })
+            expect.objectContaining({
+                confirmedHopPeerIds: [],
+                unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: [],
+                confirmedRecipientPeerIds: [],
+                unconfirmedRecipientPeerIds: [],
+                complete: true
+            })
         ]);
     });
 
@@ -127,7 +146,7 @@ describe('WS client receipt admission edges', () => {
         await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
 
         expect(acknowledgements()).toEqual([
-            expect.objectContaining({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true })
+            expect.objectContaining({ confirmedRecipientPeerIds: ['b', 'c'], unconfirmedRecipientPeerIds: [], complete: true })
         ]);
         expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
     });
@@ -155,7 +174,7 @@ describe('WS client receipt admission edges', () => {
 
             const acknowledgements = fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
             expect(acknowledgements).toHaveLength(settled);
-            expect(acknowledgements.at(-1)).toMatchObject({ confirmedHopPeerIds: ['b', 'c'], unconfirmedHopPeerIds: [], complete: true });
+            expect(acknowledgements.at(-1)).toMatchObject({ confirmedRecipientPeerIds: ['b', 'c'], unconfirmedRecipientPeerIds: [], complete: true });
             expect(await readReceipt(fixture)).toMatchObject({ ackedPeerIds: ['b', 'c'] });
         }
     );
@@ -178,6 +197,33 @@ describe('WS client receipt admission edges', () => {
         await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']));
 
         expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toHaveLength(settled);
+    });
+
+    it('states one control-admission diagnostic per receipt control, admitted or refused, keyed by the control', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+        await fixture.service.acceptIncomingMessage(receiptMessage('complete', ['b', 'c'], 'unsent-message'));
+
+        expect(fixture.diagnostics.filter((event) => event.kind === 'control-admission')).toEqual([
+            {
+                kind: 'control-admission',
+                msgId: 'receipt-admitted',
+                typeId: AL_CONTROL_RECEIPT_TYPE_ID,
+                targetMsgId: 'room-message-1',
+                outcome: 'committed',
+                reason: 'none'
+            },
+            {
+                kind: 'control-admission',
+                msgId: 'receipt-complete',
+                typeId: AL_CONTROL_RECEIPT_TYPE_ID,
+                targetMsgId: 'unsent-message',
+                outcome: 'rejected',
+                reason: 'AL receipt names no retained outbound message of its origin'
+            }
+        ]);
     });
 
     it('reads afresh after a version conflict and refuses once the conflicts outlast its attempts', async () => {
@@ -204,16 +250,18 @@ async function createReceiptTrackingFixture(): Promise<ReceiptTrackingFixture> {
     TestWebSocket.instances.at(-1)!.open();
     await connected;
     const settlements: ALDeliverySettlement[] = [];
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
     const service = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'self',
         outboundStores,
-        outboundSettlements: (settlement) => settlements.push(settlement)
+        outboundSettlements: (settlement) => settlements.push(settlement),
+        outboundDiagnostics: (event) => diagnostics.push(event)
     });
     onTestFinished(() => service.close());
-    return { service, outboundStores, settlements };
+    return { service, outboundStores, settlements, diagnostics };
 }
 
 async function readReceipt(fixture: ReceiptTrackingFixture) {

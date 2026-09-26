@@ -190,7 +190,8 @@ describe('AL state retained across runtime recreation', () => {
                     expectedSeq: 1,
                     missingSeqs: [1]
                 }
-            )
+            ),
+            'peer'
         );
 
         expect(sent).toContainEqual({ kind: 'send', msgId: seq1.id.msgId, phase: 'immediate' });
@@ -379,7 +380,7 @@ function planOutboundTestMessage(msg: ALMessage): ALOutboundDispatchPlan<Outboun
         dropReasonCode: undefined,
         persist: false,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
-        ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], mode: 'hop' },
+        ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['peer-1'], nextHopPeerIds: ['peer-1'], mode: 'hop' },
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
     };
 }

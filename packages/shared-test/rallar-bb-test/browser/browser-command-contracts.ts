@@ -71,6 +71,7 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     cancelDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     readReceipts: RallarBlackBoxBrowserRallarRuntimeMethod;
+    submitControl: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
     refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;

@@ -79,12 +79,10 @@ An ACK is `al.control.ack.v2`
 sender and receiver it names the acknowledged message's origin
 (`originPeerId`, the message's `senderId`) and the recipient it speaks for
 (`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
-whose pending receipt completes re-originates one ACK per logical recipient
-its subtree confirmed, beside its own when it is a logical recipient that
-delivered locally (the pending row's `localRecipient`), and speaks for itself
-alone when no confirming ACK is retained. The relay refuses a child's ACK as a
-duplicate only when both its sender and its logical recipient repeat, so a child
-relay's ACKs for different recipients are each admitted. The origin is never copied from a child: the relay names its own
+re-originates each child ACK it admits as a `forwarded` ACK for the recipient
+that ACK names, and ends with its own terminal ACK (below). The relay refuses a
+child's ACK as a duplicate only when both its sender and its logical recipient
+repeat, so a child relay's ACKs for different recipients are each admitted. The origin is never copied from a child: the relay names its own
 message-owner row's sender, and both the relay's inbound control admission
 and the origin's outbound control admission refuse an ACK whose
 `originPeerId` names another origin. An
@@ -109,11 +107,88 @@ The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
 content, not a key segment, because message ids are origin-unique and no
 group exists at every key site (R-S2c-i-2, amending D40; see the outbound
-README). A relay's inbound `pending` row carries a required
-`localRecipient`: a relay that delivered locally ACKs for itself as well as
-for its subtree.
+README). A relay's inbound `pending` row tracks the child hops it forwarded
+to (S2c-ii). Every child ACK it admits is relayed upward at once as a
+`forwarded` ACK for the recipient it names, so a far recipient is never lost
+behind a relay whose row already completed. A child hop completes only on its
+own `delivered` ACK (a leaf) or its `subtree-complete` terminal ACK (a relay).
+Once this peer is ready and every child hop completed, the relay sends its
+own terminal `subtree-complete` ACK, naming itself, last; the parent reads it
+as the end of the subtree. A peer that delivered nothing -- local delivery
+off, or a session outside the frozen audience, which may forward but never
+delivers locally or counts as a recipient -- ends its subtree with
+`subtree-complete`, never `delivered` (R-S2c-ii-4). The row stays until it
+expires, so a child ACK that arrives after completion is still relayed, and a
+retried copy of the message is answered from it
+([`computeALInboundDuplicateChanges`](./admission/compute-al-inbound-duplicate-changes.ts)):
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c'`. An
+- from the relay's recorded parent, the relay sends again one `forwarded` ACK
+  per recipient it already relayed, since any of them may be the one the
+  origin lost, then its terminal ACK when its subtree completed or the copy
+  onward to the child hops it still waits on (R-S2c-ii-4);
+- from the origin, or from any sender that is not one of its child hops once
+  the recorded parent left (no longer a member of the room, or no longer
+  reachable), the relay writes that sender as the parent of its row and
+  answers it as it would its recorded parent: every relayed ACK again, the
+  copy onward to the child hops it still waits on, and its terminal ACK only
+  once its subtree completed (R-S2c-ii-12). The origin is nobody's child, so
+  its copy never comes from a sibling; a retried copy is forwarded as planned
+  against the peer that sent it, not the first arrival. A former parent that
+  is still present gets the sibling answer at once: it no longer waits on this
+  peer, so its own row completes and, under `receiver`, its own delivery is
+  still confirmed by its terminal ACK (R-S2c-ii-14);
+- from a sibling, a sender that does not own this peer while the recorded
+  parent is still present, the relay answers with its own terminal ACK at
+  once, so the sibling's row completes whatever the visited exclusion missed
+  (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
+- a peer with no relay row sends its own ACK again.
+
+No retried copy is delivered locally twice. A hop outside the frozen audience
+never reads complete at the origin, so every retry resends to it, bounded by
+the attempt cap.
+
+**Who may confirm a recipient over RTC.** Over WS a session speaks only for
+itself (S2c-i). Over RTC the origin counts an admitted `forwarded` ACK for any
+member of the frozen audience it has not counted yet, whichever authenticated
+peer of the room relayed it: a relay is trusted to speak for the recipients
+below it, which relaying cannot avoid. A dishonest room member can therefore
+confirm a recipient that never delivered, as it could also withhold the copy.
+The origin does not trust a relay beyond that: a hop completes only on its
+own terminal ACK, a relay's own terminal names itself, and a session outside
+the frozen audience is never counted as a recipient.
+
+**Which children a relay owns (R-S2c-ii-8, 8a).** A relay's children are its
+next hops minus its sender and minus the sender's forwarding set, the siblings
+that already hold the message from that sender
+([`resolveALOwnedChildPeerIds`](../../al-contracts/resolve-al-owned-child-peer-ids.ts)).
+Every RTC transport copy names only its one addressee in
+`forwarding.nextHopPeerIds`, and ingress refuses anything wider, so the
+sender's forwarding set rides on `diagnostics.visitedPeerIds`: each group copy
+carries the visited set plus its sender plus the dispatch's next hops, and a
+relay never forwards to a visited peer. In a star a recipient therefore owns no
+children and acknowledges itself `delivered`; in a tree a relay still owns its
+descendants, and a peer that is both sibling and descendant is not owned. The
+same exclusion governs the forward of a retried copy and the relay row's
+expected set. A targeted repair copy inherits the repaired dispatch's own copy
+for its peer, so a requester never owns its siblings. Unicast copies carry no
+visited list.
+
+**The termination guarantee.** Termination never depends on that exclusion:
+the duplicate answer to a sender that is not the recorded parent completes an
+over-approximated owner's row. The visited list is capped at
+`AL_MESSAGE_RESOURCE_LIMITS.visitedPeers` (64 entries, pinned against the
+overlay degree limit so a star's forwarding set never truncates); past the
+cap the cost is redundant relays, never a deadlock. The RTC per-copy cost of
+the list is estimated at about 117 B in a three-session star and at most about
+2.5 KB, well inside every envelope limit; it has not been measured on the wire.
+
+**Repair requests.** A peer attaches an `al.control.repair.v1` retransmit
+request to its ACK only for owned children it could not reach (R-S2c-ii-9). A
+peer that owns no children never asks: the retry of a recipient the origin
+already counted is the origin's decision from its receipt (see the outbound
+README for the origin's `no-route` verdict when it owns no child).
+
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c-ii'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.

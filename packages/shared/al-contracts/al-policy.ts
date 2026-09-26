@@ -3,6 +3,7 @@ import type { ALMessage, ALTargets } from './al-contract.ts';
 import type { ALOrderingObservation, ALSupersedenceObservation } from './al-runtime.ts';
 
 import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos-policy.ts';
+import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
 
 export {
     DEFAULT_AL_QOS_CAPABILITIES,
@@ -355,6 +356,7 @@ export function planALMessageHandling(
     const { result, dedupKey, orderingRuntime, supersedenceRuntime, congestion } = decision;
     const drop = resolveMessageDrop(msg, context, decision);
     const delivery = computeMessageDelivery(msg, context, { decision, drop });
+    const missesOwnedChild = !delivery.forwarding.enabled && resolveALOwnedChildPeerIds(msg, context).length > 0;
     return {
         requested: result.requested,
         effective: result.effective,
@@ -368,7 +370,7 @@ export function planALMessageHandling(
         nack: planNack(result.effective, context, { orderingRuntime, drop }),
         repair: drop
             ? { enabled: false, algo: 'none' }
-            : planRepair(result.effective, delivery.forwarding.enabled, msg.targets),
+            : planRepair(result.effective, msg.targets, missesOwnedChild),
         supersedence: {
             enabled: result.effective.supersedence.algo !== 'none',
             algo: result.effective.supersedence.algo,
@@ -600,37 +602,21 @@ function planNack(
     };
 }
 
+/** A peer asks its sender to retransmit only when it owns a child it could not reach (R-S2c-ii-9). */
 function planRepair(
     effective: ALQosEffectivePolicy,
-    shouldForward: boolean,
-    targets: ALTargets | undefined
+    targets: ALTargets | undefined,
+    missesOwnedChild: boolean
 ): ALMessageHandlingPlan['repair'] {
-    if (effective.repair.algo === 'none') {
-        return {
-            enabled: false,
-            algo: 'none'
-        };
+    if (effective.repair.algo === 'none' || !missesOwnedChild) {
+        return { enabled: false, algo: effective.repair.algo };
     }
-
-    if (targets?.mode === 'unicast' && !shouldForward) {
-        return {
-            enabled: true,
-            algo: effective.repair.algo,
-            reason: 'No immediate next hop resolved for unicast message'
-        };
-    }
-
-    if (targets && targets.mode !== 'unicast' && !shouldForward) {
-        return {
-            enabled: true,
-            algo: effective.repair.algo,
-            reason: 'No downstream forwarding candidates resolved for group message'
-        };
-    }
-
     return {
-        enabled: false,
-        algo: effective.repair.algo
+        enabled: true,
+        algo: effective.repair.algo,
+        reason: targets?.mode === 'unicast'
+            ? 'No immediate next hop resolved for unicast message'
+            : 'No downstream forwarding candidates resolved for group message'
     };
 }
 
@@ -683,50 +669,12 @@ function resolveNextHopPeerIds(
     context: ALMessagePlanningContext
 ): readonly string[] {
     const connectedPeerIds = new Set(context.connectedPeerIds ?? []);
-    const groupMemberPeerIds = new Set(context.groupMemberPeerIds ?? []);
-    if (!msg.targets) {
-        return [];
-    }
-
-    if (msg.targets.mode === 'unicast') {
-        const immediatePeerId = msg.forwarding?.nextHopPeerIds?.[0] ?? msg.targets.toPeerId;
-        if (
-            immediatePeerId === context.selfPeerId ||
-            immediatePeerId === context.fromPeerId ||
-            (connectedPeerIds.size > 0 && !connectedPeerIds.has(immediatePeerId))
-        ) {
-            return [];
-        }
-
-        return [immediatePeerId];
-    }
-
-    const visitedPeerIds = new Set(msg.diagnostics?.visitedPeerIds ?? []);
-    const exceptPeerIds = msg.targets.mode === 'broadcast'
-        ? new Set(msg.targets.exceptPeerIds ?? [])
-        : new Set<string>();
-    const hintedNextHops = new Set(msg.forwarding?.nextHopPeerIds ?? []);
-
-    const candidates = (context.overlayNeighborPeerIds ?? []).filter((peerId) => {
-        if (peerId === context.selfPeerId || peerId === context.fromPeerId) {
-            return false;
-        }
-        if (visitedPeerIds.has(peerId) || exceptPeerIds.has(peerId)) {
-            return false;
-        }
-        if (connectedPeerIds.size > 0 && !connectedPeerIds.has(peerId)) {
-            return false;
-        }
-        if (groupMemberPeerIds.size > 0 && !groupMemberPeerIds.has(peerId)) {
-            return false;
-        }
-        if (hintedNextHops.size > 0 && !hintedNextHops.has(peerId)) {
-            return false;
-        }
-        return true;
-    });
-
-    return applyFanoutSelection(candidates, effective, msg.id.msgId);
+    const reachablePeerIds = resolveALOwnedChildPeerIds(msg, context).filter((peerId) =>
+        connectedPeerIds.size === 0 || connectedPeerIds.has(peerId)
+    );
+    return msg.targets?.mode === 'unicast'
+        ? reachablePeerIds
+        : applyFanoutSelection(reachablePeerIds, effective, msg.id.msgId);
 }
 
 function applyFanoutSelection(

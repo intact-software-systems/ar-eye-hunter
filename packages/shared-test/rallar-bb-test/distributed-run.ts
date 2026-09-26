@@ -38,6 +38,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS = [
     'all-agents',
     'sender-receiver',
     'one-sender-many-receivers',
+    'one-sender-two-recipients',
     'three-browser-matrix'
 ] as const;
 

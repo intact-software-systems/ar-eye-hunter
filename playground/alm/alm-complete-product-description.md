@@ -185,8 +185,10 @@ rooms with and without a snapshot floor, and answers with an advisory NACK;
 browser RTC and WS decode live messages once at ingress; control payloads are
 validated by
 [`al-control-value-codec.ts`](../../packages/shared/al-contracts/al-control-value-codec.ts)
-before dispatch; unknown controls cannot create pending work. Relay provenance
-for far-origin ACKs and the frozen logical audience land in S2.
+before dispatch; unknown controls cannot create pending work. An ACK names the
+message's origin and the logical recipient it speaks for (`al.control.ack.v2`,
+S2c-i), and RTC peer ingress refuses a room multicast that carries no frozen
+audience (S2c-ii).
 
 ## Logical audiences
 
@@ -217,11 +219,17 @@ group/overlay context resolves; WS has room snapshot authorization with and
 without a supplied floor; a message that lacks fresh authority is retained as
 pending work and replayed against current authority rather than dropped.
 
-**PLANNED — S2 and R2, frozen audience and fencing:** The logical audience is
-not yet frozen at admission and `expectedPeerIds` are physical next hops (S2).
-Membership fencing is explicitly rejected as unsupported today; R2 defines it on
-group-state's roster version supplied by the sender's snapshot, never on a
-caller-invented epoch.
+**CURRENT — S2, frozen audience:** A room multicast's logical audience is frozen
+at admission on both carriers and travels with the message as `recipientPeerIds`
+at the room's `snapshotVersion`: the RTC origin freezes it from the sessions its
+room authority admits, the WS server at its admission stamp, and a message that
+falls back from RTC to WS keeps its frozen set narrowed to what the server
+authorizes. A `receiver` receipt expects exactly that audience; joins do not widen
+it, and a session that leaves stays expected and reads unconfirmed.
+
+**PLANNED — R2, fencing:** Membership fencing is explicitly rejected as
+unsupported today; R2 defines it on group-state's roster version supplied by the
+sender's snapshot, never on a caller-invented epoch.
 
 ### Broadcast
 
@@ -346,23 +354,27 @@ requires a separate application reply. Relay-hop receipts are tracked
 separately from logical-recipient ACKs.
 
 **PARTIAL:** Hop/subtree tracking, durable ACK timeout, NACK, and repair exist.
+Since S2 `receiver` and `all-logical-recipients` are one logical algorithm over
+the frozen audience on both carriers: the WS server answers the origin with its
+receipt (`al.control.receipt.v1`), RTC relays forward each recipient's ACK toward
+the origin, an RTC retry goes only through the hops that may still lead to a
+missing recipient, and the handle carries the expected, confirmed and unconfirmed
+recipients beside the hop lists. A WS live-only room topic keeps no copy to
+retry, so its receipt ends timed out naming the recipients it did not confirm.
 Durable replay rechecks snapshot readiness, preserves predecessor order, and
 ACKs the admitted upstream relay. Current coverage includes
 [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
 [room snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
 and [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts).
 
-**PLANNED — S1 to S3, truthful at-least-once:** Default browser RTC and WS send
-paths still request at-least-once with no ACK. The RTC adapter now preserves the
-structured settlement (`sent`, `dropped`, `superseded`, `expired`, `closed`,
-`failed`, `cancelled` with `submissionAttempted`) and WS records its outbox
-delivery outcome, but neither reaches the caller as a lifecycle. S1 exposes the
-lifecycle, S2 makes the receiver receipt real, and S3 sets the reliable,
-receipted, volatile default (roadmap decision D2).
+**PLANNED — S3, truthful at-least-once:** Default browser RTC and WS send paths
+still request at-least-once with no ACK. S1 delivered the lifecycle on the
+caller's handle and S2 the logical receipt; S3 sets the reliable, receipted,
+volatile default (roadmap decision D2).
 
-**PLANNED — A2, distinct leader and all-recipient ACK:** Both modes currently
-map to the same subtree behavior. A2 defines the leader as the group's appointed
-director session and S2 defines all-recipient as the frozen logical audience.
+**PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
+behavior; all-recipient is the frozen logical audience since S2. A2 defines the
+leader as the group's appointed director session.
 
 ## Ordering and gap recovery
 

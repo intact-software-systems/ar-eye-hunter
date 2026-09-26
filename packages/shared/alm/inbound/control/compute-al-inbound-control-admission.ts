@@ -1,6 +1,5 @@
 import type {
     ALAckPayload,
-    ALCompletedPendingAck,
     ALControlAcceptance,
     ALPendingAckSnapshot
 } from '../../../al-contracts/al-control.ts';
@@ -14,10 +13,10 @@ import type {
     ALInboundControlOwnerIndex,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
-import { toALInboundCompletedAckRecipients } from '../al-inbound-effect-intent.ts';
+import { toALInboundUpwardAcks } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
-import { acceptALPendingAckPayload } from '../transition-al-pending-ack.ts';
+import { acceptALPendingAckPayload, type ALPendingAckTransition } from '../transition-al-pending-ack.ts';
 import type { AcksControlValue, PendingControlValue } from './al-inbound-control-rows.ts';
 
 export interface ALInboundControlAdmissionRead {
@@ -36,7 +35,8 @@ export interface ALInboundControlAdmissionCandidate {
     readonly read: ALInboundControlAdmissionRead;
     readonly acks: AcksControlValue;
     readonly pending: PendingControlValue | undefined;
-    readonly completedEffects: readonly ALInboundDurableEffectWrite[];
+    /** The ACKs this admission sends toward the origin: the one it relays, then the terminal one if it completed. */
+    readonly upwardEffects: readonly ALInboundDurableEffectWrite[];
     readonly acceptance: ALControlAcceptance;
     readonly controlExpireAtTimestamp: number;
     readonly pendingExpireAtTimestamp: number;
@@ -48,27 +48,13 @@ export function computeALInboundControlAdmission(
 ): ALInboundControlAdmissionCandidate {
     const retainedAcks = read.acks.slice(-(AL_MESSAGE_RESOURCE_LIMITS.collectionEntries - 1));
     const acks = [...retainedAcks, read.ack];
-    const transition = acceptALPendingAckPayload({
-        current: read.pending,
-        nextAcks: acks,
-        ack: read.ack
-    });
+    const transition = acceptALPendingAckPayload({ current: read.pending, ack: read.ack });
     const completed = transition.completed;
     return {
         read,
         acks: { kind: 'acks', values: acks },
         pending: transition.pending === undefined ? undefined : { kind: 'pending', value: transition.pending },
-        completedEffects: completed
-            ? computeCompletedAcknowledgementWork(
-                read,
-                {
-                    completed,
-                    recipientPeerIds: transition.completedRecipientPeerIds,
-                    localRecipient: transition.completedLocalRecipient
-                },
-                retention
-            )
-            : [],
+        upwardEffects: computeUpwardAcknowledgementWork(read, transition, retention),
         acceptance: {
             handled: true,
             completedPendingAcks: completed ? [completed] : []
@@ -99,17 +85,16 @@ export function toALInboundControlCommitBundle(
                 value: candidate.acks,
                 expireAtTimestamp: candidate.controlExpireAtTimestamp
             },
-            candidate.pending === undefined
-                ? { kind: 'delete-control-pending', msgId: ack.ackedMsgId, senderId: owner.senderId }
-                : {
-                    kind: 'set-control-pending',
-                    msgId: ack.ackedMsgId,
-                    senderId: owner.senderId,
-                    value: candidate.pending,
-                    expireAtTimestamp: candidate.pendingExpireAtTimestamp
-                }
+            // A candidate without a row never validates: an acknowledgement is admitted only against its row.
+            ...(candidate.pending === undefined ? [] : [{
+                kind: 'set-control-pending' as const,
+                msgId: ack.ackedMsgId,
+                senderId: owner.senderId,
+                value: candidate.pending,
+                expireAtTimestamp: candidate.pendingExpireAtTimestamp
+            }])
         ],
-        durableEffects: candidate.completedEffects
+        durableEffects: candidate.upwardEffects
     };
 }
 
@@ -131,37 +116,30 @@ function toALInboundControlObservations(
     };
 }
 
-interface ALInboundCompletedAcknowledgement {
-    readonly completed: ALCompletedPendingAck;
-    readonly recipientPeerIds: readonly string[];
-    readonly localRecipient: boolean;
-}
-
 /**
- * The relay re-originates one ACK per logical recipient its subtree confirmed (D40). The origin is its
- * own message-owner row's sender, never what a child's ACK claimed.
+ * The relay sends one ACK per recipient a child ACK named, then its own terminal ACK once its row
+ * completed (D40). The origin is its own message-owner row sender, never what a child ACK claimed.
  */
-function computeCompletedAcknowledgementWork(
+function computeUpwardAcknowledgementWork(
     read: ALInboundControlAdmissionRead,
-    acknowledgement: ALInboundCompletedAcknowledgement,
+    transition: ALPendingAckTransition,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): readonly ALInboundDurableEffectWrite[] {
-    const { completed } = acknowledgement;
-    // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
+    const pending = transition.pending;
+    if (pending === undefined) {
+        return [];
+    }
+    // The ACKs travel back toward the message sender, over the carrier that message arrived on.
     const carrier = toALDeliveryCarrier(read.owner.source);
     const relayPeerId = read.ack.toPeerId;
-    const recipients = toALInboundCompletedAckRecipients(
-        acknowledgement.recipientPeerIds,
-        acknowledgement.localRecipient
-    );
-    return recipients.map((recipient, index) => {
+    return toALInboundUpwardAcks(transition).map((upward, index) => {
         const controlMsgId = `${read.controlMsgId}:${index}`;
         return computeALInboundWorkEntry({
             namespace: read.namespace,
             observedAtMs: read.nowMs,
-            effectId: toInboundEffectId('ack', completed.msgId, completed.toPeerId, completed.status, controlMsgId),
+            effectId: toInboundEffectId('ack', read.ack.ackedMsgId, pending.toPeerId, upward.status, controlMsgId),
             expireAtTimestamp: resolveExpireAtTimestampWithFallback(
-                completed.expireAtTimestamp,
+                pending.expireAtTimestamp,
                 retention.durableEffectTtlMs,
                 read.nowMs
             ),
@@ -172,12 +150,14 @@ function computeCompletedAcknowledgementWork(
                     { v: 2, msgId: controlMsgId, senderId: relayPeerId, ts: read.nowMs },
                     {
                         fromPeerId: relayPeerId,
-                        toPeerId: completed.toPeerId,
-                        ackedMsgId: completed.msgId,
+                        toPeerId: pending.toPeerId,
+                        ackedMsgId: read.ack.ackedMsgId,
                         originPeerId: read.owner.senderId,
-                        logicalRecipientPeerId: recipient.kind === 'self' ? relayPeerId : recipient.peerId,
+                        logicalRecipientPeerId: upward.logicalRecipient.kind === 'self'
+                            ? relayPeerId
+                            : upward.logicalRecipient.peerId,
                         carrier,
-                        status: completed.status,
+                        status: upward.status,
                         observedAtEpochMs: read.nowMs
                     }
                 )

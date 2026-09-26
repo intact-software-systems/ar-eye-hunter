@@ -1,4 +1,5 @@
 import type {
+    RallarDirectorOutputOptions,
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult
@@ -97,7 +98,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         return toRelaySendResult(await this.ensureRelay().sendIntent(envelope));
     }
 
-    async publishEvent(event: TEvent): Promise<RallarGameSendResult> {
+    async publishEvent(event: TEvent, options?: RallarDirectorOutputOptions): Promise<RallarGameSendResult> {
         if (this.input.isStopped()) {
             return stoppedResult();
         }
@@ -116,7 +117,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         const envelope = this.input.createEnvelope('event', event, {
             directorEpoch: director.appointment.epoch
         });
-        return toRelaySendResult(await this.ensureRelay().sendOutput(envelope));
+        return toRelaySendResult(await this.ensureRelay().sendOutput(envelope, options));
     }
 
     async sendSnapshot(envelope: RallarGameEnvelope<TSnapshot>): Promise<RallarGameSendResult> {

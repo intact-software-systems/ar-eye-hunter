@@ -107,6 +107,16 @@ export type ALParsedControlMessage =
 /** A control one peer sends another about a message; the receipt control is the server's and travels apart. */
 export type ALPeerControlMessage = Exclude<ALParsedControlMessage, Readonly<{ type: 'receipt'; }>>;
 
+/**
+ * The completion of a hop itself: the delivered ACK of a leaf, or the terminal ACK of a relay whose
+ * subtree completed.
+ * A relay that passes on an ACK for a recipient below it speaks for that recipient, not for its hop.
+ */
+export function isALHopCompletionAck(ack: ALAckPayload): boolean {
+    return ack.fromPeerId === ack.logicalRecipientPeerId &&
+        (ack.status === 'delivered' || ack.status === 'subtree-complete');
+}
+
 export interface ALCompletedPendingAck {
     readonly msgId: string;
     readonly toPeerId: string;
@@ -119,13 +129,17 @@ export interface ALControlAcceptance {
     readonly completedPendingAcks: readonly ALCompletedPendingAck[];
 }
 
+/**
+ * How a relay tracks one message it forwarded: the child hops it waits on, and those whose subtree
+ * completed. Every child ACK is relayed upward as it arrives; the row completes once this peer is ready
+ * and every child hop completed, and stays until it expires so a late child ACK is still relayed.
+ */
 export interface ALPendingAckSnapshot {
     readonly toPeerId: string;
     readonly status: ALAckStatus;
     readonly localReady: boolean;
-    /** This relay is itself a logical recipient: its completed ACK set names it beside its children's. */
-    readonly localRecipient: boolean;
     readonly expectedFromPeerIds: readonly string[];
+    /** The child hops whose own completion ACK arrived, never a hop that only relayed a recipient below it. */
     readonly ackedFromPeerIds: readonly string[];
     readonly expireAtTimestamp?: number;
     /** The carrier the acknowledged data message arrived on. */

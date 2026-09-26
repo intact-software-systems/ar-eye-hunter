@@ -6,6 +6,7 @@ import {
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import {
     assessAlmConformanceIdentity,
     type AlmConformanceIdentityInput,
@@ -61,7 +62,7 @@ describe('ALM recipe identity assessment', () => {
         const receipts = sender.command('messages.receipts');
         sender.replaceResult({
             ...sender.result(receipts),
-            value: { handleId: receipts.handleId, confirmedHopPeerIds: [...confirmed], unconfirmedHopPeerIds: [] }
+            value: { handleId: receipts.handleId, confirmedRecipientPeerIds: [...confirmed], unconfirmedRecipientPeerIds: [] }
         });
         const issues = assessAlmConformanceIdentity(transcript.input());
         expect(issues.some((issue) => issue.startsWith(`${send.commandId}:`))).toBe(true);
@@ -73,7 +74,11 @@ describe('ALM recipe identity assessment', () => {
         const receipts = sender.command('messages.receipts');
         sender.replaceResult({
             ...sender.result(receipts),
-            value: { handleId: receipts.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: ['late'] }
+            value: {
+                handleId: receipts.handleId,
+                confirmedRecipientPeerIds: ['receiver-session'],
+                unconfirmedRecipientPeerIds: ['late']
+            }
         });
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
@@ -381,6 +386,72 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
 
+    it('accepts one sender and two declared recipients, each with exactly one complete envelope (D45)', () => {
+        expect(assessAlmConformanceIdentity(new IdentityTranscript('lifecycle').threeRoleInput())).toEqual([]);
+    });
+
+    it('rejects a run that declares recipient-b but carries no recipient-b envelope', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity(transcript.threeRoleInput([transcript.receiver])))
+            .toEqual(['recipient-b: a declared role needs exactly one envelope.']);
+    });
+
+    it('rejects a declared recipient-b whose envelope is missing authored command evidence', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const recipientB = transcript.recipientB();
+        recipientB.results.pop();
+        const issues = assessAlmConformanceIdentity(transcript.threeRoleInput([transcript.receiver, recipientB]));
+        expect(issues.some((issue) => issue.startsWith('recipient-b:'))).toBe(true);
+    });
+
+    it('rejects a recipient-b envelope in a run that declares only the sender and the receiver', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity({ ...transcript.threeRoleInput(), roles: ['sender', 'receiver'] }))
+            .toEqual(['recipient-b: the run does not declare this role.']);
+    });
+
+    it('names a declaration that leaves out the receiver in its own words, beside the envelope it leaves undeclared', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity({ ...transcript.input(), roles: ['sender'] })).toEqual([
+            'receiver: every ALM scenario declares this role.',
+            'receiver: the run does not declare this role.'
+        ]);
+    });
+
+    it('reports every role defect of a run at once', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const input = transcript.threeRoleInput([transcript.receiver]);
+        const shared = {
+            ...input,
+            roles: [...input.roles, 'sender'] as const,
+            participants: input.participants.map((participant) => participant.role === 'receiver' ? { ...participant, agentId: 'sender' } : participant)
+        };
+        expect(assessAlmConformanceIdentity(shared)).toEqual([
+            'sender: the run declares this role more than once.',
+            'recipient-b: a declared role needs exactly one envelope.',
+            'ALM identity assessment requires one distinct agent per role.'
+        ]);
+    });
+
+    it('rejects two envelopes for one declared recipient role and one agent standing in for two roles', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const input = transcript.threeRoleInput([transcript.receiver, transcript.recipientB(), transcript.recipientB()]);
+        const twice = {
+            ...input,
+            participants: input.participants.map((participant, index) => index === 3 ? { ...participant, agentId: 'other' } : participant)
+        };
+        expect(assessAlmConformanceIdentity(twice)).toEqual(['recipient-b: a declared role needs exactly one envelope.']);
+        const shared = transcript.threeRoleInput();
+        expect(
+            assessAlmConformanceIdentity({
+                ...shared,
+                participants: shared.participants.map((participant) =>
+                    participant.role === 'recipient-b' ? { ...participant, agentId: 'receiver' } : participant
+                )
+            })
+        ).toEqual(['ALM identity assessment requires one distinct agent per role.']);
+    });
+
     it.each(['missing', 'mismatched', 'duplicate'] as const)('rejects %s authored checkpoint contracts', (defect) => {
         const transcript = new IdentityTranscript('reload');
         const input = transcript.input();
@@ -404,7 +475,6 @@ describe('ALM recipe identity assessment', () => {
 
 namespace IdentityTranscript {
     export type Kind = 'lifecycle' | 'reload' | 'combined';
-    export type Role = 'sender' | 'receiver';
 }
 
 class IdentityTranscript {
@@ -418,18 +488,32 @@ class IdentityTranscript {
     }
 
     input(): AlmConformanceIdentityInput {
-        return { runId: 'run', participants: [this.sender.participant(), this.receiver.participant()] };
+        return { runId: 'run', roles: ['sender', 'receiver'], participants: [this.sender.participant(), this.receiver.participant()] };
+    }
+
+    /** A second recipient under its own agent, running what the receiver runs. */
+    recipientB(): ParticipantTranscript {
+        const recipe = this.receiver.recipe;
+        return new ParticipantTranscript('recipient-b', { ...recipe, recipeId: `${recipe.recipeId}-b` }, this.sender.recipe);
+    }
+
+    threeRoleInput(recipients: readonly ParticipantTranscript[] = [this.receiver, this.recipientB()]): AlmConformanceIdentityInput {
+        return {
+            runId: 'run',
+            roles: ['sender', 'receiver', 'recipient-b'],
+            participants: [this.sender, ...recipients].map((participant) => participant.participant())
+        };
     }
 }
 
 class ParticipantTranscript {
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly recipe: RallarBlackBoxTestRecipe;
     readonly commands: RallarBlackBoxTestCommand[];
     readonly results: RallarBlackBoxTestResult[];
 
     constructor(
-        role: IdentityTranscript.Role,
+        role: AlmConformanceRole,
         recipe: RallarBlackBoxTestRecipe,
         sender: RallarBlackBoxTestRecipe
     ) {
@@ -522,7 +606,7 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
 }
 
 interface TranscriptResultsInput {
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly commands: readonly RallarBlackBoxTestCommand[];
     readonly sender: RallarBlackBoxTestRecipe;
 }
@@ -539,7 +623,7 @@ function toTranscriptResults({ role, commands, sender }: TranscriptResultsInput)
 
 interface TranscriptValueInput {
     readonly command: RallarBlackBoxTestCommand;
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly document: number;
     readonly sender: RallarBlackBoxTestRecipe;
 }
@@ -577,7 +661,13 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         };
     }
     if (command.kind === 'messages.receipts') {
-        return { handleId: command.handleId, confirmedHopPeerIds: ['receiver-session'], unconfirmedHopPeerIds: [] };
+        return {
+            handleId: command.handleId,
+            confirmedHopPeerIds: ['receiver-session'],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: ['receiver-session'],
+            unconfirmedRecipientPeerIds: []
+        };
     }
     if (command.kind === 'wait' && command.absent !== true) {
         const sent = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) =>

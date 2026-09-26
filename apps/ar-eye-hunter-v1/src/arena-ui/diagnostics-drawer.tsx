@@ -6,6 +6,7 @@ import {
     toDirectorAttemptLabel,
     toDirectorLabel,
     toHttpProbeLabel,
+    toMatchDeliveryLabel,
     toShortId,
     toShortOptional,
     toWsTicketBackoffLabel
@@ -153,6 +154,7 @@ function toDiagnosticsJson(arena: ArenaConnection): string {
     return JSON.stringify(
         {
             directorAttempt: arena.directorAttempt,
+            matchDelivery: arena.matchDelivery,
             directorStatus: arena.directorStatus,
             match: arena.gameDiagnostics,
             transport: arena.transportDiagnostics,
@@ -181,6 +183,7 @@ function toDirectorDiagnostics(arena: ArenaConnection, nowEpochMs: number): Diag
             ['Fresh', arena.directorStatus.isFresh ? 'yes' : 'no'],
             ['Attempt', toDirectorAttemptLabel(arena.directorAttempt)],
             ['Capability delivery', toCapabilityDeliveryLabel(arena.directorAttempt.capabilityDelivery)],
+            ['Match delivery', toMatchDeliveryLabel(arena.matchDelivery)],
             [
                 'Heartbeat',
                 arena.directorStatus.lastHeartbeatAtEpochMs

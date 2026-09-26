@@ -1,3 +1,7 @@
+import {
+    isAlmConformanceRole,
+    type AlmConformanceRole
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { assessAlmConformanceIdentity } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -6,7 +10,8 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxDistributedParticipantResult,
-    RallarBlackBoxDistributedRecipeResult
+    RallarBlackBoxDistributedRecipeResult,
+    RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     rollupDistributedRunResult,
@@ -110,6 +115,7 @@ function assessAlmRecipeResults(
     ) {
         const issues = assessAlmConformanceIdentity({
             runId: distributedRun.controlRunId,
+            roles: toDeclaredAlmConformanceRoles(distributedRun.manifest),
             participants: distributedRun.commandLinks.filter((link) => link.phase === 'start').flatMap((link) => {
                 const recipe = distributedRun.manifest.recipes.find((selection) => selection.recipeId === link.recipeId)
                     ?.recipe;
@@ -135,6 +141,12 @@ function assessAlmRecipeResults(
         }
     }
     return recipes;
+}
+
+/** The recipe selections declare the roles; one the ALM family does not know stays undeclared, so its agent fails. */
+function toDeclaredAlmConformanceRoles(manifest: RallarBlackBoxDistributedRunManifest): readonly AlmConformanceRole[] {
+    const roles = manifest.recipes.flatMap((selection) => selection.role === undefined ? [] : [selection.role]);
+    return [...new Set(roles.filter(isAlmConformanceRole))];
 }
 
 export function isDistributedAckTimedOut(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {

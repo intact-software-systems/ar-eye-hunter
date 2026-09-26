@@ -1,3 +1,4 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -426,6 +427,46 @@ describe('Rallar director relay', () => {
         expect(result.status).toBe('sent');
         expect(result.rtc && 'lifecycle' in result.rtc ? result.rtc.lifecycle().state : undefined).toBe('failed');
         expect(result.ws?.lifecycle().state).toBe('queued');
+    });
+
+    it('sends a receipt output as one room multicast that falls back to WS without a second message', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        mockRtcNoRoute();
+        const wsMessages: ALMessage[] = [];
+        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => {
+            wsMessages.push(message);
+            return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+        });
+        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            laneId: 'director',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
+        });
+
+        const result = await relay.sendOutput({ ok: true }, { ack: 'all-logical-recipients' });
+        relay.stop();
+
+        expect(result).toEqual({ status: 'sent', receipt: expect.objectContaining({ typeId: 'game.output' }) });
+        expect(result.receipt?.lifecycle()).toMatchObject({ state: 'queued', ackMode: 'all-logical-recipients' });
+        const outputs = wsMessages.filter((message) => message.payload.typeId === 'game.output');
+        expect(outputs).toHaveLength(1);
+        expect(outputs[0]).toMatchObject({
+            id: { msgId: result.receipt?.msgId },
+            targets: { mode: 'multicast' },
+            delivery: { reliability: 'at-least-once', ack: 'all-logical-recipients' }
+        });
     });
 
     it('stops director relay heartbeats when auth logs out', async () => {

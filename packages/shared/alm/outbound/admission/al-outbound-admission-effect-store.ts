@@ -228,6 +228,7 @@ function readALOutboundWorkMessageReference(entry: ResourceEntry): ALOutboundMes
             'phase',
             'msgId',
             'msg',
+            'source',
             'expiresAtMs',
             'queueTypeId',
             'request',

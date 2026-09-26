@@ -10,8 +10,12 @@ import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
-/** Whom an ACK speaks for: this runtime's own delivery, or a recipient a completed subtree confirmed (D40). */
+/**
+ * Whom an ACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it delivered,
+ * or a recipient a child ACK named, which a relay passes upward as that ACK arrives (D40).
+ */
 export type ALInboundAckRecipient =
     | Readonly<{ kind: 'self'; }>
     | Readonly<{ kind: 'relayed'; peerId: string; }>;
@@ -82,8 +86,7 @@ export function toALInboundForwardingEffects(
             payload: {
                 kind: 'forward-message',
                 message: toALInboundMessageReference(input.msg),
-                fromPeerId: input.fromPeerId,
-                plan: input.plan
+                fromPeerId: input.fromPeerId
             }
         }];
     }
@@ -180,17 +183,26 @@ function toRepairEffects(
     }];
 }
 
+/** One ACK a relay sends toward the origin: who it speaks for, and whether it relays or ends the subtree. */
+export interface ALInboundUpwardAck {
+    readonly logicalRecipient: ALInboundAckRecipient;
+    readonly status: ALAckStatus;
+}
+
 /**
- * A relay speaks for each logical recipient its completed subtree confirmed (D40), and for itself when
- * it is a logical recipient that delivered locally. When the ACKs that confirmed its children are no
- * longer retained, or none were expected, it can name only itself.
+ * The ACKs a relay transition sends upward (D40): one `forwarded` ACK per recipient a child ACK named,
+ * then, on the transition that completed the row, the terminal ACK of the relay itself, last.
  */
-export function toALInboundCompletedAckRecipients(
-    completedRecipientPeerIds: readonly string[],
-    completedLocalRecipient: boolean
-): readonly ALInboundAckRecipient[] {
-    const relayed = completedRecipientPeerIds.map((peerId): ALInboundAckRecipient => ({ kind: 'relayed', peerId }));
-    return completedLocalRecipient || relayed.length === 0 ? [{ kind: 'self' }, ...relayed] : relayed;
+export function toALInboundUpwardAcks(
+    transition: Pick<ALPendingAckTransition, 'completed' | 'relayedRecipientPeerIds'>
+): readonly ALInboundUpwardAck[] {
+    const relayed = transition.relayedRecipientPeerIds.map((peerId): ALInboundUpwardAck => ({
+        logicalRecipient: { kind: 'relayed', peerId },
+        status: 'forwarded'
+    }));
+    return transition.completed === undefined
+        ? relayed
+        : [...relayed, { logicalRecipient: { kind: 'self' }, status: transition.completed.status }];
 }
 
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {

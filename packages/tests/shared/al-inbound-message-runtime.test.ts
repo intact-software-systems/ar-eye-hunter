@@ -291,7 +291,6 @@ describe('ALInboundMessageRuntime', () => {
                         toPeerId: 'peer-1',
                         status: 'subtree-complete',
                         localReady: false,
-                        localRecipient: false,
                         expectedFromPeerIds: ['peer-2'],
                         ackedFromPeerIds: [],
                         carrier: 'ws'
@@ -402,20 +401,20 @@ describe('ALInboundMessageRuntime', () => {
         await pendingRelease;
         await expect.poll(() => releaseConflictObserved).toBe(true);
         vi.setSystemTime(Date.now() + 100);
-        // The relay is a group member that delivered locally, so it names itself beside `peer-2`.
+        // The relay relays `peer-2`, then names itself in its terminal ACK.
         await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
 
         const ackPayloads = readAckPayloads(controlMessages);
 
         expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
+        expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
+            ['peer-2', 'forwarded'],
+            ['self', 'subtree-complete']
+        ]);
         for (const ack of ackPayloads) {
-            expect(ack).toMatchObject({
-                ackedMsgId: seq2.id.msgId,
-                toPeerId: 'peer-1',
-                originPeerId: 'peer-1',
-                status: 'subtree-complete'
-            });
+            expect(ack).toMatchObject({ ackedMsgId: seq2.id.msgId, toPeerId: 'peer-1', originPeerId: 'peer-1' });
         }
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
@@ -470,19 +469,19 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             { kind: 'ws-client', peerId: 'peer-2' }
         );
 
-        // One ACK for the downstream recipient and one for the relay itself, a group member that delivered.
+        // One ACK relayed for the downstream recipient and the terminal ACK of the relay itself.
         await expect.poll(() => controlMessages).toHaveLength(2);
         expect(controlAcceptances).toHaveLength(1);
 
         const ackPayloads = readAckPayloads(controlMessages);
         expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
+        expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
+            ['peer-2', 'forwarded'],
+            ['self', 'subtree-complete']
+        ]);
         for (const ack of ackPayloads) {
-            expect(ack).toMatchObject({
-                ackedMsgId: msg.id.msgId,
-                toPeerId: 'peer-1',
-                originPeerId: 'peer-1',
-                status: 'subtree-complete'
-            });
+            expect(ack).toMatchObject({ ackedMsgId: msg.id.msgId, toPeerId: 'peer-1', originPeerId: 'peer-1' });
         }
     });
 
@@ -520,14 +519,16 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await admission;
 
         await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(2);
-        expect(readAckPayloads(controlMessages)).toEqual(expect.arrayContaining(['peer-2', 'self'].map((recipient) =>
-            expect.objectContaining({
-                ackedMsgId: msg.id.msgId,
-                toPeerId: 'peer-1',
-                logicalRecipientPeerId: recipient,
-                status: 'subtree-complete'
-            })
-        )));
+        expect(readAckPayloads(controlMessages)).toEqual(
+            expect.arrayContaining([['peer-2', 'forwarded'], ['self', 'subtree-complete']].map(([recipient, status]) =>
+                expect.objectContaining({
+                    ackedMsgId: msg.id.msgId,
+                    toPeerId: 'peer-1',
+                    logicalRecipientPeerId: recipient,
+                    status
+                })
+            ))
+        );
     });
 
     it('does not complete deferred subtree ack after the source message expires', async () => {
@@ -836,13 +837,13 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const ackPayloads = readAckPayloads(controlMessages);
 
         expect(ackPayloads.map((ack) => ack.logicalRecipientPeerId).toSorted()).toEqual(['peer-2', 'self']);
+        // The child ACK is relayed as it arrives; the terminal ACK of the relay ends its subtree.
+        expect(ackPayloads.map((ack) => [ack.logicalRecipientPeerId, ack.status]).toSorted()).toEqual([
+            ['peer-2', 'forwarded'],
+            ['self', 'subtree-complete']
+        ]);
         for (const ack of ackPayloads) {
-            expect(ack).toMatchObject({
-                ackedMsgId: msg.id.msgId,
-                toPeerId: 'peer-1',
-                originPeerId: 'peer-1',
-                status: 'subtree-complete'
-            });
+            expect(ack).toMatchObject({ ackedMsgId: msg.id.msgId, toPeerId: 'peer-1', originPeerId: 'peer-1' });
         }
     });
 });

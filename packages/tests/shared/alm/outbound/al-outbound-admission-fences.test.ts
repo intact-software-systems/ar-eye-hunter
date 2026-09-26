@@ -151,7 +151,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toDeliveredAck(message))).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toDeliveredAck(message), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -161,7 +161,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
         const control = createFenceControlAdmission(fixture);
         const message = await seedControlObligation(fixture.store);
         // Both repairs name the same repair-hint effect, so the second observes what the first wrote.
-        expect(await control.admit(toRepairControl(message, 'retransmit'))).toEqual({ kind: 'committed' });
+        expect(await control.admit(toRepairControl(message, 'retransmit'), 'peer')).toEqual({ kind: 'committed' });
         const repairWork = await readOutboundWorkRow(fixture.backend, 'repair-hint');
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
@@ -172,7 +172,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toRepairControl(message, 'missing-seq'))).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toRepairControl(message, 'missing-seq'), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });

@@ -44,6 +44,7 @@ import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
@@ -127,10 +128,7 @@ export class WsQueueBoxServerService {
         OnWebSocketServerMessageCallback<ALMessage>
     >();
 
-    private outboxClusterPublisher?: (
-        message: ALMessage,
-        entry: ResourceEntry
-    ) => Promise<void>;
+    private readonly clusterPublication: WsQueueBoxServerClusterPublication;
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
@@ -163,6 +161,11 @@ export class WsQueueBoxServerService {
             socket: dependencies.socket,
             targetResolver: dependencies.targetResolver
         });
+        this.clusterPublication = new WsQueueBoxServerClusterPublication({
+            targetResolution: this.targetResolution,
+            canonicalScope: dependencies.outboundRuntime.admissionStore.canonicalScope,
+            clock: this.clock
+        });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
             diagnostics: dependencies.deliveryDiagnostics
@@ -188,7 +191,8 @@ export class WsQueueBoxServerService {
             qosProvider: dependencies.qosProvider,
             queueEngine: this.inboundQueueEngine,
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
-            acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message)
+            acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
+            acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
         });
         this.inboundRuntime = this.createInboundRuntime(dependencies);
         this.registerSocketIngress();
@@ -214,20 +218,20 @@ export class WsQueueBoxServerService {
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (message) =>
-                this.outboundPlanning.planOutboundMessage(
+                this.outboundPlanning.planOutboundMessage({
                     message,
-                    'immediate',
-                    this.outboxClusterPublisher !== undefined
-                ),
-            planDequeuedMessage: (message) =>
-                this.outboundPlanning.planOutboundMessage(
+                    phase: 'immediate',
+                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+                    admittedAudience: undefined
+                }),
+            planDequeuedMessage: (message, admittedAudience) =>
+                this.outboundPlanning.planOutboundMessage({
                     message,
-                    'dequeue',
-                    this.outboxClusterPublisher !== undefined
-                ),
-            afterDequeueAdmission: async (message, entry) => {
-                await this.outboxClusterPublisher?.(message, entry);
-            },
+                    phase: 'dequeue',
+                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+                    admittedAudience
+                }),
+            afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
             planRepairMessage: (message, request) =>
@@ -287,10 +291,8 @@ export class WsQueueBoxServerService {
         this.inboundAuthorizer = authorizer;
     }
 
-    onOutboxClusterPublishDo(
-        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
-    ): WsQueueBoxServerService {
-        this.outboxClusterPublisher = publisher;
+    onOutboxClusterPublishDo(publisher: WsQueueBoxServerClusterPublication.Publisher): WsQueueBoxServerService {
+        this.clusterPublication.setPublisher(publisher);
         return this;
     }
 
@@ -339,12 +341,20 @@ export class WsQueueBoxServerService {
         return this.onAnyInboxWebSocketMessageCallbacks.delete(id);
     }
 
-    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
-        const dispatchPlan = this.outboundPlanning.planOutboundMessage(
+    /**
+     * `admittedAudience` is the room audience a router admitted the message to. It travels with the
+     * outbound row, never on the wire, and narrows every later plan of the message to that audience.
+     */
+    async enqueueOutboxIfAbsent(
+        message: ALMessage,
+        admittedAudience?: readonly string[]
+    ): Promise<ALOutboundEnqueueResult> {
+        const dispatchPlan = this.outboundPlanning.planOutboundMessage({
             message,
-            'immediate',
-            this.outboxClusterPublisher !== undefined
-        );
+            phase: 'immediate',
+            clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+            admittedAudience
+        });
         const outgoingMessage = dispatchPlan.persist
             ? decodePersistedALMessageValue(message)
             : message;
@@ -607,8 +617,8 @@ export class WsQueueBoxServerService {
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        if (prepared.kind === 'cluster-local-complete') {
-            return { status: 'sent', submissionAttempted: true };
+        if (prepared.kind !== 'recipient') {
+            return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
         if (lifecycle.signal.aborted) {

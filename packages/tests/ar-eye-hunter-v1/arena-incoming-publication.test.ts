@@ -25,6 +25,7 @@ import {
 } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type {
     ArenaEvent,
+    ArenaMatchLifecycleMessage,
     ArenaSnapshot,
     GameRealtimeMessage,
     PickupAccepted,
@@ -311,6 +312,10 @@ async function mountIncoming(fixture: IncomingFixture): Promise<IncomingOwners> 
     function Harness() {
         const input = {
             nowMs: () => fixture.clock,
+            publishMatchLifecycleOutput: async (
+                match: Pick<ArenaRallarGameMatchHandle, 'publishEvent'>,
+                message: ArenaMatchLifecycleMessage
+            ) => void await match.publishEvent(message, { ack: 'all-logical-recipients' }),
             arenaMatchRef: fixture.matchRef,
             arenaSnapshotRef: fixture.snapshotRef,
             roomIdRef: fixture.roomIdRef,

@@ -353,7 +353,6 @@ describe('IndexedDB AL runtime stores', () => {
                                 toPeerId: 'upstream',
                                 status: 'subtree-complete',
                                 localReady: false,
-                                localRecipient: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
                                 ackedFromPeerIds: [],
                                 carrier: 'ws'
@@ -498,7 +497,8 @@ describe('IndexedDB AL runtime stores', () => {
                     reason: 'gap',
                     observedAtEpochMs: 1
                 }
-            )
+            ),
+            'peer'
         );
 
         const beforeExpiry = await admissionStore.readOutgoingMessage({ msg: msg, planner: planner, observedCanonicalEntry: undefined, intent: 'enqueue' });
@@ -580,7 +580,8 @@ describe('IndexedDB AL runtime stores', () => {
                     expectedSeq: 1,
                     missingSeqs: [1]
                 }
-            )
+            ),
+            'peer'
         );
 
         await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
@@ -696,7 +697,8 @@ describe('IndexedDB AL runtime stores', () => {
                             observedAtEpochMs: 1,
                             carrier: 'ws'
                         }
-                    )
+                    ),
+                    'peer'
                 );
             }
 
@@ -717,6 +719,7 @@ describe('IndexedDB AL runtime stores', () => {
                     timeoutMs: 10,
                     maxAttempts: 1,
                     expectedPeerIds: ['peer-1'],
+                    nextHopPeerIds: ['peer-1'],
                     mode: 'hop'
                 },
                 repairTracking: {

@@ -25,6 +25,7 @@ const ALM_COMMAND_KINDS = [
     'messages.cancel',
     'messages.received',
     'messages.receipts',
+    'messages.control',
     'fault.inject',
     'storage.counters',
     'agent.reload'
@@ -48,9 +49,22 @@ interface AlmRuntimeCaptures {
     readonly observeDelivery: RallarBlackBoxTestRecord[];
     readonly cancelDelivery: RallarBlackBoxTestRecord[];
     readonly readReceipts: RallarBlackBoxTestRecord[];
+    readonly submitControl: RallarBlackBoxTestRecord[];
     readonly injectFault: RallarBlackBoxTestRecord[];
     readonly readStorageCounters: RallarBlackBoxTestRecord[];
 }
+
+const RAW_CONTROL_COMMAND = {
+    kind: 'messages.control',
+    commandId: 'alm-raw-control',
+    carrier: 'rtc',
+    typeId: 'al.control.ack.v1',
+    msgId: 'control-1',
+    ackedMsgId: 'msg-1',
+    toPeerId: 'origin-session'
+} as const;
+
+const CONTROL_SUBMISSION = { msgId: 'control-1', typeId: 'al.control.ack.v1', carrier: 'rtc', verdict: 'admitted' };
 
 const SEND_DIAGNOSTICS = {
     handleId: 'handle-1',
@@ -75,7 +89,13 @@ const DELIVERY_OBSERVATION = {
     enqueued: true,
     confirmedHopPeerIds: ['bob-session'],
     unconfirmedHopPeerIds: [],
+    receiptMode: 'receiver',
+    expectedRecipientPeerIds: ['bob-session', 'carol-session'],
+    confirmedRecipientPeerIds: ['bob-session'],
+    unconfirmedRecipientPeerIds: ['carol-session'],
     attempts: 2,
+    attemptOutcomes: ['refused', 'sent'],
+    relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
     reason: 'hop evidence retained'
 };
 
@@ -95,6 +115,7 @@ function createAlmRuntimeCaptures(): AlmRuntimeCaptures {
         observeDelivery: [],
         cancelDelivery: [],
         readReceipts: [],
+        submitControl: [],
         injectFault: [],
         readStorageCounters: []
     };
@@ -122,6 +143,10 @@ function createAlmBrowserRuntimeFake(
         readReceipts: async (input) => {
             captures.readReceipts.push(decodeCapturedInput(input));
             return DELIVERY_OBSERVATION;
+        },
+        submitControl: async (input) => {
+            captures.submitControl.push(decodeCapturedInput(input));
+            return CONTROL_SUBMISSION;
         },
         injectFault: async (input) => {
             captures.injectFault.push(decodeCapturedInput(input));
@@ -389,6 +414,24 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a raw messages.control and refuses a typeId outside the control vocabulary or a fallback carrier', () => {
+        const valid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control', RAW_CONTROL_COMMAND));
+        expect(valid.ok, formatJsonSchemaValidationErrors(valid.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(RAW_CONTROL_COMMAND).ok).toBe(true);
+
+        const userTypeId = validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, typeId: 'alm.conformance' });
+        expect(userTypeId.ok).toBe(false);
+        if (!userTypeId.ok) {
+            expect(userTypeId.error).toBe('messages.control.typeId must name an al.control.* id.');
+        }
+        const fallback = { ...RAW_CONTROL_COMMAND, carrier: 'rtc-with-ws-fallback' };
+        expect(validateRallarBlackBoxTestCommand(fallback).ok).toBe(false);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control-fallback', fallback)).ok)
+            .toBe(false);
+        expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, toPeerId: undefined }).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, msgId: undefined }).ok).toBe(false);
+    });
+
     it('rejects a control-protocol messages.send without a carrier', () => {
         const result = validateRallarBlackBoxTestCommand({
             kind: 'messages.send',
@@ -446,7 +489,13 @@ describe('ALM browser adapter execution', () => {
             enqueued: true,
             confirmedHopPeerIds: ['bob-session'],
             unconfirmedHopPeerIds: [],
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: ['bob-session', 'carol-session'],
+            confirmedRecipientPeerIds: ['bob-session'],
+            unconfirmedRecipientPeerIds: ['carol-session'],
             attempts: 2,
+            attemptOutcomes: ['refused', 'sent'],
+            relayRejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' },
             reason: 'hop evidence retained'
         });
         expect(topicsOf(runtime.state())).toEqual(
@@ -490,6 +539,69 @@ describe('ALM browser adapter execution', () => {
         expect(refused.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
             message: 'The page runtime returned no usable messages.send replay result.verdict.'
+        });
+    });
+
+    it('submits a raw control through the page runtime and reads its carrier verdict, refusing an unknown one', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createAlmBrowserRuntimeFake(captures) });
+
+        const result = await runtime.execute(RAW_CONTROL_COMMAND);
+
+        expect(result.ok, result.error?.message).toBe(true);
+        expect(result.value).toEqual(CONTROL_SUBMISSION);
+        expect(captures.submitControl[0]).toMatchObject({
+            connection: 'default',
+            carrier: 'rtc',
+            typeId: 'al.control.ack.v1',
+            msgId: 'control-1',
+            ackedMsgId: 'msg-1',
+            toPeerId: 'origin-session'
+        });
+        expect(topicsOf(runtime.state())).toContain('rallar.bb.messages.control');
+
+        const refusing = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                submitControl: async () => ({ ...CONTROL_SUBMISSION, verdict: 'delivered' })
+            }
+        });
+        const refused = await refusing.execute({ ...RAW_CONTROL_COMMAND, commandId: 'alm-raw-control-unknown-verdict' });
+        expect(refused.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: 'The page runtime returned no usable messages.control result.verdict.'
+        });
+    });
+
+    it('resolves the message a raw control answers from an earlier result, and fails naming a reference none returned', async () => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createAlmBrowserRuntimeFake(captures) });
+        const answer = {
+            ...RAW_CONTROL_COMMAND,
+            msgId: 'retired-ack-{resultCache.alm-send.value.msgId}',
+            ackedMsgId: '{resultCache.alm-send.value.msgId}',
+            toPeerId: 'origin-{resultCache.alm-send.value.carrier}'
+        };
+        const send = { kind: 'messages.send', commandId: 'alm-send', carrier: 'ws', typeId: 'alm.test', payload: {} } as const;
+
+        const resolved = await runtime.execute({
+            kind: 'recipe.run',
+            recipe: { schemaVersion: 1, recipeId: 'raw-control-answer', name: 'raw control answer', commands: [send, answer] }
+        });
+
+        expect(resolved.ok, resolved.error?.message).toBe(true);
+        expect(captures.submitControl[0]).toMatchObject({
+            msgId: 'retired-ack-msg-1',
+            ackedMsgId: 'msg-1',
+            toPeerId: 'origin-ws'
+        });
+
+        const unresolved = await createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        }).execute({ ...answer, commandId: 'alm-raw-control-unresolved' });
+        expect(unresolved.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT',
+            message: 'messages.control names resultCache.alm-send.value.msgId, which no earlier command of this recipe returned.'
         });
     });
 
@@ -770,6 +882,38 @@ describe('ALM browser adapter execution', () => {
         expect(result.error).toMatchObject({
             code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
             message: 'The page runtime returned no usable storage.counters result.byOwner.al-work.'
+        });
+    });
+
+    it.each([
+        { field: 'receiptMode', value: 'server' },
+        { field: 'expectedRecipientPeerIds', value: 'bob-session' },
+        { field: 'confirmedRecipientPeerIds', value: [7] },
+        { field: 'unconfirmedRecipientPeerIds', value: undefined },
+        { field: 'attemptOutcomes', value: ['delivered'] },
+        { field: 'relayRejection', value: { relay: 'trusted-server' } },
+        { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
+        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } }
+    ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({ ...DELIVERY_OBSERVATION, [field]: value })
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-malformed-recipients',
+            handleId: 'handle-1',
+            state: ['acknowledged'],
+            timeoutMs: 2_500
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: `The page runtime returned no usable delivery observation.${field}.`
         });
     });
 

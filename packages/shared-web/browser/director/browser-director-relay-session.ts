@@ -1,4 +1,5 @@
 import type {
+    RallarDirectorOutputOptions,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle,
@@ -93,14 +94,16 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     };
 
     public readonly sendOutput = async (
-        output: TOutput
+        output: TOutput,
+        options?: RallarDirectorOutputOptions
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
         return guarded ?? await this.input.transport.sendRoomEnvelope({
             current: this.status(),
             topicId: this.topicId,
             typeId: this.input.config.outputTypeId,
-            payload: output
+            payload: output,
+            ack: options?.ack
         });
     };
 
@@ -121,7 +124,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             payload: {
                 sessionId: current.appointment?.sessionId,
                 epoch: current.appointment?.epoch
-            }
+            },
+            ack: undefined
         });
     };
 
@@ -140,7 +144,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
             current: this.status(),
             topicId: this.topicId,
             typeId: this.snapshotTypeId,
-            payload: resolved
+            payload: resolved,
+            ack: undefined
         });
     };
 

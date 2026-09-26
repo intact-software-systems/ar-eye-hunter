@@ -51,7 +51,8 @@ describe('RTC message diagnostic receipts', () => {
                         reason: 'not-yet-in-sync',
                         observedAtEpochMs: 1
                     }
-                )
+                ),
+                'peer'
             );
             const receipt = await readBlackBoxRtcMessageNacks(sessionId, 'attempted');
             expect(receipt).toEqual([expect.objectContaining({

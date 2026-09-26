@@ -1,4 +1,5 @@
 import type {
+    RallarDirectorOutputOptions,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
@@ -16,6 +17,7 @@ import {
     type ALDeliveryLifecycle
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
@@ -44,6 +46,8 @@ export namespace BrowserDirectorRelayTransport {
         readonly topicId: string;
         readonly typeId: string;
         readonly payload: T;
+        /** Undefined sends best effort; a stated ack asks the frozen room audience for a logical receipt. */
+        readonly ack: RallarDirectorOutputOptions['ack'] | undefined;
     }
 }
 
@@ -85,15 +89,24 @@ export class BrowserDirectorRelayTransport {
         if (rejection) {
             return rejection;
         }
-        if (!input.current.roomRef) {
+        const roomRef = input.current.roomRef;
+        if (!roomRef) {
             throw new Error('Validated director room target is missing.');
         }
-        const envelope = createEnvelope(input);
+        return input.ack === undefined
+            ? await this.sendBestEffortRoomEnvelope(input, roomRef)
+            : await this.sendReceiptRoomEnvelope(input, roomRef);
+    }
+
+    private async sendBestEffortRoomEnvelope<T>(
+        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>,
+        roomRef: GroupRef
+    ): Promise<RallarDirectorRelaySendResult> {
         const message = {
-            roomRef: input.current.roomRef,
+            roomRef,
             topicId: input.topicId,
             typeId: input.typeId,
-            payload: envelope,
+            payload: createEnvelope(input),
             reliability: 'best-effort' as const,
             ack: 'none' as const,
             ttlMs: 5_000
@@ -113,6 +126,25 @@ export class BrowserDirectorRelayTransport {
                 ws,
                 reason: wsOutcome.lifecycle.evidence.reason ?? rtcOutcome.lifecycle.evidence.reason
             };
+    }
+
+    private async sendReceiptRoomEnvelope<T>(
+        input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>,
+        roomRef: GroupRef
+    ): Promise<RallarDirectorRelaySendResult> {
+        const ttlMs = BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS;
+        const receipt = await this.input.messages
+            .room<RallarDirectorRelayEnvelope<T>>({ topicId: input.topicId, typeId: input.typeId, roomRef })
+            .send(createEnvelope(input), {
+                strategy: 'rtc-with-ws-fallback',
+                reliability: 'at-least-once',
+                ack: input.ack,
+                ttlMs
+            });
+        const outcome = await receipt.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: ttlMs });
+        return isSuccessfulDirectorDelivery(outcome.lifecycle)
+            ? { status: 'sent', receipt }
+            : { status: 'failed', receipt, reason: outcome.lifecycle.evidence.reason };
     }
 
     private async sendIntentWithWsFallback<T>(
@@ -184,7 +216,7 @@ export class BrowserDirectorRelayTransport {
 }
 
 function createEnvelope<T>(
-    input: BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
+    input: BrowserDirectorRelayTransport.SendIntentInput<T> | BrowserDirectorRelayTransport.SendRoomEnvelopeInput<T>
 ): RallarDirectorRelayEnvelope<T> {
     if (!input.current.appointment || !input.current.roomId) {
         throw new Error('Cannot create director envelope without appointment.');

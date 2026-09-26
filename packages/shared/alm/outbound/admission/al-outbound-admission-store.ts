@@ -46,6 +46,7 @@ import {
     type ALOutboundPendingAdmission,
     type RetainALOutboundPendingAdmissionInput
 } from '../al-outbound-pending-admission.ts';
+import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputeIntent } from '../compute-al-outbound-dispatch.ts';
 import {
     ALOutboundControlAdmission,
@@ -83,8 +84,10 @@ export interface ALOutboundVersionedClientRecord {
 
 export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: ALMessage) => TPrepared;
 
+/** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
-    msg: ALMessage
+    msg: ALMessage,
+    admittedAudience: readonly string[] | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {
@@ -187,6 +190,7 @@ export type ALOutboundDurableEffect<TPrepared> =
     | Readonly<{
         kind: 'admit-control';
         msg: ALMessage;
+        source: ALOutboundControlSource;
         expiresAtMs: number;
     }>
     | Readonly<{

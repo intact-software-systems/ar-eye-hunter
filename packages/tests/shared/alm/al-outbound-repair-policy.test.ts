@@ -50,10 +50,13 @@ describe('AL outbound repair policy', () => {
         });
         await enqueueOutboundOrThrow(runtime, message);
 
-        await runtime.acceptControlMessage(newALNackControlMessage(
-            { v: 2, msgId: 'gap-control', senderId: 'peer-1', ts: 1 },
-            { msgId: message.id.msgId, fromPeerId: 'peer-1', toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
-        ));
+        await runtime.acceptControlMessage(
+            newALNackControlMessage(
+                { v: 2, msgId: 'gap-control', senderId: 'peer-1', ts: 1 },
+                { msgId: message.id.msgId, fromPeerId: 'peer-1', toPeerId: 'self', reason: 'gap', observedAtEpochMs: 1 }
+            ),
+            'peer'
+        );
 
         expect(sent).toEqual([{ kind: 'send', msgId: message.id.msgId }]);
     });

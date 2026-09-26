@@ -1,5 +1,6 @@
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
@@ -370,7 +371,15 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
     return { runtime, stores, engine, observed, planner, delivered, forwarded, controls };
 }
 
+/** Every RTC copy of a room multicast carries the audience its origin froze. */
 function createMessage(input: ReplayMessageInput): ALMessage {
+    return toALFrozenMulticastMessage(createUnfrozenMessage(input), {
+        recipientPeerIds: ['receiver', 'upstream-relay', 'downstream'],
+        snapshotVersion: 5
+    });
+}
+
+function createUnfrozenMessage(input: ReplayMessageInput): ALMessage {
     return newALMulticastMessage(
         'sender',
         { topicId: 'chat', resourceId: `message-${input.seq}`, contextId: 'room' },

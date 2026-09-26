@@ -1,4 +1,9 @@
-import type { RallarFacade, RallarRoomState, RallarUnsubscribe } from '@shared-web/browser/rallar.ts';
+import type {
+    RallarDirectorOutputOptions,
+    RallarFacade,
+    RallarRoomState,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarGameHostCapability, RallarGameHostElectionResult } from '../director/election.ts';
 import type {
@@ -96,7 +101,7 @@ export interface RallarGameMatchHandle<TInput, TIntent, TSnapshot, TEvent, TPres
         snapshot: TSnapshot,
         options?: Readonly<{ reliable?: boolean; }>
     ): Promise<RallarGameSendResult>;
-    publishEvent(event: TEvent): Promise<RallarGameSendResult>;
+    publishEvent(event: TEvent, options?: RallarDirectorOutputOptions): Promise<RallarGameSendResult>;
     requestSync(payload?: object): Promise<RallarGameSendResult>;
     onPresence(handler: RallarGameEnvelopeHandler<TPresence>): RallarUnsubscribe;
     onStatus(handler: RallarGameStatusHandler): RallarUnsubscribe;

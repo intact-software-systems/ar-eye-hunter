@@ -1,5 +1,4 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -30,6 +29,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot,
+    ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
@@ -44,6 +44,7 @@ import {
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral
 } from './al-outbound-work-entry.ts';
+import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from './control/al-outbound-receipt-admission.ts';
@@ -78,6 +79,11 @@ export interface ALOutboundAckTrackingPlan {
     readonly expectedPeerIds: readonly string[];
     /** How a re-plan updates a retained receipt's expected set; absent merges. */
     readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
+    /**
+     * The next hops this dispatch sends through: the local hop view a `receiver` receipt states beside its
+     * recipients. Under `hop` and `subtree` they are the expected peers; a WS origin names no hop.
+     */
+    readonly nextHopPeerIds: readonly string[];
     /** The send's resolved ack algorithm: what the receipt it tracks counts. */
     readonly mode: ALReceiptMode;
 }
@@ -108,6 +114,8 @@ export interface ALOutboundRepairRequest {
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
     readonly failedPeerIds: readonly string[];
+    /** The next hops whose subtree the receipt saw complete; empty for a retry no receipt timed out. */
+    readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingSeqs: readonly number[];
 }
@@ -134,6 +142,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
+    /**
+     * The audience a server admitted the message to, carried beside the message rather than on the wire,
+     * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
+     * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.
+     */
+    readonly admittedAudience?: readonly string[];
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {
@@ -244,6 +258,13 @@ export interface ALOutboundEnqueueResult {
 }
 
 export namespace ALOutboundMessageRuntime {
+    /** An admitted message sent again with this plan, as one repair attempt of its own identity. */
+    export interface Retransmission<TPrepared> {
+        readonly msg: ALMessage;
+        readonly plan: ALOutboundDispatchPlan<TPrepared>;
+        readonly attemptIdentity: string;
+    }
+
     export type PendingAdmissionAuthority =
         | Readonly<{ status: 'authorized'; }>
         | Readonly<{ status: 'rejected'; reason: string; }>
@@ -293,7 +314,7 @@ export namespace ALOutboundMessageRuntime {
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-        readonly planDequeuedMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;
@@ -379,7 +400,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.receiptAdmission = new ALOutboundReceiptAdmission({
             admissionStore: dependencies.admissionStore,
             clock: dependencies.clock,
-            settlements
+            settlements,
+            diagnostics: dependencies.diagnostics
         });
         this.repairRetransmission = new ALOutboundRepairRetransmission({
             admissionStore: dependencies.admissionStore,
@@ -479,6 +501,24 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
     }
 
+    async retransmitAdmittedMessage(
+        retransmission: ALOutboundMessageRuntime.Retransmission<TPrepared>
+    ): Promise<ALOutboundEnqueueResult> {
+        await this.ready();
+        if (this.disposed) {
+            return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
+        }
+        const computed = await this.commitDispatchPlan({
+            msg: retransmission.msg,
+            planner: () => retransmission.plan,
+            intent: 'repair',
+            phase: 'immediate',
+            origin: 'repair',
+            options: { attemptIdentity: retransmission.attemptIdentity }
+        });
+        return ALOutboundMessageRuntime.toEnqueueResult(computed, retransmission.msg);
+    }
+
     /** The messages of one sender admitted as one commit, each planned as `enqueueIfAbsent` plans it; one result per message, in order. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
@@ -508,13 +548,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return results.map((result, index) => ALOutboundMessageRuntime.toEnqueueResult(result.computed, msgs[index]!));
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
+    /** The source decides trust: only the trusted server of a WS client speaks for a relay it does not name. */
+    async acceptControlMessage(
+        msg: ALMessage,
+        source: ALOutboundControlSource
+    ): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
         if (this.disposed) {
             return { kind: 'not-handled' };
         }
 
-        const admitted = await this.repairAdmission.acceptControlMessage(msg);
+        const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
             this.work.committed();
@@ -522,10 +566,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return admitted;
     }
 
-    /** A server receipt about a message this owner originated; it writes the receipt row, never work. */
-    async acceptReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+    /** A server receipt control about a message this owner originated; it writes the receipt row, never work. */
+    async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
-        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(receipt);
+        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(control);
     }
 
     private async commitDispatchPlan(

@@ -28,6 +28,9 @@ describe('browser session delivery observation', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['current-hop'],
             unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['current-hop'],
+            confirmedRecipientPeerIds: ['current-hop'],
+            unconfirmedRecipientPeerIds: [],
             complete: true
         });
         expect((await waiting).lifecycle.state).toBe('acknowledged');

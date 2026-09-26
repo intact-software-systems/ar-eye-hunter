@@ -36,7 +36,7 @@ describe('ALM conformance combined recipe', () => {
             deadlineMs: 18_000
         }).filter((scenario) => ['delivery-baseline', 'not-yet-in-sync-expires'].includes(scenario.scenarioKey));
 
-        const requests = toAlmConformanceCombinedRecipe([baseline!, withInScenarioRequest(expires!)], 'sender').commands
+        const requests = toAlmConformanceCombinedRecipe([baseline!, withInScenarioRequest(expires!)], 'sender', 'two-agent').commands
             .filter((command) => command.kind === 'http.request')
             .map((command) => command.commandId);
 

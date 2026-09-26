@@ -7,6 +7,7 @@ import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
+    ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
@@ -28,7 +29,7 @@ import {
 } from './al-outbound-pending-admission.ts';
 import {
     computeALOutboundDispatch,
-    toALOutboundSupersededMsgIds,
+    toALOutboundCommitSettlements,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
     type ALOutboundComputeIntent,
@@ -44,7 +45,7 @@ export namespace ALOutboundDispatchAdmission {
 
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
-        readonly planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
         readonly origin: ALOutboundCommitOrigin;
@@ -229,7 +230,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 msg: decision.input.read.msg,
                 intent: members[index]!.dispatch.intent
             });
-            this.emitSupersededSettlements(result);
+            this.emitCommitSettlements(result, decision.input);
             return result;
         });
     }
@@ -267,7 +268,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
         }
         const result = this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
-        this.emitSupersededSettlements(result);
+        this.emitCommitSettlements(result, input);
         return result;
     }
 
@@ -325,19 +326,22 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         });
     }
 
-    /** Stated from the replacement's own commit, so the predecessor never waits on its next attempt. */
-    private emitSupersededSettlements(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
+    /**
+     * The facts a committed admission states at once, before any attempt runs. Stated from the commit of
+     * the replacement, a superseded predecessor never waits on its next attempt.
+     */
+    private emitCommitSettlements(
+        result: ALOutboundDispatchAdmission.Result<TPrepared>,
+        input: ComputeALOutboundDispatchInput<TPrepared>
+    ): void {
         const { bundle, msg } = result.computed;
         if (!result.committed || !bundle || !msg) {
             return;
         }
-        for (const msgId of toALOutboundSupersededMsgIds(bundle)) {
-            this.dependencies.settlements({
-                kind: 'superseded',
-                msgId,
-                replacementMsgId: msg.id.msgId,
-                detail: 'A newer message replaced this one at its admission.'
-            });
+        for (
+            const fact of toALOutboundCommitSettlements({ bundle, msg, plan: input.read.plan, intent: input.intent })
+        ) {
+            this.dependencies.settlements(fact);
         }
     }
 

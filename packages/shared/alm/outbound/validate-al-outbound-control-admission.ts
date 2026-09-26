@@ -44,7 +44,7 @@ export function validateALOutboundControlAdmission(
         return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
     }
     const payload = read.parsed.payload;
-    if (!isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
+    if (!isTrustedRelayRejection(read) && !isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
         issues.push({ code: 'unauthorized', message: 'AL repair sender has no retained outbound obligation' });
     }
     if (!hasValidOrderingHints(read.sent, payload)) {
@@ -106,6 +106,12 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
                 );
         }
     }
+}
+
+/** The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer. */
+function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
+    return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
+        read.parsed.payload.reason === 'resync-required';
 }
 
 function isExpectedRepairPeer(

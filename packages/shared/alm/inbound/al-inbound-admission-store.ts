@@ -189,7 +189,6 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly supersedence: ALInboundSupersedenceReadState;
     readonly supersedenceTrackTtlMs: number;
     readonly pendingAck?: ALPendingAckSnapshot;
-    readonly acks: readonly ALAckPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 }
@@ -249,11 +248,6 @@ export type ALInboundAdmissionMutation =
         expireAtTimestamp: number;
     }>
     | Readonly<{
-        kind: 'delete-control-pending';
-        msgId: string;
-        senderId: string;
-    }>
-    | Readonly<{
         kind: 'set-control-owners';
         msgId: string;
         value: ALInboundControlOwnerIndex;
@@ -296,7 +290,7 @@ export type ALInboundDurableEffect =
         kind: 'forward-message';
         message: ALInboundMessageReference;
         fromPeerId: string;
-        plan: ALMessageHandlingPlan;
+        retryPeerIds?: readonly string[];
     }>
     | Readonly<{
         kind: 'release-buffered';
@@ -751,7 +745,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 );
             case 'set-control-acks':
             case 'set-control-pending':
-            case 'delete-control-pending':
             case 'set-control-owners':
                 return await applyALInboundControlMutation(tx, this.namespace, mutation);
             case 'set-buffered':
@@ -916,7 +909,6 @@ function toALInboundBufferedReleaseReadDto(
         supersedence,
         supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
         pendingAck,
-        acks,
         controlOwners,
         retention: observed.retention
     };

@@ -367,12 +367,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "ttlMs": 77000,
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ttlMs": 77000
           },
           {
             "kind": "messages.observe",
@@ -576,12 +571,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "ttlMs": 77000,
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ttlMs": 77000
           },
           {
             "kind": "messages.observe",
@@ -1296,7 +1286,7 @@
           {
             "kind": "assert",
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-confirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 1,
             "timeoutMs": 2000
@@ -1304,7 +1294,7 @@
           {
             "kind": "assert",
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-unconfirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedRecipientPeerIds.length",
             "operator": "equals",
             "expected": 0,
             "timeoutMs": 2000
@@ -1440,7 +1430,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.nack.v1\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\""
+              "contains": "\"typeId\":\"al.control.nack.v1\",\"targetMsgId\":\"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}\",\"outcome\":\"committed\""
             },
             "timeoutMs": 27000
           },
@@ -1559,12 +1549,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ttlMs": 7500,
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1720,12 +1705,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1784,12 +1764,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1902,12 +1877,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1981,12 +1951,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2255,11 +2220,6 @@
             "ttlMs": 7500,
             "minSnapshotVersion": {
               "absolute": 999999
-            },
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
             }
           },
           {
@@ -2435,12 +2395,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ttlMs": 7500,
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2596,12 +2551,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2672,12 +2622,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2814,12 +2759,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2893,12 +2833,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -3175,12 +3110,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "ttlMs": 30000,
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ttlMs": 30000
           },
           {
             "kind": "messages.observe",
@@ -3263,12 +3193,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
-            "ttlMs": 30000,
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
-            }
+            "ttlMs": 30000
           },
           {
             "kind": "messages.observe",
@@ -3355,11 +3280,6 @@
             "ttlMs": 7500,
             "minSnapshotVersion": {
               "absolute": 999999
-            },
-            "qos": {
-              "ack": {
-                "algo": "hop"
-              }
             }
           },
           {

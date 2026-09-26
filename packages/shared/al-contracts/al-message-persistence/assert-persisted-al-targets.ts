@@ -5,6 +5,7 @@ import {
     requirePersistedALFields,
     requirePersistedALNonEmptyString,
     requirePersistedALRecord,
+    type PersistedALRecord,
     type PersistedALValue
 } from './persisted-al-value-validation.ts';
 
@@ -16,19 +17,34 @@ export function assertPersistedALTargets(value: PersistedALValue): void {
         return;
     }
     if (targets.mode === 'multicast') {
-        requirePersistedALFields(
-            targets,
-            ['mode', 'groupRef', 'membershipEpoch', 'minSnapshotVersion'],
-            ['mode', 'groupRef']
-        );
-        assertCanonicalGroupRef(targets.groupRef);
-        requireOptionalPersistedALSafeInteger(targets.membershipEpoch, 0, 'membership epoch');
-        requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
+        assertPersistedALMulticastTargets(targets);
         return;
     }
     if (targets.mode !== 'broadcast') {
         throw new TypeError('Persisted AL target mode is invalid');
     }
+    assertPersistedALBroadcastTargets(targets);
+}
+
+function assertPersistedALMulticastTargets(targets: PersistedALRecord): void {
+    requirePersistedALFields(
+        targets,
+        ['mode', 'groupRef', 'membershipEpoch', 'minSnapshotVersion', 'recipientPeerIds', 'snapshotVersion'],
+        ['mode', 'groupRef']
+    );
+    assertCanonicalGroupRef(targets.groupRef);
+    requireOptionalPersistedALSafeInteger(targets.membershipEpoch, 0, 'membership epoch');
+    requireOptionalPersistedALSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
+    if ((targets.recipientPeerIds === undefined) !== (targets.snapshotVersion === undefined)) {
+        throw new TypeError(
+            'Persisted AL multicast frozen audience needs its recipients and snapshot version together'
+        );
+    }
+    requireOptionalPersistedALUniqueStringArray(targets.recipientPeerIds, 'multicast frozen recipients');
+    requireOptionalPersistedALSafeInteger(targets.snapshotVersion, 1, 'multicast frozen snapshot version');
+}
+
+function assertPersistedALBroadcastTargets(targets: PersistedALRecord): void {
     requirePersistedALFields(
         targets,
         [

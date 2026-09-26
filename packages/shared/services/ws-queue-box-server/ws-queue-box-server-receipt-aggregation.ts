@@ -29,6 +29,7 @@ import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { WsServerRoomAudience } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
+import { WsQueueBoxServerReceiptDeadlineIndex } from './ws-queue-box-server-receipt-deadline-index.ts';
 
 /**
  * The longest the server holds a receipt aggregate in memory: the retention of the durable effect and
@@ -64,6 +65,12 @@ export namespace WsQueueBoxServerReceiptAggregation {
         ) => Promise<ALOutboundEnqueueResult>;
         /** The server's own outbound owner, which answers every control addressed to the server itself. */
         readonly acceptServerControl: (message: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
+        /**
+         * The server's own outbound owner admitting a terminal receipt into its pending row for the message,
+         * as the origin admits it (D38, D48). An outbox-fanned message's row is the one the server's
+         * `ack-timeout` retries, so a complete receipt ends its retransmission on every instance.
+         */
+        readonly acceptServerReceipt: (control: ALMessage) => Promise<ALOutboundControlAdmissionResult>;
     }
 
     export interface AdmittedMessage {
@@ -86,15 +93,17 @@ interface WsQueueBoxServerReceiptAggregate extends WsQueueBoxServerReceiptAggreg
 
 /**
  * The receipts of the `receiver` room messages this instance admitted, counted in memory (D37) and
- * answered to the origin as one durable outbox row per phase. It is also the server's control router:
- * a receiver ACK relayed for an origin is counted here, every other control goes to the server's own
- * outbound owner. An aggregate leaves the map when its audience is confirmed or its deadline passes.
+ * answered to the origin as one durable outbox row per phase; each terminal receipt also settles the
+ * server's own pending row for the message, so the receipt is the one settlement authority. It is also
+ * the server's control router: a receiver ACK relayed for an origin is counted here, every other control
+ * goes to the server's own outbound owner. An aggregate leaves the map when its audience is confirmed or
+ * its deadline passes.
  */
 export class WsQueueBoxServerReceiptAggregation {
     readonly #aggregates = new Map<string, WsQueueBoxServerReceiptAggregate>();
+    readonly #deadlines = new WsQueueBoxServerReceiptDeadlineIndex();
     readonly #dependencies: WsQueueBoxServerReceiptAggregation.Dependencies;
     readonly #sweepTaskId: string;
-    #nextDeadlineAtMs: number | undefined;
 
     constructor(dependencies: WsQueueBoxServerReceiptAggregation.Dependencies) {
         this.#dependencies = dependencies;
@@ -128,7 +137,7 @@ export class WsQueueBoxServerReceiptAggregation {
         const aggregate = this.#aggregates.get(key) ?? { ...admission, confirmedRecipientPeerIds: [] };
         if (aggregate.expectedRecipientPeerIds.length > 0 && !this.#aggregates.has(key)) {
             this.#aggregates.set(key, aggregate);
-            this.#nextDeadlineAtMs = Math.min(this.#nextDeadlineAtMs ?? aggregate.deadlineAtMs, aggregate.deadlineAtMs);
+            this.#deadlines.add(key, aggregate.deadlineAtMs);
         }
         return toReceiptPayload(aggregate, 'admitted', this.#dependencies.clock.nowMs());
     }
@@ -156,14 +165,11 @@ export class WsQueueBoxServerReceiptAggregation {
 
     /** The `timed-out` receipt of every aggregate whose deadline has passed; each leaves the map. */
     sweep(nowMs: number): readonly ALReceiptPayload[] {
-        const receipts: ALReceiptPayload[] = [];
-        for (const [key, aggregate] of this.#aggregates) {
-            if (aggregate.deadlineAtMs <= nowMs) {
-                this.deleteAggregate(key);
-                receipts.push(toReceiptPayload(aggregate, 'timed-out', nowMs));
-            }
-        }
-        return receipts;
+        return this.#deadlines.takeDue(nowMs).flatMap((key) => {
+            const aggregate = this.#aggregates.get(key);
+            this.#aggregates.delete(key);
+            return aggregate === undefined ? [] : [toReceiptPayload(aggregate, 'timed-out', nowMs)];
+        });
     }
 
     /**
@@ -231,20 +237,17 @@ export class WsQueueBoxServerReceiptAggregation {
 
     private deleteAggregate(key: string): void {
         this.#aggregates.delete(key);
-        let nextDeadlineAtMs: number | undefined;
-        for (const aggregate of this.#aggregates.values()) {
-            nextDeadlineAtMs = Math.min(nextDeadlineAtMs ?? aggregate.deadlineAtMs, aggregate.deadlineAtMs);
-        }
-        this.#nextDeadlineAtMs = nextDeadlineAtMs;
+        this.#deadlines.delete(key);
     }
 
     /** The engine forgets a wake once it fires, so each poll arms the next deadline again. */
     private scheduleNextSweep(): void {
-        this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, this.#nextDeadlineAtMs);
+        this.#dependencies.queueEngine.wakeAt(this.#sweepTaskId, this.#deadlines.getNextDeadlineAtMs());
     }
 
     private hasDueAggregate(): boolean {
-        return this.#nextDeadlineAtMs !== undefined && this.#nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
+        const nextDeadlineAtMs = this.#deadlines.getNextDeadlineAtMs();
+        return nextDeadlineAtMs !== undefined && nextDeadlineAtMs <= this.#dependencies.clock.nowMs();
     }
 
     private async writeTimedOutReceipts(): Promise<void> {
@@ -268,6 +271,10 @@ export class WsQueueBoxServerReceiptAggregation {
             constraints: { expiresAtMs }
         });
         await this.#dependencies.enqueueOutbox(message, toWsQueueBoxServerReceiptDispatchPlan(message));
+        // Two commits: a crash between them leaves the server row unsettled, which costs only retransmissions its budget bounds.
+        if (receipt.phase !== 'admitted') {
+            await this.#dependencies.acceptServerReceipt(message);
+        }
     }
 }
 

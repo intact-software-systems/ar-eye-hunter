@@ -384,6 +384,9 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 mode: 'hop',
                 confirmedHopPeerIds: ['peer-1'],
                 unconfirmedHopPeerIds: ['peer-2'],
+                expectedRecipientPeerIds: ['peer-1', 'peer-2'],
+                confirmedRecipientPeerIds: ['peer-1'],
+                unconfirmedRecipientPeerIds: ['peer-2'],
                 complete
             });
 
@@ -450,6 +453,9 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 mode: 'hop',
                 confirmedHopPeerIds: ['peer-1'],
                 unconfirmedHopPeerIds: [],
+                expectedRecipientPeerIds: ['peer-1'],
+                confirmedRecipientPeerIds: ['peer-1'],
+                unconfirmedRecipientPeerIds: [],
                 complete: true
             });
             const next = computeALDeliveryLifecycle(acknowledged, toSupersededSettlement());
@@ -544,6 +550,9 @@ describe('terminal guard', () => {
             mode: 'hop',
             confirmedHopPeerIds: ['peer-1'],
             unconfirmedHopPeerIds: ['peer-2'],
+            expectedRecipientPeerIds: ['peer-1', 'peer-2'],
+            confirmedRecipientPeerIds: ['peer-1'],
+            unconfirmedRecipientPeerIds: ['peer-2'],
             complete: true
         });
 
@@ -570,6 +579,141 @@ describe('terminal guard', () => {
         });
 
         expect(next).toEqual({ ...cancelled, lateSettlementCount: 1 });
+    });
+});
+
+describe('logical recipient evidence', () => {
+    it('reads a receiver receipt with two of three recipients confirmed as two confirmed and one unconfirmed, not acknowledged', () => {
+        const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), toReceiverReceipt(['b', 'c'], false));
+
+        expect(next.state).toBe('queued');
+        expect(next.evidence).toMatchObject({
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: ['b', 'c', 'd'],
+            confirmedRecipientPeerIds: ['b', 'c'],
+            unconfirmedRecipientPeerIds: ['d']
+        });
+        expect(next.evidence.confirmedRecipientPeerIds).toHaveLength(2);
+        expect(next.evidence.unconfirmedRecipientPeerIds).toHaveLength(1);
+    });
+
+    it('reads acknowledged under receiver only when every expected recipient is confirmed', () => {
+        const complete = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), toReceiverReceipt(['b', 'c', 'd'], true));
+        // A settlement that claims completion while a recipient is still unconfirmed is not logical completion.
+        const claimed = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), toReceiverReceipt(['b', 'c'], true));
+
+        expect(complete.state).toBe('acknowledged');
+        expect(claimed.state).toBe('queued');
+    });
+
+    it('reads an empty receiver audience as acknowledged by all of its zero recipients', () => {
+        const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
+            ...toReceiverReceipt([], true),
+            expectedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: [],
+            unconfirmedHopPeerIds: []
+        });
+
+        expect(next.state).toBe('acknowledged');
+        expect(next.evidence).toMatchObject({
+            receiptMode: 'receiver',
+            expectedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: []
+        });
+    });
+
+    it('states no receipt mode and empty recipient lists before any receipt settles', () => {
+        expect(createLifecycle('receiver').evidence).toMatchObject({
+            receiptMode: undefined,
+            expectedRecipientPeerIds: [],
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: []
+        });
+    });
+});
+
+describe('relay rejection (D50)', () => {
+    it.each(
+        [
+            { relay: 'peer', peerId: 'relay-1', reason: 'resync-required' },
+            { relay: 'trusted-server', reason: 'resync-required' }
+        ] as const
+    )('settles a queued send as rejected by a $relay relay, with that relay as its evidence', (relayRejection) => {
+        const next = computeALDeliveryLifecycle(toQueuedLifecycle('receiver'), {
+            kind: 'relay-rejected',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS,
+            relayRejection,
+            detail: 'The relay refused the message: resync-required.'
+        });
+
+        expect(next.state).toBe('rejected');
+        expect(isALDeliveryTerminal(next)).toBe(true);
+        expect(next.evidence.relayRejection).toEqual(relayRejection);
+        expect(next.evidence.reason).toBe('The relay refused the message: resync-required.');
+    });
+});
+
+describe('a late relay rejection', () => {
+    it('lands as evidence on a best-effort send already terminal at transport-accepted, never reopening it', () => {
+        const sent = computeALDeliveryLifecycle(
+            computeALDeliveryLifecycle(createLifecycle('none'), toAttemptStartedSettlement('attempt-1')),
+            toAttemptSettledSettlement({
+                attemptId: 'attempt-1',
+                outcome: 'sent',
+                submissionAttempted: true,
+                willRetry: false,
+                detail: undefined
+            })
+        );
+
+        const next = computeALDeliveryLifecycle(sent, {
+            kind: 'relay-rejected',
+            msgId: MSG_ID,
+            carrier: 'ws',
+            atMs: AT_MS,
+            relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
+            detail: 'The server relay refused the message: resync-required.'
+        });
+
+        expect(next.state).toBe('transport-accepted');
+        expect(next.lateSettlementCount).toBe(1);
+        expect(next.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'resync-required' });
+        expect(next.evidence.reason).toBeUndefined();
+    });
+});
+
+describe('carrier refusal handed to the fallback carrier', () => {
+    it('adds the refused leg as an evidence row and leaves the state to the retried leg', () => {
+        const refused = computeALDeliveryLifecycle(createLifecycle('receiver'), {
+            kind: 'carrier-refused',
+            msgId: MSG_ID,
+            carrier: 'rtc',
+            atMs: AT_MS,
+            reason: 'unsupported',
+            detail: 'ack receiver is unsupported for rtc multicast targets'
+        });
+        const retried = computeALDeliveryLifecycle(refused, {
+            ...toAdmissionSettlement(MSG_ID, { kind: 'admitted', durable: true, queuedAttempts: 1 }),
+            carrier: 'ws'
+        });
+
+        expect(refused.state).toBe('submitted');
+        expect(refused.evidence.attempts).toEqual([{
+            attemptId: `admission:rtc:${AT_MS}`,
+            carrier: 'rtc',
+            startedAtMs: AT_MS,
+            settledAtMs: AT_MS,
+            outcome: 'refused',
+            submissionAttempted: false,
+            detail: 'ack receiver is unsupported for rtc multicast targets',
+            unroutableReason: undefined,
+            refusalReason: 'unsupported'
+        }]);
+        expect(retried.state).toBe('queued');
+        expect(retried.evidence.attempts).toHaveLength(1);
     });
 });
 
@@ -871,6 +1015,27 @@ function toQueuedLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         createLifecycle(ackMode),
         toAdmissionSettlement(MSG_ID, { kind: 'admitted', durable: true, queuedAttempts: 1 })
     );
+}
+
+/** A `receiver` receipt over the frozen audience b, c and d; the hop lists carry the same peers as today. */
+function toReceiverReceipt(
+    confirmed: readonly string[],
+    complete: boolean
+): Extract<ALDeliverySettlement, Readonly<{ kind: 'acknowledgement'; }>> {
+    const unconfirmed = ['b', 'c', 'd'].filter((peerId) => !confirmed.includes(peerId));
+    return {
+        kind: 'acknowledgement',
+        msgId: MSG_ID,
+        carrier: 'rtc',
+        atMs: AT_MS,
+        mode: 'receiver',
+        confirmedHopPeerIds: confirmed,
+        unconfirmedHopPeerIds: unconfirmed,
+        expectedRecipientPeerIds: ['b', 'c', 'd'],
+        confirmedRecipientPeerIds: confirmed,
+        unconfirmedRecipientPeerIds: unconfirmed,
+        complete
+    };
 }
 
 function toSupersededSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'superseded'; }>> {

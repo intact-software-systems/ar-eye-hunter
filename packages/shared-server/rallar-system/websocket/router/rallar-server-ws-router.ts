@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -193,7 +194,10 @@ export class RallarServerWsRouter {
         return audience === undefined ? { authorized: true } : {
             authorized: true,
             roomAudience: {
-                recipientPeerIds: audience.sessions.map((session) => session.sessionId),
+                recipientPeerIds: resolveALAdmittedRoomAudience(
+                    message,
+                    audience.sessions.map((session) => session.sessionId)
+                ),
                 snapshotVersion: audience.snapshotVersion
             }
         };

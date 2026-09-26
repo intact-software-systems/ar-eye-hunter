@@ -16,7 +16,10 @@ import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
+    ALDeliveryAttemptOutcome,
     ALDeliveryCarrier,
+    ALDeliveryEvidence,
+    ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -321,6 +324,28 @@ export interface BlackBoxRallarMessageReplayDiagnostics {
     readonly reason: string | undefined;
 }
 
+/**
+ * A harness capability, not a product path: one raw control envelope under the authored `msgId`, shaped as the ACK of
+ * `ackedMsgId` from this session and carrying `typeId`, admitted on `carrier` for `toPeerId`, the sender of that message.
+ */
+export interface BlackBoxRallarControlSubmitInput {
+    readonly carrier: ALDeliveryCarrier;
+    readonly typeId: string;
+    readonly msgId: string;
+    readonly ackedMsgId: string;
+    readonly toPeerId: string;
+}
+
+/** The raw control opens no handle: it reports its own identity and the verdict of the carrier admission. */
+export interface BlackBoxRallarControlSubmitDiagnostics {
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason: string | undefined;
+}
+
 export interface BlackBoxRallarMessageSendDiagnostics {
     readonly handleId: string;
     readonly msgId: string;
@@ -329,13 +354,14 @@ export interface BlackBoxRallarMessageSendDiagnostics {
     readonly reason: string | undefined;
 }
 
-export interface BlackBoxRallarDeliveryObservation {
+export interface BlackBoxRallarDeliveryObservation
+    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
-    readonly confirmedHopPeerIds: readonly string[];
-    readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
+    /** The outcome of every settled attempt in attempt order, a refused or unroutable admission leg included. */
+    readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
     readonly backpressured: boolean;
