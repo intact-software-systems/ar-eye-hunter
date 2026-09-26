@@ -492,6 +492,25 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   not the terminal ACK was lost too; a leaf or relay with local delivery off ends its subtree with
   `subtree-complete`, never `delivered`; a hop outside the frozen audience never reads complete at
   the origin, so every retry resends to it, bounded by the attempt cap (a stated invariant).
+- **R-S2c-ii-5 (Task 3 review, 2026-09-26; D50 scope).** Trust for a relay rejection is keyed on the
+  source, never the carrier: a `resync-required` NACK admitted from a `trusted-server` source carries a
+  trusted-relay fact, the validator skips only the expected-peer check for it, and the `relay-rejected`
+  settlement requires only the retained sent row — so the WS server's ordering NACK (D49) and any
+  retained room multicast settle on every carrier. `relayRejection` names a trusted-server relay or a
+  peer relay with its id, never a server peer id (refinement S2c-i-1). `resync-required` is a terminal
+  NACK: a `relay-rejected` row ends and is not retransmitted; a multi-recipient receipt's evidence
+  freezes at the rejection.
+- **R-S2c-ii-6 (Task 3 review, 2026-09-26; hop lists under `receiver`).** The origin's hop lists come
+  from its local hop view (R-S2c-ii-3): `confirmedHopPeerIds` = the completed hops,
+  `unconfirmedHopPeerIds` = next hops minus completed hops, so with a relay in front of a recipient
+  the hop list names the relay while the recipient list names the recipient (Task 5 scenario 5). Under
+  `hop`/`subtree` the hop lists equal the recipient lists.
+- **R-S2c-ii-5a (Task 3 fix round, 2026-09-26).** A best-effort send (`ackMode: 'none'`) is terminal at
+  `transport-accepted` by lifecycle design, so a later trusted-relay `resync-required` NACK lands as
+  evidence only (`relayRejection` set, the state unchanged); an ACK-tracked send reads `rejected` end
+  to end. D50 asked for evidence; overriding a terminal best-effort state would change the lifecycle
+  semantics. Carry: a receipt-less RTC send still refuses its receiver hop's NACK (a `peer` source; the
+  trusted-relay rule covers only the server).
 
 ## Self-review
 
