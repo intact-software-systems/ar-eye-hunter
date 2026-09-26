@@ -17,8 +17,12 @@ interface BundleBoundary {
     readonly brotliBudgetKiB: number;
 }
 
+type JsonValue = string | number | boolean | null | readonly JsonValue[] | {
+    readonly [key: string]: JsonValue;
+};
+
 interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
+    readonly inputs: Readonly<Record<string, JsonValue>>;
 }
 
 interface SharedWebPackageManifest {
@@ -230,7 +234,7 @@ function bundleForBoundary(entry: BundleBoundary): BrowserBundleMeasurement {
     };
 }
 
-function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
+function toSharedWebPackageManifest(value: JsonValue): SharedWebPackageManifest {
     const manifest = toJsonObject(value, 'shared-web package manifest');
     return {
         dependencies: toOptionalStringRecord(manifest.dependencies, 'shared-web package manifest.dependencies'),
@@ -241,7 +245,7 @@ function toSharedWebPackageManifest(value: unknown): SharedWebPackageManifest {
     };
 }
 
-function toEsbuildMetafile(value: unknown): EsbuildMetafile {
+function toEsbuildMetafile(value: JsonValue): EsbuildMetafile {
     const metafile = toJsonObject(value, 'esbuild metafile');
     return {
         inputs: toJsonObject(metafile.inputs, 'esbuild metafile inputs')
@@ -249,7 +253,7 @@ function toEsbuildMetafile(value: unknown): EsbuildMetafile {
 }
 
 function toOptionalStringRecord(
-    value: unknown,
+    value: JsonValue | undefined,
     label: string
 ): Readonly<Record<string, string>> | undefined {
     if (value === undefined) {
@@ -266,9 +270,9 @@ function toOptionalStringRecord(
     return stringRecord;
 }
 
-function toJsonObject(value: unknown, label: string): Readonly<Record<string, unknown>> {
+function toJsonObject(value: JsonValue, label: string): Readonly<Record<string, JsonValue>> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error(`${label} must be an object`);
     }
-    return value as Readonly<Record<string, unknown>>;
+    return value as Readonly<Record<string, JsonValue>>;
 }
