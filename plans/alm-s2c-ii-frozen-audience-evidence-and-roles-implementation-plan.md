@@ -511,6 +511,10 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   to end. D50 asked for evidence; overriding a terminal best-effort state would change the lifecycle
   semantics. Carry: a receipt-less RTC send still refuses its receiver hop's NACK (a `peer` source; the
   trusted-relay rule covers only the server).
+- **R-S2c-ii-7 (Task 4, 2026-09-26).** The Hetzner three-agent entry `22-alm-conformance-3-agent.json`
+  (catalog entry, ordered-list line, generated JSON) moves from Task 4 into Task 5: with no three-role
+  scenario yet the combined recipe has no connect prologue and would always fail the identity
+  assessment; the `one-sender-two-recipients` role pattern lands in Task 4 and is tested directly.
 
 ## Self-review
 
