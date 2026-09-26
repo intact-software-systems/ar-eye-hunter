@@ -1,5 +1,6 @@
 import {
     createAlmConformance2AgentEntry,
+    createAlmConformance3AgentEntry,
     createAlmConformanceExtendedEntries
 } from './hetzner/hetzner-alm-manifest-entries.ts';
 import type { HetznerDistributedManifestEntry } from './hetzner/hetzner-manifest-entry.ts';
@@ -53,6 +54,7 @@ export function createHetznerDistributedManifestCatalog(): readonly HetznerDistr
         createGroupAssertions2AgentEntry(),
         createAlmConformance2AgentEntry(),
         ...createAlmConformanceExtendedEntries(),
+        createAlmConformance3AgentEntry(),
         createDiagnosticBarrierHealth2AgentEntry(),
         createDiagnosticExpectedFailure1AgentEntry(),
         createDiagnosticRtcRealtime2Agent20hzStressEntry(),

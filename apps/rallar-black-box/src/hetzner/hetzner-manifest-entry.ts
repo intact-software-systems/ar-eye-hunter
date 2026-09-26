@@ -49,7 +49,8 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
     'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
-    'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
+    'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json',
+    'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
 ] as const;
 
 export interface HetznerDistributedManifestEntry {

@@ -1,10 +1,13 @@
 import {
     ALM_CONFORMANCE_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
     createAlmConformanceRecipes,
     isThreeAgentScenario,
+    toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
@@ -13,6 +16,7 @@ import {
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type {
     RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -41,7 +45,7 @@ const HETZNER_WITHHELD_ALM_SCENARIO_KEYS: readonly string[] = [
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
-    const scenarios = toAlmConformanceScenariosForAllCarriers();
+    const scenarios = toAlmConformanceScenariosForAllCarriers('two-agent');
 
     return createManifestEntry({
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
@@ -75,7 +79,47 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
     });
 }
 
-function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScenario[] {
+/**
+ * The three-peer receipted-audience family on three agents: an origin and two distinguishable recipients (D45). Every
+ * recipient connects once; `recipient-b` leaves and reconnects inside the membership scenario of each carrier.
+ */
+export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEntry {
+    const scenarios = toAlmConformanceScenariosForAllCarriers('three-agent');
+    return createManifestEntry({
+        filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[21],
+        title: 'ALM conformance 3-agent',
+        description:
+            'ALM conformance three-peer family (the aggregated receipt, the retry to the missing recipient, the ' +
+            'unknown ACK version, and the frozen audience after a recipient leaves) across ws, rtc, and ' +
+            'rtc-with-ws-fallback carriers, with one sender and two recipients.',
+        distributedRunId: 'hetzner-alm-conformance-3-agent',
+        recipes: (['sender', 'receiver', 'recipient-b'] as const).map((role) =>
+            toAlmConformanceCombinedRecipe(scenarios, role)
+        ),
+        agentCount: 3,
+        profiles: ['alm', 'conformance', '3-agent', 'extended'],
+        live: true,
+        targetAgentIds: ['controller-01', 'controller-02', 'controller-03'],
+        targetPolicyMode: 'role-map',
+        rolePattern: 'one-sender-two-recipients',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {
+            family: 'alm-conformance',
+            recommendedTerminalTimeoutSeconds: 300,
+            carriers: [...ALM_CONFORMANCE_CARRIERS],
+            scenarios: toAlmConformanceScenarioIds(scenarios)
+        }
+    });
+}
+
+function toAlmConformanceScenariosForAllCarriers(
+    family: 'two-agent' | 'three-agent'
+): readonly AlmConformanceScenario[] {
     const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         createAlmConformanceRecipes({
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -86,7 +130,8 @@ function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScena
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         })
     ).filter((scenario) =>
-        !isThreeAgentScenario(scenario) && !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey)
+        isThreeAgentScenario(scenario) === (family === 'three-agent') &&
+        !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey)
     );
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL.
     return [
@@ -97,25 +142,50 @@ function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScena
 
 export function toAlmConformanceCombinedRecipe(
     scenarios: readonly AlmConformanceScenario[],
-    role: 'sender' | 'receiver'
+    role: AlmConformanceRole
 ): RallarBlackBoxTestRecipe {
     const checkpoints = scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload').flatMap(
         (scenario) => {
-            const authored = toAlmReloadCheckpoints(scenario[role].metadata?.almReloadCheckpoints);
+            const authored = toAlmReloadCheckpoints(toRoleRecipe(scenario, role).metadata?.almReloadCheckpoints);
             if (!authored) {
                 throw new Error('Generated ALM reload recipe is missing its authored checkpoints.');
             }
             return authored.map((checkpoint) => ({ ...checkpoint }));
         }
     );
+    // The two families run in one profile, so the three-agent recipes carry an identity of their own.
+    const recipePrefix = scenarios.some(isThreeAgentScenario) ? 'alm-conformance-3-agent' : 'alm-conformance';
     return {
         schemaVersion: 1,
-        recipeId: `alm-conformance-${role}`,
+        recipeId: `${recipePrefix}-${role}`,
         name: `ALM conformance ${role} across ws, rtc, and rtc-with-ws-fallback carriers`,
         continueOnFailure: false,
-        metadata: { profile: 'alm-conformance', role, almReloadCheckpoints: checkpoints },
+        metadata: {
+            profile: 'alm-conformance',
+            role,
+            // The control server reads any checkpoint list, even an empty one, as a paired reload run of two roots.
+            ...(checkpoints.length === 0 ? {} : { almReloadCheckpoints: checkpoints }),
+            ...toCombinedReceiptRolesMetadata(scenarios, role)
+        },
         commands: toAlmConformanceCombinedCommands(scenarios, role)
     };
+}
+
+/** A combined sender carries the receipt pins of every scenario, each naming the handle of its own send. */
+function toCombinedReceiptRolesMetadata(
+    scenarios: readonly AlmConformanceScenario[],
+    role: AlmConformanceRole
+): RallarBlackBoxTestRecord {
+    const entries = scenarios.flatMap((scenario) => readAlmReceiptRolesEntries(toRoleRecipe(scenario, role)));
+    return entries.length === 0 ? {} : { almReceiptRoles: entries.map((entry) => ({ ...entry })) };
+}
+
+function toRoleRecipe(scenario: AlmConformanceScenario, role: AlmConformanceRole): RallarBlackBoxTestRecipe {
+    const recipe = toAlmConformanceRoleRecipe(scenario, role);
+    if (recipe === undefined) {
+        throw new Error(`Generated ALM scenario ${scenario.scenarioKey} declares no ${role} recipe.`);
+    }
+    return recipe;
 }
 
 /**
@@ -124,12 +194,12 @@ export function toAlmConformanceCombinedRecipe(
  */
 function toAlmConformanceCombinedCommands(
     scenarios: readonly AlmConformanceScenario[],
-    role: 'sender' | 'receiver'
+    role: AlmConformanceRole
 ): RallarBlackBoxTestRecipe['commands'] {
-    const rtc = scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!;
-    const rtcConnect = rtc[role].commands.find((command) => command.kind === 'rtc.connect')!;
-    const prologueEnd = rtc[role].commands.indexOf(rtcConnect);
-    const prologue = rtc[role].commands.slice(0, prologueEnd + 1).filter((command) =>
+    const rtc = toRoleRecipe(scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!, role);
+    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect')!;
+    const prologueEnd = rtc.commands.indexOf(rtcConnect);
+    const prologue = rtc.commands.slice(0, prologueEnd + 1).filter((command) =>
         command.kind === 'http.request' || command.kind === 'rtc.connect'
     ).map((command) =>
         command.kind === 'rtc.connect'
@@ -139,10 +209,11 @@ function toAlmConformanceCombinedCommands(
     return [
         ...prologue,
         ...scenarios.flatMap((scenario) => {
-            const commands = scenario[role].commands;
+            const recipe = toRoleRecipe(scenario, role);
+            const commands = recipe.commands;
             const scenarioConnectAt = commands.findIndex((command) => command.kind === 'rtc.connect');
             if (scenarioConnectAt < 0) {
-                throw new Error(`Generated ALM recipe ${scenario[role].recipeId} has no rtc.connect prologue.`);
+                throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
             }
             return commands.slice(scenarioConnectAt + 1).map((command) =>
                 command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command

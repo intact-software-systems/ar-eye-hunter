@@ -42,6 +42,8 @@ interface ManifestCommand {
     }>;
     readonly count?: number;
     readonly ack?: string;
+    readonly request?: unknown;
+    readonly handleId?: string;
     readonly qos?: Readonly<{ ack?: Readonly<{ algo?: string; }>; }>;
     readonly durationMs?: number;
     readonly intervalMs?: number;
@@ -184,7 +186,8 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/20-alm-conformance-30-agent-30s.json',
-            'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json'
+            'apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json'
         ]);
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -239,6 +242,14 @@ describe('Hetzner distributed manifest catalog', () => {
                     { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
                 ]);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
+            }
+            else if (entry.filePath.endsWith('/22-alm-conformance-3-agent.json')) {
+                expect(manifest.targetPolicy).toMatchObject({
+                    mode: 'role-map',
+                    expectedParticipantCount: 3,
+                    roles: { sender: ['controller-01'], receiver: ['controller-02'], 'recipient-b': ['controller-03'] }
+                });
+                expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver', 'recipient-b']);
             }
             else if (
                 entry.filePath.includes('rtc-messages-principal-') ||
@@ -1042,6 +1053,49 @@ describe('Hetzner distributed manifest catalog', () => {
                 }
             }
         }
+    });
+
+    it('adds the ALM conformance 3-agent manifest with one sender and two recipients, pinning each receipt (D45)', () => {
+        const entry = createHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'));
+
+        expect(entry?.agentCount).toBe(3);
+        expect(entry?.mainline).toBe(false);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER).toContain(entry?.filePath);
+        expect(entry?.manifest.metadata).toMatchObject({ family: 'alm-conformance', scenarios: ['receipted-audience'] });
+        const sender = entry?.manifest.recipes.find((selection) => selection.role === 'sender')?.recipe;
+        // An empty checkpoint list would read as a paired reload run of two roots, which the control server refuses.
+        expect(sender?.metadata).not.toHaveProperty('almReloadCheckpoints');
+        const pinnedHandles = (sender?.metadata?.almReceiptRoles as readonly Readonly<{ handleId: string; }>[] | undefined)
+            ?.map((pin) => pin.handleId);
+        expect(pinnedHandles).toEqual([
+            'alm-ws-aggregated-receipt-send-1',
+            'alm-ws-missing-recipient-retry-send-1',
+            'alm-ws-frozen-audience-membership-send-1',
+            ...['rtc', 'rtc-with-ws-fallback'].flatMap((carrier) =>
+                ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+                    .map((key) => `alm-${carrier}-${key}-send-1`)
+            )
+        ]);
+    });
+
+    it('keeps every identity of the 3-agent ALM manifest apart from the 2-agent one, so both can run in one profile', () => {
+        const catalog = createHetznerDistributedManifestCatalog();
+        const identitiesOf = (fileName: string) => {
+            const manifest = catalog.find((candidate) => candidate.filePath.endsWith(fileName))!.manifest;
+            return new Set([
+                ...manifest.recipes.map((selection) => selection.recipe?.recipeId ?? ''),
+                ...toManifestCommands(manifest).flatMap((command) => [
+                    command.commandId ?? '',
+                    ...(command.kind === 'http.request' ? [JSON.stringify(command.request)] : []),
+                    ...(command.handleId === undefined ? [] : [command.handleId])
+                ])
+            ]);
+        };
+        const threeAgent = identitiesOf('/22-alm-conformance-3-agent.json');
+        const shared = [...identitiesOf('/18-alm-conformance-2-agent.json')].filter((identity) => threeAgent.has(identity));
+
+        expect(shared).toEqual([]);
     });
 
     it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
