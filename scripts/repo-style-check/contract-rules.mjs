@@ -164,7 +164,7 @@ export function findUnknownUsages(lines) {
     let lineStartOffset = 0;
 
     for (const [index, text] of lines.entries()) {
-        const code = codeLines[index].split('//')[0];
+        const code = codeLines[index];
         const pattern = /\bunknown\b/gu;
         let match;
 
@@ -227,12 +227,20 @@ function stripQuotedLine(line, state) {
         code += step.code;
         index += step.width;
     }
+    // A single- or double-quoted string never spans lines, so an unpaired quote came from a regex
+    // character class or similar. Carrying the mode onward would mask every remaining line.
+    if (state.mode === 'single' || state.mode === 'double') {
+        state.mode = 'code';
+    }
     return code;
 }
 
 function quotedTextStep(line, index, state) {
     if (state.mode === 'template') {
         return templateTextStep(line, index, state);
+    }
+    if (state.mode === 'blockComment') {
+        return blockCommentTextStep(line, index, state);
     }
     if (state.mode === 'single' || state.mode === 'double') {
         return stringTextStep(line, index, state);
@@ -269,8 +277,23 @@ function stringTextStep(line, index, state) {
     return maskedStep(1);
 }
 
+function blockCommentTextStep(line, index, state) {
+    if (line[index] === '*' && line[index + 1] === '/') {
+        state.mode = 'code';
+        return maskedStep(2);
+    }
+    return maskedStep(1);
+}
+
 function codeTextStep(line, index, state) {
     const character = line[index];
+    if (character === '/' && line[index + 1] === '/') {
+        return maskedStep(line.length - index);
+    }
+    if (character === '/' && line[index + 1] === '*') {
+        state.mode = 'blockComment';
+        return maskedStep(2);
+    }
     if (character === '\'' || character === '"') {
         state.mode = character === '\'' ? 'single' : 'double';
         return maskedStep(1);

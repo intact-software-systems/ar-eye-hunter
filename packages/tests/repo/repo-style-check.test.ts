@@ -190,6 +190,70 @@ describe('repo style checker', () => {
         expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
     });
 
+    it('reports unknown after an apostrophe inside a line comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                '// the engine\'s own isWork -> runnable path',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
+    it('reports unknown after an apostrophe inside a block comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                '/* the engine\'s own isWork -> runnable path */',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
+    it('does not report unknown when the word only appears in a comment', () => {
+        const fixtureRoot = createFixture({
+            'notes.ts': [
+                '// this boundary once accepted unknown',
+                '/* and this one returned unknown too */',
+                'export const total = 1;'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('does not read a URL inside a string as a line comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const endpoint = \'http://example.com\';',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
+    it('recovers quote state at the end of a line holding an unpaired quote', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const quotePattern = /[\'"]/u;',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
     it('does not report synthetic TypeScript inside a multiline template literal', () => {
         const fixtureRoot = createFixture({
             'message.ts': [
