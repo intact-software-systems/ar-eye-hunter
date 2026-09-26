@@ -30,6 +30,13 @@ const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
+/** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
+const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
+    ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
+    rtc: ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'],
+    'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+} as const;
+
 const CARRIER_CONNECT_TRANSPORTS = {
     ws: 'messages.ws',
     rtc: 'messages.rtc',
@@ -117,13 +124,6 @@ function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): reado
         recipe.commands.filter((command): command is RallarBlackBoxTestMessagesReceivedCommand => command.kind === 'messages.received')
     );
 }
-
-/** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
-const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
-    ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
-    rtc: ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'],
-    'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
-} as const;
 
 const SCENARIO_KEYS_BY_CARRIER = {
     ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync'],

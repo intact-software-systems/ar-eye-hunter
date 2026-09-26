@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { submitBlackBoxRawControl } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/submit-black-box-raw-control.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -29,7 +29,10 @@ function toAdmittingContext(submitted: ALMessage[], wake: () => void) {
 describe('submitBlackBoxRawControl', () => {
     it('admits, on the named carrier, the ACK of the named message under a control id its addressee refuses unsupported', async () => {
         const submitted: ALMessage[] = [];
-        const wake = vi.fn();
+        let woken = false;
+        const wake = () => {
+            woken = true;
+        };
 
         const submission = await submitBlackBoxRawControl({
             control: CONTROL,
@@ -40,7 +43,7 @@ describe('submitBlackBoxRawControl', () => {
         });
 
         expect(submission).toEqual({ msgId: 'control-1', verdict: ADMITTED });
-        expect(wake).toHaveBeenCalledOnce();
+        expect(woken).toBe(true);
         expect(submitted).toHaveLength(1);
         const [control] = submitted;
         expect(control).toMatchObject({

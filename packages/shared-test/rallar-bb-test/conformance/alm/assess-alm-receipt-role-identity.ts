@@ -19,7 +19,7 @@ interface AlmReceiptRolesEntry {
 /** The sender recipe names every receipt it pins in `metadata.almReceiptRoles`, one entry per send. */
 export function readAlmReceiptRolesEntries(recipe: RallarBlackBoxTestRecipe): readonly AlmReceiptRolesEntry[] {
     const entries = recipe.metadata?.almReceiptRoles;
-    return Array.isArray(entries) ? entries.flatMap(toAlmReceiptRolesEntry) : [];
+    return Array.isArray(entries) ? entries.filter(isAlmReceiptRolesEntry) : [];
 }
 
 /**
@@ -43,7 +43,8 @@ function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptR
     const sessionRoles = toSessionRoles(input.recipients);
     const expected = { ...entry, expected: [...entry.confirmed, ...entry.unconfirmed] };
     return (['confirmed', 'unconfirmed', 'expected'] as const).flatMap((list) => {
-        const named = toNamedRoles(value[`${list}RecipientPeerIds`], sessionRoles);
+        const peerIds = value[`${list}RecipientPeerIds`];
+        const named = isStringList(peerIds) ? toNamedRoles(peerIds, sessionRoles) : undefined;
         return named !== undefined && isSameRoleSet(named, expected[list])
             ? []
             : [`${entry.handleId}: the ${list} recipients do not name the sessions of ${toRoleText(expected[list])}.`];
@@ -58,12 +59,12 @@ function toSessionRoles(recipients: readonly RecordedAlmConformanceParticipant[]
     );
 }
 
-/** `undefined` when the list is not a list of sessions of the recipients. */
-function toNamedRoles(peerIds: unknown, sessionRoles: ReadonlyMap<string, string>): readonly string[] | undefined {
-    if (!Array.isArray(peerIds)) {
-        return undefined;
-    }
-    const roles = peerIds.map((peerId) => typeof peerId === 'string' ? sessionRoles.get(peerId) : undefined);
+/** `undefined` when a listed peer is not a session of the recipients. */
+function toNamedRoles(
+    peerIds: readonly string[],
+    sessionRoles: ReadonlyMap<string, string>
+): readonly string[] | undefined {
+    const roles = peerIds.map((peerId) => sessionRoles.get(peerId));
     return roles.every((role) => role !== undefined) ? roles.filter((role) => role !== undefined) : undefined;
 }
 
@@ -75,23 +76,15 @@ function toRoleText(roles: readonly AlmConformanceRole[]): string {
     return roles.length === 0 ? 'no recipient' : roles.join(' and ');
 }
 
-function toAlmReceiptRolesEntry(value: unknown): readonly AlmReceiptRolesEntry[] {
-    if (!isJsonRecordValue(value) || typeof value.handleId !== 'string') {
-        return [];
-    }
-    const confirmed = toRoles(value.confirmed);
-    const unconfirmed = toRoles(value.unconfirmed);
-    return confirmed === undefined || unconfirmed === undefined
-        ? []
-        : [{ handleId: value.handleId, confirmed, unconfirmed }];
+function isAlmReceiptRolesEntry(value: unknown): value is AlmReceiptRolesEntry {
+    return isJsonRecordValue(value) && typeof value.handleId === 'string' && isRoleList(value.confirmed) &&
+        isRoleList(value.unconfirmed);
 }
 
-function toRoles(value: unknown): readonly AlmConformanceRole[] | undefined {
-    if (!Array.isArray(value)) {
-        return undefined;
-    }
-    const roles = value.filter((role): role is AlmConformanceRole =>
-        typeof role === 'string' && isAlmConformanceRole(role)
-    );
-    return roles.length === value.length ? roles : undefined;
+function isRoleList(value: unknown): value is readonly AlmConformanceRole[] {
+    return isStringList(value) && value.every(isAlmConformanceRole);
+}
+
+function isStringList(value: unknown): value is readonly string[] {
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }

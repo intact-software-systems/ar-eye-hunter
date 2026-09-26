@@ -4,6 +4,7 @@ import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -96,7 +97,7 @@ function toResultEnvelope(envelope: ControlCommandEnvelope, evidence?: RecipeEvi
 }
 
 /** Each role connects as `<role>-session`; a receipts read names the sessions of the roles its pin lists. */
-function toCommandEvidence(command: RallarBlackBoxTestCommand, evidence: RecipeEvidence): unknown {
+function toCommandEvidence(command: RallarBlackBoxTestCommand, evidence: RecipeEvidence): RallarBlackBoxTestRecord {
     if (command.kind === 'rtc.connect') {
         return { sessionId: `${evidence.recipe.metadata?.role}-session` };
     }

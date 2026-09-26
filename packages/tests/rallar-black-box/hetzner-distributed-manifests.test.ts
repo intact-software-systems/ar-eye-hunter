@@ -42,7 +42,7 @@ interface ManifestCommand {
     }>;
     readonly count?: number;
     readonly ack?: string;
-    readonly request?: unknown;
+    readonly request?: Readonly<{ method?: string; path?: string; }>;
     readonly handleId?: string;
     readonly qos?: Readonly<{ ack?: Readonly<{ algo?: string; }>; }>;
     readonly durationMs?: number;
