@@ -1,6 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     afterEach,
     describe,
@@ -9,7 +7,6 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
-import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import {
     newALMulticastMessage,
@@ -17,7 +14,9 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -47,6 +46,7 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
     readonly sendCalls: readonly object[][];
