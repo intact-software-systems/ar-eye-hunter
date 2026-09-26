@@ -65,9 +65,12 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. Its logical evidence (the
         // recipient lists, the hop view, the trusted relay rejection and the observation decoders) measures
         // 279.2412109375 KiB. Its closing harness checks (a raw control that resolves its own msgId from an earlier
-        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. The next
-        // whole-KiB ceiling is 281; all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(281);
+        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. S3a's
+        // purpose and receipt defaults measured 281.0185546875 KiB on the CI runner at 0c3302606 (the runner
+        // measures about 0.1 KiB above this machine), and its tracked receipt at admission (R-S3a-4) measures
+        // 281.16796875 KiB here. The next whole-KiB ceiling is 282 (R-S3a-3); all operator dependency
+        // exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(282);
     });
 });
 
