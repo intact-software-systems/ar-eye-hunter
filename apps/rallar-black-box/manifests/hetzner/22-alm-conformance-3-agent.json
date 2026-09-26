@@ -194,7 +194,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000,
             "readiness": {
@@ -1616,7 +1629,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000
           },
@@ -1968,7 +1994,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000
           },
@@ -2103,7 +2142,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000
           },
@@ -2280,7 +2332,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000
           },
@@ -2457,7 +2522,20 @@
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
-              }
+              },
+              "messageTypeIds": [
+                "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
+                "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
+                "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
+                "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+                "alm.conformance.rtc.aggregated-receipt",
+                "alm.conformance.rtc.frozen-audience-membership",
+                "alm.conformance.rtc.missing-recipient-retry",
+                "alm.conformance.rtc.unknown-ack-version",
+                "alm.conformance.ws.aggregated-receipt",
+                "alm.conformance.ws.frozen-audience-membership",
+                "alm.conformance.ws.missing-recipient-retry"
+              ]
             },
             "timeoutMs": 45000
           },

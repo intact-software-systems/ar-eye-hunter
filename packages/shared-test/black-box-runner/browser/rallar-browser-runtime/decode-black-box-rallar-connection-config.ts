@@ -150,6 +150,7 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         contextId: optionalString(record.contextId),
         resourceId: optionalString(record.resourceId),
         messageSelector: messageSelector(record.messageSelector),
+        messageTypeIds: stringList(record.messageTypeIds),
         ttlHops: optionalNumber(record.ttlHops),
         ttlMs: optionalNumber(record.ttlMs),
         reliability: optionalChoice(record.reliability, ['best-effort', 'at-least-once']),
