@@ -1,0 +1,11 @@
+{
+  "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"]
+  },
+  "files": [
+    "browser-rtc-answer-correlation-fixture.ts",
+    "browser-rtc-answer-correlation.spec.ts"
+  ],
+  "include": []
+}

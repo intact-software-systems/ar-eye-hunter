@@ -31,6 +31,11 @@ describe('RTC signaling route authority', () => {
         { unexpected: true },
         { channel: 'OldRtcSignal' },
         { toId: undefined },
+        { offerId: undefined },
+        { offerId: null },
+        { offerId: '' },
+        { offerId: '   ' },
+        { offerId: 17 },
         { signalType: 'Renegotiate' },
         { payload: { description: { type: 'offer', sdp: 'sdp', extra: true }, candidate: null } },
         { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null, extra: true } },
@@ -49,6 +54,7 @@ function createSignal(replacement: Readonly<Record<string, unknown>>): ALMessage
         sessionId: 'sender',
         token: 'ticket',
         signalType: 'Offer',
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null },
         ...replacement
     });

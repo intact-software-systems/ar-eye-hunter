@@ -371,6 +371,65 @@ describe('browser state cache lifecycle scope filtering', () => {
         unsubscribe();
     });
 
+    it('does not amplify a lease-only group authority renewal to RTC or state-cache listeners', async () => {
+        const current = createGroupSnapshot({
+            groupId: 'quiet-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 1
+        });
+        const renewed: typeof current = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: 20_000,
+                expiresAtEpochMs: 120_000
+            }))
+        };
+        const manager = createWebRtcGroupManager();
+        const listener = vi.fn();
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData: {
+                clientId: 'session-a',
+                sessionId: 'session-a',
+                isOnline: true
+            },
+            clientSnapshots: [],
+            groupSnapshots: [current],
+            options: {
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-b' }
+            }
+        });
+        manager.acceptGroupUpdate.mockClear();
+        manager.delete.mockClear();
+        listener.mockClear();
+        const rawKinds: string[] = [];
+        const unsubscribeRaw = groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
+            rawKinds.push(change.kind);
+        });
+
+        expect(
+            groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(
+                current,
+                renewed
+            )
+        ).toBe(true);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(current.group)).toBe(renewed);
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(manager.delete).not.toHaveBeenCalled();
+        expect(listener).not.toHaveBeenCalled();
+        expect(rawKinds).toEqual(['updated']);
+
+        unsubscribeRaw();
+        unsubscribe();
+    });
+
     it('retains durable incomparable recovery across initialise and hydrate', async () => {
         const manager = createWebRtcGroupManager();
         const recompute = vi.spyOn(manager, 'ensureAllGroupsConnected');

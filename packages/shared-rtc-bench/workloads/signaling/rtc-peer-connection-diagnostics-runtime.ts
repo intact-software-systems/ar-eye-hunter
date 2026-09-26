@@ -1,5 +1,5 @@
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { installRtcBenchmarkNativeRuntime, RtcBenchmarkNativePeer } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
@@ -188,7 +188,7 @@ export function createRtcPeerConnectionDiagnosticsDependencies(): RtcPeerConnect
     Object.defineProperty(globalThis, 'clearTimeout', { configurable: true, writable: true, value: cancelTimer });
     return {
         dependencies: {
-            createPeer: createPeerAdapter,
+            createPeer: (input) => new RtcPeerConnectionDiagnosticsPeerAdapter(input),
             reset() {
                 nativeRuntime.peers.length = 0;
                 timers = [];
@@ -213,69 +213,97 @@ export function createRtcPeerConnectionDiagnosticsDependencies(): RtcPeerConnect
     };
 }
 
-function createPeerAdapter(
-    input: RtcPeerConnectionDiagnosticsPeerInput
-): RtcPeerConnectionDiagnosticsPeer {
-    const peer = createDiagnosticsPeerConnection(input);
-    let nativePeer: RtcBenchmarkNativePeer | undefined;
-    const requireNativePeer = (): RtcBenchmarkNativePeer => {
-        if (!nativePeer) {
+class RtcPeerConnectionDiagnosticsPeerAdapter implements RtcPeerConnectionDiagnosticsPeer {
+    private readonly peer: QRtcPeerConnection;
+    private readonly input: RtcPeerConnectionDiagnosticsPeerInput;
+    private nativePeer: RtcBenchmarkNativePeer | undefined;
+
+    constructor(input: RtcPeerConnectionDiagnosticsPeerInput) {
+        this.input = input;
+        this.peer = new QRtcPeerConnection(
+            { send: async () => input.onSend() },
+            {
+                sessionId: `self-${input.id}`,
+                token: 'token',
+                peerSessionId: `peer-${input.id}`,
+                iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+                isPolite: input.isPolite
+            },
+            { createOfferId: () => crypto.randomUUID() }
+        );
+    }
+
+    connect(): void {
+        this.peer.connect();
+        if (!(this.peer.status.pc instanceof RtcBenchmarkNativePeer)) {
+            throw new Error('Expected the installed native RTC peer');
+        }
+        this.nativePeer = this.peer.status.pc;
+    }
+
+    receiveIceCandidate(index: number): Promise<void> {
+        return this.peer.handleSignal({
+            signalType: QRtcSignalingType.IceCandidate,
+            payload: {
+                description: null,
+                candidate: {
+                    candidate: `candidate-${this.input.id}-${index}`,
+                    sdpMid: '0',
+                    sdpMLineIndex: 0
+                }
+            }
+        });
+    }
+
+    receiveOffer(): Promise<void> {
+        return this.peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: `remote-offer-${this.input.id}`,
+            payload: { description: { type: 'offer', sdp: `remote-offer-${this.input.id}` }, candidate: null }
+        });
+    }
+
+    beginOfferCollision(): void {
+        this.getNativePeer().signalingState = 'have-local-offer';
+    }
+
+    receiveCollidingOffer(index: number): Promise<void> {
+        return this.peer.handleSignal({
+            signalType: QRtcSignalingType.Offer,
+            offerId: `collision-${this.input.id}-${index}`,
+            payload: {
+                description: { type: 'offer', sdp: `colliding-offer-${this.input.id}-${index}` },
+                candidate: null
+            }
+        });
+    }
+
+    failConnection(): void {
+        this.getNativePeer().connectionState = 'failed';
+    }
+
+    reconnect(): Promise<void> {
+        return this.peer.handleReconnect();
+    }
+
+    drainSignaling(): Promise<void> {
+        return this.getNativePeer().whenIceRestarted();
+    }
+
+    async exhaustReconnects(): Promise<void> {
+        // Accepted B01 input: one retry followed by the exhausted starting state.
+        this.peer.status.reconnectAttempts = 5;
+        await this.peer.handleReconnect();
+    }
+
+    readDiagnostics(): QRtcPeerConnection.Diagnostics {
+        return this.peer.readDiagnostics();
+    }
+
+    private getNativePeer(): RtcBenchmarkNativePeer {
+        if (!this.nativePeer) {
             throw new Error('Expected fake RTCPeerConnection instance.');
         }
-        return nativePeer;
-    };
-    return {
-        connect() {
-            peer.connect();
-            if (!(peer.status.pc instanceof RtcBenchmarkNativePeer)) {
-                throw new Error('Expected the installed native RTC peer');
-            }
-            nativePeer = peer.status.pc;
-        },
-        receiveIceCandidate: (index) =>
-            peer.handleSignal(QRtcSignalingType.IceCandidate, {
-                description: null,
-                candidate: { candidate: `candidate-${input.id}-${index}`, sdpMid: '0', sdpMLineIndex: 0 }
-            }),
-        receiveOffer: () =>
-            peer.handleSignal(QRtcSignalingType.Offer, {
-                description: { type: 'offer', sdp: `remote-offer-${input.id}` },
-                candidate: null
-            }),
-        beginOfferCollision() {
-            requireNativePeer().signalingState = 'have-local-offer';
-        },
-        receiveCollidingOffer: (index) =>
-            peer.handleSignal(QRtcSignalingType.Offer, {
-                description: {
-                    type: 'offer',
-                    sdp: `colliding-offer-${input.id}-${index}`
-                },
-                candidate: null
-            }),
-        failConnection: () => {
-            requireNativePeer().connectionState = 'failed';
-        },
-        reconnect: () => peer.handleReconnect(),
-        drainSignaling: () => requireNativePeer().whenIceRestarted(),
-        exhaustReconnects: async () => {
-            // Accepted B01 input: one retry followed by the exhausted starting state.
-            peer.status.reconnectAttempts = 5;
-            await peer.handleReconnect();
-        },
-        readDiagnostics: () => peer.readDiagnostics()
-    };
-}
-
-function createDiagnosticsPeerConnection(input: RtcPeerConnectionDiagnosticsPeerInput): QRtcPeerConnection {
-    return new QRtcPeerConnection(
-        { send: async () => input.onSend() },
-        {
-            sessionId: `self-${input.id}`,
-            token: 'token',
-            peerSessionId: `peer-${input.id}`,
-            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            isPolite: input.isPolite
-        }
-    );
+        return this.nativePeer;
+    }
 }

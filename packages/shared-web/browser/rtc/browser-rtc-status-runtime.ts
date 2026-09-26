@@ -8,13 +8,16 @@ import type {
     RallarRtcStatusOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import {
+    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    type WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 interface BrowserRtcPeerStatusInput {
     readonly peerId: string;
-    readonly peer: QRtcPeerDto | undefined;
+    readonly peer: WebRtcConnectionService.Peer | undefined;
     readonly activePeerIds: ReadonlySet<string>;
     readonly peerIdsWithNoReconnectableLanes: ReadonlySet<string>;
     readonly readyPeerIds: ReadonlySet<string>;
@@ -127,7 +130,7 @@ function toRtcPeerStatus(input: BrowserRtcPeerStatusInput): RallarRtcPeerStatus 
 }
 
 function toRtcConnectionStatus(
-    peer: QRtcPeerDto | undefined
+    peer: WebRtcConnectionService.Peer | undefined
 ): RallarRtcPeerConnectionStatus {
     const status = peer?.connection.status;
     const peerConnection = status?.pc;

@@ -110,7 +110,10 @@ describe('RTC admitted-message consumption', () => {
             await fixture.runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
             fixture.observed.snapshot = { ...createCurrentSnapshot(), group: { ...createCurrentSnapshot().group, snapshotVersion: 4 } };
             await fixture.runtime.admitIncomingMessage(first, { kind: 'rtc-peer', peerId: 'sender' });
-            await expect.poll(() => fixture.delivered).toEqual([first.id.msgId]);
+            await expect.poll(async () => {
+                await fixture.engine.executeOnce();
+                return fixture.delivered;
+            }).toEqual([first.id.msgId]);
             expect(await fixture.stores.admissionStore.readBufferedRelease({ trackKey, seq: 2, nowMs: Date.now() })).toBeDefined();
             expect(acknowledgedIds(fixture.controls)).not.toContain(second.id.msgId);
 

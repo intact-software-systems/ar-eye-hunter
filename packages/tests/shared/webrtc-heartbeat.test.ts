@@ -75,14 +75,18 @@ describe('WebRtcHeartbeatService', () => {
 async function createHeartbeatRuntime(maxMissedPings: number): Promise<HeartbeatRuntime> {
     vi.useFakeTimers();
     const native = installNativeRtcRuntime();
-    const fixture = createNativeRtcConnectionFixture({
-        sessionId: 'self',
-        token: 'fixture-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'heartbeat',
-        rtcSignalingTopicId: 'rtc'
-    }, native);
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'heartbeat',
+            rtcSignalingTopicId: 'rtc'
+        },
+        native,
+        createPassThroughTransportFaultPort()
+    );
     const connected = fixture.service.ensurePeerConnectionStarted('peer-1', true);
     if (!connected.right) {
         throw new Error('Heartbeat fixture failed to establish its peer');

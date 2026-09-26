@@ -74,7 +74,11 @@ describe('middleware pre-admission', () => {
                     workQueue: signalingBackend.workQueue
                 }
             });
-            onTestFinished(() => runtime.wsQBoxServerService.dispose());
+            runtime.qboxEngine.start();
+            onTestFinished(() => {
+                runtime.wsQBoxServerService.dispose();
+                runtime.qboxEngine.stop();
+            });
             const valid = signalingMessage();
             const invalid = invalidMessage(valid, corruption);
 
@@ -103,6 +107,7 @@ function signalingMessage(): ALMessage {
         sessionId: 'sender',
         token: 'fixture-ticket',
         signalType: 'Offer',
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
     });
 }

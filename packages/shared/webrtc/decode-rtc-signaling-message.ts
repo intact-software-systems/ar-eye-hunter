@@ -7,15 +7,10 @@ import {
 import { validateALMessageResourceLimits } from '../al-contracts/al-message-resource-limits.ts';
 import { Either } from '../resilience/Either.ts';
 import { toError } from '../resilience/to-error.ts';
-import { QRtcDataExchanged } from './qrtc-peer-connection.ts';
 import {
-    QRtcSignalingMessage,
-    QRtcSignalingType
-} from './QRtcSignalingContracts.ts';
-
-export interface DecodedRtcSignalingMessage extends QRtcSignalingMessage {
-    readonly payload: QRtcDataExchanged;
-}
+    QRtcSignal,
+    QRtcSignalingMessage
+} from './qrtc-signaling-contracts.ts';
 
 export class RtcSignalingDecodeError extends TypeError {
     constructor(message: string) {
@@ -24,7 +19,7 @@ export class RtcSignalingDecodeError extends TypeError {
     }
 }
 
-export function decodeRtcSignalingEnvelope(message: ALMessage): Either<ALMessageRejection, DecodedRtcSignalingMessage> {
+export function decodeRtcSignalingEnvelope(message: ALMessage): Either<ALMessageRejection, QRtcSignalingMessage> {
     const issues = validateALMessageResourceLimits(message);
     if (issues.length > 0) {
         return Either.ofLeft({ code: issues[0].code, message: 'Invalid RTC signaling message' });
@@ -47,10 +42,13 @@ export function decodeRtcSignalingEnvelope(message: ALMessage): Either<ALMessage
     }
 }
 
-export function decodeRtcSignalingMessage(serialized: string): DecodedRtcSignalingMessage {
+export function decodeRtcSignalingMessage(serialized: string): QRtcSignalingMessage {
     try {
         const message = decodePersistedALRecord(serialized, 'RTC signaling message');
         const fields = ['channel', 'type', 'fromId', 'toId', 'sessionId', 'token', 'signalType', 'payload'];
+        if (message.signalType !== 'IceCandidate') {
+            fields.push('offerId');
+        }
         requirePersistedALFields(message, fields, fields);
         if (message.channel !== 'RtcSignal' || message.type !== 'Signal') {
             throw new RtcSignalingDecodeError('Invalid RTC signaling channel or type');
@@ -63,11 +61,6 @@ export function decodeRtcSignalingMessage(serialized: string): DecodedRtcSignali
         ) {
             throw new RtcSignalingDecodeError('Invalid RTC signaling identity');
         }
-        if (
-            message.signalType !== 'Offer' && message.signalType !== 'Answer' && message.signalType !== 'IceCandidate'
-        ) {
-            throw new RtcSignalingDecodeError('Invalid RTC signaling operation');
-        }
         return {
             channel: message.channel,
             type: message.type,
@@ -75,8 +68,7 @@ export function decodeRtcSignalingMessage(serialized: string): DecodedRtcSignali
             toId: message.toId,
             sessionId: message.sessionId,
             token: message.token,
-            signalType: message.signalType,
-            payload: decodeRtcSignalingPayload(message.signalType, message.payload)
+            ...decodeRtcSignal(message)
         };
     }
     catch (caught) {
@@ -89,22 +81,35 @@ export function decodeRtcSignalingMessage(serialized: string): DecodedRtcSignali
     }
 }
 
-export function decodeRtcSignalingPayload(signalType: QRtcSignalingType, value: unknown): QRtcDataExchanged {
+export function decodeRtcSignal(signal: QRtcSignal | Record<string, unknown>): QRtcSignal {
+    const value = signal.payload;
     if (value === null || typeof value !== 'object' || !('description' in value) || !('candidate' in value)) {
         throw new RtcSignalingDecodeError('Invalid RTC signaling payload');
     }
     assertRtcSignalingFields(value, ['description', 'candidate']);
-    if (signalType === 'IceCandidate') {
+    if (signal.signalType === 'IceCandidate') {
         if (value.description !== null) {
             throw new RtcSignalingDecodeError('Unexpected ICE description');
         }
-        return { description: null, candidate: decodeIceCandidate(value.candidate) };
+        if ('offerId' in signal) {
+            throw new RtcSignalingDecodeError('Unexpected RTC ICE offer identity');
+        }
+        return {
+            signalType: 'IceCandidate',
+            payload: { description: null, candidate: decodeIceCandidate(value.candidate) }
+        };
     }
     if (value.candidate !== null) {
         throw new RtcSignalingDecodeError('Unexpected description candidate');
     }
     const description = value.description;
-    const expectedType = signalType === 'Offer' ? 'offer' : 'answer';
+    if (
+        (signal.signalType !== 'Offer' && signal.signalType !== 'Answer') ||
+        !('offerId' in signal) || typeof signal.offerId !== 'string' || signal.offerId.trim().length === 0
+    ) {
+        throw new RtcSignalingDecodeError('Invalid RTC offer identity');
+    }
+    const expectedType = signal.signalType === 'Offer' ? 'offer' : 'answer';
     if (
         description === null || typeof description !== 'object' || !('type' in description) ||
         description.type !== expectedType || !('sdp' in description) || typeof description.sdp !== 'string'
@@ -112,7 +117,17 @@ export function decodeRtcSignalingPayload(signalType: QRtcSignalingType, value: 
         throw new RtcSignalingDecodeError('Invalid RTC session description');
     }
     assertRtcSignalingFields(description, ['type', 'sdp']);
-    return { description: { type: expectedType, sdp: description.sdp }, candidate: null };
+    return signal.signalType === 'Offer'
+        ? {
+            signalType: 'Offer',
+            offerId: signal.offerId,
+            payload: { description: { type: 'offer', sdp: description.sdp }, candidate: null }
+        }
+        : {
+            signalType: 'Answer',
+            offerId: signal.offerId,
+            payload: { description: { type: 'answer', sdp: description.sdp }, candidate: null }
+        };
 }
 
 function decodeIceCandidate(value: unknown): RTCIceCandidateInit {

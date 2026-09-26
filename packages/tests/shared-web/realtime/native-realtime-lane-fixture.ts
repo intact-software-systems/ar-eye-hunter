@@ -1,4 +1,4 @@
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcDataChannel, RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { onTestFinished } from 'vitest';
@@ -9,7 +9,7 @@ import {
 } from '../../shared/native-rtc-connection-fixture.ts';
 
 export interface NativeRealtimeLaneFixture {
-    readonly peer: QRtcPeerDto;
+    readonly peer: WebRtcConnectionService.Peer;
     readonly channel: QRtcDataChannel;
     readonly native: SimulatedNativeRtcDataChannel;
 }
@@ -26,15 +26,19 @@ export async function createNativeRealtimeLaneFixture(
     options: NativeRealtimeLaneOptions = {}
 ): Promise<NativeRealtimeLaneFixture> {
     const runtime = installNativeRtcRuntime();
-    const fixture = createNativeRtcConnectionFixture({
-        sessionId: 'session-1',
-        token: 'fixture-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-        dataChannelName: 'reliable',
-        dataChannelLanes: [{ id: laneId, label: laneId, flowControl: options.flowControl }],
-        rtcSignalingTopicId: 'rtc'
-    }, runtime);
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'session-1',
+            token: 'fixture-token',
+
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+            dataChannelName: 'reliable',
+            dataChannelLanes: [{ id: laneId, label: laneId, flowControl: options.flowControl }],
+            rtcSignalingTopicId: 'rtc'
+        },
+        runtime,
+        createPassThroughTransportFaultPort()
+    );
     onTestFinished(() => {
         fixture.dispose();
         runtime.dispose();

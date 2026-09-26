@@ -42,14 +42,18 @@ export function createSimulatedRtcConnections(
     connect: (peerId: string) => boolean = () => true
 ): SimulatedRtcConnections {
     const runtime = installSimulationNativeRuntime();
-    const fixture = createNativeRtcConnectionFixture({
-        sessionId,
-        token: 'fixture-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc'
-    }, runtime);
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId,
+            token: 'fixture-token',
+
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        runtime,
+        createPassThroughTransportFaultPort()
+    );
     const { service } = fixture;
     const connectedPeerIds = installSimulatedLaneTransport(service, connect);
     // Group scenarios control lane readiness independently of the complete native

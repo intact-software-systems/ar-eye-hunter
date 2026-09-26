@@ -70,7 +70,7 @@ export function runWebRtcHeartbeatCallbackChurn(
             peerSessionId,
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
             isPolite: true
-        });
+        }, { createOfferId: () => crypto.randomUUID() });
         return new QRtcDataChannel(peer, {
             faultPort: createPassThroughTransportFaultPort(),
             peerId: peerSessionId,

@@ -72,6 +72,11 @@ import {
 } from './messaging/replay-black-box-captured-message.ts';
 import { submitBlackBoxRawControl, type SubmitBlackBoxRawControl } from './messaging/submit-black-box-raw-control.ts';
 import {
+    readBlackBoxRtcCausalState,
+    type BlackBoxRtcCausalReadPort,
+    type BlackBoxRtcCausalState
+} from './read-black-box-rtc-causal-state.ts';
+import {
     refreshBlackBoxBrowserRoomState,
     type BlackBoxRoomStateRefreshOptions
 } from './refresh-black-box-browser-room-state.ts';
@@ -88,6 +93,7 @@ export interface BlackBoxBrowserRallarRuntimeDependency
         options: BlackBoxRoomStateRefreshOptions
     ): Promise<void>;
     readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
+    readRtcCausalState(): BlackBoxRtcCausalState | undefined;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
     readonly messages: BlackBoxBrowserMessagesDependency;
@@ -196,6 +202,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         messaging
     });
     return toBlackBoxBrowserRuntimeDependency({
+        runtime: foundation.runtime,
         session,
         rooms,
         messaging,
@@ -276,6 +283,7 @@ function registerBlackBoxBrowserRallarLifecycle(
 }
 
 interface BlackBoxBrowserRuntimeComponents {
+    readonly runtime: BlackBoxRtcCausalReadPort;
     readonly session: BrowserSessionCoreComposition;
     readonly rooms: BrowserRoomsComposition;
     readonly messaging: BrowserMessagingComposition;
@@ -291,6 +299,7 @@ function toBlackBoxBrowserRuntimeDependency(
     const { session, rooms, messaging, realtime, crdt, director, diagnostics, deliveries } = components;
     return {
         ...session.connection,
+        readRtcCausalState: () => readBlackBoxRtcCausalState(components.runtime),
         connect: async (options) => {
             await session.connection.connect(options);
         },

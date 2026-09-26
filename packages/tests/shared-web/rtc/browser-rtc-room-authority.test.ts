@@ -199,14 +199,18 @@ async function createNativeRoomFixture(snapshots: readonly GroupSnapshot[]): Pro
     const mocks = readRtcWaitMocks();
     mockGroupSnapshots(snapshots);
     const runtime = installNativeRtcRuntime();
-    const fixture = createNativeRtcConnectionFixture({
-        sessionId: 'session-1',
-        token: 'fixture-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        rtcSignalingTopicId: 'rtc',
-        dataChannelName: 'reliable',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-    }, runtime);
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'session-1',
+            token: 'fixture-token',
+
+            rtcSignalingTopicId: 'rtc',
+            dataChannelName: 'reliable',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
+        },
+        runtime,
+        createPassThroughTransportFaultPort()
+    );
     mocks.initialiseApiMiddleware.mockResolvedValue({
         ...mocks.ctx,
         middleware: { ...mocks.ctx.middleware, webRtcConnectionService: fixture.service }

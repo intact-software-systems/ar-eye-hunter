@@ -36,6 +36,7 @@ import {
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { readInboundTestAcknowledgements } from './alm/read-inbound-test-acknowledgements.ts';
+import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -532,9 +533,11 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
     });
 
     it('does not complete deferred subtree ack after the source message expires', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
 
-        const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
+        const expiryStores = createDefaultInMemoryALInboundRuntimeStores();
+        const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness(expiryStores);
 
         const msg = newALMulticastMessage(
             'peer-1',
@@ -565,7 +568,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
 
-        vi.setSystemTime(Date.now() + 100);
+        nowMs += 100;
         await runtime.admitIncomingMessage(
             newALAckControlMessage(
                 { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
@@ -678,7 +681,9 @@ describe('ALInboundMessageRuntime durable effects', () => {
     });
 
     it('does not retry durable local dispatch after the message expires', async () => {
-        vi.useFakeTimers();
+        let nowMs = Date.now();
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const expiryStores = createDefaultInMemoryALInboundRuntimeStores();
 
         const delivered: string[] = [];
         let attempts = 0;
@@ -704,14 +709,14 @@ describe('ALInboundMessageRuntime durable effects', () => {
             }
         );
         const { runtime } = createInboundHarness(
-            createDefaultInMemoryALInboundRuntimeStores(),
+            expiryStores,
             {
                 dispatchInboxEntry: async (entry) => {
                     const parsed = decodePersistedALMessage(entry.resource);
                     attempts += 1;
                     if (attempts === 1) {
                         // The failing attempt outlives the message deadline; the retry must not deliver it.
-                        vi.setSystemTime(Date.now() + 30_000);
+                        nowMs += 30_000;
                         throw new Error('temporary dispatch failure');
                     }
                     delivered.push(parsed.id.msgId);
@@ -723,7 +728,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await expect.poll(() => attempts).toBe(1);
 
-        await vi.advanceTimersByTimeAsync(30_000);
+        await waitForSettledALInboundWork(expiryStores.workQueue);
 
         expect(delivered).toEqual([]);
         expect(attempts).toBe(1);

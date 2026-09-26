@@ -1,0 +1,26 @@
+{
+  "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "files": [
+    "browser-alm-committed-work-observer.ts",
+    "browser-alm-committed-work-timing-fixture.ts",
+    "browser-alm-committed-work-timing.spec.ts",
+    "browser-alm-native-observation.spec.ts",
+    "browser-alm-native-observation.ts",
+    "browser-alm-mixed-live-durable-observer.spec.ts",
+    "browser-alm-mixed-live-durable-observer.ts",
+    "browser-alm-mixed-live-durable-client.spec.ts",
+    "browser-alm-mixed-live-durable-client.ts",
+    "browser-alm-mixed-live-durable-coverage.spec.ts",
+    "browser-alm-mixed-live-durable-coverage.ts",
+    "browser-native-indexeddb-timing-recorder.ts",
+    "full-stack-alm-conformance.spec.ts",
+    "full-stack-browser-alm-mixed-live-durable.spec.ts"
+  ],
+  "include": []
+}

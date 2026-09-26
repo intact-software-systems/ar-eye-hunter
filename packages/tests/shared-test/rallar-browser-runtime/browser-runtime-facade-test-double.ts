@@ -149,6 +149,7 @@ export const facadeBehavior = {
     connect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['connect']>(),
     disconnect: vi.fn<BlackBoxBrowserRallarRuntimeDependency['disconnect']>(),
     roomStateRefresh: vi.fn<BlackBoxBrowserRallarRuntimeDependency['refreshRoomState']>(),
+    rtcCausalState: vi.fn<BlackBoxBrowserRallarRuntimeDependency['readRtcCausalState']>(),
     roomJoin: vi.fn<BlackBoxBrowserRoomsDependency['join']>(),
     roomLeave: vi.fn<BlackBoxBrowserRoomsDependency['leave']>(),
     roomRefresh: vi.fn<BlackBoxBrowserRoomsDependency['refresh']>(),
@@ -369,6 +370,7 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
 };
 
 export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
+    readRtcCausalState: () => facadeBehavior.rtcCausalState(),
     readRtcMessageNacks: async () => [],
     configure: (config) => {
         facadeRecords.configurationWrites.push(config);

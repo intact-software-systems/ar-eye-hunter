@@ -9,7 +9,10 @@ import type {
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import {
+    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    type WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
 import { readSelectedCandidatePairDiagnostics } from './read-selected-candidate-pair-diagnostics.ts';
 
 export namespace BrowserRtcDiagnosticsRuntime {
@@ -21,7 +24,7 @@ export namespace BrowserRtcDiagnosticsRuntime {
 
     export interface PeerInput {
         readonly status: RallarRtcPeerStatus;
-        readonly peer: QRtcPeerDto | undefined;
+        readonly peer: WebRtcConnectionService.Peer | undefined;
         readonly options: RallarRtcDiagnosticsOptions;
     }
 }
@@ -35,9 +38,9 @@ export class BrowserRtcDiagnosticsRuntime {
     }
 
     async read(options: RallarRtcDiagnosticsOptions = {}): Promise<RallarRtcDiagnostics> {
-        const ctx = this.input.readMiddleware();
-        const sessionId = ctx?.session.sessionId ?? this.input.readSession()?.sessionId;
-        if (!ctx) {
+        const middlewareContext = this.input.readMiddleware();
+        const sessionId = middlewareContext?.session.sessionId ?? this.input.readSession()?.sessionId;
+        if (!middlewareContext) {
             return {
                 sessionId,
                 generatedAtEpochMs: Date.now(),
@@ -48,7 +51,7 @@ export class BrowserRtcDiagnosticsRuntime {
             };
         }
 
-        const service = ctx.middleware.webRtcConnectionService;
+        const service = middlewareContext.middleware.webRtcConnectionService;
         const status = this.input.readStatus({
             ...options,
             laneId: options.laneIds?.[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID
@@ -75,7 +78,7 @@ export class BrowserRtcDiagnosticsRuntime {
             ).length,
             relayPeerCount: peers.filter((peer) => peer.usesRelay).length,
             peers,
-            groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics?.(),
+            groupManager: middlewareContext.middleware.webRtcGroupManager.readDiagnostics?.(),
             overlayAdoption: readOverlayAdoptionDiagnostics(),
             connectionAttemptBudget: service.readPeerConnectionAttemptBudgetDiagnostics?.()
         };
