@@ -208,6 +208,7 @@ export function blackBoxRallarConnectionOperationKeyOf(
             contextId: rallar.contextId,
             resourceId: rallar.resourceId,
             messageSelector: normalizedMessageSelector(rallar.messageSelector),
+            messageTypeIds: rallar.messageTypeIds,
             ttlHops: rallar.ttlHops,
             ttlMs: rallar.ttlMs,
             reliability: rallar.reliability,

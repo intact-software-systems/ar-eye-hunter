@@ -94,6 +94,8 @@ export interface BlackBoxRallarConfig {
     readonly contextId?: string;
     readonly resourceId?: string;
     readonly messageSelector?: RallarMessageSelectorInput;
+    /** The RTC message types a topic-only selector must also hear: the product registers RTC inbox callbacks per type. */
+    readonly messageTypeIds?: readonly string[];
     readonly ttlHops?: number;
     readonly ttlMs?: number;
     readonly reliability?: 'best-effort' | 'at-least-once';
