@@ -515,6 +515,36 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   (catalog entry, ordered-list line, generated JSON) moves from Task 4 into Task 5: with no three-role
   scenario yet the combined recipe has no connect prologue and would always fail the identity
   assessment; the `one-sender-two-recipients` role pattern lands in Task 4 and is tested directly.
+- **R-S2c-ii-8 (Task 5 → Task 5a, 2026-09-26).** The first three-peer RTC run deadlocked: in a
+  three-session star every recipient is the other's next hop, so each relayed the copy to the other
+  and waited for that child's `subtree-complete` before its own terminal ACK, and the origin never
+  received a receipt. A relay's owned children are its next hops minus its sender and minus the
+  sender's forwarding set (the siblings that already hold the message from the same sender); in a
+  star a recipient owns no children and acknowledges itself `delivered`; in a tree a relay still owns
+  its descendants; a peer that is both sibling and descendant is not owned. The same exclusion
+  governs the retry/duplicate forward and the relay pending row's expected set.
+- **Task 5 scenario rulings (2026-09-26).** Over ws scenario 2 asserts today's live-only behaviour:
+  the receipt ends `timed-out` naming `recipient-b` unconfirmed (the WS server has no retry in
+  live-only fanout; outbox mode and rtc carry the retry proof). Scenario 4 runs over rtc and fallback
+  through a new `messages.control` raw harness command and asserts the origin's `admission-outcome`
+  `rejected/unsupported`; the WS server's refusal stays a unit pin. Scenario 3 keeps the leave half
+  (D43); the joiner half is the Task 1/2b late-joiner pins. Scenario 5 asserts the shape over the
+  tree topology: exactly one recipient is the origin's hop while both recipients are confirmed.
+- **R-S2c-ii-8a (Task 5a, 2026-09-26).** Every RTC transport copy names only its one addressee in
+  `forwarding.nextHopPeerIds` and ingress refuses anything wider, so the sender's forwarding set rides
+  on `diagnostics.visitedPeerIds` instead: each copy carries the visited set plus the sender plus the
+  dispatch's next hops, and `resolveNextHopPeerIds` already drops visited peers, which yields
+  R-S2c-ii-8 with no wire or ingress change. The visited set is routing input (as the alternate-parent
+  repair already treats it); its 64-entry cap is pinned against the overlay degree limit so it can
+  never truncate a star's forwarding set.
+- **R-S2c-ii-8c (Task 5a review, 2026-09-26; supersedes 8b).** Termination never depends on the
+  visited exclusion: a peer that already holds a relay row and receives a duplicate copy from a
+  sender that is not its recorded parent re-emits its terminal ACK to that sender too, so an
+  over-approximated owner's row still completes and the 64-entry visited cap can never deadlock (past
+  the cap the cost is redundant relays). A targeted repair copy inherits the repaired dispatch's own
+  copy for that peer, so a requester never owns its siblings. Unicast copies carry no visited list. The
+  per-copy byte cost on RTC is about 117 B for a three-session star and at most about 2.5 KB; no
+  envelope limit is reachable.
 
 ## Self-review
 
