@@ -134,13 +134,17 @@ deadline is refused. The receipt is gone by then, and control admission's valida
 ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
 reasons) for every control it decides. A committed `resync-required` NACK is a hop's refusal of a
-retained send (D50): it states a `relay-rejected` settlement, which ends an ACK-tracked handle
+retained send (D50): it states a `relay-rejected` settlement, which ends a receipt-tracked handle
 `rejected`, and like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends
 the message. A multi-recipient receipt therefore keeps the recipient evidence it had at the rejection:
-later ACKs find no row. A best-effort send (`ack: 'none'`) is terminal at `transport-accepted` by
-lifecycle design, so a rejection that reaches it later is evidence only: the handle keeps
-`transport-accepted` and names the relay in `relayRejection` (R-S2c-ii-5a). A caller that checks
-`state === 'rejected'` alone misses that case; `relayRejection` is the fact. Every control arrives
+later ACKs find no row. A receipt-less send (`receiptAlgo: 'none'`, the receipt its admitting carrier
+tracks, R-S3a-4) is terminal at `transport-accepted` by lifecycle design, so a rejection that reaches
+it later is evidence only: the handle keeps `transport-accepted` and names the relay in
+`relayRejection` (R-S2c-ii-5a). A caller that checks `state === 'rejected'` alone misses that case;
+`relayRejection` is the fact. A default typed send tracks a receipt, so the case is left to a send
+that names `ack: 'none'` explicitly, or asks WS for a `hop` or `subtree` room receipt the WS client
+does not track. Over RTC such a send keeps no receipt row, so control admission refuses its hop's
+`resync-required` NACK and states no `relay-rejected` at all. Every control arrives
 with its source (`ALOutboundControlSource`), and trust follows the source, never the carrier. A WS client hands its server's controls over as `trusted-server`: the
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
 without an expected peer (every other check stands), and stated as a server relay that is never named.
