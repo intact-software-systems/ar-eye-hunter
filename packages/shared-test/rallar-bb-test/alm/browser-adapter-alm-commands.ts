@@ -141,6 +141,12 @@ const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
 /** Keyed by every receipt mode, so a new mode fails to compile here instead of decoding as an invalid result. */
 const ALM_RECEIPT_MODES: Readonly<Record<ALReceiptMode, true>> = { hop: true, subtree: true, receiver: true };
 
+/** Every value an observation may carry as its receipt mode: none before a receipt settles, or a known mode. */
+const ALM_RECEIPT_MODE_FIELD_VALUES: readonly (ALReceiptMode | undefined)[] = [
+    undefined,
+    ...Object.keys(ALM_RECEIPT_MODES) as ALReceiptMode[]
+];
+
 /** Keyed by every verdict kind, so a new kind fails to compile here instead of decoding as an invalid result. */
 const ALM_ADMISSION_VERDICT_KINDS: Readonly<Record<ALDeliveryAdmissionVerdict['kind'], true>> = {
     admitted: true,
@@ -668,14 +674,10 @@ function readAlmOptionalStringField(
 
 /** Absent until a receipt settles: a send that tracks no receipt never names a mode. */
 function readAlmReceiptModeField(record: RallarBlackBoxTestRecord, path: string): ALReceiptMode | undefined {
-    const value = record.receiptMode;
-    if (value === undefined) {
-        return undefined;
+    if (!ALM_RECEIPT_MODE_FIELD_VALUES.some((candidate) => candidate === record.receiptMode)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.receiptMode`);
     }
-    if (typeof value === 'string' && Object.hasOwn(ALM_RECEIPT_MODES, value)) {
-        return value as ALReceiptMode;
-    }
-    throw toAlmInvalidRuntimeResultError(`${path}.receiptMode`);
+    return record.receiptMode as ALReceiptMode | undefined;
 }
 
 function requireAlmNumberField(
