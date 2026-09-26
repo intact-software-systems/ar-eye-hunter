@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { isALHopCompletionAck, type ALAckPayload, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundAckTrackingPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { trackALOutboundPendingAckSnapshot } from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
+import {
+    toALOutboundAckedPeerId,
+    toALOutboundCompletedHopPeerIds,
+    trackALOutboundPendingAckSnapshot
+} from '@shared/alm/outbound/transition-al-outbound-pending-ack.ts';
 
 const RECEIVER_TRACKING: ALOutboundAckTrackingPlan = {
     enabled: true,
@@ -47,6 +51,31 @@ describe('outbound pending ACK transition under `receiver`', () => {
         expect(pending).toMatchObject({ expectedPeerIds: ['r1', 'r2', 'r3'], ackedPeerIds: ['r1'], attempts: 1 });
     });
 });
+
+describe('hop completion under `subtree`', () => {
+    it.each([
+        { ack: hopAck('hop', 'hop', 'delivered'), counted: 'hop', completes: true },
+        { ack: hopAck('hop', 'hop', 'subtree-complete'), counted: 'hop', completes: true },
+        { ack: hopAck('hop', 'below', 'forwarded'), counted: undefined, completes: false },
+        { ack: hopAck('hop', 'hop', 'forwarded'), counted: undefined, completes: false },
+        { ack: hopAck('hop', 'below', 'subtree-complete'), counted: undefined, completes: false }
+    ])('counts a hop on its own completion ACK only ($ack.status for $ack.logicalRecipientPeerId)', ({ ack, counted, completes }) => {
+        expect(isALHopCompletionAck(ack)).toBe(completes);
+        expect(toALOutboundAckedPeerId('subtree', ack)).toBe(counted);
+        expect(toALOutboundCompletedHopPeerIds([ack])).toEqual(completes ? ['hop'] : []);
+    });
+
+    it('keeps counting the sender under `hop` and the named recipient under `receiver`', () => {
+        const relayed = hopAck('hop', 'below', 'forwarded');
+
+        expect(toALOutboundAckedPeerId('hop', relayed)).toBe('hop');
+        expect(toALOutboundAckedPeerId('receiver', relayed)).toBe('below');
+    });
+});
+
+function hopAck(fromPeerId: string, logicalRecipientPeerId: string, status: ALAckStatus): ALAckPayload {
+    return { ...relayAck(logicalRecipientPeerId), fromPeerId, status };
+}
 
 function relayAck(logicalRecipientPeerId: string): ALAckPayload {
     return {

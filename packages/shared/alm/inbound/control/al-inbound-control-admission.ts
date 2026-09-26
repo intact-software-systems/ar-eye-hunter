@@ -32,8 +32,6 @@ export type ALInboundControlAdmissionResult =
     | Readonly<{
         kind: 'committed';
         acceptance: ALControlAcceptance;
-        /** The commit persisted work the inbound worker must claim; an idle worker stays idle without it. */
-        wroteWork: boolean;
     }>
     | Readonly<{ kind: 'pending-control'; }>
     | Readonly<{ kind: 'rejected'; reason: string; }>;
@@ -52,7 +50,10 @@ type ALInboundControlArrival = Pick<ALInboundPendingControl, 'msg' | 'carrier'>;
 export interface ALInboundControlReplayResult {
     readonly outcome: ALWorkOutcome;
     readonly acceptance: ALControlAcceptance | undefined;
-    /** The replay's own commit persisted work behind the page its batch read; nothing else announces it. */
+    /**
+     * The replay's own commit persisted work behind the page its batch read; nothing else announces it.
+     * Every committed acknowledgement relays at least the recipient it names, so a commit always writes work.
+     */
     readonly wroteWork: boolean;
 }
 
@@ -84,7 +85,7 @@ export class ALInboundControlAdmission {
         return {
             outcome: { status: result.kind === 'pending-control' ? 'retry' : 'completed' },
             acceptance: result.kind === 'committed' ? result.acceptance : undefined,
-            wroteWork: result.kind === 'committed' && result.wroteWork
+            wroteWork: result.kind === 'committed'
         };
     }
 
@@ -114,11 +115,7 @@ export class ALInboundControlAdmission {
         const bundle = toALInboundControlCommitBundle(candidate);
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'committed') {
-            return {
-                kind: 'committed',
-                acceptance: candidate.acceptance,
-                wroteWork: bundle.durableEffects.length > 0
-            };
+            return { kind: 'committed', acceptance: candidate.acceptance };
         }
         await this.retainPendingControl(arrival, nowMs);
         return { kind: 'pending-control' };

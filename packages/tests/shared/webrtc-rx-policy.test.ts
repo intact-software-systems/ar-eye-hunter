@@ -12,7 +12,7 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -435,6 +435,26 @@ describe('a retried copy of a message this peer already admitted', () => {
         expect(delivered).toEqual([message.id.msgId]);
         await expect.poll(async () => readForwardedCopies(await fixture.outboundTo('peer-3'), message)).toBe(2);
         expect(readForwardedCopies(await fixture.outboundTo('peer-2'), message)).toBe(1);
+        // The ACK it already relayed for `peer-2` may be the one the origin lost, so it goes upward again.
+        expect(readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
+            ['peer-2', 'forwarded'],
+            ['peer-2', 'forwarded']
+        ]);
+    });
+
+    it('writes no forward for a retried copy when no child hop is owed', async () => {
+        const fixture = new RtcReceiveFixture();
+        fixture.service.onAllInboxMessagesDo({ onMessage: async () => undefined });
+        // The gap before seq 2 holds local delivery, so the row stays incomplete with every child complete.
+        const message = toCopyForSelf(createMulticast({ seq: 2, acknowledgeSubtree: true }), []);
+        await fixture.receive(message, 'peer-1');
+        await fixture.receive(createChildAck(message, 'peer-2'), 'peer-2');
+        await fixture.receive(createChildAck(message, 'peer-3'), 'peer-3');
+
+        await fixture.receive(message, 'peer-1');
+
+        expect(await readRetriedForwardRows(fixture)).toEqual([]);
+        expect(readForwardedCopies(await fixture.outboundTo('peer-3'), message)).toBe(1);
     });
 
     it('re-sends a relay whose subtree completed its terminal ACK', async () => {
@@ -447,12 +467,59 @@ describe('a retried copy of a message this peer already admitted', () => {
 
         await fixture.receive(message, 'peer-1');
 
-        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).filter(([recipient]) => recipient === 'self')).toEqual([[
-            'self',
-            'subtree-complete'
-        ], ['self', 'subtree-complete']]);
+        // Every ACK it relayed goes upward again beside its terminal ACK: any of them may be the one the origin lost.
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1')).toSorted()).toEqual([
+            ['peer-2', 'forwarded'],
+            ['peer-2', 'forwarded'],
+            ['peer-3', 'forwarded'],
+            ['peer-3', 'forwarded'],
+            ['self', 'subtree-complete'],
+            ['self', 'subtree-complete']
+        ]);
+    });
+
+    it('ends the hop of a leaf outside the frozen audience with subtree-complete, never delivered', async () => {
+        const fixture = new RtcReceiveFixture();
+        const delivered: string[] = [];
+        fixture.service.onAllInboxMessagesDo({
+            onMessage: async (message) => {
+                delivered.push(message.id.msgId);
+            }
+        });
+        const message = toCopyForSelf(
+            toALFrozenMulticastMessage(createMulticast({ seq: 1, acknowledgeSubtree: true }), {
+                recipientPeerIds: ['peer-2', 'peer-3'],
+                snapshotVersion: 1
+            }),
+            ['peer-2', 'peer-3']
+        );
+
+        await fixture.receive(message, 'peer-1');
+        await fixture.receive(message, 'peer-1');
+
+        expect(delivered).toEqual([]);
+        await expect.poll(async () => readUpstreamAcks(await fixture.outboundTo('peer-1'))).toEqual([
+            ['self', 'subtree-complete'],
+            ['self', 'subtree-complete']
+        ]);
     });
 });
+
+async function readRetriedForwardRows(fixture: RtcReceiveFixture): Promise<readonly string[]> {
+    const entries = await Promise.all(
+        (await fixture.stores.workQueue.getAllKeys()).map((key) => fixture.stores.workQueue.getItem(key))
+    );
+    const workType = toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc');
+    return entries.flatMap((entry) => {
+        if (entry === undefined || entry.typeId !== workType) {
+            return [];
+        }
+        const effect = decodeALInboundWorkEntry(entry, fixture.stores.admissionStore.namespace);
+        return effect.payload.kind === 'forward-message' && effect.payload.retryPeerIds !== undefined
+            ? [effect.effectId]
+            : [];
+    });
+}
 
 /** The copy an upstream peer addresses to this one; the visited peers are hops it must not forward to. */
 function toCopyForSelf(message: shared.ALMessage, visitedPeerIds: readonly string[]): shared.ALMessage {

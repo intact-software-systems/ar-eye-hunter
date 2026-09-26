@@ -18,7 +18,7 @@ export type AcksControlValue = Extract<ALControlPersistenceValue, Readonly<{ kin
 
 export type ALInboundControlMutation = Extract<
     ALInboundAdmissionMutation,
-    { kind: 'set-control-acks' | 'set-control-pending' | 'delete-control-pending' | 'set-control-owners'; }
+    { kind: 'set-control-acks' | 'set-control-pending' | 'set-control-owners'; }
 >;
 
 /** The acknowledgement rows one message owns, under the namespace the store was opened with. */
@@ -110,8 +110,6 @@ export async function applyALInboundControlMutation(
                 mutation.value,
                 mutation.expireAtTimestamp
             );
-        case 'delete-control-pending':
-            return await transaction.remove(toALInboundControlPendingKey(namespace, mutation.msgId, mutation.senderId));
         case 'set-control-owners':
             return await transaction.set(
                 toALInboundControlOwnersKey(namespace, mutation.msgId),

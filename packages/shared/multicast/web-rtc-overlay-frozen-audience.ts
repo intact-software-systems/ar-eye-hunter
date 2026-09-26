@@ -9,6 +9,7 @@ import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from './rtc-room-snapshot-admission.ts';
+import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 
 export interface ComputeFrozenAudienceInput {
     readonly admission: Extract<RtcRoomSnapshotAdmission, { readonly kind: 'authorized'; }>;
@@ -94,12 +95,6 @@ export function toRtcEmptyAudienceDispatchPlan(
         persist: true,
         msg: plan.msg,
         preparedMessages: [],
-        ackTracking: {
-            enabled: true,
-            timeoutMs: effective.ack.opts.timeoutMs,
-            maxAttempts: effective.retry.algo === 'none' ? 0 : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [],
-            mode: 'receiver'
-        }
+        ackTracking: toRtcAckTrackingPlan(effective, [])
     };
 }

@@ -27,7 +27,6 @@ import type {
     ALOutboundRuntimeDiagnosticsSink
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
-    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
@@ -80,6 +79,7 @@ import {
 } from './overlay-multicast-contracts.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import {
     toRtcEmptyAudienceDispatchPlan,
     toRtcFrozenAudienceDispatchPlan,
@@ -592,7 +592,7 @@ export class WebRtcOverlayMulticastManager {
             persist: true,
             msg,
             preparedMessages: [toALOutboundTransportMessage(msg)],
-            ackTracking: this.toAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
+            ackTracking: toRtcAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
             repairTracking: this.toRepairTrackingPlan(effective),
             supersedenceTracking: this.toSupersedenceTrackingPlan(effective, msg)
         };
@@ -639,7 +639,7 @@ export class WebRtcOverlayMulticastManager {
             persist: plan.handlingPlan.forwarding.persist,
             msg,
             preparedMessages: plan.transportMessages.map(toALOutboundTransportMessage),
-            ackTracking: this.toAckTrackingPlan(
+            ackTracking: toRtcAckTrackingPlan(
                 plan.handlingPlan.effective,
                 plan.transportMessages
                     .map((message) => message.forwarding?.nextHopPeerIds?.[0])
@@ -756,27 +756,6 @@ export class WebRtcOverlayMulticastManager {
         return computeRtcRoomSnapshotAdmission({ ...observation, fromPeerId: undefined, recipientPeerId });
     }
 
-    private toAckTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        expectedPeerIds: readonly string[],
-        expectedPeerIdsUpdate?: 'merge' | 'replace'
-    ): ALOutboundAckTrackingPlan | undefined {
-        if (effective.ack.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            timeoutMs: effective.ack.opts.timeoutMs,
-            maxAttempts: effective.retry.algo === 'none'
-                ? 0
-                : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [...new Set(expectedPeerIds)],
-            expectedPeerIdsUpdate,
-            mode: effective.ack.algo
-        };
-    }
-
     private toRetryTrackingPlan(
         effective: ALQosEffectivePolicy
     ): ALOutboundRetryTrackingPlan | undefined {
@@ -890,7 +869,7 @@ export class WebRtcOverlayMulticastManager {
                     }
                 })
             ],
-            ackTracking: this.toAckTrackingPlan(
+            ackTracking: toRtcAckTrackingPlan(
                 normalized.effective,
                 [peerId],
                 'replace'

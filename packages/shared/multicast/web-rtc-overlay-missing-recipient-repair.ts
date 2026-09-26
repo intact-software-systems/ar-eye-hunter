@@ -5,6 +5,7 @@ import {
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
+    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest
@@ -39,6 +40,13 @@ export interface PlanRtcFailedPeerRepairInput {
 
 type RtcDispatchPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage>;
 
+interface RtcMissingRecipientRepairInput {
+    readonly outgoing: RtcDispatchPlan;
+    readonly ackTracking: ALOutboundAckTrackingPlan;
+    readonly request: ALOutboundRepairRequest;
+    readonly frozen: ALFrozenMulticastAudience;
+}
+
 /**
  * The next hops a retry still owes (D25): a missing recipient that is a direct hop, and every hop whose
  * subtree has not completed, since a missing recipient may sit behind it. A completed hop never gets a copy.
@@ -67,7 +75,7 @@ export function planRtcFailedPeerRepair(input: PlanRtcFailedPeerRepairInput): Rt
         ? input.planOutgoingMessage(input.msg)
         : undefined;
     return outgoing?.ackTracking?.mode === 'receiver' && frozen !== undefined
-        ? toMissingRecipientRepairPlan(outgoing, input.request, frozen)
+        ? toMissingRecipientRepairPlan({ outgoing, ackTracking: outgoing.ackTracking, request: input.request, frozen })
         : planRtcAlternateParentRepair(input);
 }
 
@@ -92,12 +100,14 @@ export function toRtcRetriedCopyRetransmission(
     return { msg: plan.msg, plan, attemptIdentity: copy.attemptIdentity };
 }
 
-function toMissingRecipientRepairPlan(
-    outgoing: RtcDispatchPlan,
-    request: ALOutboundRepairRequest,
-    frozen: ALFrozenMulticastAudience
-): RtcDispatchPlan | undefined {
-    if (outgoing.dropReason || outgoing.ackTracking === undefined) {
+/**
+ * A hop outside the frozen audience never reads complete here: its terminal ACK confirms no expected
+ * recipient, so the origin refuses it and it never enters the ACK history. Every retry therefore resends
+ * to such a hop, and the receipt retry budget alone bounds how often.
+ */
+function toMissingRecipientRepairPlan(input: RtcMissingRecipientRepairInput): RtcDispatchPlan | undefined {
+    const { outgoing, request, frozen } = input;
+    if (outgoing.dropReason) {
         return outgoing;
     }
     const failed = new Set(request.failedPeerIds);
@@ -114,7 +124,7 @@ function toMissingRecipientRepairPlan(
     return preparedMessages.length === 0 ? undefined : {
         ...outgoing,
         preparedMessages,
-        ackTracking: { ...outgoing.ackTracking, expectedPeerIdsUpdate: 'replace' },
+        ackTracking: { ...input.ackTracking, expectedPeerIdsUpdate: 'replace' },
         repairTracking: request.repair
     };
 }

@@ -1,3 +1,4 @@
+import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
@@ -249,7 +250,7 @@ function computeIncomingAcknowledgements(
                 ackedMsgId: read.msg.id.msgId,
                 originPeerId: read.msg.id.senderId,
                 logicalRecipient: { kind: 'self' },
-                status: shouldForward ? 'forwarded' : 'delivered',
+                status: toImmediateAckStatus(plan, shouldForward),
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
             })]
@@ -282,6 +283,14 @@ function computeIncomingAcknowledgements(
             toControlOwnerMutation(read, transition.pending.expireAtTimestamp)
         ]
     };
+}
+
+/** A peer that delivers nothing, being outside the frozen audience, ends its own empty subtree instead. */
+function toImmediateAckStatus(plan: ALMessageHandlingPlan, shouldForward: boolean): ALAckStatus {
+    if (shouldForward) {
+        return 'forwarded';
+    }
+    return plan.localDelivery.enabled || plan.localDelivery.deferred ? 'delivered' : 'subtree-complete';
 }
 
 function toControlOwnerMutation(

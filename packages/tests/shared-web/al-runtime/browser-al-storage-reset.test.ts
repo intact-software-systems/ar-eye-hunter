@@ -12,7 +12,7 @@ import {
 
 const STORE_NAME = 'entries';
 /** The schema identity S2c replaced: a store written at it holds v1 ACK history without origin or recipient. */
-const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-s2b';
+const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-s2c';
 /** The S2b session inbound namespace, spelled out so the test pins the stored key, not today's helper. */
 const S2B_SESSION_INBOUND_NAMESPACE = 'browser:browser-session-inbound:session-1:inbound:admission';
 

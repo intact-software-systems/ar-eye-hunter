@@ -7,10 +7,13 @@ import {
     vi
 } from 'vitest';
 
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { computeMissingRecipientRepair } from '@shared/multicast/web-rtc-overlay-missing-recipient-repair.ts';
 
 import {
     acknowledgeAtOrigin,
+    createOriginOverlay,
     createOriginReceiverMulticast,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
@@ -18,8 +21,11 @@ import {
     readSentTargets,
     toOriginFrozenTargets
 } from './rtc-origin-overlay-fixture.ts';
+import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 const ACK_TIMEOUT_MS = 2_000;
+/** The default `at-least-once` retry budget of a receipt. */
+const RETRY_BUDGET = 3;
 
 describe('computeMissingRecipientRepair', () => {
     it('addresses a missing direct recipient and every hop whose subtree has not completed', () => {
@@ -58,14 +64,18 @@ describe('the RTC origin retry of a receiver receipt', () => {
         vi.useRealTimers();
     });
 
-    it('retries only through the relay that still leads to a missing recipient, then completes', async () => {
-        const fixture = createRtcOriginOverlayFixture({
-            snapshot: createOriginSnapshot(['a', 'r', 'b', 'c'], 4),
-            nextHopPeerIds: ['r', 'c']
-        });
+    it('retries only through the relay that still leads to a missing recipient, whose answer completes the receipt', async () => {
+        const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c'], 4);
+        const fixture = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['r', 'c'] });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'r', snapshot, neighbourPeerIds: ['a', 'b'] });
         const message = createOriginReceiverMulticast('missing-b');
         await enqueueAndDrain(fixture.manager, message);
-        // `c` is a leaf: its own delivered ACK completes its hop. `b` sits behind `r`, and its ACK is lost.
+        await relay.receive(fixture.channels.r!.sent[0]!, 'a');
+        // `b` delivers behind `r`; `r` relays its ACK and ends its subtree, but the r -> a leg loses both.
+        await relay.receive(createLeafAck({ msgId: message.id.msgId, fromPeerId: 'b', toPeerId: 'r' }), 'b');
+        const lost = readAckTuples(await relay.readSent('a'));
+        expect(lost.toSorted()).toEqual([['b', 'forwarded'], ['r', 'subtree-complete']]);
+        // `c` is a leaf: its own delivered ACK completes its hop.
         await acknowledgeAtOrigin(fixture.manager, {
             msgId: message.id.msgId,
             fromPeerId: 'c',
@@ -83,18 +93,12 @@ describe('the RTC origin retry of a receiver receipt', () => {
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['r', 'b', 'c'], ackedPeerIds: ['c'] });
 
-        await acknowledgeAtOrigin(fixture.manager, {
-            msgId: message.id.msgId,
-            fromPeerId: 'r',
-            logicalRecipientPeerId: 'b',
-            status: 'forwarded'
-        });
-        await acknowledgeAtOrigin(fixture.manager, {
-            msgId: message.id.msgId,
-            fromPeerId: 'r',
-            logicalRecipientPeerId: 'r',
-            status: 'subtree-complete'
-        });
+        await relay.receive(fixture.channels.r!.sent[1]!, 'a');
+        const answer = (await relay.readSent('a')).filter(isAck).slice(lost.length);
+        expect(readAckTuples(answer).toSorted()).toEqual([['b', 'forwarded'], ['r', 'subtree-complete']]);
+        for (const ack of answer) {
+            await fixture.manager.acceptControlMessage(ack);
+        }
 
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toBeUndefined();
@@ -128,6 +132,29 @@ describe('the RTC origin retry of a receiver receipt', () => {
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b'], ackedPeerIds: [] });
     });
 
+    it('resends to a hop outside the frozen audience on every retry, bounded by the receipt retry budget', async () => {
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b'], 4), nextHopPeerIds: ['b'] });
+        const message = createOriginReceiverMulticast('outside-hop');
+        await enqueueAndDrain(fixture.manager, message);
+        // `d` joins after the freeze and becomes the only hop; `b` now sits behind it and never answers.
+        fixture.groups.accept('room', createOriginSnapshot(['a', 'b', 'd'], 5));
+        fixture.overlays.accept('room', createOriginOverlay(['d']));
+        fixture.ready.peerIds = ['d'];
+        await acknowledgeAtOrigin(fixture.manager, {
+            msgId: message.id.msgId,
+            fromPeerId: 'd',
+            logicalRecipientPeerId: 'd',
+            status: 'subtree-complete'
+        });
+
+        await vi.advanceTimersByTimeAsync(20 * ACK_TIMEOUT_MS);
+        const retried = fixture.channels.d!.sent.length;
+        await vi.advanceTimersByTimeAsync(20 * ACK_TIMEOUT_MS);
+
+        expect(retried).toBe(RETRY_BUDGET);
+        expect(fixture.channels.d!.sent).toHaveLength(RETRY_BUDGET);
+    });
+
     it('acknowledges an origin alone in its room at once, with an empty frozen audience', async () => {
         const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a'], 4), nextHopPeerIds: [] });
         const message = createOriginReceiverMulticast('alone');
@@ -149,3 +176,36 @@ describe('the RTC origin retry of a receiver receipt', () => {
         ]);
     });
 });
+
+interface LeafAckInput {
+    readonly msgId: string;
+    readonly fromPeerId: string;
+    readonly toPeerId: string;
+}
+
+function createLeafAck(input: LeafAckInput): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: `ack-${input.fromPeerId}`, senderId: input.fromPeerId, ts: Date.now() },
+        {
+            ackedMsgId: input.msgId,
+            fromPeerId: input.fromPeerId,
+            toPeerId: input.toPeerId,
+            originPeerId: 'a',
+            logicalRecipientPeerId: input.fromPeerId,
+            carrier: 'rtc',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+function isAck(message: ALMessage): boolean {
+    return parseALControlMessage(message)?.type === 'ack';
+}
+
+function readAckTuples(messages: readonly ALMessage[]): readonly (readonly [string, string])[] {
+    return messages.flatMap((message) => {
+        const control = parseALControlMessage(message);
+        return control?.type === 'ack' ? [[control.payload.logicalRecipientPeerId, control.payload.status] as const] : [];
+    });
+}

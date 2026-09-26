@@ -85,15 +85,14 @@ export function toALInboundControlCommitBundle(
                 value: candidate.acks,
                 expireAtTimestamp: candidate.controlExpireAtTimestamp
             },
-            candidate.pending === undefined
-                ? { kind: 'delete-control-pending', msgId: ack.ackedMsgId, senderId: owner.senderId }
-                : {
-                    kind: 'set-control-pending',
-                    msgId: ack.ackedMsgId,
-                    senderId: owner.senderId,
-                    value: candidate.pending,
-                    expireAtTimestamp: candidate.pendingExpireAtTimestamp
-                }
+            // A candidate without a row never validates: an acknowledgement is admitted only against its row.
+            ...(candidate.pending === undefined ? [] : [{
+                kind: 'set-control-pending' as const,
+                msgId: ack.ackedMsgId,
+                senderId: owner.senderId,
+                value: candidate.pending,
+                expireAtTimestamp: candidate.pendingExpireAtTimestamp
+            }])
         ],
         durableEffects: candidate.upwardEffects
     };

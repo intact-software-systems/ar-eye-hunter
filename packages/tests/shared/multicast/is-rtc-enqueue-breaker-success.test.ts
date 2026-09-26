@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import { newALBroadcastMessage } from '@shared/al-contracts/al-contract.ts';
+import { isRtcEnqueueBreakerSuccess } from '@shared/multicast/is-rtc-enqueue-breaker-success.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 
 import {
@@ -48,5 +49,19 @@ describe('the RTC enqueue circuit breaker', () => {
         const admitted = await enqueueAndDrain(fixture.manager, createOriginReceiverMulticast('after-refusals'));
 
         expect(admitted.verdict.kind, admitted.reason).toBe('admitted');
+    });
+
+    it.each(
+        [
+            { verdict: { kind: 'refused', reason: 'unauthorized', detail: 'policy' }, success: true },
+            { verdict: { kind: 'refused', reason: 'unsupported', detail: 'policy' }, success: true },
+            { verdict: { kind: 'refused', reason: 'malformed', detail: 'broken' }, success: false },
+            { verdict: { kind: 'failed', detail: 'transport' }, success: false },
+            { verdict: { kind: 'unroutable', reason: 'circuit-open', detail: 'open' }, success: false },
+            { verdict: { kind: 'unroutable', reason: 'no-route', detail: 'none' }, success: true }
+        ] as const
+    )('reads a $verdict.kind verdict as success=$success', ({ verdict, success }) => {
+        expect(isRtcEnqueueBreakerSuccess({ verdict, message: createOriginReceiverMulticast('verdict'), entries: [] }))
+            .toBe(success);
     });
 });

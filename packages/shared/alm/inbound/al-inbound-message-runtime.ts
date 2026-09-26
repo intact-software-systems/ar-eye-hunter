@@ -398,9 +398,9 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageRuntime.Acceptance> {
         const admitted = await this.controlAdmission.admit(msg, source);
-        // A control the runtime does not handle or rejects, and one whose commit wrote no work row,
-        // have nothing for the worker to claim; only retained work and a written row announce one.
-        if (admitted.kind === 'pending-control' || (admitted.kind === 'committed' && admitted.wroteWork)) {
+        // A control the runtime does not handle or rejects has nothing for the worker to claim; retained work
+        // and a commit, which always relays at least the recipient the acknowledgement names, announce one.
+        if (admitted.kind === 'pending-control' || admitted.kind === 'committed') {
             this.commitWork();
         }
         if (admitted.kind === 'pending-control') {

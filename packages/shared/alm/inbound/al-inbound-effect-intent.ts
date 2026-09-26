@@ -12,7 +12,10 @@ import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import type { ALPendingAckTransition } from './transition-al-pending-ack.ts';
 
-/** Whom an ACK speaks for: this runtime's own delivery, or a recipient a completed subtree confirmed (D40). */
+/**
+ * Whom an ACK speaks for: this peer itself, whose ACK ends its own hop and names it whether or not it delivered,
+ * or a recipient a child ACK named, which a relay passes upward as that ACK arrives (D40).
+ */
 export type ALInboundAckRecipient =
     | Readonly<{ kind: 'self'; }>
     | Readonly<{ kind: 'relayed'; peerId: string; }>;
