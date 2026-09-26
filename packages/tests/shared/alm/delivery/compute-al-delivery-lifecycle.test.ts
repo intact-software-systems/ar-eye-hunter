@@ -742,7 +742,7 @@ describe('transport-accepted terminality', () => {
 
         expect(sent.state).toBe('transport-accepted');
         expect(isALDeliveryTerminal(sent)).toBe(true);
-        expect(isALDeliveryTerminal({ ...sent, ackMode: 'receiver' })).toBe(false);
+        expect(isALDeliveryTerminal({ ...sent, ackMode: 'receiver', receiptAlgo: 'receiver' })).toBe(false);
     });
 
     it('keeps an ackMode=none lifecycle at transport-accepted against a further settlement, through the reducer', () => {
@@ -770,6 +770,24 @@ describe('transport-accepted terminality', () => {
         expect(next.state).toBe('transport-accepted');
         expect(next.lateSettlementCount).toBe(1);
     });
+
+    it.each([
+        { receiptAlgo: 'none' as const, expectedTerminal: true },
+        { receiptAlgo: 'hop' as const, expectedTerminal: false },
+        { receiptAlgo: 'subtree' as const, expectedTerminal: false },
+        { receiptAlgo: 'receiver' as const, expectedTerminal: false }
+    ])(
+        'ends at transport-accepted only when the tracked receipt is none (got $receiptAlgo)',
+        ({ receiptAlgo, expectedTerminal }) => {
+            const lifecycle = {
+                ...createLifecycle('none'),
+                state: 'transport-accepted' as const,
+                receiptAlgo
+            };
+
+            expect(isALDeliveryTerminal(lifecycle)).toBe(expectedTerminal);
+        }
+    );
 });
 
 describe('attempt-settled failed/no-targets alongside another sent hop (ruling R3)', () => {
@@ -991,6 +1009,7 @@ function createLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         msgId: MSG_ID,
         typeId: 'chat.private-text.v1',
         ackMode,
+        receiptAlgo: ackMode === 'none' ? 'none' : 'receiver',
         expiresAtMs: undefined,
         submittedAtMs: SUBMITTED_AT_MS
     });
@@ -1001,6 +1020,7 @@ function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
         msgId: MSG_ID,
         typeId: 'chat.private-text.v1',
         ackMode,
+        receiptAlgo: ackMode === 'none' ? 'none' : 'receiver',
         expiresAtMs: EXPIRES_AT_MS,
         submittedAtMs: SUBMITTED_AT_MS
     });

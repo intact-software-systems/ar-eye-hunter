@@ -783,6 +783,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             msgId: 'quick-test-ws-message',
             typeId: 'room.quick-test.ws.send',
             ackMode: 'none',
+            receiptAlgo: 'none',
             expiresAtMs: Date.now() + 60_000,
             submittedAtMs: Date.now()
         })
@@ -1801,6 +1802,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 msgId: 'ws-probe-message',
                 typeId: 'room.black-box.ws.probe',
                 ackMode: 'none',
+                receiptAlgo: 'none',
                 expiresAtMs: Date.now() + 60_000,
                 submittedAtMs: Date.now()
             })

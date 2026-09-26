@@ -110,6 +110,7 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
             msgId: message.id.msgId,
             typeId: message.payload.typeId,
             ackMode: 'receiver',
+            receiptAlgo: 'receiver',
             expiresAtMs: undefined,
             submittedAtMs: 0
         }),

@@ -7,7 +7,9 @@ import {
     vi
 } from 'vitest';
 
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
@@ -18,6 +20,7 @@ import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
+    ORIGIN_ROOM,
     readSentTargets,
     toOriginFrozenTargets,
     type RtcOriginOverlayFixture
@@ -87,6 +90,78 @@ describe('RTC frozen room audience', () => {
         expect(readSentTargets(fixture.channels.b!)).toEqual([toOriginFrozenTargets(['b', 'c'], 4)]);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'hop', expectedPeerIds: ['b', 'c'] });
+    });
+
+    it('settles a default notification send as rejected by the hop whose resync-required NACK it admits', async () => {
+        const fixture = createFixture();
+        const defaults = resolveALChannelSendDefaults({
+            purpose: 'notification',
+            durability: undefined,
+            hasLogicalAudience: true
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'default-relay-rejected', contextId: 'room' },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            { text: 'default' },
+            {
+                reliability: defaults.reliability,
+                ack: defaults.ack,
+                ttlMs: defaults.ttlMs,
+                qos: { durability: { algo: defaults.durability } }
+            }
+        );
+        await enqueueAndDrain(fixture.manager, message);
+
+        await fixture.manager.acceptControlMessage(newALNackControlMessage(
+            { v: 2, msgId: 'nack-resync-from-b', senderId: 'b', ts: Date.now() },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'resync-required',
+                observedAtEpochMs: Date.now()
+            }
+        ));
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The manager discards the admission verdict; only a committed resync-required NACK states relay-rejected.
+        expect(fixture.settlements).toContainEqual(expect.objectContaining({
+            kind: 'relay-rejected',
+            msgId: message.id.msgId,
+            relayRejection: { relay: 'peer', peerId: 'b', reason: 'resync-required' }
+        }));
+    });
+
+    it('still leaves an explicit receipt-less send without a committed hop NACK (the carry stays for explicit ack none)', async () => {
+        const fixture = createFixture();
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'receipt-less', contextId: 'room' },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            { text: 'none' },
+            { reliability: 'at-least-once', ack: 'none', ttlMs: 30_000 }
+        );
+        await enqueueAndDrain(fixture.manager, message);
+
+        await fixture.manager.acceptControlMessage(newALNackControlMessage(
+            { v: 2, msgId: 'nack-resync-receipt-less', senderId: 'b', ts: Date.now() },
+            {
+                msgId: message.id.msgId,
+                fromPeerId: 'b',
+                toPeerId: 'a',
+                reason: 'resync-required',
+                observedAtEpochMs: Date.now()
+            }
+        ));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(fixture.settlements).not.toContainEqual(expect.objectContaining({
+            kind: 'relay-rejected',
+            msgId: message.id.msgId
+        }));
     });
 });
 

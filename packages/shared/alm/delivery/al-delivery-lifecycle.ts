@@ -1,5 +1,5 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
-import type { ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 
 export type ALDeliveryState =
     | 'submitted'
@@ -223,6 +223,8 @@ export interface ALDeliveryLifecycle {
     readonly msgId: string;
     readonly typeId: string;
     readonly ackMode: ALAckMode;
+    /** The receipt the send's effective policy tracks; `none` makes `transport-accepted` terminal. */
+    readonly receiptAlgo: ALAckAlgo;
     /** Undefined only for a message without a deadline; every browser send carries one. */
     readonly expiresAtMs: number | undefined;
     readonly state: ALDeliveryState;
@@ -235,6 +237,7 @@ export interface CreateInitialALDeliveryLifecycleInput {
     readonly msgId: string;
     readonly typeId: string;
     readonly ackMode: ALAckMode;
+    readonly receiptAlgo: ALAckAlgo;
     readonly expiresAtMs: number | undefined;
     readonly submittedAtMs: number;
 }
@@ -256,6 +259,7 @@ export function createInitialALDeliveryLifecycle(
         msgId: input.msgId,
         typeId: input.typeId,
         ackMode: input.ackMode,
+        receiptAlgo: input.receiptAlgo,
         expiresAtMs: input.expiresAtMs,
         state: 'submitted',
         evidence: {
@@ -276,14 +280,18 @@ export function createInitialALDeliveryLifecycle(
     };
 }
 
-/** `transport-accepted` is terminal only for a best-effort send (`ackMode === 'none'`). */
+/**
+ * `transport-accepted` is terminal only for a best-effort send (`ackMode === 'none'`).
+ * For a caller that knows only the wire mode.
+ */
 export function isALDeliveryTerminalState(state: ALDeliveryState, ackMode: ALAckMode): boolean {
     return AL_DELIVERY_TERMINAL_STATES.includes(state) ||
         (state === 'transport-accepted' && ackMode === 'none');
 }
 
 export function isALDeliveryTerminal(lifecycle: ALDeliveryLifecycle): boolean {
-    return isALDeliveryTerminalState(lifecycle.state, lifecycle.ackMode);
+    return AL_DELIVERY_TERMINAL_STATES.includes(lifecycle.state) ||
+        (lifecycle.state === 'transport-accepted' && lifecycle.receiptAlgo === 'none');
 }
 
 export function isALDeliveryAdmitted(lifecycle: ALDeliveryLifecycle): boolean {

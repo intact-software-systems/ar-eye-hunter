@@ -20,6 +20,7 @@ import {
     computeALDeliveryLifecycle,
     computeALDeliveryUnobservable
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
@@ -152,6 +153,7 @@ export class BrowserRallarDeliveryRegistry {
                 msgId: message.id.msgId,
                 typeId: message.payload.typeId,
                 ackMode: message.delivery?.ack ?? 'none',
+                receiptAlgo: resolveALDeliveryReceiptAlgo(message),
                 expiresAtMs: message.constraints?.expiresAtMs,
                 submittedAtMs: this.input.nowMs()
             }),

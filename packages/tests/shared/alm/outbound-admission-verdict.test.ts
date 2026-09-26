@@ -349,6 +349,7 @@ function toSupersededLifecycle(
             msgId: message.id.msgId,
             typeId: message.payload.typeId,
             ackMode: 'receiver',
+            receiptAlgo: 'receiver',
             expiresAtMs: undefined,
             submittedAtMs: 0
         })

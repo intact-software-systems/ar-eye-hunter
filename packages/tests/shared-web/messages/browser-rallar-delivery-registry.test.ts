@@ -3,6 +3,7 @@ import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-me
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
+    isALDeliveryTerminal,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
@@ -37,6 +38,7 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(handle.typeId).toBe('chat.message.v1');
             expect(handle.lifecycle().state).toBe('submitted');
             expect(handle.lifecycle().ackMode).toBe('receiver');
+            expect(handle.lifecycle().receiptAlgo).toBe('receiver');
             expect(harness.registry.size()).toBe(1);
         });
 
@@ -136,6 +138,25 @@ describe('BrowserRallarDeliveryRegistry', () => {
             harness.registry.record(toAdmittedSettlement('msg-unknown', START_MS));
 
             expect(harness.registry.size()).toBe(0);
+        });
+
+        it('keeps a receipt requested only through qos.ack open past transport acceptance', () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(
+                { ...toBestEffortTestMessage('msg-1'), qos: { ack: { algo: 'hop' } } },
+                'rtc'
+            );
+
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptStartedSettlement('msg-1', START_MS));
+            harness.registry.record(toAttemptSentSettlement('msg-1', START_MS));
+
+            expect(handle.lifecycle()).toMatchObject({
+                state: 'transport-accepted',
+                ackMode: 'none',
+                receiptAlgo: 'hop'
+            });
+            expect(isALDeliveryTerminal(handle.lifecycle())).toBe(false);
         });
     });
 
