@@ -145,6 +145,7 @@ export class QRtcPeerConnection {
     private readonly DISCONNECT_TIMEOUT_MSECS: number = 5000;
 
     private signalingChain = Promise.resolve();
+    private signalingLifetime = new AbortController();
     private outboundSignalingChain = Promise.resolve();
     private outstandingOfferId: string | undefined;
 
@@ -180,6 +181,8 @@ export class QRtcPeerConnection {
         this.diagnostics.resetCount++;
         const retired = this.status;
         this.status = this.toInitialStatus();
+        this.signalingLifetime.abort();
+        this.signalingLifetime = new AbortController();
         this.signalingChain = Promise.resolve();
         this.outboundSignalingChain = Promise.resolve();
         this.outstandingOfferId = undefined;
@@ -291,8 +294,8 @@ export class QRtcPeerConnection {
         return this.onTrackCallbacks.delete(id);
     }
 
-    onRemoteStreamDo(id: string, cb: QRtcOnRemoteStreamCallback): QRtcPeerConnection {
-        this.onRemoteStreamCallbacks.set(id, cb);
+    onRemoteStreamDo(id: string, onRemoteStream: QRtcOnRemoteStreamCallback): QRtcPeerConnection {
+        this.onRemoteStreamCallbacks.set(id, onRemoteStream);
         return this;
     }
 
@@ -511,7 +514,7 @@ export class QRtcPeerConnection {
 
     async handleSignal(signal: QRtcSignal) {
         const pc = this.status.pc;
-        const run = this.signalingChain
+        const application = this.signalingChain
             .then(
                 async () => {
                     if (pc && this.status.pc === pc) {
@@ -519,6 +522,16 @@ export class QRtcPeerConnection {
                     }
                 }
             );
+        // Native description promises can remain pending after close. Reset releases this
+        // lifetime's callers; native-PC identity guards discard any eventual continuation.
+        const lifetime = this.signalingLifetime.signal;
+        const run = new Promise<void>((resolve, reject) => {
+            const retire = () => resolve();
+            lifetime.addEventListener('abort', retire, { once: true });
+            void application.then(resolve, reject).then(() => {
+                lifetime.removeEventListener('abort', retire);
+            });
+        });
         this.signalingChain = run.catch((caught) => {
             this.diagnostics.inboundSignalingErrorCount++;
             console.error('Signaling chain error', toError(caught));
