@@ -31,7 +31,10 @@ export interface ArenaMatchDelivery {
 export function useArenaMatchDelivery(input: ArenaMatchDeliveryInput): ArenaMatchDelivery {
     const [matchDelivery, setMatchDelivery] = useState<MatchDelivery | undefined>();
     const [observer] = useState(() => new ArenaMatchDeliveryObserver({ ...input, setMatchDelivery }));
-    useEffect(() => () => observer.stop(), [observer]);
+    useEffect(() => {
+        observer.start();
+        return () => observer.stop();
+    }, [observer]);
     const publishMatchLifecycleOutput = useCallback(
         (match: Pick<ArenaRallarGameMatchHandle, 'publishEvent'>, message: ArenaMatchLifecycleMessage) =>
             observer.publish(match, message),
@@ -44,8 +47,10 @@ class ArenaMatchDeliveryObserver {
     private readonly input: ArenaMatchDeliveryObserverInput;
     private unsubscribeReceipt: RallarUnsubscribe | undefined;
     private observedSignal: AbortSignal | undefined;
+    /** Set while the hook is mounted, so a publication that resolves after unmount observes nothing. */
+    private started = false;
     private readonly clearOnNetworkEnd = () => {
-        this.stop();
+        this.release();
         this.input.setMatchDelivery(undefined);
     };
 
@@ -60,12 +65,21 @@ class ArenaMatchDeliveryObserver {
         const generation = this.input.networkGenerationRef.current;
         const result = await match.publishEvent(message, MATCH_LIFECYCLE_OUTPUT_OPTIONS);
         const receipt = result.relay?.receipt;
-        if (receipt && this.input.isCurrentNetworkGeneration(generation)) {
+        if (receipt && this.started && this.input.isCurrentNetworkGeneration(generation)) {
             this.observe(message.kind, receipt);
         }
     }
 
+    start(): void {
+        this.started = true;
+    }
+
     stop(): void {
+        this.started = false;
+        this.release();
+    }
+
+    private release(): void {
         this.observedSignal?.removeEventListener('abort', this.clearOnNetworkEnd);
         this.observedSignal = undefined;
         this.unsubscribeReceipt?.();
@@ -73,7 +87,7 @@ class ArenaMatchDeliveryObserver {
     }
 
     private observe(output: MatchDelivery['output'], receipt: RallarMessageHandle): void {
-        this.stop();
+        this.release();
         this.observedSignal = this.input.currentNetworkSignal();
         this.observedSignal.addEventListener('abort', this.clearOnNetworkEnd, { once: true });
         this.input.setMatchDelivery(toMatchDelivery(output, receipt.lifecycle()));

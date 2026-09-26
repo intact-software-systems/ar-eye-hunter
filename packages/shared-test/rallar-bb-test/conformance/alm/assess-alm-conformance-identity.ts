@@ -35,6 +35,8 @@ export interface RecordedAlmConformanceParticipant {
     readonly results: ReadonlyMap<string, RallarBlackBoxTestResult>;
 }
 
+const REQUIRED_ALM_CONFORMANCE_ROLES: readonly AlmConformanceRole[] = ['sender', 'receiver'];
+
 /** ALM's ordinary recipe assertions prove states; this boundary joins independently owned message identities. */
 export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput): readonly string[] {
     const roleIssues = validateAlmConformanceRoles(input);
@@ -87,21 +89,21 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
 
 /** Every scenario declares the sender and the receiver; each declared role has exactly one agent of its own. */
 function validateAlmConformanceRoles({ roles, participants }: AlmConformanceIdentityInput): readonly string[] {
-    if (!roles.includes('sender') || !roles.includes('receiver') || new Set(roles).size !== roles.length) {
-        return ['ALM identity assessment requires one distinct sender and receiver.'];
-    }
-    const undeclared = participants.filter((participant) => !(roles as readonly string[]).includes(participant.role))
-        .map((participant) => `${participant.role}: the run does not declare this role.`);
-    const miscounted = roles.filter((role) =>
-        participants.filter((participant) => participant.role === role).length !== 1
-    )
-        .map((role) => `${role}: a declared role needs exactly one envelope.`);
-    const issues = [...undeclared, ...miscounted];
-    if (
-        issues.length === 0 &&
-        new Set(participants.map((participant) => participant.agentId)).size !== participants.length
-    ) {
-        return ['ALM identity assessment requires one distinct agent per role.'];
+    const declared: readonly string[] = roles;
+    const issues = [
+        ...REQUIRED_ALM_CONFORMANCE_ROLES.filter((role) => !roles.includes(role))
+            .map((role) => `${role}: every ALM scenario declares this role.`),
+        ...[...new Set(roles)].filter((role) => roles.indexOf(role) !== roles.lastIndexOf(role))
+            .map((role) => `${role}: the run declares this role more than once.`),
+        ...participants.filter((participant) => !declared.includes(participant.role))
+            .map((participant) => `${participant.role}: the run does not declare this role.`),
+        ...[...new Set(roles)].filter((role) =>
+            participants.filter((participant) => participant.role === role).length !== 1
+        )
+            .map((role) => `${role}: a declared role needs exactly one envelope.`)
+    ];
+    if (new Set(participants.map((participant) => participant.agentId)).size !== participants.length) {
+        issues.push('ALM identity assessment requires one distinct agent per role.');
     }
     return issues;
 }

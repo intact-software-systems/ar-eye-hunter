@@ -89,9 +89,9 @@ export function createAlmConformanceRecipes(
         .map((definition) => toAlmConformanceScenario(input, definition));
 }
 
-/** Three agents run only the scenarios that declare three roles; every other scenario runs on two (D45). */
+/** Three agents run only the scenarios that declare `recipient-b`; every other scenario runs on two (D45). */
 export function isThreeAgentScenario(scenario: AlmConformanceScenario): boolean {
-    return scenario.roles.length === 3;
+    return scenario.roles.includes('recipient-b');
 }
 
 export function toAlmConformanceRoleRecipe(

@@ -429,6 +429,32 @@ describe('arena match lifecycle delivery', () => {
         });
     });
 
+    it('attaches no receipt listener for a match end whose publication resolves after unmount', async () => {
+        const match = createMatchFixture(Date.now());
+        const delivery = await renderDirector(arena, match.active);
+        const originalOnEvent = delivery.handle.onEvent.bind(delivery.handle);
+        const listeners = new Set<Parameters<RallarMessageHandle['onEvent']>[0]>();
+        vi.spyOn(delivery.handle, 'onEvent').mockImplementation((listener) => {
+            listeners.add(listener);
+            const unsubscribeDelivery = originalOnEvent(listener);
+            return () => {
+                listeners.delete(listener);
+                unsubscribeDelivery();
+            };
+        });
+        const publication = Promise.withResolvers<Awaited<ReturnType<typeof mockMatch.publishEvent>>>();
+        mockMatch.publishEvent.mockReturnValueOnce(publication.promise);
+        await act(async () => arena.current?.publishArenaSnapshot(match.ended));
+
+        await arena.unmount();
+        await act(async () => {
+            publication.resolve({ status: 'sent', transport: 'director-relay', relay: { status: 'sent', receipt: delivery.handle } });
+            await publication.promise;
+        });
+
+        expect(listeners.size).toBe(0);
+    });
+
     it('publishes the match end once per completed match', async () => {
         const match = createMatchFixture(Date.now());
         await renderDirector(arena, match.active);
@@ -439,6 +465,15 @@ describe('arena match lifecycle delivery', () => {
 
     it('never publishes the match end from a client that is not the director', async () => {
         const match = createMatchFixture(Date.now());
+        // A publication would carry a receipt, so a stray one would also show as a match delivery.
+        mockMatch.publishEvent.mockResolvedValue({
+            status: 'sent',
+            transport: 'director-relay',
+            relay: {
+                status: 'sent',
+                receipt: createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 }, 'all-logical-recipients').handle
+            }
+        });
         await arena.render();
         await waitForState(() => arena.current?.connectionState === 'connected');
         await act(async () => arena.current?.publishArenaSnapshot(match.active));

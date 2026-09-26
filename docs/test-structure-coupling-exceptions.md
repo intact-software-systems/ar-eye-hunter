@@ -431,7 +431,7 @@ moved or changed test.
         "ownedPort": "Rallar Game match publishEvent",
         "observableEffect": "A non-director client that completes the match locally sends no director output to the room and shows no match delivery.",
         "requiredConstraint": "No match-end publication occurs from a client that is not the fresh appointed director.",
-        "failureRationale": "A non-director publication would put a second, unauthorised authority output on the room that every recipient would be asked to acknowledge."
+        "failureRationale": "The app must not issue the lifecycle publication at all from a non-director; the library would refuse it, but the arena would then attempt, and on a future library change could send, an unauthorised authority output."
       }
     },
     {

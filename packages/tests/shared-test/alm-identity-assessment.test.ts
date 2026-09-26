@@ -6,6 +6,7 @@ import {
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import {
     assessAlmConformanceIdentity,
     type AlmConformanceIdentityInput,
@@ -409,6 +410,29 @@ describe('ALM recipe identity assessment', () => {
             .toEqual(['recipient-b: the run does not declare this role.']);
     });
 
+    it('names a declaration that leaves out the receiver in its own words, beside the envelope it leaves undeclared', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        expect(assessAlmConformanceIdentity({ ...transcript.input(), roles: ['sender'] })).toEqual([
+            'receiver: every ALM scenario declares this role.',
+            'receiver: the run does not declare this role.'
+        ]);
+    });
+
+    it('reports every role defect of a run at once', () => {
+        const transcript = new IdentityTranscript('lifecycle');
+        const input = transcript.threeRoleInput([transcript.receiver]);
+        const shared = {
+            ...input,
+            roles: [...input.roles, 'sender'] as const,
+            participants: input.participants.map((participant) => participant.role === 'receiver' ? { ...participant, agentId: 'sender' } : participant)
+        };
+        expect(assessAlmConformanceIdentity(shared)).toEqual([
+            'sender: the run declares this role more than once.',
+            'recipient-b: a declared role needs exactly one envelope.',
+            'ALM identity assessment requires one distinct agent per role.'
+        ]);
+    });
+
     it('rejects two envelopes for one declared recipient role and one agent standing in for two roles', () => {
         const transcript = new IdentityTranscript('lifecycle');
         const input = transcript.threeRoleInput([transcript.receiver, transcript.recipientB(), transcript.recipientB()]);
@@ -451,7 +475,6 @@ describe('ALM recipe identity assessment', () => {
 
 namespace IdentityTranscript {
     export type Kind = 'lifecycle' | 'reload' | 'combined';
-    export type Role = 'sender' | 'receiver' | 'recipient-b';
 }
 
 class IdentityTranscript {
@@ -484,13 +507,13 @@ class IdentityTranscript {
 }
 
 class ParticipantTranscript {
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly recipe: RallarBlackBoxTestRecipe;
     readonly commands: RallarBlackBoxTestCommand[];
     readonly results: RallarBlackBoxTestResult[];
 
     constructor(
-        role: IdentityTranscript.Role,
+        role: AlmConformanceRole,
         recipe: RallarBlackBoxTestRecipe,
         sender: RallarBlackBoxTestRecipe
     ) {
@@ -583,7 +606,7 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
 }
 
 interface TranscriptResultsInput {
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly commands: readonly RallarBlackBoxTestCommand[];
     readonly sender: RallarBlackBoxTestRecipe;
 }
@@ -600,7 +623,7 @@ function toTranscriptResults({ role, commands, sender }: TranscriptResultsInput)
 
 interface TranscriptValueInput {
     readonly command: RallarBlackBoxTestCommand;
-    readonly role: IdentityTranscript.Role;
+    readonly role: AlmConformanceRole;
     readonly document: number;
     readonly sender: RallarBlackBoxTestRecipe;
 }
