@@ -14,10 +14,29 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
+    ALM_COMBINED_SENDER_PACING_MS,
     createAlmConformance2AgentEntry,
     createAlmConformance3AgentEntry,
     toAlmConformanceCombinedRecipe
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
+
+/** The pacing wait's own commandId names its scenario prefix; a following command in the same scenario shares it. */
+function isSenderCombinedPacingCommand(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'wait' && typeof command.commandId === 'string' &&
+        command.commandId.endsWith('-sender-combined-pacing');
+}
+
+function toSenderScenarioPrefixes(commands: readonly RallarBlackBoxTestCommand[]): ReadonlySet<string> {
+    return new Set(
+        commands
+            .filter((command) => !isSenderCombinedPacingCommand(command))
+            .flatMap((command) =>
+                typeof command.commandId === 'string' && command.commandId.includes('-sender-')
+                    ? [command.commandId.split('-sender-')[0]!]
+                    : []
+            )
+    );
+}
 
 /** No generated scenario carries a request of its own today, so the fixture places one right after the connect. */
 function withInScenarioRequest(scenario: AlmConformanceScenario): AlmConformanceScenario {
@@ -87,6 +106,41 @@ describe('ALM conformance combined recipe', () => {
                     // A protocol control type is owned by the ALM runtime's own RTC callback, never by the harness.
                     expect(listed?.some((typeId) => typeId.startsWith('al.control.'))).toBe(false);
                     expect(connect.rallar?.messageSelector).toEqual({ topicId: 'room.alm-conformance' });
+                }
+            }
+        }
+    });
+});
+
+describe('ALM combined sender pacing', () => {
+    it('paces the sender once before every scenario block and paces neither recipient', () => {
+        for (const entry of [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]) {
+            for (const selection of entry.manifest.recipes) {
+                const recipe = selection.recipe as RallarBlackBoxTestRecipe;
+                const role = recipe.metadata?.role;
+                const commands = recipe.commands;
+                const pacingCommands = commands.filter(isSenderCombinedPacingCommand);
+
+                if (role !== 'sender') {
+                    expect(pacingCommands).toEqual([]);
+                    continue;
+                }
+
+                const scenarioPrefixes = toSenderScenarioPrefixes(commands);
+                expect(pacingCommands.length).toBe(scenarioPrefixes.size);
+                expect(pacingCommands.length).toBeGreaterThan(0);
+
+                const commandIds = commands.map((command) => command.commandId);
+                expect(new Set(commandIds).size).toBe(commandIds.length);
+
+                for (const pacing of pacingCommands) {
+                    expect(pacing.kind === 'wait' && pacing.absent).toBe(true);
+                    expect(pacing.timeoutMs).toBe(ALM_COMBINED_SENDER_PACING_MS);
+                    const scenarioPrefix = pacing.commandId!.replace(/-sender-combined-pacing$/, '');
+                    const at = commands.indexOf(pacing);
+                    const next = commands[at + 1];
+                    expect(next).toBeDefined();
+                    expect(next!.commandId?.startsWith(`${scenarioPrefix}-sender-`)).toBe(true);
                 }
             }
         }

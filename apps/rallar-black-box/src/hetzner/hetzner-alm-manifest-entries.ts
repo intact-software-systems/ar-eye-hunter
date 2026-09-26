@@ -41,6 +41,16 @@ const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
 
 const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
 
+const ALM_COMBINED_SENDER_PACING_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
+
+/**
+ * The combined recipe has no per-scenario barrier: the lane starts each scenario's recipients before its sender, so
+ * a recipient arms that scenario's fault while the sender is still running the previous scenario's own commands. An
+ * `absent: true` wait whose match never occurs simply holds its full window, giving every recipient the same time to
+ * arm before the sender's next send.
+ */
+export const ALM_COMBINED_SENDER_PACING_MS = 3_000;
+
 /** Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is never reached. */
 const HETZNER_WITHHELD_ALM_SCENARIO_KEYS: readonly string[] = [
     'not-yet-in-sync-delivered-after-refresh'
@@ -218,11 +228,42 @@ function toAlmConformanceCombinedCommands(
             if (scenarioConnectAt < 0) {
                 throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
             }
-            return commands.slice(scenarioConnectAt + 1).map((command) =>
+            const scenarioCommands = commands.slice(scenarioConnectAt + 1).map((command) =>
                 command.kind === 'rtc.connect' ? toConnect(command) : command
             );
+            return role === 'sender'
+                ? [toSenderCombinedPacingCommand(scenario), ...scenarioCommands]
+                : scenarioCommands;
         })
     ];
+}
+
+/**
+ * Pacing exists only for `sender`: the lane orders roles per scenario (recipients start before the sender), so only
+ * the sender's combined recipe risks racing a recipient's not-yet-armed fault. See `ALM_COMBINED_SENDER_PACING_MS`.
+ */
+function toSenderCombinedPacingCommand(scenario: AlmConformanceScenario): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: `${toScenarioCarrierAndKey(scenario)}-sender-combined-pacing`,
+        match: {
+            kind: 'diagnostic',
+            topic: ALM_COMBINED_SENDER_PACING_TOPIC,
+            payloadPath: 'data',
+            contains: '"kind":"alm-combined-sender-pacing-never"'
+        },
+        timeoutMs: ALM_COMBINED_SENDER_PACING_MS,
+        absent: true
+    };
+}
+
+/** Matches `toCommandId`'s own `alm-<carrier>-<scenarioKey>` prefix; `scenarioId` alone collides across scenarioKeys. */
+function toScenarioCarrierAndKey(scenario: AlmConformanceScenario): string {
+    const carrier = scenario.sender.metadata?.carrier;
+    if (typeof carrier !== 'string') {
+        throw new Error(`Generated ALM scenario ${scenario.scenarioKey} is missing its carrier metadata.`);
+    }
+    return `alm-${carrier}-${scenario.scenarioKey}`;
 }
 
 /**

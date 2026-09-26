@@ -143,6 +143,8 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             isSameJsonValue(decodeJsonValue(command.payload), decodeJsonValue(send.payload)))
     );
     const sendIndex = prefix.indexOf(send);
+    // The combined Hetzner sender recipe paces every scenario, including this reload checkpoint's own, with an
+    // inert `absent: true` wait ahead of its first command; that pacing step carries no reload evidence of its own.
     const linearKinds = [
         'http.request',
         'rtc.connect',
@@ -152,7 +154,8 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         'fault.inject',
         'messages.send',
         'messages.observe',
-        'assert'
+        'assert',
+        'wait'
     ];
     const validPrefix = prefix.every((command) => linearKinds.includes(command.kind)) &&
         !prefix.slice(sendIndex + 1).some((command) => command.kind === 'rtc.connect');
