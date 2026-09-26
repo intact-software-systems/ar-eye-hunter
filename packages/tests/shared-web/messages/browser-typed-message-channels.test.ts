@@ -457,6 +457,27 @@ describe('Rallar typed message channel', () => {
         expect(message.constraints?.expiresAtMs).toBeLessThan(message.id.ts + 5_050);
     });
 
+    it('drops the purpose receipt from a best-effort send that names no ack, and keeps an ack it names', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification'
+        });
+
+        await channel.sendRtc({ text: 'fire and forget' }, { resourceId: 'best-effort-1', reliability: 'best-effort' });
+        await channel.sendRtc({ text: 'stated ack' }, {
+            resourceId: 'best-effort-2',
+            reliability: 'best-effort',
+            ack: 'receiver'
+        });
+
+        const [unstated, stated] = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(unstated.delivery).toMatchObject({ reliability: 'best-effort', ack: 'none' });
+        expect(stated.delivery).toMatchObject({ reliability: 'best-effort', ack: 'receiver' });
+    });
+
     it('keeps no receipt on a world broadcast, whose audience A1 owns', async () => {
         const channel = createFacade().messages.channel<ChatMessage>({
             topicId: 'room.chat',

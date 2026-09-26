@@ -27,7 +27,10 @@ export interface ToBrowserMessageSendDefaultsInput {
     readonly laneTtlMs: number;
 }
 
-/** Every send option wins over the channel's purpose; the purpose only fills what the send left out. */
+/**
+ * Every send option wins over the channel's purpose; the purpose only fills what the send left out, except that
+ * a best-effort send asks for no receipt unless it names an ack.
+ */
 export function toBrowserMessageSendDefaults(
     input: ToBrowserMessageSendDefaultsInput
 ): BrowserMessageSendDefaults {
@@ -48,7 +51,7 @@ export function toBrowserMessageSendDefaults(
     return {
         ttlMs: send.ttlMs ?? defaults.ttlMs,
         reliability: send.reliability ?? defaults.reliability,
-        ack: send.ack ?? defaults.ack,
+        ack: send.ack ?? (send.reliability === 'best-effort' ? 'none' : defaults.ack),
         qos: { ...send.qos, durability: send.qos?.durability ?? { algo: defaults.durability } }
     };
 }
