@@ -217,6 +217,18 @@
             }
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-aggregated-receipt-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-ws-aggregated-receipt-sender-storage-counters-connected",
             "reset": false,
@@ -341,6 +353,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-missing-recipient-retry-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-ws-missing-recipient-retry-sender-storage-counters-connected",
             "reset": false,
@@ -454,6 +478,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-frozen-audience-membership-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-ws-frozen-audience-membership-sender-storage-counters-connected",
             "reset": false,
@@ -565,6 +601,18 @@
             "kind": "stats",
             "commandId": "alm-ws-frozen-audience-membership-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-aggregated-receipt-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
           },
           {
             "kind": "storage.counters",
@@ -685,6 +733,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-rtc-missing-recipient-retry-sender-storage-counters-connected",
             "reset": false,
@@ -801,6 +861,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-missing-recipient-retry-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-unknown-ack-version-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
           },
           {
             "kind": "storage.counters",
@@ -932,6 +1004,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-rtc-frozen-audience-membership-sender-storage-counters-connected",
             "reset": false,
@@ -1048,6 +1132,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-frozen-audience-membership-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
           },
           {
             "kind": "storage.counters",
@@ -1168,6 +1264,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-storage-counters-connected",
             "reset": false,
@@ -1284,6 +1392,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
           },
           {
             "kind": "storage.counters",
@@ -1413,6 +1533,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-combined-pacing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
+            },
+            "timeoutMs": 3000,
+            "absent": true
           },
           {
             "kind": "storage.counters",
