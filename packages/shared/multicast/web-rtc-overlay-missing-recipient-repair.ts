@@ -10,8 +10,12 @@ import type {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest
 } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
+import {
+    toALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '../alm/outbound/al-outbound-transport-message.ts';
 import type { OverlayTree } from '../alm/outbound/transition-al-outbound-pending-ack.ts';
+import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export interface OverlayRepairPlan {
     readonly nextHopPeerIds: readonly string[];
@@ -31,6 +35,13 @@ export interface PlanRtcFailedPeerRepairInput {
 }
 
 type RtcDispatchPlan = ALOutboundDispatchPlan<ALOutboundTransportMessage>;
+
+export interface ToRtcTargetedRepairCopyInput {
+    readonly dispatch: RtcDispatchPlan;
+    readonly msg: ALMessage;
+    readonly peerId: string;
+    readonly selfPeerId: string;
+}
 
 interface RtcMissingRecipientRepairInput {
     readonly outgoing: RtcDispatchPlan;
@@ -97,6 +108,28 @@ export function toRtcRetriedCopyRetransmission(
  * recipient, so the origin refuses it and it never enters the ACK history. Every retry therefore resends
  * to such a hop, and the receipt retry budget alone bounds how often.
  */
+/**
+ * The copy a targeted repair resends to one peer: the copy the repaired dispatch addresses to it, so the
+ * siblings of that peer stay visited and it never owns them. A peer the dispatch no longer addresses gets a
+ * copy that names only the sender and itself.
+ */
+export function toRtcTargetedRepairCopy(input: ToRtcTargetedRepairCopyInput): ALOutboundTransportMessage {
+    const { msg, peerId } = input;
+    const planned = input.dispatch.preparedMessages.find((prepared) => isAddressedToAny(prepared, new Set([peerId])));
+    return planned ?? toALOutboundTransportMessage({
+        ...msg,
+        forwarding: { ...msg.forwarding, nextHopPeerIds: [peerId] },
+        diagnostics: {
+            ...msg.diagnostics,
+            visitedPeerIds: toRtcTransportVisitedPeerIds({
+                visitedPeerIds: msg.diagnostics?.visitedPeerIds,
+                selfPeerId: input.selfPeerId,
+                nextHopPeerIds: [peerId]
+            })
+        }
+    });
+}
+
 function toMissingRecipientRepairPlan(input: RtcMissingRecipientRepairInput): RtcDispatchPlan | undefined {
     const { outgoing, request, frozen } = input;
     if (outgoing.dropReason) {

@@ -12,10 +12,13 @@ export interface ToRtcTransportVisitedPeerIdsInput {
  * next hop this dispatch addresses. The visited set is routing input, as the alternate-parent repair
  * already treats it: a relay never forwards to a visited peer, so it owns only the next hops its sender
  * did not already address (R-S2c-ii-8), and a sibling also listed as its neighbour is never its child.
- * The set only grows at its end, since a prepared copy must extend the visited set of its message, so
- * the entry cap drops the newest entries first.
+ * The incoming list is kept verbatim, repeats included, because a prepared copy must extend the visited
+ * set of its message; new ids are appended once each, and past the entry cap the newest fall away.
  */
 export function toRtcTransportVisitedPeerIds(input: ToRtcTransportVisitedPeerIdsInput): readonly string[] {
-    return [...new Set([...input.visitedPeerIds ?? [], input.selfPeerId, ...input.nextHopPeerIds])]
-        .slice(0, AL_MESSAGE_RESOURCE_LIMITS.visitedPeers);
+    const visited = input.visitedPeerIds ?? [];
+    const appended = [...new Set([input.selfPeerId, ...input.nextHopPeerIds])].filter((peerId) =>
+        !visited.includes(peerId)
+    );
+    return [...visited, ...appended].slice(0, AL_MESSAGE_RESOURCE_LIMITS.visitedPeers);
 }

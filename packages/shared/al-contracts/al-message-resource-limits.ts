@@ -9,6 +9,11 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     payloadBytes: RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     routeIdCharacters: RALLAR_ROUTE_ID_MAX_LENGTH,
     collectionEntries: 256,
+    /**
+     * RTC routing input: a relay never forwards to a visited peer. Past this cap the newest siblings fall
+     * away and are relayed to redundantly; termination never depends on it, because a peer answers every
+     * sender of a duplicate copy with its own ACK.
+     */
     visitedPeers: 64,
     hops: 64,
     repairWindow: 256,

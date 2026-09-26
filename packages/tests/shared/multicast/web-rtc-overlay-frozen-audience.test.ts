@@ -142,6 +142,8 @@ describe('the origin receipt of a frozen room multicast', () => {
         expect(fixture.channels.b!.sent).toHaveLength(2);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
+        // The repair copy is the copy of the repaired dispatch, so `b` still sees its sibling as visited.
+        expect(fixture.channels.b!.sent[1]!.diagnostics).toEqual(fixture.channels.b!.sent[0]!.diagnostics);
     });
 
     it.each([

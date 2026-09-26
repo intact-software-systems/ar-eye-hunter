@@ -1,4 +1,4 @@
-import type { ALAckStatus } from '../../../al-contracts/al-control.ts';
+import type { ALAckStatus, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
@@ -19,9 +19,11 @@ interface ALInboundRepeatedAck {
 
 /**
  * A retried copy of a message this peer already admitted, addressed to this peer (D25). It is never
- * delivered again. A peer with no relay row sends its own ACK again. A relay sends again every ACK it
- * already relayed, since any of them may be the one the origin lost, and then its terminal ACK when its
- * subtree completed, or the copy onward to the child hops it still waits on.
+ * delivered again. A peer with no relay row sends its own ACK again. A relay answering its recorded parent
+ * sends again every ACK it already relayed, since any of them may be the one the origin lost, and then its
+ * terminal ACK when its subtree completed, or the copy onward to the child hops it still waits on.
+ * Any other sender only relayed to a hop another parent already owns (R-S2c-ii-8c): it gets the terminal
+ * ACK of this peer at once, so its own row completes whatever the visited exclusion missed.
  */
 export function computeALInboundDuplicateEffects(
     read: ALInboundMessageReadDto,
@@ -42,6 +44,23 @@ export function computeALInboundDuplicateEffects(
             logicalRecipient: { kind: 'self' },
             status: toOwnAckStatus(read, selfPeerId)
         })];
+    }
+    return toRelayDuplicateEffects(read, pendingAck);
+}
+
+/** A relay answers a retried copy from its recorded parent in full, and any other sender with its terminal ACK. */
+function toRelayDuplicateEffects(
+    read: ALInboundMessageReadDto,
+    pendingAck: ALPendingAckSnapshot
+): readonly ALInboundEffectIntent[] {
+    if (read.fromPeerId !== pendingAck.toPeerId) {
+        return [
+            toRepeatedAck(read, {
+                toPeerId: read.fromPeerId,
+                logicalRecipient: { kind: 'self' },
+                status: pendingAck.status
+            })
+        ];
     }
     const relayed = [...new Set(read.acks.map((ack) => ack.logicalRecipientPeerId))].map((peerId) =>
         toRepeatedAck(read, {
