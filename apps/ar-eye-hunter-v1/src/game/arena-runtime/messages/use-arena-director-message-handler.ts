@@ -1,7 +1,13 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import { GAME_PROTOCOL, type ArenaEvent, type GameRealtimeMessage } from '../../types.ts';
+import {
+    GAME_PROTOCOL,
+    type ArenaEvent,
+    type ArenaMatchState,
+    type ArenaSnapshot,
+    type GameRealtimeMessage
+} from '../../types.ts';
 import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
 import { acceptArenaDirectorPeerMessage, type ArenaDirectorPeerMessageInput } from './arena-director-peer-message.ts';
 
@@ -100,7 +106,10 @@ function acceptArenaDirectorMatchUpdate(
 
     if (message.kind === 'director-match-ended') {
         input.setArenaSnapshot((previous) => {
-            if (!isCurrent() || !previous || message.accepted.revision < previous.revision) {
+            if (
+                !isCurrent() || !previous || message.accepted.revision < previous.revision ||
+                hasEndedMatch(previous, message.accepted.match)
+            ) {
                 return previous;
             }
             const next = {
@@ -115,4 +124,8 @@ function acceptArenaDirectorMatchUpdate(
     }
 
     return false;
+}
+
+function hasEndedMatch(snapshot: ArenaSnapshot, match: ArenaMatchState): boolean {
+    return snapshot.match?.matchId === match.matchId && snapshot.match.status === 'complete';
 }

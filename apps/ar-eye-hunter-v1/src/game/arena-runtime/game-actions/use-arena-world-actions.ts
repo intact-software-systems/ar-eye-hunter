@@ -8,13 +8,15 @@ import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter
 import {
     GAME_PROTOCOL,
     type ArenaMatchDurationMs,
+    type ArenaMatchLifecycleMessage,
     type ArenaSnapshot,
     type MatchStartIntent,
     type PickupIntent
 } from '../../types.ts';
 import type { ArenaConnection } from '../arena-connection-contracts.ts';
+import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
 
-interface ArenaWorldActionsInput {
+interface ArenaWorldActionsInput extends Pick<ArenaMatchDelivery, 'publishMatchLifecycleOutput'> {
     readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
@@ -49,6 +51,8 @@ export function useArenaWorldActions(
         [
             input.isNetworkEnabled,
             input.isCurrentNetworkGeneration,
+            input.publishMatchLifecycleOutput,
+            input.runBestEffortNetworkTask,
             input.scheduleReliableArenaSnapshot
         ]
     );
@@ -108,5 +112,39 @@ function publishCurrentArenaSnapshot(input: ArenaWorldActionsInput, snapshot: Ar
     const director = input.directorStatusRef.current;
     if (input.roomIdRef.current && director.isDirector && director.isFresh) {
         input.scheduleReliableArenaSnapshot(snapshot, generation);
+        publishArenaMatchEnd(input, toArenaMatchEndedMessage(previous, snapshot), generation);
     }
+}
+
+function publishArenaMatchEnd(
+    input: ArenaWorldActionsInput,
+    message: ArenaMatchLifecycleMessage | undefined,
+    generation: number
+): void {
+    const match = input.arenaMatchRef.current;
+    if (message && match) {
+        input.runBestEffortNetworkTask(() => input.publishMatchLifecycleOutput(match, message), generation);
+    }
+}
+
+function toArenaMatchEndedMessage(
+    previous: ArenaSnapshot | undefined,
+    snapshot: ArenaSnapshot
+): ArenaMatchLifecycleMessage | undefined {
+    const match = snapshot.match;
+    if (
+        previous?.match?.status !== 'active' || match?.status !== 'complete' ||
+        match.matchId !== previous.match.matchId
+    ) {
+        return undefined;
+    }
+    return {
+        protocol: GAME_PROTOCOL,
+        kind: 'director-match-ended',
+        accepted: {
+            match,
+            revision: snapshot.revision,
+            acceptedAtEpochMs: match.completedAtEpochMs ?? snapshot.sentAtEpochMs
+        }
+    };
 }

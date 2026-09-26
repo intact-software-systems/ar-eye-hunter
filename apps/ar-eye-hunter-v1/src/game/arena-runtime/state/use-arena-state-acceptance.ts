@@ -20,6 +20,7 @@ import {
     type PickupAccepted,
     type PlayerHitAccepted
 } from '../../types.ts';
+import type { ArenaMatchDelivery } from '../match/use-arena-match-delivery.ts';
 
 export interface ArenaStateAcceptance {
     readonly acceptPlayerHit: (accepted: PlayerHitAccepted, isCurrent: () => boolean) => void;
@@ -28,7 +29,7 @@ export interface ArenaStateAcceptance {
     readonly acceptMatchStartIntent: (intent: MatchStartIntent, isCurrent: () => boolean) => Promise<void>;
 }
 
-interface ArenaStateAcceptanceInput {
+interface ArenaStateAcceptanceInput extends Pick<ArenaMatchDelivery, 'publishMatchLifecycleOutput'> {
     readonly nowMs: () => number;
     readonly arenaMatchRef: RefObject<Pick<ArenaRallarGameMatchHandle, 'publishEvent' | 'publishSnapshot'> | undefined>;
     readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
@@ -68,6 +69,7 @@ export function useArenaStateAcceptance(input: ArenaStateAcceptanceInput): Arena
             acceptArenaMatchStart(input, intent, isCurrent)
     }), [
         input.nowMs,
+        input.publishMatchLifecycleOutput,
         input.arenaMatchRef,
         input.arenaSnapshotRef,
         input.roomIdRef,
@@ -154,7 +156,7 @@ async function acceptArenaMatchStart(
     input.arenaSnapshotRef.current = snapshot;
     input.setArenaSnapshot((current) => isCurrentOwner() ? snapshot : current);
     publishAcceptedArenaEvents(input, snapshot, isCurrentOwner);
-    await match.publishEvent({
+    await input.publishMatchLifecycleOutput(match, {
         protocol: GAME_PROTOCOL,
         kind: 'director-match-started',
         accepted: result.acceptedMatch

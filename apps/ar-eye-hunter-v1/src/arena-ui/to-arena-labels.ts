@@ -1,3 +1,5 @@
+import { isALDeliveryTerminalState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
 import type { ArenaMatchState } from '../game/types.ts';
 
@@ -92,6 +94,23 @@ export function toCapabilityDeliveryLabel(delivery: ArenaConnection['directorAtt
         return `pending (${delivery.evidence})`;
     }
     return `${delivery.state}${delivery.reason ? `: ${delivery.reason}` : ''}`;
+}
+
+export function toMatchDeliveryLabel(delivery: ArenaConnection['matchDelivery']): string {
+    if (!delivery) {
+        return 'no match output';
+    }
+    const expected = delivery.expectedRecipientPeerIds.length;
+    const confirmed = delivery.confirmedRecipientPeerIds.length;
+    if (delivery.state === 'acknowledged') {
+        return `acknowledged by all ${expected}`;
+    }
+    if (isALDeliveryTerminalState(delivery.state, 'all-logical-recipients')) {
+        return delivery.receiptMode
+            ? `${delivery.state} with ${confirmed} of ${expected} confirmed`
+            : `${delivery.state}${delivery.reason ? `: ${delivery.reason}` : ''}`;
+    }
+    return delivery.receiptMode ? `waiting for ${expected - confirmed} of ${expected}` : `pending (${delivery.state})`;
 }
 
 export function toArenaDiagnosticsAttributes(

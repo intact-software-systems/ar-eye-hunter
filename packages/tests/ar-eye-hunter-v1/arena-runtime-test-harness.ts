@@ -66,7 +66,7 @@ const mockMatch = vi.hoisted(() => ({
     ),
     onStatus: vi.fn(() => vi.fn()),
     waitForReadyLanes: vi.fn<ArenaRallarGameMatchHandle['waitForReadyLanes']>(() => Promise.resolve(emptyPeerReadiness())),
-    publishEvent: vi.fn(),
+    publishEvent: vi.fn<ArenaRallarGameMatchHandle['publishEvent']>(() => Promise.resolve({ status: 'sent' })),
     publishSnapshot: vi.fn(),
     sendIntent: vi.fn(),
     sendInput: vi.fn(),

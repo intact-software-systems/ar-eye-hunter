@@ -420,6 +420,36 @@ moved or changed test.
       }
     },
     {
+      "id": "ar-arena-match-end-director-only",
+      "domain": "AR Eye Hunter match lifecycle outputs",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "Only the fresh local director publishes the match end; a client that finishes the match on its own tick publishes nothing.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#never publishes the match end from a client that is not the director",
+      "coverageRelation": "The assertion operates the real arena hook through its public snapshot action and observes the named external port alongside the resulting public match delivery state.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar Game match publishEvent",
+        "observableEffect": "A non-director client that completes the match locally sends no director output to the room and shows no match delivery.",
+        "requiredConstraint": "No match-end publication occurs from a client that is not the fresh appointed director.",
+        "failureRationale": "A non-director publication would put a second, unauthorised authority output on the room that every recipient would be asked to acknowledge."
+      }
+    },
+    {
+      "id": "ar-arena-match-end-published-once",
+      "domain": "AR Eye Hunter match lifecycle outputs",
+      "owner": "AR Eye Hunter maintainers",
+      "summary": "The director publishes the match end exactly once per completed match, however many later snapshots still carry the completed match.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#publishes the match end once per completed match",
+      "coverageRelation": "The assertion operates the real arena hook through its public snapshot action and observes the named external port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Rallar Game match publishEvent",
+        "observableEffect": "Each match end reaches the room as one at-least-once output with one logical receipt.",
+        "requiredConstraint": "Exactly one match-end publication occurs for one active-to-complete transition of a match.",
+        "failureRationale": "A repeated publication would ask every frozen recipient for a second receipt of the same end and replace the tracked match delivery with a duplicate."
+      }
+    },
+    {
       "id": "ar-arena-replaced-report-appointment-fence",
       "domain": "AR Eye Hunter browser lifecycle",
       "owner": "AR Eye Hunter maintainers",
@@ -3333,6 +3363,28 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#does not appoint after an old capability report resolves across logout"
+    },
+    {
+      "id": "test-structure-coupling-b4464cfc90c4edd8",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-match-end-published-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The single publishEvent invocation after a second completed snapshot proves the end is published once per transition, which the final arena state cannot show.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#publishes the match end once per completed match"
+    },
+    {
+      "id": "test-structure-coupling-06f784576bb12190",
+      "path": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ar-arena-match-end-director-only",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "AR Eye Hunter maintainers",
+      "rationale": "The unused publish port proves a non-director never sends the match end, which the local arena state cannot show because every client ends the match on its own tick.",
+      "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#never publishes the match end from a client that is not the director"
     },
     {
       "id": "test-structure-coupling-e11609c733133cce",

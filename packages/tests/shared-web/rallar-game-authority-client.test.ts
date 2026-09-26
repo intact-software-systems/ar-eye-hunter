@@ -169,7 +169,7 @@ describe('Rallar Game Authority browser client', () => {
         ]);
     });
 
-    it('sends commands as room-scoped WS authority envelopes', async () => {
+    it('sends commands as room-scoped WS authority envelopes that ask every logical room recipient for a receipt', async () => {
         const fake = createFakeRallar();
         const client = createClient(fake);
         await client.start();
@@ -203,6 +203,39 @@ describe('Rallar Game Authority browser client', () => {
                 })
             })
         ]);
+    });
+
+    it('resolves a command on admission while its logical receipt still waits for the room', async () => {
+        const delivery = createMessageDelivery('ws', undefined, 'receiver');
+        const client = createClient(createFakeRallar(delivery.handle));
+        await client.start();
+        const sending = client.sendCommand({ action: 'dash' });
+        delivery.registry.record({
+            kind: 'admission',
+            carrier: 'ws',
+            msgId: delivery.handle.msgId,
+            atMs: Date.now(),
+            verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }
+        });
+
+        expect(await sending).toMatchObject({ status: 'sent', raw: delivery.handle });
+        expect(delivery.handle.lifecycle()).toMatchObject({ state: 'queued', ackMode: 'receiver' });
+        delivery.registry.record({
+            kind: 'acknowledgement',
+            carrier: 'ws',
+            msgId: delivery.handle.msgId,
+            atMs: Date.now(),
+            mode: 'receiver',
+            confirmedHopPeerIds: [],
+            unconfirmedHopPeerIds: [],
+            expectedRecipientPeerIds: ['server-1', 'peer-b'],
+            confirmedRecipientPeerIds: ['server-1'],
+            unconfirmedRecipientPeerIds: ['peer-b'],
+            complete: false
+        });
+        expect(delivery.handle.lifecycle().state).toBe('queued');
+        expect(client.status().pendingCommandCount).toBe(1);
+        client.stop();
     });
 
     it('accepts server WS snapshots and events after envelope checks', async () => {

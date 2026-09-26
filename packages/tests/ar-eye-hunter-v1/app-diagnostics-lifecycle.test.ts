@@ -8,6 +8,7 @@ import { toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import App from '../../../apps/ar-eye-hunter-v1/src/app.tsx';
+import type { MatchDelivery } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/arena-connection-contracts.ts';
 import type { ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
@@ -123,6 +124,42 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
         expect(diagnostics?.querySelector('pre')?.textContent).toContain('"capabilityDelivery"');
     });
 
+    it.each(
+        [
+            { delivery: undefined, label: 'no match output' },
+            { delivery: matchDelivery({ state: 'queued', receiptMode: undefined, expected: [], confirmed: [] }), label: 'pending (queued)' },
+            { delivery: matchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: [] }), label: 'waiting for 2 of 2' },
+            { delivery: matchDelivery({ state: 'queued', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }), label: 'waiting for 1 of 2' },
+            {
+                delivery: matchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b', 'c'] }),
+                label: 'acknowledged by all 2'
+            },
+            { delivery: matchDelivery({ state: 'acknowledged', receiptMode: 'receiver', expected: [], confirmed: [] }), label: 'acknowledged by all 0' },
+            {
+                delivery: matchDelivery({ state: 'expired', receiptMode: 'receiver', expected: ['b', 'c'], confirmed: ['b'] }),
+                label: 'expired with 1 of 2 confirmed'
+            },
+            {
+                delivery: matchDelivery({ state: 'rejected', receiptMode: undefined, expected: [], confirmed: [], reason: 'membership denied' }),
+                label: 'rejected: membership denied'
+            }
+        ] as const
+    )('shows match delivery as $label from the logical receipt', async ({ delivery, label }) => {
+        mockArena.current = createArenaConnection({ matchDelivery: delivery });
+        root = createRoot(container);
+        await act(async () => {
+            root?.render(createElement(App));
+        });
+        await act(async () => {
+            findButton('Diag').click();
+        });
+        const diagnostics = container.querySelector('aside[aria-label="Arena diagnostics"]');
+        const row = [...(diagnostics?.querySelectorAll('.diagnostics-row') ?? [])]
+            .find((item) => item.querySelector('span')?.textContent === 'Match delivery');
+        expect(row?.querySelector('strong')?.textContent).toBe(label);
+        expect(diagnostics?.querySelector('pre')?.textContent?.includes('"matchDelivery"')).toBe(delivery !== undefined);
+    });
+
     it('reports a rejected clipboard write and releases a pending copy when the drawer closes', async () => {
         const pendingCopy = Promise.withResolvers<void>();
         const writeText = vi.fn<(text: string) => Promise<void>>()
@@ -152,6 +189,25 @@ describe('AR Eye Hunter diagnostics lifecycle', () => {
     }
 });
 
+interface MatchDeliveryFixtureInput {
+    readonly state: MatchDelivery['state'];
+    readonly receiptMode: MatchDelivery['receiptMode'];
+    readonly expected: readonly string[];
+    readonly confirmed: readonly string[];
+    readonly reason?: string;
+}
+
+function matchDelivery(input: MatchDeliveryFixtureInput): MatchDelivery {
+    return {
+        output: 'director-match-ended',
+        state: input.state,
+        receiptMode: input.receiptMode,
+        expectedRecipientPeerIds: input.expected,
+        confirmedRecipientPeerIds: input.confirmed,
+        reason: input.reason
+    };
+}
+
 function createArenaRoomSnapshot(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({
         applicationId: 'ar-eye-hunter',
@@ -177,6 +233,7 @@ const arenaConnectionDefaults: Omit<ArenaConnection, 'session' | 'rooms' | 'conn
     },
     rtcLanes: [],
     directorAttempt: { status: 'idle' },
+    matchDelivery: undefined,
     gameDiagnostics: undefined,
     transportDiagnostics: {
         realtimeHealth: [],

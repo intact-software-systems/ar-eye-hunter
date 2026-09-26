@@ -563,6 +563,11 @@ export type GameRealtimeMessage =
         sentAtEpochMs: number;
     }>;
 
+export type ArenaMatchLifecycleMessage = Extract<
+    GameRealtimeMessage,
+    Readonly<{ kind: 'director-match-started' | 'director-match-ended'; }>
+>;
+
 export type RemotePlayer = Readonly<{
     pose: PlayerPose;
     lastSeenEpochMs: number;
