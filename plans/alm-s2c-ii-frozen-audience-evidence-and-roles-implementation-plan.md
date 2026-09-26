@@ -545,6 +545,26 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   copy for that peer, so a requester never owns its siblings. Unicast copies carry no visited list. The
   per-copy byte cost on RTC is about 117 B for a three-session star and at most about 2.5 KB; no
   envelope limit is reachable.
+- **R-S2c-ii-9 (Task 5 → Task 5b, 2026-09-26).** Since R-S2c-ii-8 a star recipient owns no downstream
+  hop, and `planRepair` attached an `al.control.repair.v1` retransmit request to every ACK, so the
+  origin retransmitted to a recipient it had already counted. A peer attaches a repair request to its
+  ACK only for owned children that are still missing; a peer that owns no children never does — the
+  retry is the origin's decision from its receipt.
+- **R-S2c-ii-10 (Task 5, 2026-09-26).** Scenario 5 (`receiver-distinct-from-hop`) is deferred: the
+  topology override needs the group owner, and under `tree` the middle of a three-session path is a
+  hash of the session ids (the origin is the middle about one time in three), so no lane run can pin
+  a relay deterministically. The hop-versus-recipient property stays proven by the relay-in-front-of-b
+  unit pin (R-S2c-ii-6); a harness-pinnable relay is a later harness slice. Also accepted: scenario 2
+  over ws asserts the `timed-out` receipt with `recipient-b` unconfirmed; scenario 4 runs over rtc and
+  fallback only through the new `messages.control` raw command; scenario 3 keeps the leave half; the
+  test-contracts file grew twelve lines for `messages.control` because moving the type out creates a
+  type-only import cycle.
+- **R-S2c-ii-9a (Task 5b review, 2026-09-26).** With repair requests limited to owned children, an
+  RTC origin whose plan has nothing to send because it owns no child settles `unroutable/no-route`
+  instead of `skipped/planner-drop` (room members but no overlay next hop; a frozen audience that has
+  since left). Accepted as the more honest verdict: the fallback carrier then falls back to WS, `rtc`
+  alone settles `attempts-exhausted`, and a re-planned queued entry retries within the existing
+  attempt cap. An origin alone in its room and a normal send are unchanged.
 
 ## Self-review
 
