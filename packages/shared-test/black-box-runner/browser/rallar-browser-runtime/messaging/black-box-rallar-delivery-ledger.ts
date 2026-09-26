@@ -10,6 +10,8 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarControlSubmitDiagnostics,
+    BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDeliveryObserveInput,
@@ -128,6 +130,22 @@ export class BlackBoxRallarDeliveryLedger {
             reason: 'detail' in verdict ? verdict.detail : undefined
         };
     }
+
+    /** A raw control opens no handle; the verdict is that of the carrier admission it went through. */
+    submitControl = async (
+        control: BlackBoxRallarControlSubmitInput
+    ): Promise<BlackBoxRallarControlSubmitDiagnostics> => {
+        const lease = this.#input.resources.lease();
+        const { msgId, verdict } = await this.#input.deliveries.submitRawControl(control);
+        this.#input.resources.assertCurrent(lease, 'Rallar raw control completed after the runtime closed.');
+        return {
+            msgId,
+            typeId: control.typeId,
+            carrier: control.carrier,
+            verdict: verdict.kind,
+            reason: 'detail' in verdict ? verdict.detail : undefined
+        };
+    };
 
     /** `aboveCurrentBy` reads the version the product would stamp by itself, so the floor sits just past it. */
     #resolveSnapshotFloor(

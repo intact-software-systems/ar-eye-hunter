@@ -27,6 +27,16 @@ export interface RallarBlackBoxTestMessagesReplayResultValue {
     readonly reason?: string;
 }
 
+/** A raw control opens no handle: it reports its own identity and the verdict of the carrier admission. */
+export interface RallarBlackBoxTestMessagesControlResultValue {
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The detail of the verdict itself; absent for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason?: string;
+}
+
 export interface RallarBlackBoxTestMessagesObserveResultValue
     extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection'> {
     readonly handleId: string;

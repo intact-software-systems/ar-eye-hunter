@@ -40,6 +40,7 @@ describe('Rallar companion coverage boundaries', () => {
             'messages.cancel',
             'messages.received',
             'messages.receipts',
+            'messages.control',
             'fault.inject',
             'storage.counters',
             'agent.reload',

@@ -9,6 +9,7 @@ import type {
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarControlSubmitDiagnostics,
     BlackBoxRallarCrdtRuntime,
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDirectorRuntime,
@@ -74,6 +75,7 @@ export interface BlackBoxRallarRuntime {
     observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     cancelDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
     readReceipts(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;
+    submitControl(input: unknown): Promise<BlackBoxRallarControlSubmitDiagnostics>;
     injectFault(input: unknown): Promise<void>;
     readStorageCounters(input: unknown): Promise<IndexedDbOperationCounts>;
     refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void>;

@@ -324,6 +324,27 @@ export interface BlackBoxRallarMessageReplayDiagnostics {
     readonly reason: string | undefined;
 }
 
+/**
+ * A harness capability, not a product path: one raw control envelope, shaped as the ACK of `ackedMsgId` from this
+ * session and carrying `typeId`, admitted on `carrier` for `toPeerId`, the sender of that message.
+ */
+export interface BlackBoxRallarControlSubmitInput {
+    readonly carrier: ALDeliveryCarrier;
+    readonly typeId: string;
+    readonly ackedMsgId: string;
+    readonly toPeerId: string;
+}
+
+/** The raw control opens no handle: it reports its own identity and the verdict of the carrier admission. */
+export interface BlackBoxRallarControlSubmitDiagnostics {
+    readonly msgId: string;
+    readonly typeId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason: string | undefined;
+}
+
 export interface BlackBoxRallarMessageSendDiagnostics {
     readonly handleId: string;
     readonly msgId: string;

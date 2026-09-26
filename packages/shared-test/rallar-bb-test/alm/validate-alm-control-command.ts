@@ -24,6 +24,7 @@ export type RallarBlackBoxTestAlmCommandKind =
     | 'messages.cancel'
     | 'messages.received'
     | 'messages.receipts'
+    | 'messages.control'
     | 'fault.inject'
     | 'storage.counters'
     | 'agent.reload';
@@ -42,6 +43,8 @@ export function validateAlmControlCommand(
             return validateMessagesHandleCommand(command, kind);
         case 'messages.received':
             return validateMessagesReceivedCommand(command);
+        case 'messages.control':
+            return validateMessagesControlCommand(command);
         case 'fault.inject':
             return validateFaultInjectCommand(command);
         case 'storage.counters':
@@ -173,8 +176,28 @@ function validateMessagesReplayField(command: RallarBlackBoxTestRecord): readonl
             record: replay,
             key: 'carrier',
             path,
-            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg
         })
+    ];
+}
+
+/** The raw control speaks the control vocabulary only: its typeId names an `al.control.*` id. */
+function validateMessagesControlCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const path = 'messages.control';
+    const typeId = command.typeId;
+    return [
+        ...(['connection', 'typeId', 'ackedMsgId', 'toPeerId'] as const).flatMap((key) =>
+            validateStringField(command, key, path)
+        ),
+        ...validateEnumField({
+            record: command,
+            key: 'carrier',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg
+        }),
+        ...(typeof typeId === 'string' && !typeId.startsWith('al.control.')
+            ? [toControlCommandIssue(`${path}.typeId must name an al.control.* id.`)]
+            : [])
     ];
 }
 

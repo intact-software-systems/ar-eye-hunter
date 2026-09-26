@@ -2,6 +2,7 @@ import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
+import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 
 export interface CreateAlmConformanceRecipesInput {
@@ -22,7 +23,8 @@ export type AlmConformanceScenarioId =
     | 'delivery-lifecycle'
     | 'delivery-reload'
     | 'not-yet-in-sync'
-    | 'ordering-resync';
+    | 'ordering-resync'
+    | 'receipted-audience';
 
 export type AlmConformanceTag = 'smoke' | 'full';
 
@@ -49,6 +51,11 @@ export interface AlmConformanceScenarioDefinition {
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */
     readonly toRecipientCommands: (recipient: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
+    /**
+     * Absent when the sender pins no receipt identity. Otherwise the recipient roles the receipt of its first send
+     * confirms and leaves unconfirmed, which the identity assessment joins to their sessions after the run.
+     */
+    readonly toReceiptRoles?: (carrier: AlmConformanceCarrier) => AlmConformanceReceiptRoles;
 }
 
 export const SMOKE_TAGS: readonly AlmConformanceTag[] = ['smoke', 'full'];

@@ -180,6 +180,15 @@
           "handleId": "messages-send-v1-handle"
         },
         {
+          "kind": "messages.control",
+          "commandId": "messages-control-v1",
+          "connection": "goldenRtc",
+          "carrier": "rtc",
+          "typeId": "al.control.ack.v1",
+          "ackedMsgId": "golden-received-msg",
+          "toPeerId": "golden-origin-session"
+        },
+        {
           "kind": "fault.inject",
           "commandId": "fault-inject-v1",
           "faultId": "golden-drop-one-nack",

@@ -39,7 +39,7 @@ interface RtcClientEventSubscriptionInput {
     readonly deliver: (event: RallarBlackBoxTestEvent) => void;
 }
 
-// The eight ALM kinds only exist inside a browser agent: this client owns an RTC connection, not a
+// The nine ALM kinds only exist inside a browser agent: this client owns an RTC connection, not a
 // Rallar page runtime, so translating one of them into an rtc.send would hide the gap.
 const BROWSER_ONLY_COMMAND_KINDS: ReadonlySet<string> = new Set([
     'messages.send',
@@ -47,6 +47,7 @@ const BROWSER_ONLY_COMMAND_KINDS: ReadonlySet<string> = new Set([
     'messages.cancel',
     'messages.received',
     'messages.receipts',
+    'messages.control',
     'fault.inject',
     'storage.counters',
     'agent.reload'

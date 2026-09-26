@@ -102,6 +102,26 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         }
     },
     {
+        kind: 'messages.control',
+        title: 'Submit Raw ALM Control',
+        description: 'A harness capability, not a product path: submits the ACK envelope this session would send for ' +
+            'ackedMsgId to toPeerId, its sender, carrying typeId (an al.control.* id, such as an ACK version the ' +
+            'addressee does not support) through the carrier admission a product control takes. The result reports the ' +
+            'control msgId and that carrier verdict; the addressee records its own admission outcome.',
+        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
+        runtimeSurfaces: ['spa-local', 'control-agent'],
+        liveServiceRequirements: ['api-v1'],
+        artifactExpectations: ['control msgId and carrier admission verdict'],
+        example: {
+            kind: 'messages.control',
+            commandId: 'submit-unknown-ack-version',
+            carrier: 'rtc',
+            typeId: 'al.control.ack.v1',
+            ackedMsgId: 'received-msg-id',
+            toPeerId: 'origin-session-id'
+        }
+    },
+    {
         kind: 'fault.inject',
         title: 'Inject Transport Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +

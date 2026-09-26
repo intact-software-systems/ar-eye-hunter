@@ -14,6 +14,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
 import type {
+    RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
     RallarBlackBoxTestMessagesReplayResultValue,
     RallarBlackBoxTestMessagesSendResultValue,
@@ -84,7 +85,7 @@ export function decodeAlmMessagesSendResultValue(
 export function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackBoxTestMessagesReplayResultValue {
     const record = decodeAlmRuntimeRecord(value);
     const path = 'messages.send replay result';
-    const carrier = requireAlmReplayCarrierField(record, path);
+    const carrier = requireAlmCarrierLegField(record, path);
     const verdict = record.verdict;
     if (!isAlmAdmissionVerdictKind(verdict)) {
         throw toAlmInvalidRuntimeResultError(`${path}.verdict`);
@@ -93,6 +94,24 @@ export function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackB
     return {
         handleId: requireAlmStringField(record, path, 'handleId'),
         msgId: requireAlmStringField(record, path, 'msgId'),
+        carrier,
+        verdict,
+        ...(reason === undefined ? {} : { reason })
+    };
+}
+
+export function decodeAlmMessagesControlResultValue(value: unknown): RallarBlackBoxTestMessagesControlResultValue {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.control result';
+    const carrier = requireAlmCarrierLegField(record, path);
+    const verdict = record.verdict;
+    if (!isAlmAdmissionVerdictKind(verdict)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.verdict`);
+    }
+    const reason = readAlmOptionalStringField(record, path, 'reason');
+    return {
+        msgId: requireAlmStringField(record, path, 'msgId'),
+        typeId: requireAlmStringField(record, path, 'typeId'),
         carrier,
         verdict,
         ...(reason === undefined ? {} : { reason })
@@ -168,8 +187,8 @@ function requireAlmCarrierField(
     return carrier;
 }
 
-function requireAlmReplayCarrierField(record: RallarBlackBoxTestRecord, path: string): ALDeliveryCarrier {
-    const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier.find((candidate) =>
+function requireAlmCarrierLegField(record: RallarBlackBoxTestRecord, path: string): ALDeliveryCarrier {
+    const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.find((candidate) =>
         candidate === record.carrier
     );
     if (carrier === undefined) {

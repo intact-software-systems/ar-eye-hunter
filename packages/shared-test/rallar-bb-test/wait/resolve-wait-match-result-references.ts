@@ -20,24 +20,30 @@ export function resolveWaitMatchResultReferences(
     resultCache: RallarBlackBoxTestState['resultCache']
 ): Either<UnresolvedWaitMatchReference, RallarBlackBoxTestWaitMatch> {
     const contains = match.contains;
-    if (contains === undefined) {
-        return Either.ofRight(match);
-    }
+    return contains === undefined
+        ? Either.ofRight(match)
+        : resolveResultReferencesInText(contains, resultCache).mapRight((resolved) => ({
+            ...match,
+            contains: resolved
+        }));
+}
+
+/** The same tokens in any other command text, which then names an identity an earlier command returned. */
+export function resolveResultReferencesInText(
+    text: string,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<UnresolvedWaitMatchReference, string> {
     const texts = new Map<string, string>();
-    for (const [, reference] of contains.matchAll(RESULT_REFERENCE_PATTERN)) {
-        const text = toReferencedResultText(reference, resultCache);
-        if (text === undefined) {
+    for (const [, reference] of text.matchAll(RESULT_REFERENCE_PATTERN)) {
+        const referenced = toReferencedResultText(reference, resultCache);
+        if (referenced === undefined) {
             return Either.ofLeft({ reference });
         }
-        texts.set(reference, text);
+        texts.set(reference, referenced);
     }
-    return Either.ofRight({
-        ...match,
-        contains: contains.replace(
-            RESULT_REFERENCE_PATTERN,
-            (token, reference: string) => texts.get(reference) ?? token
-        )
-    });
+    return Either.ofRight(
+        text.replace(RESULT_REFERENCE_PATTERN, (token, reference: string) => texts.get(reference) ?? token)
+    );
 }
 
 function toReferencedResultText(

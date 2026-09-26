@@ -12,6 +12,7 @@ import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
 import { decodePayloadPathValue, isSameJsonValue } from '../../wait/wait-event-match.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import { assessAlmAcknowledgedIdentity } from './assess-alm-acknowledged-identity.ts';
+import { assessAlmReceiptRoleIdentity, readAlmReceiptRolesEntries } from './assess-alm-receipt-role-identity.ts';
 import { assessAlmReloadIdentity } from './assess-alm-reload-identity.ts';
 
 export interface AlmConformanceIdentityParticipant {
@@ -48,9 +49,15 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         return issues;
     }
     const sends = sender.participant.recipe.commands.filter(isIdentitySend);
-    if (sends.length === 0) {
-        return ['ALM lifecycle or reload sender evidence is missing.'];
+    if (sends.length === 0 && readAlmReceiptRolesEntries(sender.participant.recipe).length === 0) {
+        return ['ALM lifecycle, reload or pinned receipt sender evidence is missing.'];
     }
+    issues.push(...assessAlmReceiptRoleIdentity({
+        sender,
+        recipients: recorded.filter((participant): participant is RecordedAlmConformanceParticipant =>
+            participant !== undefined && participant !== sender
+        )
+    }));
     const ids = new Set<string>();
     for (const send of sends) {
         const value = sender.results.get(send.commandId!)?.value;

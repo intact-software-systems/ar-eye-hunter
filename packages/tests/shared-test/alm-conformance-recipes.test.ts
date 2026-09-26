@@ -11,6 +11,7 @@ import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-te
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
+    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -76,10 +77,10 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
     }
 }
 
-/** An admission-outcome wait routes on the typeId its `contains` names. */
+/** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */
 function toAdmissionOutcomeTypeIds(contains: string | undefined): readonly string[] {
     const typeId = contains?.match(/^"typeId":"([^"]+)"/)?.[1];
-    return typeId === undefined ? [] : [typeId];
+    return typeId === undefined || typeId.startsWith('al.control.') ? [] : [typeId];
 }
 
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
@@ -117,6 +118,13 @@ function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): reado
     );
 }
 
+/** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
+const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
+    ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
+    rtc: ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'],
+    'rtc-with-ws-fallback': ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership']
+} as const;
+
 const SCENARIO_KEYS_BY_CARRIER = {
     ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync'],
     rtc: [
@@ -143,22 +151,33 @@ const SCENARIO_KEYS_BY_CARRIER = {
     ]
 } as const;
 
+function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
+    return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver, ...(scenario.recipientB ? [scenario.recipientB] : [])]);
+}
+
 describe('alm-conformance recipe family', () => {
     it('generates the pinned recipe list for every carrier, in scenario order', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            expect(toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
-                .toEqual(SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]));
+            expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
+                .toEqual([
+                    ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]),
+                    ...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
+                        ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
+                    )
+                ]);
         }
     });
 
-    it('declares the sender and receiver roles on every scenario; none declares recipient-b yet (D45)', () => {
+    it('declares recipient-b on the receipted-audience scenarios only; every other scenario keeps one sender and one receiver (D45)', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
-                expect(scenario.roles, scenario.scenarioKey).toEqual(['sender', 'receiver']);
-                expect(scenario.recipientB, scenario.scenarioKey).toBeUndefined();
+                const threeRoles = scenario.scenarioId === 'receipted-audience';
+                expect(scenario.roles, scenario.scenarioKey).toEqual(threeRoles ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver']);
+                expect(isThreeAgentScenario(scenario), scenario.scenarioKey).toBe(threeRoles);
                 expect(toAlmConformanceRoleRecipe(scenario, 'sender')).toBe(scenario.sender);
                 expect(toAlmConformanceRoleRecipe(scenario, 'receiver')).toBe(scenario.receiver);
-                expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBeUndefined();
+                expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBe(scenario.recipientB);
+                expect(scenario.recipientB?.recipeId).toBe(threeRoles ? `alm-${carrier}-${scenario.scenarioKey}-recipient-b` : undefined);
             }
         }
     });
@@ -227,10 +246,11 @@ describe('alm-conformance recipe family', () => {
 
             expect(received.length).toBeGreaterThan(0);
             for (const command of received) {
-                const afterRefusal = command.commandId?.includes('not-yet-in-sync-expires') === true;
+                const pastExpiry = command.commandId?.includes('not-yet-in-sync-expires') === true ||
+                    command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
                     .toEqual(
-                        afterRefusal
+                        pastExpiry
                             ? { windowMs: 10_000, timeoutMs: 11_000 }
                             : command.absent
                             ? { windowMs: 17_000, timeoutMs: 18_000 }
@@ -289,7 +309,11 @@ describe('alm-conformance recipe family', () => {
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
-            'not-yet-in-sync'
+            'not-yet-in-sync',
+            'receipted-audience',
+            'receipted-audience',
+            'receipted-audience',
+            'receipted-audience'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -298,6 +322,10 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -534,5 +562,86 @@ describe('alm-conformance recipe family', () => {
                 error: expect.objectContaining({ code: 'RALLAR_BLACK_BOX_ASSERT_FAILED' })
             }));
         }
+    });
+
+    describe('receipted-audience scenarios (three agents)', () => {
+        const receiptedOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) => {
+            const scenario = createAlmConformanceRecipes(toConformanceInput(carrier)).find((candidate) => candidate.scenarioKey === key);
+            if (scenario?.recipientB === undefined) {
+                throw new Error(`${carrier} ${key} must declare recipient-b.`);
+            }
+            return { ...scenario, recipientB: scenario.recipientB };
+        };
+        const bodyOf = (recipe: RallarBlackBoxTestRecipe) =>
+            recipe.commands.slice(recipe.commands.findIndex((command) => command.kind === 'rtc.connect') + 1, -1);
+        const shapeOf = (command: RallarBlackBoxTestCommand) =>
+            command.kind === 'fault.inject'
+                ? `fault.inject:${command.carrier}:${String(command.remaining)}`
+                : command.kind === 'wait'
+                ? `wait:${command.match.kind}${command.absent === true ? ':absent' : ''}`
+                : command.kind === 'messages.received'
+                ? `received:${command.count}${command.absent === true ? ':absent' : ''}`
+                : command.kind;
+
+        it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
+            const tails = {
+                'aggregated-receipt': [2, 2, 0],
+                'unknown-ack-version': [2, 2, 0],
+                'frozen-audience-membership': [2, 1, 1]
+            } as const;
+            for (const [key, [expected, confirmed, unconfirmed]] of Object.entries(tails)) {
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-7, -1);
+                expect(tail.map(shapeOf), key).toEqual(['received:1:absent', 'messages.receipts', 'assert', 'assert', 'assert', 'assert']);
+                expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
+                    .toEqual(['receiver', expected, confirmed, unconfirmed]);
+            }
+            const retryCounts = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+                receiptedOf(carrier, 'missing-recipient-retry').sender.commands.flatMap((command) =>
+                    command.kind === 'assert' && command.source.includes('RecipientPeerIds') ? [command.expected] : []
+                );
+            expect(retryCounts('ws')).toEqual([2, 1, 1]);
+            expect(retryCounts('rtc')).toEqual([2, 2, 0]);
+            expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0]);
+        });
+
+        it('holds the ACK of recipient-b until the retried copy arrives over RTC, and proves over ws that no copy is retried', () => {
+            expect(bodyOf(receiptedOf('rtc', 'missing-recipient-retry').recipientB).map(shapeOf))
+                .toEqual(['fault.inject:rtc:until-cleared', 'received:1', 'wait:diagnostic', 'fault.inject:rtc:0']);
+            expect(bodyOf(receiptedOf('ws', 'missing-recipient-retry').recipientB).map(shapeOf))
+                .toEqual(['fault.inject:ws:until-cleared', 'received:1', 'wait:diagnostic:absent', 'fault.inject:ws:0']);
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                expect(bodyOf(receiptedOf(carrier, 'missing-recipient-retry').receiver).map(shapeOf), carrier)
+                    .toEqual(['received:1', 'wait:diagnostic:absent']);
+            }
+        });
+
+        it('answers the send with a raw retired ACK over the rtc leg and waits for the origin to refuse it unsupported', () => {
+            const scenario = receiptedOf('rtc-with-ws-fallback', 'unknown-ack-version');
+            expect(bodyOf(scenario.recipientB)).toMatchObject([
+                { kind: 'wait', commandId: 'alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1' },
+                {
+                    kind: 'messages.control',
+                    carrier: 'rtc',
+                    typeId: 'al.control.ack.v1',
+                    ackedMsgId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}',
+                    toPeerId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}'
+                }
+            ]);
+            expect(scenario.sender.commands).toContainEqual(expect.objectContaining({
+                kind: 'wait',
+                match: expect.objectContaining({
+                    topic: INBOUND_DIAGNOSTICS_TOPIC,
+                    contains: '"typeId":"al.control.ack.v1","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
+                })
+            }));
+        });
+
+        it('lets recipient-b leave once the send reached it and reconnect only past the expiry of the send', () => {
+            expect(bodyOf(receiptedOf('ws', 'frozen-audience-membership').recipientB).map(shapeOf))
+                .toEqual(['fault.inject:ws:until-cleared', 'received:1', 'close', 'received:2:absent', 'rtc.connect']);
+            expect(receiptedOf('rtc', 'frozen-audience-membership').sender.commands).toContainEqual(
+                expect.objectContaining({ kind: 'messages.send', ack: 'all-logical-recipients', ttlMs: 7_500 })
+            );
+        });
     });
 });

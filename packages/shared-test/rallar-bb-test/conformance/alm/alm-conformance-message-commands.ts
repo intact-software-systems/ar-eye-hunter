@@ -26,7 +26,7 @@ interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
     /** Command budget when it must stay independent of `ttlMs`. */
     readonly commandTimeoutMs?: number;
-    readonly ack?: 'receiver';
+    readonly ack?: 'receiver' | 'all-logical-recipients';
     readonly reliability?: 'at-least-once';
     readonly orderingKey?: string;
     readonly seq?: number;

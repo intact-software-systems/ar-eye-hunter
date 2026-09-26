@@ -252,7 +252,8 @@ async function runThreeAgentScenarios(
 }
 
 function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
-    return scenario.scenarioId === 'delivery-lifecycle' || scenario.scenarioId === 'delivery-reload';
+    return scenario.scenarioId === 'delivery-lifecycle' || scenario.scenarioId === 'delivery-reload' ||
+        scenario.scenarioId === 'receipted-audience';
 }
 
 async function assertScenarioIdentity(

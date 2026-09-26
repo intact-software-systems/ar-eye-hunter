@@ -65,11 +65,17 @@ function toAcceptedResponse(url: string): Playwright.APIResponse {
 }
 
 describe('three-agent ALM run', () => {
-    it('selects no scenario for the three-agent family while none declares recipient-b', () => {
+    it('selects exactly the receipted-audience scenarios for the three-agent family on every carrier', () => {
+        const rtcScenarioKeys = ['aggregated-receipt', 'missing-recipient-retry', 'unknown-ack-version', 'frozen-audience-membership'];
+        const expectedKeys = {
+            ws: ['aggregated-receipt', 'missing-recipient-retry', 'frozen-audience-membership'],
+            rtc: rtcScenarioKeys,
+            'rtc-with-ws-fallback': rtcScenarioKeys
+        };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const scenarios = toScenarios(carrier);
-            expect(scenarios.length, carrier).toBeGreaterThan(0);
-            expect(scenarios.filter(isThreeAgentScenario), carrier).toEqual([]);
+            const threeAgent = toScenarios(carrier).filter(isThreeAgentScenario);
+            expect(threeAgent.map((scenario) => scenario.scenarioKey), carrier).toEqual(expectedKeys[carrier]);
+            expect(threeAgent.every((scenario) => scenario.recipientB !== undefined), carrier).toBe(true);
         }
     });
 

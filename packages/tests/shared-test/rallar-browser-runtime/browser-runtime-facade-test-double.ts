@@ -193,6 +193,7 @@ export const facadeBehavior = {
     directorStatus: vi.fn<BlackBoxBrowserDirectorDependency['status']>(),
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
     replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
+    submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
     resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>()
 };
 
@@ -344,6 +345,7 @@ let deliverySequence = 0;
 const deliveries: BlackBoxBrowserDeliveriesDependency = {
     getHandle: (msgId) => deliveryRegistry.getHandle(msgId),
     replayCapturedMessage: async (replay) => await facadeBehavior.replayCapturedMessage(replay),
+    submitRawControl: async (control) => await facadeBehavior.submitRawControl(control),
     resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
 };
 

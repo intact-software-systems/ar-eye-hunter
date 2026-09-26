@@ -28,7 +28,8 @@ const CARRIER_SCENARIO_IDS = {
         'delivery-baseline',
         'delivery-lifecycle',
         'delivery-reload',
-        'ordering-resync'
+        'ordering-resync',
+        ...Array.from({ length: 3 }, () => 'receipted-audience' as const)
     ],
     rtc: [
         'bounded-rejection',
@@ -38,7 +39,8 @@ const CARRIER_SCENARIO_IDS = {
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync',
-        'not-yet-in-sync'
+        'not-yet-in-sync',
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ],
     'rtc-with-ws-fallback': [
         'bounded-rejection',
@@ -50,7 +52,8 @@ const CARRIER_SCENARIO_IDS = {
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
-        'not-yet-in-sync'
+        'not-yet-in-sync',
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ]
 } as const;
 

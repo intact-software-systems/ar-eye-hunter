@@ -15,12 +15,14 @@ import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
+    decodeAlmMessagesControlResultValue,
     decodeAlmMessagesReplayResultValue,
     decodeAlmMessagesSendResultValue,
     decodeAlmRuntimeRecord,
     decodeAlmStorageCountersResultValue
 } from './decode-alm-runtime-result.ts';
 import type { RallarBlackBoxTestMessagesObserveResultValue } from './rallar-black-box-alm-result-values.ts';
+import { resolveAlmControlReferences } from './resolve-alm-control-references.ts';
 import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
 export type RallarBlackBoxAlmCommandWithId =
@@ -117,6 +119,7 @@ const ALM_ERROR_CODES = {
     deliveryStateTimeout: 'RALLAR_BLACK_BOX_ALM_DELIVERY_STATE_TIMEOUT',
     scriptedPortsUnavailable: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE',
     replayUnavailable: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE',
+    rawControlUnavailable: 'RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
     messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
     messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT'
@@ -125,7 +128,8 @@ const ALM_ERROR_CODES = {
 const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES)[] = [
     'deliveryStateTimeout',
     'scriptedPortsUnavailable',
-    'replayUnavailable'
+    'replayUnavailable',
+    'rawControlUnavailable'
 ];
 
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and
@@ -157,6 +161,8 @@ export async function dispatchAlmBrowserCommand(
             return await readAlmDelivery({ port, command, context });
         case 'messages.received':
             return await countAlmReceivedMessages({ port, command, context });
+        case 'messages.control':
+            return await submitAlmControl({ port, command, context });
         case 'fault.inject':
             return await injectAlmFault({ port, command, context });
         case 'storage.counters':
@@ -188,6 +194,30 @@ function sendAlmMessage(
                 : decodeAlmMessagesSendResultValue(
                     await runtime.sendMessage({ ...send, handleId: command.handleId ?? command.commandId })
                 )
+    });
+}
+
+function submitAlmControl(
+    input: AlmBrowserCommandInput<'messages.control'>
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const connection = input.port.resolveConnection(input.command, input.context);
+    const references = resolveAlmControlReferences(input.command, input.context.state().resultCache);
+    const control = {
+        ...input.port.resolveCommandFields(input.command, input.context),
+        ...references.right,
+        connection
+    };
+    return runAlmRuntimeCommand({
+        port: input.port,
+        command: input.command,
+        context: input.context,
+        connection,
+        topic: 'rallar.bb.messages.control',
+        invoke: async (runtime) =>
+            references.fold(
+                (message) => Promise.reject(new TypeError(message)),
+                async () => decodeAlmMessagesControlResultValue(await runtime.submitControl(control))
+            )
     });
 }
 

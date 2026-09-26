@@ -61,6 +61,7 @@ import {
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 import type {
+    BlackBoxRallarControlSubmitInput,
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
@@ -69,6 +70,7 @@ import {
     replayBlackBoxCapturedMessage,
     type BlackBoxCapturedMessageReplay
 } from './messaging/replay-black-box-captured-message.ts';
+import { submitBlackBoxRawControl, type SubmitBlackBoxRawControl } from './messaging/submit-black-box-raw-control.ts';
 import {
     refreshBlackBoxBrowserRoomState,
     type BlackBoxRoomStateRefreshOptions
@@ -118,6 +120,7 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 /** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
     replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
+    submitRawControl(control: BlackBoxRallarControlSubmitInput): Promise<SubmitBlackBoxRawControl.Submission>;
     /** The floor the product stamps on a room send that states none: the sender's cached room version. */
     resolveRoomMinSnapshotVersion(roomRef: GroupRef): number | undefined;
 }
@@ -207,6 +210,14 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
                     ...replay,
                     sessionId: session.connection.session()?.sessionId,
                     context: session.session.readMiddleware()
+                }),
+            submitRawControl: async (control) =>
+                await submitBlackBoxRawControl({
+                    control,
+                    sessionId: session.connection.session()?.sessionId,
+                    context: session.session.readMiddleware(),
+                    nowMs: Date.now(),
+                    msgId: crypto.randomUUID()
                 }),
             resolveRoomMinSnapshotVersion: (roomRef) => state.roomStateStore.resolveRoomMinSnapshotVersion(roomRef)
         }

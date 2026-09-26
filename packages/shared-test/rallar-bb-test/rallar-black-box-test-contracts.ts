@@ -23,6 +23,7 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'messages.cancel',
     'messages.received',
     'messages.receipts',
+    'messages.control',
     'fault.inject',
     'storage.counters',
     'agent.reload',
@@ -352,6 +353,16 @@ export type RallarBlackBoxTestMessagesReceivedCommand =
 export type RallarBlackBoxTestMessagesReceiptsCommand =
     & RallarBlackBoxTestCommandBase<'messages.receipts'>
     & Readonly<{ connection?: string; handleId: string; }>;
+
+/**
+ * A harness capability, not a product path: submits the raw ACK envelope of `ackedMsgId` to `toPeerId`, its sender,
+ * on one carrier, carrying `typeId` in place of the supported ACK version.
+ */
+export type RallarBlackBoxTestMessagesControlCommand =
+    & RallarBlackBoxTestCommandBase<'messages.control'>
+    & Readonly<
+        { connection?: string; carrier: ALDeliveryCarrier; typeId: string; ackedMsgId: string; toPeerId: string; }
+    >;
 
 export type RallarBlackBoxTestFaultInjectCommand =
     & RallarBlackBoxTestCommandBase<'fault.inject'>
@@ -685,6 +696,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestMessagesCancelCommand
     | RallarBlackBoxTestMessagesReceivedCommand
     | RallarBlackBoxTestMessagesReceiptsCommand
+    | RallarBlackBoxTestMessagesControlCommand
     | RallarBlackBoxTestFaultInjectCommand
     | RallarBlackBoxTestStorageCountersCommand
     | RallarBlackBoxTestAgentReloadCommand

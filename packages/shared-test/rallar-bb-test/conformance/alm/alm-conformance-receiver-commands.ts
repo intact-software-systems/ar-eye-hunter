@@ -1,6 +1,7 @@
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestMessagesReceivedCommand
+    RallarBlackBoxTestMessagesReceivedCommand,
+    RallarBlackBoxTestWaitCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
@@ -77,13 +78,34 @@ export function toSingleArrivalReceiverCommands(
 }
 
 /**
+ * The `admission-outcome` a peer states for a control it received, matched in its emitted key order (`typeId`, then
+ * `carrier`, `outcome`, `reason`). The control carries no scenario typeId, so its own typeId scopes the match.
+ */
+export function toControlAdmissionOutcomeWait(
+    step: AlmConformanceStepInput,
+    outcome: Readonly<{ name: string; controlTypeId: string; contains: string; timeoutMs: number; }>
+): RallarBlackBoxTestWaitCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(step, outcome.name),
+        match: {
+            kind: 'diagnostic',
+            topic: INBOUND_DIAGNOSTICS_TOPIC,
+            payloadPath: 'data',
+            contains: `"typeId":"${outcome.controlTypeId}",${outcome.contains}`
+        },
+        timeoutMs: outcome.timeoutMs
+    };
+}
+
+/**
  * The pair's `admission-outcome` event, matched in its emitted key order (`typeId`, then `carrier`, `outcome`,
  * `reason`); the inbound diagnostics event carries no connection to route on.
  */
 export function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
     outcome: Readonly<{ name: string; contains: string; timeoutMs: number; }>
-): RallarBlackBoxTestCommand {
+): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
         commandId: toCommandId(step, outcome.name),

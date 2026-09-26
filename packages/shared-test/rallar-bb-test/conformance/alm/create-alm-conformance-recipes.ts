@@ -1,6 +1,7 @@
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord
 } from '../../rallar-black-box-test-contracts.ts';
 
 import {
@@ -10,6 +11,7 @@ import {
 } from './alm-conformance-budgets.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
+import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
     AlmConformanceScenarioDefinition,
@@ -24,7 +26,7 @@ import {
     toEnsureMemberCommand,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
-import { toRoomRef } from './alm-conformance-step-identities.ts';
+import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
@@ -33,6 +35,7 @@ import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
+import { receiptedAudience } from './scenarios/receipted-audience.ts';
 
 export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -48,6 +51,8 @@ export interface AlmConformanceScenario {
 
 interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
+    /** Set only on the sender of a scenario that pins its receipt identity. */
+    readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
 }
 
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
@@ -66,7 +71,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     deliveryReload,
     orderingResync,
     ...crossCarrierDuplicate,
-    ...notYetInSync
+    ...notYetInSync,
+    ...receiptedAudience
 ];
 
 export function createAlmConformanceRecipes(
@@ -108,7 +114,8 @@ function toAlmConformanceScenario(
             roles: definition.roles
         };
         const commands = role === 'sender' ? definition.toSenderCommands(step) : definition.toRecipientCommands(step);
-        return toAlmConformanceRecipe({ ...step, commands });
+        const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
+        return toAlmConformanceRecipe({ ...step, commands, receiptRoles });
     };
     return {
         scenarioId: definition.scenarioId,
@@ -135,7 +142,10 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
             group: toRoomRef(recipe.input.group),
             ...(recipe.scenarioId === 'delivery-reload'
                 ? { almReloadCheckpoints: [{ ...toReloadCheckpoint(recipe) }] }
-                : {})
+                : {}),
+            ...(recipe.receiptRoles === undefined
+                ? {}
+                : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] })
         },
         commands: [
             toEnsureGroupCommand(recipe),
@@ -157,4 +167,16 @@ function toConnectedStorageCountersCommands(
     step: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected')] : [];
+}
+
+/** Names the send whose receipt the roles describe, so a combined recipe carries one entry per scenario. */
+function toReceiptRolesMetadata(
+    step: AlmConformanceStepInput,
+    roles: AlmConformanceReceiptRoles
+): RallarBlackBoxTestRecord {
+    return {
+        handleId: toSendHandleId({ ...step, index: 1 }),
+        confirmed: roles.confirmed,
+        unconfirmed: roles.unconfirmed
+    };
 }
