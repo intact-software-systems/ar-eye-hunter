@@ -57,6 +57,7 @@ import {
     readableGroupStateSnapshotCache,
     setGroupStateSnapshot
 } from '@shared/repository/group-state-snapshots-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
@@ -72,6 +73,7 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -104,7 +106,7 @@ describe('RTC room authority recovery', () => {
         const nativeRuntime = installNativeRtcRuntime();
         const receiverRepository = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
         const senderGroups = new LatestRepository<string, GroupSnapshot>();
-        const snapshot = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+        const snapshot = createAcceptedRoomSnapshot();
         senderGroups.set(toScopedOverlayId(room), snapshot);
         const response = Promise.withResolvers<Response>();
         const reads: string[] = [];
@@ -254,7 +256,6 @@ describe('RTC room authority recovery', () => {
         );
         await Promise.all([receiving, ...duplicateAdmissions]);
         await vi.advanceTimersByTimeAsync(0);
-
         const shouldDeliver = [
             'acknowledged',
             'no-ack',
@@ -265,6 +266,14 @@ describe('RTC room authority recovery', () => {
             'newer-authority',
             'coalesced-higher-floor'
         ].includes(scenario);
+        if (shouldDeliver) {
+            expect(receiver.admissions).toContainEqual(expect.objectContaining({
+                kind: 'admission-outcome',
+                msgId: message.id.msgId,
+                outcome: 'committed'
+            }));
+            await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
+        }
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual(shouldDeliver ? [message.id.msgId] : []);
         expect(reads).toHaveLength(1);
         if (higherFloorMessage !== undefined) {
@@ -295,7 +304,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             vi.setSystemTime(1_000);
             const nativeRuntime = installNativeRtcRuntime();
             const groups = new LatestRepository<string, GroupSnapshot>();
-            groups.set(toScopedOverlayId(room), createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] }));
+            groups.set(toScopedOverlayId(room), createAcceptedRoomSnapshot());
             const faults = createScriptedTransportFaultPort();
             const hold = {
                 faultId: 'latest-wins-hold',
@@ -439,7 +448,7 @@ it('delivers the canonical generated supersedence specimen through the page deco
     vi.useFakeTimers();
     const nativeRuntime = installNativeRtcRuntime();
     const groups = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
-    const snapshot = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+    const snapshot = createAcceptedRoomSnapshot();
     setGroupStateSnapshot({
         ...snapshot,
         activeSessions: snapshot.activeSessions.map((session) => ({
@@ -602,7 +611,7 @@ describe('authoritative room observation freshness', () => {
             const nativeRuntime = installNativeRtcRuntime();
             const senderRepository = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
             const receiverGroups = new LatestRepository<string, GroupSnapshot>();
-            const initial = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+            const initial = createAcceptedRoomSnapshot();
             const snapshot: GroupSnapshot = {
                 ...initial,
                 activeSessions: initial.activeSessions.map((session) => ({
@@ -837,19 +846,24 @@ class NativeAuthorityEndpoint {
     readonly settlements: ALDeliverySettlement[] = [];
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     readonly connection;
+    readonly inboundStores = createDefaultInMemoryALInboundRuntimeStores();
     private readonly overlays = new LatestRepository<string, OverlayInfo>();
     private transferredCount = 0;
     private readonly peerId: string;
 
     constructor(input: NativeAuthorityEndpoint.Input) {
         this.peerId = input.peerId;
-        this.connection = createNativeRtcConnectionFixture({
-            sessionId: input.sessionId,
-            token: 'fixture-token',
-            rtcSignalingTopicId: 'rtc',
-            dataChannelName: 'reliable',
-            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-        }, input.nativeRuntime, input.faultPort ?? createPassThroughTransportFaultPort());
+        this.connection = createNativeRtcConnectionFixture(
+            {
+                sessionId: input.sessionId,
+                token: 'fixture-token',
+                rtcSignalingTopicId: 'rtc',
+                dataChannelName: 'reliable',
+                iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
+            },
+            input.nativeRuntime,
+            input.faultPort ?? createPassThroughTransportFaultPort()
+        );
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
         this.native = this.connection.nativePeer(input.peerId).channels[0];
         this.overlays.set(toScopedOverlayId(room), createOverlay(input.peerId));
@@ -872,7 +886,7 @@ class NativeAuthorityEndpoint {
         this.streamer = createDefaultWebRtcRxStreamerService({
             multicast: this.multicast,
             sessionId: input.sessionId,
-            inboundStores: createDefaultInMemoryALInboundRuntimeStores(),
+            inboundStores: this.inboundStores,
             roomAuthorityRefresh: input.refresh,
             inboundDiagnostics: (event) => this.admissions.push(event)
         });
@@ -931,5 +945,17 @@ function createOverlay(peerId: string): OverlayInfo {
         createdByClientId: 'sender',
         createdAtEpochMs: 1,
         updatedAtEpochMs: 1
+    };
+}
+
+function createAcceptedRoomSnapshot(): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            transportState: 'flowing',
+            acceptedLayoutIdentity: toOverlayLayoutIdentity(createOverlay('receiver'))
+        }
     };
 }

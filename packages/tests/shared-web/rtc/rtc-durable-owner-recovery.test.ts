@@ -28,6 +28,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -315,28 +316,34 @@ class RtcRecoveryOwner {
     }
 
     observe(nextHopSessionIds: readonly string[]): void {
-        this.groups.accept(
-            toScopedOverlayId(this.roomRef),
-            createGroupSnapshotFixture({
-                ...this.roomRef,
-                sessionIds: [this.sessionId, 'receiver', 'origin', 'other']
-            })
-        );
-        this.overlays.accept(toScopedOverlayId(this.roomRef), {
+        const snapshot = createGroupSnapshotFixture({
+            ...this.roomRef,
+            sessionIds: [this.sessionId, 'receiver', 'origin', 'other']
+        });
+        const overlay: OverlayInfo = {
             overlayId: toScopedOverlayId(this.roomRef),
             groupRef: this.roomRef,
             provenance: 'server',
             state: 'active',
             topology: 'tree',
             name: 'Reload room',
-            sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 2 },
+            sourceGroupStateCausalRevision: snapshot.causalRevision,
             nextHopSessionIds,
             degreeLimit: 2,
             overlayVersion: 1,
             createdByClientId: this.sessionId,
             createdAtEpochMs: 1,
             updatedAtEpochMs: Date.now()
+        };
+        this.groups.accept(toScopedOverlayId(this.roomRef), {
+            ...snapshot,
+            group: {
+                ...snapshot.group,
+                transportState: 'flowing',
+                acceptedLayoutIdentity: toOverlayLayoutIdentity(overlay)
+            }
         });
+        this.overlays.accept(toScopedOverlayId(this.roomRef), overlay);
     }
 
     original(senderId = this.sessionId): ALMessage {

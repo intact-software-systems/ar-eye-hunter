@@ -119,7 +119,7 @@ describe('authoritative group observation freshness', () => {
 });
 
 describe('guarded authoritative session lease acquisition', () => {
-    it('adopts actual acquired leases with one Updated and an unchanged causal tuple', async () => {
+    it('adopts actual acquired leases without a public lifecycle change and with an unchanged causal tuple', async () => {
         const expected = seedObservation();
         const manager = createWebRtcGroupManager();
         await browserStateCacheLifecycle.hydrate({
@@ -143,7 +143,7 @@ describe('guarded authoritative session lease acquisition', () => {
         expect(acceptAuthoritativeGroupSessionLeaseAdvance({ expected, acquired, scope: room, assertCanMutate: () => {} })).toBe(true);
         await waitForGroupStateSnapshotChangesIdle();
         expect(events).toEqual([ObservableValueEventType.Updated]);
-        expect(changedGroups).toEqual([acquired]);
+        expect(changedGroups).toEqual([]);
         vi.setSystemTime(62_000);
         expect(findGroupStateSnapshotByRef(room)).toBe(acquired);
         expect(acquired.causalRevision).toEqual({ groupRevision: 2, presenceRevision: 2 });
