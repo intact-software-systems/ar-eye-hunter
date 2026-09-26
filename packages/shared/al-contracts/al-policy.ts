@@ -356,6 +356,7 @@ export function planALMessageHandling(
     const { result, dedupKey, orderingRuntime, supersedenceRuntime, congestion } = decision;
     const drop = resolveMessageDrop(msg, context, decision);
     const delivery = computeMessageDelivery(msg, context, { decision, drop });
+    const missesOwnedChild = !delivery.forwarding.enabled && resolveALOwnedChildPeerIds(msg, context).length > 0;
     return {
         requested: result.requested,
         effective: result.effective,
@@ -369,11 +370,7 @@ export function planALMessageHandling(
         nack: planNack(result.effective, context, { orderingRuntime, drop }),
         repair: drop
             ? { enabled: false, algo: 'none' }
-            : planRepair(
-                result.effective,
-                msg.targets,
-                !delivery.forwarding.enabled && resolveALOwnedChildPeerIds(msg, context).length > 0
-            ),
+            : planRepair(result.effective, msg.targets, missesOwnedChild),
         supersedence: {
             enabled: result.effective.supersedence.algo !== 'none',
             algo: result.effective.supersedence.algo,

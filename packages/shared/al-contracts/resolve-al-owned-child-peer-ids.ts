@@ -3,9 +3,10 @@ import type { ALMessagePlanningContext } from './al-policy.ts';
 
 /**
  * The peers this peer owns as its children for one copy, reachable now or not: the immediate peer of a
- * unicast it does not address itself, or the overlay neighbours of a group message that are not its
- * sender, not already visited or excepted, and in the room. A peer that owns none is a leaf; the retry
- * of a recipient it already confirmed is the decision of the origin, never its own (R-S2c-ii-9).
+ * unicast it does not address itself, or the overlay neighbours of a group message that are neither this
+ * peer nor its sender, not already visited or excepted, in the room, and within the forwarding hint when
+ * one is given. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient
+ * the origin already counted is the decision of the origin (R-S2c-ii-9).
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,

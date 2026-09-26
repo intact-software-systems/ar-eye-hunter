@@ -9,6 +9,7 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { computeMissingRecipientRepair } from '@shared/multicast/web-rtc-overlay-missing-recipient-repair.ts';
 
 import {
@@ -221,6 +222,63 @@ describe('the RTC origin retry of a receiver receipt', () => {
                 complete: true
             })
         ]);
+    });
+});
+
+describe('the RTC origin verdict when it owns no child (R-S2c-ii-9a)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    // An origin with room members but no copy to send has no route: `no-route` is the verdict a fallback
+    // carrier takes over, where it used to be skipped as a planner drop.
+    it.each(
+        [
+            {
+                shape: 'room members but no overlay next hop',
+                sessions: ['a', 'b', 'c'],
+                frozen: undefined,
+                nextHopPeerIds: [],
+                verdict: { kind: 'unroutable', reason: 'no-route' }
+            },
+            {
+                shape: 'a frozen audience that has since left the room',
+                sessions: ['a'],
+                frozen: ['b', 'c'],
+                nextHopPeerIds: [],
+                verdict: { kind: 'unroutable', reason: 'no-route' }
+            },
+            {
+                shape: 'an origin alone in its room',
+                sessions: ['a'],
+                frozen: undefined,
+                nextHopPeerIds: [],
+                verdict: { kind: 'admitted' }
+            },
+            {
+                shape: 'a room with next hops',
+                sessions: ['a', 'b', 'c'],
+                frozen: undefined,
+                nextHopPeerIds: ['b', 'c'],
+                verdict: { kind: 'admitted' }
+            }
+        ] as const
+    )('settles $verdict.kind for $shape', async ({ sessions, frozen, nextHopPeerIds, verdict }) => {
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(sessions, 5), nextHopPeerIds });
+        const original = createOriginReceiverMulticast(`verdict-${sessions.length}-${nextHopPeerIds.length}`);
+        const message = frozen === undefined
+            ? original
+            : toALFrozenMulticastMessage(original, { recipientPeerIds: frozen, snapshotVersion: 4 });
+
+        const admitted = await enqueueAndDrain(fixture.manager, message);
+
+        expect(admitted.verdict).toMatchObject(verdict);
     });
 });
 
