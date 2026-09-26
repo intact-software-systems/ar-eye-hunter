@@ -218,17 +218,19 @@ export class WsQueueBoxServerService {
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: (message) =>
-                this.outboundPlanning.planOutboundMessage(
+                this.outboundPlanning.planOutboundMessage({
                     message,
-                    'immediate',
-                    this.clusterPublication.hasPublisher()
-                ),
-            planDequeuedMessage: (message) =>
-                this.outboundPlanning.planOutboundMessage(
+                    phase: 'immediate',
+                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+                    admittedAudience: undefined
+                }),
+            planDequeuedMessage: (message, admittedAudience) =>
+                this.outboundPlanning.planOutboundMessage({
                     message,
-                    'dequeue',
-                    this.clusterPublication.hasPublisher()
-                ),
+                    phase: 'dequeue',
+                    clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+                    admittedAudience
+                }),
             afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
                 await this.sendPreparedMessage(prepared, lifecycle),
@@ -339,12 +341,20 @@ export class WsQueueBoxServerService {
         return this.onAnyInboxWebSocketMessageCallbacks.delete(id);
     }
 
-    async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
-        const dispatchPlan = this.outboundPlanning.planOutboundMessage(
+    /**
+     * `admittedAudience` is the room audience a router admitted the message to. It travels with the
+     * outbound row, never on the wire, and narrows every later plan of the message to that audience.
+     */
+    async enqueueOutboxIfAbsent(
+        message: ALMessage,
+        admittedAudience?: readonly string[]
+    ): Promise<ALOutboundEnqueueResult> {
+        const dispatchPlan = this.outboundPlanning.planOutboundMessage({
             message,
-            'immediate',
-            this.clusterPublication.hasPublisher()
-        );
+            phase: 'immediate',
+            clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
+            admittedAudience
+        });
         const outgoingMessage = dispatchPlan.persist
             ? decodePersistedALMessageValue(message)
             : message;

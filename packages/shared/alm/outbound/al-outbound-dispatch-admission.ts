@@ -7,6 +7,7 @@ import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
+    ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
@@ -44,7 +45,7 @@ export namespace ALOutboundDispatchAdmission {
 
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
-        readonly planner: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
         readonly origin: ALOutboundCommitOrigin;

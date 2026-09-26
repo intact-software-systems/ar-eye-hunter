@@ -13,7 +13,7 @@ export function isWsQueueBoxServerReceiptRow(message: ALMessage): boolean {
  * How long a receipt whose origin has no session on this instance waits before it is published to the
  * cluster again: as long as it has already waited, from one second up to the receipt grace, and never
  * past a last publication one second before the row expires at its deadline plus that grace. An origin
- * that reconnects on any instance inside the window therefore receives it.
+ * that reconnects on any instance up to that last publication therefore receives it.
  */
 export function toWsQueueBoxServerReceiptRepublishDelayMs(message: ALMessage, nowMs: number): number {
     const waitedMs = Math.min(

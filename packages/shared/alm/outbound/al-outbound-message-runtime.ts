@@ -30,6 +30,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot,
+    ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
@@ -136,6 +137,12 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
+    /**
+     * The audience a server admitted the message to, carried beside the message rather than on the wire,
+     * where a large room would exceed the collection limit. The owner keeps it with the captured policy and
+     * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.
+     */
+    readonly admittedAudience?: readonly string[];
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {
@@ -302,7 +309,7 @@ export namespace ALOutboundMessageRuntime {
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
-        readonly planDequeuedMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;

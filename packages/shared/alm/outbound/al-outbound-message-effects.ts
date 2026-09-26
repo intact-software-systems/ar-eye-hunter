@@ -397,6 +397,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         ackTracking: pending.policy.ackTracking ?? undefined,
         retryTracking: pending.policy.retryTracking ?? undefined,
         repairTracking: pending.policy.repairTracking ?? undefined,
-        supersedenceTracking: pending.policy.supersedenceTracking ?? undefined
+        supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
+        admittedAudience: pending.policy.admittedAudience
     };
 }

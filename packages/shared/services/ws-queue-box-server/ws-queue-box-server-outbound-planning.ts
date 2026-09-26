@@ -55,10 +55,20 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     }
 
+    export interface Request {
+        readonly message: ALMessage;
+        readonly phase: WsQueueBoxServerOutboundPhase;
+        readonly clusterPublisherRegistered: boolean;
+        /** The audience the router admitted the message to, carried beside it; absent for every other message. */
+        readonly admittedAudience: readonly string[] | undefined;
+    }
+
     export interface RecipientResolution {
         readonly resolveRecipients: boolean;
         readonly representNoCurrentRecipient: boolean;
         readonly allowClusterRecipients: boolean;
+        /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
+        readonly audience: readonly string[] | undefined;
     }
 }
 
@@ -76,12 +86,12 @@ export class WsQueueBoxServerOutboundPlanning {
     }
 
     planOutboundMessage(
-        original: ALMessage,
-        phase: WsQueueBoxServerOutboundPhase,
-        clusterPublisherRegistered: boolean
+        request: WsQueueBoxServerOutboundPlanning.Request
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-        const normalized = this.normalizePolicy(original);
-        const message = toALOutboundMessage(original, normalized.effective);
+        const { phase, clusterPublisherRegistered, admittedAudience } = request;
+        const normalized = this.normalizePolicy(request.message);
+        const message = toALOutboundMessage(request.message, normalized.effective);
+        const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const persist = shouldPersistOutbox(normalized.effective);
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
             msg: message,
@@ -96,7 +106,8 @@ export class WsQueueBoxServerOutboundPlanning {
         return this.validateMessage(message, {
             resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
-            allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered
+            allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
+            audience
         }).fold(
             (error) =>
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
@@ -109,10 +120,13 @@ export class WsQueueBoxServerOutboundPlanning {
                     : toRecipientPreparedMessages(message, recipients),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
-                    resolveRecipients ? toExpectedPeerIds(message, recipients, normalized.effective) : []
+                    resolveRecipients
+                        ? toExpectedPeerIds({ message, recipients, audience, effective: normalized.effective })
+                        : []
                 ),
                 repairTracking: toRepairTrackingPlan(normalized.effective),
-                supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message)
+                supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
+                ...(admittedAudience === undefined ? {} : { admittedAudience })
             })
         );
     }
@@ -164,10 +178,11 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const recipients = toAdmittedAudienceRecipients(
-            message,
-            this.#targetResolution.resolveOutboundRecipients(message)
-        );
+        const resolved = this.#targetResolution.resolveOutboundRecipients(message);
+        const audience = resolution.audience;
+        const recipients = audience === undefined
+            ? resolved
+            : resolved.filter((recipient) => audience.includes(recipient.peerId));
         if (recipients.length > 0) {
             return Either.ofRight(recipients);
         }
@@ -212,40 +227,20 @@ function toNoRouteDispatchPlan(
     return { msg: message, dropReason, dropReasonCode: 'no-route', persist: false, preparedMessages: [] };
 }
 
-/**
- * The audience a room message was admitted to, when it carries one: a multicast's frozen recipients, or
- * the recipients the router stamped on a room broadcast it fanned out through the outbox.
- */
-function resolveAdmittedAudience(message: ALMessage): readonly string[] | undefined {
-    const targets = message.targets;
-    return targets?.mode === 'broadcast'
-        ? targets.recipientPeerIds
-        : resolveALFrozenMulticastAudience(targets)?.recipientPeerIds;
-}
-
-/**
- * A message admitted to an audience goes to that audience, never to a session that joined the room
- * after it (D24, D43); any other message goes to every recipient resolved now.
- */
-function toAdmittedAudienceRecipients(
-    message: ALMessage,
-    resolved: readonly WsServerResolvedRecipient[]
-): readonly WsServerResolvedRecipient[] {
-    const audience = resolveAdmittedAudience(message);
-    return audience === undefined ? resolved : resolved.filter((recipient) => audience.includes(recipient.peerId));
+interface ToExpectedPeerIdsInput {
+    readonly message: ALMessage;
+    readonly recipients: readonly WsServerResolvedRecipient[];
+    readonly audience: readonly string[] | undefined;
+    readonly effective: ReturnType<typeof normalizeALQosPolicy>['effective'];
 }
 
 /**
  * A `receiver` receipt counts logical recipients, so a message admitted to an audience expects all of it,
  * connected here or not; every other receipt counts the hops this instance sends to.
  */
-function toExpectedPeerIds(
-    message: ALMessage,
-    recipients: readonly WsServerResolvedRecipient[],
-    effective: ReturnType<typeof normalizeALQosPolicy>['effective']
-): readonly string[] {
-    const audience = resolveAdmittedAudience(message);
-    return effective.ack.algo === 'receiver' && audience !== undefined
+function toExpectedPeerIds(input: ToExpectedPeerIdsInput): readonly string[] {
+    const { message, recipients, audience } = input;
+    return input.effective.ack.algo === 'receiver' && audience !== undefined
         ? audience.filter((peerId) => peerId !== message.id.senderId)
         : recipients.map((recipient) => recipient.peerId);
 }

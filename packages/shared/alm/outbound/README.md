@@ -179,7 +179,8 @@ session on the instance that dequeues it is not settled by its first cluster pub
 ([`WsQueueBoxServerClusterPublication`](../../services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts))
 publishes it again, each wait as long as the receipt has waited and the last one a second before the row
 expires, until the origin has a session there or the row expires, so an origin that reconnects on any
-instance inside that window receives it. A `receiver` message addressed
+instance up to a second before the row expires receives it; one that reconnects in that last second
+does not. A `receiver` message addressed
 to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
 (D42) until a slice aggregates unicasts.
 
@@ -189,10 +190,13 @@ sends the room message and keeps a `receiver` pending row for it, keyed by the o
 terminal receipt it writes through the same receipt admission as the origin, so a `complete` receipt
 leaves that row complete and its `ack-timeout` stops retransmitting, on whichever instance claims it.
 That row is not the origin's kept final snapshot: once complete, the next `ack-timeout` deletes it,
-and nothing reads it after that. The router stamps the audience it admitted on the message it fans out
-(a multicast's frozen `recipientPeerIds` and `snapshotVersion`, a room broadcast's `recipientPeerIds`),
-so the server sends to that audience only and a `receiver` row expects exactly it, never a session that
-joined after admission (D24, D43). Running out of receipt-admission attempts is reported as a warning
+and nothing reads it after that. The router hands the audience it admitted to the outbox beside the
+message, never on the wire, where a room larger than the collection limit would not fit: the plan
+carries it as `admittedAudience`, the captured policy keeps it with the sent row, and every later plan of
+the message receives it. The server sends to that audience only and a `receiver` row expects exactly it,
+never a session that joined after admission (D24, D43); a `hop` or `subtree` row expects the hops this
+instance sent to. A multicast frozen by its origin and sent without a router keeps planning against its
+own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
 naming the message and its origin.
 
 Known limitations:
@@ -201,7 +205,7 @@ Known limitations:
   socket write counts as delivery.
 - Nothing tells the publishing instance that another one delivered a receipt, so a receipt whose origin
   is connected elsewhere, or whose row another instance claimed first (the WS namespace is shared across
-  the cluster), is published until its row expires: 8 publications for a 30 s message, 26 for a 10 min
+  the cluster), is published until its row expires: 8 publications for a 30 s message, 27 for a 10 min
   one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
 - On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
   non-retryable, so a receipt row it claims stops being published.

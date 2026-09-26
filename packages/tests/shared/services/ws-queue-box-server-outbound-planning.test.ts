@@ -103,6 +103,33 @@ describe('WS server outbound planning', () => {
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'], ackedPeerIds: [] });
         expect(fixture.sockets.get('late-joiner')!.sent).toEqual([]);
     });
+
+    it.each(
+        [
+            { algo: 'hop', expectedPeerIds: ['b'] },
+            { algo: 'subtree', expectedPeerIds: ['b'] },
+            { algo: 'receiver', expectedPeerIds: ['b', 'c', 'd'] }
+        ] as const
+    )('expects $expectedPeerIds of a frozen multicast under $algo when only b of it is connected here', async ({ algo, expectedPeerIds }) => {
+        const fixture = createPlanningFixture(['a', 'b', 'e']);
+        const multicast = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: `frozen-${algo}` },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, qos: { ack: { algo }, durability: { algo: 'local-outbox' } } }
+        );
+        const message = { ...multicast, targets: { ...multicast.targets!, recipientPeerIds: ['b', 'c', 'd'], snapshotVersion: 3 } };
+
+        await fixture.service.enqueueOutboxIfAbsent(message);
+        await drainEngine(fixture.engine);
+        await expect.poll(() => fixture.sockets.get('b')!.sent.length).toBe(1);
+
+        expect(await fixture.store.readReceiptState({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toMatchObject({ mode: algo, expectedPeerIds });
+        expect(fixture.sockets.get('e')!.sent).toEqual([]);
+    });
 });
 
 interface PlanningFixture {

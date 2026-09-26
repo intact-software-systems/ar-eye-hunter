@@ -83,8 +83,10 @@ export interface ALOutboundVersionedClientRecord {
 
 export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: ALMessage) => TPrepared;
 
+/** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
-    msg: ALMessage
+    msg: ALMessage,
+    admittedAudience: readonly string[] | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {

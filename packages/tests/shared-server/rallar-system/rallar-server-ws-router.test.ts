@@ -710,6 +710,31 @@ describe('RallarServerWsRouter', () => {
         expect(fixture.sockets['peer-4']!.sent.filter((sent) => sent.payload.typeId === 'chat.message.v1')).toEqual([]);
     });
 
+    it.each(
+        [
+            { ack: 'best-effort', delivery: { reliability: 'best-effort', ack: 'none' }, qos: undefined },
+            { ack: 'hop', delivery: undefined, qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } } },
+            { ack: 'receiver', delivery: { reliability: 'at-least-once', ack: 'receiver' }, qos: undefined }
+        ] as const
+    )('admits and delivers an outbox-fanned $ack room broadcast to a room larger than the wire collection limit', async ({ delivery, qos }) => {
+        const sessionIds = Array.from({ length: 300 }, (_, index) => `session-${String(index).padStart(3, '0')}`);
+        const fixture = createLargeOutboxRoom(sessionIds);
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('large-room'),
+            id: { v: 2, msgId: 'large-room-1', ts: Date.now(), senderId: sessionIds[0]! },
+            delivery,
+            qos
+        };
+
+        await fixture.router.route(message, { kind: 'ws-client', peerId: sessionIds[0]!, groupRecipientPeerIds: sessionIds });
+
+        await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
+            sessionIds.length
+        );
+        const delivered = Object.values(fixture.sockets).flatMap((socket) => socket.sent.filter((sent) => sent.id.msgId === 'large-room-1'));
+        expect(delivered.every((sent) => sent.targets?.mode === 'broadcast' && sent.targets.recipientPeerIds === undefined)).toBe(true);
+    });
+
     it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
         const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
         const message = newALBroadcastMessage(
@@ -1156,6 +1181,42 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
     });
     router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
     return { router, sockets, outboundStores };
+}
+
+/** A room of `sessionIds`, each connected here, whose room topic fans out through the server outbox. */
+function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRouterFixture, 'outboundStores'> {
+    const server = new JsonWebSocketServer();
+    const sockets = Object.fromEntries(sessionIds.map((sessionId) => [sessionId, new RouterIngressWebSocket()]));
+    for (const [sessionId, socket] of Object.entries(sockets)) {
+        server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    }
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: outboundStores.workQueue,
+        outboundStores,
+        socket: server,
+        name: 'server-1',
+        targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
+            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
+            resolveBroadcastRecipients: () => sessionIds.map((peerId) => ({ peerId, connectionId: peerId }))
+        }
+    });
+    onTestFinished(() => service.dispose());
+    const router = new RallarServerWsRouter(service, {
+        nowEpochMs: () => 1,
+        authorizeRoomMessage: ({ message }) =>
+            message.targets === undefined ? false : {
+                authorized: true,
+                audience: {
+                    targets: message.targets,
+                    sessions: sessionIds.map((sessionId) => createGroupPresenceRecord('room-1', sessionId, 3)),
+                    snapshotVersion: 3
+                }
+            }
+    });
+    router.install().defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+    return { router, sockets };
 }
 
 function createReceiverRoomBroadcast(resourceId: string): ALMessage {

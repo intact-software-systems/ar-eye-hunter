@@ -33,6 +33,8 @@ export interface ALOutboundCapturedPolicy {
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
     readonly repairTracking: NonNullable<ALOutboundDispatchPlan<never>['repairTracking']> | null;
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
+    /** Kept only for a message a server admitted to an audience; absent for every other message. */
+    readonly admittedAudience?: readonly string[];
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -41,7 +43,8 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         ackTracking: plan.ackTracking ?? null,
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
-        supersedenceTracking: plan.supersedenceTracking ?? null
+        supersedenceTracking: plan.supersedenceTracking ?? null,
+        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience })
     };
 }
 
@@ -61,7 +64,8 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
         repairTracking: policy.repairTracking ?? undefined,
-        supersedenceTracking: policy.supersedenceTracking ?? undefined
+        supersedenceTracking: policy.supersedenceTracking ?? undefined,
+        admittedAudience: policy.admittedAudience
     };
 }
 
@@ -97,7 +101,8 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ]);
+    ], ['admittedAudience']);
+    requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (typeof policy.persist !== 'boolean') {
         throw new TypeError('Captured outbound persistence policy is invalid');
     }
