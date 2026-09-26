@@ -295,11 +295,19 @@ describe('QRtcPeerConnection', () => {
         const { peer, native, sentSignals } = createPeerFixture(true);
         const started = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
+        const nativeFinished = Promise.withResolvers<void>();
+        const replacementStarted = Promise.withResolvers<void>();
+        const releaseReplacement = Promise.withResolvers<void>();
+        onTestFinished(() => {
+            release.resolve();
+            releaseReplacement.resolve();
+        });
         const setLocalDescription = native.setLocalDescription.bind(native);
         vi.spyOn(native, 'setLocalDescription').mockImplementationOnce(async () => {
             started.resolve();
             await release.promise;
             await setLocalDescription();
+            nativeFinished.resolve();
         });
         const applying = peer.handleSignal({
             signalType: 'Offer',
@@ -312,10 +320,29 @@ describe('QRtcPeerConnection', () => {
         await started.promise;
         peer.reset();
         peer.connect();
-        release.resolve();
+        const replacement = peer.status.pc;
+        if (!(replacement instanceof SimulatedNativeRtcPeerConnection)) {
+            throw new Error('Expected replacement native peer');
+        }
+        vi.spyOn(replacement, 'setLocalDescription').mockImplementationOnce(async () => {
+            replacementStarted.resolve();
+            await releaseReplacement.promise;
+        });
+        const replacementNegotiation = replacement.onnegotiationneeded?.call(replacement, new Event('negotiationneeded'));
+        await replacementStarted.promise;
         await applying;
+        expect(peer.status.makingOffer).toBe(true);
         expect(sentSignals).toEqual([]);
-        expect(peer.status.pc?.signalingState).toBe('stable');
+
+        release.resolve();
+        await nativeFinished.promise;
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect(sentSignals).toEqual([]);
+        expect(peer.status.pc).toBe(replacement);
+        expect(peer.status.makingOffer).toBe(true);
+        expect(replacement.signalingState).toBe('stable');
+        releaseReplacement.resolve();
+        await replacementNegotiation;
     });
 
     it('consumes a matching answer only after native application succeeds', async () => {
