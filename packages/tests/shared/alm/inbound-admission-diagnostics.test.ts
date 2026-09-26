@@ -174,6 +174,9 @@ it.each(['memory', 'indexeddb'] as const)(
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(2);
         const dispatch = claimsOf(diagnostics).find((claim) => claim.payloadKind === 'dispatch-local')!;
         const control = claimsOf(diagnostics).find((claim) => claim.payloadKind === 'send-control')!;
+        // The batch reports its drain after its last claim, so wait for it rather than for a third claim.
+        await expect.poll(() => drainsOf(diagnostics).some((event) => event.startedAtMs === dispatch.batchStartedAtMs))
+            .toBe(true);
         const drain = drainsOf(diagnostics).find((event) => event.startedAtMs === dispatch.batchStartedAtMs)!;
         expect(dispatch.effectId).toBe(`dispatch:${INBOUND_TEST_SENDER_PEER_ID}:${message.id.msgId}`);
         expect(dispatch.subjectMsgId).toBe(message.id.msgId);

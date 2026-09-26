@@ -103,9 +103,9 @@ describe('inbound admission preparation boundary', () => {
         const second = computeALInboundAdmission({ ...prepared, canForward: false });
 
         expect(second).toEqual(first);
+        // The ACK alone: the addressee owns no child, so it never asks its sender to retransmit (R-S2c-ii-9).
         expect(first.durableEffects.map((effect) => effect.payload.kind)).toEqual([
             'dispatch-local',
-            'send-control',
             'send-control'
         ]);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);

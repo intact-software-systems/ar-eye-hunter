@@ -47,6 +47,8 @@ describe('the child hops an RTC relay owns', () => {
         expect(readCopies(await c.readSent('b'), message)).toBe(0);
         const acks = [...await b.readSent('a'), ...await c.readSent('a')];
         expect(readAckTuples(acks)).toEqual([['b', 'delivered'], ['c', 'delivered']]);
+        // A recipient that owns no child never asks the origin to retransmit (R-S2c-ii-9).
+        expect(acks.map((control) => parseALControlMessage(control)?.type)).toEqual(['ack', 'ack']);
         for (const ack of acks) {
             await origin.manager.acceptControlMessage(ack);
         }
