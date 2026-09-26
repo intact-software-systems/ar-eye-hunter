@@ -325,12 +325,13 @@ export interface BlackBoxRallarMessageReplayDiagnostics {
 }
 
 /**
- * A harness capability, not a product path: one raw control envelope, shaped as the ACK of `ackedMsgId` from this
- * session and carrying `typeId`, admitted on `carrier` for `toPeerId`, the sender of that message.
+ * A harness capability, not a product path: one raw control envelope under the authored `msgId`, shaped as the ACK of
+ * `ackedMsgId` from this session and carrying `typeId`, admitted on `carrier` for `toPeerId`, the sender of that message.
  */
 export interface BlackBoxRallarControlSubmitInput {
     readonly carrier: ALDeliveryCarrier;
     readonly typeId: string;
+    readonly msgId: string;
     readonly ackedMsgId: string;
     readonly toPeerId: string;
 }

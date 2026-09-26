@@ -202,9 +202,11 @@ perform (no connected session, or the capturing carrier no longer retains the
 envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 
 `messages.control` is a harness capability, not a product path. It names `carrier`
-(`ws` or `rtc`), `typeId` (an `al.control.*` id), `ackedMsgId` and `toPeerId`, and
-optionally `connection`. The page builds the ACK envelope its own session would send
-for `ackedMsgId` to `toPeerId`, that message's sender, and swaps in `typeId`, so a
+(`ws` or `rtc`), `typeId` (an `al.control.*` id), `msgId`, `ackedMsgId` and `toPeerId`,
+and optionally `connection`. The page builds, under the authored `msgId`, the ACK
+envelope its own session would send for `ackedMsgId` to `toPeerId`, that message's
+sender, and swaps in `typeId`, so the addressee's admission outcome names this one
+control, and so a
 recipe can send a control version its addressee does not support. The envelope goes
 through the carrier admission a product control takes. It returns
 `{ msgId, typeId, carrier, verdict, reason? }`: the control's own msgId and that
@@ -218,13 +220,19 @@ no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
 The `receipted-audience` conformance scenarios run on three agents: `sender`,
 `receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
 sender reads its receipt only after the scenario window, never by polling
-`acknowledged`, and pins the receipt mode and the length of each recipient list. Its
+`acknowledged`, and pins the state the handle ended in (`acknowledged` for a receipt
+that completes, `expired` for one that ends timed out), the receipt mode and the
+length of each recipient list. Every send payload names its carrier, and the raw ACK
+of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
+runs every carrier on one page never matches an earlier carrier's event. Its
 recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
 receipt confirms and leaves unconfirmed. The identity assessment joins each list to
 the sessions of those roles after the run.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
-  waits for its committed `control-admission` of `al.control.receipt.v1`.
+  waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
+  first receipt frame, the `admitted` one, and the `acknowledged` read proves the
+  `complete` one.
 - `missing-recipient-retry`: `recipient-b` holds its ACK back with a fault it keeps
   armed until it is released. A one-shot `drop` would not lose the ACK: the RTC
   channel settles a dropped frame `not-ready` and its sender resubmits it 50 ms
@@ -234,17 +242,18 @@ the sessions of those roles after the run.
     retried copy ever reaches it, and the receipt confirms both recipients.
   - Over `ws` the room topic fans out live-only, so the WS server keeps no copy to
     retry. `recipient-b` proves no copy is retried, and the short-lived send's
-    receipt ends timed out, with the receiver confirmed and `recipient-b`
-    unconfirmed.
+    receipt ends timed out: the handle reads `expired`, with the receiver confirmed
+    and `recipient-b` unconfirmed.
 - `unknown-ack-version` (`rtc`, `rtc-with-ws-fallback`): `recipient-b` answers the
   send with a raw `al.control.ack.v1` through `messages.control`, and the sender
-  waits for its own `admission-outcome` refusing it `rejected`/`unsupported`. Over
+  waits for its own `admission-outcome` of that authored msgId refusing it
+  `rejected`/`unsupported`. Over
   `ws` the WS server refuses that frame before any relay, which stays a unit pin of
   the server.
 - `frozen-audience-membership`: `recipient-b` holds its ACK back and closes its
   connection once the send reaches it, which clears the fault. The receipt keeps it
-  expected and reports it unconfirmed (D43). `recipient-b` reconnects only after the
-  send has expired, as the same session.
+  expected and reports it unconfirmed (D43), and the handle reads `expired`.
+  `recipient-b` reconnects only after the send has expired, as the same session.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that

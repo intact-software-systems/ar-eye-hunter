@@ -16,7 +16,6 @@ export namespace SubmitBlackBoxRawControl {
         readonly sessionId: string | undefined;
         readonly context: ApiMiddleware | undefined;
         readonly nowMs: number;
-        readonly msgId: string;
     }
 
     export interface Submission {
@@ -42,12 +41,12 @@ export async function submitBlackBoxRawControl(
     }
     const result = await writeCarrierOutboxAdmission(context, control.carrier, toRawControlMessage(input, sessionId));
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);
-    return { msgId: input.msgId, verdict: result.verdict };
+    return { msgId: control.msgId, verdict: result.verdict };
 }
 
 function toRawControlMessage(input: SubmitBlackBoxRawControl.Input, sessionId: string): ALMessage {
     const { control, nowMs } = input;
-    const ack = newALAckControlMessage({ v: 2, msgId: input.msgId, senderId: sessionId, ts: nowMs }, {
+    const ack = newALAckControlMessage({ v: 2, msgId: control.msgId, senderId: sessionId, ts: nowMs }, {
         ackedMsgId: control.ackedMsgId,
         fromPeerId: sessionId,
         toPeerId: control.toPeerId,

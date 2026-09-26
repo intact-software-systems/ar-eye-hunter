@@ -216,8 +216,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
                     control,
                     sessionId: session.connection.session()?.sessionId,
                     context: session.session.readMiddleware(),
-                    nowMs: Date.now(),
-                    msgId: crypto.randomUUID()
+                    nowMs: Date.now()
                 }),
             resolveRoomMinSnapshotVersion: (roomRef) => state.roomStateStore.resolveRoomMinSnapshotVersion(roomRef)
         }

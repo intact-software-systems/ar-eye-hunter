@@ -55,8 +55,8 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
             'across ws, rtc, and rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
-            toAlmConformanceCombinedRecipe(scenarios, 'sender'),
-            toAlmConformanceCombinedRecipe(scenarios, 'receiver')
+            toAlmConformanceCombinedRecipe(scenarios, 'sender', 'two-agent'),
+            toAlmConformanceCombinedRecipe(scenarios, 'receiver', 'two-agent')
         ],
         agentCount: 2,
         profiles: ['alm', 'conformance', '2-agent', 'github-free-smoke', 'extended'],
@@ -94,7 +94,7 @@ export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEnt
             'rtc-with-ws-fallback carriers, with one sender and two recipients.',
         distributedRunId: 'hetzner-alm-conformance-3-agent',
         recipes: (['sender', 'receiver', 'recipient-b'] as const).map((role) =>
-            toAlmConformanceCombinedRecipe(scenarios, role)
+            toAlmConformanceCombinedRecipe(scenarios, role, 'three-agent')
         ),
         agentCount: 3,
         profiles: ['alm', 'conformance', '3-agent', 'extended'],
@@ -117,9 +117,10 @@ export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEnt
     });
 }
 
-function toAlmConformanceScenariosForAllCarriers(
-    family: 'two-agent' | 'three-agent'
-): readonly AlmConformanceScenario[] {
+/** A three-role scenario runs on its own three agents (D45), so each family combines into its own recipes. */
+type AlmConformanceFamily = 'two-agent' | 'three-agent';
+
+function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): readonly AlmConformanceScenario[] {
     const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         createAlmConformanceRecipes({
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -142,7 +143,8 @@ function toAlmConformanceScenariosForAllCarriers(
 
 export function toAlmConformanceCombinedRecipe(
     scenarios: readonly AlmConformanceScenario[],
-    role: AlmConformanceRole
+    role: AlmConformanceRole,
+    family: AlmConformanceFamily
 ): RallarBlackBoxTestRecipe {
     const checkpoints = scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload').flatMap(
         (scenario) => {
@@ -154,7 +156,7 @@ export function toAlmConformanceCombinedRecipe(
         }
     );
     // The two families run in one profile, so the three-agent recipes carry an identity of their own.
-    const recipePrefix = scenarios.some(isThreeAgentScenario) ? 'alm-conformance-3-agent' : 'alm-conformance';
+    const recipePrefix = family === 'three-agent' ? 'alm-conformance-3-agent' : 'alm-conformance';
     return {
         schemaVersion: 1,
         recipeId: `${recipePrefix}-${role}`,

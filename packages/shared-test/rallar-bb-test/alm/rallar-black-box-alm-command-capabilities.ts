@@ -104,10 +104,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
     {
         kind: 'messages.control',
         title: 'Submit Raw ALM Control',
-        description: 'A harness capability, not a product path: submits the ACK envelope this session would send for ' +
-            'ackedMsgId to toPeerId, its sender, carrying typeId (an al.control.* id, such as an ACK version the ' +
-            'addressee does not support) through the carrier admission a product control takes. The result reports the ' +
-            'control msgId and that carrier verdict; the addressee records its own admission outcome.',
+        description: 'Harness-only: submits, as msgId, the ACK of ackedMsgId to its sender toPeerId under an ' +
+            'al.control.* typeId, through the carrier admission a product control takes; returns the carrier verdict.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -117,6 +115,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             commandId: 'submit-unknown-ack-version',
             carrier: 'rtc',
             typeId: 'al.control.ack.v1',
+            msgId: 'retired-ack-1',
             ackedMsgId: 'received-msg-id',
             toPeerId: 'origin-session-id'
         }

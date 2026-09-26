@@ -17,15 +17,17 @@ export function decodeBlackBoxRallarControlSubmitInput(
     const record = isBlackBoxCommandRecord(value) ? value : {};
     const carrier = CONTROL_CARRIERS.find((candidate) => candidate === record.carrier);
     const typeId = decodeBlackBoxCommandString(record.typeId);
+    const msgId = decodeBlackBoxCommandString(record.msgId);
     const ackedMsgId = decodeBlackBoxCommandString(record.ackedMsgId);
     const toPeerId = decodeBlackBoxCommandString(record.toPeerId);
     if (
         carrier === undefined || typeId === undefined || !typeId.startsWith(CONTROL_TYPE_ID_PREFIX) ||
-        ackedMsgId === undefined || toPeerId === undefined
+        msgId === undefined || ackedMsgId === undefined || toPeerId === undefined
     ) {
         return Either.ofLeft({
-            message: 'messages.control must name a ws or rtc carrier, an al.control.* typeId, ackedMsgId and toPeerId.'
+            message:
+                'messages.control must name a ws or rtc carrier, an al.control.* typeId, msgId, ackedMsgId and toPeerId.'
         });
     }
-    return Either.ofRight({ carrier, typeId, ackedMsgId, toPeerId });
+    return Either.ofRight({ carrier, typeId, msgId, ackedMsgId, toPeerId });
 }

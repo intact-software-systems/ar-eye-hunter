@@ -1079,6 +1079,19 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
     });
 
+    it('scopes every positive wait of the 3-agent ALM recipes to one scenario, since a wait also matches past events', () => {
+        const manifest = createHetznerDistributedManifestCatalog()
+            .find((candidate) => candidate.filePath.endsWith('/22-alm-conformance-3-agent.json'))!.manifest;
+        for (const selection of manifest.recipes) {
+            const matches = ((selection.recipe?.commands ?? []) as readonly (ManifestCommand & { absent?: boolean; match?: object; })[])
+                .filter((command) => command.kind === 'wait' && command.absent !== true)
+                .map((command) => JSON.stringify(command.match));
+            const shadowed = matches.filter((match, index) => matches.some((other, otherIndex) => otherIndex !== index && other.includes(match.slice(1, -1))));
+
+            expect(shadowed, selection.role).toEqual([]);
+        }
+    });
+
     it('keeps every identity of the 3-agent ALM manifest apart from the 2-agent one, so both can run in one profile', () => {
         const catalog = createHetznerDistributedManifestCatalog();
         const identitiesOf = (fileName: string) => {

@@ -78,12 +78,15 @@ export function toSingleArrivalReceiverCommands(
 }
 
 /**
- * The `admission-outcome` a peer states for a control it received, matched in its emitted key order (`typeId`, then
- * `carrier`, `outcome`, `reason`). The control carries no scenario typeId, so its own typeId scopes the match.
+ * The `admission-outcome` a peer states for a control it received, matched in its emitted key order (`msgId`, `typeId`,
+ * then `carrier`, `outcome`, `reason`). The control carries no scenario typeId, so its own authored msgId scopes the
+ * match to this one control.
  */
 export function toControlAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<{ name: string; controlTypeId: string; contains: string; timeoutMs: number; }>
+    outcome: Readonly<
+        { name: string; controlMsgId: string; controlTypeId: string; contains: string; timeoutMs: number; }
+    >
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -92,7 +95,7 @@ export function toControlAdmissionOutcomeWait(
             kind: 'diagnostic',
             topic: INBOUND_DIAGNOSTICS_TOPIC,
             payloadPath: 'data',
-            contains: `"typeId":"${outcome.controlTypeId}",${outcome.contains}`
+            contains: `"msgId":"${outcome.controlMsgId}","typeId":"${outcome.controlTypeId}",${outcome.contains}`
         },
         timeoutMs: outcome.timeoutMs
     };

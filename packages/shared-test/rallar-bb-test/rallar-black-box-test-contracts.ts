@@ -6,6 +6,8 @@ import type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
+
+import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
     'recipe.load',
@@ -354,15 +356,9 @@ export type RallarBlackBoxTestMessagesReceiptsCommand =
     & RallarBlackBoxTestCommandBase<'messages.receipts'>
     & Readonly<{ connection?: string; handleId: string; }>;
 
-/**
- * A harness capability, not a product path: submits the raw ACK envelope of `ackedMsgId` to `toPeerId`, its sender,
- * on one carrier, carrying `typeId` in place of the supported ACK version.
- */
 export type RallarBlackBoxTestMessagesControlCommand =
     & RallarBlackBoxTestCommandBase<'messages.control'>
-    & Readonly<
-        { connection?: string; carrier: ALDeliveryCarrier; typeId: string; ackedMsgId: string; toPeerId: string; }
-    >;
+    & RallarBlackBoxTestMessagesControlFields;
 
 export type RallarBlackBoxTestFaultInjectCommand =
     & RallarBlackBoxTestCommandBase<'fault.inject'>

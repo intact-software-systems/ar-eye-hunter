@@ -633,6 +633,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         connection: stringSchema,
         carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg },
         typeId: stringSchema,
+        msgId: stringSchema,
         ackedMsgId: stringSchema,
         toPeerId: stringSchema
     }),

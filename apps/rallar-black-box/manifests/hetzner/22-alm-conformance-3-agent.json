@@ -217,7 +217,8 @@
             "typeId": "alm.conformance.ws.aggregated-receipt",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "aggregated-receipt"
+              "marker": "aggregated-receipt",
+              "carrier": "ws"
             },
             "handleId": "alm-ws-aggregated-receipt-send-1",
             "timeoutMs": 10000,
@@ -283,6 +284,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-ws-aggregated-receipt-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-ws-aggregated-receipt-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-ws-aggregated-receipt-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-ws-aggregated-receipt-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -332,7 +341,8 @@
             "typeId": "alm.conformance.ws.missing-recipient-retry",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "missing-recipient-retry"
+              "marker": "missing-recipient-retry",
+              "carrier": "ws"
             },
             "handleId": "alm-ws-missing-recipient-retry-send-1",
             "timeoutMs": 7500,
@@ -387,6 +397,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-ws-missing-recipient-retry-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-ws-missing-recipient-retry-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "expired",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-ws-missing-recipient-retry-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-ws-missing-recipient-retry-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -436,7 +454,8 @@
             "typeId": "alm.conformance.ws.frozen-audience-membership",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "frozen-audience-membership"
+              "marker": "frozen-audience-membership",
+              "carrier": "ws"
             },
             "handleId": "alm-ws-frozen-audience-membership-send-1",
             "timeoutMs": 7500,
@@ -491,6 +510,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-ws-frozen-audience-membership-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-ws-frozen-audience-membership-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "expired",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-ws-frozen-audience-membership-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-ws-frozen-audience-membership-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -540,7 +567,8 @@
             "typeId": "alm.conformance.rtc.aggregated-receipt",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "aggregated-receipt"
+              "marker": "aggregated-receipt",
+              "carrier": "rtc"
             },
             "handleId": "alm-rtc-aggregated-receipt-send-1",
             "timeoutMs": 10000,
@@ -600,6 +628,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-rtc-aggregated-receipt-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-aggregated-receipt-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-rtc-aggregated-receipt-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-rtc-aggregated-receipt-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -649,7 +685,8 @@
             "typeId": "alm.conformance.rtc.missing-recipient-retry",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "missing-recipient-retry"
+              "marker": "missing-recipient-retry",
+              "carrier": "rtc"
             },
             "handleId": "alm-rtc-missing-recipient-retry-send-1",
             "timeoutMs": 10000,
@@ -709,6 +746,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-missing-recipient-retry-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-rtc-missing-recipient-retry-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-rtc-missing-recipient-retry-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -758,7 +803,8 @@
             "typeId": "alm.conformance.rtc.unknown-ack-version",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "unknown-ack-version"
+              "marker": "unknown-ack-version",
+              "carrier": "rtc"
             },
             "handleId": "alm-rtc-unknown-ack-version-send-1",
             "timeoutMs": 10000,
@@ -806,7 +852,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-unknown-ack-version-retired-ack-1\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
             },
             "timeoutMs": 27000
           },
@@ -826,6 +872,14 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-unknown-ack-version-send-1",
             "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-unknown-ack-version-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-unknown-ack-version-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
           },
           {
             "kind": "assert",
@@ -878,7 +932,8 @@
             "typeId": "alm.conformance.rtc.frozen-audience-membership",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "frozen-audience-membership"
+              "marker": "frozen-audience-membership",
+              "carrier": "rtc"
             },
             "handleId": "alm-rtc-frozen-audience-membership-send-1",
             "timeoutMs": 7500,
@@ -938,6 +993,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-frozen-audience-membership-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "expired",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-rtc-frozen-audience-membership-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-rtc-frozen-audience-membership-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -987,7 +1050,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.aggregated-receipt",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "aggregated-receipt"
+              "marker": "aggregated-receipt",
+              "carrier": "rtc-with-ws-fallback"
             },
             "handleId": "alm-rtc-with-ws-fallback-aggregated-receipt-send-1",
             "timeoutMs": 10000,
@@ -1047,6 +1111,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-aggregated-receipt-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-rtc-with-ws-fallback-aggregated-receipt-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -1096,7 +1168,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "missing-recipient-retry"
+              "marker": "missing-recipient-retry",
+              "carrier": "rtc-with-ws-fallback"
             },
             "handleId": "alm-rtc-with-ws-fallback-missing-recipient-retry-send-1",
             "timeoutMs": 10000,
@@ -1156,6 +1229,14 @@
           },
           {
             "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-missing-recipient-retry-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-assert-receipt-receiptMode-1",
             "source": "resultCache.alm-rtc-with-ws-fallback-missing-recipient-retry-sender-receipts-1.value.receiptMode",
             "operator": "equals",
@@ -1205,7 +1286,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "unknown-ack-version"
+              "marker": "unknown-ack-version",
+              "carrier": "rtc-with-ws-fallback"
             },
             "handleId": "alm-rtc-with-ws-fallback-unknown-ack-version-send-1",
             "timeoutMs": 10000,
@@ -1253,7 +1335,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1\",\"typeId\":\"al.control.ack.v1\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
             },
             "timeoutMs": 27000
           },
@@ -1273,6 +1355,14 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-unknown-ack-version-send-1",
             "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
           },
           {
             "kind": "assert",
@@ -1325,7 +1415,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
             "topicId": "room.alm-conformance",
             "payload": {
-              "marker": "frozen-audience-membership"
+              "marker": "frozen-audience-membership",
+              "carrier": "rtc-with-ws-fallback"
             },
             "handleId": "alm-rtc-with-ws-fallback-frozen-audience-membership-send-1",
             "timeoutMs": 7500,
@@ -1382,6 +1473,14 @@
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-frozen-audience-membership-send-1",
             "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-assert-receipt-state-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-frozen-audience-membership-sender-receipts-1.value.state",
+            "operator": "equals",
+            "expected": "expired",
+            "timeoutMs": 2000
           },
           {
             "kind": "assert",
@@ -1558,7 +1657,7 @@
           },
           {
             "kind": "wait",
-            "commandId": "alm-ws-missing-recipient-retry-receiver-retried-copy",
+            "commandId": "alm-ws-missing-recipient-retry-receiver-no-retried-copy",
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
@@ -1625,7 +1724,7 @@
           },
           {
             "kind": "wait",
-            "commandId": "alm-rtc-missing-recipient-retry-receiver-retried-copy",
+            "commandId": "alm-rtc-missing-recipient-retry-receiver-no-retried-copy",
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
@@ -1717,7 +1816,7 @@
           },
           {
             "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-receiver-retried-copy",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-receiver-no-retried-copy",
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
@@ -1922,7 +2021,7 @@
           },
           {
             "kind": "wait",
-            "commandId": "alm-ws-missing-recipient-retry-recipient-b-retried-copy",
+            "commandId": "alm-ws-missing-recipient-retry-recipient-b-no-retried-copy",
             "match": {
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
@@ -2096,7 +2195,8 @@
               "connection": "almConformanceReceiver",
               "payloadPath": "data.payload",
               "equals": {
-                "marker": "unknown-ack-version"
+                "marker": "unknown-ack-version",
+                "carrier": "rtc"
               }
             },
             "timeoutMs": 27000
@@ -2107,6 +2207,7 @@
             "connection": "almConformanceReceiver",
             "carrier": "rtc",
             "typeId": "al.control.ack.v1",
+            "msgId": "alm-rtc-unknown-ack-version-retired-ack-1",
             "ackedMsgId": "{resultCache.alm-rtc-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "toPeerId": "{resultCache.alm-rtc-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}",
             "timeoutMs": 5000
@@ -2263,7 +2364,8 @@
               "connection": "almConformanceReceiver",
               "payloadPath": "data.payload",
               "equals": {
-                "marker": "unknown-ack-version"
+                "marker": "unknown-ack-version",
+                "carrier": "rtc-with-ws-fallback"
               }
             },
             "timeoutMs": 27000
@@ -2274,6 +2376,7 @@
             "connection": "almConformanceReceiver",
             "carrier": "rtc",
             "typeId": "al.control.ack.v1",
+            "msgId": "alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1",
             "ackedMsgId": "{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}",
             "toPeerId": "{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}",
             "timeoutMs": 5000

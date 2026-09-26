@@ -27,9 +27,23 @@ export function readAlmReceiptRolesEntries(recipe: RallarBlackBoxTestRecipe): re
  * must name exactly the sessions of the roles the scenario pins, so a count that is right for the wrong peer fails.
  */
 export function assessAlmReceiptRoleIdentity(input: AlmReceiptRoleIdentityInput): readonly string[] {
-    return readAlmReceiptRolesEntries(input.sender.participant.recipe).flatMap((entry) =>
-        assessReceiptRolesEntry(entry, input)
-    );
+    const recipe = input.sender.participant.recipe;
+    return [
+        ...validateAlmReceiptRolesMetadata(recipe),
+        ...readAlmReceiptRolesEntries(recipe).flatMap((entry) => assessReceiptRolesEntry(entry, input))
+    ];
+}
+
+/** A pin that does not decode fails the run instead of skipping its identity check. */
+function validateAlmReceiptRolesMetadata(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    const entries = recipe.metadata?.almReceiptRoles;
+    if (entries === undefined) {
+        return [];
+    }
+    const malformed = Array.isArray(entries) ? entries.filter((entry) => !isAlmReceiptRolesEntry(entry)).length : 1;
+    return malformed === 0
+        ? []
+        : [`${recipe.recipeId}: ${malformed} receipt role pin(s) do not name a handle and two role lists.`];
 }
 
 function assessReceiptRolesEntry(entry: AlmReceiptRolesEntry, input: AlmReceiptRoleIdentityInput): readonly string[] {

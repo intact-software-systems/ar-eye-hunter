@@ -185,6 +185,7 @@
           "connection": "goldenRtc",
           "carrier": "rtc",
           "typeId": "al.control.ack.v1",
+          "msgId": "golden-retired-ack",
           "ackedMsgId": "golden-received-msg",
           "toPeerId": "golden-origin-session"
         },

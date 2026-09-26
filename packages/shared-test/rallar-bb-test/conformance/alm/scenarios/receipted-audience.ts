@@ -15,6 +15,7 @@ import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-con
 import { toCommittedControlAdmissionWait } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
+    toAudiencePayload,
     toAudienceSendCommands,
     toReceiptWindowCommands,
     type AlmConformanceReceiptRoles
@@ -54,7 +55,7 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED)
+        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
     ],
     toRecipientCommands: toSingleArrivalReceiverCommands
 };
@@ -77,7 +78,11 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
             sender,
             ttlMs: sender.input.carrier === 'ws' ? EXPIRY_TTL_MS : NON_EXPIRING_TTL_MS
         }),
-        ...toReceiptWindowCommands(sender, toRetryReceiptRoles(sender.input.carrier))
+        ...toReceiptWindowCommands(
+            sender,
+            toRetryReceiptRoles(sender.input.carrier),
+            sender.input.carrier === 'ws' ? 'expired' : 'acknowledged'
+        )
     ],
     toRecipientCommands: toRetryRecipientCommands
 };
@@ -96,7 +101,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS }),
-        ...toReceiptWindowCommands(sender, RECIPIENT_B_UNCONFIRMED)
+        ...toReceiptWindowCommands(sender, RECIPIENT_B_UNCONFIRMED, 'expired')
     ],
     toRecipientCommands: toMembershipRecipientCommands
 };
@@ -118,11 +123,12 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
         toControlAdmissionOutcomeWait(sender, {
             name: 'unknown-ack-version-refused',
+            controlMsgId: toRetiredAckMsgId(sender),
             controlTypeId: RETIRED_ACK_TYPE_ID,
             contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"',
             timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
         }),
-        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED)
+        ...toReceiptWindowCommands(sender, BOTH_CONFIRMED, 'acknowledged')
     ],
     toRecipientCommands: toUnknownAckVersionRecipientCommands
 };
@@ -134,11 +140,20 @@ export const receiptedAudience: readonly AlmConformanceScenarioDefinition[] = [
     frozenAudienceMembership
 ];
 
+/** Authored, so the refusal the origin states names this control and no raw ACK of another carrier. */
+function toRetiredAckMsgId(step: AlmConformanceStepInput): string {
+    return `alm-${step.input.carrier}-${step.scenarioKey}-retired-ack-1`;
+}
+
 function toRetryReceiptRoles(carrier: AlmConformanceCarrier): AlmConformanceReceiptRoles {
     return carrier === 'ws' ? RECIPIENT_B_UNCONFIRMED : BOTH_CONFIRMED;
 }
 
-/** Over ws the receipt is a control of the trusted server, so the origin states its own admission of it. */
+/**
+ * Over ws the receipt is a control of the trusted server, so the origin states its own admission of it. The wait
+ * matches the first receipt frame committed for the send, the `admitted` one; the frame carries no phase in its
+ * diagnostic, so completion is proven by the receipt read after the window, which must read `acknowledged`.
+ */
 function toServerReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return sender.input.carrier !== 'ws' ? [] : [
         toCommittedControlAdmissionWait({
@@ -162,6 +177,7 @@ function toRetryRecipientCommands(recipient: AlmConformanceStepInput): readonly 
     });
     const noRetriedCopy = {
         ...retried,
+        commandId: toCommandId(recipient, 'no-retried-copy'),
         absent: true as const,
         timeoutMs: recipient.input.deadlineMs - RESPONSE_MARGIN_MS
     };
@@ -211,7 +227,7 @@ function toUnknownAckVersionRecipientCommands(
     const arrival = toPayloadWait({
         step: recipient,
         name: 'received-send-1',
-        payload: { marker: recipient.scenarioKey },
+        payload: toAudiencePayload(recipient),
         absent: false
     });
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
@@ -223,6 +239,7 @@ function toUnknownAckVersionRecipientCommands(
             connection: recipient.input.receiverConnection,
             carrier: 'rtc',
             typeId: RETIRED_ACK_TYPE_ID,
+            msgId: toRetiredAckMsgId(recipient),
             ackedMsgId: `{${event}.data.msgId}`,
             toPeerId: `{${event}.senderId}`,
             timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, recipient.input.deadlineMs)

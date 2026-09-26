@@ -59,6 +59,7 @@ const RAW_CONTROL_COMMAND = {
     commandId: 'alm-raw-control',
     carrier: 'rtc',
     typeId: 'al.control.ack.v1',
+    msgId: 'control-1',
     ackedMsgId: 'msg-1',
     toPeerId: 'origin-session'
 } as const;
@@ -428,6 +429,7 @@ describe('ALM recipe commands', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('raw-control-fallback', fallback)).ok)
             .toBe(false);
         expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, toPeerId: undefined }).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand({ ...RAW_CONTROL_COMMAND, msgId: undefined }).ok).toBe(false);
     });
 
     it('rejects a control-protocol messages.send without a carrier', () => {
@@ -552,6 +554,7 @@ describe('ALM browser adapter execution', () => {
             connection: 'default',
             carrier: 'rtc',
             typeId: 'al.control.ack.v1',
+            msgId: 'control-1',
             ackedMsgId: 'msg-1',
             toPeerId: 'origin-session'
         });

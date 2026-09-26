@@ -103,4 +103,18 @@ describe('ALM receipt role identity', () => {
                 'alm-ws-missing-recipient-retry-send-1: the expected recipients do not name the sessions of receiver and recipient-b.'
             ]);
     });
+
+    it('fails a malformed receipt role pin instead of skipping its identity check', () => {
+        const scenario = toRetryScenario('ws');
+        const pins = scenario.sender.metadata?.almReceiptRoles;
+        const sender = {
+            ...scenario.sender,
+            metadata: { ...scenario.sender.metadata, almReceiptRoles: [...(Array.isArray(pins) ? pins : []), { handleId: 7 }] }
+        };
+
+        expect(assessAlmReceiptRoleIdentity({
+            sender: toRecorded('sender', sender, WS_TIMED_OUT),
+            recipients: [toRecorded('receiver', scenario.receiver, WS_TIMED_OUT), toRecorded('recipient-b', scenario.recipientB, WS_TIMED_OUT)]
+        })).toEqual(['alm-ws-missing-recipient-retry-sender: 1 receipt role pin(s) do not name a handle and two role lists.']);
+    });
 });

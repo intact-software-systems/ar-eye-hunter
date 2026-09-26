@@ -1,3 +1,5 @@
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import {
@@ -22,6 +24,9 @@ export interface AlmConformanceReceiptRoles {
     readonly unconfirmed: readonly AlmConformanceRole[];
 }
 
+/** The state the handle has reached when the origin reads its receipt: complete, or past its deadline. */
+export type AlmConformanceReceiptEnding = Extract<ALDeliveryState, 'acknowledged' | 'expired'>;
+
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
@@ -38,7 +43,7 @@ export function toAudienceSendCommands(
         toSendCommand({
             ...sender,
             index: 1,
-            payload: { marker: sender.scenarioKey },
+            payload: toAudiencePayload(sender),
             delivery: {
                 ack: 'all-logical-recipients',
                 reliability: 'at-least-once',
@@ -52,12 +57,14 @@ export function toAudienceSendCommands(
 
 /**
  * D28: the origin reads its receipt only after the scenario window, never by polling `acknowledged`, and spends the
- * window proving it is not its own recipient, since the frozen audience excludes it. Then it pins the receipt mode and
- * the length of each recipient list; which session each list names is joined after the run.
+ * window proving it is not its own recipient, since the frozen audience excludes it. Then it pins the state the handle
+ * ended in, the receipt mode and the length of each recipient list; which session each list names is joined after the
+ * run.
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
-    roles: AlmConformanceReceiptRoles
+    roles: AlmConformanceReceiptRoles,
+    ending: AlmConformanceReceiptEnding
 ): readonly RallarBlackBoxTestCommand[] {
     const windowMs = sender.input.deadlineMs - RESPONSE_MARGIN_MS;
     const lists = [
@@ -77,9 +84,15 @@ export function toReceiptWindowCommands(
             timeoutMs: windowMs + RESPONSE_MARGIN_MS
         },
         toReceiptsCommand({ ...sender, index: 1 }),
+        toReceiptAssertion(sender, 'state', ending),
         toReceiptAssertion(sender, 'receiptMode', 'receiver'),
         ...lists.map(([field, expected]) => toReceiptAssertion(sender, `${field}.length`, expected))
     ];
+}
+
+/** The carrier scopes the payload, so a combined recipe never matches the arrival of an earlier carrier. */
+export function toAudiencePayload(step: AlmConformanceStepInput): Readonly<Record<string, string>> {
+    return { marker: step.scenarioKey, carrier: step.input.carrier };
 }
 
 /**

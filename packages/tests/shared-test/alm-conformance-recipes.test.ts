@@ -585,15 +585,16 @@ describe('alm-conformance recipe family', () => {
 
         it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
             const tails = {
-                'aggregated-receipt': [2, 2, 0],
-                'unknown-ack-version': [2, 2, 0],
-                'frozen-audience-membership': [2, 1, 1]
+                'aggregated-receipt': ['acknowledged', 2, 2, 0],
+                'unknown-ack-version': ['acknowledged', 2, 2, 0],
+                'frozen-audience-membership': ['expired', 2, 1, 1]
             } as const;
-            for (const [key, [expected, confirmed, unconfirmed]] of Object.entries(tails)) {
-                const tail = receiptedOf('rtc', key).sender.commands.slice(-7, -1);
-                expect(tail.map(shapeOf), key).toEqual(['received:1:absent', 'messages.receipts', 'assert', 'assert', 'assert', 'assert']);
+            for (const [key, [ending, expected, confirmed, unconfirmed]] of Object.entries(tails)) {
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-8, -1);
+                expect(tail.map(shapeOf), key)
+                    .toEqual(['received:1:absent', 'messages.receipts', 'assert', 'assert', 'assert', 'assert', 'assert']);
                 expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
-                    .toEqual(['receiver', expected, confirmed, unconfirmed]);
+                    .toEqual([ending, 'receiver', expected, confirmed, unconfirmed]);
             }
             const retryCounts = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
                 receiptedOf(carrier, 'missing-recipient-retry').sender.commands.flatMap((command) =>
@@ -602,6 +603,77 @@ describe('alm-conformance recipe family', () => {
             expect(retryCounts('ws')).toEqual([2, 1, 1]);
             expect(retryCounts('rtc')).toEqual([2, 2, 0]);
             expect(retryCounts('rtc-with-ws-fallback')).toEqual([2, 2, 0]);
+        });
+
+        it.each(
+            [
+                ['ws', 'expired', 'acknowledged'],
+                ['rtc', 'acknowledged', 'expired'],
+                ['rtc-with-ws-fallback', 'acknowledged', 'expired']
+            ] as const
+        )('ends the %s retry receipt %s and fails it when the handle reads %s', async (carrier, ending, other) => {
+            const sender = receiptedOf(carrier, 'missing-recipient-retry').sender;
+            const receiptsAt = sender.commands.findIndex((command) => command.kind === 'messages.receipts');
+            const lists = carrier === 'ws'
+                ? { expected: ['r', 'b'], confirmed: ['r'], unconfirmed: ['b'] }
+                : { expected: ['r', 'b'], confirmed: ['r', 'b'], unconfirmed: [] };
+            const readTail = async (state: string) => {
+                const runtime = createRallarBlackBoxTestRuntime({
+                    commandExecutor: (command) =>
+                        command.kind === 'messages.receipts'
+                            ? {
+                                status: 'ok',
+                                value: {
+                                    state,
+                                    receiptMode: 'receiver',
+                                    expectedRecipientPeerIds: lists.expected,
+                                    confirmedRecipientPeerIds: lists.confirmed,
+                                    unconfirmedRecipientPeerIds: lists.unconfirmed
+                                }
+                            }
+                            : undefined
+                });
+                const tail = { ...sender, commands: sender.commands.slice(receiptsAt, -1) };
+                return (await runtime.execute({ kind: 'recipe.run', recipe: tail })).ok;
+            };
+
+            expect(await readTail(ending)).toBe(true);
+            expect(await readTail(other)).toBe(false);
+        });
+
+        it('ends the frozen-audience receipt expired and every completing receipt acknowledged, on every carrier', () => {
+            const endingOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) =>
+                receiptedOf(carrier, key).sender.commands.flatMap((command) =>
+                    command.kind === 'assert' && command.source.endsWith('receipts-1.value.state') ? [command.expected] : []
+                );
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                expect(endingOf(carrier, 'frozen-audience-membership'), carrier).toEqual(['expired']);
+                expect(endingOf(carrier, 'aggregated-receipt'), carrier).toEqual(['acknowledged']);
+            }
+            expect(endingOf('rtc', 'unknown-ack-version')).toEqual(['acknowledged']);
+        });
+
+        it('scopes each unknown-ack-version wait to its own carrier, so a combined recipe cannot match an earlier carrier', () => {
+            const waitsOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) => {
+                const scenario = receiptedOf(carrier, 'unknown-ack-version');
+                const arrival = bodyOf(scenario.recipientB).find((command) => command.kind === 'wait');
+                const control = bodyOf(scenario.recipientB).find((command) => command.kind === 'messages.control');
+                const refusal = scenario.sender.commands.find((command) =>
+                    command.kind === 'wait' && command.match.contains?.includes('al.control.ack.v1') === true
+                );
+                return {
+                    arrival: arrival?.kind === 'wait' ? JSON.stringify(arrival.match.equals) : undefined,
+                    controlMsgId: control?.kind === 'messages.control' ? control.msgId : undefined,
+                    refusal: refusal?.kind === 'wait' ? refusal.match.contains : undefined
+                };
+            };
+            const rtc = waitsOf('rtc');
+            const fallback = waitsOf('rtc-with-ws-fallback');
+
+            expect(rtc.arrival).not.toBe(fallback.arrival);
+            expect(rtc.controlMsgId).not.toBe(fallback.controlMsgId);
+            expect(rtc.refusal).toContain(`"msgId":"${rtc.controlMsgId}"`);
+            expect(fallback.refusal).toContain(`"msgId":"${fallback.controlMsgId}"`);
         });
 
         it('holds the ACK of recipient-b until the retried copy arrives over RTC, and proves over ws that no copy is retried', () => {
@@ -623,6 +695,7 @@ describe('alm-conformance recipe family', () => {
                     kind: 'messages.control',
                     carrier: 'rtc',
                     typeId: 'al.control.ack.v1',
+                    msgId: 'alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1',
                     ackedMsgId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.data.msgId}',
                     toPeerId: '{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-send-1.value.event.payload.senderId}'
                 }
@@ -631,7 +704,8 @@ describe('alm-conformance recipe family', () => {
                 kind: 'wait',
                 match: expect.objectContaining({
                     topic: INBOUND_DIAGNOSTICS_TOPIC,
-                    contains: '"typeId":"al.control.ack.v1","carrier":"rtc","outcome":"rejected","reason":"unsupported"'
+                    contains: '"msgId":"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-1","typeId":"al.control.ack.v1",' +
+                        '"carrier":"rtc","outcome":"rejected","reason":"unsupported"'
                 })
             }));
         });
