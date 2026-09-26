@@ -352,7 +352,7 @@ class RtcRecoveryOwner {
                 'room',
                 'reload.original',
                 { original: true },
-                { groupRef: this.roomRef, ttlMs: 30_000 }
+                { groupRef: this.roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
             ),
             delivery: { reliability: 'at-least-once', ack: 'none' }
         };

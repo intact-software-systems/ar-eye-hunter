@@ -16,6 +16,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
+    RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
@@ -726,5 +727,25 @@ describe('alm-conformance recipe family', () => {
                 expect.objectContaining({ kind: 'messages.send', ack: 'all-logical-recipients', ttlMs: 7_500 })
             );
         });
+    });
+
+    it('opts the reload original into local-outbox and reads the lifecycle specimens as volatile', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+            const reload = scenarios.find((scenario) => scenario.scenarioId === 'delivery-reload')!;
+            const lifecycle = scenarios.find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
+            const reloadSend = reload.sender.commands.find((command) => command.kind === 'messages.send');
+            const enqueuedAsserts = (recipe: RallarBlackBoxTestRecipe) =>
+                recipe.commands.filter((command): command is RallarBlackBoxTestAssertCommand =>
+                    command.kind === 'assert' && command.source.endsWith('.value.enqueued')
+                );
+
+            expect(reloadSend, carrier).toMatchObject({ durability: 'local-outbox' });
+            expect(enqueuedAsserts(reload.sender).map((command) => command.expected), carrier).toEqual([
+                true
+            ]);
+            expect(enqueuedAsserts(lifecycle.sender).map((command) => command.expected), carrier)
+                .toEqual([false, false]);
+        }
     });
 });

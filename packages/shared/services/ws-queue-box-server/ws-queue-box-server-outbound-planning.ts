@@ -12,7 +12,7 @@ import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
-    shouldPersistOutbox,
+    shouldAwaitALRoute,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { toALReceiverAckNormalizationInput } from '../../al-contracts/validate-al-ack-support.ts';
@@ -92,7 +92,7 @@ export class WsQueueBoxServerOutboundPlanning {
         const normalized = this.normalizePolicy(request.message);
         const message = toALOutboundMessage(request.message, normalized.effective);
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
-        const persist = shouldPersistOutbox(normalized.effective);
+        const persist = shouldAwaitALRoute(normalized.effective);
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
             msg: message,
             carrier: 'ws',

@@ -462,6 +462,28 @@ it('passes a stated QoS request to the typed send as given, and none without one
         .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
+it('decodes a declared send durability and refuses an unknown one', () => {
+    const send = {
+        kind: 'messages.send',
+        timeoutMs: 1_000,
+        connection: 'sender',
+        carrier: 'ws',
+        typeId: 'alm.conformance',
+        handleId: 'handle-1',
+        payload: { n: 1 }
+    };
+
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'local-outbox' }).right)
+        .toMatchObject({ durability: 'local-outbox' });
+    expect(decodeBlackBoxRallarMessageSendInput(send).right).toMatchObject({
+        durability: undefined
+    });
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'forever' }).left)
+        .toEqual({
+            message: 'messages.send.durability must be volatile, local-outbox or local-inbox.'
+        });
+});
+
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
     const runtime = await loadRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 0 });

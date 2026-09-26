@@ -11,11 +11,16 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
+import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
+import {
+    WsQueueBoxServerOutboundPlanning,
+    type WsQueueBoxServerPreparedMessage
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { drainEngine } from '../alm/outbound-runtime-test-fixture.ts';
@@ -129,6 +134,35 @@ describe('WS server outbound planning', () => {
         expect(await fixture.store.readReceiptState({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: algo, expectedPeerIds });
         expect(fixture.sockets.get('e')!.sent).toEqual([]);
+    });
+
+    it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {
+        const server = new JsonWebSocketServer();
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: server,
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'a',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'volatile-retrying' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', qos: { durability: { algo: 'volatile' } } }
+        );
+
+        const plan = planning.planOutboundMessage({
+            message,
+            phase: 'immediate',
+            clusterPublisherRegistered: false,
+            admittedAudience: undefined
+        });
+
+        expect(plan).toMatchObject({ dropReasonCode: undefined, persist: true, preparedMessages: [] });
     });
 });
 

@@ -215,7 +215,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(wakes).toBe(0);
     });
 
-    it('persists signaling while disconnected and wakes for accepted work but not a closed service', async () => {
+    it('queues signaling while disconnected as volatile work without waking the outbox, and refuses a closed service', async () => {
         const service = createSignalingQueueBox();
         let wakes = 0;
         const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
@@ -225,7 +225,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         await transport.send(payload);
 
-        expect(wakes).toBe(1);
+        expect(wakes).toBe(0);
         const keys = await service.outbox.getAllKeys();
         const rows = await Promise.all(keys.map((key) => service.outbox.getItem(key)));
         const entry = rows.find((row) => row?.key.topicId === 'AL_OUTBOUND_MESSAGE');
@@ -240,7 +240,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         service.close(1000, 'test-disconnect');
         await expect(transport.send(payload)).rejects.toThrow();
-        expect(wakes).toBe(1);
+        expect(wakes).toBe(0);
         expect(await service.outbox.getAllKeys()).toEqual(keys);
     });
 });

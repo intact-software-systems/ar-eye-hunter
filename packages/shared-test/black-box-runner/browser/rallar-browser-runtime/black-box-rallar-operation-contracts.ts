@@ -13,7 +13,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
@@ -289,6 +289,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly scope: 'room' | 'world' | 'all' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
     readonly ack: ALAckMode | undefined;
+    /** Absent, the send is volatile. */
+    readonly durability: ALDurabilityAlgo | undefined;
     readonly ttlMs: number | undefined;
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;

@@ -101,6 +101,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'scope',
             'reliability',
             'ack',
+            'durability',
             'ttlMs',
             'orderingKey',
             'seq',
@@ -287,6 +288,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesScope: ['room', 'world', 'all'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
+    messagesDurability: ['volatile', 'local-outbox', 'local-inbox'],
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],

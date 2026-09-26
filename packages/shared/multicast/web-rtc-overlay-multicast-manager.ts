@@ -10,6 +10,8 @@ import {
     planALMessageHandling,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
+    shouldAwaitALRoute,
+    shouldPersistOutbox,
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
@@ -605,7 +607,7 @@ export class WebRtcOverlayMulticastManager {
         }
         return {
             dropReasonCode: undefined,
-            persist: true,
+            persist: shouldPersistOutbox(effective),
             msg,
             preparedMessages: [toALOutboundTransportMessage(msg)],
             ackTracking: toRtcAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
@@ -671,7 +673,7 @@ export class WebRtcOverlayMulticastManager {
     }
 
     private readMissingImmediatePeer(plan: OverlayMulticastDispatchPlan): string | undefined {
-        if (plan.handlingPlan.forwarding.persist) {
+        if (shouldAwaitALRoute(plan.handlingPlan.effective)) {
             return undefined;
         }
         return plan.transportMessages

@@ -102,7 +102,8 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     });
     const original = {
         ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
-            ttlMs: 30_000
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } }
         }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     } as const;
@@ -195,7 +196,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     const original: ALMessage = {
         ...newALBroadcastMessage(sessionId, { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: 'one' }, 'room', 'reload.room-original', {
             original: true
-        }, { groupRef: roomRef, ttlMs: 30_000 }),
+        }, { groupRef: roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     };
     expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });

@@ -389,9 +389,18 @@ export function shouldPersistInbox(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo === 'local-inbox';
 }
 
+/** The sender keeps its copy in browser storage exactly when the channel chose a durability above volatile. */
 export function shouldPersistOutbox(effective: ALQosEffectivePolicy): boolean {
-    return effective.durability.algo === 'local-outbox' ||
-        effective.retry.algo !== 'none';
+    return effective.durability.algo !== 'volatile';
+}
+
+/**
+ * An admission that may wait for a route instead of being refused for lacking one: a message that
+ * retries or persists. This is what `shouldPersistOutbox` meant before S3a; the WS server's recipient
+ * resolution and the RTC missing-channel check keep that meaning.
+ */
+export function shouldAwaitALRoute(effective: ALQosEffectivePolicy): boolean {
+    return effective.durability.algo !== 'volatile' || effective.retry.algo !== 'none';
 }
 
 export function resolveSupersedenceKey(

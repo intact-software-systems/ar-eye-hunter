@@ -28,6 +28,7 @@ interface AlmConformanceSendDelivery {
     readonly commandTimeoutMs?: number;
     readonly ack?: 'receiver' | 'all-logical-recipients';
     readonly reliability?: 'at-least-once';
+    readonly durability?: 'local-outbox' | 'local-inbox';
     readonly orderingKey?: string;
     readonly seq?: number;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
@@ -118,7 +119,11 @@ export function toAdmissionCommands(admission: AlmConformanceMessageStepInput): 
     ];
 }
 
-export function toRetainedEvidenceCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+/** `durable` is the store the admission chose: only a send that opted into a durability is enqueued. */
+export function toRetainedEvidenceCommands(
+    step: AlmConformanceMessageStepInput,
+    durable: boolean
+): readonly RallarBlackBoxTestCommand[] {
     const observation = `observe-admitted-${step.index}`;
     return [
         ...toAdmissionCommands(step),
@@ -128,7 +133,7 @@ export function toRetainedEvidenceCommands(step: AlmConformanceMessageStepInput)
             resultName: observation,
             field: 'enqueued',
             operator: 'equals',
-            expected: true
+            expected: durable
         }),
         toResultAssertion({
             step: step,

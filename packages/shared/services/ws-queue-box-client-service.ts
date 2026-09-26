@@ -271,7 +271,7 @@ export class WsQueueBoxClientService {
         return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>((refused) => refused, () => ({
             msg: message,
             dropReasonCode: undefined,
-            persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
+            persist: shouldPersistOutbox(normalized.effective),
             preparedMessages: [toALOutboundTransportMessage(message)],
             ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),

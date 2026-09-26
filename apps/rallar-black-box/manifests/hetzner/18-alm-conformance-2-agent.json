@@ -199,6 +199,7 @@
             "handleId": "alm-ws-delivery-reload-send-1",
             "timeoutMs": 10000,
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -415,6 +416,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -643,6 +645,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -1152,7 +1155,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -1260,7 +1263,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -1895,7 +1898,7 @@
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -2008,7 +2011,7 @@
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -2753,7 +2756,7 @@
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -2890,7 +2893,7 @@
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {

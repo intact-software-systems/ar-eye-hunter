@@ -152,8 +152,10 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`reliability`, `ack`, `durability`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
 `minSnapshotVersion` and `qos`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
+channel's durability; absent, the send is volatile.
 `handleId` defaults to the command's own `commandId`, and every later delivery
 command addresses the send through that handle. Supersedence (`key`) and unicast
 targeting (`toPeerId`) are not part of this release; naming either one fails

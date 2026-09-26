@@ -15,6 +15,9 @@ import {
     normalizeALQosPolicy,
     planALMessageHandling,
     resolveALQosNormalizationInput,
+    shouldAwaitALRoute,
+    shouldPersistInbox,
+    shouldPersistOutbox,
     type ALMessagePlanningContext,
     type ALQosInputProvider,
     type ALQosNormalizationInput
@@ -711,3 +714,45 @@ function groupRef(groupId: string) {
         groupId
     };
 }
+
+describe('durability decoupled from retry (S3a)', () => {
+    const route = { topicId: 'chat', resourceId: 'decoupled', contextId: 'room' };
+    const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+    it('normalizes an at-least-once message that requests no durability to volatile, still retrying and waiting for a route', () => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            reliability: 'at-least-once',
+            ack: 'receiver'
+        });
+
+        const { effective } = normalizeALQosPolicy(message);
+
+        expect(effective.durability.algo).toBe('volatile');
+        expect(effective.retry.algo).toBe('exp-backoff');
+        expect(shouldPersistOutbox(effective)).toBe(false);
+        expect(shouldAwaitALRoute(effective)).toBe(true);
+    });
+
+    it.each([
+        { algo: 'volatile' as const, outbox: false, inbox: false },
+        { algo: 'local-outbox' as const, outbox: true, inbox: false },
+        { algo: 'local-inbox' as const, outbox: true, inbox: true }
+    ])('honours a requested $algo: outbox $outbox, inbox $inbox', ({ algo, outbox, inbox }) => {
+        const message = newALMulticastMessage('self', route, room, 'chat.message.v1', {}, {
+            reliability: 'at-least-once',
+            qos: { durability: { algo } }
+        });
+
+        const { effective } = normalizeALQosPolicy(message);
+
+        expect(effective.durability.algo).toBe(algo);
+        expect(shouldPersistOutbox(effective)).toBe(outbox);
+        expect(shouldPersistInbox(effective)).toBe(inbox);
+    });
+
+    it('lets a best-effort volatile message be refused for lacking a route', () => {
+        const message = newALMulticastMessage('self', route, room, 'chat.typing.v1', {});
+
+        expect(shouldAwaitALRoute(normalizeALQosPolicy(message).effective)).toBe(false);
+    });
+});

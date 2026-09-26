@@ -176,9 +176,6 @@ function toALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
                 opts: { limit: msg.forwarding.fanoutLimit }
             }
             : undefined,
-        durability: msg.delivery?.reliability === 'at-least-once'
-            ? { algo: 'local-outbox' }
-            : undefined,
         ownership: msg.delivery?.ownership
             ? { algo: msg.delivery.ownership }
             : undefined
@@ -270,10 +267,7 @@ function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
                 limit: msg.forwarding?.fanoutLimit
             }
         },
-        durability: {
-            algo: deliveryAlgo === 'at-least-once' ? 'local-outbox' : 'volatile',
-            opts: {}
-        },
+        durability: { algo: 'volatile', opts: {} },
         ownership: {
             algo: msg.delivery?.ownership ?? 'shared',
             opts: {}

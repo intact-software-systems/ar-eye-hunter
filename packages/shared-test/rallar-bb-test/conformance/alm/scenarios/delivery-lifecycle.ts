@@ -134,7 +134,7 @@ function toRetainedCancellationCommands(sender: AlmConformanceStepInput): readon
             payload: toLifecyclePayload(sender, 'cancellation'),
             delivery: { ack: 'receiver' }
         }),
-        ...toRetainedEvidenceCommands({ ...sender, index: 2 }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 2 }, false),
         toCancelCommand({ ...sender, index: 2 }),
         toResultAssertion({
             step: sender,
@@ -157,7 +157,7 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             payload: toLifecyclePayload(sender, 'supersedence', 'old'),
             delivery: { ack: 'receiver' }
         }),
-        ...toRetainedEvidenceCommands({ ...sender, index: 3 }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 3 }, false),
         toSendCommand({
             ...sender,
             index: 4,

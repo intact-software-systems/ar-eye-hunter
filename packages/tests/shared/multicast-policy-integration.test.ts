@@ -311,7 +311,7 @@ describe('multicast QoS integration', () => {
         expect(reserved.size).toBe(0);
     });
 
-    it('admits durable multicast actions before native submission', async () => {
+    it('admits a volatile at-least-once multicast before native submission', async () => {
         const connectionService = createConnectionService(['peer-1']);
 
         const manager = new shared.WebRtcOverlayMulticastManager({
@@ -362,7 +362,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);

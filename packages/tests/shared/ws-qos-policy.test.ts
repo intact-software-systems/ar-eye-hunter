@@ -691,6 +691,30 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await expect.poll(() => deliveredTexts).toEqual([seq1.payload.resource, seq2.payload.resource]);
     });
+
+    it('admits an at-least-once send that requests no durability as volatile, even while the socket is closed', async () => {
+        const socket = createFakeWsSocket();
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket.client,
+            sessionId: 'self'
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+        const msg = shared.newALBroadcastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'msg-volatile-closed', contextId: 'all' },
+            'all',
+            'chat.message.v1',
+            { text: 'later' },
+            { reliability: 'at-least-once', ttlMs: 30_000 }
+        );
+
+        socket.native.readyState = 3;
+        const result = await enqueueOutboxAndDrain(service, msg);
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(socket.sentJsonStrings).toEqual([]);
+    });
 });
 
 function createFakeWsSocket() {
