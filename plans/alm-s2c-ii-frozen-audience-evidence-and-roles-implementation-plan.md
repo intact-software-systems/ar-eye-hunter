@@ -565,6 +565,18 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   since left). Accepted as the more honest verdict: the fallback carrier then falls back to WS, `rtc`
   alone settles `attempts-exhausted`, and a re-planned queued entry retries within the existing
   attempt cap. An origin alone in its room and a normal send are unchanged.
+- **R-S2c-ii-11 (Task 6, 2026-09-26).** No match-end output existed (the kind and its receiving branch
+  did, nothing published it), the director's room envelope also carries heartbeats, snapshots and
+  high-rate player state, and the named projection files show the best-effort capability report. So:
+  `sendOutput` and `publishEvent` gain an optional `ack: 'all-logical-recipients'` that sends the
+  output as one room send over `rtc-with-ws-fallback`, `at-least-once`, and returns the handle as
+  `receipt`, while everything else keeps the best-effort path; `director-match-started` requests the
+  receipt and the director now publishes `director-match-ended` with the receipt when its own tick
+  finishes the match (the receiving branch applies it idempotently beside the reliable snapshot); a
+  new `matchDelivery` arena state, projected by a pure `toMatchDelivery` from the handle's expected
+  and confirmed recipient lists, reads "acknowledged by all N" or "waiting for k of N" in a new
+  "Match delivery" diagnostics row; the authority client keeps `ack: 'receiver'` and pins that a
+  command resolves on admission.
 
 ## Self-review
 
