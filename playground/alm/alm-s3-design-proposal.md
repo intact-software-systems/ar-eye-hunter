@@ -245,9 +245,10 @@ Constraints that bind all three:
   exclusive ownership; I1 owns correlation, `awaitReply` and trace; I2 owns durable lifetime across
   tabs; V1 owns fairness and the remaining budgets.
 
-## 4. Open questions for the maintainer
+## 4. Maintainer decisions (2026-09-26)
 
-The recommended answer is first in each case.
+Settled with the maintainer on 2026-09-26: every question took its recommended answer, recorded in
+the roadmap's decision record as D52–D61 in this order. The recommended answer is first in each case.
 
 1. **Purpose surface.** (a) `purpose` required on every typed channel definition, in-repo callers
    updated, `realtime` refused at typed channels and the `'realtime'` send strategy retired; (b)

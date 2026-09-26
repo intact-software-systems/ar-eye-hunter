@@ -299,9 +299,9 @@ unsupported guarantee.
 
 **PLANNED — S3, production providers:** Browser composition does not install
 transport-aware capability, authorization, or live-congestion providers; the
-default capability set claims every declared algorithm, and `ack: 'receiver'`
-normalizes to the transport `hop` algorithm. S3 installs carrier-aware
-capabilities and S2 adds the logical `receiver` algorithm.
+default capability set claims every declared algorithm except `receiver`, which
+S2 added as a logical algorithm declared per carrier by a wrapper. S3a installs
+carrier-aware capabilities in the composition (D52–D55).
 
 ## Reliability and acknowledgement
 
@@ -334,7 +334,8 @@ durability must be selected separately. Matching duplicate data can repeat its
 receipt without redelivery or unbounded history growth. Late receipts are no-ops
 once their obligation is terminal.
 
-An explicit at-least-once request with `ack: none` is invalid. A WebSocket frame
+An explicit at-least-once request with `ack: none` is invalid — and the pre-S3
+default typed send has exactly that shape; S3a's purpose default (D52) removes it. A WebSocket frame
 accepted by the browser API or an RTC payload accepted by `RTCDataChannel.send`
 is not a logical delivery receipt.
 
