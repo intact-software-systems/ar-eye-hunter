@@ -79,7 +79,7 @@ describe('three-agent ALM run', () => {
         const posted: string[] = [];
         const request = await Playwright.request.newContext();
         vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-            const data: unknown = options?.data;
+            const data = options?.data;
             if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
                 throw new Error('Expected the actual control HTTP command body.');
             }
