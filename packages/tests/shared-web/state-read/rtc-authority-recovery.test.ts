@@ -272,14 +272,22 @@ describe('RTC room authority recovery', () => {
                 msgId: message.id.msgId,
                 outcome: 'committed'
             }));
-            await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
         }
+        await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual(shouldDeliver ? [message.id.msgId] : []);
         expect(reads).toHaveLength(1);
         if (higherFloorMessage !== undefined) {
             expect(receiver.admissions).toContainEqual(expect.objectContaining({
                 kind: 'admission-outcome',
                 msgId: higherFloorMessage.id.msgId,
+                outcome: 'rejected',
+                reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
+            }));
+        }
+        if (scenario === 'insufficient-floor') {
+            expect(receiver.admissions).toContainEqual(expect.objectContaining({
+                kind: 'admission-outcome',
+                msgId: message.id.msgId,
                 outcome: 'rejected',
                 reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
             }));
