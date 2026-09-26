@@ -1,18 +1,21 @@
 import {
-    newALBroadcastMessage,
-    newALMulticastMessage,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
     afterEach,
     describe,
     expect,
     it,
     vi
 } from 'vitest';
+
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+
 import { room, RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
+
 const endpoints: RtcEndpointFixture[] = [];
 
 afterEach(() => {
