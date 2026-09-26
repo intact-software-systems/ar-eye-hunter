@@ -34,6 +34,7 @@ describe('browser Rallar runtime bridge', () => {
                 apiBaseUrl: 'https://api.example.test',
                 transport: 'messages.rtc',
                 messageSelector: { topicId: 'topic', typeId: 'message' },
+                messageTypeIds: ['message', 'other-message'],
                 register: 'if-needed',
                 dataChannelLanes: [{
                     id: 'reliable',
@@ -54,6 +55,7 @@ describe('browser Rallar runtime bridge', () => {
                 { apiBaseUrl: input.rallar.apiBaseUrl, transport: 'unsupported' },
                 { apiBaseUrl: input.rallar.apiBaseUrl, timeoutMs: Number.NaN },
                 { apiBaseUrl: input.rallar.apiBaseUrl, peerIds: [4] },
+                { apiBaseUrl: input.rallar.apiBaseUrl, messageTypeIds: ['message', 4] },
                 { apiBaseUrl: input.rallar.apiBaseUrl, dataChannelLanes: [{ id: 'lane', label: 1 }] }
             ]
         ) {

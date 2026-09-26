@@ -22,6 +22,7 @@ import type {
     RallarTypedMessageSendOptions,
     RallarTypedPayloadHandler
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarCrdtDocument,
@@ -262,6 +263,10 @@ const messages: BlackBoxBrowserMessagesDependency = {
             return await facadeBehavior.rtcMessageSend(input);
         },
         onMessage: (selector, handler) => {
+            // The product rule: RTC inbox callbacks are registered per typeId on the rx streamer.
+            if (!normalizeRallarMessageSelector(selector).typeId) {
+                throw new Error('RTC message subscriptions require a typeId.');
+            }
             const recordedHandler = toRecordedMessageHandler(handler);
             facadeRecords.rtcMessageSubscriptions.push([selector, recordedHandler]);
             const unsubscribe = facadeBehavior.rtcMessageOnMessage(

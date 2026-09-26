@@ -1,5 +1,8 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import {
+    normalizeRallarMessageSelector,
+    type RallarMessageSelector
+} from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -58,7 +61,7 @@ export class BlackBoxRallarTypedChannels {
             selector && (selector.typeId === undefined || selector.typeId === route.typeId) &&
             (selector.topicId === undefined || selector.topicId === route.topicId)
         ) {
-            this.#subscribeSelector(config);
+            this.#subscribeSelector(config, selector);
             return channel;
         }
         const key = JSON.stringify({ kind: 'typed', typeId: route.typeId, topicId: route.topicId });
@@ -85,7 +88,7 @@ export class BlackBoxRallarTypedChannels {
     /** A receiver that only connects still needs the inbound topics a send would otherwise install. */
     subscribe(config: BlackBoxRallarConnectionConfig): void {
         if (config.rallar.messageSelector) {
-            this.#subscribeSelector(config);
+            this.#subscribeSelector(config, normalizeRallarMessageSelector(config.rallar.messageSelector));
             return;
         }
         this.open(config, {
@@ -95,25 +98,32 @@ export class BlackBoxRallarTypedChannels {
         });
     }
 
-    /** A combined recipe keeps its authored topic selector across all generated message types. */
-    #subscribeSelector(config: BlackBoxRallarConnectionConfig): void {
-        const selector = config.rallar.messageSelector!;
-        const key = JSON.stringify({ kind: 'selector', selector });
+    /** A combined recipe keeps its authored topic selector on WS; RTC subscribes once per type it must hear. */
+    #subscribeSelector(config: BlackBoxRallarConnectionConfig, selector: RallarMessageSelector): void {
+        const rtcTypeIds = resolveRtcSelectorTypeIds(config, selector);
+        const key = JSON.stringify({ kind: 'selector', selector, rtcTypeIds });
         this.#input.resources.ensureWsSubscription(key, () => {
             const unsubscribeWs = this.#input.messages.ws.onMessage<RallarMessagePayload>(selector, (message) => {
                 this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
             });
-            const unsubscribeRtc = this.#input.messages.rtc.onMessage<RallarMessagePayload>(selector, (message) => {
-                this.#recordMessage({
-                    config,
-                    topic: 'rallar.browser.messages.rtc.message',
-                    transport: 'messages.rtc',
-                    message
-                });
-            });
+            const unsubscribeRtc = rtcTypeIds.map((typeId) =>
+                this.#input.messages.rtc.onMessage<RallarMessagePayload>(
+                    { ...selector, typeId },
+                    (message) => {
+                        this.#recordMessage({
+                            config,
+                            topic: 'rallar.browser.messages.rtc.message',
+                            transport: 'messages.rtc',
+                            message
+                        });
+                    }
+                )
+            );
             return () => {
                 unsubscribeWs();
-                unsubscribeRtc();
+                for (const unsubscribe of unsubscribeRtc) {
+                    unsubscribe();
+                }
             };
         });
     }
@@ -142,4 +152,14 @@ export class BlackBoxRallarTypedChannels {
             }
         });
     }
+}
+
+function resolveRtcSelectorTypeIds(
+    config: BlackBoxRallarConnectionConfig,
+    selector: RallarMessageSelector
+): readonly string[] {
+    if (selector.typeId) {
+        return [selector.typeId];
+    }
+    return [...new Set([...(config.rallar.messageTypeIds ?? []), resolveBlackBoxRallarTypeId(config)])];
 }

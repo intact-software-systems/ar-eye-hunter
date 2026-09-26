@@ -1,3 +1,4 @@
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import {
     ALM_CONFORMANCE_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
@@ -15,6 +16,7 @@ import {
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type {
+    RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestRtcConnectCommand
@@ -200,14 +202,13 @@ function toAlmConformanceCombinedCommands(
 ): RallarBlackBoxTestRecipe['commands'] {
     const rtc = toRoleRecipe(scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!, role);
     const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect')!;
+    const messageTypeIds = computeCombinedAlmMessageTypeIds(scenarios, role);
+    const toConnect = (command: RallarBlackBoxTestRtcConnectCommand) =>
+        toCombinedAlmConnect(command, rtcConnect.readiness, messageTypeIds);
     const prologueEnd = rtc.commands.indexOf(rtcConnect);
     const prologue = rtc.commands.slice(0, prologueEnd + 1).filter((command) =>
         command.kind === 'http.request' || command.kind === 'rtc.connect'
-    ).map((command) =>
-        command.kind === 'rtc.connect'
-            ? toCombinedAlmConnect(command, rtcConnect.readiness)
-            : command
-    );
+    ).map((command) => command.kind === 'rtc.connect' ? toConnect(command) : command);
     return [
         ...prologue,
         ...scenarios.flatMap((scenario) => {
@@ -218,23 +219,47 @@ function toAlmConformanceCombinedCommands(
                 throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
             }
             return commands.slice(scenarioConnectAt + 1).map((command) =>
-                command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command
+                command.kind === 'rtc.connect' ? toConnect(command) : command
             );
         })
     ];
 }
 
-/** A new sender document must recover the shared RTC-ready subscription before later mixed-carrier work. */
+/**
+ * A new sender document must recover the shared RTC-ready subscription before later mixed-carrier work. The topic
+ * selector hears every type on WS; RTC inbox callbacks are registered per type, so the connect also lists them.
+ */
 function toCombinedAlmConnect(
     command: RallarBlackBoxTestRtcConnectCommand,
-    readiness: RallarBlackBoxTestRtcConnectCommand['readiness']
+    readiness: RallarBlackBoxTestRtcConnectCommand['readiness'],
+    messageTypeIds: readonly string[]
 ): RallarBlackBoxTestRtcConnectCommand {
     return {
         ...command,
         transport: 'messages.rtc',
         readiness,
-        rallar: { ...command.rallar, messageSelector: { topicId: 'room.alm-conformance' } }
+        rallar: { ...command.rallar, messageSelector: { topicId: 'room.alm-conformance' }, messageTypeIds }
     };
+}
+
+/** Control types are absent on purpose: a raw `messages.control` ACK is the origin's refusal to observe, not a harness subscription (the RTC inbox map replaces, never adds, a callback per type). */
+function computeCombinedAlmMessageTypeIds(
+    scenarios: readonly AlmConformanceScenario[],
+    role: AlmConformanceRole
+): readonly string[] {
+    const typeIds = scenarios.flatMap((scenario) => toRoleRecipe(scenario, role).commands.flatMap(toScenarioTypeIds));
+    return [...new Set(typeIds)].sort();
+}
+
+function toScenarioTypeIds(command: RallarBlackBoxTestCommand): readonly string[] {
+    if (command.kind === 'rtc.connect') {
+        const typeId = command.rallar?.typeId;
+        return typeof typeId === 'string' ? [typeId] : [];
+    }
+    if (isRallarBlackBoxTestMessagesSendCommand(command) || command.kind === 'messages.received') {
+        return [command.typeId];
+    }
+    return [];
 }
 
 function toAlmConformanceScenarioIds(
