@@ -30,7 +30,7 @@ export class BrowserTypedMessageChannels {
     public channel<T>(
         definition: RallarTypedMessageChannelDefinition
     ): RallarTypedMessageChannel<T> {
-        const issues = this.input.inputValidator.validateTypedChannel(definition.topicId, definition.typeId);
+        const issues = this.input.inputValidator.validateTypedChannel(definition);
         if (issues.length > 0) {
             throwRallarValidation(issues);
         }
@@ -38,24 +38,20 @@ export class BrowserTypedMessageChannels {
     }
 
     private createChannel<T>(definition: RallarTypedMessageChannelDefinition): RallarTypedMessageChannel<T> {
-        const channelDefinition: RallarTypedMessageChannelDefinition = {
-            topicId: definition.topicId,
-            typeId: definition.typeId
-        };
-
+        const route = { topicId: definition.topicId, typeId: definition.typeId };
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
-                await this.input.sender.sendTyped({ ...options, ...channelDefinition, payload }),
+                await this.input.sender.sendTyped({ ...options, ...route, payload }, definition),
             sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
-                await this.input.sender.sendRtc({ ...options, ...channelDefinition, payload }),
+                await this.input.sender.sendRtc({ ...options, ...route, payload }, definition),
             sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
-                await this.input.sender.sendWs({ ...options, ...channelDefinition, payload }),
+                await this.input.sender.sendWs({ ...options, ...route, payload }, definition),
             onRtc: (handler) =>
-                this.input.rtc.onMessage<T>(channelDefinition, async (message) => {
+                this.input.rtc.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
                 }),
             onWs: (handler) =>
-                this.input.ws.onMessage<T>(channelDefinition, async (message) => {
+                this.input.ws.onMessage<T>(route, async (message) => {
                     await handler(message.payload, message);
                 })
         };
@@ -64,7 +60,7 @@ export class BrowserTypedMessageChannels {
     public room<T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> {
         const issues = [
             ...this.input.inputValidator.validateRoomChannel(definition),
-            ...this.input.inputValidator.validateTypedChannel(definition.topicId, definition.typeId)
+            ...this.input.inputValidator.validateTypedChannel(definition)
         ];
         if (issues.length > 0) {
             throwRallarValidation(issues);

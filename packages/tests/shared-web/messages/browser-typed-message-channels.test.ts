@@ -86,7 +86,8 @@ describe('Rallar typed message channel', () => {
         });
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
-            typeId: 'chat.message.v1'
+            typeId: 'chat.message.v1',
+            purpose: 'notification'
         });
 
         await channel.sendRtc(
@@ -129,7 +130,7 @@ describe('Rallar typed message channel', () => {
     });
 
     it('reports channel definition problems through the public validation-error boundary', () => {
-        expect(() => createFacade().messages.channel({ topicId: 'bad topic', typeId: '' })).toThrow(
+        expect(() => createFacade().messages.channel({ topicId: 'bad topic', typeId: '', purpose: 'notification' })).toThrow(
             expect.objectContaining({
                 name: 'RallarValidationError',
                 issues: expect.arrayContaining([
@@ -141,7 +142,14 @@ describe('Rallar typed message channel', () => {
     });
 
     it('collects room and channel definition issues together', () => {
-        expect(() => createFacade().messages.room({ roomId: 'bad room', topicId: 'bad topic', typeId: 'bad type' })).toThrow(
+        expect(() =>
+            createFacade().messages.room({
+                roomId: 'bad room',
+                topicId: 'bad topic',
+                typeId: 'bad type',
+                purpose: 'notification'
+            })
+        ).toThrow(
             expect.objectContaining({
                 name: 'RallarValidationError',
                 issues: expect.arrayContaining([
@@ -159,21 +167,24 @@ describe('Rallar typed message channel', () => {
         expect(() =>
             facade.messages.channel({
                 topicId: 'room chat',
-                typeId: 'chat.message.v1'
+                typeId: 'chat.message.v1',
+                purpose: 'notification'
             })
         ).toThrow('$.topicId');
         expect(() =>
             facade.messages.room({
                 topicId: 'room.chat',
                 typeId: 'chat message',
-                roomId: 'room-1'
+                roomId: 'room-1',
+                purpose: 'notification'
             })
         ).toThrow('$.typeId');
         expect(() =>
             facade.messages.room({
                 topicId: 'room.chat',
                 typeId: 'chat.message.v1',
-                roomId: 'bad room'
+                roomId: 'bad room',
+                purpose: 'notification'
             })
         ).toThrow('$.roomId');
     });
@@ -184,7 +195,8 @@ describe('Rallar typed message channel', () => {
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
-            typeId: 'chat.message.v1'
+            typeId: 'chat.message.v1',
+            purpose: 'notification'
         });
 
         const result = await channel.send(
@@ -222,7 +234,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.room<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            roomId: 'room-1'
+            roomId: 'room-1',
+            purpose: 'notification'
         });
 
         await channel.sendRtc(
@@ -253,7 +266,8 @@ describe('Rallar typed message channel', () => {
         const channel = facade.messages.room<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            roomId: 'room-1'
+            roomId: 'room-1',
+            purpose: 'notification'
         });
 
         const result = await channel.send(
@@ -283,7 +297,8 @@ describe('Rallar typed message channel', () => {
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
-            typeId: 'chat.message.v1'
+            typeId: 'chat.message.v1',
+            purpose: 'notification'
         });
 
         const result = await channel.send(
@@ -324,7 +339,8 @@ describe('Rallar typed message channel', () => {
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
-            typeId: 'chat.message.v1'
+            typeId: 'chat.message.v1',
+            purpose: 'notification'
         });
         const received: ReceivedChatMessage[] = [];
         const unsubscribeRtc = channel.onRtc((payload, event) => {
@@ -370,6 +386,127 @@ describe('Rallar typed message channel', () => {
             { payload: { text: 'rtc' }, transport: 'rtc' },
             { payload: { text: 'ws' }, transport: 'ws' }
         ]);
+    });
+
+    it('builds a notification room send receipted, at-least-once and volatile with no options', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification'
+        });
+
+        const handle = await channel.send({ text: 'default' }, { resourceId: 'purpose-default-1' });
+        await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        const message = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(message.delivery).toEqual({
+            ownership: 'shared',
+            reliability: 'at-least-once',
+            ack: 'all-logical-recipients'
+        });
+        expect(message.qos?.durability).toEqual({ algo: 'volatile' });
+        // The builder reads the clock once for the id and once for the deadline.
+        expect(message.constraints?.expiresAtMs).toBeGreaterThanOrEqual(message.id.ts + 30_000);
+        expect(message.constraints?.expiresAtMs).toBeLessThan(message.id.ts + 30_050);
+    });
+
+    it('asks the addressed receiver for a command and keeps the channel durability opt-in', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.command',
+            typeId: 'room.command.v1',
+            roomId: 'room-1',
+            purpose: 'command',
+            durability: 'local-outbox'
+        });
+
+        await channel.sendRtc({ text: 'command' }, { resourceId: 'purpose-command-1' });
+
+        const message = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(message.delivery?.ack).toBe('receiver');
+        expect(message.qos?.durability).toEqual({ algo: 'local-outbox' });
+    });
+
+    it('lets every per-send option override the purpose', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification'
+        });
+
+        await channel.sendRtc({ text: 'override' }, {
+            resourceId: 'purpose-override-1',
+            reliability: 'best-effort',
+            ack: 'none',
+            ttlMs: 5_000,
+            qos: { durability: { algo: 'local-inbox' } }
+        });
+
+        const message = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(message.delivery).toMatchObject({ reliability: 'best-effort', ack: 'none' });
+        expect(message.qos?.durability).toEqual({ algo: 'local-inbox' });
+        expect(message.constraints?.expiresAtMs).toBeGreaterThanOrEqual(message.id.ts + 5_000);
+        expect(message.constraints?.expiresAtMs).toBeLessThan(message.id.ts + 5_050);
+    });
+
+    it('keeps no receipt on a world broadcast, whose audience A1 owns', async () => {
+        const channel = createFacade().messages.channel<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            purpose: 'notification'
+        });
+
+        await channel.sendWs({ text: 'everyone' }, { scope: 'all', resourceId: 'purpose-all-1' });
+
+        const message = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'none' });
+        expect(message.qos?.durability).toEqual({ algo: 'volatile' });
+    });
+
+    it('refuses a realtime, a missing or an unknown purpose and an unknown durability at the channel', () => {
+        const facade = createFacade();
+        const define = (definition: object) => () => facade.messages.channel(definition as Parameters<typeof facade.messages.channel>[0]);
+
+        expect(define({ typeId: 'chat.message.v1', purpose: 'realtime' })).toThrow(
+            expect.objectContaining({
+                issues: [expect.objectContaining({ path: '$.purpose', code: 'unsupported' })]
+            })
+        );
+        expect(define({ typeId: 'chat.message.v1' })).toThrow(expect.objectContaining({
+            issues: [expect.objectContaining({ path: '$.purpose', code: 'invalid-purpose' })]
+        }));
+        expect(define({ typeId: 'chat.message.v1', purpose: 'broadcast' })).toThrow(
+            expect.objectContaining({
+                issues: [expect.objectContaining({ path: '$.purpose', code: 'invalid-purpose' })]
+            })
+        );
+        expect(define({ typeId: 'chat.message.v1', purpose: 'command', durability: 'forever' }))
+            .toThrow(
+                expect.objectContaining({
+                    issues: [
+                        expect.objectContaining({ path: '$.durability', code: 'invalid-durability' })
+                    ]
+                })
+            );
+    });
+
+    it('retires the realtime send strategy', async () => {
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'notification'
+        });
+
+        await expect(channel.send({ text: 'x' }, { strategy: 'realtime' as never })).rejects
+            .toMatchObject({
+                name: 'RallarValidationError',
+                issues: [expect.objectContaining({ path: '$.strategy', code: 'unsupported' })]
+            });
     });
 });
 

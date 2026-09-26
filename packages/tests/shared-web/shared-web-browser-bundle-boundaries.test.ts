@@ -45,11 +45,12 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // brings it to 217.681640625 KiB, and its retry through the relay tree (the missing-recipient repair,
         // the per-recipient relay row and the retried-copy path) to 218.388671875 KiB. Its logical evidence on the
         // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
-        // 219.0595703125 KiB. The next whole-KiB ceiling is 220.
+        // 219.0595703125 KiB. S3a's purpose table and channel policy validation measure 220.1640625 KiB.
+        // The next whole-KiB ceiling is 221.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 220
+        brotliBudgetKiB: 221
     },
     {
         label: 'browser/rallar-core.ts',

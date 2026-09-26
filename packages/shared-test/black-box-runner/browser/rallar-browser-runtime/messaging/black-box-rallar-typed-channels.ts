@@ -49,7 +49,8 @@ export class BlackBoxRallarTypedChannels {
             typeId: route.typeId,
             topicId: route.topicId,
             roomId: config.roomId,
-            roomRef: route.roomRef
+            roomRef: route.roomRef,
+            purpose: 'notification'
         });
         const selector = config.rallar.messageSelector
             ? normalizeRallarMessageSelector(config.rallar.messageSelector)

@@ -100,7 +100,8 @@ runtime directly, with no duplicate browser-root context layer.
   delegates to `rallar.realtime.room<T>(...)` with the room ref applied, and
   `room.message<T>(...)` delegates to `rallar.messages.room<T>(...)` with the
   room ref applied. `room.message('chat')` derives route-safe
-  `room.chat`/`room.chat.v1` IDs.
+  `room.chat`/`room.chat.v1` IDs. `room.message('chat')` is a `notification`
+  channel; the object form declares its own `purpose`.
 - `rallar.realtime.room<T>(defaults)` remains the underlying helper for
   room-scoped JSON motion/game payloads. It owns room RTC readiness, ready-peer
   targeting, stale-send options, and send diagnostics while still returning the

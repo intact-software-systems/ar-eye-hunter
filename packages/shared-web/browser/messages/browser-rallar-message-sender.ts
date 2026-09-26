@@ -5,9 +5,11 @@ import type {
 import type {
     RallarMessageHandle,
     RallarRtcSendInput,
+    RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendStrategy,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { toBrowserMessageSendDefaults } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     newALRoute,
@@ -40,6 +42,7 @@ interface CreateWsMessageInput<T> {
     readonly room: string | GroupRef | undefined;
     readonly payloadValidation: CapturedMessagePayload;
     readonly session: AuthSession;
+    readonly channel: RallarTypedMessageChannelDefinition | undefined;
 }
 
 interface CreateRtcMessageInput<T> {
@@ -47,6 +50,7 @@ interface CreateRtcMessageInput<T> {
     readonly payloadValidation: CapturedMessagePayload;
     readonly target: ResolvedRtcMessageTarget;
     readonly session: AuthSession;
+    readonly channel: RallarTypedMessageChannelDefinition | undefined;
 }
 
 export namespace BrowserRallarMessageSender {
@@ -128,7 +132,10 @@ export class BrowserRallarMessageSender {
         });
     }
 
-    public async sendRtc<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageHandle> {
+    public async sendRtc<T>(
+        input: RallarRtcSendInput<T>,
+        channel: RallarTypedMessageChannelDefinition | undefined
+    ): Promise<RallarMessageHandle> {
         const target = this.resolveRtcMessageTarget(input, []);
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
@@ -136,7 +143,8 @@ export class BrowserRallarMessageSender {
             input,
             payloadValidation,
             target,
-            session: this.input.requireSession()
+            session: this.input.requireSession(),
+            channel
         });
         return this.startDelivery({
             context,
@@ -147,7 +155,10 @@ export class BrowserRallarMessageSender {
         });
     }
 
-    public async sendWs<T>(input: RallarWsSendInput<T>): Promise<RallarMessageHandle> {
+    public async sendWs<T>(
+        input: RallarWsSendInput<T>,
+        channel: RallarTypedMessageChannelDefinition | undefined
+    ): Promise<RallarMessageHandle> {
         const room = input.roomRef ??
             input.roomId ??
             (input.scope === undefined ? this.input.resolveDefaultRoom() : undefined);
@@ -166,7 +177,8 @@ export class BrowserRallarMessageSender {
             resolved: { input, scope, roomId, roomRef },
             room,
             payloadValidation,
-            session: this.input.requireSession()
+            session: this.input.requireSession(),
+            channel
         });
 
         return this.startDelivery({
@@ -178,17 +190,19 @@ export class BrowserRallarMessageSender {
         });
     }
 
-    public async sendTyped<T>(input: BrowserRallarMessageSender.TypedInput<T>): Promise<RallarMessageHandle> {
+    public async sendTyped<T>(
+        input: BrowserRallarMessageSender.TypedInput<T>,
+        channel: RallarTypedMessageChannelDefinition | undefined
+    ): Promise<RallarMessageHandle> {
         switch (input.strategy ?? 'rtc-with-ws-fallback') {
             case 'ws':
-                return await this.sendWs(input);
+                return await this.sendWs(input, channel);
             case 'rtc':
-            case 'realtime':
-                return await this.sendRtc(input);
+                return await this.sendRtc(input, channel);
             case 'ws-then-rtc':
-                return await this.sendRoomWithFallback(input, 'ws');
+                return await this.sendRoomWithFallback(input, 'ws', channel);
             case 'rtc-with-ws-fallback':
-                return await this.sendRoomWithFallback(input, 'rtc');
+                return await this.sendRoomWithFallback(input, 'rtc', channel);
             default:
                 return throwMessageValidationIssue(
                     '$.strategy',
@@ -200,7 +214,8 @@ export class BrowserRallarMessageSender {
 
     private async sendRoomWithFallback<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
-        firstCarrier: 'rtc' | 'ws'
+        firstCarrier: 'rtc' | 'ws',
+        channel: RallarTypedMessageChannelDefinition | undefined
     ): Promise<RallarMessageHandle> {
         const target = this.resolveRtcMessageTarget(input, validateRoomFallbackInput(input));
         throwIfMessageIssues(
@@ -214,7 +229,7 @@ export class BrowserRallarMessageSender {
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const message = toRoomFallbackMessage(
-            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession() }),
+            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession(), channel }),
             input.exceptPeerIds
         );
         return this.startDelivery({
@@ -276,8 +291,16 @@ export class BrowserRallarMessageSender {
         return { room, roomId, roomRef };
     }
 
-    private createWsMessage<T>({ resolved, room, payloadValidation, session }: CreateWsMessageInput<T>): ALMessage {
+    private createWsMessage<T>(
+        { resolved, room, payloadValidation, session, channel }: CreateWsMessageInput<T>
+    ): ALMessage {
         const { input, scope, roomId, roomRef } = resolved;
+        const defaults = toBrowserMessageSendDefaults({
+            send: input,
+            channel,
+            hasLogicalAudience: scope === 'room',
+            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
         return this.input.creation.createBroadcast(
             session.sessionId,
             newALRoute(
@@ -295,11 +318,11 @@ export class BrowserRallarMessageSender {
                     ? this.input.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
                     : input.minSnapshotVersion,
                 ttlHops: input.ttlHops,
-                ttlMs: input.ttlMs ?? BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
-                reliability: input.reliability ?? 'at-least-once',
-                ack: input.ack ?? 'none',
+                ttlMs: defaults.ttlMs,
+                reliability: defaults.reliability,
+                ack: defaults.ack,
                 ownership: input.ownership ?? 'shared',
-                qos: input.qos,
+                qos: defaults.qos,
                 ordering: input.orderingKey !== undefined && input.seq !== undefined
                     ? { orderingKey: input.orderingKey, seq: input.seq }
                     : undefined
@@ -307,7 +330,15 @@ export class BrowserRallarMessageSender {
         );
     }
 
-    private createRtcMessage<T>({ input, payloadValidation, target, session }: CreateRtcMessageInput<T>): ALMessage {
+    private createRtcMessage<T>(
+        { input, payloadValidation, target, session, channel }: CreateRtcMessageInput<T>
+    ): ALMessage {
+        const defaults = toBrowserMessageSendDefaults({
+            send: input,
+            channel,
+            hasLogicalAudience: true,
+            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
         return this.input.creation.createMulticast(
             session.sessionId,
             newALRoute(
@@ -325,13 +356,13 @@ export class BrowserRallarMessageSender {
                     input.minSnapshotVersion
                 ),
                 ttlHops: input.ttlHops,
-                ttlMs: input.ttlMs ?? BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
+                ttlMs: defaults.ttlMs,
                 seq: input.seq,
                 orderingKey: input.orderingKey ?? toALGroupTargetKey(target.roomRef),
-                reliability: input.reliability ?? 'at-least-once',
-                ack: input.ack ?? 'none',
+                reliability: defaults.reliability,
+                ack: defaults.ack,
                 ownership: input.ownership ?? 'shared',
-                qos: input.qos,
+                qos: defaults.qos,
                 nextHopPeerIds: input.nextHopPeerIds,
                 overlayId: input.overlayId ?? toScopedOverlayId(target.roomRef),
                 fanoutLimit: input.fanoutLimit

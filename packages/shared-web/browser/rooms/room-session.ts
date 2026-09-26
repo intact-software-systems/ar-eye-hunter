@@ -87,7 +87,7 @@ function toRoomSessionMessageDefinition(
     roomRef: GroupRef
 ): RallarRoomMessageChannelDefinition {
     if (typeof input === 'string') {
-        return { topicId: `room.${input}`, typeId: `room.${input}.v1`, roomRef };
+        return { topicId: `room.${input}`, typeId: `room.${input}.v1`, roomRef, purpose: 'notification' };
     }
     const issues: RallarValidationIssue[] = [];
     if (input.roomId && input.roomId !== roomRef.groupId) {
@@ -105,5 +105,11 @@ function toRoomSessionMessageDefinition(
         });
     }
     throwIfRallarValidationIssues(issues);
-    return { topicId: input.topicId, typeId: input.typeId, roomRef };
+    return {
+        topicId: input.topicId,
+        typeId: input.typeId,
+        roomRef,
+        purpose: input.purpose,
+        ...(input.durability === undefined ? {} : { durability: input.durability })
+    };
 }
