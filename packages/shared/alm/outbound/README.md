@@ -134,11 +134,14 @@ deadline is refused. The receipt is gone by then, and control admission's valida
 ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
 reasons) for every control it decides. A committed `resync-required` NACK is a hop's refusal of a
-retained send (D50): it states a `relay-rejected` settlement, which ends the handle `rejected`, and
-like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends the message. A
-multi-recipient receipt therefore keeps the recipient evidence it had at the rejection: later ACKs
-find no row. Every control arrives with its source (`ALOutboundControlSource`), and trust follows the
-source, never the carrier. A WS client hands its server's controls over as `trusted-server`: the
+retained send (D50): it states a `relay-rejected` settlement, which ends an ACK-tracked handle
+`rejected`, and like a `stale` NACK it ends the receipt row and its repair attempts, so nothing resends
+the message. A multi-recipient receipt therefore keeps the recipient evidence it had at the rejection:
+later ACKs find no row. A best-effort send (`ack: 'none'`) is terminal at `transport-accepted` by
+lifecycle design, so a rejection that reaches it later is evidence only: the handle keeps
+`transport-accepted` and names the relay in `relayRejection` (R-S2c-ii-5a). A caller that checks
+`state === 'rejected'` alone misses that case; `relayRejection` is the fact. Every control arrives
+with its source (`ALOutboundControlSource`), and trust follows the source, never the carrier. A WS client hands its server's controls over as `trusted-server`: the
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
 without an expected peer (every other check stands), and stated as a server relay that is never named.
 Every other control, the WS server's own included, arrives as `peer` and must come from an expected
@@ -165,10 +168,49 @@ When an `ack-timeout` retries a `receiver` receipt, the repair request carries t
 subtree the ACK history shows complete (`completedHopPeerIds`). The RTC origin of a frozen
 multicast retries only through the next hops that may still lead to a missing recipient: a
 missing recipient that is a direct hop, and every hop whose subtree has not completed; a
-completed hop never gets a copy (D25). Every other retry re-plans around the failed hops
-through an alternate parent. `retransmitAdmittedMessage` sends an admitted message again as a
-repair attempt of its own identity; a relay uses it to pass a retried copy on to the child hops
-it still waits on.
+completed hop never gets a copy (D25). The hop view is the origin's own (`OverlayTree`: its next
+hops and those whose completion ACK arrived; R-S2c-ii-3): no browser peer holds the tree beyond its
+own hops, so with several relay hops outstanding the retry over-approximates, never to a completed
+hop. Every other retry re-plans around the failed hops through an alternate parent.
+`retransmitAdmittedMessage` sends an admitted message again as a repair attempt of its own identity;
+a relay uses it to pass a retried copy on to the child hops it still waits on (the inbound README
+covers the relay's side: which children it owns, and why its row always completes).
+
+A peer asks for a retransmit only for a child it owns and could not reach (R-S2c-ii-9); a leaf never
+does, since the retry of a recipient the origin already counted is the origin's decision. So an RTC
+origin that owns no next hop for a send -- members in the room but no overlay next hop, or a frozen
+audience that has since left -- has nothing to plan and settles `unroutable`/`no-route` rather than
+`skipped`/`planner-drop` (R-S2c-ii-9a): `rtc-with-ws-fallback` then falls back to WS, `rtc` alone
+settles `attempts-exhausted`, and a re-planned queued entry retries within the attempt cap. An origin
+alone in its room is the empty frozen audience above, not this case.
+
+### The frozen audience
+
+A `multicast` target carries its logical audience as `recipientPeerIds` with the `snapshotVersion` it
+was frozen at ([`al-frozen-multicast-audience.ts`](../../al-contracts/al-frozen-multicast-audience.ts)),
+both or neither (R-S2c-ii-1). Absence means "not yet frozen", a distinct state:
+`newALMulticastMessage` builds a multicast before any snapshot exists, so the carriers freeze it, and
+`assertPersistedALTargets` accepts the unfrozen shape or a complete pair (a unique id list and
+`snapshotVersion ≥ 1`). The pair is pinned on the room's `GroupSnapshot.group.snapshotVersion` (D26).
+
+- The RTC origin freezes its own multicast once, at the first plan that has a room authority
+  ([`web-rtc-overlay-frozen-audience.ts`](../../multicast/web-rtc-overlay-frozen-audience.ts)): the
+  sessions that authority admits (active members with live leases) minus itself, at the admission's
+  `snapshotVersion` (R-S2c-ii-2). Every later attempt and every stored row keeps that audience, whatever
+  the room has become.
+- The WS server freezes a room message at its admission stamp from the sessions it authorizes. A
+  multicast an RTC origin froze that falls back to WS keeps its frozen set narrowed to the sessions the
+  server authorizes: a frozen audience narrows what the admitting authority allows and never widens it,
+  and an empty intersection means nobody, never "no filter".
+- The outbound authority checks (`validateALOutboundPlannedMessage`, canonical reuse) accept exactly one
+  difference between an original and its planned or stored copy: unfrozen to frozen. A copy that drops
+  or changes a frozen audience still differs.
+- RTC peer ingress refuses a room multicast that carries no frozen audience (`malformed`).
+- Under `receiver` the origin's receipt row expects exactly the frozen recipients. The set a relay
+  forwards over is the sessions authorized now, a late joiner included, but only a session of the
+  frozen audience delivers locally or counts as a logical recipient; a session outside it may forward
+  and ends its own subtree with `subtree-complete`. A join never widens a frozen audience, and a session
+  that leaves stays expected and reads unconfirmed (D43).
 
 ### Server receipts on WS
 
@@ -218,6 +260,11 @@ Known limitations:
   one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
 - On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
   non-retryable, so a receipt row it claims stops being published.
+- With the cluster publisher registered (the pub/sub bridge), a dequeued room message is planned as one
+  `cluster-local-complete` publication, and every instance then delivers it to the room's current
+  sessions: the audience the outbox carried is ignored there, so a session that joined after admission
+  receives the message although the `receiver` row does not expect it. The audience stated above holds
+  only without a cluster publisher, until a slice routes cluster delivery through the plan.
 
 The origin admits a receipt through
 [`ALOutboundReceiptAdmission`](./control/al-outbound-receipt-admission.ts), not through control

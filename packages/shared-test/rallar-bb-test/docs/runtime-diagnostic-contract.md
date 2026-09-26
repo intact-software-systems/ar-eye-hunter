@@ -266,6 +266,12 @@ independent of any connection. The event's `data` is the event itself:
   and likewise for the missing observation, the missing session, the missing
   member and the missing server relay authority -- so an RTC delivery lost at
   ingress names which of the five room-authority branches held it
+- a raw control a recipe submits through `messages.control` is decided by its
+  addressee's ingress like any control, so its addressee states this event
+  under the recipe's authored `msgId`: a retired `al.control.ack.v1` reads
+  carrier `rtc`, `rejected`/`unsupported`. The `messages.control` result is the
+  submitting page's own carrier verdict (`admitted` when that carrier took the
+  frame), never the addressee's
 - `effect-drain` carries `durationMs`, `claimedCount`, `completedCount`,
   `rescheduledCount` and `rejectedCount` for each inbound work batch that
   touched work, the same five fields the outbound topic reports for its own

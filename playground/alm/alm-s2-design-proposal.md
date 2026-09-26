@@ -279,8 +279,10 @@ Constraints that bind all three:
   and `compute-al-delivery-lifecycle.ts`; `al-inbound-admission-store.ts` is already 1 015 lines, so
   S2b's key work splits it rather than grows it.
 - **S1's handle is the surface receipts extend, additively.** `ALDeliverySettlement` and the hop lists
-  get logical-recipient evidence _beside_ them, never renamed — AR Eye Hunter's match capability reads
-  `confirmedHopPeerIds` today (D9, D12). `rallar.realtime` stays untouched (D15). The observation
+  get logical-recipient evidence _beside_ them, never renamed (D9, D12). _Corrected by S2c-ii (Task 6):_
+  no AR Eye Hunter code reads `confirmedHopPeerIds`; its match lifecycle outputs project the handle's
+  recipient lists into `matchDelivery` (`toMatchDelivery`, never the room roster). `rallar.realtime`
+  stays untouched (D15). The observation
   artifact's inbound block, which F2c taught to decode the inbound topic, is the acceptance instrument.
 - **S2 pre-empts nothing.** R2 owns membership fencing and `rosterVersion`; A1 owns principal, world, all
   and fixed audiences; A2 owns leader ACK and exclusive ownership; I1 owns correlation and trace.

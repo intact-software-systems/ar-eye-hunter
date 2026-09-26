@@ -210,7 +210,10 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     /** Undefined until an `admitted` verdict: a duplicate states nothing about the durability of the original. */
     readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
-    /** Undefined unless a hop refused the message. */
+    /**
+     * Undefined unless a hop refused the message. An ACK-tracked send then reads `rejected`; a best-effort send
+     * keeps its terminal `transport-accepted`, and this field is the only sign of the refusal (R-S2c-ii-5a).
+     */
     readonly relayRejection: ALDeliveryRelayRejection | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;

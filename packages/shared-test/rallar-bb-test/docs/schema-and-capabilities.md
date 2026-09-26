@@ -206,13 +206,15 @@ envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 and optionally `connection`. The page builds, under the authored `msgId`, the ACK
 envelope its own session would send for `ackedMsgId` to `toPeerId`, that message's
 sender, and swaps in `typeId`, so the addressee's admission outcome names this one
-control, and so a
-recipe can send a control version its addressee does not support. The envelope goes
-through the carrier admission a product control takes. It returns
+control, and so a recipe can send a control version its addressee does not support.
+The envelope goes through the carrier admission a product control takes. It returns
 `{ msgId, typeId, carrier, verdict, reason? }`: the control's own msgId and that
-carrier's verdict. The addressee records its own `admission-outcome` for the control.
-`ackedMsgId` and `toPeerId` may name `{resultCache.<commandId>.<path>}` tokens, the
-same tokens a `wait` resolves in `contains`, such as
+carrier's verdict, which says only whether this page's carrier took the control:
+`admitted`, or another admission verdict such as `duplicate` for a msgId this page's
+store already holds. The addressee records its own `admission-outcome` for the control, which is
+the verdict a recipe asserts on the addressee's page. `msgId`, `ackedMsgId` and
+`toPeerId` may name `{resultCache.<commandId>.<path>}` tokens, the same tokens a
+`wait` resolves in `contains`, such as
 `{resultCache.<wait>.value.event.payload.senderId}` of an earlier message wait. A
 token no earlier command returned fails the command as invalid input. A page with
 no connected session fails with `RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE`.
@@ -245,15 +247,38 @@ the sessions of those roles after the run.
     receipt ends timed out: the handle reads `expired`, with the receiver confirmed
     and `recipient-b` unconfirmed.
 - `unknown-ack-version` (`rtc`, `rtc-with-ws-fallback`): `recipient-b` answers the
-  send with a raw `al.control.ack.v1` through `messages.control`, and the sender
-  waits for its own `admission-outcome` of that authored msgId refusing it
-  `rejected`/`unsupported`. Over
-  `ws` the WS server refuses that frame before any relay, which stays a unit pin of
-  the server.
+  send with a raw `al.control.ack.v1` through `messages.control` and asserts its own
+  carrier took it (`verdict` `admitted`), and the sender waits for its own
+  `admission-outcome` of that authored msgId refusing it `rejected`/`unsupported`.
+  The authored msgId is the carrier and scenario followed by the msgId of the send it
+  answers, which both pages read from their own result cache, so a re-run on a page
+  whose store survived submits a new control rather than a `duplicate`. Over `ws` the
+  WS server refuses that frame before any relay, which stays a unit pin of the
+  server.
 - `frozen-audience-membership`: `recipient-b` holds its ACK back and closes its
   connection once the send reaches it, which clears the fault. The receipt keeps it
   expected and reports it unconfirmed (D43), and the handle reads `expired`.
   `recipient-b` reconnects only after the send has expired, as the same session.
+
+A fifth scenario, a relay in front of `recipient-b` whose hop list names the relay
+while the recipient list names `recipient-b`, is deferred (R-S2c-ii-10): only the
+group owner can override the topology, and under `tree` which of three sessions sits
+in the middle is a hash of their ids, so no run can pin the relay. A unit pin proves
+the hop-versus-recipient property until the harness can place a relay.
+
+The local lane runs these scenarios as the `three-agent family over <carrier>` test,
+three pages in one run. The Hetzner manifest
+`22-alm-conformance-3-agent.json` (pattern `one-sender-two-recipients`) runs every
+carrier's scenarios in one combined recipe per role. Nothing in that combined recipe
+orders `recipient-b` arming its ACK hold for the next scenario before the sender's
+next send. `recipient-b` arms it once its previous scenario's absence window has
+ended, a window that started at the arrival; the sender sends once its own window,
+which started at its admission a little earlier, and its receipt read and asserts
+are done. The margin is the sender's extra local steps against the arrival latency,
+milliseconds rather than a barrier. The local lane runs each scenario with its own
+connect, and there the hold lands seconds before the send. A lost race on Hetzner
+reddens the scenario (an ACK that should have been held confirms `recipient-b`); it
+never makes one green.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that

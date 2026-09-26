@@ -62,49 +62,87 @@ to settle or to route to the maintainer:
 
 - **A multi-level relay loses its deeper recipients.** A relay's pending row completes on its last
   child's first ACK, so recipients below a child relay are lost. The S2c-ii RED must include a relay
-  that is itself a recipient (M7 emits the relay itself at index 0).
+  that is itself a recipient (M7 emits the relay itself at index 0). **Landed: Task 2 (10b3c03bb,
+  c91fd3197) — a relay forwards each far ACK as it arrives and ends with its own `subtree-complete`
+  (R-S2c-ii-3, R-S2c-ii-4).**
 - **The overlay manager's receipt mode.** `mode: effective.ack.algo` over next-hop `expectedPeerIds` is
   correct only while RTC refuses `receiver`; Task 1's frozen audience must change the pair together.
+  **Landed: Task 1 (514c440d1, 2bf752ddf) — under `receiver` the origin's row expects the frozen
+  recipients; `hop` and `subtree` keep next hops.**
 - **The outbox-planner audience change and the D38 durable-row receipt** (R-S2c-i-3): S2c-i aggregates
   in memory per instance only; the durable receipt row moves here, where the frozen audience rides the
-  targets (D24). **Settled: D48 → Task 2b.**
+  targets (D24). **Settled: D48 → Task 2b. Landed: be4b745b9, db8e878e7 (the audience rides beside
+  the message as `admittedAudience`).**
 - **Ordering on relayed broadcasts** (maintainer design question): whether the WS server should gate
   ordering on broadcasts it only relays. Today it keeps its own ordering track and NACKs the sender
-  (R-S2c-i-4). **Settled: D49 — the gate stays; no task.**
+  (R-S2c-i-4). **Settled: D49 — the gate stays; no task, no code.**
 - **An admitted `resync-required` NACK does nothing at the sender.** No outbound code acts on it, so a
   handle stays admitted for a message the relay dropped — a receipt-contract gap. **Settled: D50 →
-  Task 3 (evidence only).**
+  Task 3 (evidence only). Landed: 7ee546efe, 7dd902db8 (R-S2c-ii-5, R-S2c-ii-5a).**
 - **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
-  settlement. **→ Task 3 (R-S2c-ii-0).**
-- **The RTC breaker counts `refused/unsupported` as failure.** **→ Task 2 (R-S2c-ii-0).**
+  settlement. **→ Task 3 (R-S2c-ii-0). Landed: 7ee546efe (the `carrier-refused` attempt row).**
+- **The RTC breaker counts `refused/unsupported` as failure.** **→ Task 2 (R-S2c-ii-0). Landed:
+  10b3c03bb, 3f9ee87d7 (`is-rtc-enqueue-breaker-success.ts`).**
 - **The receipt admission is invisible in diagnostics.** The origin's receipt admission emits no
   `control-admission` event, so a refused receipt leaves no trace. Emit it from
   `ALOutboundReceiptAdmission`: give it the `diagnostics` sink, and have `acceptReceipt` take the
   control message so the event carries the control's own `msgId`, with `targetMsgId` = the receipt's
-  `msgId`. Then update `runtime-diagnostic-contract.md`. **→ Task 3 (R-S2c-ii-0).**
+  `msgId`. Then update `runtime-diagnostic-contract.md`. **→ Task 3 (R-S2c-ii-0). Landed: 7ee546efe
+  (`write-al-outbound-control-admission-diagnostic.ts`), documented in the diagnostic contract.**
 - **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
-  stop being refused `unsupported` (D42, S2c-i Task 4). **Settled: stays refused (Global Constraints).**
+  stop being refused `unsupported` (D42, S2c-i Task 4). **Settled: stays refused (Global Constraints);
+  no code.**
 - **Outbox-fanned `receiver` messages keep retransmitting after `complete`** (final review m2; pre-existing on
   8d98a7d6f). In the production outbox fan-out mode (`forwardsRoomScopedMessages: false`) the server's own
   outbound runtime writes a `receiver`-mode pending row and `ack-timeout` work for the room message, but
   the receivers' ACKs feed the aggregator, never that row, so `b` and `c` keep receiving retransmissions
   after the origin's receipt reads `complete`. Suppress the dequeue-time pending row for aggregated room
   messages or let the aggregator feed it, and extend the Task 4 pin ("answers an outbox-fanned receiver
-  message with one complete row") to advance past the ack timeout. **→ Task 2b (D48).**
+  message with one complete row") to advance past the ack timeout. **→ Task 2b (D48). Landed: be4b745b9 — the
+  aggregator feeds the server's own row, so its `ack-timeout` stops at `complete`.**
 - **Receipt redelivery to a reconnecting origin in a cluster** (final review m3). The receipt row's
   deadline + grace expiry keeps it deliverable on a single instance (a no-route dequeue retries); with a
   cluster publisher the dequeue publishes once as `cluster-local-complete`, so an origin disconnected at
-  that moment never gets the receipt. Belongs with the D38 durable receipt. **→ Task 2b (D48).**
+  that moment never gets the receipt. Belongs with the D38 durable receipt. **→ Task 2b (D48). Landed:
+  be4b745b9, d2c48626a — republished until one second before the row expires; the remaining limits
+  are listed in the outbound README.**
 - **The aggregate map's next-deadline scan** (final review m1, remainder): the server now caps an
   aggregate at `WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS`, but `deleteAggregate` still rescans the map for
   the next deadline whenever an aggregate leaves (O(n) per completing ACK); a sorted deadline index removes it.
-  **→ Task 2b (R-S2c-ii-0).**
+  **→ Task 2b (R-S2c-ii-0). Landed: be4b745b9 (`ws-queue-box-server-receipt-deadline-index.ts`).**
 - **Task 2c readiness notes** (informational): the harness's room-wait retry leaves
   `roomRefreshAttempts`/`roomRefreshSuccesses` at 1 however many retries ran, and the split readiness
   files import each other's types (a type-only cycle). The product defect behind the retry stays with the
-  maintainer (next item).
+  maintainer (next item). **Not addressed in S2c-ii; still informational, for the next harness slice.**
 - **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
-  ~835 and 878–918; a maintainer task chip).
+  ~835 and 878–918; a maintainer task chip). **Not S2c-ii's: the maintainer's a4b4e7233 (a fresh peer
+  for a closed SCTP association) is in this branch's base, and a hosted rtc smoke on this branch still
+  showed a reconnect readiness race (run 36206031954); carried out below.**
+
+### Carried out of S2c-ii
+
+Recorded by S2c-ii's execution, for the maintainer or a later slice:
+
+- **Scenario 5 and a harness-pinnable relay** (R-S2c-ii-10): under `tree` the middle of a three-session
+  path is a hash of the session ids, and only the group owner can override the topology; a harness
+  that can place a relay lets `receiver-distinct-from-hop` run.
+- **Publishing `nextHopsBySessionId` to browsers** (R-S2c-ii-3): a true tree would let the origin's
+  retry stop over-approximating while several relay hops are outstanding.
+- **A topology-config bound for the visited cap** (R-S2c-ii-8a/8c): the 64-entry cap is pinned against
+  today's overlay degree limit only; a configured degree above it costs redundant relays.
+- **Measuring the RTC per-copy byte cost and the relay-row retention**: the visited list's ~117 B /
+  ~2.5 KB per copy is an estimate, and the relay row stays until the message expires.
+- **The `acknowledgement-under-transport-hold` wall-clock flake**: recorded, not diagnosed.
+- **The stale-snapshot reopen** (Task 6 review): `onSnapshot` has no revision check, so a stale active
+  snapshot can reopen an ended match; pre-existing, and Task 6 makes it no likelier.
+- **A durable `tests/playwright` tsconfig in `npm run typecheck`**: the Playwright specs are type-checked
+  by nothing today.
+- **The receipt-less RTC send refusing its receiver hop's NACK** (R-S2c-ii-5a): the NACK arrives from a
+  `peer` source, and the trusted-relay rule covers only the server.
+- **Cluster delivery ignores the outbox audience** (Task 2b re-review N2-m1): with the pub/sub bridge
+  registered every instance delivers a dequeued room message to the room's current sessions; stated as
+  a known limitation in the outbound README.
+- **The dead-RTC-peer reconnect race** (the maintainer's chip).
 
 ---
 
