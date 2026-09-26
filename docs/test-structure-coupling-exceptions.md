@@ -113,9 +113,9 @@ moved or changed test.
       "id": "alm-ingress-wake-reaches-followup-batch",
       "domain": "ALM inbound work handler wake-on-admission",
       "owner": "Rallar shared maintainers",
-      "summary": "A committed ingress admission reaches the work handler's existing engine wake even while a batch it started is still running, and the newly admitted row is drained by that batch's own follow-up round rather than a later engine tick (S2a ruling R-S2a-6).",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running",
-      "coverageRelation": "The test holds a first admission's dispatch open behind a gate, admits a second message while that batch is still running, counts the queueEngine.wake spy across both admissions, then releases the gate and proves the second message dispatches without the test ever starting or ticking the engine itself.",
+      "summary": "Each committed ingress admission reaches the work handler's existing engine wake, including while an earlier dispatch is held; the running worker delivers both messages after release (S2a ruling R-S2a-6).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held",
+      "coverageRelation": "The test starts the caller-owned engine, holds a first admission's dispatch open behind a gate, admits a second message while that batch is still running, counts the queueEngine.wake spy across both admissions, then releases the gate and proves the second message dispatches without manually calling executeOnce.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "InboxOutboxEngine.wake called by ALWorkHandler.committed()",
@@ -1981,6 +1981,36 @@ moved or changed test.
         "observableEffect": "Recovered state replaces divergence and drives one recomputation.",
         "requiredConstraint": "Recovery performs one reread and one recomputation while divergent input never reaches active update.",
         "failureRationale": "Missing recovery preserves divergence; duplicates race; active update bypasses the oracle."
+      }
+    },
+    {
+      "id": "shared-web-lease-renewal-cache-only",
+      "domain": "Shared-web lease-only group snapshot renewal",
+      "owner": "Shared Web maintainers",
+      "summary": "A lease-only renewal updates the stored group snapshot without RTC mutation or state-cache listener notification.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners",
+      "coverageRelation": "The test observes the renewed repository value and raw update event, then checks the three independent downstream side-effect ports that must stay quiet.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebRTC group-manager active-update and delete ports, and state-cache lifecycle listeners",
+        "observableEffect": "The repository accepts the lease renewal without changing RTC group tracking or notifying state-cache consumers.",
+        "requiredConstraint": "A heartbeat timestamp-only change must not update or delete the RTC group, or emit a state-cache lifecycle change.",
+        "failureRationale": "The renewed repository value and raw event alone cannot reveal a needless RTC reconciliation, group deletion, or public lifecycle notification."
+      }
+    },
+    {
+      "id": "shared-web-replaced-heartbeat-auth-suppression",
+      "domain": "Shared-web replaced heartbeat authentication lifecycle",
+      "owner": "Shared Web maintainers",
+      "summary": "A delayed 401 from a replaced heartbeat cannot invalidate the auth session owned by its successor.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401",
+      "coverageRelation": "The test begins a heartbeat request, replaces its owner, then resolves the old request with 401 and observes the former owner's auth-invalidation callback.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Replaced heartbeat onAuthInvalid callback",
+        "observableEffect": "The old request's 401 leaves auth invalidation to the currently active heartbeat owner.",
+        "requiredConstraint": "The retired owner's auth-invalidation callback is never invoked by its delayed response.",
+        "failureRationale": "Successful replacement request and cleanup do not expose an obsolete auth callback that could invalidate the new lifetime."
       }
     },
     {
@@ -5851,6 +5881,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts#pulls the floored group snapshot when a delta envelope arrives over a causal gap"
     },
     {
+      "id": "test-structure-coupling-b03d419644a551dd",
+      "path": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-replaced-heartbeat-auth-suppression",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The retired callback's zero-call assertion excludes delayed auth invalidation after a successor has taken ownership; replacement request completion alone cannot reveal that side effect.",
+      "semanticCoverage": "packages/tests/shared-web/session/browser-session-heartbeat.test.ts#does not report auth invalidation from a replaced heartbeat delayed 401"
+    },
+    {
       "id": "test-structure-coupling-025be7ee49840bd9",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -5884,6 +5925,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session"
     },
     {
+      "id": "test-structure-coupling-5dbeb5981a460f8a",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-lease-renewal-cache-only",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The listener's zero-call assertion proves a raw lease renewal does not become a public state-cache lifecycle notification.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
+    },
+    {
       "id": "test-structure-coupling-62267828560f3742",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -5893,6 +5945,28 @@ moved or changed test.
       "owner": "Shared Web maintainers",
       "rationale": "The three-notification count after all envelopes directly proves that notification occurs exactly once per topology envelope.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#applies overlay topology websocket snapshots to the local overlay cache"
+    },
+    {
+      "id": "test-structure-coupling-69e7ce65f836a3fc",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-hydration-incomparable-recovery",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The active-update zero-call assertion proves the incomparable input was not applied to RTC directly before durable reread recovery.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
+    },
+    {
+      "id": "test-structure-coupling-7b44c7a4d33da48f",
+      "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-lease-renewal-cache-only",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The delete zero-call assertion excludes tearing down RTC group tracking on a lease-only renewal.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
     },
     {
       "id": "test-structure-coupling-938ac1b9663ee78e",
@@ -5964,12 +6038,12 @@ moved or changed test.
       "id": "test-structure-coupling-f9d11d5598249f3f",
       "path": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-hydration-incomparable-recovery",
+      "contract": "shared-web-lease-renewal-cache-only",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
-      "rationale": "The divergent active-update absence assertion directly proves that one reread and recomputation occur while divergent input is not applied.",
-      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate"
+      "rationale": "The active-update zero-call assertion excludes unnecessary RTC mutation on a lease-only renewal whose repository update is already observable.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#does not amplify a lease-only group authority renewal to RTC or state-cache listeners"
     },
     {
       "id": "test-structure-coupling-1b3d4d2848352f1b",
@@ -6101,7 +6175,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The count-of-one after the held admission's own commit is the only witness that admitting inbound work reaches the engine wake through ALWorkHandler.committed(), not merely through the batch it starts.",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running"
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held"
     },
     {
       "id": "test-structure-coupling-425d655aa28cc0d0",
@@ -6112,7 +6186,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The count-of-two after a second admission lands while the first batch is still running its held claim proves that admission's own commit reaches the same wake too, even though the running batch cannot claim the new row until its own follow-up round.",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running"
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held"
     },
     {
       "id": "test-structure-coupling-6a5c7121c5ec0433",

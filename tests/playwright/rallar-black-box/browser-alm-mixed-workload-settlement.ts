@@ -1,3 +1,5 @@
+import { toError } from '../../../packages/shared/resilience/to-error.ts';
+
 export interface MixedWorkloadSettlement<TDurable, TLive, TReconnect> {
     readonly durable: PromiseSettledResult<TDurable>;
     readonly live: PromiseSettledResult<TLive>;
@@ -15,16 +17,19 @@ export async function settleMixedWorkload<TDurable, TLive, TReconnect>(
 ): Promise<MixedWorkloadSettlement<TDurable, TLive, TReconnect>> {
     let firstRejection: MixedWorkloadSettlement<TDurable, TLive, TReconnect>['firstRejection'] = null;
     const observedDurable = durablePromise.catch((reason: unknown) => {
-        firstRejection ??= { stage: 'send-durable-burst', reason: toError(reason) };
-        throw reason;
+        const error = toError(reason);
+        firstRejection ??= { stage: 'send-durable-burst', reason: error };
+        throw error;
     });
     const observedLive = livePromise.catch((reason: unknown) => {
-        firstRejection ??= { stage: 'send-live-sequence', reason: toError(reason) };
-        throw reason;
+        const error = toError(reason);
+        firstRejection ??= { stage: 'send-live-sequence', reason: error };
+        throw error;
     });
     const observedReconnect = reconnectPromise.catch((reason: unknown) => {
-        firstRejection ??= { stage: 'reconnect-and-send', reason: toError(reason) };
-        throw reason;
+        const error = toError(reason);
+        firstRejection ??= { stage: 'reconnect-and-send', reason: error };
+        throw error;
     });
     const [durable, live, reconnect] = await Promise.allSettled(
         [
@@ -35,4 +40,3 @@ export async function settleMixedWorkload<TDurable, TLive, TReconnect>(
     );
     return { durable, live, reconnect, firstRejection };
 }
-import { toError } from '../../../packages/shared/resilience/to-error.ts';

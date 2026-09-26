@@ -2,6 +2,21 @@ import { expect, test } from '@playwright/test';
 
 import { settleMixedWorkload } from './browser-alm-mixed-workload-settlement.ts';
 
+test('normalizes a non-Error rejection before returning workload evidence', async () => {
+    const result = await settleMixedWorkload(
+        Promise.resolve([]),
+        Promise.reject('live failure'),
+        Promise.resolve(null)
+    );
+
+    expect(result.firstRejection?.reason).toBeInstanceOf(Error);
+    expect(result.live.status).toBe('rejected');
+    if (result.live.status === 'rejected') {
+        expect(result.live.reason).toBeInstanceOf(Error);
+        expect(result.live.reason.message).toBe('live failure');
+    }
+});
+
 test('records an early live rejection and waits for outstanding work before cleanup', async () => {
     const durable = Promise.withResolvers<readonly string[]>();
     const reconnect = Promise.withResolvers<string>();

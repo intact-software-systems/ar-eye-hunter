@@ -256,7 +256,7 @@ describe('ALInboundWorkSelector claim order', () => {
     });
 
     it(
-        'pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running',
+        'each admission wakes the running engine while an earlier dispatch is held',
         async () => {
             let releaseHeld: (() => void) | undefined;
             const held = new Promise<void>((resolve) => {
@@ -290,9 +290,8 @@ describe('ALInboundWorkSelector claim order', () => {
             onTestFinished(() => fixture.queueEngine.stop());
             wake.mockClear();
 
-            // The commit starts a batch through `ALWorkHandler.committed()` alone: the engine is
-            // never started or driven by this test, so nothing here can claim `held`'s row except
-            // that same batch.
+            // The caller-owned engine is running, but each admission must still announce its
+            // own write, including one that lands while a claim is held by the current batch.
             await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'held' }), INBOUND_TEST_SOURCE);
             await heldEntered;
             expect(wake).toHaveBeenCalledTimes(1);
@@ -304,8 +303,8 @@ describe('ALInboundWorkSelector claim order', () => {
             expect(wake).toHaveBeenCalledTimes(2);
 
             releaseHeld?.();
-            // No `start()` and no `executeOnce()` run in this test: `second` can only be dispatched by
-            // the follow-up batch `runBatch()`'s own `finally` schedules at the first batch's end.
+            // The test does not execute a batch manually; the running worker must discover
+            // and deliver the second message after the first claim is released.
             await expect.poll(() => dispatchedIds).toEqual(['held', 'second']);
         }
     );
@@ -314,7 +313,7 @@ describe('ALInboundWorkSelector claim order', () => {
         const claims = [
             createTestClaim('forward-message'),
             createTestClaim('send-control'),
-            createTestClaim('unknown'),
+            createTestClaim('undecoded'),
             createTestClaim('admit-control'),
             createTestClaim('admit-message'),
             createTestClaim('release-buffered'),
@@ -334,7 +333,7 @@ describe('ALInboundWorkSelector claim order', () => {
         expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual([
             'release-buffered',
             'dispatch-local',
-            'unknown',
+            'undecoded',
             'admit-control',
             'admit-message',
             'forward-message',
