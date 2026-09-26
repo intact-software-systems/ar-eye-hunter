@@ -417,9 +417,8 @@ export class ALInboundMessageRuntime {
         return { kind: 'control', handled: acceptance.handled };
     }
 
-    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
+    /** Durable work wakes the existing worker without rewinding its current rotation. */
     private commitWork(): void {
-        this.workSelector.restartScan();
         this.work.committed();
     }
 

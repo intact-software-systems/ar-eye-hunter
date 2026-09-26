@@ -237,8 +237,9 @@ obligation short-circuits, because the remaining checks read that obligation.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
-it through `commitWork()`: the scan restarts and the row reaches the batch the running
-batch's end schedules, rather than whichever round the rotation next reaches. A retained
+it through `commitWork()`: the handler invalidates readiness and schedules its existing
+batch or follow-up batch. The selector preserves its cursor and cached page, so rows behind
+the cursor are reached on the next natural rotation. A retained
 conflict announces for the same reason, and only when retention left a claimable row: a message
 already past its deadline is rejected before the write or as a row written already expired, and a
 row that is already terminal holds nothing to claim. An admission that wrote no row announces nothing, because
@@ -320,13 +321,14 @@ and cannot: a conflict means an authority-bearing observation moved, so the surf
 attempt read is exactly the thing that has to be read again. The pre-plan, the deadline and
 the decoded message are pure work re-derived from the message and the source
 [`retainPending`](./al-inbound-message-admission.ts) already persists; the effect facts are
-carried by neither, and are taken fresh instead — `readALInboundEffectFacts` builds
+carried by neither, and are taken fresh instead — `readALInboundEffectFacts` constructs
 `selfPeerId`, `observedAtEpochMs` and a new `controlIdPrefix` from the replay's own clock
 and this owner's effect preparation. So the retained payload carries nothing it did not
 carry before and the stored schema identity did not move. The replay runs in the batch the
-owner's own commit starts when the worker is idle, or in the follow-up batch
-`commitPending` schedules when a batch is already running; it never waits for the rotation
-to come round to it.
+existing worker selects its retained row. The owner's commit starts a batch when idle,
+or requests the follow-up batch through `commitPending` when a batch is already running.
+Those batches preserve natural rotation; notification does not promise that the next batch
+will select the newly committed row.
 
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
@@ -363,8 +365,8 @@ The delivery that an eligibility read cleared does not read that surface again. 
 `dispatch-local` or `forward-message` row the read takes the retained message and its
 stored planning state, and the selector carries exactly that surface to the claim by effect
 id ([`ALInboundDeliveryObservation`](./al-inbound-admitted-delivery.ts)). It is recorded
-only for a row the port went on to reserve, and it is dropped when the scan restarts or the
-next page replaces it. The delivery then decides again only what cannot be decided as early
+only for a row the port went on to reserve, and it is replaced by the next claimed selection.
+A concurrent commit preserves these observations. The delivery then decides again only what cannot be decided as early
 as the page: every expiry, against a fresh clock reading, and an ordered message's
 predecessor, which can land inside the claim window. A claim that carries no observation
 reads the surface for itself.
@@ -385,8 +387,8 @@ selection. The first of those claims to run hands the whole array to `sendContro
 every other claim of that batch awaits the same send. The browser carriers commit that array as one
 outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
 order. The round is keyed by that array's identity, never by time, so a row retried in a later
-batch never joins a finished round. A restarted scan empties the array, and a claim it left out
-sends alone. When the round's send throws, each of its claims sends its own message alone, so each
+batch never joins a finished round. New commits preserve both the rotation and its claimed array.
+When the round's send throws, each of its claims sends its own message alone, so each
 claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
 a member's storage throw once every member ran: a message the round already admitted then answers
 `duplicate`, and only the claim whose message throws again carries that failure. On RTC the round

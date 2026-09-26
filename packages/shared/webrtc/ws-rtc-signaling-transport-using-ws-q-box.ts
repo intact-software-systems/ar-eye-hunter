@@ -10,8 +10,8 @@ import { QRtcSignalingAdmissionError } from './qrtc-signaling-admission.ts';
 import {
     QRtcSignalingMessage,
     QRtcSignalingTransport,
-    QRtcSignalingTransportInputDto
-} from './QRtcSignalingContracts.ts';
+    QRtcSignalingTransportInput
+} from './qrtc-signaling-contracts.ts';
 
 /** What one admission of a signaling message means for the peer that is waiting on it. */
 type SignalAdmissionOutcome = 'accepted' | 'retryable' | 'terminal';
@@ -40,13 +40,13 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
         this.wakeOutbox = wakeOutbox;
     }
 
-    connect(input: QRtcSignalingTransportInputDto): Promise<void> {
+    connect(input: QRtcSignalingTransportInput): Promise<void> {
         this.registerSocketLifecycle(input);
         this.registerInboxReceiver(input);
         return this.qbox.socket.connect();
     }
 
-    private registerSocketLifecycle(input: QRtcSignalingTransportInputDto): void {
+    private registerSocketLifecycle(input: QRtcSignalingTransportInput): void {
         this.qbox.socket.onWebsocketCallbacksDo(
             this.id,
             {
@@ -78,7 +78,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
         );
     }
 
-    private registerInboxReceiver(input: QRtcSignalingTransportInputDto): void {
+    private registerInboxReceiver(input: QRtcSignalingTransportInput): void {
         this.qbox.onInboxMessageDo(
             this.typeId,
             {

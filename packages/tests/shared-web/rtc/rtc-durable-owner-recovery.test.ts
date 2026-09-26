@@ -260,9 +260,8 @@ class RtcRecoveryOwner {
             token: 'fixture-token',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'alm',
-            faultPort: this.faults,
             rtcSignalingTopicId: 'rtc'
-        });
+        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto) });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
             connectionService: this.connection,

@@ -43,6 +43,7 @@ jobs:
 
   capture:
     name: Run RTC-B06 E3-memory
+    if: ${{ inputs.mode == 'publish' }}
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -94,19 +95,6 @@ jobs:
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --output="$RTC_OBSERVATION_OUTPUT"
 
-      - name: Exercise RTC-B06 branch candidate
-        if: ${{ inputs.mode == 'diagnostic' }}
-        run: |
-          set -o pipefail
-          env -u DATABASE_URL \
-            -u RALLAR_ICE_MODE \
-            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
-            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
-            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
-            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_OBSERVATION_OUTPUT/readiness-diagnostics" \
-            npm run test:rallar:full-stack:memory:live-rtc-3 \
-            2>&1 | tee "$RTC_OBSERVATION_OUTPUT/diagnostic.log"
-
       - name: Retain RTC-B06 observation output
         if: ${{ always() && inputs.mode == 'publish' }}
         uses: actions/upload-artifact@v7
@@ -116,14 +104,120 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  diagnostic:
+    name: Diagnose RTC-B06 E3-memory runner ${{ matrix.runner }}
+    if: ${{ inputs.mode == 'diagnostic' }}
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - 1
+          - 2
+          - 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Initialize RTC-B06 diagnostic output
+        run: |
+          diagnostic_output="$RUNNER_TEMP/rtc-b06-diagnostic-${{ matrix.runner }}"
+          mkdir -p "$diagnostic_output"
+          git rev-parse HEAD > "$diagnostic_output/source-commit.txt"
+          echo "RTC_DIAGNOSTIC_OUTPUT=$diagnostic_output" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install repository dependencies
+        run: npm ci
+
+      - name: Install supported Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check RTC observation tooling
+        run: npm run check --workspace=packages/shared-rtc-bench
+
+      - name: Exercise RTC-B06 diagnostic cases
+        run: |
+          set -o pipefail
+          diagnostic_status=0
+
+          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/default"
+          if env -u DATABASE_URL \
+            -u RALLAR_ICE_MODE \
+            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/default/failure-diagnostics" \
+            npm run test:rallar:full-stack:memory:live-rtc-3 -- \
+            --retries=0 \
+            --output="$RTC_DIAGNOSTIC_OUTPUT/default/playwright-results" \
+            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/default/diagnostic.log"; then
+            :
+          else
+            diagnostic_status=$?
+          fi
+
+          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios"
+          if env -u DATABASE_URL \
+            -u RALLAR_ICE_MODE \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/failure-diagnostics" \
+            npm run test:rallar:full-stack:memory:live-rtc-3 -- \
+            --retries=0 \
+            --output="$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/playwright-results" \
+            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/all-scenarios/diagnostic.log"; then
+            :
+          else
+            case_status=$?
+            if [[ "$diagnostic_status" -eq 0 ]]; then
+              diagnostic_status="$case_status"
+            fi
+          fi
+
+          mkdir -p "$RTC_DIAGNOSTIC_OUTPUT/retention-100"
+          if env -u DATABASE_URL \
+            -u RALLAR_ICE_MODE \
+            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
+            RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 \
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 \
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_DIAGNOSTIC_OUTPUT/retention-100/failure-diagnostics" \
+            npm run test:rallar:full-stack:memory:live-rtc-3 -- \
+            --retries=0 \
+            --output="$RTC_DIAGNOSTIC_OUTPUT/retention-100/playwright-results" \
+            2>&1 | tee "$RTC_DIAGNOSTIC_OUTPUT/retention-100/diagnostic.log"; then
+            :
+          else
+            case_status=$?
+            if [[ "$diagnostic_status" -eq 0 ]]; then
+              diagnostic_status="$case_status"
+            fi
+          fi
+
+          exit "$diagnostic_status"
+
       - name: Retain RTC-B06 diagnostic output
-        if: ${{ always() && inputs.mode == 'diagnostic' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: rtc-b06-diagnostic-gh${{ github.run_id }}-a${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/rtc-b06-observation
-            apps/rallar-black-box/test-results
+          name: rtc-b06-diagnostic-r${{ matrix.runner }}-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rtc-b06-diagnostic-${{ matrix.runner }}
           if-no-files-found: error
           retention-days: 14
 

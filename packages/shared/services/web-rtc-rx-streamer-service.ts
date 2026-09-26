@@ -26,7 +26,7 @@ import type { QRtcMediaPolicy } from '../webrtc/qrtc-peer-connection.ts';
 import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
 import type { OnMessageCallback } from './queue-message-callbacks.ts';
-import type { QRtcPeerDto } from './web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import {
     defaultMaxMissedPings,
     defaultPingFrequencyMsecs,
@@ -100,7 +100,7 @@ export class WebRtcRxStreamerService {
 
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
     private readonly rttVersionByPeerId = new Map<PeerId, number>();
-    private readonly peerDtoByPeerId = new Map<PeerId, QRtcPeerDto>();
+    private readonly peersByPeerId = new Map<PeerId, WebRtcConnectionService.Peer>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private disposed = false;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
@@ -125,7 +125,7 @@ export class WebRtcRxStreamerService {
                     return await this.dispatchInboxEntry(entry, plan);
                 },
                 sendControlMessages: async (msgs) => {
-                    await this.multicast.enqueueAllIfAbsent(msgs);
+                    await this.handoffControlMessages(msgs);
                 },
                 onControlMessage: async (msg) => {
                     await this.multicast.acceptControlMessage(msg);
@@ -142,34 +142,61 @@ export class WebRtcRxStreamerService {
         );
     }
 
-    addPeer(peerDto: QRtcPeerDto): void {
-        if (this.peerDtoByPeerId.has(peerDto.peerId)) {
-            console.warn(`Peer ${peerDto.peerId} already exists. Ignoring ...`);
+    private async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
+        const results = await this.multicast.enqueueAllIfAbsent(msgs);
+        for (const result of results) {
+            this.validateControlHandoff(result);
+        }
+    }
+
+    private validateControlHandoff(result: ALOutboundEnqueueResult): void {
+        switch (result.verdict.kind) {
+            case 'pending':
+            case 'admitted':
+            case 'duplicate':
+                return;
+            case 'deferred':
+            case 'unroutable':
+            case 'failed':
+                throw new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
+            case 'refused':
+            case 'skipped':
+            case 'superseded':
+            case 'expired':
+                throw new NonRetryableException(
+                    result.reason ?? `RTC control admission returned ${result.verdict.kind}`
+                );
+        }
+    }
+
+    addPeer(peer: WebRtcConnectionService.Peer): void {
+        if (this.peersByPeerId.has(peer.peerId)) {
+            console.warn(`Peer ${peer.peerId} already exists. Ignoring ...`);
             return;
         }
 
-        this.peerDtoByPeerId.set(peerDto.peerId, peerDto);
-        this.registerPeerMessages(peerDto);
-        this.registerPeerMedia(peerDto);
+        this.peersByPeerId.set(peer.peerId, peer);
+        this.registerPeerMessages(peer);
+        this.registerPeerMedia(peer);
     }
 
-    private registerPeerMessages(peerDto: QRtcPeerDto): void {
-        peerDto.channel
+    private registerPeerMessages(peer: WebRtcConnectionService.Peer): void {
+        peer.channel
             .onRtcCallbacksDo(
-                this.toHeartbeatCallbackId(peerDto.peerId),
-                this.toHeartbeatCallbacks(peerDto.peerId)
+                this.toHeartbeatCallbackId(peer.peerId),
+                this.toHeartbeatCallbacks(peer.peerId)
             )
             .onRtcMessageDo(
-                this.toRtcChannelSubscriptionId(peerDto.peerId),
+                this.toRtcChannelSubscriptionId(peer.peerId),
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
-                    onMessage: async (value) => await this.admitPeerMessage(peerDto, value)
+                    onMessage: async (value) => await this.admitPeerMessage(peer, value)
                 }
             );
     }
 
-    private async admitPeerMessage(peer: QRtcPeerDto, value: unknown): Promise<void> {
-        if (this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+    private async admitPeerMessage(peer: WebRtcConnectionService.Peer, value: unknown): Promise<void> {
+        if (this.disposed || this.peersByPeerId.get(peer.peerId) !== peer) {
             return;
         }
         const message = decodeALMessageValue(value).right;
@@ -186,7 +213,7 @@ export class WebRtcRxStreamerService {
             message,
             acceptance.right
         );
-        if (!refreshed || this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+        if (!refreshed || this.disposed || this.peersByPeerId.get(peer.peerId) !== peer) {
             return;
         }
         const retry = await this.inboundRuntime.admitIncomingMessage(message, source);
@@ -195,19 +222,19 @@ export class WebRtcRxStreamerService {
         }
     }
 
-    private registerPeerMedia(peerDto: QRtcPeerDto): void {
+    private registerPeerMedia(peer: WebRtcConnectionService.Peer): void {
         if (this.status.mediaPolicy) {
-            peerDto.connection.applyMediaPolicy(this.status.mediaPolicy);
+            peer.connection.applyMediaPolicy(this.status.mediaPolicy);
         }
 
-        peerDto.media
+        peer.media
             .onRemoteStreamDo(
-                this.toRtcMediaSubscriptionId(peerDto.peerId),
-                (stream, event) => this.publishRemoteStream(peerDto.peerId, stream, event)
+                this.toRtcMediaSubscriptionId(peer.peerId),
+                (stream, event) => this.publishRemoteStream(peer.peerId, stream, event)
             );
 
         if (this.status.localMediaStream) {
-            peerDto.media.setParameters(
+            peer.media.setParameters(
                 this.status.localMediaStream,
                 this.status.localAudioEnabled,
                 this.status.localVideoEnabled
@@ -227,18 +254,18 @@ export class WebRtcRxStreamerService {
         }
     }
 
-    removePeer(peerDto: QRtcPeerDto): void {
-        this.peerDtoByPeerId.delete(peerDto.peerId);
+    removePeer(peer: WebRtcConnectionService.Peer): void {
+        this.peersByPeerId.delete(peer.peerId);
 
-        peerDto.media.removeOnRemoteStreamCallbackById(this.toRtcMediaSubscriptionId(peerDto.peerId));
-        peerDto.channel.removeOnRtcMessageCallbackById(this.toRtcChannelSubscriptionId(peerDto.peerId));
-        peerDto.channel.removeRtcCallbackById(this.toHeartbeatCallbackId(peerDto.peerId));
+        peer.media.removeOnRemoteStreamCallbackById(this.toRtcMediaSubscriptionId(peer.peerId));
+        peer.channel.removeOnRtcMessageCallbackById(this.toRtcChannelSubscriptionId(peer.peerId));
+        peer.channel.removeRtcCallbackById(this.toHeartbeatCallbackId(peer.peerId));
 
-        const heartbeat = this.heartbeatByPeerId.get(peerDto.peerId);
+        const heartbeat = this.heartbeatByPeerId.get(peer.peerId);
 
         heartbeat?.stop();
 
-        this.heartbeatByPeerId.delete(peerDto.peerId);
+        this.heartbeatByPeerId.delete(peer.peerId);
     }
 
     stopAllHeartbeats(): void {
@@ -264,7 +291,7 @@ export class WebRtcRxStreamerService {
         }
 
         for (const peerId of peerIds) {
-            const peer = this.peerDtoByPeerId.get(peerId);
+            const peer = this.peersByPeerId.get(peerId);
             if (peer?.channel.isOpen()) {
                 this.startRtcHeartbeats(peerId).catch((error) =>
                     console.error(`Failed to start RTT heartbeat for ${peerId}`, toError(error))
@@ -292,7 +319,7 @@ export class WebRtcRxStreamerService {
     }
 
     private startRtcHeartbeats(peerId: string): Promise<void> {
-        const peer = this.peerDtoByPeerId.get(peerId);
+        const peer = this.peersByPeerId.get(peerId);
         if (!peer) {
             return Promise.resolve();
         }
@@ -448,7 +475,7 @@ export class WebRtcRxStreamerService {
     async setLocalMediaStream(stream: MediaStream): Promise<void> {
         this.status.localMediaStream = stream;
 
-        for (const peer of this.peerDtoByPeerId.values()) {
+        for (const peer of this.peersByPeerId.values()) {
             await peer.media.setLocalMediaStream(stream);
             peer.media.setLocalAudioEnabled(this.status.localAudioEnabled);
             peer.media.setLocalVideoEnabled(this.status.localVideoEnabled);
@@ -458,7 +485,7 @@ export class WebRtcRxStreamerService {
     setLocalAudioEnabled(enabled: boolean): void {
         this.status.localAudioEnabled = enabled;
 
-        for (const peer of this.peerDtoByPeerId.values()) {
+        for (const peer of this.peersByPeerId.values()) {
             peer.media.setLocalAudioEnabled(enabled);
         }
     }
@@ -466,13 +493,13 @@ export class WebRtcRxStreamerService {
     setLocalVideoEnabled(enabled: boolean): void {
         this.status.localVideoEnabled = enabled;
 
-        for (const peer of this.peerDtoByPeerId.values()) {
+        for (const peer of this.peersByPeerId.values()) {
             peer.media.setLocalVideoEnabled(enabled);
         }
     }
 
     stopLocalMedia(kind: 'audio' | 'video' | 'all'): void {
-        for (const peer of this.peerDtoByPeerId.values()) {
+        for (const peer of this.peersByPeerId.values()) {
             peer.media.stopLocalMedia(kind);
         }
     }
@@ -480,7 +507,7 @@ export class WebRtcRxStreamerService {
     setMediaPolicy(policy: QRtcMediaPolicy): void {
         this.status.mediaPolicy = policy;
 
-        for (const peer of this.peerDtoByPeerId.values()) {
+        for (const peer of this.peersByPeerId.values()) {
             peer.connection.applyMediaPolicy(policy);
         }
     }

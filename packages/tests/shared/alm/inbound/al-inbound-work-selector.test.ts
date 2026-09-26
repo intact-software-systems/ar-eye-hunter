@@ -1,6 +1,15 @@
 import '../../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -30,13 +39,6 @@ import {
     type ResourceEntry,
     type ResourceEntryKeyString
 } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
@@ -91,16 +93,14 @@ describe('ALInboundWorkSelector readiness', () => {
         expect(selection.nextReadyAtMs).toBe(NOW_MS);
     });
 
-    it('drops the page a probe cached when a commit restarts the scan', async () => {
+    it('reaches work committed behind a cached empty page on a natural rotation', async () => {
         const fixture = createSelectorFixture();
 
         // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
 
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
-        fixture.selector.restartScan();
-
-        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        const selection = await readFirstClaimingSelection(fixture, 6);
         expect(selection.claims).toHaveLength(1);
     });
 });
@@ -182,6 +182,8 @@ describe('ALInboundWorkSelector claim order', () => {
                 effectWorkerId: 'al-inbound:claim-order'
             });
             await fixture.runtime.ready();
+            fixture.queueEngine.start();
+            onTestFinished(() => fixture.queueEngine.stop());
 
             await fixture.runtime.admitIncomingMessage(
                 createInboundTestMessage({ msgId: 'claim-order', acknowledged: true }),
@@ -225,7 +227,7 @@ describe('ALInboundWorkSelector claim order', () => {
         }
     );
 
-    it('sends each control of a batch alone once a commit restarted the scan mid-batch', async () => {
+    it('keeps the control batch intact when a commit arrives mid-batch', async () => {
         let releaseHeld: (() => void) | undefined;
         const held = new Promise<void>((resolve) => {
             releaseHeld = resolve;
@@ -244,14 +246,13 @@ describe('ALInboundWorkSelector claim order', () => {
             await fixture.queueEngine.executeOnce();
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        // A commit while the batch holds its first dispatch restarts the scan, which empties the
-        // claimed control sends of the batch: each of its control claims then sends alone.
+        // New committed work does not rewind the rotation or split its already claimed control batch.
         await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'late' }), INBOUND_TEST_SOURCE);
         releaseHeld?.();
 
-        await expect.poll(() => fixture.controlSends.length).toBeGreaterThanOrEqual(2);
-        expect(fixture.controlSends.slice(0, 2).map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg))))
-            .toEqual([['first-acknowledged'], ['second-acknowledged']]);
+        await expect.poll(() => fixture.controlSends.length).toBe(1);
+        expect(fixture.controlSends.map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg))))
+            .toEqual([['first-acknowledged', 'second-acknowledged']]);
     });
 
     it(
@@ -285,6 +286,8 @@ describe('ALInboundWorkSelector claim order', () => {
             });
             const wake = vi.spyOn(fixture.queueEngine, 'wake');
             await fixture.runtime.ready();
+            fixture.queueEngine.start();
+            onTestFinished(() => fixture.queueEngine.stop());
             wake.mockClear();
 
             // The commit starts a batch through `ALWorkHandler.committed()` alone: the engine is
@@ -406,8 +409,8 @@ function createTimedSelectorFixture(): SelectorFixture {
 }
 
 /** The rotation's next few rounds, stopped at the one that took work. */
-async function readFirstClaimingSelection(fixture: SelectorFixture) {
-    for (let round = 0; round < SCAN_STATUS_COUNT; round += 1) {
+async function readFirstClaimingSelection(fixture: SelectorFixture, maxRounds = SCAN_STATUS_COUNT) {
+    for (let round = 0; round < maxRounds; round += 1) {
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         if (selection.claims.length > 0) {
             return selection;

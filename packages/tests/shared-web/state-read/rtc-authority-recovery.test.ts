@@ -846,11 +846,10 @@ class NativeAuthorityEndpoint {
         this.connection = createNativeRtcConnectionFixture({
             sessionId: input.sessionId,
             token: 'fixture-token',
-            faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc',
             dataChannelName: 'reliable',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
-        }, input.nativeRuntime);
+        }, input.nativeRuntime, input.faultPort ?? createPassThroughTransportFaultPort());
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
         this.native = this.connection.nativePeer(input.peerId).channels[0];
         this.overlays.set(toScopedOverlayId(room), createOverlay(input.peerId));

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { MediaSessionState, QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
@@ -125,7 +126,7 @@ function createNativeMediaChannelFixture(): NativeMediaChannelFixture {
         peerSessionId: 'peer-1',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peerConnection.connect();
     peers.push(peerConnection);
     const native = peerConnection.status.pc;

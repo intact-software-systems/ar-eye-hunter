@@ -45,7 +45,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
-import { waitForALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
+import { waitForSettledALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
 
 describe('RallarServerWsRouter', () => {
     it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
@@ -55,7 +55,8 @@ describe('RallarServerWsRouter', () => {
             vi.restoreAllMocks();
         });
         const expiresAtMs = nowMs + 1_000;
-        const fixture = createIngressRouter({ defaultFanout: 'none' }, undefined, {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, stores, {
             defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } })
         });
         const delivered: string[] = [];
@@ -72,6 +73,17 @@ describe('RallarServerWsRouter', () => {
         const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
 
         await fixture.socket.receive(message);
+        const keys = await stores.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        if (offsetMs < 0) {
+            await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({
+                status: 'COMPLETED',
+                dequeueAudit: { attempts: 1 }
+            });
+        }
+        else {
+            await expect.poll(() => stores.workQueue.getItem(keys[0])).toBeUndefined();
+        }
 
         expect(observedDeadlines).toEqual([expiresAtMs]);
         expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
@@ -114,10 +126,14 @@ describe('RallarServerWsRouter', () => {
 
         const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        const retry = await stores.workQueue.getItem(keys[0]);
+        if (retry?.dequeueAudit.nextTs === undefined) {
+            throw new Error('Expected the failed public consumer to retain a scheduled retry');
+        }
         available = true;
-        await vi.advanceTimersByTimeAsync(1_000);
-        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        await vi.advanceTimersByTimeAsync(Math.max(0, retry.dequeueAudit.nextTs.epochMilliseconds - Date.now()));
+        await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
         expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
     });
 
@@ -540,7 +556,7 @@ describe('RallarServerWsRouter', () => {
             }
             return await readIncomingMessage(input);
         });
-        const publishedSessionIds: string[][] = [];
+        const publishedAudiences: { readonly msgId: string; readonly sessionIds: readonly string[]; }[] = [];
         let authorizationCount = 0;
         const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const { router, service, socket } = createIngressRouter({
@@ -565,10 +581,11 @@ describe('RallarServerWsRouter', () => {
         }, stores);
         const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
         vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((message, sessionIds) => {
-            publishedSessionIds.push([...sessionIds ?? []]);
+            publishedAudiences.push({ msgId: message.id.msgId, sessionIds: [...sessionIds ?? []] });
             return sendToTargetsWithResult(message, sessionIds);
         });
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {
             router.install();
             const first = newALBroadcastMessage(
@@ -598,10 +615,17 @@ describe('RallarServerWsRouter', () => {
             await allAuthorizationsCompleted.promise;
             releaseFirstAdmission.resolve();
             await Promise.all([firstIngress, duplicateIngress, alteredIngress]);
+            const keys = await stores.workQueue.getAllKeys();
+            expect(keys.length).toBeGreaterThan(0);
+            await waitForSettledALInboundWork(stores.workQueue);
 
-            expect(publishedSessionIds).toEqual([['session-1']]);
+            expect(publishedAudiences).toEqual([{
+                msgId: first.id.msgId,
+                sessionIds: ['session-1']
+            }]);
         }
         finally {
+            error.mockRestore();
             warn.mockRestore();
         }
     });
@@ -1289,7 +1313,6 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
                 await listener.handleEvent(event);
             }
         }
-        await waitForALInboundWork();
     }
 }
 

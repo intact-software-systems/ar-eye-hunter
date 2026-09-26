@@ -229,11 +229,10 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
     const fixture = createNativeRtcConnectionFixture({
         sessionId: 'self',
         token: 'fixture-token',
-        faultPort: faults,
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc'
-    }, nativeRuntime);
+    }, nativeRuntime, faults);
     onTestFinished(() => {
         fixture.dispose();
         nativeRuntime.dispose();

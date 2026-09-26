@@ -455,7 +455,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await socket.receive(msg);
 
-        expect(receivedByFirst).toEqual([msg.id.msgId]);
+        await expect.poll(() => receivedByFirst).toEqual([msg.id.msgId]);
         expect(receivedBySecond).toEqual([]);
     });
 
@@ -539,7 +539,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(newer);
         await socket.receive(older);
 
-        expect(deliveredTexts).toEqual([newer.payload.resource]);
+        await expect.poll(() => deliveredTexts).toEqual([newer.payload.resource]);
     });
 
     it('keeps deferred delivery unclaimed until overload clears', async () => {
@@ -678,6 +678,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(deliveredTexts).toEqual([]);
         expect((await readQueueEntries(outbox)).filter((entry) => entry.status !== shared.EntityStatus.COMPLETED)).toEqual([]);
 
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(2);
         const sentTypeIds = socket.sentJsonStrings
             .map((serialized) => decodePersistedALMessage(serialized).payload.typeId)
             .sort();

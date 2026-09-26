@@ -97,13 +97,21 @@ payload-dependent sends and repair stop at the deadline. Live missing or mismatc
 references are corruption. Superseding messages retain separate canonical payloads;
 they do not overwrite a predecessor's envelope.
 
-An initial admission conflict can retain a validated message and compact
-`admit-message` work through
-[`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts).
-The worker rereads current admission facts for one new attempt. The retained policy,
-original deadline, and authorized transport provenance remain unchanged; the stored
-candidate contains no prior mutable write context. A terminal pending descriptor
-cannot be revived or reported as a retryable owner merely because its content matches.
+A validated initial AL control enqueue runs the normal read, computation, validation,
+and optimistic commit without entering the sender queue or browser Web Lock. An
+uncontended commit returns `admitted`; a real commit conflict atomically retains the
+canonical payload, immutable identity, and compact `admit-message` work through
+[`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts). That fallback
+returns `pending`, meaning durable ownership exists, not that transport ran. A spoofed
+control type whose envelope does not decode as a canonical control stays on the ordinary
+serialized path.
+
+The outbound worker claims the retained `admit-message`, rereads current admission
+facts, and replays one new attempt through the unchanged sender queue and browser Web
+Lock. The retained policy, original deadline, and authorized transport provenance
+remain unchanged; the stored candidate contains no prior mutable write context. A
+retention conflict leaves no false ownership for the caller to complete, and a terminal
+pending descriptor cannot be revived merely because its content matches.
 
 The server's independently produced `WS_OUTBOX` rows remain active canonical
 sources. Cluster notifications carry bounded key/type/deadline claims, which the
@@ -313,8 +321,9 @@ telemetry that no conformance scenario holds or asserts on.
 ### Grouped control sends
 
 `enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`
-takes one sender-queue slot and one browser lock for the group and reads, computes and validates each
-member with the single-message decision. `commitBundles` then fences the sender version once, runs every
+takes one sender-queue slot and one browser lock for an ordinary data group. Canonical initial
+controls bypass those waits and use the same optimistic group commit; a mixed group settles each
+member alone. Each member uses the single-message decision. `commitBundles` fences the sender version once, runs every
 bundle's own pending, effect, observation and identity fences, writes every bundle and bumps the version
 once. The group falls back when a member settles before its write (it fails validation, finds its own
 pending admission, or has nothing to commit), when a version moved between the members' reads, when two

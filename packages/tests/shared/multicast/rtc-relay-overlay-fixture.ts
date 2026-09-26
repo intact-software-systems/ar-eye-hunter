@@ -16,7 +16,7 @@ import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
-import { waitForALInboundWork } from '../wait-for-al-inbound-work.ts';
+import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { createOriginOverlay } from './rtc-origin-overlay-fixture.ts';
 
 export interface RtcRelayOverlayFixtureInput {
@@ -36,18 +36,22 @@ export interface RtcRelayOverlayFixture {
 
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
     const nativeRuntime = installNativeRtcRuntime();
-    const connection = createNativeRtcConnectionFixture({
-        sessionId: input.selfPeerId,
-        token: 'test-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 600_000 },
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc-signaling'
-    }, nativeRuntime);
+    const connection = createNativeRtcConnectionFixture(
+        {
+            sessionId: input.selfPeerId,
+            token: 'test-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 600_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc-signaling'
+        },
+        nativeRuntime,
+        createPassThroughTransportFaultPort()
+    );
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
     overlays.accept('room', createOriginOverlay(input.neighbourPeerIds));
+    const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
     const multicast = new shared.WebRtcOverlayMulticastManager({
         connectionService: connection.service,
         groupCache: groups,
@@ -56,15 +60,16 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         qosProvider: undefined,
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+        outboundRuntime: outboundResources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),
         dequeueResilience: createDefaultALOutboundDequeueResilience()
     });
+    const inboundStores = shared.createDefaultInMemoryALInboundRuntimeStores();
     const service = shared.createDefaultWebRtcRxStreamerService({
         multicast,
         sessionId: input.selfPeerId,
-        inboundStores: shared.createDefaultInMemoryALInboundRuntimeStores(),
+        inboundStores,
         roomAuthorityRefresh: undefined
     });
     service.setRttReportingPeerIds([]);
@@ -87,10 +92,11 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         receive: async (message, fromPeerId) => {
             await ready;
             await connection.nativePeer(fromPeerId).channels[0].receive(JSON.stringify(message));
-            await waitForALInboundWork();
+            await waitForOwnedQueueWork(inboundStores.workQueue);
+            await waitForOwnedQueueWork(outboundResources.workQueue);
         },
         readSent: async (peerId) => {
-            await waitForALInboundWork();
+            await waitForOwnedQueueWork(outboundResources.workQueue);
             return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
         },
         acceptSnapshot: (snapshot) => groups.accept('room', snapshot)

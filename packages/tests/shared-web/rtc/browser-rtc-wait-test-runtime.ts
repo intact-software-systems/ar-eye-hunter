@@ -4,11 +4,7 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import {
-    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-    type QRtcPeerDto,
-    type WebRtcConnectionService
-} from '@shared/services/web-rtc-connection-service.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -102,7 +98,7 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-const openedPeers = new Map<string, QRtcPeerDto>();
+const openedPeers = new Map<string, WebRtcConnectionService.Peer>();
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),

@@ -1,0 +1,15 @@
+{
+  "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "files": [
+    "create-group-formation-lifecycle-driver.ts",
+    "live-rtc-causal-diagnostics.ts",
+    "live-rtc-control-client.ts"
+  ],
+  "include": []
+}

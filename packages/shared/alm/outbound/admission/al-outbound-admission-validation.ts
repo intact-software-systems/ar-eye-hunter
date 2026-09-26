@@ -76,9 +76,12 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         ackTracking: policy.ackTracking
             ? {
                 ...policy.ackTracking,
-                expectedPeerIds: plan.ackTracking?.expectedPeerIds ?? [],
+                expectedPeerIds: plan.ackTracking?.expectedPeerIds ??
+                    (policy.ackTracking.mode === 'receiver'
+                        ? policy.ackTracking.expectedPeerIds
+                        : plan.receiptNextHopPeerIds ?? []),
                 expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
-                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? []
+                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? plan.receiptNextHopPeerIds ?? []
             }
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
