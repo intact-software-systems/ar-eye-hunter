@@ -73,7 +73,7 @@ and settles all started operations before closing their browser contexts. Old
 artifacts remain historical evidence, not inputs requiring migration.
 
 The rebase onto `d8e72dca5ba53a8f6de48a67c41c02fe5bd1282d` is published in
-PR #566. Affected semantic tests/typechecks and independent review are complete;
+PR #566. Focused semantic tests/typechecks and independent review are complete;
 the review corrections preserve one-transaction control batching and settle
 mixed workloads before browser cleanup. The next two useful outcomes are closing
 the remaining delivery gates, then the necessary source-labelled browser
@@ -85,6 +85,13 @@ for headless, exceeding their unchanged strict limits. Approval for ceilings of
 `<221 KiB` and `<282 KiB` has been requested but not received. Do not treat earlier
 source-specific budget approvals as authorization or mark this PR ready while
 these checks fail.
+
+Task 25 corrects the stale accepted-room fixtures and lease-only notification
+expectation exposed by the broader shared-web suite. Recovery assertions now wait
+for due receiver work before checking either delivery or non-delivery. The full
+shared-web suite has 1,141 passes and only the unchanged facade-size failure;
+both game builds pass with large-chunk warnings. These results do not establish
+browser lifecycle, retention, or RTC-B06 acceptance.
 
 Task 24's single producer and recorder completed before this rebase. Reconnect
 cycle 3 failed readiness and retained only cycle-0 heap. The terminal causal cuts
@@ -1840,6 +1847,35 @@ integration above now precedes selection of any further observation.
 retention evidence or bounds the latest readiness failure through the terminal
 causal cut. No automatic rerun, new queue, retry, fence, lock, timer, dependency,
 migration, legacy path, deadline, threshold or workload change.
+
+### Task 25: Align RTC recovery fixtures with current accepted-room contracts
+
+**Status: complete; independent review and scoped correction review accepted.**
+
+**Validation:** All 67 recovery/freshness cases and 58 unchanged negative
+authority cases pass. Shared-web and maintained-test typechecks pass. The sole
+remaining shared-web failure is the separately gated facade bundle ceiling.
+
+**Outcome:** Recovery tests reach the intended admitted-work scenarios without
+weakening current room authorization, frozen audiences, receipts, or lease checks.
+
+- Capture the actual refusal reason before editing. Correct the local fixtures
+  in `rtc-durable-owner-recovery.test.ts` and `rtc-authority-recovery.test.ts` to
+  supply a flowing room with an exact active accepted-layout identity and matching
+  overlay source revisions. Keep generic room defaults unchanged.
+- Preserve negative authority, expiry, cancellation, disposal, owner-recreation,
+  latest-wins, and delivery assertions. Investigate any newly reached failure;
+  do not erase it or weaken production checks to make fixtures pass.
+- Correct `authoritative-group-freshness.test.ts` to require no public lifecycle
+  notification for lease-only renewal, while still proving the raw repository
+  update, acquired snapshot readback, refreshed lifetime, and unchanged causal tuple.
+- Run the three focused suites, maintained test and shared-web typechecks, and
+  the full shared-web suite. Review the correction independently. Bundle ceilings
+  stay unchanged pending their separate approval.
+
+**Exit:** Corrected fixtures exercise their named scenarios, and any remaining
+failure is explicitly classified. No runtime behavior change is selected by this
+fixture diagnosis alone.
 
 ## Later outcomes, not additional speculative implementation slices
 
