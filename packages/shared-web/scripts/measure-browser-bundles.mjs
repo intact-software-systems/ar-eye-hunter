@@ -35,7 +35,7 @@ const entries = [
         // brings it to 217.681640625 KiB, and its retry through the relay tree (the missing-recipient repair,
         // the per-recipient relay row and the retried-copy path) to 218.388671875 KiB. Its logical evidence on the
         // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
-        // 219.0595703125 KiB. S3a's purpose table and channel policy validation measure 220.1640625 KiB.
+        // 219.0595703125 KiB. S3a's purpose table and channel policy validation measure 220.3134765625 KiB.
         // The next whole-KiB ceiling is 221.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
