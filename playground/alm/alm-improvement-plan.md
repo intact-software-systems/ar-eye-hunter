@@ -951,10 +951,12 @@ artifacts in the lanes.
 ## Continuing from a fresh session
 
 Read this roadmap, then the open pull request's Goal, Acceptance, Validation, and Follow-up
-sections, then run `npm run pr:delivery -- status`. The current delivery is S1 from branch `claude/alm-s1-delivery-handle`; its implementation plan is
-`plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`, beside the ticked F1, F2, and F2b
-plans; F2c runs as its own slice from `main`. Start the
-next slice from merged `main` on a new branch. Recover the current owner, entry,
+sections, then run `npm run pr:delivery -- status`. The S2 outcome is delivered (S2a, S2b, S2c-i
+and S2c-ii, the last from branch `claude/alm-s2c-ii-frozen-audience` with its plan
+`plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md`); the earlier ticked
+plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. The next slice is not planned yet: its
+inputs are the "Carried out of S2c-ii" list in the S2c-ii plan and the S3 items in this roadmap. Start
+it from merged `main` on a new branch. Recover the current owner, entry,
 dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
 navigation map. When a release completes, move the next two slices into the concrete horizon here
 and leave the rest outcome-shaped. Do not add pull request status prose to this document.
