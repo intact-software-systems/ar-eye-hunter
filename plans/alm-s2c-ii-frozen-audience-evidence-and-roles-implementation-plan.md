@@ -453,6 +453,45 @@ git commit -m "feat(ar-eye-hunter): match lifecycle outputs request logical rece
   the receipt `control-admission` diagnostic into Task 3; the O(n) deadline rescan into Task 2b. Two
   defaults taken without a question: S2c-ii starts from `main` 786ced4ff and merges the dead-peer fix
   in when it lands; `receiver` on a WS unicast stays refused.
+- **R-S2c-ii-1 (Task 1, 2026-09-25).** `recipientPeerIds` and `snapshotVersion` are optional
+  _together_ on a `multicast`: absence means "not yet frozen", a distinct domain state, exactly like a
+  broadcast's `recipientPeerIds?`. `assertPersistedALTargets` enforces both-or-neither, a unique id
+  list and `snapshotVersion ≥ 1`. The carriers freeze inside: the RTC origin at its first
+  `planOutgoingMessage`, the WS server at its admission stamp; RTC peer ingress refuses an unfrozen
+  multicast with a typed issue; an RTC-frozen multicast that falls back to WS keeps its frozen set
+  intersected with the audience the server authorizes (a client can never widen); the two authority
+  checks accept exactly the unfrozen → frozen change. The `rtc-peer` source keeps the WS name
+  `groupRecipientPeerIds?` and gains `snapshotVersion?`, both-or-neither. Why: `newALMulticastMessage`
+  builds messages before any snapshot exists and the shared decoder runs before the freeze at four
+  sites, so a required pair was unbuildable.
+- **R-S2c-ii-2 (Task 1 review, 2026-09-25).** The RTC origin freezes the audience from the sessions
+  the room authority admits — active members with live leases at the snapshot — minus itself, the same
+  audience the WS stamp freezes; the frozen `snapshotVersion` is the admission's `snapshotVersion`; an
+  empty authorized ∩ frozen set means nobody, never "no filter"; the per-hop member set (origin
+  included) and the frozen recipients (origin-free) are different objects. Amends the brief's "every
+  session in the identified snapshot".
+- **R-S2c-ii-3 (Task 2, 2026-09-26).** No `OverlayTree` exists and a browser peer holds only its own
+  next hops, so the tree is the node's _local_ hop view `{ nextHopPeerIds, completedHopPeerIds }`; a
+  hop is complete on its `delivered` self-ACK (a leaf) or its `subtree-complete`; the pure
+  `computeMissingRecipientRepair` returns the missing direct recipients plus every incomplete hop
+  (the over-approximation while several relay hops are outstanding is accepted — D25's narrowing means
+  never to a complete hop). Relays stream far ACKs upward as `forwarded` as they arrive and emit their
+  own `subtree-complete` _last_ as the end marker (M7 kept; a non-recipient relay's terminal ACK never
+  counts, M5). A retried duplicate re-emits the peer's own ACK and is forwarded only to the
+  still-incomplete child hops, with no second local delivery. Publishing `nextHopsBySessionId` to
+  browsers (a true tree) is a possible later slice. Dispatch rulings applied with it: a session outside
+  the frozen audience may forward but never delivers locally or counts; an origin alone in its room
+  completes its `receiver` send at commit with an empty expected set on both carriers; the RTC breaker
+  ignores typed `refused/unsupported` leg outcomes.
+- **R-S2c-ii-4 (Task 2 review, 2026-09-26).** The inbound pending row's `localRecipient` became dead once
+  a relay's terminal ACK always names the relay, and the repo forbids both dead fields and the dual
+  decode that ignoring it would be (D21), so the schema id moves to `rallar-alm-2026-09-s2c-ii`: one
+  more browser-database reset under D3 and server `pending` rows undecodable for their TTL; D46 is
+  extended to this bump. On a retried copy a relay re-sends one `forwarded` ACK per recipient it
+  already relayed beside its terminal ACK, so a lost relay-to-origin ACK is recoverable whether or
+  not the terminal ACK was lost too; a leaf or relay with local delivery off ends its subtree with
+  `subtree-complete`, never `delivered`; a hop outside the frozen audience never reads complete at
+  the origin, so every retry resends to it, bounded by the attempt cap (a stated invariant).
 
 ## Self-review
 
