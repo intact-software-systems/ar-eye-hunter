@@ -35,7 +35,9 @@ interface PortMessage {
 class GeneratedAlmPorts {
     now = 1_000;
     senderDocument = 100;
-    writes = 1;
+    /** IndexedDB admission writes per page since its last reset: only a send that opts into a durability writes. */
+    readonly writes = { sender: 1, receiver: 1 };
+    readonly inboxAdmitted = new Set<string>();
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
     readonly holds = new Map<string, string>();
@@ -72,7 +74,7 @@ class GeneratedAlmPorts {
         }
         this.handles.clear();
         this.holds.clear();
-        this.writes = 1;
+        this.writes.sender = 1;
         this.sender = this.createRuntime('sender');
     }
 
@@ -106,14 +108,7 @@ class GeneratedAlmPorts {
             case 'health':
                 return { status: 'ok', value: { rallar: { document, session } } };
             case 'storage.counters':
-                return {
-                    status: 'ok',
-                    value: {
-                        total: this.writes * 2,
-                        byOwner: { 'al-admission': this.writes, 'al-work': this.writes },
-                        byKind: { write: this.writes, 'work-read': 1 }
-                    }
-                };
+                return this.readStorageCounters(role, command.reset === true);
             case 'fault.inject':
                 return this.injectFault(command);
             case 'messages.send':
@@ -155,7 +150,9 @@ class GeneratedAlmPorts {
                 };
             }
             case 'messages.received': {
-                const count = this.messages.filter((message) => message.command.typeId === command.typeId && message.submitted).length;
+                const arrived = this.messages.filter((message) => message.command.typeId === command.typeId && message.submitted);
+                this.admitReceiverInbox(arrived);
+                const count = arrived.length;
                 const passed = command.absent ? count < command.count : count >= command.count;
                 return { status: passed ? 'ok' : 'failed', value: { count } };
             }
@@ -165,6 +162,34 @@ class GeneratedAlmPorts {
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    /** The receiver admits a local-inbox arrival to IndexedDB on its own timeline: when its page reads the arrival. */
+    private admitReceiverInbox(arrived: readonly PortMessage[]): void {
+        for (const message of arrived) {
+            if (message.command.durability === 'local-inbox' && !this.inboxAdmitted.has(message.msgId)) {
+                this.inboxAdmitted.add(message.msgId);
+                this.writes.receiver += 1;
+            }
+        }
+    }
+
+    private readStorageCounters(role: 'sender' | 'receiver', reset: boolean): RallarBlackBoxTestCommandOutcome {
+        const writes = this.writes[role];
+        if (reset) {
+            this.writes[role] = 0;
+        }
+        return {
+            status: 'ok',
+            value: {
+                total: writes * 2,
+                byOwner: { 'al-admission': writes, 'al-work': writes },
+                byKind: writes === 0 ? {} : { write: writes, 'work-read': writes },
+                workProbeCount: 0,
+                workNonProbeCount: writes,
+                reset
+            }
+        };
     }
 
     private deliverRecoveredOriginals(role: 'sender' | 'receiver'): void {
@@ -205,7 +230,9 @@ class GeneratedAlmPorts {
         this.messages.push(message);
         assert(command.handleId);
         this.handles.set(command.handleId, message);
-        this.writes += 1;
+        if ((command.durability ?? 'volatile') !== 'volatile') {
+            this.writes.sender += 1;
+        }
         if (command.payload.revision === 'replacement') {
             for (const prior of this.messages) {
                 if (prior.command.typeId === command.typeId && isJsonRecordValue(prior.command.payload) && prior.command.payload.revision === 'old') {
@@ -361,12 +388,14 @@ class GeneratedAlmPorts {
     }
 
     private deliver(message: PortMessage): void {
+        // S3a: a send that names no ack is receipted by default; only an explicit `none` ends at transport acceptance.
+        const receipted = message.command.ack !== 'none';
         message.submitted = true;
-        message.state = message.command.carrier === 'ws' && message.command.ack !== 'receiver' ? 'transport-accepted' : 'acknowledged';
+        message.state = message.command.carrier === 'ws' && !receipted ? 'transport-accepted' : 'acknowledged';
         if (message.command.carrier !== 'ws') {
             this.admitReceiverAck(message);
         }
-        else if (message.command.ack === 'receiver') {
+        else if (receipted) {
             this.admitServerReceipts(message);
         }
         this.receiver.recordEvent({
