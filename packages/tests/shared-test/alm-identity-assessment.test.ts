@@ -200,6 +200,24 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(transcript.input()).length === 0).toBe(accepted);
     });
 
+    it.each(
+        [
+            ['receive-submission', 'rtc', true],
+            ['receive-submission', 'ws', false],
+            ['receive-replacement', 'rtc', true],
+            ['receive-replacement', 'ws', false]
+        ] as const
+    )('on the rtc-with-ws-fallback cell, the lifecycle %s that arrived over %s is accepted: %s', (name, transport, accepted) => {
+        // The lifecycle sends that reach the receiver are never held, so no hand-over moves them off their first carrier.
+        const transcript = new IdentityTranscript('lifecycle', 'rtc-with-ws-fallback');
+        const wait = transcript.receiver.commands.find((command) => command.commandId?.endsWith(name));
+        if (wait === undefined) {
+            throw new Error(`Missing lifecycle wait: ${name}.`);
+        }
+        recordAt(transcript.receiver.result(wait).value, 'event', 'payload', 'data').transport = transport;
+        expect(assessAlmConformanceIdentity(transcript.input()).length === 0).toBe(accepted);
+    });
+
     it.each(['state', 'enqueued', 'submitted', 'handleId'] as const)('rejects invalid retained %s', (field) => {
         const transcript = new IdentityTranscript('reload');
         recordAt(transcript.sender.result(transcript.sender.command('messages.observe')).value)[field] = field === 'enqueued'

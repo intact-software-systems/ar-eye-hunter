@@ -35,8 +35,8 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
 }));
 
 /**
- * One envelope over both carriers, which the product never does (it falls back only after an
- * `unroutable` verdict): the replay reuses the first handle's captured envelope on the other carrier.
+ * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
+ * trigger: it reuses the first handle's captured envelope on the other carrier.
  * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its

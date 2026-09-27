@@ -177,5 +177,8 @@ describe('the fallback-within-the-deadline family (D56)', () => {
 
         // The last window the RTC owner writes closes after the first timeout and every retry.
         expect(EXPIRY_TTL_MS).toBeLessThan(tracking.timeoutMs * (tracking.maxAttempts + 1));
+        // The receipt-exhaustion observe outlasts that window, so the hand-over it waits for can happen inside it.
+        expect(tracking.timeoutMs * (tracking.maxAttempts + 1))
+            .toBeLessThan(NON_EXPIRING_SEND_TIMEOUT_MS + MESSAGE_CONTROL_TIMEOUT_MS);
     });
 });
