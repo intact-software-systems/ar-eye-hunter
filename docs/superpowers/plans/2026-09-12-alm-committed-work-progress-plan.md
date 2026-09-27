@@ -26,10 +26,10 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
 - Remove affected obsolete code; remediate whole touched files and recursively
   affected support files under current repo guidance, not historical line caps.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
-- Preserve current main's bundle ceilings: strict `<220 KiB` for the browser
-  facade and `<281 KiB` for headless, with unchanged compression and dependency
-  exclusions. Earlier approvals below describe their historical sources, not
-  permission to raise these current limits. Further increases require approval.
+- Preserve the maintainer-approved current branch ceilings: strict `<221 KiB`
+  for the browser facade and `<282 KiB` for headless, with unchanged compression
+  and dependency exclusions. Earlier limits below are historical measurements;
+  further increases require approval.
 - The maintainer approved the spec's narrow RTC offer/answer correlation contract,
   including fail-closed old descriptions and coordinated consumer replacement.
   This is the sole exception to the protocol-change constraint; no general
@@ -72,19 +72,18 @@ release contract. The mixed-workload artifact is v4; it retains partial results
 and settles all started operations before closing their browser contexts. Old
 artifacts remain historical evidence, not inputs requiring migration.
 
-The rebase onto `d8e72dca5ba53a8f6de48a67c41c02fe5bd1282d` is published in
-PR #566. Focused semantic tests/typechecks and independent review are complete;
-the review corrections preserve one-transaction control batching and settle
-mixed workloads before browser cleanup. The next two useful outcomes are closing
-the remaining delivery gates, then the necessary source-labelled browser
-correctness/retention proof of this reconciled runtime. Historical observations
-below remain evidence of their own runtime only.
+The earlier rebase onto `d8e72dca5ba53a8f6de48a67c41c02fe5bd1282d` and
+its focused review were published in PR #566. A later maintainer-approved
+ceiling change and rebase onto `6407a9d275c2b22ba7bbe65361540b58d1684320`
+supersede that status. Follow the dated current-execution section below for
+the next two slices; historical observations below remain evidence of their
+own runtime only.
 
-The current bundle measurements are 220.6582 KiB for the facade and 281.5518 KiB
-for headless, exceeding their unchanged strict limits. Approval for ceilings of
-`<221 KiB` and `<282 KiB` has been requested but not received. Do not treat earlier
-source-specific budget approvals as authorization or mark this PR ready while
-these checks fail.
+The earlier measurements of 220.6582 KiB facade and 281.5518 KiB headless
+exceeded their then-current strict limits. The maintainer subsequently approved
+strict `<221 KiB` and `<282 KiB` ceilings for this branch. Do not treat the
+earlier failed checks as the current gate result or the approval as permission
+for any further increase.
 
 Task 25 corrects the stale accepted-room fixtures and lease-only notification
 expectation exposed by the broader shared-web suite. Recovery assertions now wait
@@ -1877,45 +1876,83 @@ weakening current room authorization, frozen audiences, receipts, or lease check
 failure is explicitly classified. No runtime behavior change is selected by this
 fixture diagnosis alone.
 
-## Current execution after the retained E3-memory failure (2026-09-27)
+## Current execution after the second retained E3-memory failure (2026-09-27)
 
-The current PR #566 source incorporated approved strict browser bundle ceilings
-`<221 KiB` for the facade and `<282 KiB` for headless, plus a test-only wait for
-committed ordinary-ordered receiver work. One fresh E3-memory `retention-100`
-warmup on the preceding source `140c549977fdfa6e3ef1f275a72f318bf282a9fa`
-failed at reconnect cycle 43 after preserving checkpoints 0, 10, 20, 30 and
-40. It was recorded as the first failed result, not a valid RTC-B06 primary or
-a cycle-100 memory verdict. Its truncated control-event tail cannot prove that
-an absent event never ran.
+PR #566 was rebased without conflict onto `6407a9d275c2b22ba7bbe65361540b58d1684320`
+at the maintainer's request; its reviewed head is
+`ae475f5a69f262edeefa1e18d56e02d6c2fe9480`. The new main includes the
+typed ALM subscription and sender-scenario pacing changes. The same-source
+local ALM RTC smoke passes, and the hosted ALM conformance, durable topology,
+formation-large and medium-scale jobs pass. The hosted Release Gate aggregate
+remains pending as of this update. Main may keep moving; `BEHIND` alone does not
+trigger another rebase while the PR remains mergeable.
 
-The retained trace showed C's current answer admitted but its native
-`setRemoteDescription` attempt still unsettled after the peer timeout and
-close. The existing peer owner now settles callers awaiting retired native
-signaling on reset, and its pre-existing peer-identity guard protects
-replacement state from late completion. Focused unit and Chromium tests,
-deterministic cancellation/identity-guard mutations, and independent reviews
-support this correction; they do not establish the 100-cycle outcome. No new
-QueueBox, retry, admission fence, lock, timer, dependency, migration or legacy
-path was introduced.
+The branch includes the approved strict browser ceilings `<221 KiB` facade and
+`<282 KiB` headless, the ordinary ordered receiver evidence test, and the
+peer-reset fix that settles callers awaiting retired native signaling. It also
+adds deterministic ACK-CAS-conflict/deadline and concurrent empty-NEW-page
+progress tests. These pass existing production behavior; neither establishes a
+new runtime defect. Maintained test typing passes after the rebase. The
+same-settings synthetic control polling measurement at 2,000 events is about
+4.90 ms median and 5.86 ms p95 for fetch/parse/normalize/decode/find, far below
+the observed multi-second reconnect intervals in a different environment. It
+does not justify a control-API rewrite or prove zero contribution.
+
+The first E3-memory `retention-100 / warmup / 1` on preceding source
+`140c549977fdfa6e3ef1f275a72f318bf282a9fa` failed reconnect cycle 43,
+retaining checkpoints 0/10/20/30/40 only. The one fresh attempt on current
+source `ae475f5a69f262edeefa1e18d56e02d6c2fe9480`, rooted at
+`tmp/perf/rtc-baseline/20260927T071755000Z-ae475f5a69f2-e3-memory-local/`,
+also failed at cycle 43 with those five checkpoints. It used fresh memory
+services, Node 24.21.0, one worker, zero retries, 100 requested cycles and the
+unchanged readiness deadline. The first producer result is retained and
+recorded as a failed warmup, not rerun, finalized, or promoted to a B06 primary.
+The first recorder invocation accidentally used a different Node major and
+produced runtime-mismatch sidecars; those were preserved in a separate ignored
+diagnostic directory, then the same producer result was reconciled under its
+observed Node runtime. This operator correction did not create another sample.
+
+The new causal cut positively shows the retired native caller's QueueBox claim
+settling after reset, despite that native promise remaining unsettled. Two
+later Answers reached C's socket but their committed claims began only after
+the corresponding peers timed out and closed; their measured overdue waits
+before batch run-loop start were 12.8 and 15.7 seconds. Their own claim
+durations were zero, and replacement peers eventually connected after the
+readiness deadline. This supports late committed signaling dispatch across
+peer replacement, **not** a cause for the pre-batch delay. The bounded
+projection omits already-emitted due/batch/claim identifiers and preceding
+control/rotation evidence, so selector wait, earlier batches, and event-loop
+scheduling remain unresolved. No behavioral scheduler correction is yet
+justified.
+
+The three-page post-GC heap sum increased from 111.0 to 232.7 MiB through
+cycle 40 in the latest incomplete run, while mean reconnect time increased
+across cycle groups. Visible peers, lanes, channel callbacks and buffered work
+returned to their checkpoint counts, but no heap dominators or retained-owner
+inventory was captured. Do not infer a specific leak owner or a cycle-100
+retention verdict. The failed staging artifact incorrectly labels the last
+partial checkpoint's heap as `post-gc-heap.cycle-100`; acceptance correctly
+rejects the incomplete checkpoints, but evidence labeling must be corrected.
 
 The next two concrete slices are:
 
-1. Finish isolated whole-branch validation and publish the reviewed commits in
-   the existing draft PR. Investigate any exact failing test before changing
-   behavior; do not rebase merely because `main` has moved while GitHub still
-   reports the PR mergeable.
-2. Bound the browser-control polling cost before another long retention run.
-   The current client polls growing whole-run snapshots for each command and
-   the previous reconnect intervals increased with cycle count; this is a
-   plausible performance explanation, **not a measured cause**. Measure the
-   existing path under representative result counts and select only a focused
-   correction supported by those timings. Preserve the 100 cycles, original
-   deadlines and failure recording. If polling is not material, do not change
-   it; proceed to one fresh source-labelled RTC-B06 observation and retain its
-   first outcome.
+1. Correct failed-sample checkpoint metric labels and preserve existing bounded
+   QueueBox due/batch/claim plus preceding control/rotation provenance in the
+   causal projection. Use focused RED/GREEN tests, touched-file closure,
+   maintained test typing and independent review; do not change hot-path
+   behavior or add new telemetry. Publish both in the existing PR.
+2. Use the corrected projection to run one source-labelled, unchanged
+   100-cycle E3-memory attempt, retaining its first outcome. Partition any
+   repeated pre-batch wait before selecting a scheduler change; if it reaches
+   cycle 100, require all eleven checkpoints and the existing settled-state and
+   strict heap rules. Failed or incomplete evidence remains diagnostic, not a
+   B06 primary. Consider heap-retainer instrumentation only if that run again
+   shows growth without ownership attribution, and keep it out of acceptance
+   metrics.
 
-No later E4/ranking or Phase 1 completion can be claimed from the failed E3
-attempt. The long capture remains required after these two slices.
+No E4/ranking or Phase 1 completion can be claimed from either failed E3
+attempt. No new queue, retry, fence, lock, timer, dependency, migration,
+legacy path, relaxed deadline or reduced workload is authorized.
 
 ## Later outcomes, not additional speculative implementation slices
 

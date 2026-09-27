@@ -69,6 +69,111 @@ function toClaimProjection(overrides: LiveRtcJsonRecord) {
 }
 
 describe('live RTC causal diagnostics', () => {
+    it('preserves the evidence separating overdue selection from a preceding control claim', () => {
+        const records: LiveRtcJsonRecord[] = [
+            { kind: 'admission-outcome', typeId: 'rtc-signaling', msgId: 'answer-1', outcome: 'committed' },
+            {
+                kind: 'rotation-alive',
+                workerId: 'worker-1',
+                emptyRoundCount: 10,
+                durationMs: 12_000,
+                longestRoundMs: 8_000,
+                deferredRoundCount: 2,
+                latestDeferred: [{ effectId: 'dispatch:session-c:answer-1', dueAtMs: 1_000 }]
+            },
+            {
+                kind: 'claim-settled',
+                workerId: 'worker-1',
+                effectId: 'ack:session-c:previous-1',
+                msgId: 'control-1',
+                subjectMsgId: 'previous-1',
+                typeId: 'al.control.ack.v2',
+                payloadKind: 'send-control',
+                durationMs: 2_000,
+                attempts: 1,
+                outcome: 'completed',
+                dueAtMs: 900,
+                batchStartedAtMs: 13_000,
+                startedAtMs: 13_000,
+                queueWaitMs: 12_100
+            },
+            {
+                kind: 'claim-settled',
+                workerId: 'worker-1',
+                effectId: 'dispatch:session-c:answer-1',
+                msgId: 'answer-1',
+                subjectMsgId: 'answer-1',
+                typeId: null,
+                payloadKind: 'dispatch-local',
+                durationMs: 0,
+                attempts: 1,
+                outcome: 'completed',
+                dueAtMs: 1_000,
+                batchStartedAtMs: 13_000,
+                startedAtMs: 15_000,
+                queueWaitMs: 12_000
+            },
+            {
+                kind: 'effect-drain',
+                workerId: 'worker-1',
+                durationMs: 3_000,
+                startedAtMs: 13_000,
+                claimedEffectIds: ['ack:session-c:previous-1', 'dispatch:session-c:answer-1'],
+                deferred: [{ effectId: 'dispatch:session-c:later-1', dueAtMs: 2_000 }],
+                claimedCount: 2,
+                completedCount: 2,
+                rescheduledCount: 0,
+                rejectedCount: 0,
+                selectionDurationMs: 400,
+                claimDurationMs: 300,
+                runDurationMs: 2_000,
+                releaseDurationMs: 300,
+                queueWaitMs: 11_400
+            }
+        ];
+        const projection = toLiveRtcCausalEvents({
+            events: records.map((data, index) =>
+                diagnosticEvent({
+                    agentId: 'agent-c',
+                    topic: 'rallar.browser.alm.inbound_diagnostics',
+                    atEpochMs: 15_000 + index,
+                    data
+                })
+            ),
+            agentReferences: new Map([['agent-c', 'agent-c']]),
+            peerIds: []
+        });
+
+        expect(projection.events).toHaveLength(5);
+        expect(projection.events[1]).toMatchObject({
+            kind: 'rotation-alive',
+            longestRoundMs: 8_000,
+            deferredRoundCount: 2,
+            latestDeferred: [{ effectId: 'dispatch:session-c:answer-1', dueAtMs: 1_000 }]
+        });
+        expect(projection.events[2]).toMatchObject({
+            effectId: 'ack:session-c:previous-1',
+            subjectMsgId: 'previous-1',
+            dueAtMs: 900,
+            batchStartedAtMs: 13_000,
+            startedAtMs: 13_000,
+            durationMs: 2_000
+        });
+        expect(projection.events[3]).toMatchObject({
+            effectId: 'dispatch:session-c:answer-1',
+            subjectMsgId: 'answer-1',
+            dueAtMs: 1_000,
+            batchStartedAtMs: 13_000,
+            startedAtMs: 15_000,
+            queueWaitMs: 12_000
+        });
+        expect(projection.events[4]).toMatchObject({
+            startedAtMs: 13_000,
+            claimedEffectIds: ['ack:session-c:previous-1', 'dispatch:session-c:answer-1'],
+            deferred: [{ effectId: 'dispatch:session-c:later-1', dueAtMs: 2_000 }]
+        });
+    });
+
     it('retains bounded signaling work evidence with explicit incomplete event coverage', () => {
         const sentinel = 'SENTINEL-must-not-be-retained';
         const unrelated: LiveRtcControlClient.Event[] = [];
@@ -226,7 +331,11 @@ describe('live RTC causal diagnostics', () => {
             defaultRuntimeTailCapacityReached: true,
             upstreamCompleteness: 'unknown',
             runtimeTailLimit: 'unknown',
-            eventCoverageThroughHealthCapture: 'unknown'
+            eventCoverageThroughHealthCapture: 'unknown',
+            contextScope: 'retained-primary-worker-effects',
+            contextEventCount: 0,
+            retainedContextEventCount: 0,
+            omittedContextEventCount: 0
         });
         expect(projection.events).toHaveLength(200);
         expect(projection.events.slice(-5)).toMatchObject([
@@ -270,6 +379,126 @@ describe('live RTC causal diagnostics', () => {
         );
         expect(projection.events.at(-2)).not.toHaveProperty('msgId');
         expect(projection.events.at(-2)).not.toHaveProperty('typeId');
+    });
+
+    it('bounds supplemental worker context without evicting primary RTC evidence or leaking payloads', () => {
+        const primary = Array.from({ length: 198 }, (_, index) =>
+            diagnosticEvent({
+                agentId: 'agent-c',
+                topic: 'rallar.browser.rtc.lifecycle',
+                atEpochMs: index,
+                data: { kind: 'peer-created', peerId: 'session-b' }
+            }));
+        primary.push(diagnosticEvent({
+            agentId: 'agent-c',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            atEpochMs: 200,
+            data: { kind: 'admission-outcome', typeId: 'rtc-signaling', msgId: 'answer-1', outcome: 'committed' }
+        }));
+        const controls = Array.from({ length: 40 }, (_, index) =>
+            diagnosticEvent({
+                agentId: 'agent-c',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 201 + index,
+                data: {
+                    kind: 'claim-settled',
+                    workerId: 'worker-1',
+                    effectId: `control:${index}`,
+                    msgId: `ack-${index}`,
+                    subjectMsgId: 'answer-1',
+                    typeId: 'al.control.ack.v2',
+                    payloadKind: 'send-control',
+                    durationMs: 1,
+                    attempts: 1,
+                    outcome: 'completed',
+                    queueWaitMs: 1,
+                    payload: 'SENTINEL-secret'
+                }
+            }));
+        primary.push(
+            diagnosticEvent({
+                agentId: 'agent-c',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 250,
+                data: {
+                    kind: 'claim-settled',
+                    workerId: 'worker-1',
+                    effectId: 'dispatch:answer-1',
+                    msgId: 'answer-1',
+                    subjectMsgId: 'answer-1',
+                    typeId: null,
+                    payloadKind: 'dispatch-local',
+                    durationMs: 0,
+                    attempts: 1,
+                    outcome: 'completed',
+                    queueWaitMs: 12_000
+                }
+            }),
+            diagnosticEvent({
+                agentId: 'agent-c',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 251,
+                data: {
+                    kind: 'effect-drain',
+                    workerId: 'worker-1',
+                    durationMs: 40,
+                    startedAtMs: 200,
+                    claimedEffectIds: [...Array.from({ length: 40 }, (_, index) => `control:${index}`), 'dispatch:answer-1'],
+                    deferred: Array.from({ length: 105 }, (_, index) => ({
+                        effectId: `dispatch:encoded%3Apart:${index}`,
+                        dueAtMs: index,
+                        payload: 'SENTINEL-secret'
+                    })),
+                    claimedCount: 41,
+                    completedCount: 41,
+                    rescheduledCount: 0,
+                    rejectedCount: 0,
+                    selectionDurationMs: 0,
+                    claimDurationMs: 0,
+                    runDurationMs: 40,
+                    releaseDurationMs: 0,
+                    queueWaitMs: 12_000
+                }
+            })
+        );
+        const agentReferences = new Map([['agent-c', 'agent-c'], ['agent-outside', 'agent-outside']]);
+        const baseline = toLiveRtcCausalEvents({ events: primary, agentReferences, peerIds: ['session-b'] });
+        const projection = toLiveRtcCausalEvents({
+            events: [...primary.slice(0, -2), ...controls, { ...controls[0], agentId: 'agent-outside' }, ...primary.slice(-2)],
+            agentReferences,
+            peerIds: ['session-b']
+        });
+
+        expect(projection.events.filter((event) => event.payloadKind !== 'send-control')).toEqual(baseline.events);
+        expect(projection.events).toHaveLength(232);
+        expect(projection.coverage).toMatchObject({
+            contextScope: 'retained-primary-worker-effects',
+            contextEventCount: 40,
+            retainedContextEventCount: 32,
+            omittedContextEventCount: 8,
+            projectionTruncated: true,
+            upstreamCompleteness: 'unknown'
+        });
+        expect(projection.events.filter((event) => event.payloadKind === 'send-control')[0]).toMatchObject({ msgId: 'ack-8' });
+        expect(projection.events.at(-1)).toMatchObject({ deferredTruncated: true });
+        expect(projection.events.at(-1)?.deferred).toHaveLength(100);
+        expect(JSON.stringify(projection.events)).not.toMatch(/SENTINEL|agent-outside/u);
+    });
+
+    it('redacts invalid work identity and timing fields without inventing queue provenance', () => {
+        const projection = toClaimProjection({
+            effectId: 'dispatch/secret',
+            subjectMsgId: 'subject/secret',
+            dueAtMs: -1,
+            batchStartedAtMs: Number.POSITIVE_INFINITY,
+            startedAtMs: Number.NaN
+        });
+
+        expect(projection.events.at(-1)).toMatchObject({ effectId: null, subjectMsgId: null });
+        expect(projection.events.at(-1)).not.toHaveProperty('dueAtMs');
+        expect(projection.events.at(-1)).not.toHaveProperty('batchStartedAtMs');
+        expect(projection.events.at(-1)).not.toHaveProperty('startedAtMs');
+        expect(JSON.stringify(projection)).not.toContain('secret');
     });
 
     it.each<{ readonly invalidField: string; readonly overrides: LiveRtcJsonRecord; }>([

@@ -451,6 +451,63 @@ function retentionAttempt(
 }
 
 describe('live RTC external-attempt evidence', () => {
+    it.each([
+        { checkpointCount: 0, outcome: 'failed', heapMetrics: [] },
+        {
+            checkpointCount: 1,
+            outcome: 'failed',
+            heapMetrics: [{ metric: 'post-gc-heap.cycle-0', unit: 'bytes', value: 100 }]
+        },
+        {
+            checkpointCount: 5,
+            outcome: 'failed',
+            heapMetrics: [
+                { metric: 'post-gc-heap.cycle-0', unit: 'bytes', value: 100 },
+                { metric: 'post-gc-heap.cycle-40', unit: 'bytes', value: 140 }
+            ]
+        },
+        {
+            checkpointCount: 11,
+            outcome: 'passed',
+            heapMetrics: [
+                { metric: 'post-gc-heap.cycle-0', unit: 'bytes', value: 100 },
+                { metric: 'post-gc-heap.cycle-100', unit: 'bytes', value: 200 }
+            ]
+        }
+    ])('labels observed heap endpoints with $checkpointCount retention checkpoints', ({ checkpointCount, outcome, heapMetrics }) => {
+        const rawEvidence = retentionRawEvidence({ outerOrdinal: 1, cycle0HeapBytes: 100, finalHeapBytes: 200 });
+        const identity = rawEvidence.identity;
+        const attempt = buildLiveRtcExternalAttempt({
+            locator: {
+                ...identity,
+                rawResultRelativePath: 'artifacts/staging/rtc-b06-retention-100-e3-memory-retention-100-retained-001.json'
+            },
+            sampleIdentity: {
+                ...identity,
+                sampleId: 'rtc-b06-retention-100-e3-memory-retention-100-retained-001-001',
+                innerOrdinal: 1
+            },
+            producerExitStatus: 0,
+            runtimeObservation,
+            rawEvidence: {
+                ...rawEvidence,
+                retention: {
+                    cycles: 100,
+                    checkpoints: rawEvidence.retention!.checkpoints.slice(0, checkpointCount),
+                    settledStateReturned: checkpointCount > 0
+                }
+            }
+        });
+
+        expect(attempt.samples[0]?.outcome).toBe(outcome);
+        expect(attempt.samples[0]?.issues.some((issue) => issue.code === 'invalid-retention-checkpoints'))
+            .toBe(outcome === 'failed');
+        expect(attempt.samples[0]?.metrics).toEqual([
+            { metric: 'reconnect-ready.messages-rtc', unit: 'milliseconds', value: 14 },
+            ...heapMetrics
+        ]);
+    });
+
     it('loads one exact predeclared attempt from the controller environment', async () => {
         const repoRoot = await mkdtemp(join(tmpdir(), 'rallar-rtc-b06-context-'));
         temporaryDirectories.push(repoRoot);

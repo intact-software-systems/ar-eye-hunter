@@ -1,4 +1,5 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import { isALControlTypeId } from '../../../packages/shared/al-contracts/al-control-type-ids.ts';
 
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import {
@@ -40,11 +41,17 @@ export interface LiveRtcCausalEventProjection {
         upstreamCompleteness: 'unknown';
         runtimeTailLimit: 'unknown';
         eventCoverageThroughHealthCapture: 'unknown';
+        contextScope: 'retained-primary-worker-effects';
+        contextEventCount: number;
+        retainedContextEventCount: number;
+        omittedContextEventCount: number;
     }>;
     readonly events: readonly LiveRtcJsonRecord[];
 }
 
 const MAX_CAUSAL_EVENTS = 200;
+const MAX_CAUSAL_CONTEXT_EVENTS = 32;
+const MAX_CAUSAL_WORK_EFFECTS = 100;
 const MAX_CAUSAL_PEERS = 100;
 const MAX_CAUSAL_LANES = 100;
 const DEFAULT_CONTROL_RUNTIME_EVENT_TAIL_SIZE = 2_000;
@@ -155,6 +162,17 @@ interface SelectedCausalEvent {
     readonly runtimeEvent: LiveRtcJsonRecord;
 }
 
+interface CausalEventCandidate {
+    readonly index: number;
+    readonly event: ProjectedCausalEvent;
+}
+
+interface CausalEventRetention {
+    readonly events: readonly LiveRtcJsonRecord[];
+    readonly contextEventCount: number;
+    readonly retainedContextEventCount: number;
+}
+
 /** Raw IDs exclude '@'; generated aliases use that disjoint namespace and contain no input text. */
 export function toCausalAgentReference(agentId: string, ordinal: number): string {
     return toCausalIdentity(agentId) ?? `@causal-agent-${ordinal}`;
@@ -164,13 +182,29 @@ export function toCausalAgentReference(agentId: string, ordinal: number): string
 export function toLiveRtcCausalEvents(input: LiveRtcCausalEventsInput): LiveRtcCausalEventProjection {
     const selectedEvents = toSelectedCausalEvents(input);
     const rtcSignalingMessageIds = toRtcSignalingMessageIds(selectedEvents);
-    const relevantEvents = selectedEvents.flatMap<ProjectedCausalEvent>(({ agentReference, runtimeEvent }) => {
+    const primary = selectedEvents.flatMap<CausalEventCandidate>(({ agentReference, runtimeEvent }, index) => {
         const projected = toCausalEvent(runtimeEvent, input.peerIds, rtcSignalingMessageIds);
-        return projected ? [{ agentId: agentReference, ...projected }] : [];
+        return projected ? [{ index, event: { agentId: agentReference, ...projected } }] : [];
     });
-    const events = toCausalEventsWithOrdinals(relevantEvents.slice(-MAX_CAUSAL_EVENTS));
+    const retainedPrimary = primary.slice(-MAX_CAUSAL_EVENTS);
+    const primaryIndices = new Set(primary.map(({ index }) => index));
+    const workEffects = toRetainedWorkEffects(retainedPrimary);
+    const context = selectedEvents.flatMap<CausalEventCandidate>((selected, index) => {
+        const projected = primaryIndices.has(index) ? null : toCausalWorkContext(selected, workEffects);
+        return projected ? [{ index, event: { agentId: selected.agentReference, ...projected } }] : [];
+    });
+    const retainedContext = context.slice(-MAX_CAUSAL_CONTEXT_EVENTS);
+    const events = toCausalEventsWithOrdinals(
+        [...retainedPrimary, ...retainedContext].sort((left, right) => left.index - right.index).map(({ event }) =>
+            event
+        )
+    );
     return {
-        coverage: toCausalEventCoverage(input.events.length, relevantEvents.length, events),
+        coverage: toCausalEventCoverage(input.events.length, primary.length + context.length, {
+            events,
+            contextEventCount: context.length,
+            retainedContextEventCount: retainedContext.length
+        }),
         events
     };
 }
@@ -221,8 +255,9 @@ function toCausalEventsWithOrdinals(
 function toCausalEventCoverage(
     runEventCount: number,
     relevantEventCount: number,
-    events: readonly LiveRtcJsonRecord[]
+    retention: CausalEventRetention
 ): LiveRtcCausalEventProjection['coverage'] {
+    const { events, contextEventCount, retainedContextEventCount } = retention;
     const retainedTimes = events.flatMap((event) => {
         const atEpochMs = numberValue(event.atEpochMs);
         return atEpochMs !== undefined && atEpochMs >= 0 ? [atEpochMs] : [];
@@ -239,7 +274,11 @@ function toCausalEventCoverage(
         defaultRuntimeTailCapacityReached: runEventCount === DEFAULT_CONTROL_RUNTIME_EVENT_TAIL_SIZE,
         upstreamCompleteness: 'unknown',
         runtimeTailLimit: 'unknown',
-        eventCoverageThroughHealthCapture: 'unknown'
+        eventCoverageThroughHealthCapture: 'unknown',
+        contextScope: 'retained-primary-worker-effects',
+        contextEventCount,
+        retainedContextEventCount,
+        omittedContextEventCount: contextEventCount - retainedContextEventCount
     };
 }
 
@@ -343,29 +382,7 @@ function toCausalInboundWork(
     }
     if (data.kind === 'claim-settled') {
         const msgId = toCausalIdentity(data.msgId);
-        const payloadKind = toAllowedValue(data.payloadKind, INBOUND_CLAIM_PAYLOAD_KINDS);
-        const expectedTypeId = INBOUND_CLAIM_TYPE_BY_PAYLOAD_KIND.get(String(payloadKind));
-        const typeId = data.typeId === expectedTypeId ? expectedTypeId : undefined;
-        const outcome = toAllowedValue(data.outcome, INBOUND_CLAIM_OUTCOMES);
-        const attempts = toNonnegativeInteger(data.attempts);
-        const durations = toRequiredDiagnosticNumbers(data, ['durationMs', 'queueWaitMs']);
-        if (
-            !msgId || !rtcSignalingMessageIds.has(msgId) || !payloadKind || typeId === undefined || !outcome ||
-            attempts === null || !durations
-        ) {
-            return null;
-        }
-        return {
-            topic,
-            kind: data.kind,
-            workerId,
-            msgId,
-            typeId,
-            payloadKind,
-            outcome,
-            attempts,
-            ...durations
-        };
+        return msgId && rtcSignalingMessageIds.has(msgId) ? toCausalInboundClaim(data) : null;
     }
     if (data.kind !== 'effect-drain') {
         return null;
@@ -379,9 +396,147 @@ function toCausalInboundWork(
             evidenceScope: 'inbound-worker-batch-aggregate',
             workerId,
             ...durations,
-            ...counts
+            ...counts,
+            ...toDiagnosticNumbers(data, ['startedAtMs']),
+            claimedEffectIds: toCausalEffectIds(data.claimedEffectIds),
+            claimedEffectIdsTruncated: isCausalEffectListTruncated(data.claimedEffectIds),
+            deferred: toCausalDeferredEffects(data.deferred),
+            deferredTruncated: isCausalEffectListTruncated(data.deferred)
         }
         : null;
+}
+
+function toCausalInboundClaim(data: LiveRtcJsonRecord): LiveRtcJsonRecord | null {
+    const workerId = toCausalIdentity(data.workerId);
+    const msgId = toCausalIdentity(data.msgId);
+    const payloadKind = toAllowedValue(data.payloadKind, INBOUND_CLAIM_PAYLOAD_KINDS);
+    const expectedTypeId = INBOUND_CLAIM_TYPE_BY_PAYLOAD_KIND.get(String(payloadKind));
+    const control = (payloadKind === 'admit-control' || payloadKind === 'send-control') &&
+        typeof data.typeId === 'string' && isALControlTypeId(data.typeId);
+    const typeId = control ? data.typeId : data.typeId === expectedTypeId ? expectedTypeId : undefined;
+    const outcome = toAllowedValue(data.outcome, INBOUND_CLAIM_OUTCOMES);
+    const attempts = toNonnegativeInteger(data.attempts);
+    const durations = toRequiredDiagnosticNumbers(data, ['durationMs', 'queueWaitMs']);
+    if (!workerId || !msgId || !payloadKind || typeId === undefined || !outcome || attempts === null || !durations) {
+        return null;
+    }
+    return {
+        topic: 'rallar.browser.alm.inbound_diagnostics',
+        kind: data.kind,
+        workerId,
+        msgId,
+        typeId,
+        payloadKind,
+        outcome,
+        attempts,
+        ...durations,
+        effectId: toCausalEffectId(data.effectId),
+        subjectMsgId: toCausalIdentity(data.subjectMsgId),
+        ...toDiagnosticNumbers(data, ['dueAtMs', 'batchStartedAtMs', 'startedAtMs'])
+    };
+}
+
+function toRetainedWorkEffects(primary: readonly CausalEventCandidate[]): Map<string, Map<string, Set<string>>> {
+    const effectsByAgent = new Map<string, Map<string, Set<string>>>();
+    for (const { event } of primary) {
+        const workerId = toCausalIdentity(event.workerId);
+        if (!workerId) {
+            continue;
+        }
+        const workers = effectsByAgent.get(event.agentId) ?? new Map<string, Set<string>>();
+        const effects = workers.get(workerId) ?? new Set<string>();
+        const effectId = toCausalEffectId(event.effectId);
+        if (effectId) {
+            effects.add(effectId);
+        }
+        for (const claimed of toCausalEffectIds(event.claimedEffectIds) ?? []) {
+            effects.add(claimed);
+        }
+        workers.set(workerId, effects);
+        effectsByAgent.set(event.agentId, workers);
+    }
+    return effectsByAgent;
+}
+
+function toCausalWorkContext(
+    selected: SelectedCausalEvent,
+    effectsByAgent: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>
+): LiveRtcJsonRecord | null {
+    const { runtimeEvent } = selected;
+    if (runtimeEvent.kind !== 'diagnostic' || runtimeEvent.topic !== 'rallar.browser.alm.inbound_diagnostics') {
+        return null;
+    }
+    const data = jsonRecord(jsonRecord(runtimeEvent.payload)?.data) ?? {};
+    const workerId = toCausalIdentity(data.workerId);
+    const effects = workerId ? effectsByAgent.get(selected.agentReference)?.get(workerId) : undefined;
+    if (!effects?.size) {
+        return null;
+    }
+    let projected: LiveRtcJsonRecord | null = null;
+    if (
+        data.kind === 'claim-settled' && effects.has(toCausalEffectId(data.effectId) ?? '') &&
+        (data.payloadKind === 'admit-control' || data.payloadKind === 'send-control') &&
+        typeof data.typeId === 'string' && isALControlTypeId(data.typeId)
+    ) {
+        projected = toCausalInboundClaim(data);
+    }
+    else if (data.kind === 'rotation-alive') {
+        projected = toCausalRotation(data, effects);
+    }
+    const atEpochMs = numberValue(runtimeEvent.atEpochMs);
+    return projected
+        ? { ...projected, atEpochMs: atEpochMs !== undefined && atEpochMs >= 0 ? atEpochMs : null }
+        : null;
+}
+
+function toCausalRotation(data: LiveRtcJsonRecord, effects: ReadonlySet<string>): LiveRtcJsonRecord | null {
+    const latestDeferred = toCausalDeferredEffects(data.latestDeferred);
+    if (!latestDeferred?.some((entry) => effects.has(String(entry.effectId)))) {
+        return null;
+    }
+    const durations = toRequiredDiagnosticNumbers(data, ['durationMs', 'longestRoundMs']);
+    const counts = toRequiredDiagnosticIntegers(data, ['emptyRoundCount', 'deferredRoundCount']);
+    return durations && counts
+        ? {
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            kind: data.kind,
+            workerId: toCausalIdentity(data.workerId),
+            ...durations,
+            ...counts,
+            latestDeferred,
+            latestDeferredTruncated: isCausalEffectListTruncated(data.latestDeferred)
+        }
+        : null;
+}
+
+function toCausalEffectId(value: RtcBaselineJson | undefined): string | null {
+    return typeof value === 'string' && value.length <= 512 && /^(?:[a-zA-Z0-9_.:-]|%[0-9a-fA-F]{2})+$/u.test(value)
+        ? value
+        : null;
+}
+
+function toCausalEffectIds(value: RtcBaselineJson | undefined): string[] | null {
+    return Array.isArray(value)
+        ? value.slice(0, MAX_CAUSAL_WORK_EFFECTS).flatMap((entry) => {
+            const effectId = toCausalEffectId(entry);
+            return effectId ? [effectId] : [];
+        })
+        : null;
+}
+
+function toCausalDeferredEffects(value: RtcBaselineJson | undefined): LiveRtcJsonRecord[] | null {
+    return Array.isArray(value)
+        ? value.slice(0, MAX_CAUSAL_WORK_EFFECTS).flatMap((entry) => {
+            const record = jsonRecord(entry);
+            const effectId = toCausalEffectId(record?.effectId);
+            const dueAtMs = numberValue(record?.dueAtMs);
+            return effectId && dueAtMs !== undefined && dueAtMs >= 0 ? [{ effectId, dueAtMs }] : [];
+        })
+        : null;
+}
+
+function isCausalEffectListTruncated(value: RtcBaselineJson | undefined): boolean {
+    return Array.isArray(value) && value.length > MAX_CAUSAL_WORK_EFFECTS;
 }
 
 function toCausalSignalingFailure(
