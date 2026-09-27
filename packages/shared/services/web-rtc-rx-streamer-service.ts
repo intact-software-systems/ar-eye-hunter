@@ -5,7 +5,10 @@ import {
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
-import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALRtcPeerSource } from '../alm/inbound/al-inbound-source-validation.ts';
@@ -60,6 +63,7 @@ export namespace WebRtcRxStreamerService {
         readonly multicast: WebRtcOverlayMulticastManager;
         readonly sessionId: string;
         readonly inboundStores?: ALInboundRuntimeStores;
+        readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
@@ -492,6 +496,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         sessionId: input.sessionId,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX)

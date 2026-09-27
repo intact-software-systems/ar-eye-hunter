@@ -1,7 +1,9 @@
 import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult } from 'vitest';
 
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
@@ -269,6 +271,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId('self')),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -340,6 +343,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         socket: new JsonWebSocketClient('ws://test', runtime.faults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

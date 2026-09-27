@@ -13,7 +13,10 @@ import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-store.ts';
-import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from './inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -200,21 +203,32 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
     const input = toDefaultInMemoryInput(options);
-    const backend = new InMemoryAdmissionBackend(
-        createInMemoryALAdmissionState(
-            new InMemoryQueueBox(
-                undefined,
-                () => Temporal.Instant.fromEpochMilliseconds(input.nowMs())
-            )
-        ),
-        input.nowMs
-    );
+    const backend = createVolatileALAdmissionBackend(input.nowMs);
     const stores = createInMemoryALOutboundRuntimeStores({
         ...input,
         outboundBackend: backend,
         decodePrepared: options.decodePrepared
     });
     return { ...stores, evictExpired: () => backend.evictExpired() };
+}
+
+/** The session's inbound memory pair, shared by both carriers' volatile lanes; it persists nothing. */
+export function createVolatileALInboundRuntimeStores(
+    options: CreateDefaultALRuntimeStoresInput = {}
+): ALVolatileInboundRuntimeStores {
+    const input = toDefaultInMemoryInput(options);
+    const backend = createVolatileALAdmissionBackend(input.nowMs);
+    const stores = createInMemoryALInboundRuntimeStores({ ...input, inboundBackend: backend });
+    return { ...stores, evictExpired: () => backend.evictExpired() };
+}
+
+function createVolatileALAdmissionBackend(nowMs: () => number): InMemoryAdmissionBackend {
+    return new InMemoryAdmissionBackend(
+        createInMemoryALAdmissionState(
+            new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+        ),
+        nowMs
+    );
 }
 
 export function createDefaultIndexedDbALInboundRuntimeStores(

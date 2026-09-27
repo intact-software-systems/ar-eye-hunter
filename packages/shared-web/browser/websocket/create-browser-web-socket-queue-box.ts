@@ -6,7 +6,10 @@ import {
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
@@ -35,6 +38,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
         readonly inboundStores: ALInboundRuntimeStores;
+        /** The session's inbound memory pair, the same one the RTC receiver holds. */
+        readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;
         readonly newConnectionRequestId: (() => string) | undefined;
@@ -81,6 +86,7 @@ function createBrowserWebSocketQueueBoxService(
         socket,
         sessionId: clientData.sessionId,
         inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
         outboundStores,
         outboundVolatileStores: createBrowserALVolatileOutboundRuntimeStores(
             toBrowserWsClientALRuntimeStoreId(clientData.sessionId)

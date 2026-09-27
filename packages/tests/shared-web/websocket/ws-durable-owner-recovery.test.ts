@@ -11,8 +11,10 @@ import {
 
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -87,6 +89,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         socket: new JsonWebSocketClient('ws://test', oldFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -129,6 +132,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         socket: new JsonWebSocketClient('ws://test', freshFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -449,6 +453,7 @@ async function openRecoveryOwner(
         socket: new JsonWebSocketClient('ws://test', faults),
         clientData: { clientId: principalId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

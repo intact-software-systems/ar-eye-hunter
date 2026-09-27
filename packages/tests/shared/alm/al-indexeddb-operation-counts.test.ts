@@ -1,7 +1,12 @@
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
-import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import {
+    createVolatileALInboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -31,6 +36,8 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     createInboundTestStores,
+    INBOUND_TEST_SELF_PEER_ID,
+    INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
     readInboundTestAdmission,
     type InboundTestRuntime
@@ -305,17 +312,74 @@ describe('inbound work owner IndexedDB scan volume', () => {
     });
 
     it('admits one unordered message through the real ingress and dispatches it', async () => {
-        const admitted = await readAdmittedInboundDelivery();
+        const admitted = await readAdmittedInboundDelivery({ volatile: false, durability: undefined });
 
         expect(admitted.acceptance).toEqual({ kind: 'admitted' });
         expect(admitted.delivered).toEqual(['dispatched']);
     });
 
-    it('admits and delivers one unordered message in 8 admission operations', async () => {
+    it('admits and delivers one unordered message over a single durable pair in 8 admission operations', async () => {
         expect(
-            (await readAdmittedInboundDelivery()).admissionOperations,
+            (await readAdmittedInboundDelivery({ volatile: false, durability: undefined })).admissionOperations,
             'inbound admit to deliver: 6 operations for the admission, and 2 for the drain that dispatches it'
         ).toBe(8);
+    });
+
+    it('admits and delivers one volatile message beside a durable pair in 0 admission and 0 non-probe work operations', async () => {
+        const admitted = await readAdmittedInboundDelivery({ volatile: true, durability: undefined });
+
+        expect(admitted.acceptance).toEqual({ kind: 'admitted' });
+        expect(admitted.delivered).toEqual(['dispatched']);
+        // S3a (D55): the volatile default admits to the memory pair.
+        expect(admitted.admissionOperations).toBe(0);
+        expect(admitted.nonProbeWorkOperations).toBe(0);
+    });
+
+    it('still admits a local-inbox message beside a volatile pair in 8 admission operations', async () => {
+        expect(
+            (await readAdmittedInboundDelivery({ volatile: true, durability: 'local-inbox' }))
+                .admissionOperations
+        ).toBe(8);
+    });
+
+    it('answers an acknowledgement of its own message without reading any store', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const fixture = createInboundTestRuntime({
+            carrier: 'ws',
+            stores: createInboundTestStores({
+                namespace: INBOUND_NAMESPACE,
+                storage: 'indexeddb',
+                observer
+            }),
+            effectWorkerId: INBOUND_WORKER_ID
+        });
+        await fixture.runtime.ready();
+        observer.reset();
+
+        const admitted = await fixture.runtime.admitIncomingMessage(
+            newALAckControlMessage(
+                {
+                    v: 2,
+                    msgId: 'ack-own-message',
+                    senderId: INBOUND_TEST_SENDER_PEER_ID,
+                    ts: Date.now()
+                },
+                {
+                    ackedMsgId: 'own-message',
+                    fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                    toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                    originPeerId: INBOUND_TEST_SELF_PEER_ID,
+                    logicalRecipientPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                    carrier: 'ws',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now()
+                }
+            ),
+            INBOUND_TEST_SOURCE
+        );
+
+        expect(admitted.right).toEqual({ kind: 'control', handled: false });
+        expect(observer.getCounts().byOwner['al-admission']).toBe(0);
     });
 
     it.each(['empty-queue', 'deferred-row'] as const)(
@@ -455,7 +519,7 @@ async function readDrainedInboundRotation(): Promise<DrainedInboundRotation> {
     const committed = await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message));
     observer.reset();
 
-    await runInboundRotationUntilSettled(fixture);
+    await runInboundRotationUntilSettled(fixture, fixture.stores.workQueue);
 
     return {
         committed,
@@ -468,29 +532,47 @@ interface AdmittedInboundDelivery {
     readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
     readonly delivered: readonly string[];
     readonly admissionOperations: number;
+    /** Every `al-work` operation but the idle owners' readiness probes (`work-page`). */
+    readonly nonProbeWorkOperations: number;
 }
 
 /** The whole path one unordered message walks: its ingress admission, then the drain that dispatches it. */
-async function readAdmittedInboundDelivery(): Promise<AdmittedInboundDelivery> {
+async function readAdmittedInboundDelivery(
+    input: Readonly<{ volatile: boolean; durability: ALDurabilityAlgo | undefined; }>
+): Promise<AdmittedInboundDelivery> {
     const observer = createCountingIndexedDbOperationObserver();
+    const volatileStores = input.volatile
+        ? createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` })
+        : undefined;
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
         stores: createInboundTestStores({ namespace: INBOUND_NAMESPACE, storage: 'indexeddb', observer }),
+        volatileStores,
         effectWorkerId: INBOUND_WORKER_ID
     });
     await fixture.runtime.ready();
     observer.reset();
 
     const admitted = await fixture.runtime.admitIncomingMessage(
-        createInboundTestMessage({ msgId: 'admit-to-deliver' }),
+        createInboundTestMessage({ msgId: 'admit-to-deliver', durability: input.durability }),
         INBOUND_TEST_SOURCE
     );
-    await runInboundRotationUntilSettled(fixture);
+    if (volatileStores === undefined || input.durability === 'local-inbox') {
+        await runInboundRotationUntilSettled(fixture, fixture.stores.workQueue);
+    }
+    else {
+        // The memory lane's own commit runs the batch that delivers. An engine round would also run
+        // the idle IndexedDB rotation's batch -- 1 work-page and 3 work-reserve per batch, measured
+        // with no message at all -- which is that idle owner's cost, not this message's.
+        await vi.waitFor(async () => expect(await readSettledInboundWork(volatileStores.workQueue)).toBe(true));
+    }
 
+    const counts = observer.getCounts();
     return {
         acceptance: admitted.right,
         delivered: fixture.delivered,
-        admissionOperations: observer.getCounts().byOwner['al-admission']
+        admissionOperations: counts.byOwner['al-admission'],
+        nonProbeWorkOperations: counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0)
     };
 }
 
@@ -498,9 +580,12 @@ async function readAdmittedInboundDelivery(): Promise<AdmittedInboundDelivery> {
  * Stops on the settled work row rather than on the dispatch: a claimed row is RESERVED, and a
  * rotation that scanned it there would read its readiness a second time inside the measured window.
  */
-async function runInboundRotationUntilSettled(fixture: InboundTestRuntime): Promise<void> {
+async function runInboundRotationUntilSettled(
+    fixture: InboundTestRuntime,
+    workQueue: QueueBoxResourceEntryRepository
+): Promise<void> {
     for (let round = 0; round < INBOUND_ROTATION_ROUND_LIMIT; round += 1) {
-        if (await readSettledInboundWork(fixture.stores.workQueue)) {
+        if (await readSettledInboundWork(workQueue)) {
             return;
         }
         await fixture.queueEngine.executeOnce();

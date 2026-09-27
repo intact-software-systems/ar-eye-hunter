@@ -21,7 +21,10 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -130,6 +133,7 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         readonly qosProvider?: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
+        readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -646,6 +650,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         qosProvider: input.qosProvider,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)

@@ -6,6 +6,7 @@ import {
     createDefaultIndexedDbALOutboundRuntimeStores,
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores,
+    createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores,
     isIndexedDbALRuntimeStoreSupported
 } from '@shared/alm/al-runtime-stores.ts';
@@ -16,7 +17,10 @@ import {
     type ALRuntimeStoreFactories,
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
@@ -127,6 +131,15 @@ export function createBrowserALVolatileOutboundRuntimeStores(
         namespace: `browser:${name}:volatile`,
         decodePrepared: decodeALOutboundTransportMessage
     });
+}
+
+/**
+ * Always memory: the session's inbound pair for volatile messages, created once per middleware and
+ * shared by both carriers (D20). Session cleanup and a storage reset never reach it; it dies with the
+ * middleware.
+ */
+export function createBrowserALVolatileInboundRuntimeStores(name: string): ALVolatileInboundRuntimeStores {
+    return createVolatileALInboundRuntimeStores({ namespace: `browser:${name}:volatile` });
 }
 
 export function configureBrowserALRuntimeStores(

@@ -5,6 +5,7 @@ import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-con
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     planALMessageHandling,
+    type ALDurabilityAlgo,
     type ALMessageHandlingPlan,
     type ALQosPolicyRequest
 } from '@shared/al-contracts/al-policy.ts';
@@ -21,7 +22,11 @@ import {
     type ALInboundPlanner
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
-import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from '@shared/alm/inbound/al-inbound-source-validation.ts';
@@ -38,7 +43,7 @@ import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-de
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-const INBOUND_TEST_SELF_PEER_ID = 'receiver';
+export const INBOUND_TEST_SELF_PEER_ID = 'receiver';
 export const INBOUND_TEST_SENDER_PEER_ID = 'sender';
 const INBOUND_TEST_ORDERING_KEY = 'chat';
 export const INBOUND_TEST_SOURCE: ALInboundMessageRuntime.Source = {
@@ -123,6 +128,8 @@ export interface InboundTestRuntime {
 
 export interface CreateInboundTestRuntimeInput {
     readonly stores: ALInboundRuntimeStores;
+    /** Absent keeps one backend: every admission goes to `stores`. */
+    readonly volatileStores?: ALVolatileInboundRuntimeStores;
     /** The carrier of the sources the test admits, so the runtime claims the rows they write. */
     readonly carrier: ALDeliveryCarrier;
     readonly effectWorkerId: string;
@@ -151,6 +158,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: INBOUND_TEST_SELF_PEER_ID,
             stores: input.stores,
+            volatileStores: input.volatileStores,
             queueEngine,
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
         }),
@@ -191,6 +199,8 @@ export interface InboundTestMessageInput {
     readonly supersedenceKey?: string;
     /** Absent leaves the message unacknowledged, so its admission writes no `send-control` row. */
     readonly acknowledged?: boolean;
+    /** Absent leaves the envelope's durability to the policy default. */
+    readonly durability?: ALDurabilityAlgo;
 }
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
@@ -212,10 +222,11 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
 }
 
 function toInboundTestQos(input: InboundTestMessageInput): ALQosPolicyRequest | undefined {
-    if (input.supersedenceKey === undefined && input.acknowledged !== true) {
+    if (input.supersedenceKey === undefined && input.acknowledged !== true && input.durability === undefined) {
         return undefined;
     }
     return {
+        ...(input.durability === undefined ? {} : { durability: { algo: input.durability } }),
         ...(input.supersedenceKey === undefined ? {} : {
             supersedence: { algo: 'latest-wins', opts: { supersedenceKey: input.supersedenceKey } }
         }),
