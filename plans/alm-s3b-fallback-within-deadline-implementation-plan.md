@@ -61,7 +61,8 @@ maintainer-reviewed landing), with S3b's values:
 - **Bundle ceilings:** facade `browser/rallar.ts` 222 KiB (recorded 221.8 at `e417fe749`), headless 284
   KiB (recorded 283.62 at `e417fe749`), raised only by the next-whole-KiB rule (maintainer ruling
   2026-09-05) with the measured figure recorded in the test comment, the measure script and the task
-  commit.
+  commit. A crossed ceiling is raised in the task that crosses it — Tasks 1 and 2 included — by the Task
+  3 Step 8 rule with that run's figure, never deferred to a later commit (R-S3b-2); Task 3 re-measures.
 - **`rallar.realtime` untouched** (D15). `ALDeliverySettlement` grows additively (`receipt-exhausted`,
   `not-yet-in-sync-exhausted`, `carrier-fallback`); `ALDeliveryEvidence` gains one field.
 - **D53, D57, D58, D59 are S3c's.** No unicast fallback, no WS unicast receipt, no `server` target, no
@@ -71,12 +72,15 @@ maintainer-reviewed landing), with S3b's values:
   runs in the WS server's PostgreSQL-backed owner too: after Task 1 a server receipt that runs out of
   retries deletes its pending-ACK row at exhaustion instead of keeping it to the message expiry, and
   states `receipt-exhausted` into the server's `undefined` sink (nothing observes it until S3c). No
-  `packages/shared/services/ws-queue-box-server/**` file changes.
+  `packages/shared/services/ws-queue-box-server/**` file changes, but that delete is a new PostgreSQL
+  mutation through the shared owner, so the medium-scale gate runs once after Task 1 (R-S3b-15).
 - Files at cognitive-load warn or review that S3b touches take call lines only; new behaviour goes into
   new files beside them: `qrtc-data-channel.ts` (121, untouched), `web-rtc-overlay-multicast-manager.ts`
   (86), `ws-queue-box-server-service.ts` (82, untouched), `ws-queue-box-client-service.ts` (50,
   untouched), `web-rtc-rx-streamer-service.ts` (49). `packages/shared/alm/outbound` already holds 21 direct
-  files: new outbound files go under `control/`.
+  files: new outbound files go under `control/`. `packages/shared-test/rallar-bb-test/conformance/alm`
+  holds exactly 20 direct `.ts` files and `layout.directory-density` fires above 20: Task 5 adds no file
+  there (R-S3b-3).
 - **Per-task validation** (every task, before its commit; a task names the extra gates it needs):
   - the focused Vitest files the task names (`npx vitest run <files>`), then `npm run test:unit`
     (both Vitest roots) before the push;
@@ -96,8 +100,11 @@ maintainer-reviewed landing), with S3b's values:
   - `npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check` whenever a
     conformance recipe changes, and `npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/rallar-black-box/hetzner-alm-manifest-entries.test.ts`;
   - `npm run test:repo-governance` when docs under `docs/`, `examples/` or `.agents/` change;
-  - the medium-scale PostgreSQL gate `npm run test:api-v1:black-box:postgres:medium-scale` only if a
-    `packages/shared/services/ws-queue-box-server/**` file changes (Q11); none is planned, and Task 6
+  - the medium-scale PostgreSQL gate `npm run test:api-v1:black-box:postgres:medium-scale` (unsandboxed,
+    the Postgres container `ar-eye-hunter-postgres` up) runs ONCE after Task 1, because Task 1 makes the
+    shared repair owner delete the WS server's pending-ACK row at exhaustion; its summary line goes into
+    Task 1's commit body and the PR body (R-S3b-15). Otherwise Q11's file trigger stands: it reruns only
+    if a `packages/shared/services/ws-queue-box-server/**` file changes; none is planned, and Task 6
     records the empty `git diff --name-only origin/main...HEAD -- packages/shared/services/ws-queue-box-server`.
 - Every task ends with a commit, pushed to `claude/alm-s3b-fallback-within-deadline` (never `main`).
 - Acceptance follows D51: the local full lanes on normal pages plus the both-normal hosted smoke; the
@@ -131,7 +138,8 @@ before Task 1: these twelve as settled, and its ruling on C1–C9.
 9. **Q9** — no fallback for a durable RTC message resumed after a reload; stated as a limitation [D64].
 10. **Q10** — the five existing fallback cells keep their expectations; only their evidence moves, named
     in the PR body; re-read in Task 5 [§9].
-11. **Q11** — the medium-scale gate runs only if a `ws-queue-box-server/**` file changes (none planned) [§9].
+11. **Q11** — the medium-scale gate runs only if a `ws-queue-box-server/**` file changes (none planned) [§9];
+    R-S3b-15 adds one run after Task 1 for the shared owner's new server-side delete.
 12. **Q12** — no new RTC fault kind; `messages.observe` gains `attemptCarriers`; three scenarios on the
     two-agent `rtc-with-ws-fallback` cell; manifest 18 regenerated [§9].
 
@@ -149,8 +157,7 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   deadline passed, so the read-time deadline already reads `expired`; (4) a terminal NACK
   (`expired`/`unauthorized`/`stale`) → the incomplete acknowledgement it already states, then
   `receipt-exhausted` (Task 1) — beyond D64's list (exhaustion, completion at a re-plan dispatch, the
-  timeout of 0), and droppable: without it, delete Task 1 Step 3's second case and make Step 9's
-  `toALOutboundControlSettlements` return `[acknowledgement]`; (5) the WS server's `timed-out` receipt → no code: its deadline is
+  timeout of 0), accepted by R-S3b-0; (5) the WS server's `timed-out` receipt → no code: its deadline is
   `min(message expiry, now + 30 min)` (`WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS` = `DEFAULT_AL_EPHEMERAL_TTL_MS`),
   so it arrives at the browser message's own deadline, which the read-time deadline already settles
   `expired`; (6) a `qos.ack` timeout of 0 or an empty non-`receiver` expected set → the admission reports
@@ -237,6 +244,9 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `packages/shared/alm/outbound/al-outbound-message-runtime.ts:32,347,405-421`,
   `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts:212-214`,
   `packages/shared/services/web-rtc-rx-streamer-service.ts:444-446`.
+- Modify `packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts:1-80` and
+  `packages/shared/alm/inbound/README.md:198` — a duplicate on the other carrier than its first
+  admission, with no relay row, is acknowledged again over its arrival carrier (R-S3b-1).
 
 **The fallback controller (Task 3):**
 
@@ -252,8 +262,9 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
 **Harness evidence (Task 4):** `attemptCarriers` through the page projection, the operation contract,
 the result value, the decoder, the capability prose and every observation fixture.
 
-**Scenarios (Task 5):** three scenario files, one shared assertion file, the fault helper, the
-registries, the pinned lists, the manifest description and manifest 18.
+**Scenarios (Task 5):** three scenario files, the hand-over assertions beside `toResultAssertion` (no new
+file in `conformance/alm`, R-S3b-3), one fault builder for the held and the dropped faults, the shared
+fallback-cell constant, the registries, the pinned lists, the manifest description and manifest 18.
 
 **Docs (Task 6):** the two ALM READMEs, the product description, the roadmap, the harness schema doc.
 
@@ -801,6 +812,22 @@ describe('the receipt a re-plan completes at dispatch (S2c-ii carry)', () => {
             expect.objectContaining({ kind: 'acknowledgement', msgId: MSG_ID, complete: true })
         ]);
     });
+
+    it('is not stated by a commit that leaves the row, even when the plan completes it', () => {
+        const facts = toALOutboundCommitSettlements({
+            bundle: {
+                senderId: MESSAGE.id.senderId,
+                expectedVersion: 1,
+                mutations: [{ kind: 'delete-repair-attempt', msgId: MSG_ID }],
+                durableEffects: []
+            },
+            msg: MESSAGE,
+            read: toRead(HOP_REPLACING, HOP_ROW),
+            intent: 'repair'
+        });
+
+        expect(facts).toEqual([]);
+    });
 });
 ```
 
@@ -1264,7 +1291,8 @@ export interface ALOutboundCommitSettlementsInput<TPrepared> {
 
 /**
  * What a committed dispatch states at once: each message it superseded, a receipt nobody is left to
- * confirm, and the receipt its re-plan completed and deleted.
+ * confirm, and the receipt its re-plan completed -- only when this commit deletes that row, since a
+ * dispatch with no prepared copy writes no receipt mutation at all.
  */
 export function toALOutboundCommitSettlements<TPrepared>(
     input: ALOutboundCommitSettlementsInput<TPrepared>
@@ -1280,7 +1308,12 @@ export function toALOutboundCommitSettlements<TPrepared>(
     const emptyAudience = input.intent === 'enqueue'
         ? toALOutboundEmptyAudienceReceipt(input.read.plan)
         : undefined;
-    const completion = toALOutboundDispatchCompletionReceipt(input.read);
+    const deletesReceipt = input.bundle.mutations.some((mutation) =>
+        mutation.kind === 'delete-pending-ack'
+    );
+    const completion = deletesReceipt
+        ? toALOutboundDispatchCompletionReceipt(input.read)
+        : undefined;
     return [
         ...superseded,
         ...(emptyAudience === undefined ? [] : [emptyAudience]),
@@ -1361,12 +1394,22 @@ for (const settlement of toALOutboundControlSettlements(computed)) {
       acknowledgement" moves to the new facts; name each moved pin with its file and old/new figure in the
       commit body, and stop for a ruling if one encodes something else. Then the per-task validation list
       (the `deno task check`s and `npm run test:deno` apply: `packages/shared` changed; the bundle checks
-      apply). The changed-style report (`npm run check:repo-style:changed -- origin/main HEAD`) must show
+      apply: the reducer and the outbound owner ship in the facade and the headless bundle, and a crossed
+      ceiling is raised in this task's commit by the Task 3 Step 8 rule, with this run's figure (R-S3b-2)).
+      The changed-style report (`npm run check:repo-style:changed -- origin/main HEAD`) must show
       no new cognitive-load finding on `compute-al-delivery-lifecycle.ts` (load 37 before) or
       `compute-al-outbound-control-admission.ts` (39 before); if either reaches the warn tier of 50, move
       the new transition into a sibling file under the same directory and keep a call line.
+      Then, once (R-S3b-15: the shared repair owner now deletes the WS server's PostgreSQL pending-ACK row
+      at exhaustion), with the Postgres container `ar-eye-hunter-postgres` up (check `docker ps`;
+      if it stopped, `docker start ar-eye-hunter-postgres`), run unsandboxed
+      `npm run test:api-v1:black-box:postgres:medium-scale` and record its summary line in the commit body
+      and later in the PR body; a red run stops the task for a ruling.
 
-- [ ] **Step 11: Commit and push.**
+- [ ] **Step 11: Commit and push.** Also `git add` every moved-pin file named in the commit body and,
+      when a ceiling was raised, `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`,
+      `packages/shared-web/scripts/measure-browser-bundles.mjs` and
+      `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`.
 
 ```bash
 git add packages/shared/alm packages/tests/shared/alm
@@ -1384,7 +1427,9 @@ git push
 - Modify: as "Retryable outcomes and the hand-over" above.
 - Test: create `packages/tests/shared/alm/delivery/resolve-al-delivery-fallback-trigger.test.ts`,
   `packages/tests/shared/alm/delivery/al-delivery-carrier-fallback.test.ts`,
-  `packages/tests/shared/alm/outbound/al-outbound-hand-over.test.ts`; modify
+  `packages/tests/shared/alm/outbound/al-outbound-hand-over.test.ts`,
+  `packages/tests/shared/alm/inbound/compute-al-inbound-duplicate-changes.test.ts` (Steps 11–15; no
+  duplicate-changes test file exists yet); modify
   `packages/tests/shared-web/messages/browser-message-fallback-identity.test.ts:176-195`.
 
 **Interfaces:**
@@ -1408,8 +1453,14 @@ git push
   `ALOutboundMessageRuntime.handOver(msgId: string): Promise<void>`,
   `WebRtcOverlayMulticastManager.handOver(msgId: string): Promise<void>`,
   `WebRtcRxStreamerService.handOverOutbox(msgId: string): Promise<void>`.
+- Produces in `compute-al-inbound-duplicate-changes.ts` (R-S3b-1, Steps 11–15): a `duplicate` admitted
+  on a carrier other than the one its message-owner row records (`toALDeliveryCarrier(read.observations.messageOwner.source)`),
+  with no relay row (`pendingAck === undefined`), emits one `send-ack` of this peer's own ACK
+  (`logicalRecipient: self`, `delivered` or `subtree-complete`) to `plan.ack.toPeerId` on the arrival
+  carrier, whether or not the copy names this peer as its next hop; a relay row keeps D25's answers.
 - Task 3 consumes `resolveALDeliveryFallbackTrigger`, the `carrier-fallback` settlement and
-  `rtcRxStreamer.handOverOutbox`; Task 4 needs nothing from here.
+  `rtcRxStreamer.handOverOutbox`; Task 5's `receipt-exhausted-fallback` consumes R-S3b-1's WS re-ACK for
+  its `acknowledged` pin; Task 4 needs nothing from here.
 
 - [ ] **Step 1: RED — the trigger.** Create `packages/tests/shared/alm/delivery/resolve-al-delivery-fallback-trigger.test.ts`:
 
@@ -2175,7 +2226,9 @@ async endReceipt(msgId: string): Promise<void> {
 }
 ```
 
-    In `packages/shared/alm/outbound/al-outbound-message-runtime.ts` change the class doc bullet (`:347`)
+    In `packages/shared/alm/outbound/al-outbound-message-runtime.ts` make the type re-export (`:32`)
+    `export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';`,
+    change the class doc bullet (`:347`)
     to `` * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes. ``
     and add after `cancel` (`:415-421`):
 
@@ -2216,14 +2269,270 @@ async handOverOutbox(msgId: string): Promise<void> {
 - [ ] **Step 9: GREEN.** Run the Step 5 command. Expected: PASS. Then
       `npx vitest run packages/tests/shared/alm packages/tests/shared/multicast packages/tests/shared-web/messages packages/tests/shared-test/rallar-browser-runtime`
       and the per-task validation list (Deno checks and `npm run test:deno`: `packages/shared` changed;
-      the bundle checks: the reducer ships in the browser — a crossed ceiling is raised in Task 3, which
-      measures once for both tasks, so record the Task 2 figure in its commit body only).
+      the bundle checks: the reducer ships in the browser — a crossed ceiling is raised in this task's
+      commit by the Task 3 Step 8 rule, with this run's figure (R-S3b-2); Task 3 Step 8 re-measures).
+      The changed-style report (`npm run check:repo-style:changed -- origin/main HEAD`) must show no new
+      cognitive-load finding on `compute-al-delivery-lifecycle.ts` (its load after Task 1); if it reaches
+      the warn tier of 50, move the new transition into a sibling file under the same directory and keep
+      a call line. It must also show no new finding on `web-rtc-rx-streamer-service.ts` (49 before): if
+      the `handOverOutbox` pass-through
+      takes it to 50, drop that method and have Task 3's controller call
+      `candidate.context.middleware.webRtcOverlayMulticastManager.handOver(msgId)` instead —
+      `RallarBrowserMiddleware` already exposes that manager (`rallar-connection-facade.ts:43`); first
+      confirm it is the rx-streamer's own `multicast` instance, and record the reroute in the commit body.
 
-- [ ] **Step 10: Commit and push.**
+- [ ] **Step 10: Commit and push.** Also `git add` every moved-pin file named in the commit body (such as
+      those under `packages/tests/shared-test/rallar-browser-runtime`) and, when a ceiling was raised, the
+      three bundle files Task 1 Step 11 names.
 
 ```bash
 git add packages/shared/alm packages/shared/multicast/web-rtc-overlay-multicast-manager.ts packages/shared/services/web-rtc-rx-streamer-service.ts packages/shared-web/browser/messages/browser-rallar-message-dispatch.ts packages/tests/shared/alm packages/tests/shared-web/messages/browser-message-fallback-identity.test.ts
 git commit -m "feat(alm): the declared retryable outcomes, rate-limited falls back at admission, and a settlement-free RTC hand-over (D56)"
+git push
+```
+
+- [ ] **Step 11: RED — a duplicate on the other carrier is acknowledged again (R-S3b-1).** D56's WS leg
+      completes only when the server's `receiver` receipt hears the receiver's WS ACK, but the tree
+      answers a duplicate only when it is a retried copy addressed to this peer
+      (`compute-al-inbound-duplicate-changes.ts:52-55`); the WS copy is the planner's envelope, so a
+      receiver whose RTC ACK was held never acknowledges it. Create
+      `packages/tests/shared/alm/inbound/compute-al-inbound-duplicate-changes.test.ts`:
+
+```ts
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
+import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
+import type {
+    ALInboundAdmissionStore,
+    ALInboundCommitBundle
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    createInboundTestMessage,
+    INBOUND_TEST_EFFECT_PREPARATION,
+    INBOUND_TEST_SENDER_PEER_ID,
+    planInboundTestMessage
+} from '../inbound-runtime-test-fixture.ts';
+
+const SOURCES: Readonly<Record<ALDeliveryCarrier, ALInboundMessageRuntime.Source>> = {
+    rtc: { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID },
+    ws: { kind: 'ws-client', peerId: INBOUND_TEST_SENDER_PEER_ID }
+};
+
+interface RepeatedAck {
+    /** The runtime that claims the `send-control` row. */
+    readonly rowCarrier: ALDeliveryCarrier;
+    /** The carrier the ACK names for itself. */
+    readonly carrier: ALDeliveryCarrier;
+    readonly toPeerId: string;
+    readonly ackedMsgId: string;
+    readonly status: ALAckStatus;
+}
+
+/** The bundle one arrival computes over the store's current rows, read as the real admission reads it. */
+async function computeArrival(
+    store: ALInboundAdmissionStore,
+    msg: ALMessage,
+    carrier: ALDeliveryCarrier
+): Promise<ALInboundCommitBundle> {
+    const source = SOURCES[carrier];
+    const nowMs = Date.now();
+    const read = await store.readIncomingMessage({
+        msg,
+        source,
+        nowMs,
+        prePlan: planInboundTestMessage(msg, source, { nowMs })
+    });
+    const plan = planInboundTestMessage(msg, source, computeALInboundPlanningObservations(read));
+    const facts = readALInboundEffectFacts(nowMs, INBOUND_TEST_EFFECT_PREPARATION);
+    return computeALInboundAdmission({
+        read,
+        plan,
+        facts,
+        canForward: false,
+        recordedParentPresent: true
+    });
+}
+
+/** Commits the first copy's admission, then computes what the second copy's would commit. */
+async function computeSecondArrival(
+    msg: ALMessage,
+    first: ALDeliveryCarrier,
+    second: ALDeliveryCarrier
+): Promise<ALInboundCommitBundle> {
+    const { admissionStore } = createDefaultInMemoryALInboundRuntimeStores();
+    expect(await admissionStore.commitBundle(await computeArrival(admissionStore, msg, first)))
+        .toBe('committed');
+    return await computeArrival(admissionStore, msg, second);
+}
+
+function toRepeatedAcks(bundle: ALInboundCommitBundle): readonly RepeatedAck[] {
+    return bundle.durableEffects.flatMap((effect): RepeatedAck[] => {
+        if (effect.payload.kind !== 'send-control') {
+            return [];
+        }
+        const control = decodeALControlMessage(effect.payload.msg).right;
+        return control?.type === 'ack'
+            ? [{
+                rowCarrier: effect.carrier,
+                carrier: control.payload.carrier,
+                toPeerId: control.payload.toPeerId,
+                ackedMsgId: control.payload.ackedMsgId,
+                status: control.payload.status
+            }]
+            : [];
+    });
+}
+
+describe('a duplicate on the other carrier than its first admission (D56, R-S3b-1)', () => {
+    it.each([['rtc', 'ws'], ['ws', 'rtc']] as const)(
+        'first admitted over %s, a copy over %s sends the own ACK again on the arrival carrier',
+        async (first, second) => {
+            const msg = createInboundTestMessage({ msgId: 'handed-over', acknowledged: true });
+
+            expect(toRepeatedAcks(await computeSecondArrival(msg, first, second))).toEqual([{
+                rowCarrier: second,
+                carrier: second,
+                toPeerId: INBOUND_TEST_SENDER_PEER_ID,
+                ackedMsgId: 'handed-over',
+                status: 'delivered'
+            }]);
+        }
+    );
+
+    it('keeps a copy on the first carrier that names no next hop unanswered, as before', async () => {
+        const msg = createInboundTestMessage({ msgId: 'same-carrier', acknowledged: true });
+
+        expect(toRepeatedAcks(await computeSecondArrival(msg, 'rtc', 'rtc'))).toEqual([]);
+    });
+
+    it('answers nothing for a message that asked for no acknowledgement', async () => {
+        const msg = createInboundTestMessage({ msgId: 'unacknowledged' });
+
+        expect(toRepeatedAcks(await computeSecondArrival(msg, 'rtc', 'ws'))).toEqual([]);
+    });
+});
+```
+
+- [ ] **Step 12: Run the RED test.**
+
+Run: `npx vitest run packages/tests/shared/alm/inbound/compute-al-inbound-duplicate-changes.test.ts`
+Expected: FAIL — both cross-carrier cases read `[]` where one repeated ACK is expected (the fixture's
+unicast names no next hop, so the tree's `nextHopPeerIds === [self]` guard returns nothing); the
+same-carrier and unacknowledged cases pass and stay as regression guards.
+
+- [ ] **Step 13: Implement the cross-carrier re-ACK.** In
+      `packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts` add
+      `import type { ALMessage } from '../../../al-contracts/al-contract.ts';` as the first import, and
+      replace the doc comment and the head of `computeALInboundDuplicateChanges` (`:34-63`, through the
+      `pendingAck === undefined` branch) with:
+
+```ts
+/**
+ * A copy of a message this peer already admitted. It is never delivered again. A retried copy addressed to
+ * this peer (D25): a peer with no relay row sends its own ACK again. A relay answers its parent in full:
+ * every ACK it already relayed again, since any of them may be the one the origin lost, then its terminal
+ * ACK when its subtree completed, or the copy onward to the child hops it still waits on. A sibling sender
+ * gets the terminal ACK of this peer at once, so its own row completes whatever the visited exclusion
+ * missed (R-S2c-ii-8c). The origin, or any sender once the recorded parent left, becomes the parent of
+ * the row, and is answered in full (R-S2c-ii-12); a former parent still present then gets the sibling
+ * answer (R-S2c-ii-14). A copy on the other carrier than the first admission -- the envelope a sender
+ * re-admitted there after a hand-over (D56) -- gets the own ACK of a peer with no relay row again over the
+ * carrier it came in on, whatever its next hops: the first ACK went out on the carrier the sender left
+ * (R-S3b-1).
+ */
+export function computeALInboundDuplicateChanges(
+    read: ALInboundMessageReadDto,
+    input: ComputeALInboundDuplicateChangesInput
+): ALInboundDuplicateChanges {
+    const { plan, pendingAck } = read;
+    const toPeerId = plan.ack.toPeerId;
+    if (plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined) {
+        return NO_DUPLICATE_CHANGES;
+    }
+    const addressedToSelf = isAddressedToSelf(read.msg, input.selfPeerId);
+    if (pendingAck === undefined) {
+        return addressedToSelf || isCrossCarrierCopy(read)
+            ? { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] }
+            : NO_DUPLICATE_CHANGES;
+    }
+    if (!addressedToSelf) {
+        return NO_DUPLICATE_CHANGES;
+    }
+```
+
+    and add before `toFormerParentRelease` (`:82`):
+
+```ts
+/** A retried hop copy names this peer as its one next hop (D25). */
+function isAddressedToSelf(msg: ALMessage, selfPeerId: string): boolean {
+    const nextHopPeerIds = msg.forwarding?.nextHopPeerIds ?? [];
+    return nextHopPeerIds.length === 1 && nextHopPeerIds[0] === selfPeerId;
+}
+
+/**
+ * The message-owner row keeps the first admission's source, so a copy on the other carrier is told apart
+ * from a retried copy on the same one. An owner row that already expired answers nothing, as before.
+ */
+function isCrossCarrierCopy(read: ALInboundMessageReadDto): boolean {
+    const owner = read.observations.messageOwner;
+    return owner !== undefined &&
+        toALDeliveryCarrier(owner.source) !== toALDeliveryCarrier(read.source);
+}
+
+function toOwnRepeatedAck(
+    read: ALInboundMessageReadDto,
+    toPeerId: string,
+    selfPeerId: string
+): ALInboundEffectIntent {
+    return toRepeatedAck(read, {
+        toPeerId,
+        logicalRecipient: { kind: 'self' },
+        status: toOwnAckStatus(read, selfPeerId)
+    });
+}
+```
+
+    `toRepeatedAck` already stamps `carrier: toALDeliveryCarrier(read.source)`, so the row is claimed by
+    the arrival carrier's runtime and the ACK travels on it. In `packages/shared/alm/inbound/README.md`,
+    after the bullet "a peer with no relay row sends its own ACK again." (`:198`), add:
+
+```md
+A copy on the other carrier than the message's first admission is answered as well, whatever next hops it
+names: a sender that hands a message from RTC to WS (D56) admits the same envelope there, and this peer's
+first ACK went out on the carrier the sender left. A peer with no relay row, whose message-owner row
+records the other carrier, sends its own ACK again over the carrier the copy came in on (R-S3b-1); a relay
+row keeps the answers above.
+```
+
+- [ ] **Step 14: GREEN.** Run the Step 12 command. Expected: PASS. Then
+      `npx vitest run packages/tests/shared/alm packages/tests/shared/multicast packages/tests/shared/services packages/tests/shared-web/messages`
+      — an existing pin that encoded "a duplicate on the other carrier states no ACK" moves to one
+      repeated ACK; name each moved pin with its file and old/new figure in the commit body, and stop for
+      a ruling if one encodes something else. Then the per-task validation list (Deno checks and
+      `npm run test:deno`: `packages/shared` changed; the bundle checks: the inbound owner ships in the
+      browser, and a crossed ceiling is raised in this commit by the Task 3 Step 8 rule, with this run's
+      figure, R-S3b-2). The changed-style report must show no new finding on
+      `compute-al-inbound-duplicate-changes.ts`; if it reaches the warn tier of 50, move
+      `isCrossCarrierCopy` and `toOwnRepeatedAck` into a sibling file under `inbound/admission/` and keep
+      the call line.
+
+- [ ] **Step 15: Commit and push.** Also `git add` every moved-pin file named in the commit body and,
+      when a ceiling was raised, the three bundle files Task 1 Step 11 names.
+
+```bash
+git add packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts packages/shared/alm/inbound/README.md packages/tests/shared/alm/inbound/compute-al-inbound-duplicate-changes.test.ts
+git commit -m "feat(alm): a duplicate on the other carrier than its first admission is acknowledged again over its arrival carrier (R-S3b-1)"
 git push
 ```
 
@@ -2574,16 +2883,16 @@ export interface BrowserMessageFallbackCandidate {
     readonly readmit: () => Promise<void>;
 }
 
-export namespace BrowserMessageFallbackController {
-    export interface Input {
-        readonly nowMs: () => number;
-    }
-}
-
 /** One watched RTC leg and the consecutive `not-ready` attempts counted on it so far. */
 interface BrowserMessageFallbackWatch {
     readonly candidate: BrowserMessageFallbackCandidate;
     notReadyRun: number;
+}
+
+export namespace BrowserMessageFallbackController {
+    export interface Input {
+        readonly nowMs: () => number;
+    }
 }
 
 /**
@@ -2815,12 +3124,13 @@ export type {
 
 - [ ] **Step 8: Measure the bundles.** Run
       `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
-      and `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`. For each budgeted entry
-      whose measured brotli size crossed its ceiling (the facade `222`, the headless `284`, or any other
-      entry in `budgetedEntries`), raise the ceiling to the next whole KiB above the measured figure in
-      the test and, for the facade, in `packages/shared-web/scripts/measure-browser-bundles.mjs`, and
-      extend the entry's comment with one sentence carrying the measured figure from this run, for the
-      facade:
+      and `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`. This re-measures on top of
+      any ceiling Task 1 or Task 2 already raised (R-S3b-2). For each budgeted entry whose measured brotli
+      size crossed its ceiling (the facade `222`, the headless `284`, or any other entry in
+      `budgetedEntries`), raise the ceiling to the next whole KiB above the measured figure in the test and
+      in `packages/shared-web/scripts/measure-browser-bundles.mjs` for every crossed entry (the script
+      mirrors every budgeted entry, `:40-90`), and extend the entry's comment with one sentence carrying the
+      measured figure from this run, for the facade:
       `S3b's post-admission fallback (the declared retryable outcomes, the receipt ends and the fallback controller) measures <measured> KiB here; the next whole-KiB ceiling is <ceiling>.`
       and for the headless test the same sentence with its own measured figure. Record every measured
       figure (crossed or not) in the commit body.
@@ -2829,7 +3139,8 @@ export type {
       (the smoke lane still has no post-admission trigger; it proves nothing regressed, verify the
       summary line).
 
-- [ ] **Step 10: Commit and push.**
+- [ ] **Step 10: Commit and push.** Also `git add` every moved-pin file named in the commit body (such as
+      those under `packages/tests/shared-test/rallar-browser-runtime`).
 
 ```bash
 git add packages/shared-web packages/tests/shared-web packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
@@ -2866,7 +3177,7 @@ git push
 - [ ] **Step 1: RED — the page projection.** In `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts`
       extend the lifecycle import (`:26`) to `import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict, type ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';`,
       add `attemptCarriers: [],` after `attemptOutcomes: [],` in `unknownObservation` (`:82`) and in the
-      `queued` expectation (`:146`), and add after the test that ends near `:190`:
+      `queued` expectation (`:146`), and add after the test that ends at `:231`:
 
 ```ts
 it('projects the carrier of every settled attempt beside its outcome, in attempt order (D56)', async () => {
@@ -2944,14 +3255,7 @@ readonly attemptCarriers: readonly ALDeliveryCarrier[];
     (both files already import `ALDeliveryCarrier`).
 
 - [ ] **Step 5: Implement the decoder.** In `packages/shared-test/rallar-bb-test/alm/decode-alm-runtime-result.ts`
-      add after `ALM_ATTEMPT_OUTCOMES` (`:67`):
-
-```ts
-/** Keyed by every carrier, so a new carrier fails to compile here instead of decoding as an invalid result. */
-const ALM_ATTEMPT_CARRIERS: Readonly<Record<ALDeliveryCarrier, true>> = { rtc: true, ws: true };
-```
-
-    make `decodeAlmDeliveryResultValue` (`:125-146`):
+      make `decodeAlmDeliveryResultValue` (`:125-146`):
 
 ```ts
 export function decodeAlmDeliveryResultValue(
@@ -2995,20 +3299,25 @@ export function decodeAlmDeliveryResultValue(
     and add after `requireAlmAttemptOutcomesField` (`:260-269`):
 
 ```ts
-/** One known carrier per settled attempt, index-aligned with `attemptOutcomes`. */
+/**
+ * One carrier leg per settled attempt, index-aligned with `attemptOutcomes`; the legs are the schema's own
+ * `messagesCarrierLeg` list, which `requireAlmCarrierLegField` already decodes against.
+ */
 function requireAlmAttemptCarriersField(
     record: RallarBlackBoxTestRecord,
     path: string,
     settledAttempts: number
 ): readonly ALDeliveryCarrier[] {
-    const carriers = requireAlmStringListField(record, path, 'attemptCarriers');
-    if (
-        carriers.length !== settledAttempts ||
-        !carriers.every((carrier) => Object.hasOwn(ALM_ATTEMPT_CARRIERS, carrier))
-    ) {
+    const values = requireAlmStringListField(record, path, 'attemptCarriers');
+    const carriers = values.flatMap((value) =>
+        RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.filter((carrier) =>
+            carrier === value
+        )
+    );
+    if (values.length !== settledAttempts || carriers.length !== values.length) {
         throw toAlmInvalidRuntimeResultError(`${path}.attemptCarriers`);
     }
-    return carriers as readonly ALDeliveryCarrier[];
+    return carriers;
 }
 ```
 
@@ -3048,13 +3357,15 @@ git push
 
 **Files:**
 
-- Create: `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-fallback-commands.ts`,
-  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/fallback-within-deadline.ts`,
+- Create: `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/fallback-within-deadline.ts`,
   `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/receipt-exhausted-fallback.ts`,
   `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/no-fallback-after-deadline.ts`
 - Modify: `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts:1`,
-  `alm-conformance-fault-commands.ts` (append), `alm-conformance-message-commands.ts:43-45,56-63,91-100`,
-  `alm-conformance-scenario-definition.ts:18-29`, `create-alm-conformance-recipes.ts:30-40,69-84`,
+  `alm-conformance-fault-commands.ts:12-27` (one private builder for both fault commands),
+  `alm-conformance-message-commands.ts:43-45,56-63,91-100,203-214` (`toHandedOverAssertions` beside
+  `toResultAssertion`: `conformance/alm` already holds 20 direct `.ts` files and `layout.directory-density`
+  fires above 20, R-S3b-3), `scenarios/cross-carrier-duplicate.ts:10,26,33` (the shared fallback-cell
+  constant), `alm-conformance-scenario-definition.ts:18-29`, `create-alm-conformance-recipes.ts:30-40,72-84`,
   `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts:57-59`, and the regenerated
   `apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json` (the only manifest that
   embeds the two-agent family; 19–22 are unaffected).
@@ -3064,10 +3375,12 @@ git push
 
 **Interfaces:**
 
-- Consumes Task 4's `attemptCarriers`, Tasks 1–3's behaviour.
+- Consumes Task 4's `attemptCarriers` and Tasks 1–3's behaviour, including Task 2's cross-carrier re-ACK
+  (R-S3b-1, Steps 11–15), which `receipt-exhausted-fallback`'s `acknowledged` pin needs.
 - Produces `ALM_CONFORMANCE_FALLBACK_CARRIERS: readonly AlmConformanceCarrier[]` (`['rtc-with-ws-fallback']`),
   `toRtcDropFaultCommand(step: AlmConformanceStepInput, name: string, remaining: 'until-cleared' | 0): RallarBlackBoxTestCommand`,
-  `toHandedOverAssertions(sender: AlmConformanceStepInput, resultName: string): readonly RallarBlackBoxTestCommand[]`,
+  `toHandedOverAssertions(sender: AlmConformanceStepInput, resultName: string): readonly RallarBlackBoxTestCommand[]`
+  (in `alm-conformance-message-commands.ts`, R-S3b-3),
   an optional `budgetMs` on the observe input (absent: the state's own budget) and `'contains'` on the
   result-assertion operator.
 - Produces `AlmConformanceScenarioId` members `'fallback-within-deadline' | 'receipt-exhausted-fallback' | 'no-fallback-after-deadline'`,
@@ -3098,6 +3411,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
+import { toRtcAckTrackingPlan } from '@shared/multicast/to-rtc-ack-tracking-plan.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -3247,12 +3561,15 @@ describe('the fallback-within-the-deadline family (D56)', () => {
             { reliability: 'at-least-once', ack: 'receiver', ttlMs: EXPIRY_TTL_MS }
         );
 
-        const { effective } = normalizeALQosPolicy(message);
+        const tracking = toRtcAckTrackingPlan(normalizeALQosPolicy(message).effective, [
+            'receiver'
+        ]);
+        if (tracking === undefined) {
+            throw new Error('A receiver-acknowledged send must track an RTC receipt.');
+        }
 
-        expect(effective.ack).toEqual({ algo: 'receiver', opts: { timeoutMs: 2_000 } });
-        expect(effective.retry).toEqual({ algo: 'exp-backoff', opts: { maxAttempts: 3 } });
-        // The last window closes after the first timeout and three retries: 2 000 ms x 4.
-        expect(EXPIRY_TTL_MS).toBeLessThan(2_000 * (3 + 1));
+        // The last window the RTC owner writes closes after the first timeout and every retry.
+        expect(EXPIRY_TTL_MS).toBeLessThan(tracking.timeoutMs * (tracking.maxAttempts + 1));
     });
 });
 ```
@@ -3271,9 +3588,43 @@ export const ALM_CONFORMANCE_FALLBACK_CARRIERS: readonly AlmConformanceCarrier[]
 ];
 ```
 
-    Append to `alm-conformance-fault-commands.ts`:
+    In `scenarios/cross-carrier-duplicate.ts` delete the private `FALLBACK_CARRIERS` (`:25-26`, with its
+    comment), replace the type import of `AlmConformanceCarrier` (`:10`, used only there) with
+    `import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';` and make its
+    `carriers:` (`:33`) `ALM_CONFORMANCE_FALLBACK_CARRIERS`.
+
+    In `alm-conformance-fault-commands.ts` add `RallarBlackBoxTestFaultInjectCommand` to the contracts type
+    import (`:1`) and replace `toHeldFaultCommands` (`:12-27`) with the held faults and the RTC drop, both
+    built by one private builder:
 
 ```ts
+interface AlmConformanceFaultCommandInput {
+    readonly step: AlmConformanceStepInput;
+    readonly name: string;
+    /** Prefixes the scenario's type id: one fault id per carrier and purpose. */
+    readonly faultName: string;
+    readonly carrier: AlmConformanceFaultCarrier;
+    readonly action: 'drop' | 'not-ready';
+    readonly remaining: 'until-cleared' | 0;
+}
+
+export function toHeldFaultCommands(
+    step: AlmConformanceStepInput,
+    name: string,
+    remaining: 'until-cleared' | 0
+): readonly RallarBlackBoxTestCommand[] {
+    return toFaultCarriers(step.input.carrier).map((carrier) =>
+        toFaultCommand({
+            step,
+            name: `${name}-${carrier}`,
+            faultName: `hold-${carrier}`,
+            carrier,
+            action: carrier === 'ws' ? 'not-ready' : 'drop',
+            remaining
+        })
+    );
+}
+
 /**
  * Drops every RTC frame of the scenario's type this page sends: each attempt settles `not-ready` and its
  * owner resubmits it 50 ms later, so a hold yields the consecutive run D56 hands to WS.
@@ -3283,19 +3634,35 @@ export function toRtcDropFaultCommand(
     name: string,
     remaining: 'until-cleared' | 0
 ): RallarBlackBoxTestCommand {
-    const typeId = toScenarioTypeId(step);
+    return toFaultCommand({
+        step,
+        name,
+        faultName: 'drop-rtc',
+        carrier: 'rtc',
+        action: 'drop',
+        remaining
+    });
+}
+
+function toFaultCommand(
+    input: AlmConformanceFaultCommandInput
+): RallarBlackBoxTestFaultInjectCommand {
+    const typeId = toScenarioTypeId(input.step);
     return {
         kind: 'fault.inject',
-        commandId: toCommandId(step, name),
-        faultId: `drop-rtc-${typeId}`,
-        carrier: 'rtc',
+        commandId: toCommandId(input.step, input.name),
+        faultId: `${input.faultName}-${typeId}`,
+        carrier: input.carrier,
         match: { typeId },
-        action: 'drop',
-        remaining,
-        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
+        action: input.action,
+        remaining: input.remaining,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, input.step.input.deadlineMs)
     };
 }
 ```
+
+    The held faults keep their command and fault ids (`<name>-<carrier>`, `hold-<carrier>-<typeId>`), so
+    no recipe pin moves.
 
     In `alm-conformance-message-commands.ts`: add to `AlmConformanceObserveInput` (`:43-45`)
 
@@ -3309,14 +3676,9 @@ readonly budgetMs?: number;
     and widen the operator of `AlmConformanceResultAssertionInput` (`:61`) to
     `readonly operator: 'equals' | 'matches' | 'gt' | 'contains';`.
 
-    Create `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-fallback-commands.ts`:
+    and add after `toResultAssertion` (`:203-214`), in the same file (R-S3b-3):
 
 ```ts
-import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
-
-import { toResultAssertion } from './alm-conformance-message-commands.ts';
-import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
-
 /**
  * The handle reached its receipt after a hand-over: acknowledged, with a settled attempt on each carrier
  * (D56). Which copy the receiver delivered is the receiver's own evidence.
@@ -3360,10 +3722,10 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toHandedOverAssertions } from '../alm-conformance-fallback-commands.ts';
 import { toRtcDropFaultCommand } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
+    toHandedOverAssertions,
     toObserveCommand,
     toSendCommand
 } from '../alm-conformance-message-commands.ts';
@@ -3442,9 +3804,9 @@ import {
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toHandedOverAssertions } from '../alm-conformance-fallback-commands.ts';
 import {
     toAdmissionCommands,
+    toHandedOverAssertions,
     toObserveCommand,
     toSendCommand
 } from '../alm-conformance-message-commands.ts';
@@ -3468,7 +3830,8 @@ const RECEIPT_EXHAUSTION_OBSERVE_MS = NON_EXPIRING_SEND_TIMEOUT_MS + MESSAGE_CON
 /**
  * D56 and Q6: the receiver withholds its RTC ACKs, so the RTC receipt runs out of retries. That
  * `receipt-exhausted` hands the message to WS instead of failing it; the receiver refuses the WS copy as a
- * duplicate and acknowledges it over WS, and the handle reads `acknowledged`.
+ * duplicate and, since its first admission was on RTC, sends its own ACK again over WS (R-S3b-1), and the
+ * handle reads `acknowledged`.
  */
 export const receiptExhaustedFallback: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipt-exhausted-fallback',
@@ -3622,7 +3985,7 @@ export type AlmConformanceScenarioId =
 ```
 
     In `create-alm-conformance-recipes.ts` import the three definitions (`:30-40`, alphabetical among the
-    scenario imports) and make `ALM_CONFORMANCE_SCENARIOS` (`:69-84`):
+    scenario imports) and make `ALM_CONFORMANCE_SCENARIOS` (`:72-84`, keeping its doc comment at `:68-71`):
 
 ```ts
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
@@ -3656,7 +4019,7 @@ description: 'ALM conformance family (the volatile default, bounded rejection, d
       `'fallback-within-deadline', 'receipt-exhausted-fallback', 'no-fallback-after-deadline'` after
       `'not-yet-in-sync-expires'` in `SCENARIO_KEYS_BY_CARRIER['rtc-with-ws-fallback']` (`:150`), and
       `'receipt-exhausted-fallback', 'no-fallback-after-deadline'` after the second `'not-yet-in-sync'` of
-      the fallback non-smoke list (`:318`). In `alm-conformance-recipe-validation.test.ts` add
+      the fallback non-smoke list (`:319`). In `alm-conformance-recipe-validation.test.ts` add
       `'fallback-within-deadline', 'receipt-exhausted-fallback', 'no-fallback-after-deadline',` after the
       second `'not-yet-in-sync',` of `CARRIER_SCENARIO_IDS['rtc-with-ws-fallback']` (`:61`), and the
       line `* The fallback family (D56) needs the fallback cell.` to its doc comment (`:20-23`).
@@ -3710,7 +4073,8 @@ git push
 
 **Files:** `packages/shared/alm/outbound/README.md` (a new section before "## Atomic IndexedDB work
 storage", `:491`, and one sentence in "Transport attempt settlement", `:472-479`),
-`packages/shared/alm/inbound/README.md` (after the operation-count paragraph of "The memory and IndexedDB lanes", `:92-97`),
+`packages/shared/alm/inbound/README.md` (after the operation-count paragraph of "The memory and IndexedDB lanes", `:92-97`;
+Task 2 Step 13 already added the R-S3b-1 paragraph to the duplicate answers),
 `playground/alm/alm-complete-product-description.md` (`:271-282` "Transport selection and parity",
 `:335-366` "At-least-once"), `playground/alm/alm-improvement-plan.md` (the D56 row `:83`, the S3 bullet
 `:797-833`, matrix rows F1 `:937` and F4 `:940`, the revision history), `playground/alm/alm-s3-design-proposal.md`
@@ -3779,7 +4143,8 @@ takes that decision from the delivery registry's `record`; this owner only hands
 ```md
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused
-`not-handled`/`duplicate`, and the receiver acknowledges it again over WS — the receipt the WS leg needs.
+`not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
+its own ACK again over WS (R-S3b-1, see the duplicate answers above) — the receipt the WS leg needs.
 The WS server narrows its current room to the frozen audience, so a session that left after the RTC
 freeze is absent from the WS receipt rather than read unconfirmed.
 ```
@@ -3845,8 +4210,9 @@ the scenario ends; the third consecutive `not-ready` attempt hands the message t
 `acknowledged` with `attemptCarriers` containing `rtc` and `ws`, and the receiver delivers it once and
 waits for its `admission-outcome` `committed`/`admitted` on carrier `ws`. `receipt-exhausted-fallback`
 (full) holds the receiver's RTC ACKs; the RTC receipt runs out of retries after about 8 s and hands the
-message over, the receiver refuses the WS copy as `not-handled`/`duplicate` and acknowledges it over WS,
-and the sender observes `acknowledged` within a 15 s budget. `no-fallback-after-deadline` (full) holds the
+message over, the receiver refuses the WS copy as `not-handled`/`duplicate` and, its first admission
+having been on RTC, sends its own ACK again over WS (R-S3b-1), and the sender observes `acknowledged`
+within a 15 s budget. `no-fallback-after-deadline` (full) holds the
 receiver's RTC ACKs on a 7.5 s send, which expires before the RTC receipt budget ends: the sender
 observes `expired`, and no `admission-outcome` on carrier `ws` reaches the receiver for the whole window.
 ```
@@ -3873,9 +4239,10 @@ git push
   - `npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check`;
   - unsandboxed: `npm run test:e2e`, `npm run test:full-stack:memory`, the ALM smoke lane, and the full
     lane two- and three-agent on every carrier on normal pages;
-  - the medium-scale gate: `git diff --name-only origin/main...HEAD -- packages/shared/services/ws-queue-box-server`
-    prints nothing, so `npm run test:api-v1:black-box:postgres:medium-scale` is skipped under Q11 —
-    record the empty diff; if it prints a file, run the gate against a freshly migrated database.
+  - the medium-scale gate: its one run after Task 1 (R-S3b-15) is recorded from Task 1's commit body;
+    beyond it, `git diff --name-only origin/main...HEAD -- packages/shared/services/ws-queue-box-server`
+    prints nothing, so a rerun of `npm run test:api-v1:black-box:postgres:medium-scale` is skipped under
+    Q11 — record the empty diff; if it prints a file, run the gate against a freshly migrated database.
 
 - [ ] **Step 8: The PR and the hosted reads.** Update draft PR #604 (it holds the questions and decisions
       commits) with `gh pr edit 604 --body-file <file>` (unsandboxed; the sandbox fails `gh` on TLS),
@@ -3884,7 +4251,9 @@ git push
       the six receipt ends and how each settles (C2); the hand-over and the fallback controller; the
       harness evidence (`attemptCarriers`); the three scenarios; the five re-read cells' table from Task
       5 Step 9; the moved pins by kind (the `rate-limited` fallback row, Task 1 Step 10's list, the
-      recipe pins, manifest 18); the bundle figures from Task 3 Step 8 and Task 4 Step 7; the schema id
+      recipe pins, manifest 18); the bundle figures from Tasks 1 and 2 (R-S3b-2), Task 3 Step 8 and Task 4
+      Step 7; the medium-scale gate's summary line from Task 1 (R-S3b-15); the cross-carrier re-ACK
+      (R-S3b-1) and what it adds to `cross-carrier-duplicate`'s evidence; the schema id
       unchanged and what a deploy discards (nothing persisted changes shape; a server receipt that runs
       out of retries now deletes its row at exhaustion instead of at the message expiry); the gate list
       from Step 7; the carried lists; and, last, the line
@@ -3909,8 +4278,38 @@ git push
   makes an `unauthorized` NACK terminal for the whole message where a caller might have wanted the other
   recipients' receipts to run on — the evidence keeps them.
 
-None yet. The controller records R-S3b-0 before Task 1 (Q1–Q12 as settled by D56 "As applied" and
-D63–D66, and its ruling on C1–C9), then each later ruling as R-S3b-n with why and the cost if wrong.
+- **R-S3b-1 (pre-flight finding 1).** A duplicate admitted on a carrier other than its first admission's,
+  with no relay row, re-sends the peer's own ACK over the arrival carrier (Task 2 Steps 11–15:
+  `compute-al-inbound-duplicate-changes.ts`, its unit test, the inbound README); `receipt-exhausted-fallback`
+  keeps its `acknowledged` pin and the Task 6 doc sentences say so. Why: D56's WS leg needs the receiver's
+  WS ACK for the server's `receiver` receipt to complete, and §2.2's "receivers dedup the second copy"
+  presumes that ACK; the tree answered only a retried copy addressed to this peer. Cost if wrong: one extra
+  ACK per cross-carrier duplicate, and `cross-carrier-duplicate` may gain an acknowledgement it never
+  asserted (evidence only).
+- **R-S3b-2 (finding 2).** A crossed bundle ceiling is raised in the task that crosses it (Tasks 1 and 2
+  too), by the Task 3 Step 8 rule, with that run's figure; Task 3 re-measures. Why: every push runs the
+  Branch Release Gate, and a deferral would push a knowingly red bundle test. Cost if wrong: up to three
+  ceiling commits instead of one.
+- **R-S3b-3 (finding 3).** `toHandedOverAssertions` lives in `alm-conformance-message-commands.ts` beside
+  `toResultAssertion`; no new file in `conformance/alm`. Why: that directory holds exactly 20 direct files
+  and `layout.directory-density` fires above 20. Cost if wrong: one more export in an existing file.
+- **R-S3b-4..14, R-S3b-16 (findings 4–14, 16).** The scan's smallest edits, applied verbatim: the
+  controller's namespace immediately before its class (4); the completion-at-dispatch acknowledgement
+  stated only by a commit that carries the `delete-pending-ack` mutation, with a negative case (5); the
+  anchors `delivery.test.ts:231`, `alm-conformance-recipes.test.ts:319` and
+  `create-alm-conformance-recipes.ts:72-84` keeping its doc comment (6, 7); `ALOutboundHandOverOutcome`
+  in the `:32` re-export (8); every moved-pin file in the commit (9); this section's text and C2 without
+  its conditional (10); `messagesCarrierLeg` for the attempt carriers, one shared fallback-cell constant,
+  one fault builder (11); the measure script raised for every crossed entry (12); a changed-style check on
+  the rx-streamer with the multicast-manager reroute (13); the warn-tier guard on Task 2's lifecycle growth
+  (14); the receipt window derived from `toRtcAckTrackingPlan` (16). Why: each keeps the plan consistent
+  with the tree and the style gates. Cost if wrong: none beyond the edit.
+- **R-S3b-15 (finding 15).** The medium-scale PostgreSQL gate runs once after Task 1 and its summary line
+  is recorded in Task 1's commit body and the PR body; Q11's file trigger otherwise stands. Why: Task 1's
+  shared repair owner deletes a server-side pending-ACK row at exhaustion, a mutation-path change CLAUDE.md
+  gates, although no `ws-queue-box-server/**` file changes. Cost if wrong: about 3 minutes.
+
+Later rulings follow as R-S3b-n with why and the cost if wrong.
 
 ## Self-review
 
@@ -3921,17 +4320,18 @@ D63–D66, and its ruling on C1–C9), then each later ruling as R-S3b-n with wh
   registry … cancels the RTC runtime's owned work, re-admits the same envelope (same msgId, frozen
   audience, unchanged `expiresAtMs`) on WS with `canFallback: false`, and records a `carrier-fallback`
   evidence row" → Tasks 2 (hand-over, evidence, left-carrier rule) and 3 (controller, re-admission,
-  deadline guard); "receivers dedup the second copy" → Task 5's `receipt-exhausted-fallback` and the
-  inbound README; "non-room targets stay refused" → Global Constraints (D53 is S3c's). §2.2 harness: each
+  deadline guard); "receivers dedup the second copy" → Task 2 Steps 11–15 (the cross-carrier re-ACK,
+  R-S3b-1), Task 5's `receipt-exhausted-fallback` and the inbound README; "non-room targets stay refused" → Global Constraints (D53 is S3c's). §2.2 harness: each
   attempt's carrier → Task 4; the three scenarios → Task 5 (the RTC fault kind dropped per Q12; the
   negative scenario's mechanism per C7). §9 Q1 → Task 3 Step 5 (`carrier === 'rtc'`) and its Q1 test;
   Q2 → Task 3 Steps 4–5; Q3 → Task 2 Steps 6 and 8, Task 3; Q4 → Task 2 Step 7; Q5 → Task 2 Steps 4 and 7;
   Q6 → Task 1 Step 8; Q7 → Carried to S3c; Q8 → the inbound README and D56 as applied; Q9 → the controller
   doc, the READMEs and the product description; Q10 → Task 5 Step 9 and the PR body; Q11 → Global
-  Constraints and Task 6 Step 7; Q12 → Tasks 4 and 5. §8's carry (the completion-at-dispatch delete) →
+  Constraints, Task 1 Step 10 (the one run under R-S3b-15) and Task 6 Step 7; Q12 → Tasks 4 and 5. §8's carry (the completion-at-dispatch delete) →
   Task 1. D63–D66, which landed while the plan was written, add nothing beyond Q1–Q12.
 - **Placeholder scan.** Every code step shows the code. The values only a run gives are named as such:
-  the bundle figures (Task 3 Step 8, Task 4 Step 7), the moved pins (Task 1 Step 10), the five cells'
+  the bundle figures (Tasks 1 and 2, Task 3 Step 8, Task 4 Step 7), the medium-scale summary line (Task 1
+  Step 10), the moved pins (Task 1 Step 10, Task 2 Steps 9 and 14), the five cells'
   table (Task 5 Step 9) and the revision-history date. Mechanical fixture edits (Task 4 Step 6) name
   every file and line and end with a grep that proves completeness.
 - **Type consistency.** `receipt-exhausted` and `not-yet-in-sync-exhausted` (Task 1) are what
