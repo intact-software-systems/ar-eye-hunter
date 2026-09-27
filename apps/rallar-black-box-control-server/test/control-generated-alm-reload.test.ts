@@ -335,6 +335,27 @@ class GeneratedAlmPorts {
         });
     }
 
+    /** Over WS the server answers a receipted send with its admitted receipt, then the complete one (R-S3a-9). */
+    private admitServerReceipts(message: PortMessage): void {
+        for (const phase of ['admitted', 'complete'] as const) {
+            this.sender.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'control-admission',
+                        msgId: `${message.msgId}-receipt-${phase}`,
+                        typeId: 'al.control.receipt.v1',
+                        targetMsgId: message.msgId,
+                        outcome: 'committed',
+                        reason: 'none',
+                        phase
+                    }
+                }
+            });
+        }
+    }
+
     private isHeld(typeId: string): boolean {
         return [...this.holds.values()].includes(typeId);
     }
@@ -344,6 +365,9 @@ class GeneratedAlmPorts {
         message.state = message.command.carrier === 'ws' && message.command.ack !== 'receiver' ? 'transport-accepted' : 'acknowledged';
         if (message.command.carrier !== 'ws') {
             this.admitReceiverAck(message);
+        }
+        else if (message.command.ack === 'receiver') {
+            this.admitServerReceipts(message);
         }
         this.receiver.recordEvent({
             kind: 'message',
