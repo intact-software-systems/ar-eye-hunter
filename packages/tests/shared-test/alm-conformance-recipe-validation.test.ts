@@ -23,19 +23,23 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
+        'volatile-default',
         'bounded-rejection',
         'deadline-expiry',
         'delivery-baseline',
         'delivery-lifecycle',
+        'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const)
     ],
     rtc: [
+        'volatile-default',
         'bounded-rejection',
         'deadline-expiry',
         'delivery-baseline',
         'delivery-lifecycle',
+        'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync',
@@ -43,10 +47,12 @@ const CARRIER_SCENARIO_IDS = {
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ],
     'rtc-with-ws-fallback': [
+        'volatile-default',
         'bounded-rejection',
         'deadline-expiry',
         'delivery-baseline',
         'delivery-lifecycle',
+        'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
         'cross-carrier-duplicate',

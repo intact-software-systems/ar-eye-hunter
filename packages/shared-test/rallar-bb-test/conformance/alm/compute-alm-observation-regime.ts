@@ -329,10 +329,24 @@ function computeWorkPageRate(
     const spanMs = last.atEpochMs - first.atEpochMs;
     return {
         outcome: 'measured',
-        perSecond: toTwoDecimals((last.workPageCount - first.workPageCount) / (spanMs / 1000)),
+        perSecond: toTwoDecimals(computeWorkPageIncrements(ordered) / (spanMs / 1000)),
         readingCount: ordered.length,
         spanMs
     };
+}
+
+/** Each agent counts from its own previous reading, or from zero after a reading that reset the counter. */
+function computeWorkPageIncrements(ordered: readonly ALMObservationStorageCounters[]): number {
+    const previousByAgent = new Map<string, ALMObservationStorageCounters>();
+    let increments = 0;
+    for (const reading of ordered) {
+        const previous = previousByAgent.get(reading.agentId);
+        if (previous !== undefined) {
+            increments += reading.workPageCount - (previous.reset ? 0 : previous.workPageCount);
+        }
+        previousByAgent.set(reading.agentId, reading);
+    }
+    return increments;
 }
 
 /**

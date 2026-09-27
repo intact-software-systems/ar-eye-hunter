@@ -82,6 +82,22 @@ function toCommitPhaseEvent(
     };
 }
 
+function toSyntheticRegimeWithStorageCounters(
+    readings: readonly Readonly<{ atEpochMs: number; agentId: string; workPageCount: number; reset: boolean; }>[]
+): ALMObservationRegime {
+    return toSyntheticRegime(readings.map((reading) => ({
+        kind: 'diagnostic',
+        atEpochMs: reading.atEpochMs,
+        agentId: reading.agentId,
+        payload: {
+            topic: 'rallar.bb.storage.counters',
+            payload: {
+                data: { byKind: { 'work-page': reading.workPageCount }, reset: reading.reset }
+            }
+        }
+    })));
+}
+
 function toReadinessProbeEvent(
     atEpochMs: number,
     agentId: string,
@@ -279,6 +295,37 @@ describe('computeALMObservationRegime', () => {
             perSecond: 3.15,
             readingCount: 4,
             spanMs: 67_293
+        });
+    });
+
+    it('sums the work-page increments across a counter reset instead of reading the reset as negative', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 10, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-sender-1', workPageCount: 30, reset: true },
+            { atEpochMs: 20_000, agentId: 'alm-sender-1', workPageCount: 5, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 1.25,
+            readingCount: 3,
+            spanMs: 20_000
+        });
+    });
+
+    it('counts each agent from its own previous reading when two pages read their counters', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 100, reset: false },
+            { atEpochMs: 1_000, agentId: 'alm-receiver-1', workPageCount: 7, reset: false },
+            { atEpochMs: 5_000, agentId: 'alm-sender-1', workPageCount: 110, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-receiver-1', workPageCount: 17, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 2,
+            readingCount: 4,
+            spanMs: 10_000
         });
     });
 

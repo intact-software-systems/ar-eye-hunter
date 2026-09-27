@@ -213,11 +213,15 @@ export function toResultAssertion(
     };
 }
 
-export function toStorageCountersCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
+export function toStorageCountersCommand(
+    step: AlmConformanceStepInput,
+    name: string,
+    reset: boolean
+): RallarBlackBoxTestCommand {
     return {
         kind: 'storage.counters',
         commandId: toCommandId(step, name),
-        reset: false,
+        reset,
         timeoutMs: toBudgetMs(STORAGE_COUNTERS_TIMEOUT_MS, step.input.deadlineMs)
     };
 }

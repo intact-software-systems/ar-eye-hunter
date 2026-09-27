@@ -22,9 +22,11 @@ export type AlmConformanceScenarioId =
     | 'delivery-baseline'
     | 'delivery-lifecycle'
     | 'delivery-reload'
+    | 'durable-opt-in'
     | 'not-yet-in-sync'
     | 'ordering-resync'
-    | 'receipted-audience';
+    | 'receipted-audience'
+    | 'volatile-default';
 
 export type AlmConformanceTag = 'smoke' | 'full';
 

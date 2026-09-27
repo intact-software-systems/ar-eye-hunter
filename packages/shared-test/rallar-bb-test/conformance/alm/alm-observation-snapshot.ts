@@ -34,7 +34,10 @@ export interface ALMObservationRtcLifecycle {
 
 export interface ALMObservationStorageCounters {
     readonly atEpochMs: number;
+    readonly agentId: string;
     readonly workPageCount: number;
+    /** The reading reset the page's counter, so that page's next reading counts from zero. */
+    readonly reset: boolean;
 }
 
 export type ALMObservationCommandResult =
@@ -233,9 +236,12 @@ function toStorageCounter(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationStorageCounters | undefined {
     const workPageCount = decodeFiniteNumber(decodeRecord(diagnostic.detail.byKind)?.[WORK_PAGE_COUNTER_KIND]);
-    return workPageCount === undefined
-        ? undefined
-        : { atEpochMs: diagnostic.atEpochMs, workPageCount };
+    return workPageCount === undefined ? undefined : {
+        atEpochMs: diagnostic.atEpochMs,
+        agentId: diagnostic.agentId,
+        workPageCount,
+        reset: decodeBoolean(diagnostic.detail.reset) ?? false
+    };
 }
 
 function toInboundOutcome(
@@ -388,6 +394,10 @@ function decodeTextArray(value: unknown): readonly string[] {
 
 function decodeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function decodeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
 }
 
 function decodeFiniteNumber(value: unknown): number | undefined {

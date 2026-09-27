@@ -65,7 +65,7 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
         ...toHeldFaultCommands(sender, 'reload-hold', 'until-cleared'),
         toReloadOriginalSend(sender),
         ...toRetainedEvidenceCommands({ ...sender, index: 1 }, true),
-        toStorageCountersCommand(sender, 'storage-counters-held'),
+        toStorageCountersCommand(sender, 'storage-counters-held', false),
         ...(['al-admission', 'al-work'] as const).map((owner) =>
             toResultAssertion({
                 step: sender,
@@ -104,7 +104,7 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
             operator: 'equals',
             expected: 'unobservable'
         }),
-        toStorageCountersCommand(sender, 'storage-counters-recovered')
+        toStorageCountersCommand(sender, 'storage-counters-recovered', false)
     ];
 }
 

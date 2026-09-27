@@ -822,7 +822,10 @@ describe('ALM browser adapter execution', () => {
         expect(counters.value).toEqual({
             total: 7,
             byOwner: { 'al-admission': 3, 'al-work': 4 },
-            byKind: { read: 3, 'work-write': 4 }
+            byKind: { read: 3, 'work-write': 4 },
+            workProbeCount: 0,
+            workNonProbeCount: 4,
+            reset: true
         });
         expect(captures.readStorageCounters[0]).toMatchObject({ reset: true });
         expect(reload.ok, reload.error?.message).toBe(true);

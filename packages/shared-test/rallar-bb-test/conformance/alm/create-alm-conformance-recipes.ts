@@ -33,9 +33,11 @@ import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
+import { durableOptIn } from './scenarios/durable-opt-in.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
+import { volatileDefault } from './scenarios/volatile-default.ts';
 
 export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -63,11 +65,14 @@ const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
     MINIMUM_POST_EXPIRY_OBSERVATION_MS +
     RESPONSE_MARGIN_MS;
 
+/** `volatileDefault` runs first on its pages, before any scenario leaves durable work there. */
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
+    volatileDefault,
     boundedRejection,
     deadlineExpiry,
     deliveryBaseline,
     deliveryLifecycle,
+    durableOptIn,
     deliveryReload,
     orderingResync,
     ...crossCarrierDuplicate,
@@ -166,7 +171,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
 function toConnectedStorageCountersCommands(
     step: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected')] : [];
+    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected', false)] : [];
 }
 
 /** Names the send whose receipt the roles describe, so a combined recipe carries one entry per scenario. */

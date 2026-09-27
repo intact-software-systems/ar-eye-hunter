@@ -1169,10 +1169,12 @@ describe('Hetzner distributed manifest catalog', () => {
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
             scenarios: [
                 'delivery-reload',
+                'volatile-default',
                 'bounded-rejection',
                 'deadline-expiry',
                 'delivery-baseline',
                 'delivery-lifecycle',
+                'durable-opt-in',
                 'ordering-resync',
                 'not-yet-in-sync',
                 'cross-carrier-duplicate'
