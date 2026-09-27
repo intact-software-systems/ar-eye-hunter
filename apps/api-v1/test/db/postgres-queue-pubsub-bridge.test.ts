@@ -80,8 +80,9 @@ Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects i
 Deno.test('postgres queue pub/sub bridge rejects notices outside the wire budget before notify', async () => {
     let notified = false;
     const bridge = createPostgresQueuePubSubBridge({
-        notify: async () => {
+        notify: () => {
             notified = true;
+            return Promise.resolve();
         },
         listen: async () => {}
     });
@@ -110,8 +111,9 @@ Deno.test('postgres live WS transport publishes and receives a validated inline 
         }
     };
     const transport = createPostgresLiveWsNoticeTransport({
-        notify: async (_channel, message) => {
+        notify: (_channel, message) => {
             published.push(message);
+            return Promise.resolve();
         },
         listen: async (_channel, onMessage) => {
             await onMessage('not-json');
@@ -132,8 +134,9 @@ Deno.test('postgres live WS transport publishes and receives a validated inline 
 Deno.test('postgres live WS transport refuses expired and oversized notices before notify', async () => {
     let notified = false;
     const transport = createPostgresLiveWsNoticeTransport({
-        notify: async () => {
+        notify: () => {
             notified = true;
+            return Promise.resolve();
         },
         listen: async () => {}
     }, () => 1_800_000_000_000);
@@ -156,8 +159,9 @@ Deno.test('postgres live WS transport refuses expired and oversized notices befo
 Deno.test('postgres live WS transport publishes the exact JSON-clean builder notice', async () => {
     const sent: string[] = [];
     const transport = createPostgresLiveWsNoticeTransport({
-        notify: async (_channel, notice) => {
+        notify: (_channel, notice) => {
             sent.push(JSON.stringify(notice));
+            return Promise.resolve();
         },
         listen: async () => {}
     }, () => 1);
@@ -165,7 +169,6 @@ Deno.test('postgres live WS transport publishes the exact JSON-clean builder not
     const encoded = encodeLiveWsNotice({
         channel: 'ws-channel',
         publisherId: 'publisher-a',
-        scope: { applicationId: 'app', workspaceId: 'workspace' },
         expiresAtMs: 1_800_000_000_000,
         audience: { mode: 'broad', targetMode: 'all' },
         message: built

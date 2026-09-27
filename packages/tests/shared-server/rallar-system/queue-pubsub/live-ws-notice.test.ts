@@ -28,10 +28,118 @@ function publication(resource = '') {
 }
 
 describe('live WS notice codec', () => {
+    it('round trips broad inline and canonical key notices without an invented scope', () => {
+        const broadMessage: ALMessage = {
+            ...message(),
+            targets: { mode: 'broadcast', scope: 'world' }
+        };
+        const broad = {
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            expiresAtMs: 1_800_000_000_000,
+            audience: { mode: 'broad' as const, targetMode: 'world' as const },
+            message: broadMessage
+        };
+        const inline = encodeLiveWsNotice(broad);
+        expect(inline.kind).toBe('inline');
+        if (inline.kind === 'inline') {
+            expect(Object.hasOwn(inline.notice, 'scope')).toBe(false);
+            expect(decodeLiveWsNotice(JSON.parse(inline.serialized), 'ws-channel', 1)).toEqual(inline.notice);
+        }
+        const key = encodeLiveWsNotice({
+            ...broad,
+            message: { ...broadMessage, payload: { ...broadMessage.payload, resource: JSON.stringify('x'.repeat(8_000)) } },
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        });
+        expect(key.kind).toBe('inbound-key');
+        if (key.kind === 'inbound-key') {
+            expect(Object.hasOwn(key.notice, 'scope')).toBe(false);
+            expect(key.notice).toMatchObject({ audienceMode: 'broad', targetMode: 'world' });
+            expect(decodeLiveWsNotice(JSON.parse(key.serialized), 'ws-channel', 1)).toEqual(key.notice);
+            if (key.notice.delivery === 'inbound-key' && key.notice.audienceMode === 'broad') {
+                const { targetMode: _targetMode, ...missingTargetMode } = key.notice;
+                expect(decodeLiveWsNotice(missingTargetMode, 'ws-channel', 1)).toBeUndefined();
+            }
+        }
+    });
+
+    it('rejects broad scope spoofing and scoped notices missing scope', () => {
+        const broadMessage: ALMessage = { ...message(), targets: { mode: 'broadcast', scope: 'all' } };
+        const broad = {
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            expiresAtMs: 1_800_000_000_000,
+            audience: { mode: 'broad' as const, targetMode: 'all' as const },
+            message: broadMessage
+        };
+        const spoofed = { ...broad };
+        Reflect.set(spoofed, 'scope', scope);
+        expect(() => encodeLiveWsNotice(spoofed)).toThrow(TypeError);
+        const broadInline = {
+            kind: 'live-ws',
+            version: 1,
+            ...broad,
+            delivery: 'inline'
+        };
+        expect(decodeLiveWsNotice({ ...broadInline, scope }, 'ws-channel', 1)).toBeUndefined();
+        const broadKey = {
+            kind: 'live-ws',
+            version: 1,
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            expiresAtMs: 1_800_000_000_000,
+            delivery: 'inbound-key',
+            audienceMode: 'broad',
+            targetMode: 'all',
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        };
+        expect(decodeLiveWsNotice({ ...broadKey, scope }, 'ws-channel', 1)).toBeUndefined();
+        const missingScope = { ...publication() };
+        Reflect.deleteProperty(missingScope, 'scope');
+        expect(() => encodeLiveWsNotice(missingScope)).toThrow(TypeError);
+        const scoped = encodeLiveWsNotice(publication());
+        if (scoped.kind !== 'inline') {
+            throw new Error('Expected scoped inline fixture');
+        }
+        const { scope: _scope, ...withoutScope } = scoped.notice;
+        expect(decodeLiveWsNotice(withoutScope, 'ws-channel', 1)).toBeUndefined();
+        expect(decodeLiveWsNotice({ ...broadKey, audienceMode: 'room' }, 'ws-channel', 1)).toBeUndefined();
+    });
+
+    it('rejects mismatched broad target modes', () => {
+        const broad = {
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            expiresAtMs: 1_800_000_000_000,
+            audience: { mode: 'broad' as const, targetMode: 'all' as const },
+            message: { ...message(), targets: { mode: 'broadcast' as const, scope: 'world' as const } }
+        };
+        expect(() => encodeLiveWsNotice(broad)).toThrow(TypeError);
+        expect(decodeLiveWsNotice({ kind: 'live-ws', version: 1, delivery: 'inline', ...broad }, 'ws-channel', 1)).toBeUndefined();
+    });
+
+    it.each(['peer', 'principal'] as const)('refuses oversized canonical %s notices', (mode) => {
+        const principalRef = { ...scope, principalId: 'principal-1' };
+        const audience = mode === 'peer'
+            ? { mode, recipientSessionIds: ['session-1'] }
+            : { mode, principalRef, recipientSessionIds: ['session-1'] };
+        const targets = mode === 'peer'
+            ? { mode: 'unicast' as const, toPeerId: 'session-1' }
+            : { mode: 'broadcast' as const, scope: 'principal' as const, principalRef };
+        const encoded = encodeLiveWsNotice({
+            ...publication('x'.repeat(8_000)),
+            audience,
+            message: { ...message('x'.repeat(8_000)), targets },
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        });
+        expect(encoded).toMatchObject({ kind: 'oversize', keyBytes: undefined });
+    });
+
     it('accepts an explicit logical deadline for a message without AL expiry', () => {
         const { id, route, payload } = message();
+        const { scope: _scope, ...broadPublication } = publication();
         const encoded = encodeLiveWsNotice({
-            ...publication(),
+            ...broadPublication,
             audience: { mode: 'broad', targetMode: 'all' },
             message: { id, route, payload, targets: { mode: 'broadcast', scope: 'all' } }
         });
@@ -57,8 +165,9 @@ describe('live WS notice codec', () => {
             targets: { mode: 'broadcast', scope: 'all' },
             qos: { expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 10 } } }
         };
+        const { scope: _scope, ...broadPublication } = publication();
         const input = {
-            ...publication(),
+            ...broadPublication,
             audience: { mode: 'broad' as const, targetMode: 'all' as const },
             message: qosMessage
         };
@@ -68,8 +177,9 @@ describe('live WS notice codec', () => {
 
     it('encodes a standard broadcast builder as the exact JSON-clean notice sent by transport', () => {
         const built = newALBroadcastMessage('server', newALRoute('room.match', 'world', 'resource'), 'all', 'room.match', { text: 'hello' });
+        const { scope: _scope, ...broadPublication } = publication();
         const encoded = encodeLiveWsNotice({
-            ...publication(),
+            ...broadPublication,
             audience: { mode: 'broad', targetMode: 'all' },
             message: built
         });
@@ -91,6 +201,7 @@ describe('live WS notice codec', () => {
         Reflect.set(audience, 'unexpected', undefined);
         expect(() => encodeLiveWsNotice({ ...publication(), audience })).toThrow(TypeError);
     });
+
     it('round trips a final inline message and its frozen room audience', () => {
         const encoded = encodeLiveWsNotice(publication());
         expect(encoded.kind).toBe('inline');
@@ -104,7 +215,7 @@ describe('live WS notice codec', () => {
     it('rejects a spoofed room scope, malformed audience, and expired notice', () => {
         const encoded = encodeLiveWsNotice(publication());
         expect(encoded.kind).toBe('inline');
-        if (encoded.kind !== 'inline') {
+        if (encoded.kind !== 'inline' || encoded.notice.delivery !== 'inline') {
             return;
         }
         expect(decodeLiveWsNotice({ ...encoded.notice, scope: { applicationId: 'other', workspaceId: 'workspace' } }, 'ws-channel', 1)).toBeUndefined();
@@ -124,7 +235,7 @@ describe('live WS notice codec', () => {
         expect(atBoundary).toMatchObject({ kind: 'oversize', inlineBytes: 8_000 });
         const belowBoundary = encodeLiveWsNotice(publication('x'.repeat(7_999 - baselineBytes)));
         expect(belowBoundary.kind).toBe('inline');
-        if (belowBoundary.kind === 'inline') {
+        if (belowBoundary.kind === 'inline' && belowBoundary.notice.delivery === 'inline') {
             expect(new TextEncoder().encode(belowBoundary.serialized).length).toBe(7_999);
             expect(decodeLiveWsNotice(JSON.parse(belowBoundary.serialized), 'ws-channel', 1)).toEqual(belowBoundary.notice);
             const atDecodeBoundary = {

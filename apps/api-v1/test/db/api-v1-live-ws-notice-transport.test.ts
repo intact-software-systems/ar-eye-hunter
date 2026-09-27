@@ -47,7 +47,10 @@ Deno.test('local live notice transport shares its mode family and skips the publ
         received.push(value);
     });
     await publisher.publish(notice);
-    assert.deepEqual(received, [notice]);
+    const { scope: _scope, ...unscoped } = notice;
+    const broad: LiveWsNotice = { ...unscoped, audienceMode: 'broad', targetMode: 'all' };
+    await publisher.publish(broad);
+    assert.deepEqual(received, [notice, broad]);
 });
 
 Deno.test('disabled live notice transport does not claim a receiving callback', async () => {

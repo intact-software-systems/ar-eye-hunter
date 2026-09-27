@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { rememberAuthorisedWsConnection } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
@@ -11,22 +12,27 @@ const scope = { applicationId: 'app', workspaceId: 'workspace' };
 const groupRef = { ...scope, groupId: 'room' };
 
 function notice(audience: Extract<LiveWsNotice, { delivery: 'inline'; }>['audience']): LiveWsNotice {
-    return {
-        kind: 'live-ws',
-        version: 1,
+    const common = {
+        kind: 'live-ws' as const,
+        version: 1 as const,
         channel: 'ws-channel',
         publisherId: 'remote',
-        scope,
         expiresAtMs: 1_800_000_000_000,
-        delivery: 'inline',
-        audience,
-        message: {
-            id: { v: 2, msgId: 'message', ts: 1, senderId: 'sender' },
-            route: { topicId: 'room.match', resourceId: 'room', contextId: 'room' },
-            targets: { mode: 'multicast', groupRef },
-            payload: { typeId: 'room.match', resource: '{}' }
-        }
+        delivery: 'inline' as const
     };
+    const message: ALMessage = {
+        id: { v: 2, msgId: 'message', ts: 1, senderId: 'sender' },
+        route: { topicId: 'room.match', resourceId: 'room', contextId: 'room' },
+        targets: audience.mode === 'broad'
+            ? { mode: 'broadcast', scope: audience.targetMode }
+            : audience.mode === 'principal'
+            ? { mode: 'broadcast', scope: 'principal', principalRef: audience.principalRef }
+            : { mode: 'multicast', groupRef },
+        payload: { typeId: 'room.match', resource: '{}' }
+    };
+    return audience.mode === 'broad'
+        ? { ...common, audience, message }
+        : { ...common, scope, audience, message };
 }
 
 interface AddConnectionInput {
@@ -122,10 +128,6 @@ Deno.test('principal and broad notices use current authenticated eligibility', (
     const server = new JsonWebSocketServer();
     addConnection(server, 'principal-a', { scope, principalId: 'principal-a' });
     addConnection(server, 'principal-b', { scope, principalId: 'principal-b' });
-    addConnection(server, 'just-opened', {
-        scope: { applicationId: 'another', workspaceId: 'workspace' },
-        principalId: 'principal-c'
-    });
     const principal = notice({
         mode: 'principal',
         principalRef: { ...scope, principalId: 'principal-a' },
@@ -142,6 +144,11 @@ Deno.test('principal and broad notices use current authenticated eligibility', (
     );
 
     const broad = notice({ mode: 'broad', targetMode: 'all' });
+    assert.equal(Object.hasOwn(broad, 'scope'), false);
+    addConnection(server, 'just-opened', {
+        scope: { applicationId: 'another', workspaceId: 'workspace' },
+        principalId: 'principal-c'
+    });
     assert.deepEqual(
         filterEligibleLiveWsSessionIds({
             socketServer: server,

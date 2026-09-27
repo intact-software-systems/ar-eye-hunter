@@ -133,7 +133,9 @@ describe('live WS notice subscriber', () => {
         await receiver.receive(roomNotice([]));
         await receiver.receive({ ...roomNotice(), publisherId: 'publisher-b' });
         await receiver.receive({ ...roomNotice(), expiresAtMs: 1 });
-        await receiver.receive({ ...roomNotice(), audience: { mode: 'room', groupRef, recipientSessionIds: [''] } });
+        const malformed = structuredClone(roomNotice());
+        Reflect.set(malformed, 'audience', { mode: 'room', groupRef, recipientSessionIds: [''] });
+        await receiver.receive(malformed);
 
         expect(receiver.sent).toEqual([]);
         expect(receiver.resolveBroad).not.toHaveBeenCalled();
@@ -146,7 +148,6 @@ describe('live WS notice subscriber', () => {
         const encoded = encodeLiveWsNotice({
             channel: 'ws-channel',
             publisherId: 'publisher-a',
-            scope,
             expiresAtMs: deadline,
             audience: { mode: 'broad', targetMode: 'all' },
             message
@@ -158,6 +159,43 @@ describe('live WS notice subscriber', () => {
 
         expect(receiver.resolveBroad).toHaveBeenCalledWith(message);
         expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
+    });
+
+    it('resolves a broad canonical key against the local audience at receipt', async () => {
+        const receiver = createReceiver();
+        const message: ALMessage = { ...roomMessage(), targets: { mode: 'broadcast', scope: 'world' } };
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: message,
+            source: { kind: 'ws-client', peerId: 'sender' },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
+        const encoded = encodeLiveWsNotice({
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            expiresAtMs: deadline,
+            audience: { mode: 'broad', targetMode: 'world' },
+            message: { ...message, payload: { ...message.payload, resource: JSON.stringify('x'.repeat(8_000)) } },
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        });
+        if (encoded.kind !== 'inbound-key') {
+            throw new Error('Expected broad key fixture');
+        }
+        await receiver.receive(encoded.notice);
+
+        expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: { ...message, targets: { mode: 'broadcast', scope: 'all' } },
+            source: { kind: 'ws-client', peerId: 'sender' },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
+        await receiver.receive(encoded.notice);
+        expect(receiver.sent).toHaveLength(1);
     });
 
     it('reads a 64 KiB canonical room message and sends only its persisted frozen audience', async () => {

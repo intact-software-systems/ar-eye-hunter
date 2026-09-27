@@ -25,10 +25,11 @@ export function filterEligibleLiveWsSessionIds(input: FilterEligibleLiveWsSessio
         const isBroad = input.notice.delivery === 'inline'
             ? input.notice.audience.mode === 'broad'
             : input.notice.audienceMode === 'broad';
+        const scope = input.notice.scope;
         if (
             !isBroad &&
-            (facts.scope.applicationId !== input.notice.scope.applicationId ||
-                facts.scope.workspaceId !== input.notice.scope.workspaceId)
+            (!scope || facts.scope.applicationId !== scope.applicationId ||
+                facts.scope.workspaceId !== scope.workspaceId)
         ) {
             continue;
         }

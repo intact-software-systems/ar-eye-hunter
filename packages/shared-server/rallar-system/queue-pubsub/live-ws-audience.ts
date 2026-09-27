@@ -4,31 +4,31 @@ import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 import type { LiveWsAudience } from './live-ws-notice.ts';
 
-export function decodeLiveWsAudience(value: JsonWireValue, scope: GroupScope): LiveWsAudience | undefined {
+export function decodeLiveWsAudience(value: JsonWireValue, scope: GroupScope | undefined): LiveWsAudience | undefined {
     if (!isRecord(value)) {
         return undefined;
     }
     if (
         value.mode === 'room' && hasKeys(value, ['mode', 'groupRef', 'recipientSessionIds']) &&
-        isGroupRef(value.groupRef, scope) && isSessionIds(value.recipientSessionIds)
+        scope !== undefined && isGroupRef(value.groupRef, scope) && isSessionIds(value.recipientSessionIds)
     ) {
         return { mode: 'room', groupRef: value.groupRef, recipientSessionIds: value.recipientSessionIds };
     }
     if (
         value.mode === 'peer' && hasKeys(value, ['mode', 'recipientSessionIds']) &&
-        isSessionIds(value.recipientSessionIds) && value.recipientSessionIds.length === 1
+        scope !== undefined && isSessionIds(value.recipientSessionIds) && value.recipientSessionIds.length === 1
     ) {
         return { mode: 'peer', recipientSessionIds: value.recipientSessionIds };
     }
     if (
         value.mode === 'principal' && hasKeys(value, ['mode', 'principalRef', 'recipientSessionIds']) &&
-        isPrincipalRef(value.principalRef, scope) && isSessionIds(value.recipientSessionIds)
+        scope !== undefined && isPrincipalRef(value.principalRef, scope) && isSessionIds(value.recipientSessionIds)
     ) {
         return { mode: 'principal', principalRef: value.principalRef, recipientSessionIds: value.recipientSessionIds };
     }
     if (
         value.mode === 'broad' && hasKeys(value, ['mode', 'targetMode']) &&
-        (value.targetMode === 'all' || value.targetMode === 'world')
+        scope === undefined && (value.targetMode === 'all' || value.targetMode === 'world')
     ) {
         return { mode: 'broad', targetMode: value.targetMode };
     }

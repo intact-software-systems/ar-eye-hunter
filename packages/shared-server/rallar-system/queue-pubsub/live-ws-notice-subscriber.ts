@@ -112,7 +112,7 @@ function toRecoveredAudience(
         return { mode: 'room', groupRef: targets.groupRef, recipientSessionIds: source.groupRecipientPeerIds };
     }
     if (notice.audienceMode === 'broad') {
-        return targets?.mode === 'broadcast' && (targets.scope === 'all' || targets.scope === 'world')
+        return targets?.mode === 'broadcast' && targets.scope === notice.targetMode
             ? { mode: 'broad', targetMode: targets.scope }
             : undefined;
     }
