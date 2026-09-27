@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckStatus, ALPendingAckSnapshot } from '../../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../../al-contracts/al-frozen-multicast-audience.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
@@ -32,34 +33,35 @@ interface ALInboundRepeatedAck {
 const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects: [] };
 
 /**
- * A retried copy of a message this peer already admitted, addressed to this peer (D25). It is never
- * delivered again. A peer with no relay row sends its own ACK again. A relay answers its parent in full:
+ * A copy of a message this peer already admitted. It is never delivered again. A retried copy addressed to
+ * this peer (D25): a peer with no relay row sends its own ACK again. A relay answers its parent in full:
  * every ACK it already relayed again, since any of them may be the one the origin lost, then its terminal
  * ACK when its subtree completed, or the copy onward to the child hops it still waits on. A sibling sender
  * gets the terminal ACK of this peer at once, so its own row completes whatever the visited exclusion
  * missed (R-S2c-ii-8c). The origin, or any sender once the recorded parent left, becomes the parent of
  * the row, and is answered in full (R-S2c-ii-12); a former parent still present then gets the sibling
- * answer (R-S2c-ii-14).
+ * answer (R-S2c-ii-14). A copy on the other carrier than the first admission -- the envelope a sender
+ * re-admitted there after a hand-over (D56) -- gets the own ACK of a peer with no relay row again over the
+ * carrier it came in on, whatever its next hops: the first ACK went out on the carrier the sender left
+ * (R-S3b-1).
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
     input: ComputeALInboundDuplicateChangesInput
 ): ALInboundDuplicateChanges {
-    const { msg, plan, pendingAck } = read;
+    const { plan, pendingAck } = read;
     const toPeerId = plan.ack.toPeerId;
-    const nextHopPeerIds = msg.forwarding?.nextHopPeerIds ?? [];
-    if (
-        plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined ||
-        nextHopPeerIds.length !== 1 || nextHopPeerIds[0] !== input.selfPeerId
-    ) {
+    if (plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined) {
         return NO_DUPLICATE_CHANGES;
     }
+    const addressedToSelf = isAddressedToSelf(read.msg, input.selfPeerId);
     if (pendingAck === undefined) {
-        const status = toOwnAckStatus(read, input.selfPeerId);
-        return {
-            mutations: [],
-            effects: [toRepeatedAck(read, { toPeerId, logicalRecipient: { kind: 'self' }, status })]
-        };
+        return addressedToSelf || isCrossCarrierCopy(read)
+            ? { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] }
+            : NO_DUPLICATE_CHANGES;
+    }
+    if (!addressedToSelf) {
+        return NO_DUPLICATE_CHANGES;
     }
     if (read.fromPeerId === pendingAck.toPeerId) {
         return { mutations: [], effects: toParentAnswer(read, pendingAck) };
@@ -77,6 +79,34 @@ export function computeALInboundDuplicateChanges(
             ...(input.recordedParentPresent ? [toFormerParentRelease(read, pendingAck)] : [])
         ]
     };
+}
+
+/** A retried hop copy names this peer as its one next hop (D25). */
+function isAddressedToSelf(msg: ALMessage, selfPeerId: string): boolean {
+    const nextHopPeerIds = msg.forwarding?.nextHopPeerIds ?? [];
+    return nextHopPeerIds.length === 1 && nextHopPeerIds[0] === selfPeerId;
+}
+
+/**
+ * The message-owner row keeps the first admission's source, so a copy on the other carrier is told apart
+ * from a retried copy on the same one. An owner row that already expired answers nothing, as before.
+ */
+function isCrossCarrierCopy(read: ALInboundMessageReadDto): boolean {
+    const owner = read.observations.messageOwner;
+    return owner !== undefined &&
+        toALDeliveryCarrier(owner.source) !== toALDeliveryCarrier(read.source);
+}
+
+function toOwnRepeatedAck(
+    read: ALInboundMessageReadDto,
+    toPeerId: string,
+    selfPeerId: string
+): ALInboundEffectIntent {
+    return toRepeatedAck(read, {
+        toPeerId,
+        logicalRecipient: { kind: 'self' },
+        status: toOwnAckStatus(read, selfPeerId)
+    });
 }
 
 /**

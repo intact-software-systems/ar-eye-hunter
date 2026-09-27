@@ -197,6 +197,13 @@ retried copy of the message is answered from it
   (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
 - a peer with no relay row sends its own ACK again.
 
+A copy on the other carrier than the message's first admission is answered as
+well, whatever next hops it names: a sender that hands a message from RTC to
+WS (D56) admits the same envelope there, and this peer's first ACK went out
+on the carrier the sender left. A peer with no relay row, whose message-owner
+row records the other carrier, sends its own ACK again over the carrier the
+copy came in on (R-S3b-1); a relay row keeps the answers above.
+
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by
 the attempt cap.
