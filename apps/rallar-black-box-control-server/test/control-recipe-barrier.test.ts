@@ -185,6 +185,56 @@ Deno.test('an outsider at the barrier, or arrivals that disagree, fail it for ev
     ]);
 });
 
+Deno.test('an outsider or a disagreeing arrival after the verdict fails typed on its own, never passes', () => {
+    const released = toRunningTwoAgentRun({ now: 10_000 });
+    released.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-3' }));
+    released.receiveClientEnvelope(toArrival({ agentId: 'agent-1' }));
+    released.receiveClientEnvelope(toArrival({ agentId: 'agent-2' }));
+    assertEquals(toResolutions(released, 'run-1', 'agent-1'), [
+        { outcome: 'released', arrivedAgentIds: ['agent-1', 'agent-2'] }
+    ]);
+
+    released.receiveClientEnvelope(toArrival({ agentId: 'agent-3' }));
+    assertEquals(toResolutions(released, 'run-1', 'agent-3'), [
+        {
+            outcome: 'failed',
+            reason: 'not-a-participant',
+            arrivedAgentIds: ['agent-1', 'agent-2', 'agent-3'],
+            missingAgentIds: []
+        }
+    ]);
+    assertEquals(toResolutions(released, 'run-1', 'agent-1'), [], 'the participants keep their released verdict');
+
+    const clock = { now: 10_000 };
+    const timedOut = toRunningTwoAgentRun(clock);
+    timedOut.receiveClientEnvelope(toArrival({ agentId: 'agent-1', timeoutMs: 5_000 }));
+    clock.now = 15_000;
+    assertEquals(toResolutions(timedOut, 'run-1', 'agent-1').map((resolution) => resolution.outcome), ['failed']);
+    timedOut.receiveClientEnvelope(toArrival({ agentId: 'agent-2', timeoutMs: 6_000 }));
+    assertEquals(toResolutions(timedOut, 'run-1', 'agent-2'), [
+        { outcome: 'failed', reason: 'conflicting-arrival', arrivedAgentIds: ['agent-1', 'agent-2'], missingAgentIds: [] }
+    ]);
+});
+
+Deno.test('two barriers open at once resolve independently', () => {
+    const service = toRunningTwoAgentRun({ now: 10_000 });
+    const armed = 'alm-ws-delivery-baseline-armed';
+    const nextStart = 'alm-ws-delivery-reload-start';
+    service.receiveClientEnvelope(toArrival({ agentId: 'agent-1', barrierId: armed }));
+    service.receiveClientEnvelope(toArrival({ agentId: 'agent-2', barrierId: nextStart }));
+    assertEquals(toResolutions(service, 'run-1', 'agent-1'), []);
+    assertEquals(toResolutions(service, 'run-1', 'agent-2'), []);
+
+    service.receiveClientEnvelope(toArrival({ agentId: 'agent-2', barrierId: armed }));
+    const takeIds = (agentId: string) => service.takeBarrierResolutions('run-1', agentId).map((envelope) => [envelope.barrierId, envelope.resolution.outcome]);
+    assertEquals(takeIds('agent-1'), [[armed, 'released']]);
+    assertEquals(takeIds('agent-2'), [[armed, 'released']], 'the other barrier stays open');
+
+    service.receiveClientEnvelope(toArrival({ agentId: 'agent-1', barrierId: nextStart }));
+    assertEquals(takeIds('agent-1'), [[nextStart, 'released']]);
+    assertEquals(takeIds('agent-2'), [[nextStart, 'released']]);
+});
+
 Deno.test('a recipe barrier outside a started distributed run fails at once', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 10_000 }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-9', agentId: 'agent-1' }));

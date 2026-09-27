@@ -96,6 +96,8 @@ export interface ControlRecipeBarrierState {
     readonly issue: ControlBarrierFailureReason | undefined;
     /** Undefined until every participant arrived or the barrier failed; then it never changes. */
     readonly resolution: ControlBarrierResolution | undefined;
+    /** An outsider or disagreeing agent that arrived after the resolution fails alone; the verdict stands for the rest. */
+    readonly lateArrivalIssues: Readonly<Record<string, ControlBarrierFailureReason>>;
     readonly deliveredConnectionSequences: Readonly<Record<string, number>>;
 }
 

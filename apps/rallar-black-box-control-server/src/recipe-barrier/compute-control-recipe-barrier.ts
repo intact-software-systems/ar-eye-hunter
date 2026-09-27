@@ -58,11 +58,12 @@ export function computeControlRecipeBarrierArrival(
     if (barrier.arrivedAgentIds.includes(agentId)) {
         return barrier;
     }
-    return {
-        ...barrier,
-        arrivedAgentIds: [...barrier.arrivedAgentIds, agentId],
-        issue: barrier.issue ?? resolveArrivalIssue(barrier, arrival, agentId)
-    };
+    const issue = resolveArrivalIssue(barrier, arrival, agentId);
+    const arrivedAgentIds = [...barrier.arrivedAgentIds, agentId];
+    if (barrier.resolution === undefined || issue === undefined) {
+        return { ...barrier, arrivedAgentIds, issue: barrier.issue ?? issue };
+    }
+    return { ...barrier, arrivedAgentIds, lateArrivalIssues: { ...barrier.lateArrivalIssues, [agentId]: issue } };
 }
 
 /** Every barrier with the resolution now due, and the envelopes this agent has not heard on its current connection. */
@@ -78,7 +79,7 @@ export function computeControlRecipeBarrierDelivery(
     };
 }
 
-export function computeControlRecipeBarrierResolution(
+function computeControlRecipeBarrierResolution(
     barrier: ControlRecipeBarrierState,
     read: Pick<ControlRecipeBarrierDeliveryRead, 'run' | 'nowEpochMs'>
 ): ControlBarrierResolution | undefined {
@@ -121,6 +122,7 @@ function toOpenedBarrier(
         arrivedAgentIds: [],
         issue: participants.left,
         resolution: undefined,
+        lateArrivalIssues: {},
         deliveredConnectionSequences: {}
     };
 }
@@ -178,7 +180,7 @@ function toAuthoredParticipants(roles: readonly string[] | undefined): string {
 }
 
 function toDeliveredBarrier(barrier: ControlRecipeBarrierState, agent: ControlAgentState): DeliveredBarrier {
-    const resolution = barrier.resolution;
+    const resolution = toAgentResolution(barrier, agent.agentId);
     if (
         resolution === undefined || !barrier.arrivedAgentIds.includes(agent.agentId) ||
         barrier.deliveredConnectionSequences[agent.agentId] === agent.connectionSequence
@@ -202,4 +204,12 @@ function toDeliveredBarrier(barrier: ControlRecipeBarrierState, agent: ControlAg
             resolution
         }
     };
+}
+
+function toAgentResolution(barrier: ControlRecipeBarrierState, agentId: string): ControlBarrierResolution | undefined {
+    const lateIssue = barrier.lateArrivalIssues[agentId];
+    if (barrier.resolution === undefined || lateIssue === undefined) {
+        return barrier.resolution;
+    }
+    return { outcome: 'failed', reason: lateIssue, arrivedAgentIds: barrier.arrivedAgentIds, missingAgentIds: [] };
 }
