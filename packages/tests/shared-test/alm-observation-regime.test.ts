@@ -98,15 +98,21 @@ function toSyntheticRegimeWithStorageCounters(
     })));
 }
 
-/** The same events as the memory lane states them: the lane rides in each event's `data`. */
+/** The diagnostic envelope every synthetic event here is built with. */
+interface SyntheticDiagnosticEnvelope {
+    readonly topic: string;
+    readonly payload: Readonly<{ data: RallarBlackBoxTestRecord; }>;
+}
+
+/** The same event as a lane that names itself states it: the lane rides in the event's `data`. */
+function toLaneNamedEvent(event: RallarBlackBoxTestRecord, lane: string | number): RallarBlackBoxTestRecord {
+    const envelope = event.payload as SyntheticDiagnosticEnvelope;
+    return { ...event, payload: { ...envelope, payload: { data: { ...envelope.payload.data, lane } } } };
+}
+
+/** The same events as the memory lane states them. */
 function toVolatileLaneEvents(events: readonly RallarBlackBoxTestRecord[]): readonly RallarBlackBoxTestRecord[] {
-    return events.map((event) => {
-        const envelope = event.payload as { topic: string; payload: { data: Record<string, unknown>; }; };
-        return {
-            ...event,
-            payload: { ...envelope, payload: { ...envelope.payload, data: { ...envelope.payload.data, lane: 'volatile' } } }
-        };
-    });
+    return events.map((event) => toLaneNamedEvent(event, 'volatile'));
 }
 
 function toReadinessProbeEvent(
@@ -835,18 +841,14 @@ describe('page diagnostics on the regime', () => {
 
 describe('decodeALMObservationSnapshot', () => {
     it('decodes the lane a commit and a probe name, and skips one that names no lane it knows', () => {
-        const named = (event: RallarBlackBoxTestRecord, lane: unknown): RallarBlackBoxTestRecord => {
-            const envelope = event.payload as { topic: string; payload: { data: Record<string, unknown>; }; };
-            return { ...event, payload: { ...envelope, payload: { data: { ...envelope.payload.data, lane } } } };
-        };
         const decoded = decodeALMObservationSnapshot({
             runId: 'alm-lanes',
             results: [],
             events: [
-                named(toCommitPhaseEvent(1_000, 12, 'send'), 'volatile'),
-                named(toCommitPhaseEvent(1_001, 12, 'send'), 'memory'),
-                named(toReadinessProbeEvent(1_002, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 'volatile'),
-                named(toReadinessProbeEvent(1_003, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 7)
+                toLaneNamedEvent(toCommitPhaseEvent(1_000, 12, 'send'), 'volatile'),
+                toLaneNamedEvent(toCommitPhaseEvent(1_001, 12, 'send'), 'memory'),
+                toLaneNamedEvent(toReadinessProbeEvent(1_002, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 'volatile'),
+                toLaneNamedEvent(toReadinessProbeEvent(1_003, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 7)
             ]
         });
 
