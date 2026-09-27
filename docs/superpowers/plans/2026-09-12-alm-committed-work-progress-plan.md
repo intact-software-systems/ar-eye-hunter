@@ -2133,22 +2133,34 @@ measurement, and the affected headless application build passes with Vite's
 existing large-chunk warning. This budget approval does not validate E3 memory
 retention or resolve the other Release Gate failures.
 
-Read-only cross-package analysis traces three AL backend/connection/queue owners
-per constructed browser middleware: session inbound, WS outbound and RTC
-outbound. Normal shutdown disposes their consumers but does not close the
-IndexedDB connections, consistent with C's three-per-reconnect object slope.
-The preferred design is an internal middleware-generation owner of those exact
-three stores, with terminal idempotent connection disposal after consumer
-shutdown and on partial initialization failure. A pending open must close its
-late result; a disposed owner must not reopen. The shared inbound store must
-remain alive until both WS and RTC consumers stop. Durable QueueBox rows are
-unchanged. This is a design recommendation, not an authorized production edit:
-in-flight read-to-write and overlapping-generation behavior need explicit
-tests, and the sampled paths do not explain all heap growth. Changing public
-AL store/facade contracts or injected-backend ownership would be a separate
-compatibility decision requiring maintainer approval. The next step is
-maintainer review of the lifecycle design before writing its spec/implementation
-plan; no 100-cycle E3 recapture is selected on uncorrected source.
+Read-only cross-package analysis traces three initial AL backend/connection/queue
+owners per constructed browser middleware: session inbound, WS outbound and RTC
+outbound. Later factory resolutions also create backends, so closing only the
+initial trio would be incomplete. Normal shutdown disposes consumers but does
+not close their IndexedDB connections, consistent with C's measured
+three-per-reconnect object slope. The [written lifetime design](../specs/2026-09-27-browser-al-indexeddb-lifetime-design.md)
+selects one internal middleware-generation owner that tracks every newly
+factory-created, owned IndexedDB backend; borrowed injected backends remain
+outside its ownership. It requires terminal idempotent disposal, pending-open
+and partial-initialization cleanup, overlapping-generation isolation, and an
+in-flight read/write proof without changing durable QueueBox rows. This is not
+an authorized production edit: the written design awaits maintainer review
+before an implementation plan or code. The sampled paths do not explain all
+heap growth, and public contract changes remain a separate compatibility
+decision.
+
+A branch-only RTC-B06 diagnostic on source `c97be0bb5` passed the default case
+on all three runners, but retention-100 failed before completion on each:
+initial pair readiness, reconnect cycle 5, and reconnect cycle 11. It did not
+publish an observation or produce a cycle-100 memory verdict. After the
+approved strict `<283 KiB` headless budget adjustment, the heap-owner
+diagnostic project now explicitly declares its TS7 ambient types; the focused
+boundary test and project typecheck pass locally. Main's `98325f7a1`
+independently replaces the stale Hetzner branch-checkout assertion with a real
+rewritten-branch test, and the full affected Hetzner suite passes 88/88. A separate
+hosted ALM conformance run on unchanged runtime source failed delivery-lifecycle
+timing; classify it from retained artifacts and the next exact-head run before
+selecting a production correction. Neither failed run is a valid E3 primary.
 
 ## Later outcomes, not additional speculative implementation slices
 
