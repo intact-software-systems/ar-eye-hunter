@@ -110,6 +110,21 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-volatile-lane-eviction-interval",
+      "domain": "ALM volatile outbound lane memory-pair eviction",
+      "owner": "Rallar shared maintainers",
+      "summary": "A volatile outbound lane sweeps its memory pair from its own work round, at most once per AL_VOLATILE_STORE_EVICTION_INTERVAL_MS of its clock, and never from a timer of its own (S3a ruling 5). Executable assertion: “sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map”.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map",
+      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the owner's work rounds at the bootstrap, one millisecond before the interval, at the interval and past the one-hour row retention, counts the evictExpired port, and reads the admission map it clears.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALVolatileOutboundRuntimeStores.evictExpired called by ALOutboundStoreLane.evictWhenDue",
+        "observableEffect": "Each call walks every row of the memory pair's admission map and queue, and it is the only thing that removes rows that no read reaches.",
+        "requiredConstraint": "The lane calls the sweep once on its first round, not again on a round inside the interval, and once more on the first round at or past it.",
+        "failureRationale": "Without the call, the memory pair keeps every volatile send's sent snapshot and owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome, so only the count shows them."
+      }
+    },
+    {
       "id": "alm-ingress-wake-reaches-followup-batch",
       "domain": "ALM inbound work handler wake-on-admission",
       "owner": "Rallar shared maintainers",
@@ -6201,6 +6216,50 @@ moved or changed test.
       "rationale": "The spied claim count is the polled condition of a bounded wait rather than a product property: it is the only observable of “no batch is still asking for work” available to a fixture that receives stores and not a runtime, and the assertion is that wait's budget, failing loudly instead of restoring real claims inside a batch.",
       "removalCondition": "Remove once the outbound owner exposes batch quiescence to a fixture, so holdOutboundClaims awaits an owner-side idle signal instead of polling the queue spy's call count.",
       "semanticCoverage": "packages/tests/shared/al-outbound-durable-effects.test.ts#lets only one runtime claim the same committed send effect"
+    },
+    {
+      "id": "test-structure-coupling-1dca6ab0819a3459",
+      "path": "packages/tests/shared/alm/al-outbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: the bootstrap round sweeps once.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-bc81e3a3e8eae22e",
+      "path": "packages/tests/shared/alm/al-outbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: no sweep on the round one millisecond before the interval.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-04761957c8abb4ad",
+      "path": "packages/tests/shared/alm/al-outbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: one more sweep on the round at the interval.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-a5a422bbb5fe3f92",
+      "path": "packages/tests/shared/alm/al-outbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: one more sweep on the round past the row retention, before the map is read.",
+      "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
     },
     {
       "id": "test-structure-coupling-ba353a1cc01e52dc",
