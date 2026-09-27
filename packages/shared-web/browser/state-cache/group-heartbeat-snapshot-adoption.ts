@@ -45,20 +45,25 @@ export function isGroupHeartbeatSnapshotRenewal(
     observed: GroupSnapshot,
     returned: GroupSnapshot
 ): boolean {
-    if (
-        observed.memberCount !== returned.memberCount ||
-        observed.onlineMemberCount !== returned.onlineMemberCount ||
-        observed.activeSessions.length !== returned.activeSessions.length ||
-        !isTuplePreservingGroupLivenessReduction(returned, observed)
-    ) {
+    if (!isTuplePreservingGroupLivenessReduction(returned, observed)) {
         return false;
     }
 
-    return observed.activeSessions.every((session, index) => {
-        const returnedSession = returned.activeSessions[index];
-        return returnedSession !== undefined &&
-            returnedSession.sessionId === session.sessionId &&
-            returnedSession.lastHeartbeatAtEpochMs >= session.lastHeartbeatAtEpochMs &&
-            returnedSession.expiresAtEpochMs >= session.expiresAtEpochMs;
-    });
+    let leaseAdvanced = false;
+    for (const returnedSession of returned.activeSessions) {
+        const observedSession = observed.activeSessions.find(
+            (session) => session.sessionId === returnedSession.sessionId
+        );
+        if (
+            !observedSession ||
+            returnedSession.lastHeartbeatAtEpochMs < observedSession.lastHeartbeatAtEpochMs ||
+            returnedSession.expiresAtEpochMs < observedSession.expiresAtEpochMs
+        ) {
+            return false;
+        }
+        leaseAdvanced ||= returnedSession.lastHeartbeatAtEpochMs > observedSession.lastHeartbeatAtEpochMs ||
+            returnedSession.expiresAtEpochMs > observedSession.expiresAtEpochMs;
+    }
+
+    return returned.activeSessions.length === observed.activeSessions.length || leaseAdvanced;
 }

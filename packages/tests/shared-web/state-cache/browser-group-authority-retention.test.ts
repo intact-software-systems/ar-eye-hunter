@@ -173,6 +173,30 @@ describe('browser group authority retention', () => {
         expect(readRtcRoomAuthority()).toBe(renewed);
     });
 
+    it('adopts a heartbeat liveness reduction across cache TTL when a surviving lease advances', () => {
+        const observed = withLeasePairs(createRoomAuthority(120_000, 20_000), [
+            [20_000, 55_000],
+            [20_000, 120_000]
+        ]);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+
+        vi.setSystemTime(50_000);
+        const observedBeforeHeartbeat = getAllGroupStateSnapshots();
+        const returned = withActiveSessions(observed, [{
+            ...observed.activeSessions[1]!,
+            lastHeartbeatAtEpochMs: 60_000,
+            expiresAtEpochMs: 140_000
+        }]);
+        vi.setSystemTime(61_001);
+        expect(readRtcRoomAuthority()).toBeUndefined();
+
+        adoptGroupSnapshotsFromHeartbeat(observedBeforeHeartbeat, [returned]);
+
+        expect(readRtcRoomAuthority()).toBe(returned);
+        expect(findGroupStateSnapshotsBySessionIds(['origin'])).toEqual([]);
+        expect(findGroupStateSnapshotsBySessionIds(['receiver'])).toEqual([returned]);
+    });
+
     it.each([
         {
             caseName: 'an older lease pair',
@@ -205,6 +229,15 @@ describe('browser group authority retention', () => {
                     current,
                     current.activeSessions.slice(0, 1)
                 )
+        },
+        {
+            caseName: 'a reduced inventory with a regressing surviving lease pair',
+            candidate: (current: GroupSnapshot) =>
+                withActiveSessions(current, [{
+                    ...current.activeSessions[1]!,
+                    lastHeartbeatAtEpochMs: 10_000,
+                    expiresAtEpochMs: 130_000
+                }])
         },
         {
             caseName: 'an expanded session inventory',
