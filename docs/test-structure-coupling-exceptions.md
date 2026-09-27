@@ -125,6 +125,66 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-inbound-control-memory-first",
+      "domain": "ALM inbound control routing across the store lanes",
+      "owner": "Rallar shared maintainers",
+      "summary": "An inbound control goes to the volatile lane first and to the durable lane only when that lane answers not-handled, and a not-handled answer writes nothing (S3a Task 5). Executable assertion: “admits a control about a durable message in the durable pair after one memory read that writes nothing”.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a durable message in the durable pair after one memory read that writes nothing",
+      "coverageRelation": "The test seeds the relay state an acknowledgement completes in the durable pair only, admits that acknowledgement through a runtime holding both pairs, and counts the decision-surface reads and commits on each pair beside the handled acceptance and the unchanged memory map.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALInboundAdmissionStore.readControlDecisionSurface and commitBundle of each lane, called by ALInboundMessageRuntime.admitControlInLanes",
+        "observableEffect": "A decision-surface read on the durable pair is an IndexedDB transaction; a commit on the memory pair would leave a row that no durable message owns.",
+        "requiredConstraint": "A control about a durable message costs exactly one memory read that commits nothing, then exactly one durable read.",
+        "failureRationale": "A durable-first order would put an IndexedDB read on every volatile control, and a spurious memory write would strand a row; the acceptance is handled either way, so only the counts show them."
+      }
+    },
+    {
+      "id": "alm-inbound-control-volatile-no-indexeddb",
+      "domain": "ALM inbound control routing across the store lanes",
+      "owner": "Rallar shared maintainers",
+      "summary": "A control about a message held in the memory pair is admitted there and never reads the IndexedDB pair (S3a Task 5, D55). Executable assertion: “admits a control about a volatile message in the memory pair and never reads the durable pair”.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a volatile message in the memory pair and never reads the durable pair",
+      "coverageRelation": "The test seeds the relay state in the memory pair only, admits the acknowledgement through a runtime holding both pairs, and asserts the durable decision-surface read never ran beside the handled acceptance.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ALInboundAdmissionStore.readControlDecisionSurface of the durable lane, called by ALInboundMessageRuntime.admitControlInLanes",
+        "observableEffect": "Each durable decision-surface read is an IndexedDB operation the volatile default promises not to spend.",
+        "requiredConstraint": "A control the memory lane handles never reaches the durable lane.",
+        "failureRationale": "The acceptance is the same whichever lane reads first, so only the absence of the durable read shows the volatile path stayed in memory."
+      }
+    },
+    {
+      "id": "alm-inbound-origin-ack-reads-no-store",
+      "domain": "ALM inbound acknowledgement of an own message",
+      "owner": "Rallar shared maintainers",
+      "summary": "An acknowledgement whose originPeerId is this peer is answered not-handled without reading either inbound pair: the origin keeps no inbound decision surface for its own message (S3a Task 5). Executable assertion: “answers an acknowledgement of its own message without reading either pair”.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#answers an acknowledgement of its own message without reading either pair",
+      "coverageRelation": "The test admits an ACK v2 naming the runtime's own peer as origin through a runtime holding both pairs and asserts neither pair's decision-surface read ran beside the not-handled acceptance.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ALInboundAdmissionStore.readControlDecisionSurface of both lanes, skipped by isALOriginAcknowledgement",
+        "observableEffect": "Before S3a the same answer cost an IndexedDB read on every acknowledgement a receiver returned to its sender.",
+        "requiredConstraint": "An origin acknowledgement reads neither pair.",
+        "failureRationale": "The acceptance is not-handled with or without the read, so only the absence of the reads shows the short-circuit."
+      }
+    },
+    {
+      "id": "alm-volatile-inbound-lane-eviction-interval",
+      "domain": "ALM volatile inbound lane memory-pair eviction",
+      "owner": "Rallar shared maintainers",
+      "summary": "A volatile inbound lane sweeps the session's memory pair from its own rotation round, at most once per AL_VOLATILE_STORE_EVICTION_INTERVAL_MS of its clock, and never from a timer of its own (S3a ruling 5). Executable assertion: “sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map”.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map",
+      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the rotation's rounds at the bootstrap, one millisecond before the interval, at the interval and past the one-hour row retention, counts the evictExpired port, and reads the admission map it clears.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ALVolatileInboundRuntimeStores.evictExpired called by ALInboundStoreLane.evictWhenDue",
+        "observableEffect": "Each call walks every row of the memory pair's admission map and queue, and it is the only thing that removes rows that no read reaches.",
+        "requiredConstraint": "The lane calls the sweep once on its first round, not again on a round inside the interval, and once more on the first round at or past it.",
+        "failureRationale": "Without the call, the memory pair keeps every volatile message's owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome, so only the count shows them."
+      }
+    },
+    {
       "id": "alm-ingress-wake-reaches-followup-batch",
       "domain": "ALM inbound work handler wake-on-admission",
       "owner": "Rallar shared maintainers",
@@ -6260,6 +6320,116 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The evictExpired call count is the rate limit itself: one more sweep on the round past the row retention, before the map is read.",
       "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-ed12153dd189d5d7",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-control-memory-first",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The memory decision-surface read count is the memory-first order itself: exactly one memory read before the durable lane.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a durable message in the durable pair after one memory read that writes nothing"
+    },
+    {
+      "id": "test-structure-coupling-54a76d07b8196f45",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-control-memory-first",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent memory commit is the “not-handled writes nothing” half of the order.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a durable message in the durable pair after one memory read that writes nothing"
+    },
+    {
+      "id": "test-structure-coupling-2e0ab733285be3d7",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-control-memory-first",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The durable decision-surface read count shows the not-handled answer reached the durable lane exactly once.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a durable message in the durable pair after one memory read that writes nothing"
+    },
+    {
+      "id": "test-structure-coupling-e884f2c9f0387308",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-control-volatile-no-indexeddb",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent durable read is the whole claim: a control the memory lane handles never reaches IndexedDB.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#admits a control about a volatile message in the memory pair and never reads the durable pair"
+    },
+    {
+      "id": "test-structure-coupling-94b916e8295ce733",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-origin-ack-reads-no-store",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent memory read is half of the short-circuit: the origin acknowledgement reads no memory row.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#answers an acknowledgement of its own message without reading either pair"
+    },
+    {
+      "id": "test-structure-coupling-93a5c6798c39fb69",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-inbound-origin-ack-reads-no-store",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The absent durable read is the other half: the origin acknowledgement spends no IndexedDB operation.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#answers an acknowledgement of its own message without reading either pair"
+    },
+    {
+      "id": "test-structure-coupling-a76905264c4dbd25",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-inbound-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: the bootstrap round sweeps once.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-3ed44bfcf42e6b49",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-inbound-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: no sweep on the rounds one millisecond before the interval.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-e70640c1eff73157",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-inbound-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: one more sweep on the rounds at the interval.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
+    },
+    {
+      "id": "test-structure-coupling-28e5829345b59be3",
+      "path": "packages/tests/shared/alm/al-inbound-store-lane.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-volatile-inbound-lane-eviction-interval",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The evictExpired call count is the rate limit itself: one more sweep on the rounds past the row retention, before the map is read.",
+      "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map"
     },
     {
       "id": "test-structure-coupling-ba353a1cc01e52dc",
