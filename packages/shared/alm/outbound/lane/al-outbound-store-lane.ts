@@ -75,50 +75,13 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input = input;
         const { stores, runtime } = input;
         this.readyPromise = stores.admissionStore.ready();
-        const workPort = createALWorkQueuePort({
-            queue: stores.workQueue,
-            workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
-            leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
-            nowMs: () => runtime.clock.nowMs(),
-            random: runtime.random
-        });
+        const workPort = createALOutboundLaneWorkPort(input);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
-        const controlAdmission = stores.admissionStore.createControlAdmission({
-            port: workPort,
-            clock: runtime.clock,
-            settlements,
-            carrier: runtime.carrier
-        });
-        this.dispatchAdmission = new ALOutboundDispatchAdmission({
-            admissionStore: stores.admissionStore,
-            workPort,
-            toOutboxEntry: runtime.toOutboxEntry,
-            decodePreparedMessage: runtime.decodePreparedMessage,
-            clock: runtime.clock,
-            browserLocks: input.browserLocks,
-            diagnostics: runtime.diagnostics,
-            settlements
-        });
-        this.repairAdmission = new ALOutboundRepairAdmission({
-            admissionStore: stores.admissionStore,
-            controlAdmission,
-            clock: runtime.clock,
-            planOutgoingMessage: runtime.planOutgoingMessage,
-            planRepairMessage: runtime.planRepairMessage,
-            diagnostics: runtime.diagnostics
-        });
-        this.receiptAdmission = new ALOutboundReceiptAdmission({
-            admissionStore: stores.admissionStore,
-            clock: runtime.clock,
-            settlements,
-            diagnostics: runtime.diagnostics
-        });
-        this.repairRetransmission = new ALOutboundRepairRetransmission({
-            admissionStore: stores.admissionStore,
-            dispatchAdmission: this.dispatchAdmission,
-            planOutgoingMessage: runtime.planOutgoingMessage,
-            planRepairMessage: runtime.planRepairMessage
-        });
+        const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
+        this.dispatchAdmission = admissions.dispatchAdmission;
+        this.repairAdmission = admissions.repairAdmission;
+        this.receiptAdmission = admissions.receiptAdmission;
+        this.repairRetransmission = admissions.repairRetransmission;
         this.work = new ALWorkHandler({
             workerId: input.workerId,
             port: workPort,
@@ -427,6 +390,82 @@ export class ALOutboundStoreLane<TPrepared> {
     private readNowMs(): number {
         return this.input.runtime.clock.nowMs();
     }
+}
+
+/** The admissions one lane runs over its own store pair and work port. */
+interface ALOutboundLaneAdmissions<TPrepared> {
+    readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
+    readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
+    readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
+}
+
+/** The lane's own work types, plus the foreign dequeue rows only the durable lane admits. */
+function createALOutboundLaneWorkPort<TPrepared>(input: ALOutboundStoreLane.Input<TPrepared>): ALWorkQueuePort {
+    const { stores, runtime } = input;
+    return createALWorkQueuePort({
+        queue: stores.workQueue,
+        workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
+        leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
+        nowMs: () => runtime.clock.nowMs(),
+        random: runtime.random
+    });
+}
+
+function createALOutboundLaneAdmissions<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    workPort: ALWorkQueuePort,
+    settlements: ALOutboundSettlementEmitter
+): ALOutboundLaneAdmissions<TPrepared> {
+    const { stores, runtime } = input;
+    const dispatchAdmission = new ALOutboundDispatchAdmission({
+        admissionStore: stores.admissionStore,
+        workPort,
+        toOutboxEntry: runtime.toOutboxEntry,
+        decodePreparedMessage: runtime.decodePreparedMessage,
+        clock: runtime.clock,
+        browserLocks: input.browserLocks,
+        diagnostics: runtime.diagnostics,
+        settlements
+    });
+    return {
+        dispatchAdmission,
+        repairAdmission: createALOutboundLaneRepairAdmission(input, workPort, settlements),
+        receiptAdmission: new ALOutboundReceiptAdmission({
+            admissionStore: stores.admissionStore,
+            clock: runtime.clock,
+            settlements,
+            diagnostics: runtime.diagnostics
+        }),
+        repairRetransmission: new ALOutboundRepairRetransmission({
+            admissionStore: stores.admissionStore,
+            dispatchAdmission,
+            planOutgoingMessage: runtime.planOutgoingMessage,
+            planRepairMessage: runtime.planRepairMessage
+        })
+    };
+}
+
+/** Controls commit through the lane's own control admission, over its own work port. */
+function createALOutboundLaneRepairAdmission<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    workPort: ALWorkQueuePort,
+    settlements: ALOutboundSettlementEmitter
+): ALOutboundRepairAdmission<TPrepared> {
+    const { stores, runtime } = input;
+    return new ALOutboundRepairAdmission({
+        admissionStore: stores.admissionStore,
+        controlAdmission: stores.admissionStore.createControlAdmission({
+            port: workPort,
+            clock: runtime.clock,
+            settlements,
+            carrier: runtime.carrier
+        }),
+        clock: runtime.clock,
+        planOutgoingMessage: runtime.planOutgoingMessage,
+        planRepairMessage: runtime.planRepairMessage,
+        diagnostics: runtime.diagnostics
+    });
 }
 
 function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {

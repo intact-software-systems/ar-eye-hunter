@@ -341,6 +341,11 @@ export namespace ALOutboundMessageRuntime {
  *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
  * - An ordering or supersedence track whose messages declare different durabilities is split between
  *   the lanes; no caller declares one that way.
+ * - Duplicate detection is per lane: a msgId the memory lane admitted is unknown to the IndexedDB lane,
+ *   and the reverse. That is sound because a message's durability is fixed by its policy, so the same
+ *   msgId always resolves to the same lane. A caller that re-sent one msgId under another durability
+ *   would get a second copy in the other lane, whose receipt never completes, because every control
+ *   for that id goes to the memory lane first. No caller does this.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
     private readonly sendControls = new ALOutboundSendControls();
@@ -416,7 +421,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         }
         const admission = dispatchPlan === undefined
             ? this.planAdmission(msg)
-            : { lane: this.selectLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
+            : { lane: this.resolveLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
         const computed = await admission.lane.commit(
             this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
         );
@@ -430,7 +435,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
         }
-        const lane = await this.selectLaneForMessage(retransmission.msg.id.msgId);
+        const lane = await this.readLaneForMessage(retransmission.msg.id.msgId);
         const computed = await lane.commit({
             msg: retransmission.msg,
             planner: () => retransmission.plan,
@@ -482,7 +487,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return { kind: 'not-handled' };
         }
-        return await (await this.selectLaneForControl(msg)).acceptControlMessage(msg, source);
+        return await (await this.readLaneForControl(msg)).acceptControlMessage(msg, source);
     }
 
     /** A server receipt control about a message this owner originated; it writes the receipt row, never work. */
@@ -491,7 +496,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return { kind: 'not-handled' };
         }
-        return await (await this.selectLaneForControl(control)).acceptReceipt(control);
+        return await (await this.readLaneForControl(control)).acceptReceipt(control);
     }
 
     /**
@@ -502,7 +507,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
         try {
             const plan = planOutgoingMessage(msg);
-            return { lane: this.selectLaneForPlan(plan), planner: toPlannedOnce(msg, plan, planOutgoingMessage) };
+            return { lane: this.resolveLaneForPlan(plan), planner: toPlannedOnce(msg, plan, planOutgoingMessage) };
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
@@ -510,19 +515,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     /** The lane a durable plan names, or the only lane of a runtime with one backend. */
-    private selectLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
+    private resolveLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
         return plan.persist || this.volatile === undefined ? this.durable : this.volatile;
     }
 
     /** A memory read, so a control about a volatile message never reaches IndexedDB. */
-    private async selectLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
+    private async readLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
         return this.volatile !== undefined && await this.volatile.ownsMessage(msgId) ? this.volatile : this.durable;
     }
 
     /** An undecodable control goes to the durable lane, which answers it `not-handled`. */
-    private async selectLaneForControl(control: ALMessage): Promise<ALOutboundStoreLane<TPrepared>> {
+    private async readLaneForControl(control: ALMessage): Promise<ALOutboundStoreLane<TPrepared>> {
         const decoded = decodeALControlMessage(control).right;
-        return decoded === undefined ? this.durable : await this.selectLaneForMessage(controlTargetMsgId(decoded));
+        return decoded === undefined ? this.durable : await this.readLaneForMessage(controlTargetMsgId(decoded));
     }
 
     private toEnqueueDispatch(
