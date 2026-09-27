@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
+import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -192,6 +192,11 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         outcome: ALOutboundControlAdmissionResult['kind'];
         /** The rejection's reasons, or `none` for every other outcome. */
         reason: string;
+        /**
+         * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,
+         * so absence means "not a receipt" rather than an unknown phase.
+         */
+        phase?: ALReceiptPayload['phase'];
     }>
     | Readonly<{
         kind: 'effect-drain';

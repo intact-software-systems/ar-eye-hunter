@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
+import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '../al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from './al-outbound-control-admission.ts';
 
@@ -7,6 +8,8 @@ export interface ALOutboundControlAdmissionDiagnosticInput {
     readonly control: ALMessage;
     /** The outbound message the control answers. */
     readonly targetMsgId: string;
+    /** The receipt's phase for a WS server receipt; `undefined` for every other control, which has none. */
+    readonly receiptPhase: ALReceiptPayload['phase'] | undefined;
     readonly admitted: ALOutboundControlAdmissionResult;
 }
 
@@ -23,7 +26,9 @@ export function writeALOutboundControlAdmissionDiagnostic(
             typeId: control.payload.typeId,
             targetMsgId: input.targetMsgId,
             outcome: admitted.kind,
-            reason: admitted.kind === 'rejected' ? admitted.reason : 'none'
+            reason: admitted.kind === 'rejected' ? admitted.reason : 'none',
+            // Last, so a match on `typeId`, `targetMsgId` and `outcome` in their emitted order still finds a receipt.
+            ...(input.receiptPhase === undefined ? {} : { phase: input.receiptPhase })
         });
     }
     catch (error) {

@@ -191,8 +191,8 @@ every session the page opens. The event's `data` is the event itself:
   bullet's `age-bound` probes as the page's storage-queue regime (`pageRegime`,
   `alm-observation-artifact.md`)
 
-- `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome` and
-  `reason`: one event for every inbound ACK, NACK, repair or receipt control
+- `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
+  `reason`, and for a receipt `phase` (below): one event for every inbound ACK, NACK, repair or receipt control
   the outbound owner decides, recorded when it decides it. Every carrier discards
   that verdict: the inbound topic's `admission-outcome` for the same control
   reads `not-handled`/`control` whatever the outbound owner answered, so this
@@ -215,7 +215,13 @@ every session the page opens. The event's `data` is the event itself:
   origin's receipt row, or `rejected` with its reasons — a receipt that moves
   nothing reads `AL receipt moves no receipt of its message`, and one about a
   message the origin never sent reads `AL receipt names no retained outbound
-  message of its origin`. Its arrival is also the inbound topic's
+  message of its origin`. It also carries the receipt's `phase` (`admitted`,
+  `complete` or `timed-out`) as its last field. No other control has a phase, so
+  the field is absent from every other `control-admission` event; it is optional
+  only for that reason. Because it comes last, a wait that matches `typeId`,
+  `targetMsgId` and `outcome` in their emitted order still matches a receipt,
+  and one that appends `"reason":"none","phase":"complete"` matches only the
+  committed terminal receipt. Its arrival is also the inbound topic's
   `admission-outcome` with that `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`

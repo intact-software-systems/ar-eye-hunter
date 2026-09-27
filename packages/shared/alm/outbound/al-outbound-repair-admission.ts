@@ -82,6 +82,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control: msg,
             targetMsgId: controlTargetMsgId(control),
+            receiptPhase: undefined,
             admitted
         });
         if (admitted.kind === 'committed') {

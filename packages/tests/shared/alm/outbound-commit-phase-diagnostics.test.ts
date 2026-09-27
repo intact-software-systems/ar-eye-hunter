@@ -233,6 +233,10 @@ it.each(['memory', 'indexeddb'] as const)(
                 reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
             }
         ]);
+        // Only a receipt has a phase: an ACK's verdict states none (R-S3a-9).
+        for (const admission of controlAdmissionsOf(diagnostics)) {
+            expect(admission).not.toHaveProperty('phase');
+        }
         runtime.dispose();
     }
 );

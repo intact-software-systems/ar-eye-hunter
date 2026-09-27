@@ -293,7 +293,8 @@ redelivered receipt finds nothing to move and is refused without a write, and an
 bound is refused. A receipt writes no work and no `ack-timeout` schedule; the server's receipts own it.
 `acceptReceipt` takes the receipt control message itself and records its verdict as the same
 `control-admission` diagnostic, under the control's own id with the receipt's message as
-`targetMsgId`, whether it commits or is refused.
+`targetMsgId`, whether it commits or is refused. Only a receipt's diagnostic carries a `phase`
+(`admitted`, `complete` or `timed-out`), its last field; every other control's has none.
 
 Every receipt row states its `acknowledgement` settlement through `toALOutboundAcknowledgementFact`.
 Under `hop` and `subtree` the row counts next hops, so its peers are both the hop lists and the

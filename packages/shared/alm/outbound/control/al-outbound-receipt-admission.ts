@@ -46,6 +46,7 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         writeALOutboundControlAdmissionDiagnostic(this.dependencies.diagnostics, {
             control,
             targetMsgId: decoded.payload.msgId,
+            receiptPhase: decoded.payload.phase,
             admitted
         });
         return admitted;
