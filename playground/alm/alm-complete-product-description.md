@@ -275,9 +275,10 @@ ALM supports RTC and WS as first-class carriers.
 
 **PARTIAL — one fallback lifecycle:** Since the first release the browser
 sender reuses one envelope, identity, and deadline for the fallback carrier, and
-fallback fires on `no-route` and `circuit-open` within the deadline. Inbound
-stores remain carrier-scoped, so a duplicate through the other carrier is not
-yet deduplicated (S2), and fallback on a receipt timeout lands with S3.
+fallback fires on `no-route` and `circuit-open` within the deadline. Since S2b
+one inbound store per session is shared by both carriers (D20), and since S3a
+each backend's pair is (D54), so a duplicate through the other carrier meets its
+first admission; fallback on a receipt timeout is S3b's (D56).
 
 **PLANNED — F1, conformance contract:** There is no cross-transport suite or
 public outcome model proving that the same QoS request has the same meaning on

@@ -2808,6 +2808,11 @@ The controller settles these before Task 1 (record each as R-S3a-0):
   default no durable send commits inside the 20 s opening window. Cost if wrong: a failing cell that
   reaches the sample floor can read `slow` from its own slowdown, and two hosted fixture medians moved by
   one commit each.
+- **R-S3a-17 (final whole-branch review, I1).** inbound store durability is the sending channel's
+  `qos.durability` carried on the envelope; a receiver-side `local-inbox` declaration does not move a
+  message — the plan's 'How the receiving side learns the durability' section chose it, the D54 row and
+  proposal §4 decision 3 now carry the As-applied note. Cost if wrong: a receiver that wants durability
+  for messages a volatile sender emits has no lever until S3c revisits D54.
 
 ## Self-review
 

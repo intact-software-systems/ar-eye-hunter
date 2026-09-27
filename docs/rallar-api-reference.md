@@ -586,6 +586,9 @@ Both lanes expose:
 - `send(input)`
 - `onMessage(selector, handler)`
 
+`messages.rtc.send` and `messages.ws.send` (lane sends) are volatile since S3a: receipted, kept in the
+memory pair only, no IndexedDB. Opt in to browser storage with `qos.durability: 'local-outbox'`.
+
 Selectors can be a `typeId` string or `{ topicId, typeId }`.
 
 ```ts

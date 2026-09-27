@@ -163,7 +163,9 @@ retries and what the proofs (1.4) consume; budgets (1.5) bound the volatile stor
   durability; the inbound session store becomes a memory and an IndexedDB pair, still one per session
   shared by both carriers (D20 kept; the roadmap's "per carrier runtime" is corrected), routed by the
   receiving channel's declared durability (default volatile). Work handlers register once per pair on
-  the shared engine. Cleanup and reset learn the memory pair (a reset is a no-op there).
+  the shared engine. Cleanup and reset learn the memory pair (a reset is a no-op there). **As applied
+  (S3a):** routed by the sending channel's durability carried on the envelope as `qos.durability`; a
+  receiver-side declaration does not move a message.
 - **The volatile proof.** The harness counter gains a per-scenario `reset: true` and a by-owner,
   by-kind read; the S3 lane pin is **zero `al-admission` operations and zero non-probe `al-work`
   operations** between reset and read for a volatile scenario, with `work-page` probes reported
@@ -273,7 +275,9 @@ the roadmap's decision record as D52–D61 in this order. The recommended answer
    store shared by both carriers (D20 kept), routed by the receiving channel's declared durability;
    (b) two runtimes per carrier (volatile and durable), each bound to one pair as today. (a) keeps
    one owner and one work handler set per carrier; (b) keeps runtimes untouched at the cost of a
-   second owner per carrier on the shared engine.
+   second owner per carrier on the shared engine. **As applied (S3a):** routed by the sending
+   channel's durability carried on the envelope as `qos.durability`; a receiver-side declaration
+   does not move a message.
 4. **What "zero IndexedDB" pins.** (a) Zero `al-admission` operations and zero non-probe `al-work`
    operations over a reset window per volatile scenario, with the durable owners' idle `work-page`
    probes counted and reported beside it; (b) a literal total of zero, which requires the IndexedDB

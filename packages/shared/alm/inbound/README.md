@@ -82,7 +82,10 @@ its own pair on the shared engine.
 - **Eviction on the owner's round.** Session cleanup and a storage reset never reach the
   memory pair; it dies with the middleware. Each lane over it (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
-  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock.
+  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. The rows it sweeps
+  carry the repository's 1 h retention, not the message's deadline (`toDefaultInMemoryInput`),
+  so heap growth is send rate × 1 h until S3c's deadline-scale bound. Both inbound lanes sweep
+  the shared pair on their own 60 s schedule; this is idempotent.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 

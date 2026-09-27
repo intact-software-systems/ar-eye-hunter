@@ -69,12 +69,17 @@ every server message keeps its one backend.
   (one memory read), else to the durable lane.
 - **One cancel.** `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
 - **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
-  takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab.
+  takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab. A
+  planner that returns zero prepared messages for a volatile message must settle it (drop code or an
+  immediate zero-recipient receipt, as the RTC empty-audience plan does) — the volatile lane has no
+  claimant for a `NEW` canonical row.
 - **Eviction on the owner's round.** Nothing outside the lane touches the memory pair: session cleanup
   and a storage reset never reach it, and it dies with its runtime. The volatile lane (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most once per
   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s, the IndexedDB eviction's cadence) of its clock; no
-  timer runs for it.
+  timer runs for it. The rows it sweeps carry the repository's 1 h retention, not the message's
+  deadline (`toDefaultInMemoryInput`), so heap growth is send rate × 1 h until S3c's deadline-scale
+  bound.
 - **Duplicate detection is per lane.** A msgId the memory lane admitted is invisible to the IndexedDB
   lane, and the reverse. That is sound because a message's durability is fixed by its policy, so one
   msgId always resolves to one lane. A caller that re-sent one msgId under another durability would get

@@ -76,7 +76,7 @@ Use Rallar Server middleware/facade when the task involves:
    active sessions/peers.
 
 8. Use WS for reliable server-routed messages.
-   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path with RTC and WS options. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
+   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path with RTC and WS options; `definition` requires a `purpose` (`'command'` or `'notification'`). Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
 
 9. Use `roomRef` where scope matters.
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
