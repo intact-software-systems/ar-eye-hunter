@@ -106,9 +106,14 @@ conformance observation is terminal: WS and RTC delivery-lifecycle cells
 failed, while RTC-with-WS-fallback passed. The WS sender's second send aborted
 at its command deadline and the receiver did not observe the replacement. The
 RTC sender's first handle expired after one reported transport send without a
-confirmed hop receipt. These outcomes do not identify a common queue cause;
-the retained source-labelled events need separate causal review before a
-production change is selected.
+confirmed hop receipt. The receiver committed and completed the matching ACK
+handoff; the ACK then reached the sender, where admission reported
+`pending-control`. No settlement of that pending control is visible before the
+handle expired. This narrows the RTC failure to pending-control replay or its
+observation window, not a missing receiver ACK, but does not identify why it
+failed to settle in time. The WS timeout remains separately unclassified; do
+not infer one common queue cause or select a production change from aggregate
+timing.
 
 Task 24's existing first result is retained: readiness failed during reconnect
 cycle 3 and only the cycle-0 checkpoint exists. Recording completed and released
