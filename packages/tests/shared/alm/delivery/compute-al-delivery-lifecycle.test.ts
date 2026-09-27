@@ -880,6 +880,23 @@ describe('the receipt the admitting carrier tracks (R-S3a-4)', () => {
         expect(admitted.evidence.admittedAtMs).toBe(AT_MS);
         expect(isALDeliveryTerminal(admitted)).toBe(terminal);
     });
+
+    // Review m2: over `ack: none` the sent attempt already ended the handle at `transport-accepted`. A late
+    // admission is additive evidence there: it lands its durability and never changes terminality.
+    it.each([
+        { tracked: 'none' as const, receiptAlgo: 'none' as const },
+        { tracked: 'hop' as const, receiptAlgo: 'none' as const }
+    ])('records a late admission tracking $tracked on a handle already terminal at transport-accepted', ({ tracked, receiptAlgo }) => {
+        const opened = createLifecycle('none');
+        const sent = toSentLifecycle(opened);
+        expect(isALDeliveryTerminal(sent)).toBe(true);
+
+        const admitted = computeALDeliveryLifecycle(sent, toAdmissionSettlement(opened, ADMITTED, tracked));
+
+        expect(admitted).toMatchObject({ state: 'transport-accepted', receiptAlgo, lateSettlementCount: 1 });
+        expect(admitted.evidence).toMatchObject({ admittedAtMs: AT_MS, admittedDurable: true });
+        expect(isALDeliveryTerminal(admitted)).toBe(true);
+    });
 });
 
 function toSentLifecycle(admitted: ALDeliveryLifecycle): ALDeliveryLifecycle {

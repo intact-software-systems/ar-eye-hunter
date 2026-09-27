@@ -1,6 +1,7 @@
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import {
     isALDeliveryTerminal,
+    type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttempt,
     type ALDeliveryCarrier,
     type ALDeliveryEvidence,
@@ -103,7 +104,29 @@ function toTerminalLifecycle(
             lateSettlementCount
         };
     }
+    if (settlement.kind === 'admission') {
+        return { ...toLateAdmissionLifecycle(previous, settlement), lateSettlementCount };
+    }
     return { ...previous, lateSettlementCount };
+}
+
+/**
+ * A late admission on a terminal handle lands its evidence and never changes terminality: the tracked
+ * receipt applies only where the handle stays terminal under it.
+ */
+function toLateAdmissionLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryAdmissionSettlement
+): ALDeliveryLifecycle {
+    const verdict = settlement.verdict;
+    if (verdict.kind !== 'admitted' && verdict.kind !== 'duplicate') {
+        return previous;
+    }
+    const admitted = {
+        ...toAdmittedLifecycle(previous, toAdmittedAdmission(previous, settlement, verdict)),
+        state: previous.state
+    };
+    return isALDeliveryTerminal(admitted) ? admitted : { ...admitted, receiptAlgo: previous.receiptAlgo };
 }
 
 function toAdmissionLifecycle(
@@ -113,19 +136,8 @@ function toAdmissionLifecycle(
     const verdict = settlement.verdict;
     switch (verdict.kind) {
         case 'admitted':
-            return toAdmittedLifecycle(previous, {
-                state: verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
-                atMs: settlement.atMs,
-                durable: verdict.durable,
-                trackedReceiptAlgo: settlement.trackedReceiptAlgo
-            });
         case 'duplicate':
-            return toAdmittedLifecycle(previous, {
-                state: 'accepted',
-                atMs: settlement.atMs,
-                durable: previous.evidence.admittedDurable,
-                trackedReceiptAlgo: settlement.trackedReceiptAlgo
-            });
+            return toAdmittedLifecycle(previous, toAdmittedAdmission(previous, settlement, verdict));
         case 'pending':
             return { ...previous };
         case 'deferred':
@@ -195,6 +207,27 @@ interface AdmittedAdmission {
     /** Undefined for a duplicate, which states nothing about the durability of the original admission. */
     readonly durable: boolean | undefined;
     readonly trackedReceiptAlgo: ALAckAlgo;
+}
+
+/** A duplicate states nothing about the durability of the original admission, so it keeps the recorded one. */
+function toAdmittedAdmission(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryAdmissionSettlement,
+    verdict: Extract<ALDeliveryAdmissionVerdict, Readonly<{ kind: 'admitted' | 'duplicate'; }>>
+): AdmittedAdmission {
+    return verdict.kind === 'admitted'
+        ? {
+            state: verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
+            atMs: settlement.atMs,
+            durable: verdict.durable,
+            trackedReceiptAlgo: settlement.trackedReceiptAlgo
+        }
+        : {
+            state: 'accepted',
+            atMs: settlement.atMs,
+            durable: previous.evidence.admittedDurable,
+            trackedReceiptAlgo: settlement.trackedReceiptAlgo
+        };
 }
 
 /**
