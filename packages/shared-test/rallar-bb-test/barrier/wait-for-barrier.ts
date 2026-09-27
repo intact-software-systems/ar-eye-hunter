@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestRuntimeEventInput
 } from '../rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT } from '../recipe/run-recipe-commands.ts';
 import { decodePayloadPathValue } from '../wait/wait-event-match.ts';
 import { waitForEvent, type WaitForEventInput } from '../wait/wait-for-event.ts';
 import {
@@ -40,6 +41,7 @@ export async function waitForBarrier(input: WaitForBarrierInput): Promise<Rallar
         });
     }
     input.recordEvent(toBarrierArrivedEvent(command));
+    const graceEndsAtEpochMs = input.now() + command.timeoutMs + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS;
     const waited = await waitForEvent({
         ...input,
         command: {
@@ -55,7 +57,7 @@ export async function waitForBarrier(input: WaitForBarrierInput): Promise<Rallar
             }
         }
     });
-    return toBarrierOutcome(input, waited);
+    return toBarrierOutcome(input, waited, graceEndsAtEpochMs);
 }
 
 function isArrivalAt(event: RallarBlackBoxTestEvent, barrierId: string): boolean {
@@ -65,7 +67,8 @@ function isArrivalAt(event: RallarBlackBoxTestEvent, barrierId: string): boolean
 
 function toBarrierOutcome(
     input: WaitForBarrierInput,
-    waited: RallarBlackBoxTestCommandOutcome
+    waited: RallarBlackBoxTestCommandOutcome,
+    graceEndsAtEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     const { command } = input;
     if (waited.status === 'cancelled') {
@@ -80,12 +83,7 @@ function toBarrierOutcome(
         ? decodeBarrierResolution(carried.value).right
         : undefined;
     if (resolution === undefined) {
-        return toBarrierFailure(command, {
-            code: RALLAR_BLACK_BOX_BARRIER_TIMEOUT,
-            message:
-                'No barrier resolution arrived from the control server within timeoutMs plus the resolution grace.',
-            details: { timeoutMs: command.timeoutMs, graceMs: RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS }
-        });
+        return toBarrierFailure(command, toUnresolvedBarrierError(command, graceEndsAtEpochMs));
     }
     if (resolution.outcome === 'failed') {
         return toBarrierFailure(command, {
@@ -98,6 +96,31 @@ function toBarrierOutcome(
         status: 'ok',
         value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: resolution.arrivedAgentIds },
         nextStatus: input.currentStatus()
+    };
+}
+
+/** A recipe deadline shorter than the window plus the grace ends the wait before the control server owes a verdict. */
+function toUnresolvedBarrierError(
+    command: BarrierCommandWithId,
+    graceEndsAtEpochMs: number
+): NonNullable<RallarBlackBoxTestCommandOutcome['error']> {
+    const deadlineEpochMs = command.deadlineEpochMs;
+    if (deadlineEpochMs !== undefined && deadlineEpochMs < graceEndsAtEpochMs) {
+        return {
+            code: RALLAR_BLACK_BOX_RECIPE_TIMEOUT,
+            message: `The recipe deadline ended the wait at barrier ${command.barrierId} before its window closed.`,
+            details: { barrierId: command.barrierId, deadlineEpochMs, timeoutMs: command.timeoutMs }
+        };
+    }
+    return {
+        code: RALLAR_BLACK_BOX_BARRIER_TIMEOUT,
+        message: `No control server resolved barrier ${command.barrierId} within its ${command.timeoutMs} ms window ` +
+            `plus the ${RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS} ms resolution grace.`,
+        details: {
+            barrierId: command.barrierId,
+            timeoutMs: command.timeoutMs,
+            graceMs: RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS
+        }
     };
 }
 
