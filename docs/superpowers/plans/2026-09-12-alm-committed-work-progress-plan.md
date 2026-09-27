@@ -2085,6 +2085,19 @@ worker. The initial failure remains recorded, not relabelled as green.
 
 ### Next decision: explicit IndexedDB lifetime ownership
 
+After rebasing PR #566 onto main `dc12f8930925496985cb4ffe7488f523967166e4`,
+the source conflict is resolved and the focused Task 34/35 tests pass 31/31;
+maintained test and diagnostic-project typechecks pass. The unchanged headless
+bundle boundary now measures **282.6005859375 KiB against the approved strict
+`<282 KiB` limit**, while the five shared-web bundle checks pass. Main's newer
+D62 recipe-barrier measurement and the existing 282-KiB ceiling were retained
+during conflict resolution. The added causal diagnostic is reachable from the
+headless browser runtime; removing its required fields or weakening the
+boundary solely to pass the size check is not selected. A separate, explicit
+maintainer bundle-budget decision or a reviewed behavior-preserving reduction
+is needed before PR readiness. This size result is not runtime performance
+evidence and does not authorize the IndexedDB lifecycle correction.
+
 Read-only cross-package analysis traces three AL backend/connection/queue owners
 per constructed browser middleware: session inbound, WS outbound and RTC
 outbound. Normal shutdown disposes their consumers but does not close the
