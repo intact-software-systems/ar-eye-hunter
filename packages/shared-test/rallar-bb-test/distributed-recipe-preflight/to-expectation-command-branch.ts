@@ -1,5 +1,7 @@
+import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../barrier/wait-for-barrier.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
+    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestWaitCommand
 } from '../rallar-black-box-test-contracts.ts';
 import {
@@ -25,6 +27,30 @@ export function toWaitCommandBranch(
         summary: `wait up to ${command.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS} ms`,
         details: [wait.matchSummary],
         warnings: [`${path}: wait can time out if matching evidence is not emitted.`],
+        errors: [],
+        loops: [],
+        parallelGroups: [],
+        waits: [wait],
+        asserts: []
+    };
+}
+
+export function toBarrierCommandBranch(
+    command: RallarBlackBoxTestBarrierCommand,
+    path: string
+): DistributedRecipeCommandBranch {
+    const wait: DistributedRecipePreflightWait = {
+        path,
+        commandId: command.commandId,
+        matchSummary: `barrier ${command.barrierId}`,
+        timeoutMs: command.timeoutMs + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS
+    };
+    return {
+        effectiveCommandCount: 1,
+        childAnalyses: [],
+        summary: `barrier ${command.barrierId}, up to ${wait.timeoutMs} ms`,
+        details: [wait.matchSummary],
+        warnings: [`${path}: barrier fails when a participant does not arrive within ${command.timeoutMs} ms.`],
         errors: [],
         loops: [],
         parallelGroups: [],
