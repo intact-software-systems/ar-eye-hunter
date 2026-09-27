@@ -2029,7 +2029,7 @@ scheduler behavior changed, and the diagnostic does not select continuation.
 
 ### Task 35: Capture diagnostic heap ownership at settled 0 and 20 cycles
 
-**Status: complete after reviewed fix `e2ef6723ecede4410507e3f928e6e83b593df81b`.** Add a separate explicitly gated
+**Status: complete after integrated review fix `94eb3ed2ea43a536963df0e3507eb62cbb0831b7`.** Add a separate explicitly gated
 diagnostic-only E3-memory three-page reconnect case using the existing browser
 agent, control and CDP facilities. Reuse the 100-cycle test's actual group
 formation and reconnect flow, but run exactly 20 cycles for this _diagnostic_,
@@ -2071,15 +2071,36 @@ through the connection and admission backend to the work queue. This is a
 concrete lifecycle-ownership lead, not a retained-size/dominator calculation
 or proof that those objects explain all heap growth. Generic Object/Array and
 React FiberNode counts also rose. No production fix, 100-cycle verdict, or
-RTC-B06 acceptance follows from the diagnostic. The first independent review
-found a failed-startup cleanup-metadata gap in the new harness; its focused
-repair passed scoped re-review and did not rerun the capture. The separate
-partial-trio test now preserves opening and cleanup failures. Direct helper and
-agent tests passed 27/27, maintained typing 1,310 files, and affected build,
+RTC-B06 acceptance follows from the diagnostic. Independent task and integrated
+reviews found two layers of failed-startup cleanup-metadata loss. Both focused
+repairs passed scoped re-review and did not rerun the capture. The real agent
+opener, trio and diagnostic now preserve the original opening cause and every
+failed context close; a direct disk-write-failure test protects partial
+snapshot output and cleanup. Direct helper and agent tests passed 31/31,
+maintained typing 1,310 files, and affected build,
 structure, style, coupling and legacy checks passed. The broad browser-support
 Vitest invocation timed out seven tests while overlapping capture and build;
 all 29 tests in the five affected files later passed sequentially with one
 worker. The initial failure remains recorded, not relabelled as green.
+
+### Next decision: explicit IndexedDB lifetime ownership
+
+Read-only cross-package analysis traces three AL backend/connection/queue owners
+per constructed browser middleware: session inbound, WS outbound and RTC
+outbound. Normal shutdown disposes their consumers but does not close the
+IndexedDB connections, consistent with C's three-per-reconnect object slope.
+The preferred design is an internal middleware-generation owner of those exact
+three stores, with terminal idempotent connection disposal after consumer
+shutdown and on partial initialization failure. A pending open must close its
+late result; a disposed owner must not reopen. The shared inbound store must
+remain alive until both WS and RTC consumers stop. Durable QueueBox rows are
+unchanged. This is a design recommendation, not an authorized production edit:
+in-flight read-to-write and overlapping-generation behavior need explicit
+tests, and the sampled paths do not explain all heap growth. Changing public
+AL store/facade contracts or injected-backend ownership would be a separate
+compatibility decision requiring maintainer approval. The next step is
+maintainer review of the lifecycle design before writing its spec/implementation
+plan; no 100-cycle E3 recapture is selected on uncorrected source.
 
 ## Later outcomes, not additional speculative implementation slices
 
