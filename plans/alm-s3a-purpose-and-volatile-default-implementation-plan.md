@@ -2724,6 +2724,90 @@ The controller settles these before Task 1 (record each as R-S3a-0):
   A1) is accepted over the proposal's "WS unicast keeps `hop`" sketch. Task 7 stays droppable and runs
   last. Cost if wrong: one extra gate run; one documented behaviour change the maintainer can revert
   by pinning `local-outbox` on the lane sends.
+- **R-S3a-1 (controller, 2026-09-26, pre-flight).** After `claude/hetzner-alm-combined-rtc-types` merges to
+  main, merge main into this branch BEFORE Task 3's regeneration (or Task 6's at the latest); regenerate
+  rather than hand-merge the JSON. Why: that branch also regenerates manifests 18 and 22. Cost if wrong: a
+  manifest-freshness red on the gate.
+- **R-S3a-2 (Task 1 review, Minor 2).** A per-send `reliability: 'best-effort'` with no `ack` resolves
+  `ack: 'none'` (a receipted best-effort send is a contradiction); with an explicit `ack` the caller's ack
+  wins. Why: a partial override `{ reliability: 'best-effort' }` built a best-effort send that expected a
+  receipt. Cost if wrong: a best-effort caller who wanted a receipt names it explicitly.
+- **R-S3a-3 (gate on 0c3302606).** Raise the headless ceiling 281 → 282 by the next-whole-KiB rule with
+  the CI figure 281.02 recorded (the maintainer's 2026-09-05 rule: quality first, raise and record). Why:
+  CI measures about 0.1 KiB above local, and the merged main added the harness's per-type RTC
+  subscriptions to the headless bundle. Cost if wrong: one KiB of headless budget spent without a trim.
+- **R-S3a-4 (Task 2 review, M1).** Neither refuse nor pin the hang — the carrier reports the receipt it
+  tracks: the admission settlement gains a required `trackedReceiptAlgo`, the lifecycle settles
+  `receiptAlgo` to it at admission and records a downgrade evidence entry when weaker than the resolved
+  one; a WS room `hop`/`subtree` send ends terminal at `transport-accepted` again with the downgrade
+  visible; RTC and the default `receiver` unaffected. Carried to S3b: the WS server's hop ACK as a real
+  receipt (D56). Why: refusing would red the `hop` fallback recipes that hand a send to WS, and a WS room
+  send asking `hop`/`subtree` otherwise hung to its deadline. Cost if wrong: a hop-over-WS caller reads
+  terminal `transport-accepted` plus a downgrade note instead of a typed refusal; the roadmap's "typed
+  rejection" letter is deferred to S3b where every receipt end settles.
+- **R-S3a-5 (Task 3 review, m4).** Ruling 2's statement is amended with m4's shape (at-least-once +
+  explicit `qos.retry: none` + no durability flips the server planner's value true → false); it is named
+  in the PR body as the second (theoretical) server-planner value change; no code. Why: no in-repo caller
+  sends that shape; it is reachable only through the public `qos` option. Cost if wrong: such a caller's
+  WS server recipients resolve at enqueue instead of dequeue.
+- **R-S3a-6 (Task 4 lane diagnosis).** No yield in the lane, no browser lock, no routing exception (the
+  implementer's levers rejected); `delivery-lifecycle` waits for the sender's committed ACK admission
+  before `receipts-1` on non-ws carriers (D28-compliant), plus an evidence-based engine hygiene check.
+  Why: the frames were not lost — the sender page ran one uninterrupted microtask chain, so the harness's
+  point-in-time read came before the queued ACK task. Cost if wrong: one extra wait command in a scenario
+  and, if added, one task turn per memory-lane round.
+- **R-S3a-7 (Task 4 fix round 1).** An app loop of awaited volatile sends yields no task turn until it
+  ends — accepted and DOCUMENTED (product description + PR body: a volatile admission completes within the
+  caller's microtask turn; a burst loop should yield or batch); fairness work is V1's. Why: new against
+  IndexedDB, where every admission crossed a task boundary. Cost if wrong: a burst loop starves the page's
+  other tasks until it ends.
+- **R-S3a-8 (Task 4 review, m2).** A terminal lifecycle keeps its state but still records the admission's
+  evidence — evidence is additive and never changes terminality. Why: a late admission on a
+  `transport-accepted`-terminal handle was dropped, so `admittedDurable` never landed. Cost if wrong: a
+  terminal handle's evidence can still grow after its state ended.
+- **R-S3a-9 (Task 4 fix round 2).** The outbound control-admission diagnostic gains the receipt phase
+  (evidence only; optional because non-receipt controls have none), and the ws `delivery-lifecycle` waits
+  for the committed `complete` receipt admission before `receipts-1` (D28-compliant). Why: the ws smoke
+  went red once at `receipts-1`, the same point-in-time read race on the WS receipt. Cost if wrong: one
+  optional diagnostic field and one extra wait command.
+- **R-S3a-10 (maintainer decisions 2026-09-27).** Merge main (6407a9d27, PR #599's pacing) into this
+  branch BEFORE Task 6's manifest regeneration, between Task 5 and Task 6. Why: #599 regenerates the
+  manifests Task 6 regenerates. Cost if wrong: a manifest-freshness red on the gate.
+- **R-S3a-11 (Task 5, for Task 6).** The observer counts IndexedDB operations, not intents — the two
+  pre-short-circuit `work-reserve` counts are removed; the idle rotation's exhausted finalize read is a
+  probe-class operation (`work-probe`) so D55's non-probe `al-work` reads 0 for a volatile page; pins for
+  both. Why: the idle IndexedDB inbound rotation counted three `work-reserve` per empty batch, two before
+  a short-circuit that opens no transaction. Cost if wrong: the counter kinds shift against pre-S3a
+  readings (an idle rotation's 189 `work-reserve` become 63 `work-probe`).
+- **R-S3a-12 (controller, Task 6b drafted).** The barrier is executed as ITS OWN PR from main (worktree
+  `alm-barrier`, branch `claude/alm-recipe-barrier`) in parallel with S3a Tasks 6–8, not inside this
+  branch; it carries D62 + the roadmap/proposal text and removes #599's pacing; this plan gets a pointer
+  once the PR exists. Why: it is harness/control-server only, so it can merge independently and S3a
+  merges main again before Task 8. Cost if wrong: one manifest regeneration conflict on the S3a side.
+- **R-S3a-13 (Task 6 smoke red).** CONFIRM by instrumenting one smoke run that the two reservations
+  reserved nothing (if one reserved a row → a defect, stop), then reclassify honestly — a reservation that
+  reads and changes nothing is `work-probe`, one that reserves a row stays `work-reserve`; durable figures
+  must not move; then the full lanes. Why: on every carrier the volatile-default sender window read
+  `workNonProbeCount` 2 from a durable owner's reservation reads that wrote nothing. Cost if wrong: on
+  hosted manifest 18 `volatile-default` cannot run first (the reload hoist), so the hosted zero read may
+  see real durable retries.
+- **R-S3a-14 (PR #601 merged).** S3a merges main after the Task 6 review lands (the reviewer reads this
+  tree now), regenerates manifests, and applies `scratchpad/alm-recipe-barrier-s3a-docs.patch` (D62 row,
+  S3 clause, §2.1 bullet) in Task 8. Why: the barrier and its rollout fixes are on main, and the reviewer
+  must not read a moving tree. Cost if wrong: a conflicted manifest 18, regenerated rather than merged.
+- **R-S3a-15 (Task 6 review, M1).** The regime instruments measure the IndexedDB lane only — a required
+  `lane: 'durable' | 'volatile'` on the lane-emitted diagnostics (evidence, not persisted; the server
+  emits `'durable'`), the regime computation selects `'durable'`, volatile-only input reads `unmeasured`;
+  pins RED first. Why: both runner-regime instruments counted the memory lanes, so a slow hosted runner
+  could read `normal`. Cost if wrong: a required field on six diagnostic kinds, and a pre-S3a artifact's
+  events decode as durable.
+- **R-S3a-16 (Task 6 fix round 2).** The per-operation regime spans the cell's durable send commits (no
+  20 s window; thresholds unchanged), and when it is unmeasured the page regime decides the cell's regime
+  (`regime=<x> (page)`); no synthetic durable send; roadmap 'Observation status' + artifact doc updated;
+  memory-lane commits excluded because their 0–39 ms/op is event-loop contention. Why: with the volatile
+  default no durable send commits inside the 20 s opening window. Cost if wrong: a failing cell that
+  reaches the sample floor can read `slow` from its own slowdown, and two hosted fixture medians moved by
+  one commit each.
 
 ## Self-review
 
