@@ -897,6 +897,29 @@ describe('the receipt the admitting carrier tracks (R-S3a-4)', () => {
         expect(admitted.evidence).toMatchObject({ admittedAtMs: AT_MS, admittedDurable: true });
         expect(isALDeliveryTerminal(admitted)).toBe(true);
     });
+
+    // Task 4 re-review N1: the never-reopen rule holds on every terminal state, not only on `transport-accepted`.
+    it.each([
+        { state: 'cancelled' as const, settlement: toCancelledSettlement() },
+        {
+            state: 'expired' as const,
+            settlement: { kind: 'expired' as const, msgId: MSG_ID, carrier: 'rtc' as const, atMs: AT_MS, detail: 'deadline passed' }
+        }
+    ])('keeps $state when a late admission lands and records its evidence', ({ state, settlement }) => {
+        const opened = createLifecycle('receiver');
+        const ended = computeALDeliveryLifecycle(opened, settlement);
+        expect(isALDeliveryTerminal(ended)).toBe(true);
+
+        const admitted = computeALDeliveryLifecycle(ended, toAdmissionSettlement(opened, ADMITTED, 'hop'));
+
+        expect(admitted).toMatchObject({ state, receiptAlgo: 'hop', lateSettlementCount: 1 });
+        expect(admitted.evidence).toMatchObject({
+            admittedAtMs: AT_MS,
+            admittedDurable: true,
+            receiptDowngrade: { requested: 'receiver', tracked: 'hop' }
+        });
+        expect(isALDeliveryTerminal(admitted)).toBe(true);
+    });
 });
 
 function toSentLifecycle(admitted: ALDeliveryLifecycle): ALDeliveryLifecycle {
