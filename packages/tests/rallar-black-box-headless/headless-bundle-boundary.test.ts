@@ -65,13 +65,15 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // per-recipient relay row and the retried-copy path) 278.1376953125 KiB. Its logical evidence (the
         // recipient lists, the hop view, the trusted relay rejection and the observation decoders) measures
         // 279.2412109375 KiB. Its closing harness checks (a raw control that resolves its own msgId from an earlier
-        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. S3a's
+        // result, and the observation decoder refusing a server relay id) measure 280.05078125 KiB. The recipe
+        // barrier (D62: the barrier protocol, its waiter and validator, and the control client's resolution frame)
+        // measures 281.2978515625 KiB and its deadline-versus-timeout failure labels 281.619140625 KiB. S3a's
         // purpose and receipt defaults measured 281.0185546875 KiB on the CI runner at 0c3302606 (the runner
-        // measures about 0.1 KiB above this machine), and its tracked receipt at admission (R-S3a-4) measures
-        // 281.1708984375 KiB here (ceiling 282, R-S3a-3). Its store lanes (a memory pair beside the IndexedDB
-        // pair on each outbound carrier, routed by durability) measure 282.255859375 KiB here. The next
-        // whole-KiB ceiling is 283; all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(283);
+        // measures about 0.1 KiB above this machine), its tracked receipt at admission (R-S3a-4) 281.1708984375 KiB
+        // here, and its store lanes (a memory pair beside the IndexedDB pair on each outbound carrier, routed by
+        // durability) 282.255859375 KiB here; the S3a tree with the barrier merged in measures 283.7880859375 KiB here.
+        // The next whole-KiB ceiling is 284; all operator dependency exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(284);
     });
 });
 

@@ -169,16 +169,16 @@
             }
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-delivery-reload-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-reload-sender-start",
+            "barrierId": "alm-ws-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-reload-sender-armed",
+            "barrierId": "alm-ws-delivery-reload-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -399,16 +399,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-delivery-reload-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-reload-sender-start",
+            "barrierId": "alm-rtc-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-reload-sender-armed",
+            "barrierId": "alm-rtc-delivery-reload-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -634,16 +634,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-reload-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -881,16 +881,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-volatile-default-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-sender-start",
+            "barrierId": "alm-ws-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-sender-armed",
+            "barrierId": "alm-ws-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -963,16 +963,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-bounded-rejection-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-bounded-rejection-sender-start",
+            "barrierId": "alm-ws-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-bounded-rejection-sender-armed",
+            "barrierId": "alm-ws-bounded-rejection-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1043,16 +1043,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-deadline-expiry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-deadline-expiry-sender-start",
+            "barrierId": "alm-ws-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-deadline-expiry-sender-armed",
+            "barrierId": "alm-ws-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1140,16 +1140,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-delivery-baseline-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-baseline-sender-start",
+            "barrierId": "alm-ws-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-baseline-sender-armed",
+            "barrierId": "alm-ws-delivery-baseline-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1217,16 +1217,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-delivery-lifecycle-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-lifecycle-sender-start",
+            "barrierId": "alm-ws-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-lifecycle-sender-armed",
+            "barrierId": "alm-ws-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1620,16 +1620,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-durable-opt-in-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-sender-start",
+            "barrierId": "alm-ws-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-sender-armed",
+            "barrierId": "alm-ws-durable-opt-in-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1712,16 +1712,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-ordering-resync-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-ordering-resync-sender-start",
+            "barrierId": "alm-ws-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-ordering-resync-sender-armed",
+            "barrierId": "alm-ws-ordering-resync-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1836,16 +1836,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-volatile-default-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-sender-start",
+            "barrierId": "alm-rtc-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-sender-armed",
+            "barrierId": "alm-rtc-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1923,16 +1923,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-bounded-rejection-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-bounded-rejection-sender-start",
+            "barrierId": "alm-rtc-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-bounded-rejection-sender-armed",
+            "barrierId": "alm-rtc-bounded-rejection-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2008,16 +2008,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-deadline-expiry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-deadline-expiry-sender-start",
+            "barrierId": "alm-rtc-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-deadline-expiry-sender-armed",
+            "barrierId": "alm-rtc-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2110,16 +2110,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-delivery-baseline-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-baseline-sender-start",
+            "barrierId": "alm-rtc-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-baseline-sender-armed",
+            "barrierId": "alm-rtc-delivery-baseline-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2192,16 +2192,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-start",
+            "barrierId": "alm-rtc-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-armed",
+            "barrierId": "alm-rtc-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2615,16 +2615,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-durable-opt-in-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-sender-start",
+            "barrierId": "alm-rtc-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-sender-armed",
+            "barrierId": "alm-rtc-durable-opt-in-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2712,16 +2712,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-ordering-resync-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-ordering-resync-sender-start",
+            "barrierId": "alm-rtc-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-ordering-resync-sender-armed",
+            "barrierId": "alm-rtc-ordering-resync-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2835,16 +2835,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-not-yet-in-sync-expires-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-not-yet-in-sync-expires-sender-start",
+            "barrierId": "alm-rtc-not-yet-in-sync-expires-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-not-yet-in-sync-expires-sender-armed",
+            "barrierId": "alm-rtc-not-yet-in-sync-expires-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -2929,16 +2929,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3016,16 +3016,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-bounded-rejection-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3101,16 +3101,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3215,16 +3215,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-baseline-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3297,16 +3297,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3768,16 +3768,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3865,16 +3865,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-ordering-resync-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -3988,16 +3988,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -4084,16 +4084,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -4180,16 +4180,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -4439,6 +4439,18 @@
             }
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-reload-receiver-start",
+            "barrierId": "alm-ws-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-reload-receiver-armed",
+            "barrierId": "alm-ws-delivery-reload-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "health",
             "commandId": "alm-ws-delivery-reload-receiver-health-before",
             "timeoutMs": 3000
@@ -4481,6 +4493,18 @@
             "kind": "stats",
             "commandId": "alm-ws-delivery-reload-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-reload-receiver-start",
+            "barrierId": "alm-rtc-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-reload-receiver-armed",
+            "barrierId": "alm-rtc-delivery-reload-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "health",
@@ -4527,6 +4551,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-reload-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-reload-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "health",
             "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-before",
             "timeoutMs": 3000
@@ -4569,6 +4605,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-receiver-start",
+            "barrierId": "alm-ws-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-receiver-armed",
+            "barrierId": "alm-ws-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -4624,6 +4672,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-bounded-rejection-receiver-start",
+            "barrierId": "alm-ws-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-bounded-rejection-receiver-armed",
+            "barrierId": "alm-ws-bounded-rejection-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-bounded-rejection-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -4637,6 +4697,18 @@
             "kind": "stats",
             "commandId": "alm-ws-bounded-rejection-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-deadline-expiry-receiver-start",
+            "barrierId": "alm-ws-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-deadline-expiry-receiver-armed",
+            "barrierId": "alm-ws-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -4654,6 +4726,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-baseline-receiver-start",
+            "barrierId": "alm-ws-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-baseline-receiver-armed",
+            "barrierId": "alm-ws-delivery-baseline-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-delivery-baseline-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -4667,6 +4751,18 @@
             "kind": "stats",
             "commandId": "alm-ws-delivery-baseline-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-lifecycle-receiver-start",
+            "barrierId": "alm-ws-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-delivery-lifecycle-receiver-armed",
+            "barrierId": "alm-ws-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -4738,6 +4834,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-receiver-start",
+            "barrierId": "alm-ws-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-receiver-armed",
+            "barrierId": "alm-ws-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-ws-durable-opt-in-receiver-storage-window-open",
             "reset": true,
@@ -4783,6 +4891,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-ordering-resync-receiver-start",
+            "barrierId": "alm-ws-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-ordering-resync-receiver-armed",
+            "barrierId": "alm-ws-ordering-resync-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-ordering-resync-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -4806,6 +4926,18 @@
             "kind": "stats",
             "commandId": "alm-ws-ordering-resync-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-receiver-start",
+            "barrierId": "alm-rtc-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-receiver-armed",
+            "barrierId": "alm-rtc-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -4861,6 +4993,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-bounded-rejection-receiver-start",
+            "barrierId": "alm-rtc-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-bounded-rejection-receiver-armed",
+            "barrierId": "alm-rtc-bounded-rejection-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-bounded-rejection-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -4874,6 +5018,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-bounded-rejection-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-deadline-expiry-receiver-start",
+            "barrierId": "alm-rtc-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-deadline-expiry-receiver-armed",
+            "barrierId": "alm-rtc-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -4891,6 +5047,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-baseline-receiver-start",
+            "barrierId": "alm-rtc-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-baseline-receiver-armed",
+            "barrierId": "alm-rtc-delivery-baseline-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-delivery-baseline-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -4904,6 +5072,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-delivery-baseline-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-lifecycle-receiver-start",
+            "barrierId": "alm-rtc-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-delivery-lifecycle-receiver-armed",
+            "barrierId": "alm-rtc-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -4975,6 +5155,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-receiver-start",
+            "barrierId": "alm-rtc-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-receiver-armed",
+            "barrierId": "alm-rtc-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-rtc-durable-opt-in-receiver-storage-window-open",
             "reset": true,
@@ -5020,6 +5212,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-ordering-resync-receiver-start",
+            "barrierId": "alm-rtc-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-ordering-resync-receiver-armed",
+            "barrierId": "alm-rtc-ordering-resync-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-ordering-resync-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -5056,6 +5260,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-not-yet-in-sync-expires-receiver-start",
+            "barrierId": "alm-rtc-not-yet-in-sync-expires-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-not-yet-in-sync-expires-receiver-armed",
+            "barrierId": "alm-rtc-not-yet-in-sync-expires-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "wait",
             "commandId": "alm-rtc-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome",
             "match": {
@@ -5080,6 +5296,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-not-yet-in-sync-expires-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -5135,6 +5363,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-bounded-rejection-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-bounded-rejection-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -5148,6 +5388,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-deadline-expiry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-deadline-expiry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -5165,6 +5417,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-baseline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-baseline-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -5178,6 +5442,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-lifecycle-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-delivery-lifecycle-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -5249,6 +5525,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "storage.counters",
             "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-storage-window-open",
             "reset": true,
@@ -5294,6 +5582,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-ordering-resync-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-ordering-resync-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-ordering-resync-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -5330,6 +5630,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -5364,6 +5676,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -5416,6 +5740,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",

@@ -156,8 +156,9 @@ update_rollout_checkout() {
 		return
 	fi
 
-	git -C "${checkout_dir}" checkout "${repo_ref}"
-	git -C "${checkout_dir}" pull --ff-only origin "${repo_ref}"
+	# A branch may have been rewritten since the last rollout (a rebased PR branch), so the checkout
+	# follows the remote branch exactly instead of fast-forwarding a diverged local one.
+	git -C "${checkout_dir}" checkout -B "${repo_ref}" "origin/${repo_ref}"
 }
 
 repair_known_rollout_generated_checkout_changes() {

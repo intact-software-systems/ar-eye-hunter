@@ -1746,8 +1746,57 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain(`checkoutHead=${commitSha.trim()}`);
         expect(stdout).toContain('checkoutBranch=HEAD');
         expect(rolloutScript).toMatch(
-            /if is_full_git_sha "\$\{repo_ref\}"; then[\s\S]*checkout --detach "\$\{repo_ref\}"[\s\S]*return[\s\S]*pull --ff-only origin "\$\{repo_ref\}"/
+            /if is_full_git_sha "\$\{repo_ref\}"; then[\s\S]*checkout --detach "\$\{repo_ref\}"[\s\S]*return[\s\S]*checkout -B "\$\{repo_ref\}" "origin\/\$\{repo_ref\}"/
         );
+    });
+
+    it('follows a rewritten remote branch instead of failing the fast-forward of a diverged local one', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-rewritten-branch-'));
+        const originDir = path.join(tmp, 'origin.git');
+        const sourceDir = path.join(tmp, 'source');
+        const checkoutDir = path.join(tmp, 'checkout');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh');
+        const gitIn = (cwd: string, args: readonly string[]) => execFileAsync('git', [...args], { cwd });
+
+        await execFileAsync('git', ['init', '--bare', originDir]);
+        await mkdir(sourceDir, { recursive: true });
+        await gitIn(sourceDir, ['init']);
+        await gitIn(sourceDir, ['config', 'user.email', 'test@example.com']);
+        await gitIn(sourceDir, ['config', 'user.name', 'Test User']);
+        await writeFile(path.join(sourceDir, 'README.md'), 'seed\n');
+        await gitIn(sourceDir, ['add', 'README.md']);
+        await gitIn(sourceDir, ['commit', '-m', 'seed']);
+        await gitIn(sourceDir, ['branch', '-M', 'main']);
+        await gitIn(sourceDir, ['remote', 'add', 'origin', originDir]);
+        await gitIn(sourceDir, ['push', '-u', 'origin', 'main']);
+        await execFileAsync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: originDir });
+        await gitIn(sourceDir, ['checkout', '-b', 'feature']);
+        await writeFile(path.join(sourceDir, 'README.md'), 'first\n');
+        await gitIn(sourceDir, ['commit', '-am', 'first']);
+        await gitIn(sourceDir, ['push', '-u', 'origin', 'feature']);
+
+        // The controller rolled out the first version of the branch.
+        await execFileAsync('git', ['clone', originDir, checkoutDir]);
+        await gitIn(checkoutDir, ['checkout', 'feature']);
+
+        // The branch is rewritten upstream (a rebase), so the local branch no longer fast-forwards.
+        await gitIn(sourceDir, ['reset', '--hard', 'main']);
+        await writeFile(path.join(sourceDir, 'README.md'), 'rewritten\n');
+        await gitIn(sourceDir, ['commit', '-am', 'rewritten']);
+        await gitIn(sourceDir, ['push', '--force', 'origin', 'feature']);
+        const { stdout: rewrittenSha } = await gitIn(sourceDir, ['rev-parse', 'HEAD']);
+
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_CHECKOUT_DIR: checkoutDir,
+                RALLAR_REPO_REF: 'feature',
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'checkout-ref'
+            }
+        });
+
+        expect(stdout).toContain(`checkoutHead=${rewrittenSha.trim()}`);
+        expect(stdout).toContain('checkoutBranch=feature');
     });
 
     it('warms Deno caches without mutating checked-in lockfiles', async () => {

@@ -13,7 +13,7 @@ export interface ControlAgentIdentity {
 
 export type ControlAgentSocketService = Pick<
     RallarBlackBoxControlService,
-    'recordDuplicateAgentSocketReplacement' | 'takeDispatchableCommands'
+    'recordDuplicateAgentSocketReplacement' | 'takeDispatchableCommands' | 'takeBarrierResolutions'
 >;
 
 const OPEN_SOCKET_STATE = 1;
@@ -85,6 +85,9 @@ export class ControlAgentSockets {
         }
         for (const command of this.controlService.takeDispatchableCommands(agent.runId, agent.agentId)) {
             socket.send(JSON.stringify(command));
+        }
+        for (const resolution of this.controlService.takeBarrierResolutions(agent.runId, agent.agentId)) {
+            socket.send(JSON.stringify(resolution));
         }
     }
 

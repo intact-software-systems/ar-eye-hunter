@@ -719,7 +719,8 @@ describe('alm-conformance recipe family', () => {
                     source: 'resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-unknown-ack-version-1.value.verdict',
                     operator: 'equals',
                     expected: 'admitted'
-                }
+                },
+                { kind: 'messages.received', count: 2, absent: true }
             ]);
             expect(scenario.sender.commands).toContainEqual(expect.objectContaining({
                 kind: 'wait',
@@ -731,6 +732,43 @@ describe('alm-conformance recipe family', () => {
                 })
             }));
         });
+
+        it(
+            'keeps a recipient-b block whose sender reads acknowledged inside its scenario until its own ACK has ' +
+                'left, unless the block clears its hold explicitly',
+            () => {
+                let sawAcknowledged = false;
+                for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                    for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                        if (!isThreeAgentScenario(scenario)) {
+                            continue;
+                        }
+                        const endingAssert = scenario.sender.commands.find((command) =>
+                            command.kind === 'assert' && command.source.endsWith('receipts-1.value.state')
+                        );
+                        if (endingAssert?.kind !== 'assert' || endingAssert.expected !== 'acknowledged') {
+                            continue;
+                        }
+                        sawAcknowledged = true;
+                        const senderWindow = scenario.sender.commands.find((command) =>
+                            command.kind === 'messages.received' && command.commandId?.endsWith('received-self-1') === true
+                        );
+                        if (senderWindow?.kind !== 'messages.received') {
+                            throw new Error(`${carrier} ${scenario.scenarioKey} sender is missing its receipt window.`);
+                        }
+                        const label = `${carrier} ${scenario.scenarioKey}`;
+                        const last = bodyOf(scenario.recipientB!).at(-1);
+                        const clearsHoldExplicitly = last?.kind === 'close' ||
+                            (last?.kind === 'fault.inject' && last.remaining === 0);
+                        const endsWithLongEnoughAbsence = last?.kind === 'messages.received' &&
+                            last.absent === true && (last.timeoutMs ?? 0) >= (senderWindow.timeoutMs ?? 0);
+
+                        expect(clearsHoldExplicitly || endsWithLongEnoughAbsence, label).toBe(true);
+                    }
+                }
+                expect(sawAcknowledged).toBe(true);
+            }
+        );
 
         it('lets recipient-b leave once the send reached it and reconnect only past the expiry of the send', () => {
             expect(bodyOf(receiptedOf('ws', 'frozen-audience-membership').recipientB).map(shapeOf))

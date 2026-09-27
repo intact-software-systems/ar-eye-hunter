@@ -143,8 +143,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
             isSameJsonValue(decodeJsonValue(command.payload), decodeJsonValue(send.payload)))
     );
     const sendIndex = prefix.indexOf(send);
-    // The combined Hetzner sender recipe paces every scenario, including this reload checkpoint's own, with an
-    // inert `absent: true` wait ahead of its first command; that pacing step carries no reload evidence of its own.
+    // The combined Hetzner recipe opens every scenario, this checkpoint's too, at its two barriers (D62).
     const linearKinds = [
         'http.request',
         'rtc.connect',
@@ -155,7 +154,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         'messages.send',
         'messages.observe',
         'assert',
-        'wait'
+        'barrier'
     ];
     const validPrefix = prefix.every((command) => linearKinds.includes(command.kind)) &&
         !prefix.slice(sendIndex + 1).some((command) => command.kind === 'rtc.connect');
@@ -166,7 +165,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         suffix.slice(1).every((command) => ['messages.observe', 'assert', 'storage.counters'].includes(command.kind));
     const receiverPreserved =
         [...receiverBefore, ...recovery].every((command) =>
-            ['http.request', 'rtc.connect', 'health', 'stats', 'wait'].includes(command.kind)
+            ['http.request', 'rtc.connect', 'health', 'stats', 'wait', 'barrier'].includes(command.kind)
         ) && recovery.every((command) => command.kind !== 'rtc.connect');
     const absenceValue = resultValue(evidence.receiver, absence);
     const receives = recovery.filter((command) =>

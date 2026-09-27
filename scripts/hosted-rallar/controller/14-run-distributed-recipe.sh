@@ -154,14 +154,18 @@ control_get_text_to_file() {
 control_post() {
 	local path="$1"
 	local body="${2:-}"
-	local response_file http_code curl_status
+	local response_file body_file http_code curl_status
 	local post_args
 	CONTROL_POST_LAST_HTTP_CODE=""
 	CONTROL_POST_LAST_CURL_STATUS=""
 	response_file="$(mktemp /tmp/rallar-control-post.XXXXXX.json)"
+	body_file=""
 	post_args=(-sS -o "${response_file}" -w "%{http_code}" -H "Content-Type: application/json" -X POST)
 	if [[ -n "${body}" ]]; then
-		post_args+=(--data-binary "${body}")
+		# A manifest body can exceed the kernel's single-argument limit (128 KiB), so curl reads it from a file.
+		body_file="$(mktemp /tmp/rallar-control-post-body.XXXXXX.json)"
+		printf '%s' "${body}" >"${body_file}"
+		post_args+=(--data-binary "@${body_file}")
 	fi
 
 	set +e
@@ -172,6 +176,9 @@ control_post() {
 	fi
 	curl_status=$?
 	set -e
+	if [[ -n "${body_file}" ]]; then
+		rm -f -- "${body_file}"
+	fi
 	CONTROL_POST_LAST_HTTP_CODE="${http_code}"
 	CONTROL_POST_LAST_CURL_STATUS="${curl_status}"
 

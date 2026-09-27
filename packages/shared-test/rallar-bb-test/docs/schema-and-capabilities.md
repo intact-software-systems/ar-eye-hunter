@@ -472,6 +472,37 @@ waits. Pair every absence wait with a same-scope positive control delivery so
 a broken transport cannot masquerade as proven absence. Evaluation lives in
 `wait/wait-for-event.ts`; match semantics live in `wait/wait-event-match.ts`.
 
+## Recipe Barrier
+
+`barrier` stops an agent until every participant of the started distributed run has reached the same
+`barrierId`. The agent records `rallar.bb.barrier.arrived` (`barrierId`, `timeoutMs`, `participants`),
+which its control client forwards like any event, and completes on the control server's
+`rallar.bb.barrier.resolved`. Absent `participants`, every agent the run started takes part; present,
+the role names resolve through the run's start links. The server opens the window at the first
+arrival and decides once: `released`, or `failed` with `timed-out`, `participant-failed` (a missing
+participant's run already failed), `not-a-participant`, `conflicting-arrival` (another `timeoutMs` or
+participant set), `unknown-participant-role` or `no-distributed-run`, naming the arrived and missing
+agents. A late participant hears the recorded verdict; a late outsider, or a late arrival naming
+another `timeoutMs` or participant set, fails alone with `not-a-participant` or `conflicting-arrival`
+while the recorded verdict stands for the participants. The agent waits `timeoutMs` plus a 10 s grace
+and fails `RALLAR_BLACK_BOX_BARRIER_TIMEOUT` (naming the barrier, the window and the grace) only when no
+resolution came; a failed resolution is `RALLAR_BLACK_BOX_BARRIER_FAILED`. When the recipe deadline
+ends the wait first, the barrier fails `RALLAR_BLACK_BOX_RECIPE_TIMEOUT` with the deadline, and a
+cancelled recipe leaves it `cancelled`. A barrier id is single-use per control run
+(`RALLAR_BLACK_BOX_BARRIER_REUSED` on the same page). Barrier state is in-memory on the control server:
+a restart forgets open barriers. Outside a control agent nothing resolves the barrier.
+
+Triage. Barrier state is keyed by control run and barrier id, not by distributed run: a second
+distributed run reusing a control run id (an operator `--control-run-id` override, or a re-dispatch
+with an explicit run id) hears the first run's recorded verdicts for the same generated ids, so give
+every distributed run its own control run id; the hosted workflows already do (`gh-<run>-<attempt>`,
+`main-<run>-<attempt>-<manifest>`). One role's failure cascades: every other role then fails the next
+`<scenario>-start` barrier with `participant-failed`, so a combined run shows one root failure and a
+barrier failure per other role. The cause is the earliest failed command that is not a `barrier`.
+The fleet report files every `RALLAR_BLACK_BOX_*` code, barrier failures included, under `readiness`
+(its guidance matches `ack` before `barrier`, and each code contains "bl**ack**"), so read a barrier
+failure's `error.details.reason`, not the fleet category.
+
 ## Assert Operators
 
 `assert` evaluates a dot-path `source` over the runtime evidence roots

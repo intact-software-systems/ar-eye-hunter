@@ -346,6 +346,13 @@ commands are queued. Missing stage ACKs after `ackTimeoutMs` roll up to
 to `timed-out`; disconnecting while a required agent is waiting at the barrier
 rolls up to `failed`.
 
+Inside a running recipe the `barrier` command synchronizes agents per step: the
+control server records each forwarded `rallar.bb.barrier.arrived` event on the
+control run and pushes a `{ kind: 'barrier', runId, agentId, barrierId,
+resolution }` frame over the control socket once the barrier resolves (see
+`schema-and-capabilities.md`, Recipe Barrier). It is the only server-to-agent
+frame that is not a command.
+
 Distributed artifacts may contain nested `loop` and `parallel` result payloads
 inside ordinary command results. Consumers should use
 `toRallarBlackBoxCompositeResultFlatEntries(...)`,
