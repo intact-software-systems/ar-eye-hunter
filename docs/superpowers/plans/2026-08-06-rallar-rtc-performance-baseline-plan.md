@@ -91,6 +91,15 @@ renewal, Offer/Answer correlation, and bounded evidence through current
 contracts. A green branch gate and unchanged 100-cycle E3-memory primary remain
 unproven; none of the diagnostic runs supplies RTC-B06 acceptance.
 
+Exact-head Branch Release Gate `36327899084` on
+`46611c342a766b98432705b2b485135af0fa48ac` passed root CI, builds,
+Deno checks, and PostgreSQL shared-server integration, but its API matrix
+passed only 58/59 recipes. In `api-v1-group-data-policy`, Bob's best-effort
+WS send reported `sent` while Alice did not receive the expected `room.match`
+message within ten seconds. This repeats the known failure shape; this run's
+standard artifact does not by itself identify the claiming API process. The
+topology-artifact upload failure followed the skipped replay and is secondary.
+
 Task 24's existing first result is retained: readiness failed during reconnect
 cycle 3 and only the cycle-0 checkpoint exists. Recording completed and released
 its writer lock. Both causal cuts were captured, but upstream event completeness
