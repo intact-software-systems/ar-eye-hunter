@@ -20,7 +20,11 @@ import {
     toParallelCommandBranch
 } from './to-composite-command-branch.ts';
 import { toDistributedRecipeCommandSummary } from './to-distributed-recipe-command-summary.ts';
-import { toAssertCommandBranch, toWaitCommandBranch } from './to-expectation-command-branch.ts';
+import {
+    toAssertCommandBranch,
+    toBarrierCommandBranch,
+    toWaitCommandBranch
+} from './to-expectation-command-branch.ts';
 import {
     toRtcConnectCommandDetails,
     toRtcStreamCommandDetails
@@ -101,6 +105,8 @@ function toCommandBranch(
             return toWaitCommandBranch(command, path);
         case 'assert':
             return toAssertCommandBranch(command, path);
+        case 'barrier':
+            return toBarrierCommandBranch(command, path);
         case 'rtc.connect':
             return toLeafCommandBranch(toRtcConnectCommandDetails(command));
         case 'rtc.stream':

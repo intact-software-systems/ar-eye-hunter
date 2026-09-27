@@ -841,7 +841,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 tags: ['Control WebSocket'],
                 summary: 'Upgrade to browser-agent control WebSocket',
                 description:
-                    'Browser agents connect here, send a register envelope, receive queued commands, and stream results, events, stats, reports, and heartbeats back to the control server.',
+                    'Browser agents connect here, send a register envelope, receive queued commands and recipe barrier resolutions, and stream results, events, stats, reports, and heartbeats back to the control server.',
                 security: [{ bearerAuth: [] }, { runTokenHeader: [] }, { queryToken: [] }],
                 responses: {
                     '101': { description: 'WebSocket upgrade accepted.' },

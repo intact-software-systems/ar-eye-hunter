@@ -18,6 +18,10 @@ import {
     type ControlEventEnvelope,
     type ControlResultEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    RALLAR_BLACK_BOX_BARRIER_RESOLVED_TOPIC,
+    type ControlBarrierEnvelope
+} from '../../shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -975,6 +979,36 @@ describe('shared rallar black-box control client', () => {
         finally {
             client.dispose();
             vi.unstubAllGlobals();
+        }
+    });
+
+    it('records a barrier resolution addressed to this agent as a runtime event, never as a command', () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
+        try {
+            connectToRunOne(client);
+            socket.open();
+            const envelope: ControlBarrierEnvelope = {
+                kind: 'barrier',
+                protocolVersion: 1,
+                runId: 'run-1',
+                agentId: 'agent-1',
+                barrierId: 'scenario-armed',
+                resolution: { outcome: 'released', arrivedAgentIds: ['agent-1', 'agent-2'] }
+            };
+
+            socket.publishMessage(JSON.stringify(envelope));
+
+            expect(runtime.state().events.filter((event) => event.topic === RALLAR_BLACK_BOX_BARRIER_RESOLVED_TOPIC))
+                .toEqual([
+                    expect.objectContaining({ payload: { barrierId: 'scenario-armed', resolution: envelope.resolution } })
+                ]);
+            expect(runtime.state().events.some((event) => event.topic === 'rallar.bb.control.protocol_error'))
+                .toBe(false);
+        }
+        finally {
+            client.dispose();
         }
     });
 });

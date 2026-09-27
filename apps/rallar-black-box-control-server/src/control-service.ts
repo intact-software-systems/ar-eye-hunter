@@ -1,3 +1,4 @@
+import type { ControlBarrierEnvelope } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -107,6 +108,10 @@ import {
 } from './fleet/control-fleet-aggregate-report.ts';
 import { createControlFleetReportBundle } from './fleet/create-control-fleet-report-bundle.ts';
 import { createControlFleetRunReport } from './fleet/create-control-fleet-run-report.ts';
+import {
+    computeControlRecipeBarrierArrival,
+    computeControlRecipeBarrierDelivery
+} from './recipe-barrier/compute-control-recipe-barrier.ts';
 import {
     computeControlRecipeReloadStep,
     computeReloadRootDeadline,
@@ -485,6 +490,17 @@ export class RallarBlackBoxControlService {
         );
     }
 
+    takeBarrierResolutions(runId: string, agentId: string): readonly ControlBarrierEnvelope[] {
+        const run = this.runs.get(runId);
+        const agent = run?.agents.get(agentId);
+        if (!run || !agent?.connected) {
+            return [];
+        }
+        const delivery = computeControlRecipeBarrierDelivery({ run, agent, nowEpochMs: this.dependencies.now() });
+        delivery.barriers.forEach((barrier) => run.barriers.set(barrier.barrierId, barrier));
+        return delivery.envelopes;
+    }
+
     markAgentDisconnected(runId: string, agentId: string): void {
         const run = this.runs.get(runId);
         const agent = run?.agents.get(agentId);
@@ -839,6 +855,15 @@ export class RallarBlackBoxControlService {
         agent.receivedEventCount += 1;
         agent.lastSeenAtEpochMs = this.dependencies.now();
         run.events.push(storedEnvelope);
+        const barrier = computeControlRecipeBarrierArrival({
+            run,
+            envelope: storedEnvelope,
+            distributedRuns: this.distributedRuns.values(),
+            nowEpochMs: this.dependencies.now()
+        });
+        if (barrier) {
+            run.barriers.set(barrier.barrierId, barrier);
+        }
         if (storedEnvelope.kind === 'stats') {
             run.stats.push(storedEnvelope);
         }
@@ -1137,7 +1162,8 @@ export class RallarBlackBoxControlService {
             heartbeats: [],
             tokens: new Map(),
             retentionRevision: 0,
-            issuedRunTokenStateRevision: 0
+            issuedRunTokenStateRevision: 0,
+            barriers: new Map()
         };
         this.runs.set(runId, run);
         return run;

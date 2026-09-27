@@ -23,6 +23,7 @@ import {
     type ControlCommandIssue
 } from './control-command-issue.ts';
 import { validateAssertControlCommand } from './validate-assert-control-command.ts';
+import { validateBarrierControlCommand } from './validate-barrier-control-command.ts';
 import {
     validateAllowedFields,
     validateBooleanField,
@@ -75,6 +76,7 @@ const REQUIRED_FIELDS_WITH_OWN_MESSAGE: {
     loop: ['commands'],
     parallel: ['groups'],
     wait: ['match'],
+    barrier: ['barrierId'],
     'http.request': ['request'],
     'messages.send': ['carrier', 'typeId', 'payload'],
     'messages.observe': ['state'],
@@ -175,6 +177,8 @@ function validateCommandKindFields(
             return validateWaitControlCommand(command);
         case 'assert':
             return validateAssertControlCommand(command);
+        case 'barrier':
+            return validateBarrierControlCommand(command);
         case 'health':
             return validateBooleanField(command, 'includeRtcDiagnostics', kind);
         case 'close':

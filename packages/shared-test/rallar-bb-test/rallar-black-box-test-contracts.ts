@@ -17,6 +17,7 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'parallel',
     'wait',
     'assert',
+    'barrier',
     'rtc.connect',
     'rtc.send',
     'rtc.stream',
@@ -233,6 +234,18 @@ export type RallarBlackBoxTestWaitCommand =
     & Readonly<{
         match: RallarBlackBoxTestWaitMatch;
         absent?: true;
+    }>;
+
+/**
+ * Reports this agent's arrival at `barrierId` to the control server and completes when every participant of the
+ * started distributed run has arrived. Absent `participants`: every started target agent. Single-use per control run.
+ */
+export type RallarBlackBoxTestBarrierCommand =
+    & RallarBlackBoxTestCommandBase<'barrier'>
+    & Readonly<{
+        barrierId: string;
+        timeoutMs: number;
+        participants?: readonly string[];
     }>;
 
 export type RallarBlackBoxTestAssertOperator =
@@ -682,6 +695,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestLoopCommand
     | RallarBlackBoxTestParallelCommand
     | RallarBlackBoxTestWaitCommand
+    | RallarBlackBoxTestBarrierCommand
     | RallarBlackBoxTestAssertCommand
     | RallarBlackBoxTestRtcConnectCommand
     | RallarBlackBoxTestRtcSendCommand

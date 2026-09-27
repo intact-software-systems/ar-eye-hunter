@@ -211,6 +211,12 @@
           "readyTimeoutMs": 10000
         },
         {
+          "kind": "barrier",
+          "commandId": "barrier-v1",
+          "barrierId": "golden-barrier-v1",
+          "timeoutMs": 10000
+        },
+        {
           "kind": "ws.open",
           "commandId": "ws-open-v1",
           "connection": "goldenWs",

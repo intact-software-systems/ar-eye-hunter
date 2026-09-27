@@ -238,6 +238,27 @@ const COMMAND_CAPABILITIES_WITHOUT_FIELDS: readonly CommandCapabilityWithoutFiel
         }
     },
     {
+        kind: 'barrier',
+        title: 'Recipe Barrier',
+        description:
+            'Reports this agent\'s arrival at barrierId to the control server and completes once every participant of the started distributed run arrived; fails typed when the window closes, a missing participant failed, or the arrivals disagree.',
+        supportedProviderModes: ['browser-rallar', 'rallar-remote-browser', 'mixed'],
+        runtimeSurfaces: ['control-agent', 'control-server'],
+        liveServiceRequirements: [
+            'a started distributed run on a control server that resolves recipe barriers; each participant reaches a barrierId once'
+        ],
+        artifactExpectations: [
+            'rallar.bb.barrier.arrived and rallar.bb.barrier.resolved runtime events',
+            'a released result naming the arrived agents, or a failed result naming the reason and the missing agents'
+        ],
+        example: {
+            kind: 'barrier',
+            commandId: 'alm-ws-delivery-baseline-sender-armed',
+            barrierId: 'alm-ws-delivery-baseline-armed',
+            timeoutMs: 60_000
+        }
+    },
+    {
         kind: 'rtc.connect',
         title: 'RTC Connect',
         description: 'Connects an RTC/realtime provider and can wait for exact-room ready peers.',

@@ -32,6 +32,7 @@ describe('Rallar companion coverage boundaries', () => {
             'parallel',
             'wait',
             'assert',
+            'barrier',
             'rtc.connect',
             'rtc.send',
             'rtc.stream',

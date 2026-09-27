@@ -157,6 +157,10 @@ class GeneratedAlmPorts {
                 const passed = command.absent ? count < command.count : count >= command.count;
                 return { status: passed ? 'ok' : 'failed', value: { count } };
             }
+            case 'barrier':
+                // The replay dispatches paired segments one at a time, so the barrier is a controlled fact here;
+                // control-recipe-barrier.test.ts proves its control path.
+                return { status: 'ok', value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [role] } };
             case 'assert':
             case 'wait':
                 return undefined; // These acceptance commands execute in the real runtime.

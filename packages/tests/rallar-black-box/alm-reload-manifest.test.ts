@@ -82,6 +82,11 @@ describe('hosted ALM reload composition', () => {
             const readyEnd = receiver.commands.findIndex((command) => command.commandId === checkpoint.receiverReadyEnd);
             const absenceEnd = receiver.commands.findIndex((command) => command.commandId === checkpoint.receiverAbsenceEnd);
             const recoveryEnd = receiver.commands.findIndex((command) => command.commandId === checkpoint.receiverRecoveryEnd);
+            // A barrier inside a reload phase would wait for a peer segment the coordinator holds until this one ends.
+            expect(sender.commands.slice(prefixEnd + 1, suffixEnd + 1).filter((command) => command.kind === 'barrier'))
+                .toEqual([]);
+            expect(receiver.commands.slice(readyEnd + 1, recoveryEnd + 1).filter((command) => command.kind === 'barrier'))
+                .toEqual([]);
             expect(receiver.commands.slice(receiverStart, readyEnd + 1).filter((command) => command.kind === 'wait')).toEqual([]);
             expect(receiver.commands.slice(readyEnd + 1, absenceEnd + 1)).toEqual([
                 expect.objectContaining({ kind: 'wait', absent: true, match: expect.objectContaining({ equals: { marker: 'delivery-reload', carrier } }) })
