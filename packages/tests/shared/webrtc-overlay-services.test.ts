@@ -273,6 +273,51 @@ describe('WebRtc overlay services', () => {
         expect(reserved.size).toBe(0);
     });
 
+    // Ruling 3 (S3a): the missing-channel tolerance keys on awaiting a route, not on persisting. A volatile
+    // at-least-once send retries, so it waits for its hop's channel instead of falling back.
+    it('admits a volatile at-least-once immediate send whose next hop has no rtc channel yet', async () => {
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService: connectionService,
+            groupCache: createReadableCache({}),
+            overlayCache: createReadableCache({}),
+            multicasterFactory: (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService
+                ),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        onTestFinished(() => manager.dispose());
+
+        const msg: ALMessage = {
+            ...newALUnicastMessage(
+                'sender-2',
+                {
+                    topicId: 'chat',
+                    resourceId: 'msg-awaits-channel',
+                    contextId: 'conversation-1'
+                },
+                'peer-1',
+                'chat.private-text.v1',
+                {
+                    text: 'send once the channel opens'
+                }
+            ),
+            delivery: { reliability: 'at-least-once', ack: 'none' }
+        };
+
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
+            verdict: { kind: 'admitted', durable: false }
+        });
+    });
+
     it('skips outbound messages without targets or next hop', async () => {
         const warnings = captureWarnings();
 

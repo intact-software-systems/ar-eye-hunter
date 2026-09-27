@@ -14,7 +14,7 @@ import { isALDeliveryTerminal, type ALDeliveryCarrier } from '@shared/alm/delive
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { createDefaultWsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -102,7 +102,7 @@ describe('the receipt an RTC send tracks reaches its handle (R-S3a-4)', () => {
     it('keeps a room send asking qos.ack hop tracking hop, with no downgrade', async () => {
         vi.useFakeTimers();
         const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
-        const harness = createDispatchHarness(createRegistry(), 'rtc', (message) => fixture.manager.enqueueIfAbsent(message));
+        const harness = createDispatchHarness(createRegistry(), 'rtc', { rtc: (message) => fixture.manager.enqueueIfAbsent(message) });
         const handle = harness.send(newALMulticastMessage('a', toRoute('rtc-hop'), ORIGIN_ROOM, 'chat.message.v1', { text: 'hop' }, {
             reliability: 'at-least-once',
             ack: 'none',
@@ -119,53 +119,94 @@ describe('the receipt an RTC send tracks reaches its handle (R-S3a-4)', () => {
     });
 });
 
+describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    // Task 2 re-review N2: the RTC leg's `unroutable` leaves the handle's receipt alone; the WS leg that
+    // takes over tracks none for a room `hop` send, so the handle ends where that WS leg ends.
+    it('ends a room send asking qos.ack hop at WS transport-accepted after its RTC leg is unroutable', async () => {
+        const registry = createRegistry();
+        const ws = await createWsClient(registry, 'a');
+        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b'], 4), nextHopPeerIds: [] });
+        const harness = createDispatchHarness(registry, 'rtc', {
+            rtc: (message) => fixture.manager.enqueueIfAbsent(message),
+            ws: (message) => ws.enqueueOutboxIfAbsent(message)
+        });
+        const handle = harness.send(newALMulticastMessage('a', toRoute('fallback-hop'), ORIGIN_ROOM, 'chat.message.v1', {
+            text: 'hop'
+        }, { reliability: 'at-least-once', ack: 'none', ttlMs: TTL_MS, qos: { ack: { algo: 'hop' } } }));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+        expect(handle.lifecycle()).toMatchObject({ receiptAlgo: 'none' });
+        expect(handle.lifecycle().evidence.receiptDowngrade).toEqual({ requested: 'hop', tracked: 'none' });
+        expect(handle.lifecycle().evidence.attempts.map(({ carrier, outcome }) => ({ carrier, outcome }))).toEqual([
+            { carrier: 'rtc', outcome: 'unroutable' },
+            { carrier: 'ws', outcome: 'sent' }
+        ]);
+        expect(isALDeliveryTerminal(handle.lifecycle())).toBe(true);
+    });
+});
+
 function toRoute(resourceId: string): ALMessage['route'] {
     return { topicId: 'chat', resourceId, contextId: ORIGIN_ROOM.groupId };
 }
 
 /** The origin WS client, connected to a native socket that accepts every frame it writes. */
 async function createWsDispatchHarness(): Promise<DispatchHarness> {
+    const registry = createRegistry();
+    const service = await createWsClient(registry, SESSION_ID);
+    return createDispatchHarness(registry, 'ws', { ws: (message) => service.enqueueOutboxIfAbsent(message) });
+}
+
+async function createWsClient(registry: BrowserRallarDeliveryRegistry, sessionId: string): Promise<WsQueueBoxClientService> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
     const connected = client.connect();
     await Promise.resolve();
     TestWebSocket.instances.at(-1)!.open();
     await connected;
-    const registry = createRegistry();
     const service = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
-        sessionId: SESSION_ID,
+        sessionId,
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
         outboundSettlements: (settlement) => registry.record(settlement)
     });
     onTestFinished(() => service.close());
-    return createDispatchHarness(registry, 'ws', (message) => service.enqueueOutboxIfAbsent(message));
+    return service;
 }
 
 function createRegistry(): BrowserRallarDeliveryRegistry {
     return new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
 }
 
-/** The browser's own dispatch and registry over one real carrier admission. */
+/** The browser's own dispatch and registry over real carrier admissions; with both carriers it may fall back. */
 function createDispatchHarness(
     registry: BrowserRallarDeliveryRegistry,
     carrier: ALDeliveryCarrier,
-    admit: CarrierAdmission
+    admits: Readonly<Partial<Record<ALDeliveryCarrier, CarrierAdmission>>>
 ): DispatchHarness {
     const middleware: ApiMiddleware = createDefaultApiMiddlewareTestDouble({
-        middleware: carrier === 'ws' ? { webSocketQueueBox: { enqueueOutboxIfAbsent: admit } } : { rtcRxStreamer: { enqueueOutboxIfAbsent: admit } }
+        middleware: {
+            ...(admits.ws === undefined ? {} : { webSocketQueueBox: { enqueueOutboxIfAbsent: admits.ws } }),
+            ...(admits.rtc === undefined ? {} : { rtcRxStreamer: { enqueueOutboxIfAbsent: admits.rtc } })
+        }
     });
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => middleware });
     sessionDeliveries.beginSession(middleware.session);
     feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now });
+    const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {
         registry,
         send: (message) => {
             const handle = registry.open(message, carrier);
-            dispatch.send({ context: middleware, carrier, message, canFallback: false, payloadIssues: [] });
+            dispatch.send({ context: middleware, carrier, message, canFallback, payloadIssues: [] });
             return handle;
         }
     };
