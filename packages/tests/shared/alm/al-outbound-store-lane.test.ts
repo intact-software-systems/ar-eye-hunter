@@ -1,8 +1,16 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '@shared/alm/ALStoreRetention.ts';
-import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundDispatchPlan,
+    ALVolatileOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
 import {
     createDefaultOutboundTestRuntime,
@@ -14,7 +22,7 @@ import {
     toOutboundTestAck,
     trackOutboundTestAcks
 } from './outbound-runtime-test-fixture.ts';
-import type { OutboundTestPayload } from './outbound-test-payload.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound store lanes (S3a, D54)', () => {
     function planVolatileSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
@@ -85,23 +93,58 @@ describe('outbound store lanes (S3a, D54)', () => {
         expect(await durable.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
     });
 
-    it('evicts its expired rows on the first round past the eviction interval, with no timer of its own', async () => {
+    it('sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
             vi.useRealTimers();
         });
-        const volatileStores = createVolatileOutboundTestStores();
+        const startedAtMs = Date.now();
+        const lane = createObservedVolatileStores();
         const runtime = createDefaultOutboundTestRuntime({
-            volatileStores,
+            volatileStores: lane.stores,
             planOutgoingMessage: planVolatileSend,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         await enqueueOutboundOrThrow(runtime, createOutboundMessage('expiring', { ttlMs: 1_000 }));
-        expect((await volatileStores.workQueue.getAllKeys()).length).toBeGreaterThan(0);
+        // The bootstrap round sweeps first; the admission's own round falls inside the interval.
+        expect(lane.evictExpired).toHaveBeenCalledTimes(1);
+        const rowsAfterSend = lane.state.data.size;
+        expect(rowsAfterSend).toBeGreaterThan(0);
 
-        vi.setSystemTime(Date.now() + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS + 1_000);
+        vi.setSystemTime(startedAtMs + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS - 1);
         await runOutboundWorkTask(runtime);
+        expect(lane.evictExpired, 'no sweep before the interval elapsed').toHaveBeenCalledTimes(1);
 
-        expect(await volatileStores.workQueue.getAllKeys()).toEqual([]);
+        vi.setSystemTime(startedAtMs + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
+        await runOutboundWorkTask(runtime);
+        expect(lane.evictExpired, 'one sweep once the interval elapsed').toHaveBeenCalledTimes(2);
+
+        // The sent and owner rows keep the repository retention (one hour), well past the message deadline.
+        vi.setSystemTime(startedAtMs + 2 * 60 * 60_000);
+        await runOutboundWorkTask(runtime);
+        expect(lane.evictExpired).toHaveBeenCalledTimes(3);
+        expect(lane.state.data.size).toBeLessThan(rowsAfterSend);
     });
 });
+
+/** A memory pair whose admission map and sweep the test can observe; `read` and `list` would expire lazily. */
+function createObservedVolatileStores() {
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(Date.now()))
+    );
+    const backend = new InMemoryAdmissionBackend(state, Date.now);
+    const evictExpired = vi.fn(() => backend.evictExpired());
+    const stores: ALVolatileOutboundRuntimeStores<OutboundTestPayload> = {
+        ...createInMemoryALOutboundRuntimeStores({
+            nowMs: Date.now,
+            namespace: 'lane-eviction',
+            outboundBackend: backend,
+            orderingTrackTtlMs: 60_000,
+            supersedenceTrackTtlMs: 60_000,
+            retention: undefined,
+            decodePrepared: decodeOutboundTestPayload
+        }),
+        evictExpired
+    };
+    return { state, evictExpired, stores };
+}

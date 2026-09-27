@@ -669,3 +669,22 @@ function decodeVersion(value: unknown): number {
     }
     return Number(value);
 }
+
+describe('memory pair eviction (S3a, ruling 5)', () => {
+    it('removes every expired admission row from the map at once and keeps the live ones', async () => {
+        let nowMs = 1_000;
+        const state = createInMemoryALAdmissionState();
+        const backend = new InMemoryAdmissionBackend(state, () => nowMs);
+        await backend.write(async (tx) => {
+            await tx.set('expiring-1', 'a', 2_000);
+            await tx.set('expiring-2', 'b', 3_000);
+            await tx.set('live', 'c', 10_000);
+        });
+        nowMs = 5_000;
+
+        // `read` and `list` expire lazily, one key at a time, so only the map says what the sweep removed.
+        backend.evictExpired();
+
+        expect([...state.data.keys()]).toEqual(['live']);
+    });
+});
