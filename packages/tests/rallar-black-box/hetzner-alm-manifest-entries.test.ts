@@ -112,6 +112,73 @@ describe('ALM conformance combined recipe', () => {
     });
 });
 
+describe('ALM combined recipient-b ACK-hold ordering', () => {
+    it(
+        'requires an ack-hold fault that opens a scenario block to follow a previous block long enough for its ' +
+            'own ACK to have left, unless that receipt is expected to end expired',
+        () => {
+            const recipes = createAlmConformance3AgentEntry().manifest.recipes.map(
+                (selection) => selection.recipe as RallarBlackBoxTestRecipe
+            );
+            const senderRecipe = recipes.find((recipe) => recipe.metadata?.role === 'sender')!;
+            const recipientBRecipe = recipes.find((recipe) => recipe.metadata?.role === 'recipient-b')!;
+
+            const windowByPrefix = new Map<string, number>();
+            const endingByPrefix = new Map<string, unknown>();
+            for (const command of senderRecipe.commands) {
+                if (
+                    command.kind === 'messages.received' && typeof command.commandId === 'string' &&
+                    command.commandId.endsWith('-sender-received-self-1')
+                ) {
+                    windowByPrefix.set(command.commandId.replace(/-sender-received-self-1$/, ''), command.timeoutMs ?? 0);
+                }
+                if (
+                    command.kind === 'assert' && typeof command.commandId === 'string' &&
+                    command.source.endsWith('receipts-1.value.state')
+                ) {
+                    endingByPrefix.set(command.commandId.replace(/-sender-assert-receipt-state-1$/, ''), command.expected);
+                }
+            }
+            expect(windowByPrefix.size).toBeGreaterThan(0);
+            expect(endingByPrefix.size).toBe(windowByPrefix.size);
+
+            const prefixOf = (commandId: string | undefined) => commandId?.split('-recipient-b-')[0];
+            const commands = recipientBRecipe.commands;
+            let checked = 0;
+            // Every scenario block ends with its own `stats` command (added by the per-role recipe wrapper), so
+            // the fault.inject that opens the next block is always directly preceded by that `stats` command; the
+            // previous block's own last command — the one that must hold the ACK open — is one step further back.
+            for (let i = 2; i < commands.length; i++) {
+                const command = commands[i]!;
+                if (command.kind !== 'fault.inject' || command.match.controlType !== 'ack' || command.remaining !== 'until-cleared') {
+                    continue;
+                }
+                const currentPrefix = prefixOf(command.commandId);
+                const statsCommand = commands[i - 1]!;
+                const previousPrefix = prefixOf(statsCommand.commandId);
+                if (previousPrefix === undefined || previousPrefix === currentPrefix) {
+                    continue;
+                }
+                expect(statsCommand.kind, `${previousPrefix} -> ${currentPrefix}`).toBe('stats');
+                const blockLast = commands[i - 2]!;
+                const label = `${previousPrefix} -> ${currentPrefix}`;
+                const previousEnding = endingByPrefix.get(previousPrefix);
+                expect(previousEnding, label).toBeDefined();
+                if (previousEnding === 'expired') {
+                    continue;
+                }
+                checked += 1;
+                const requiredMinTimeoutMs = windowByPrefix.get(previousPrefix)!;
+                expect(blockLast.kind, label).toBe('messages.received');
+                expect(blockLast.kind === 'messages.received' && blockLast.absent, label).toBe(true);
+                expect(blockLast.kind === 'messages.received' ? (blockLast.timeoutMs ?? 0) : 0, label)
+                    .toBeGreaterThanOrEqual(requiredMinTimeoutMs);
+            }
+            expect(checked).toBeGreaterThan(0);
+        }
+    );
+});
+
 describe('ALM combined sender pacing', () => {
     it('paces the sender once before every scenario block and paces neither recipient', () => {
         for (const entry of [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]) {

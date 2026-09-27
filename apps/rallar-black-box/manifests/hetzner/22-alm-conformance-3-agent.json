@@ -2405,6 +2405,16 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-unknown-ack-version-recipient-b-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc.unknown-ack-version",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-rtc-unknown-ack-version-recipient-b-stats",
             "timeoutMs": 3000
@@ -2593,6 +2603,16 @@
             "operator": "equals",
             "expected": "admitted",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.unknown-ack-version",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
           },
           {
             "kind": "stats",
