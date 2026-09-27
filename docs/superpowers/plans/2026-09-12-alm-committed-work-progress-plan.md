@@ -2083,7 +2083,28 @@ Vitest invocation timed out seven tests while overlapping capture and build;
 all 29 tests in the five affected files later passed sequentially with one
 worker. The initial failure remains recorded, not relabelled as green.
 
-### Next decision: explicit IndexedDB lifetime ownership
+### Next slice: heartbeat lease renewal across cache expiry
+
+A post-rebase independent review found a reproducible liveness edge in the
+already-selected heartbeat-only authority renewal. If the group HTTP response
+arrives after the browser snapshot's 60-second memory TTL, the lease-advance
+helper's TTL-aware identity read returns `undefined` before the existing raw
+identity CAS runs. The authoritative lease is discarded; the next heartbeat
+selects joined groups from the expired cache and can omit that room. The
+non-lease replacement branch does not have this TTL-only failure. Focused
+review reproduced `expiredRead true` and `retainedAfterLeaseRenewal false` on
+the real cache. This is a P2 correctness gap, not RTC-B06 acceptance evidence.
+
+The bounded proposed correction is to keep the same scope and lease validation
+but use the existing exact-object identity CAS directly for heartbeat lease
+adoption. It can renew an expired entry still physically present, while a
+newer replacement or removed entry still fails; there is no fallback write
+after a lost CAS. Add a fake-time in-flight TTL-crossing test and a newer-winner
+control first, then run focused heartbeat/authority tests, shared-web typing,
+and the affected browser bundle boundaries. This proposal awaits maintainer
+design approval; no implementation or acceptance-rule change is implied here.
+
+### Subsequent decision: explicit IndexedDB lifetime ownership
 
 After rebasing PR #566 onto main `dc12f8930925496985cb4ffe7488f523967166e4`,
 the source conflict is resolved and the focused Task 34/35 tests pass 31/31;
