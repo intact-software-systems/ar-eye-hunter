@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decodeLiveWsNotice, encodeLiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 const groupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
@@ -28,6 +28,69 @@ function publication(resource = '') {
 }
 
 describe('live WS notice codec', () => {
+    it('accepts an explicit logical deadline for a message without AL expiry', () => {
+        const { id, route, payload } = message();
+        const encoded = encodeLiveWsNotice({
+            ...publication(),
+            audience: { mode: 'broad', targetMode: 'all' },
+            message: { id, route, payload, targets: { mode: 'broadcast', scope: 'all' } }
+        });
+        expect(encoded.kind).toBe('inline');
+        if (encoded.kind === 'inline') {
+            expect(decodeLiveWsNotice(JSON.parse(encoded.serialized), 'ws-channel', 1)).toEqual(encoded.notice);
+        }
+    });
+
+    it('does not let a notice extend an existing AL expiry', () => {
+        const extended = { ...publication(), expiresAtMs: 1_800_000_000_001 };
+        expect(() => encodeLiveWsNotice(extended)).toThrow(TypeError);
+        const encoded = encodeLiveWsNotice(publication());
+        expect(encoded.kind).toBe('inline');
+    });
+
+    it('does not extend a fresh-until QoS expiry carried by the message', () => {
+        const { id, route, payload } = message();
+        const qosMessage: ALMessage = {
+            id,
+            route,
+            payload,
+            targets: { mode: 'broadcast', scope: 'all' },
+            qos: { expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 10 } } }
+        };
+        const input = {
+            ...publication(),
+            audience: { mode: 'broad' as const, targetMode: 'all' as const },
+            message: qosMessage
+        };
+        expect(() => encodeLiveWsNotice({ ...input, expiresAtMs: 12 })).toThrow(TypeError);
+        expect(encodeLiveWsNotice({ ...input, expiresAtMs: 11 }).kind).toBe('inline');
+    });
+
+    it('encodes a standard broadcast builder as the exact JSON-clean notice sent by transport', () => {
+        const built = newALBroadcastMessage('server', newALRoute('room.match', 'world', 'resource'), 'all', 'room.match', { text: 'hello' });
+        const encoded = encodeLiveWsNotice({
+            ...publication(),
+            audience: { mode: 'broad', targetMode: 'all' },
+            message: built
+        });
+        expect(encoded.kind).toBe('inline');
+        if (encoded.kind === 'inline') {
+            expect(encoded.notice).toEqual(JSON.parse(encoded.serialized));
+            expect(decodeLiveWsNotice(JSON.parse(encoded.serialized), 'ws-channel', 1)).toEqual(encoded.notice);
+        }
+    });
+
+    it('does not clean a missing mandatory AL field into a valid notice', () => {
+        const malformed = structuredClone(message());
+        Reflect.set(malformed.payload, 'resource', undefined);
+        expect(() => encodeLiveWsNotice({ ...publication(), message: malformed })).toThrow(TypeError);
+    });
+
+    it('does not silently erase an undefined audience field', () => {
+        const audience = { mode: 'room' as const, groupRef, recipientSessionIds: ['session-1'] };
+        Reflect.set(audience, 'unexpected', undefined);
+        expect(() => encodeLiveWsNotice({ ...publication(), audience })).toThrow(TypeError);
+    });
     it('round trips a final inline message and its frozen room audience', () => {
         const encoded = encodeLiveWsNotice(publication());
         expect(encoded.kind).toBe('inline');
