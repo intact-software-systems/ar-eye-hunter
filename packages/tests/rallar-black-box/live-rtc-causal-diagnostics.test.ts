@@ -69,6 +69,85 @@ function toClaimProjection(overrides: LiveRtcJsonRecord) {
 }
 
 describe('live RTC causal diagnostics', () => {
+    it('accounts for filtered drain identities without equating them to runtime claims', () => {
+        const projection = toLiveRtcCausalEvents({
+            events: [diagnosticEvent({
+                agentId: 'agent-a',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 1,
+                data: {
+                    kind: 'effect-drain',
+                    workerId: 'worker-1',
+                    durationMs: 10,
+                    claimedCount: 7,
+                    completedCount: 7,
+                    rescheduledCount: 0,
+                    rejectedCount: 0,
+                    selectionDurationMs: 1,
+                    claimDurationMs: 1,
+                    runDurationMs: 7,
+                    releaseDurationMs: 1,
+                    queueWaitMs: 0,
+                    claimedEffectIds: ['effect:one', 'secret/invalid', 42, 'effect:two']
+                }
+            })],
+            agentReferences: new Map([['agent-a', 'agent-a']]),
+            peerIds: []
+        });
+
+        expect(projection.events[0]).toMatchObject({
+            claimedCount: 7,
+            claimedEffectIds: ['effect:one', 'effect:two'],
+            claimedEffectIdsRawLength: 4,
+            claimedEffectIdsRetainedCount: 2,
+            claimedEffectIdsFilteredCount: 2,
+            claimedEffectIdsTruncated: false
+        });
+        expect(JSON.stringify(projection)).not.toContain('secret/invalid');
+    });
+
+    it('accounts for identities inspected before the 100-entry drain cap', () => {
+        const claimedEffectIds = [
+            ...Array.from({ length: 99 }, (_, index) => `effect:${index}`),
+            'secret/invalid',
+            'effect:beyond-cap'
+        ];
+        const projection = toLiveRtcCausalEvents({
+            events: [diagnosticEvent({
+                agentId: 'agent-a',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                atEpochMs: 1,
+                data: {
+                    kind: 'effect-drain',
+                    workerId: 'worker-1',
+                    durationMs: 10,
+                    claimedCount: 101,
+                    completedCount: 101,
+                    rescheduledCount: 0,
+                    rejectedCount: 0,
+                    selectionDurationMs: 1,
+                    claimDurationMs: 1,
+                    runDurationMs: 7,
+                    releaseDurationMs: 1,
+                    queueWaitMs: 0,
+                    claimedEffectIds
+                }
+            })],
+            agentReferences: new Map([['agent-a', 'agent-a']]),
+            peerIds: []
+        });
+
+        expect(projection.events[0]).toMatchObject({
+            claimedCount: 101,
+            claimedEffectIdsRawLength: 101,
+            claimedEffectIdsRetainedCount: 99,
+            claimedEffectIdsFilteredCount: 1,
+            claimedEffectIdsTruncated: true
+        });
+        expect(projection.events[0]?.claimedEffectIds).toHaveLength(99);
+        expect(JSON.stringify(projection)).not.toMatch(/secret\/invalid|beyond-cap/u);
+    });
+
     it('preserves the evidence separating overdue selection from a preceding control claim', () => {
         const records: LiveRtcJsonRecord[] = [
             { kind: 'admission-outcome', typeId: 'rtc-signaling', msgId: 'answer-1', outcome: 'committed' },

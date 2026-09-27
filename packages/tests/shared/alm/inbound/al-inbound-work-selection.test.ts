@@ -30,6 +30,7 @@ import {
     createALInboundWorkSelector,
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
+import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler, type ALWorkBatchDiagnostics } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -39,6 +40,7 @@ import {
     type ResourceEntry,
     type ResourceEntryKeyString
 } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
@@ -106,6 +108,93 @@ describe('ALInboundWorkSelector readiness', () => {
 });
 
 describe('ALInboundWorkSelector phase measurement', () => {
+    it.each([4, AL_INBOUND_WORK_PAGE_SIZE])(
+        'separates original work and release from successor rediscovery behind %i held claims',
+        async (originalCount) => {
+            const fixture = createCostBoundaryFixture();
+            const originals: ResourceEntry[] = [];
+            for (let index = 0; index < originalCount; index += 1) {
+                const entry = createPendingAdmissionEntry(fixture.namespace, NOW_MS, `original-${String(index).padStart(2, '0')}`);
+                originals.push(entry);
+                await fixture.port.retainIfAbsent(entry);
+            }
+
+            let signalHeld: (() => void) | undefined;
+            const heldEntered = new Promise<void>((resolve) => {
+                signalHeld = resolve;
+            });
+            let releaseHeld: (() => void) | undefined;
+            const held = new Promise<void>((resolve) => {
+                releaseHeld = resolve;
+            });
+            const runIds: string[] = [];
+            const batches: ALWorkBatchDiagnostics[] = [];
+            const handler = new ALWorkHandler({
+                workerId: 'cost-boundary-worker',
+                port: fixture.port,
+                queueEngine: new InboxOutboxEngine(),
+                ownsQueueEngine: false,
+                clock: { nowMs: fixture.nowMs },
+                pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+                readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+                readNextReadyAtMs: fixture.selector.readNextReadyAtMs,
+                selectReady: fixture.selector.selectReady,
+                runClaim: async (claim) => {
+                    runIds.push(decodeALInboundWorkEntry(claim.entry, fixture.namespace).effectId);
+                    if (runIds.length === 1) {
+                        signalHeld?.();
+                        await held;
+                    }
+                    fixture.advance(17);
+                    return { status: 'completed' };
+                },
+                diagnostics: (event) => {
+                    if (event.kind === 'work-batch') {
+                        batches.push(event);
+                    }
+                }
+            });
+            try {
+                const originalBatch = handler.ready();
+                await heldEntered;
+                await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'successor-zz'));
+                releaseHeld?.();
+                await originalBatch;
+
+                expect(runIds).toHaveLength(originalCount);
+                expect(runIds.every((id) => id.includes('original-'))).toBe(true);
+                const originalStatuses = (await Promise.all(originals.map((entry) => fixture.port.readEntry(entry.key))))
+                    .map((entry) => entry?.status);
+                expect(originalStatuses).toEqual(Array(originalCount).fill(EntityStatus.COMPLETED));
+                expect(batches).toHaveLength(1);
+                expect(batches[0]).toMatchObject({
+                    claimedCount: originalCount,
+                    completedCount: originalCount,
+                    selectionDurationMs: 5,
+                    claimDurationMs: 3,
+                    runDurationMs: 17 * originalCount,
+                    releaseDurationMs: 23,
+                    durationMs: 5 + 3 + 17 * originalCount + 23
+                });
+
+                const rediscoveryStartedAtMs = fixture.nowMs();
+                let successorClaims: readonly ALWorkClaim[] = [];
+                for (let scan = 0; scan < 4 && successorClaims.length === 0; scan += 1) {
+                    successorClaims = (await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims;
+                }
+                expect(successorClaims).toHaveLength(1);
+                expect(decodeALInboundWorkEntry(successorClaims[0]!.entry, fixture.namespace).effectId).toContain('successor-zz');
+                expect(fixture.nowMs() - rediscoveryStartedAtMs).toBe(
+                    (originalCount === AL_INBOUND_WORK_PAGE_SIZE ? 1 : 3) * (5 + 3)
+                );
+            }
+            finally {
+                releaseHeld?.();
+                handler.dispose();
+            }
+        }
+    );
+
     it('times its page read apart from its reservation, and reports the wait of the row it claimed', async () => {
         const fixture = createTimedSelectorFixture();
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS - DUE_SINCE_MS));
@@ -407,6 +496,58 @@ function createTimedSelectorFixture(): SelectorFixture {
     };
 }
 
+/** Logical phase costs at real selector and queue-port seams; these are not IndexedDB timings. */
+function createCostBoundaryFixture() {
+    const namespace = 'cost-boundary';
+    let currentMs = NOW_MS;
+    const nowMs = () => currentMs;
+    const advance = (durationMs: number) => {
+        currentMs += durationMs;
+    };
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+    );
+    const admissionStore = createALInboundAdmissionStore({
+        nowMs,
+        namespace,
+        backend: new InMemoryAdmissionBackend(state, nowMs),
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention()
+    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, nowMs).delivery;
+    const originalPort = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs });
+    const port = createCostBoundaryPort(originalPort, advance);
+    return {
+        namespace,
+        port,
+        nowMs,
+        advance,
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs })
+    };
+}
+
+function createCostBoundaryPort(originalPort: ALWorkQueuePort, advance: (durationMs: number) => void): ALWorkQueuePort {
+    return {
+        ...originalPort,
+        readPage: async (input) => {
+            const page = await originalPort.readPage(input);
+            advance(5);
+            return page;
+        },
+        claim: async (input) => {
+            const claims = await originalPort.claim(input);
+            advance(3);
+            return claims;
+        },
+        releaseAll: async (releases) => {
+            await originalPort.releaseAll(releases);
+            advance(23);
+        }
+    };
+}
+
 /** The rotation's next few rounds, stopped at the one that took work. */
 async function readFirstClaimingSelection(fixture: SelectorFixture, maxRounds = SCAN_STATUS_COUNT) {
     for (let round = 0; round < maxRounds; round += 1) {
@@ -501,16 +642,20 @@ function createUnleasedReservationEntry(namespace: string, observedAtMs: number)
     return { ...createPendingAdmissionEntry(namespace, observedAtMs), status: EntityStatus.RESERVED };
 }
 
-function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS) {
+function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS, msgId = 'selection') {
     const original = newALUnicastMessage(
         'peer-1',
-        { topicId: 'chat', resourceId: 'selection', contextId: 'chat-1' },
+        { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
         'self',
         'chat.private-text.v1',
         { text: 'claimable' },
         { ttlMs: 60_000 }
     );
-    const msg = { ...original, constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 } };
+    const msg = {
+        ...original,
+        id: { ...original.id, msgId },
+        constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 }
+    };
     return computeALInboundWorkEntry({
         carrier: 'ws',
         namespace,

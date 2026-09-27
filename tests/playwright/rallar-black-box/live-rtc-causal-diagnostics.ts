@@ -389,6 +389,10 @@ function toCausalInboundWork(
     }
     const durations = toRequiredDiagnosticNumbers(data, INBOUND_DRAIN_DURATION_FIELDS);
     const counts = toRequiredDiagnosticIntegers(data, INBOUND_DRAIN_COUNT_FIELDS);
+    const claimedEffectIds = toCausalEffectIds(data.claimedEffectIds);
+    const claimedEffectIdsInspectedCount = Array.isArray(data.claimedEffectIds)
+        ? Math.min(data.claimedEffectIds.length, MAX_CAUSAL_WORK_EFFECTS)
+        : null;
     return durations && counts
         ? {
             topic,
@@ -398,7 +402,12 @@ function toCausalInboundWork(
             ...durations,
             ...counts,
             ...toDiagnosticNumbers(data, ['startedAtMs']),
-            claimedEffectIds: toCausalEffectIds(data.claimedEffectIds),
+            claimedEffectIds,
+            claimedEffectIdsRawLength: Array.isArray(data.claimedEffectIds) ? data.claimedEffectIds.length : null,
+            claimedEffectIdsRetainedCount: claimedEffectIds?.length ?? null,
+            claimedEffectIdsFilteredCount: claimedEffectIdsInspectedCount === null || claimedEffectIds === null
+                ? null
+                : claimedEffectIdsInspectedCount - claimedEffectIds.length,
             claimedEffectIdsTruncated: isCausalEffectListTruncated(data.claimedEffectIds),
             deferred: toCausalDeferredEffects(data.deferred),
             deferredTruncated: isCausalEffectListTruncated(data.deferred)
