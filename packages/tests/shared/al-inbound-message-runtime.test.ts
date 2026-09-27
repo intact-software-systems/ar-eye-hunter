@@ -825,6 +825,10 @@ describe('ALInboundMessageRuntime durable effects', () => {
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
         );
+        // The offline send releases both acknowledgement rows for retry before the restart. A runtime
+        // disposed while its batch still holds a claim leaves that row reserved until its lease ends,
+        // which the frozen clock never reaches.
+        await expect.poll(() => countWorkRowsWithStatus(stores.workQueue, EntityStatus.RETRY)).toBe(2);
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
@@ -931,6 +935,14 @@ function toDeliveredMessageText(entry: ResourceEntry): string {
         throw new TypeError('Test message text must be a string');
     }
     return text ?? msg.id.msgId;
+}
+
+async function countWorkRowsWithStatus(
+    workQueue: ALInboundRuntimeStores['workQueue'],
+    status: EntityStatus
+): Promise<number> {
+    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
+    return rows.filter((row) => row?.status === status).length;
 }
 
 function readAckPayloads(messages: readonly ALMessage[]) {
