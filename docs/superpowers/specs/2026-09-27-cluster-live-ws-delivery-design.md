@@ -1,4 +1,6 @@
-# Cluster Live WebSocket Delivery Design (proposed)
+# Cluster Live WebSocket Delivery Design
+
+Approved by the maintainer on 2026-09-27 for implementation in draft PR #566.
 
 ## Problem and scope
 
@@ -37,8 +39,8 @@ explicitly, rather than silently upgrading or downgrading QoS.
 | `none`                                                     | No cluster publication                                                                                          | Existing handler-only behavior.                                                                                                                                                                                                                                                                                      |
 
 The publisher must finish admission, authorization, transformation, and expiry
-checks once before announcing the final message. For room-scoped and
-explicit-peer sends, it also freezes authorized addressed session IDs; the
+checks once before announcing the final message. For room-scoped,
+principal-scoped, and explicit-peer sends, it also freezes authorized addressed session IDs; the
 notice carries or identifies that final message and audience, not a room name
 to re-resolve later. For broad `all`/`world` best-effort broadcasts, the
 notice instead identifies that target mode and each subscriber uses its
@@ -78,11 +80,14 @@ exceed the notification budget even when the message body does not. Therefore:
 
 1. Measure the **serialized UTF-8 notice**, including message, audience, and
    metadata. Do not advertise an 8 KiB _message_ limit or guess from character
-   count. Keep an explicit safety margin within the existing `<8,000` parser
-   bound; tests must cover the exact boundary.
+   count. Preserve the existing `<8,000`-byte wire bound: a 7,999-byte notice
+   is accepted and an 8,000-byte notice is not sent inline. Tests cover the
+   exact boundary.
 2. For an admitted inbound best-effort message that exceeds the inline budget,
    notify by a small key and read the already-retained canonical inbound
-   message on each receiver. This is a read-only carrier lookup, **not** a
+   delivery surface on each receiver. Its persisted message owner supplies the
+   frozen `groupRecipientPeerIds` alongside the final message, so a large
+   audience need not be copied into the notice. This is a read-only carrier lookup, **not** a
    receiver inbox or a new durable-delivery promise. Publish after admission
    commits; a missing/expired row is an observable best-effort miss.
 3. A server-generated/proxy-created best-effort publication may have no
@@ -121,9 +126,9 @@ cluster publication.
   the absence of a receiving write.
 
 The placement of the live cluster publisher, its notice codec, and the
-application wiring is deliberately a review checkpoint in the accompanying
-plan. This design fixes behavior and boundaries; it does not yet bless a file
-split or public API shape.
+application wiring follows the ownership map in the accompanying approved
+plan. This design fixes behavior and boundaries; implementation still chooses
+the smallest interfaces consistent with that map.
 
 ## Ownership and audience questions found during code review
 
@@ -137,7 +142,7 @@ it. Keep the outbox key codec's meaning unchanged.
 The admitted inbound `route()` call can pass its captured room audience and
 `groupRecipientPeerIds` to `publishToFanout`. In contrast, `publish()` and
 proxy `toTargets`/`toPeer`/`toRoom`/`toAll` currently call it without an
-audience. A room publication needs a publisher-side authoritative snapshot
+audience. A room or principal publication needs a publisher-side authoritative snapshot
 of its final targets; a unicast names its peer directly. A proxy may transform
 targets after inbound authorization, so it cannot inherit that old audience
 without rechecking the final scope. For broad `all`/`world` sends, the

@@ -25,18 +25,18 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
 
 ## Global Constraints
 
-- The maintainer approved the oversize refusal, `cluster-published` result,
-  subscriber-local broad-broadcast audience policy, and a mandatory full
-  `roomRef` on public Rallar Game server snapshot/event inputs without a
-  compatibility path. The revised written spec/plan and final ownership map
-  still require review before production behavior changes.
+- The maintainer approved the revised written spec, this plan, and the
+  proposed ownership map on 2026-09-27. That approval includes oversize
+  refusal, the `cluster-published` result, subscriber-local broad-broadcast
+  audience policy, and a mandatory full `roomRef` on public Rallar Game
+  server snapshot/event inputs without a compatibility path.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
   silently change best-effort into durable outbox, or at-least-once into one
   untracked local send.
 - Preserve one authoritative handler/mutation execution and the admission-time
-  room audience. Broad `all`/`world` best-effort broadcasts use locally
+  room or principal audience. Broad `all`/`world` best-effort broadcasts use locally
   eligible open sockets at notice receipt; each subscriber may only perform
   a direct local socket send.
 - Do not add a library, receiving inbox/queue, retry, fence, lock, timer,
@@ -78,10 +78,10 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
 
 ---
 
-## Proposed ownership map for design review
+## Approved ownership map
 
 The current call trace identifies these ownership seams. New files and
-signatures are proposed, not yet authorized for implementation. Do not bury
+signatures remain subject to placement review during implementation. Do not bury
 live publication in `apps/api-v1` or extend the `WS_OUTBOX` codec with a
 misleading second meaning just to avoid a file:
 
@@ -98,7 +98,8 @@ misleading second meaning just to avoid a file:
   `ApiV1DatabaseNotificationPort`. Their local/disabled equivalents own the
   corresponding non-cluster behavior.
 - The existing inbound admission store's `readDeliverySurface` owns canonical
-  key lookup for oversized inbound messages; no receiver inbox or new table.
+  key lookup for oversized inbound messages and returns the persisted source,
+  including frozen `groupRecipientPeerIds`; no receiver inbox or new table.
 - API-v1 room-authority composition freezes a room audience at publication.
   A narrow local-eligibility port reads the current authenticated socket's
   scope and generation from `authorised-ws-connection-registry.ts` before a
@@ -113,7 +114,7 @@ misleading second meaning just to avoid a file:
 - Existing shared-server middleware composes the ports. Neighboring
   shared-server and API-v1 tests plus API-v1 black-box recipes prove behavior.
 
-Before implementation, finish tracing result consumers (including RTC
+During implementation, finish tracing result consumers (including RTC
 signaling, RTT, game, Relic, AI, and custom topic examples), and check these
 proposed signatures against the smallest existing ports. The first two
 implementation slices are codec/transport and publisher routing; later slices
@@ -184,21 +185,22 @@ new neighboring Vitest module; existing Postgres adapter tests in
 
 **Interface to settle at placement review:** A discriminated live notice with
 `publisherId`, version, final AL message or canonical inbound key, explicit
-room/peer/broad audience mode with frozen IDs where required, scope, and
+room/principal/peer/broad audience mode with frozen IDs where required, scope, and
 logical deadline; a pure decoder returning a
 validated notice or `undefined`; a UTF-8 encoder returning inline, key-only,
 or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 
-- [ ] Write failing codec tests for malformed/spoofed scope, expiry, exact
+- [x] Write failing codec tests for malformed/spoofed scope, expiry, exact
       serialized-byte boundaries, non-ASCII payloads, large audience, and a
       noncanonical oversize publication.
-- [ ] Run those focused Vitest tests and confirm the intended failures.
-- [ ] Implement the smallest codec/adapter change with the existing `<8,000`
-      bound; run the same tests green with
-      `npx vitest run packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/postgres-queue-pubsub-bridge.test.ts`
-      and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
-- [ ] Review the changed files for touched-file standards closure; commit the
-      independently testable codec slice on the PR branch.
+- [x] Run those focused Vitest tests and confirm the intended failures.
+- [x] Implement the smallest codec/adapter change with the existing `<8,000`
+      bound. The focused shared-server Vitest command passed 34/34; the
+      API-v1 Deno adapter test, which root Vitest does not select, passed 6/6;
+      shared-server typecheck passed.
+- [x] Review the changed files for touched-file standards closure; commit the
+      independently testable codec slice on the PR branch (`2c706f9fe`,
+      `53597fb3b`). Independent fix re-review found both issues addressed.
 
 ### Task 2: Publish once and send locally on each listener
 
@@ -216,7 +218,7 @@ The result distinguishes cluster publication from locally observed sends.
       a different process owns the addressed socket, and exactly one authorized
       local send occurs; a subscriber never invokes the router handler.
 - [ ] Add failing tests for generated and proxy publications, wrong scope, late
-      room joiner, a same-ID authenticated socket reconnected under another scope,
+      room joiner, a frozen principal audience, a same-ID authenticated socket reconnected under another scope,
       bare-room-ID refusal, a scoped Relic publication, broad just-opened socket,
       expiry, duplicate/self notice,
       absent canonical row, listener loss,
@@ -233,8 +235,8 @@ The result distinguishes cluster publication from locally observed sends.
       receiving inbox. Run
       `npx vitest run packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/local-queue-pubsub-bridge.test.ts`
       green and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
-- [ ] Review all result consumers and affected examples; commit this slice only
-      after the revised written spec/plan and ownership map have been approved.
+- [ ] Review all result consumers and affected examples; commit this slice
+      after the focused behavior and type checks pass.
 
 ### Later outcome: durable live publications use the existing outbox
 
@@ -260,23 +262,21 @@ specific commands and files from the then-current implementation and
 
 ## Approval and rollback gates
 
-The maintainer approved (1) noncanonical best-effort oversize refusal, (2)
+The maintainer approved the revised design, plan, and ownership map on
+2026-09-27, including (1) noncanonical best-effort oversize refusal, (2)
 the `cluster-published` result instead of global send counts, (3)
 subscriber-local eligibility for broad `all`/`world` best-effort broadcasts,
 while room authority remains frozen at the publisher, and (4) mandatory full
 `roomRef` for Rallar Game server snapshot/event publication without legacy.
-Review the revised written spec/plan and proposed ownership map before
-production implementation.
-If that review changes a decision, revise both artifacts first. Rollback is
-a normal PR revert of the new publication path;
+If implementation evidence changes a decision, revise both artifacts first.
+Rollback is a normal PR revert of the new publication path;
 `WS_OUTBOX` remains the existing durable carrier. A green single-process test
 or mere successful `NOTIFY` is not evidence of cluster delivery.
 
 ## PR #566 readiness boundary
 
-Keep the PR draft. Review the revised written design, plan, and code ownership
-above **before** implementing the live-delivery correction. Then resolve and
-prove cross-process WS behavior, address the known heartbeat cache-TTL edge,
+Keep the PR draft. Resolve and prove cross-process WS behavior, address the
+known heartbeat cache-TTL edge,
 obtain the unchanged 100-cycle E3 acceptance evidence, and require a green
 exact-head Branch Release Gate and independent review before marking the whole
 branch ready for `main`. The WS correction alone does not satisfy the RTC-B06
