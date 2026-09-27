@@ -273,8 +273,17 @@ describe('ALM combined scenario barriers (D62)', () => {
                 expect(recipientB[hold + 1], prefix).toBe(`${prefix}-recipient-b-armed`);
             }
         }
-        // Manifest 22 run 4: recipient-b armed this hold while its ACK for unknown-ack-version was still owed.
-        expect(sender.indexOf('alm-rtc-unknown-ack-version-sender-assert-receipt-state-1'))
-            .toBeLessThan(sender.indexOf('alm-rtc-frozen-audience-membership-sender-start'));
+        // Manifest 22 run 4: recipient-b armed this hold while its ACK for unknown-ack-version was still owed. The hold now
+        // waits on the same start barrier the sender reaches only after its receipt assertion for that scenario.
+        const nextStart = 'alm-rtc-frozen-audience-membership-start';
+        const toBarrierIndex = (role: string) =>
+            (recipes.find((selection) => selection.role === role)!.recipe as RallarBlackBoxTestRecipe).commands
+                .findIndex((command) => command.kind === 'barrier' && command.barrierId === nextStart);
+        const receiptAt = sender.indexOf('alm-rtc-unknown-ack-version-sender-assert-receipt-state-1');
+        expect(receiptAt).toBeGreaterThanOrEqual(0);
+        expect(toBarrierIndex('sender')).toBeGreaterThan(receiptAt);
+        const holdAt = recipientB.findIndex((id) => id.startsWith('alm-rtc-frozen-audience-membership-recipient-b-hold-ack-'));
+        expect(toBarrierIndex('recipient-b')).toBeGreaterThanOrEqual(0);
+        expect(toBarrierIndex('recipient-b')).toBeLessThan(holdAt);
     });
 });
