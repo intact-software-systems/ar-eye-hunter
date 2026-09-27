@@ -1376,6 +1376,17 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-lifecycle-sender-receipt-complete-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.receipt.v1\",\"targetMsgId\":\"{resultCache.alm-ws-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\",\"reason\":\"none\",\"phase\":\"complete\""
+            },
+            "timeoutMs": 27000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-ws-delivery-lifecycle-sender-receipts-1",
             "connection": "almConformanceSender",

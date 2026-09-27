@@ -1,4 +1,4 @@
-import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
@@ -82,20 +82,26 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
  * `assessAlmAcknowledgedIdentity`.
  *
  * Elapsed time is not a turn of the sender's event loop: when every command settles in microtasks, the
- * peer's ACK is still a queued task at the read. The rtc read therefore waits for the sender's own
- * committed ACK admission, a local event and not an `acknowledged` observe (D28).
+ * peer's ACK is still a queued task at the read. So the read first waits for a local event, not an
+ * `acknowledged` observe (D28): the sender's committed ACK admission over rtc, and over ws its committed
+ * `complete` receipt from the server, whose `admitted` receipt arrives first (R-S3a-9).
  */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const isWs = sender.input.carrier === 'ws';
     const peerLists = isWs ? 'RecipientPeerIds' : 'HopPeerIds';
     return [
-        ...(isWs ? [] : [
-            toCommittedControlAdmissionWait({
+        isWs
+            ? toCommittedControlAdmissionWait({
+                step: { ...sender, index: 1 },
+                name: 'receipt-complete-1',
+                controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+                receiptPhase: 'complete'
+            })
+            : toCommittedControlAdmissionWait({
                 step: { ...sender, index: 1 },
                 name: 'ack-admitted-1',
                 controlTypeId: AL_CONTROL_ACK_TYPE_ID
-            })
-        ]),
+            }),
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
             step: sender,

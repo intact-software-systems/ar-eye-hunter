@@ -48,9 +48,9 @@ describe('ALM lifecycle recipe evidence', () => {
 
     // Task 4 lane diagnosis: the sender's runner settles every command of a memory lane in microtasks, so the
     // receiver's ACK task never runs before a point-in-time `receipts-1` read. The read waits on the sender's
-    // own committed ACK admission instead; over ws the server's receipt answers and nothing is added.
+    // own committed ACK admission instead; over ws, on its committed `complete` receipt (R-S3a-9).
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
-        'reads the submission receipts over %s only after the sender committed the ACK admission when a peer acknowledges',
+        'reads the submission receipts over %s only after the sender committed the acknowledgement that completes them',
         (carrier) => {
             const commands = createAlmConformanceRecipes({
                 group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
@@ -63,11 +63,21 @@ describe('ALM lifecycle recipe evidence', () => {
             const receiptsIndex = commands.findIndex((command) => command.commandId?.endsWith('receipts-1'));
             const ackAdmitted = commands.filter((command) => command.commandId?.endsWith('ack-admitted-1'));
 
+            const sendId = commands.find((command) => command.commandId?.endsWith('send-1'))!.commandId!;
             if (carrier === 'ws') {
+                // R-S3a-9: over ws the server's complete receipt is the local event; its admitted one precedes it.
                 expect(ackAdmitted).toEqual([]);
+                expect(commands[receiptsIndex - 1]).toMatchObject({
+                    kind: 'wait',
+                    commandId: expect.stringMatching(/receipt-complete-1$/),
+                    match: {
+                        kind: 'diagnostic',
+                        contains:
+                            `"typeId":"al.control.receipt.v1","targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed","reason":"none","phase":"complete"`
+                    }
+                });
                 return;
             }
-            const sendId = commands.find((command) => command.commandId?.endsWith('send-1'))!.commandId!;
             expect(commands[receiptsIndex - 1]).toMatchObject({
                 kind: 'wait',
                 commandId: expect.stringMatching(/ack-admitted-1$/),

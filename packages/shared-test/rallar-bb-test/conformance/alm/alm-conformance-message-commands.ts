@@ -1,3 +1,4 @@
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type {
@@ -48,6 +49,8 @@ interface AlmConformanceControlAdmissionWaitInput {
     readonly name: string;
     /** The control that answers the send of `step.index`. */
     readonly controlTypeId: string;
+    /** A receipt's phase to match; absent, any committed admission of the control matches (a receipt's first). */
+    readonly receiptPhase?: ALReceiptPayload['phase'];
 }
 
 interface AlmConformanceResultAssertionInput {
@@ -176,13 +179,14 @@ export function toReceiptsCommand(receipts: AlmConformanceMessageStepInput): Ral
 
 /**
  * The `control-admission` event in which the origin commits a control that answers one of its sends, matched in its
- * emitted key order (`typeId`, `targetMsgId`, `outcome`). The verdict is local to the origin, so the wait polls no
- * other page.
+ * emitted key order (`typeId`, `targetMsgId`, `outcome`, then a receipt's `phase` after the `reason`). The verdict is
+ * local to the origin, so the wait polls no other page.
  */
 export function toCommittedControlAdmissionWait(
-    { step, name, controlTypeId }: AlmConformanceControlAdmissionWaitInput
+    { step, name, controlTypeId, receiptPhase }: AlmConformanceControlAdmissionWaitInput
 ): RallarBlackBoxTestCommand {
     const targetMsgId = `{resultCache.${toCommandId(step, `send-${step.index}`)}.value.msgId}`;
+    const phase = receiptPhase === undefined ? '' : `,"reason":"none","phase":"${receiptPhase}"`;
     return {
         kind: 'wait',
         commandId: toCommandId(step, name),
@@ -190,7 +194,7 @@ export function toCommittedControlAdmissionWait(
             kind: 'diagnostic',
             topic: OUTBOUND_DIAGNOSTICS_TOPIC,
             payloadPath: 'data',
-            contains: `"typeId":"${controlTypeId}","targetMsgId":"${targetMsgId}","outcome":"committed"`
+            contains: `"typeId":"${controlTypeId}","targetMsgId":"${targetMsgId}","outcome":"committed"${phase}`
         },
         timeoutMs: step.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
     };
