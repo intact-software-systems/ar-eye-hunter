@@ -173,6 +173,7 @@ function toInitialLifecycle(msgId: string, ackMode: 'none' | 'receiver') {
         msgId,
         typeId: 'ordered.v1',
         ackMode,
+        receiptAlgo: ackMode,
         expiresAtMs: undefined,
         submittedAtMs: 0
     });

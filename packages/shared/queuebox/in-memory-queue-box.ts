@@ -133,11 +133,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     cleanup(): boolean {
+        const now = this.now();
         const keysToRemove: ResourceEntryKeyString[] = [];
 
         for (const [key, entry] of this.data) {
             if (
-                isExpiredResourceEntry(entry) ||
+                isExpiredResourceEntry(entry, now) ||
                 (COMPLETED_STATUSES.has(entry.status) &&
                     !matchesQueueBoxCompletedRetention(entry, this.completedRetention))
             ) {
@@ -147,10 +148,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         for (const key of keysToRemove) {
             this.removeEntry(key);
-        }
-
-        if (keysToRemove.length > 0) {
-            console.log('Removed entries: ', keysToRemove.length);
         }
 
         return keysToRemove.length > 0;

@@ -1,3 +1,4 @@
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { vi } from 'vitest';
@@ -235,7 +236,8 @@ function resetRtcTransportMocks(): void {
         async (message) => ({
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
@@ -249,7 +251,8 @@ function resetWebSocketTransportMocks(): void {
         async (message) => ({
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(

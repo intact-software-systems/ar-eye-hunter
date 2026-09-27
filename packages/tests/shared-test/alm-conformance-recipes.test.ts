@@ -4,7 +4,6 @@ import {
     it
 } from 'vitest';
 
-import type { RallarBlackBoxTestStorageCountersResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
@@ -16,6 +15,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
+    RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
@@ -25,10 +25,10 @@ import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/run
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
+import { toConformanceInput } from './alm-conformance-test-input.ts';
+
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
-
-const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
 /** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
 const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
@@ -42,19 +42,6 @@ const CARRIER_CONNECT_TRANSPORTS = {
     rtc: 'messages.rtc',
     'rtc-with-ws-fallback': 'messages.rtc'
 } as const;
-
-function toConformanceInput(
-    carrier: CreateAlmConformanceRecipesInput['carrier']
-): CreateAlmConformanceRecipesInput {
-    return {
-        group,
-        carrier,
-        typeId: 'alm.conformance',
-        senderConnection: 'sender',
-        receiverConnection: 'receiver',
-        deadlineMs: 18_000
-    };
-}
 
 function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
     return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver]);
@@ -126,22 +113,35 @@ function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): reado
 }
 
 const SCENARIO_KEYS_BY_CARRIER = {
-    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync'],
-    rtc: [
+    ws: [
+        'volatile-default',
         'bounded-rejection',
         'deadline-expiry',
         'delivery-baseline',
         'delivery-lifecycle',
+        'durable-opt-in',
+        'delivery-reload',
+        'ordering-resync'
+    ],
+    rtc: [
+        'volatile-default',
+        'bounded-rejection',
+        'deadline-expiry',
+        'delivery-baseline',
+        'delivery-lifecycle',
+        'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires'
     ],
     'rtc-with-ws-fallback': [
+        'volatile-default',
         'bounded-rejection',
         'deadline-expiry',
         'delivery-baseline',
         'delivery-lifecycle',
+        'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
         'cross-carrier-duplicate-rtc-then-ws',
@@ -298,7 +298,14 @@ describe('alm-conformance recipe family', () => {
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
                 .map((scenario) => scenario.scenarioId)
-        ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle']);
+        ).toEqual([
+            'volatile-default',
+            'bounded-rejection',
+            'deadline-expiry',
+            'delivery-baseline',
+            'delivery-lifecycle',
+            'durable-opt-in'
+        ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
                 .filter((scenario) => !scenario.tags.includes('smoke'))
@@ -318,6 +325,8 @@ describe('alm-conformance recipe family', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
         ).toEqual([
+            ['smoke', 'full'],
+            ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
@@ -537,30 +546,34 @@ describe('alm-conformance recipe family', () => {
         ]);
     });
 
-    it.each([0, 1])('requires positive storage evidence in the delivery baseline when the counter is %i', async (total) => {
-        const baseline = createAlmConformanceRecipes(toConformanceInput('ws'))
-            .find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
-        const commands = baseline.sender.commands.filter((command) =>
-            command.kind === 'storage.counters' ||
-            (command.kind === 'assert' && command.source.endsWith('.value.total'))
-        );
-        const counters: RallarBlackBoxTestStorageCountersResultValue = {
-            total,
-            byOwner: { 'al-admission': total, 'al-work': 0 },
-            byKind: { read: total }
-        };
-        const runtime = createRallarBlackBoxTestRuntime({
-            commandExecutor: (command) =>
-                command.kind === 'storage.counters'
-                    ? { status: 'ok', value: counters }
-                    : undefined
-        });
-        const result = await runtime.execute({ kind: 'recipe.run', recipe: { ...baseline.sender, commands } });
-        expect(result.ok).toBe(total > 0);
-        if (total === 0) {
-            expect(runtime.state().failures).toContainEqual(expect.objectContaining({
-                error: expect.objectContaining({ code: 'RALLAR_BLACK_BOX_ASSERT_FAILED' })
-            }));
+    it('keeps the delivery baseline\'s storage reading as evidence without asserting a total (the default is volatile)', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const baseline = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+            expect(baseline.sender.commands.some((command) => command.kind === 'storage.counters'), carrier).toBe(true);
+            expect(
+                baseline.sender.commands.some((command) => command.kind === 'assert' && command.source.endsWith('.value.total')),
+                carrier
+            ).toBe(false);
+        }
+    });
+
+    // Review m3: a window that opens after the send, or reads before the arrival, would pass its zero vacuously.
+    it.each(ALM_CONFORMANCE_CARRIERS)('opens each storage window before the send and reads it after the outcome over %s', (carrier) => {
+        const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+            recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+        for (const scenarioId of ['volatile-default', 'durable-opt-in']) {
+            const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .find((candidate) => candidate.scenarioId === scenarioId)!;
+            const outcome = scenarioId === 'volatile-default' ? '-observe-acknowledged-1' : '-receipts-1';
+            const sender = ['-storage-window-open', '-send-1', outcome, '-storage-window']
+                .map((suffix) => indexOf(scenario.sender, suffix));
+            const receiver = ['-storage-window-open', '-received-1', '-storage-window']
+                .map((suffix) => indexOf(scenario.receiver, suffix));
+            for (const indices of [sender, receiver]) {
+                expect(indices.every((index) => index >= 0), `${scenarioId} ${indices.join(',')}`).toBe(true);
+                expect(indices, scenarioId).toEqual([...indices].sort((left, right) => left - right));
+            }
         }
     });
 
@@ -764,5 +777,38 @@ describe('alm-conformance recipe family', () => {
                 expect.objectContaining({ kind: 'messages.send', ack: 'all-logical-recipients', ttlMs: 7_500 })
             );
         });
+    });
+
+    it('opts the reload original into local-outbox and reads the lifecycle specimens as volatile', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+            const reload = scenarios.find((scenario) => scenario.scenarioId === 'delivery-reload')!;
+            const lifecycle = scenarios.find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
+            const reloadSend = reload.sender.commands.find((command) => command.kind === 'messages.send');
+            const enqueuedAsserts = (recipe: RallarBlackBoxTestRecipe) =>
+                recipe.commands.filter((command): command is RallarBlackBoxTestAssertCommand =>
+                    command.kind === 'assert' && command.source.endsWith('.value.enqueued')
+                );
+
+            expect(reloadSend, carrier).toMatchObject({ durability: 'local-outbox' });
+            expect(enqueuedAsserts(reload.sender).map((command) => command.expected), carrier).toEqual([
+                true
+            ]);
+            expect(enqueuedAsserts(lifecycle.sender).map((command) => command.expected), carrier)
+                .toEqual([false, false]);
+        }
+    });
+
+    // S3a (D54): the replay reads the first send's envelope back from IndexedDB, which a volatile send
+    // never reaches -- its admission lands in the carrier's memory pair.
+    it('opts the first send of each cross-carrier duplicate into local-outbox, so its replay finds the envelope', () => {
+        const duplicates = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
+
+        expect(duplicates).toHaveLength(2);
+        for (const scenario of duplicates) {
+            const [first] = scenario.sender.commands.filter((command) => command.kind === 'messages.send');
+            expect(first, scenario.scenarioKey).toMatchObject({ durability: 'local-outbox' });
+        }
     });
 });

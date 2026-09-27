@@ -78,14 +78,14 @@ export class BrowserRallarMessagesController {
         });
 
         const rtc: RallarMessagesOperations['rtc'] = {
-            send: async <T>(sendInput: RallarRtcSendInput<T>) => await this.sender.sendRtc(sendInput),
+            send: async <T>(sendInput: RallarRtcSendInput<T>) => await this.sender.sendRtc(sendInput, undefined),
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
             ) => this.subscriptions.subscribe('rtc', selector, handler)
         };
         const ws: RallarMessagesOperations['ws'] = {
-            send: async <T>(sendInput: RallarWsSendInput<T>) => await this.sender.sendWs(sendInput),
+            send: async <T>(sendInput: RallarWsSendInput<T>) => await this.sender.sendWs(sendInput, undefined),
             onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>

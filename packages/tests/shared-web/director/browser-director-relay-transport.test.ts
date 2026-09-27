@@ -43,7 +43,8 @@ describe('director delivery admission', () => {
             carrier: 'rtc',
             msgId: rtc.handle.msgId,
             atMs: Date.now(),
-            verdict: state === 'queued' ? { kind: 'admitted', durable: true, queuedAttempts: 1 } : { kind: 'superseded', detail: 'Newer state' }
+            verdict: state === 'queued' ? { kind: 'admitted', durable: true, queuedAttempts: 1 } : { kind: 'superseded', detail: 'Newer state' },
+            trackedReceiptAlgo: rtc.handle.lifecycle().receiptAlgo
         });
         expect(await sending).toEqual({ status: 'sent', rtc: rtc.handle });
         expect(ws).not.toHaveBeenCalled();
@@ -83,7 +84,12 @@ describe('director receipt output', () => {
         });
 
         expect(await transport.sendRoomEnvelope(receiptInput)).toEqual({ status: 'sent', receipt: receipt.handle });
-        expect(room.open).toHaveBeenCalledWith({ topicId: 'room.director', typeId: 'output', roomRef: current.roomRef });
+        expect(room.open).toHaveBeenCalledWith({
+            topicId: 'room.director',
+            typeId: 'output',
+            roomRef: current.roomRef,
+            purpose: 'notification'
+        });
         expect(room.send).toHaveBeenCalledWith(
             expect.objectContaining({ protocol: 'rallar.director.relay.v1', typeId: 'output', payload: { revision: 1 } }),
             { strategy: 'rtc-with-ws-fallback', reliability: 'at-least-once', ack: 'all-logical-recipients', ttlMs: 30_000 }

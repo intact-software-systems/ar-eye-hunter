@@ -1,3 +1,4 @@
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
     ALOutboundCommitBundleOutcome,
     ALOutboundCommitOrigin,
@@ -6,6 +7,7 @@ import type {
 
 export namespace ALOutboundCommitPhases {
     export interface Input {
+        readonly lane: ALStoreDurability;
         readonly senderId: string;
         readonly msgId: string;
         readonly typeId: string;
@@ -60,6 +62,7 @@ export class ALOutboundCommitPhases {
     toEvent(): ALOutboundRuntimeDiagnosticsEvent {
         return {
             kind: 'commit-phases',
+            lane: this.input.lane,
             senderId: this.input.senderId,
             msgId: this.input.msgId,
             typeId: this.input.typeId,

@@ -52,4 +52,10 @@ export interface RallarBlackBoxTestStorageCountersResultValue {
     readonly total: number;
     readonly byOwner: Readonly<Record<'al-admission' | 'al-work', number>>;
     readonly byKind: Readonly<Record<string, number>>;
+    /** The durable owners' idle probes: `work-page` and `work-probe` (D55 reports them beside the zero). */
+    readonly workProbeCount: number;
+    /** Every `al-work` operation but the probes. */
+    readonly workNonProbeCount: number;
+    /** Whether this reading reset the counter after reading it, so the next reading counts from zero. */
+    readonly reset: boolean;
 }

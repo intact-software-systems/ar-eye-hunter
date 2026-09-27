@@ -146,18 +146,25 @@ export function decodeAlmDeliveryResultValue(
 }
 
 export function decodeAlmStorageCountersResultValue(
-    value: unknown
+    value: unknown,
+    reset: boolean
 ): RallarBlackBoxTestStorageCountersResultValue {
     const record = decodeAlmRuntimeRecord(value);
     const path = 'storage.counters result';
     const byOwner = requireAlmRecordField(record, path, 'byOwner');
+    const work = requireAlmNumberField(byOwner, `${path}.byOwner`, 'al-work');
+    const byKind = requireAlmCountsByKind(requireAlmRecordField(record, path, 'byKind'), `${path}.byKind`);
+    const workProbeCount = (byKind['work-page'] ?? 0) + (byKind['work-probe'] ?? 0);
     return {
         total: requireAlmNumberField(record, path, 'total'),
         byOwner: {
             'al-admission': requireAlmNumberField(byOwner, `${path}.byOwner`, 'al-admission'),
-            'al-work': requireAlmNumberField(byOwner, `${path}.byOwner`, 'al-work')
+            'al-work': work
         },
-        byKind: requireAlmCountsByKind(requireAlmRecordField(record, path, 'byKind'), `${path}.byKind`)
+        byKind,
+        workProbeCount,
+        workNonProbeCount: work - workProbeCount,
+        reset
     };
 }
 

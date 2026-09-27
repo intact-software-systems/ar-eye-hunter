@@ -927,7 +927,8 @@ describe('RallarServer.ws.publish current behavior', () => {
             verdict,
             message,
             entries: [],
-            reason: verdict.detail
+            reason: verdict.detail,
+            trackedReceiptAlgo: 'none'
         });
 
         const result = await server.ws.publish(message, 'outbox');
@@ -963,7 +964,8 @@ describe('RallarServer.ws.publish current behavior', () => {
             verdict,
             message,
             entries: [],
-            reason: verdict.detail
+            reason: verdict.detail,
+            trackedReceiptAlgo: 'none'
         });
 
         const result = await server.ws.publish(message, 'outbox');

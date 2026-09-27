@@ -86,6 +86,8 @@ interface ALAlgorithmAuthorizationPolicy<TAlgo extends string, TOpts extends obj
     readonly supported: readonly TAlgo[];
 }
 
+export const AL_DURABILITY_ALGOS: readonly ALDurabilityAlgo[] = ['volatile', 'local-outbox', 'local-inbox'];
+
 export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     supportedDelivery: ['best-effort', 'at-least-once'],
     supportedForwarding: ['target'],
@@ -97,7 +99,7 @@ export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     supportedSupersedence: ['none', 'latest-wins'],
     supportedFanout: ['all', 'limit', 'random-k'],
     supportedCongestion: ['drop-low', 'defer', 'reject'],
-    supportedDurability: ['volatile', 'local-outbox', 'local-inbox'],
+    supportedDurability: AL_DURABILITY_ALGOS,
     supportedOwnership: ['shared', 'exclusive'],
     maxTtlHops: 32,
     maxFanout: 16,
@@ -175,9 +177,6 @@ function toALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
                 algo: 'limit',
                 opts: { limit: msg.forwarding.fanoutLimit }
             }
-            : undefined,
-        durability: msg.delivery?.reliability === 'at-least-once'
-            ? { algo: 'local-outbox' }
             : undefined,
         ownership: msg.delivery?.ownership
             ? { algo: msg.delivery.ownership }
@@ -270,10 +269,7 @@ function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
                 limit: msg.forwarding?.fanoutLimit
             }
         },
-        durability: {
-            algo: deliveryAlgo === 'at-least-once' ? 'local-outbox' : 'volatile',
-            opts: {}
-        },
+        durability: { algo: 'volatile', opts: {} },
         ownership: {
             algo: msg.delivery?.ownership ?? 'shared',
             opts: {}

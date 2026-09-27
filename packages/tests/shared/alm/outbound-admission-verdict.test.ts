@@ -349,6 +349,7 @@ function toSupersededLifecycle(
             msgId: message.id.msgId,
             typeId: message.payload.typeId,
             ackMode: 'receiver',
+            receiptAlgo: 'receiver',
             expiresAtMs: undefined,
             submittedAtMs: 0
         })
@@ -360,6 +361,7 @@ function createTestOutboundDispatchAdmission(
     settlements: ALOutboundSettlementEmitter = () => {}
 ): ALOutboundDispatchAdmission<OutboundTestPayload> {
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
+        lane: 'durable',
         admissionStore: stores.admissionStore,
         workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),

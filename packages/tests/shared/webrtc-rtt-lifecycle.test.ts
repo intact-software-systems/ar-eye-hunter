@@ -9,6 +9,7 @@ import {
     vi
 } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -204,7 +205,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         multicasterFactory: () => {
             throw new Error('Heartbeat traffic must not enter multicast');
         },
-        qosProvider: undefined,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),

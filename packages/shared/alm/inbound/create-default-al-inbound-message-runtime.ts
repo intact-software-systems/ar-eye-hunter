@@ -6,7 +6,11 @@ import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
-import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from './al-inbound-message-runtime.ts';
+import {
+    ALInboundMessageRuntime,
+    type ALInboundRuntimeStores,
+    type ALVolatileInboundRuntimeStores
+} from './al-inbound-message-runtime.ts';
 
 export interface DefaultALInboundRuntimeResourceInput {
     readonly selfPeerId: string;
@@ -15,6 +19,8 @@ export interface DefaultALInboundRuntimeResourceInput {
     readonly newControlId?: () => string;
     readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
     readonly stores?: ALInboundRuntimeStores;
+    /** Absent keeps one backend for every message, as the server and a standalone runtime do. */
+    readonly volatileStores?: ALVolatileInboundRuntimeStores;
     readonly queueEngine?: InboxOutboxEngine;
 }
 
@@ -41,6 +47,7 @@ export function createDefaultALInboundRuntimeResources(
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        volatileStores: input.volatileStores,
         effectWorkerId: `al-inbound:${crypto.randomUUID()}`,
         effectPreparation: {
             newControlId,

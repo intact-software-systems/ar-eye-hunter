@@ -21,6 +21,8 @@ import {
 import {
     configureBrowserALRuntimeStores,
     createBrowserALOutboundRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
+    createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -38,6 +40,8 @@ import {
     type ALOutboundSentMessageSnapshot
 } from '@shared/mod.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import {
     afterEach,
@@ -518,6 +522,30 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await stores.admissionStore.readSentMessage('never-persisted');
 
         expect(observer.getCounts().total).toBeGreaterThan(0);
+    });
+
+    it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
+        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1');
+        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1');
+
+        expect(first.workQueue).toBeInstanceOf(InMemoryQueueBox);
+        expect(second.workQueue).not.toBe(first.workQueue);
+        expect(await second.workQueue.getAllKeys()).toEqual([]);
+    });
+
+    it('keeps the session inbound memory pair out of IndexedDB, so session cleanup never reaches it', async () => {
+        const sessionId = `inbound-memory-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
+        const volatile = createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId));
+        const message = createOutboundUnicastMessage('inbound-memory');
+        await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));
+
+        expect(volatile.workQueue).toBeInstanceOf(InMemoryQueueBox);
+        expect(volatile.admissionStore.namespace).toBe(
+            `browser:${toBrowserSessionALInboundRuntimeStoreId(sessionId)}:volatile:inbound:admission`
+        );
+        await deleteBrowserALRuntimeEntriesForSession(sessionId, { onStorageReset: diagnosticsPorts.onStorageReset });
+        expect(await volatile.workQueue.getAllKeys()).toHaveLength(1);
     });
 });
 

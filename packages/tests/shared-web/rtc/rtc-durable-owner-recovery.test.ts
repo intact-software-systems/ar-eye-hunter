@@ -14,6 +14,7 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -269,7 +270,7 @@ class RtcRecoveryOwner {
             groupCache: this.groups,
             overlayCache: this.overlays,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: (settlement) => this.settlements.push(settlement),
             outboundRuntime: createDefaultALOutboundRuntimeResources({
@@ -352,7 +353,7 @@ class RtcRecoveryOwner {
                 'room',
                 'reload.original',
                 { original: true },
-                { groupRef: this.roomRef, ttlMs: 30_000 }
+                { groupRef: this.roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }
             ),
             delivery: { reliability: 'at-least-once', ack: 'none' }
         };

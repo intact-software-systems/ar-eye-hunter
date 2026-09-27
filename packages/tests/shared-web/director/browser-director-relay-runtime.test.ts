@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -377,7 +378,13 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 enqueuedWsTypeIds.push(message.payload.typeId);
-                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+                return {
+                    status: 'enqueued',
+                    verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                    message,
+                    entries: [],
+                    trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+                };
             }
         );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
@@ -444,7 +451,13 @@ describe('Rallar director relay', () => {
         const wsMessages: ALMessage[] = [];
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => {
             wsMessages.push(message);
-            return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+            return {
+                status: 'enqueued',
+                verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                message,
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+            };
         });
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
@@ -497,13 +510,25 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+                return {
+                    status: 'enqueued',
+                    verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                    message,
+                    entries: [],
+                    trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+                };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+                return {
+                    status: 'enqueued',
+                    verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                    message,
+                    entries: [],
+                    trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+                };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -546,13 +571,25 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+                return {
+                    status: 'enqueued',
+                    verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                    message,
+                    entries: [],
+                    trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+                };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
+                return {
+                    status: 'enqueued',
+                    verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+                    message,
+                    entries: [],
+                    trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+                };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -632,7 +669,13 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
+        async (message) => ({
+            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.rtcRxStreamer
@@ -647,14 +690,21 @@ function mockRtcNoRoute(): void {
             verdict: { kind: 'unroutable' as const, reason: 'no-route' as const, detail: `No outbound transport route for message ${message.id.msgId}` },
             message,
             entries: [],
-            reason: `No outbound transport route for message ${message.id.msgId}`
+            reason: `No outbound transport route for message ${message.id.msgId}`,
+            trackedReceiptAlgo: 'none'
         })
     );
 }
 
 function resetDirectorWsDoubles(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
+        async (message) => ({
+            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox

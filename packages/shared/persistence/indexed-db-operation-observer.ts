@@ -1,5 +1,9 @@
 export type IndexedDbOperationOwner = 'al-admission' | 'al-work';
 
+/**
+ * `work-page` and `work-probe` are an owner's inspections: a readiness read, and a reservation read that
+ * computed no write. `work-reserve` is a reservation that computed a write, even one that then conflicted.
+ */
 export type IndexedDbOperationKind =
     | 'read'
     | 'list'

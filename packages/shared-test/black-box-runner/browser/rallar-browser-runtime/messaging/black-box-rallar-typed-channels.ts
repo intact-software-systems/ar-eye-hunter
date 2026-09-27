@@ -4,6 +4,7 @@ import {
     type RallarMessageSelector
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
@@ -20,6 +21,7 @@ export interface TypedChannelRoute {
     readonly typeId: string;
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
+    readonly durability: ALDurabilityAlgo | undefined;
 }
 
 interface TypedChannelMessageEvent {
@@ -52,7 +54,9 @@ export class BlackBoxRallarTypedChannels {
             typeId: route.typeId,
             topicId: route.topicId,
             roomId: config.roomId,
-            roomRef: route.roomRef
+            roomRef: route.roomRef,
+            purpose: 'notification',
+            ...(route.durability === undefined ? {} : { durability: route.durability })
         });
         const selector = config.rallar.messageSelector
             ? normalizeRallarMessageSelector(config.rallar.messageSelector)
@@ -94,7 +98,8 @@ export class BlackBoxRallarTypedChannels {
         this.open(config, {
             typeId: resolveBlackBoxRallarTypeId(config),
             topicId: resolveBlackBoxRallarTopicId(config),
-            roomRef: blackBoxRallarRoomRefOf(config)
+            roomRef: blackBoxRallarRoomRefOf(config),
+            durability: undefined
         });
     }
 

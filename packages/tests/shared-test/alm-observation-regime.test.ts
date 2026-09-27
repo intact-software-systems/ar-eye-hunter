@@ -26,8 +26,11 @@ const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/ral
 // Both fixtures are trimmed copies of hosted observation runs of the rtc cell: the green head
 // `c99cf654e` and the red head `902fa30a7`. Events the regime does not read were dropped, and the
 // run's own earliest event was kept so the opening window still starts where it started on the
-// runner. The normal fixture keeps every in-window `send`-origin commit phase (18) so the pinned
-// figure matches the real cell; the slow fixture keeps its original trim.
+// runner. The normal fixture keeps every in-window `send`-origin commit phase (18); the slow fixture
+// keeps its original trim. Each also kept one send commit just past the opening window. Since R-S3a-16
+// the per-operation regime spans the whole cell, so the pinned figures are the trimmed files' own:
+// 26 ms/op over 19 (the opening window read 24.06 over 18) and 39.44 over 8 (36 over 7). Neither class
+// moved. They are not the original runs' whole-cell figures, whose later commits the trim dropped.
 const NORMAL_FIXTURE = 'alm-observation-normal-regime-snapshot.json';
 const SLOW_FIXTURE = 'alm-observation-slow-regime-snapshot.json';
 
@@ -80,6 +83,39 @@ function toCommitPhaseEvent(
             }
         }
     };
+}
+
+function toSyntheticRegimeWithStorageCounters(
+    readings: readonly Readonly<{ atEpochMs: number; agentId: string; workPageCount: number; reset: boolean; }>[]
+): ALMObservationRegime {
+    return toSyntheticRegime(readings.map((reading) => ({
+        kind: 'diagnostic',
+        atEpochMs: reading.atEpochMs,
+        agentId: reading.agentId,
+        payload: {
+            topic: 'rallar.bb.storage.counters',
+            payload: {
+                data: { byKind: { 'work-page': reading.workPageCount }, reset: reading.reset }
+            }
+        }
+    })));
+}
+
+/** The diagnostic envelope every synthetic event here is built with. */
+interface SyntheticDiagnosticEnvelope {
+    readonly topic: string;
+    readonly payload: Readonly<{ data: RallarBlackBoxTestRecord; }>;
+}
+
+/** The same event as a lane that names itself states it: the lane rides in the event's `data`. */
+function toLaneNamedEvent(event: RallarBlackBoxTestRecord, lane: string | number): RallarBlackBoxTestRecord {
+    const envelope = event.payload as SyntheticDiagnosticEnvelope;
+    return { ...event, payload: { ...envelope, payload: { data: { ...envelope.payload.data, lane } } } };
+}
+
+/** The same events as the memory lane states them. */
+function toVolatileLaneEvents(events: readonly RallarBlackBoxTestRecord[]): readonly RallarBlackBoxTestRecord[] {
+    return events.map((event) => toLaneNamedEvent(event, 'volatile'));
 }
 
 function toReadinessProbeEvent(
@@ -244,8 +280,8 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('normal');
         expect(regime.perOperation).toEqual({
             outcome: 'measured',
-            medianMs: 24.06,
-            sampleCount: 18
+            medianMs: 26,
+            sampleCount: 19
         });
         expect(regime.runId).toBe('alm-rtc-1789077925043-04591945-9cb6-4db4-a5');
         expect(regime.carrier).toBe('rtc');
@@ -282,6 +318,53 @@ describe('computeALMObservationRegime', () => {
         });
     });
 
+    it('sums the work-page increments across a counter reset instead of reading the reset as negative', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 10, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-sender-1', workPageCount: 30, reset: true },
+            { atEpochMs: 20_000, agentId: 'alm-sender-1', workPageCount: 5, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 1.25,
+            readingCount: 3,
+            spanMs: 20_000
+        });
+    });
+
+    // Review m2: a reload replaces the page and its counter with it, under the same agent id and with no reset.
+    it('counts a reading below the page\'s previous one as a new page counting from zero, not as a negative increment', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 100, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-sender-1', workPageCount: 140, reset: false },
+            { atEpochMs: 20_000, agentId: 'alm-sender-1', workPageCount: 6, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 2.3,
+            readingCount: 3,
+            spanMs: 20_000
+        });
+    });
+
+    it('counts each agent from its own previous reading when two pages read their counters', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 100, reset: false },
+            { atEpochMs: 1_000, agentId: 'alm-receiver-1', workPageCount: 7, reset: false },
+            { atEpochMs: 5_000, agentId: 'alm-sender-1', workPageCount: 110, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-receiver-1', workPageCount: 17, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 2,
+            readingCount: 4,
+            spanMs: 10_000
+        });
+    });
+
     it('records the wall clock of every scenario recipe run that completed', () => {
         const regime = readFixtureRegime(NORMAL_FIXTURE, 'passed');
 
@@ -300,8 +383,8 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('slow');
         expect(regime.perOperation).toEqual({
             outcome: 'measured',
-            medianMs: 36,
-            sampleCount: 7
+            medianMs: 39.44,
+            sampleCount: 8
         });
         expect(regime.cellOutcome).toBe('failed');
         expect(regime.inbound).toEqual([]);
@@ -364,6 +447,29 @@ describe('computeALMObservationRegime', () => {
         });
     });
 
+    // R-S3a-15: the regime is calibrated on IndexedDB read chains and IndexedDB probes. A memory lane's
+    // 0 ms commits and probes never enter it, however many there are.
+    it('reads the durable lane only: slow durable commits and probes stay slow beside volatile 0 ms ones', () => {
+        const durable = [...toEvenlySpacedCommitPhases(40, 7), ...toPageWindowProbes(120, 10)];
+        const volatile = toVolatileLaneEvents([...toEvenlySpacedCommitPhases(0.01, 20), ...toPageWindowProbes(0, 30)]);
+
+        const regime = toSyntheticRegime([...durable, ...volatile]);
+
+        expect(regime.regime).toBe('slow');
+        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 40, sampleCount: 8 });
+        expect(regime.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 120, sampleCount: 10, regime: 'slow' });
+    });
+
+    it('reads unmeasured, not normal, when only the volatile lane committed and probed', () => {
+        const regime = toSyntheticRegime(
+            toVolatileLaneEvents([...toEvenlySpacedCommitPhases(0.01, 20), ...toPageWindowProbes(0, 30)])
+        );
+
+        expect(regime.regime).toBe('unclassified');
+        expect(regime.perOperation).toEqual({ outcome: 'too-few-samples', sampleCount: 0 });
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
+    });
+
     it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {
         expect(toSyntheticRegime(toPageWindowProbes(120, 10)).pageRegime).toEqual({
             outcome: 'measured',
@@ -408,15 +514,31 @@ describe('computeALMObservationRegime', () => {
         });
     });
 
-    it('measures the opening window rather than the whole cell', () => {
+    // R-S3a-16: the volatile default moved a cell's first durable send to `durable-opt-in`, well past the
+    // opening window, so the per-operation regime reads the durable send commits of the whole cell.
+    it('measures the durable send commits of the whole cell, not only the opening window', () => {
+        // A drain commit at 1 000 opens the run, so every send commit lands after the opening window.
         const regime = toSyntheticRegime([
-            ...toEvenlySpacedCommitPhases(12, 5),
-            toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 1, 400, 'send'),
-            toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 2, 400, 'send')
+            toCommitPhaseEvent(1_000, 400, 'drain'),
+            ...Array.from(
+                { length: 5 },
+                (_unused, index) => toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1), 40, 'send')
+            )
         ]);
 
-        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 12, sampleCount: 5 });
-        expect(regime.regime).toBe('normal');
+        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 40, sampleCount: 5 });
+        expect(regime.regime).toBe('slow');
+        expect(regime.regimeSource).toBe('per-operation');
+    });
+
+    it('lets the page regime decide a cell with no durable send, and says so in the line', () => {
+        // A drain commit at 1 000 opens the run and is no send commit, so no durable send ran.
+        const regime = toSyntheticRegime([toCommitPhaseEvent(1_000, 400, 'drain'), ...toPageWindowProbes(120, 10).slice(1)]);
+
+        expect(regime.perOperation).toEqual({ outcome: 'too-few-samples', sampleCount: 0 });
+        expect(regime.regime).toBe('slow');
+        expect(regime.regimeSource).toBe('page');
+        expect(toALMObservationRegimeSummary(regime)).toContain('regime=slow (page) perOperation=unmeasured (0 commits)');
     });
 
     it('measures a caller admission rather than the drain commit behind it', () => {
@@ -604,9 +726,65 @@ describe('computeALMObservationRegime', () => {
         ]);
     });
 
+    // Task 6 re-review: F2c's acceptance figures (drain phases, claim waits) were read when every inbound
+    // owner was IndexedDB. A memory lane's single-digit drains must not pull a slow receiver's medians down.
+    it('reads the durable lane only in the inbound block: slow drains and claims stay slow beside fast volatile ones', () => {
+        const slowDrain = (atEpochMs: number, durationMs: number) =>
+            toInboundDrainEvent(atEpochMs, RECEIVER_AGENT_ID, {
+                durationMs,
+                selectionDurationMs: durationMs / 10,
+                claimDurationMs: durationMs / 20,
+                runDurationMs: durationMs / 2,
+                releaseDurationMs: durationMs / 5,
+                queueWaitMs: durationMs / 4
+            });
+        const fastDrains = Array.from({ length: 5 }, (_unused, index) =>
+            toInboundDrainEvent(1_100 + index, RECEIVER_AGENT_ID, {
+                durationMs: 2,
+                selectionDurationMs: 0,
+                claimDurationMs: 0,
+                runDurationMs: 1,
+                releaseDurationMs: 0,
+                queueWaitMs: 0
+            }));
+        const fastClaims = Array.from({ length: 5 }, (_unused, index) => toDispatchClaimEvent(1_200 + index, 1, 1));
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, RECEIVER_AGENT_ID, 'committed'),
+            slowDrain(1_001, 5_000),
+            slowDrain(1_002, 7_000),
+            toDispatchClaimEvent(1_003, 3_000, 400),
+            toDispatchClaimEvent(1_004, 5_000, 600),
+            ...toVolatileLaneEvents([...fastDrains, ...fastClaims])
+        ]);
+
+        const receiver = regime.inbound.find((direction) => direction.role === 'receiver');
+        expect(receiver).toEqual({
+            role: 'receiver',
+            outcome: 'measured',
+            pendingShare: { outcome: 'measured', pendingSharePercent: 0, outcomeCount: 1 },
+            phases: {
+                selectionMedianMs: 600,
+                claimMedianMs: 300,
+                runMedianMs: 3_000,
+                releaseMedianMs: 1_200,
+                queueWaitMedianMs: 1_500,
+                drainMedianMs: 6_000,
+                drainCount: 2
+            },
+            claimWaits: {
+                reservationWaitMedianMs: 4_000,
+                intraBatchWaitMedianMs: 500,
+                dispatchClaimCount: 2,
+                sendControlClaimMedianMs: 0,
+                sendControlClaimCount: 0
+            }
+        });
+    });
+
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
-            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed ' +
+            'ALM observation rtc-smoke: regime=slow perOperation=39.44 ms/op over 8 commits outcome=failed ' +
                 'page=unclassified (unmeasured, 0 probes)'
         );
         expect(
@@ -619,7 +797,7 @@ describe('computeALMObservationRegime', () => {
                 })
             )
         ).toBe(
-            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed ' +
+            'ALM observation ws-smoke: regime=unclassified (page) perOperation=unmeasured (0 commits) outcome=failed ' +
                 'page=unclassified (unmeasured, 0 probes)'
         );
     });
@@ -737,6 +915,49 @@ describe('page diagnostics on the regime', () => {
 });
 
 describe('decodeALMObservationSnapshot', () => {
+    it('decodes the lane a commit and a probe name, and skips one that names no lane it knows', () => {
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-lanes',
+            results: [],
+            events: [
+                toLaneNamedEvent(toCommitPhaseEvent(1_000, 12, 'send'), 'volatile'),
+                toLaneNamedEvent(toCommitPhaseEvent(1_001, 12, 'send'), 'memory'),
+                toLaneNamedEvent(toReadinessProbeEvent(1_002, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 'volatile'),
+                toLaneNamedEvent(toReadinessProbeEvent(1_003, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 7)
+            ]
+        });
+
+        expect(decoded.right?.commitPhases.map((phase) => phase.lane)).toEqual(['volatile']);
+        expect(decoded.right?.readinessProbes.map((probe) => probe.lane)).toEqual(['volatile']);
+    });
+
+    it('decodes the lane an inbound drain and claim name, and skips one that names no lane it knows', () => {
+        const drain = toInboundDrainEvent(1_000, RECEIVER_AGENT_ID, {
+            durationMs: 2,
+            selectionDurationMs: 0,
+            claimDurationMs: 0,
+            runDurationMs: 1,
+            releaseDurationMs: 0,
+            queueWaitMs: 0
+        });
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-inbound-lanes',
+            results: [],
+            events: [
+                drain,
+                toLaneNamedEvent(drain, 'volatile'),
+                toLaneNamedEvent(drain, 'memory'),
+                toDispatchClaimEvent(1_001, 100, 4_000),
+                toLaneNamedEvent(toDispatchClaimEvent(1_002, 100, 4_000), 'volatile'),
+                toLaneNamedEvent(toDispatchClaimEvent(1_003, 100, 4_000), 7)
+            ]
+        });
+
+        // An artifact recorded before S3a names no lane: every inbound store then was IndexedDB.
+        expect(decoded.right?.inboundDrains.map((entry) => entry.lane)).toEqual(['durable', 'volatile']);
+        expect(decoded.right?.inboundClaims.map((entry) => entry.lane)).toEqual(['durable', 'volatile']);
+    });
+
     it('rejects a value that is not an object', () => {
         expect(decodeALMObservationSnapshot(42).left).toEqual(['snapshot is not an object']);
     });
@@ -844,6 +1065,7 @@ describe('decodeALMObservationSnapshot', () => {
         expect(decoded.right?.inboundClaims).toEqual([{
             atEpochMs: 1_001,
             role: 'receiver',
+            lane: 'durable',
             workerId: INBOUND_WORKER_ID,
             payloadKind: 'dispatch-local',
             durationMs: 5,
@@ -876,8 +1098,9 @@ describe('decodeALMObservationSnapshot', () => {
         });
 
         expect(decoded.right?.readinessProbes).toEqual([
-            { atEpochMs: 1_000, role: 'sender', cause: 'age-bound', durationMs: 12 },
-            { atEpochMs: 1_001, role: 'receiver', cause: 'own-commit', durationMs: 8 }
+            // An artifact recorded before S3a names no lane: every store then was IndexedDB.
+            { atEpochMs: 1_000, role: 'sender', lane: 'durable', cause: 'age-bound', durationMs: 12 },
+            { atEpochMs: 1_001, role: 'receiver', lane: 'durable', cause: 'own-commit', durationMs: 8 }
         ]);
     });
 

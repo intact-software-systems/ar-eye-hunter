@@ -1,3 +1,4 @@
+import { AL_DURABILITY_ALGOS } from '../al-policy.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
     requireOptionalPersistedALSafeInteger,
@@ -17,7 +18,7 @@ const ALGORITHMS: Readonly<Record<string, readonly string[]>> = {
     supersedence: ['none', 'latest-wins'],
     fanout: ['all', 'limit', 'random-k'],
     congestion: ['drop-low', 'defer', 'reject'],
-    durability: ['volatile', 'local-outbox', 'local-inbox'],
+    durability: AL_DURABILITY_ALGOS,
     ownership: ['shared', 'exclusive']
 };
 

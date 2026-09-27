@@ -1,7 +1,18 @@
-import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toBrowserRtcOverlayALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    createBrowserALVolatileOutboundRuntimeStores,
+    resolveBrowserRtcOverlayALOutboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    AL_RTC_OVERLAY_CAPABILITIES,
+    toALCarrierQosInputProvider
+} from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -59,12 +70,15 @@ export function initialiseRtcOverlayMulticastManager(
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeALOutboundTransportMessage,
             queueEngine: qboxEngine,
-            stores
+            stores,
+            volatileStores: createBrowserALVolatileOutboundRuntimeStores(
+                toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId)
+            )
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
-        qosProvider: input.qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });
@@ -77,6 +91,8 @@ export interface InitialiseRtcRxStreamerInput {
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
+    /** The session's inbound memory pair, the same one the WS client holds. */
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
 }
@@ -90,6 +106,7 @@ export function initialiseRtcRxStreamer(
         multicast: webRtcOverlayMulticastManager,
         sessionId: clientData.sessionId,
         inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,

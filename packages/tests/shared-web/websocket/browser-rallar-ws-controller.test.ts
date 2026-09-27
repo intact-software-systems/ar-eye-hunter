@@ -15,6 +15,7 @@ import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/r
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
@@ -229,7 +230,8 @@ describe('Rallar WS lifecycle', () => {
             status: 'enqueued',
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         }));
         rtcRxStreamer.onInboxMessageDo.mockReturnValue(rtcRxStreamer);
         rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
@@ -237,7 +239,8 @@ describe('Rallar WS lifecycle', () => {
             status: 'enqueued',
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         }));
         webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(webSocketQueueBox);
         webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);

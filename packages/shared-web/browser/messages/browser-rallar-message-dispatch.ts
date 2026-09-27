@@ -1,6 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -20,6 +21,7 @@ export type BrowserFallbackDisposition = 'retry' | 'stop' | 'expired';
 interface CapturedMessageAdmission {
     readonly message: ALMessage;
     readonly verdict: ALDeliveryAdmissionVerdict;
+    readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
 /** The verdict of one carrier leg and what the strategy does next with it. */
@@ -27,6 +29,7 @@ interface CarrierAdmission {
     readonly msgId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict;
+    readonly trackedReceiptAlgo: ALAckAlgo;
     readonly fallback: BrowserFallbackDisposition;
 }
 
@@ -67,7 +70,8 @@ export class BrowserRallarMessageDispatch {
                     msgId: delivery.message.id.msgId,
                     carrier: delivery.carrier,
                     atMs: this.input.nowMs(),
-                    verdict: { kind: 'failed', detail: toError(caught).message }
+                    verdict: { kind: 'failed', detail: toError(caught).message },
+                    trackedReceiptAlgo: 'none'
                 });
             }
         });
@@ -90,6 +94,7 @@ export class BrowserRallarMessageDispatch {
             msgId: delivery.message.id.msgId,
             carrier: delivery.carrier,
             verdict: result.verdict,
+            trackedReceiptAlgo: result.trackedReceiptAlgo,
             fallback: delivery.canFallback
                 ? computeFallbackDisposition(
                     result.verdict,
@@ -122,28 +127,32 @@ export class BrowserRallarMessageDispatch {
         const validated = decodeALMessageValue(message);
         const issue = delivery.payloadIssues[0];
         if (issue) {
-            return { message, verdict: { kind: 'refused', reason: 'oversized', detail: issue.message } };
+            return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
         }
         if (validated.left) {
-            return {
-                message,
-                verdict: { kind: 'refused', reason: validated.left.code, detail: validated.left.message }
-            };
+            return toUnadmittedAdmission(message, {
+                kind: 'refused',
+                reason: validated.left.code,
+                detail: validated.left.message
+            });
         }
         if (message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()) {
-            return {
-                message,
-                verdict: { kind: 'expired', detail: 'Message deadline elapsed before carrier admission.' }
-            };
+            return toUnadmittedAdmission(message, {
+                kind: 'expired',
+                detail: 'Message deadline elapsed before carrier admission.'
+            });
         }
         try {
             return await writeCarrierOutboxAdmission(context, carrier, message);
         }
         catch (caught) {
-            const error = toError(caught);
-            return { message, verdict: { kind: 'failed', detail: error.message } };
+            return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
         }
     }
+}
+
+function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
+    return { message, verdict, trackedReceiptAlgo: 'none' };
 }
 
 /** One carrier's own outbound admission of an envelope: the call a first send and its fallback both make. */
@@ -171,10 +180,10 @@ export function computeFallbackDisposition(
 
 /** A refusal the fallback carrier takes over is evidence of the refused leg, not the verdict: `rejected` is terminal. */
 function toCarrierAdmissionSettlement(admission: CarrierAdmission, atMs: number): ALDeliverySettlement {
-    const { msgId, carrier, verdict } = admission;
+    const { msgId, carrier, verdict, trackedReceiptAlgo } = admission;
     return admission.fallback !== 'stop' && verdict.kind === 'refused'
         ? { kind: 'carrier-refused', msgId, carrier, atMs, reason: verdict.reason, detail: verdict.detail }
-        : { kind: 'admission', msgId, carrier, atMs, verdict };
+        : { kind: 'admission', msgId, carrier, atMs, verdict, trackedReceiptAlgo };
 }
 
 /** What ends a leg no fallback continues: the deadline it reached first, or no carrier left to route it. */

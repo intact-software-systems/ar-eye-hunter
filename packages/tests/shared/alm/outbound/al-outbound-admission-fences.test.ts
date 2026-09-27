@@ -359,6 +359,7 @@ function toDeliveredAck(message: ALMessage): ALMessage {
 /** The dispatch admission alone: the reads, fences and fallback of a group, without the work engine of an owner. */
 function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatchAdmission<OutboundTestPayload> {
     const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+        lane: 'durable',
         admissionStore: fixture.store,
         workPort: createTestALOutboundWorkPort({
             admissionStore: fixture.store,

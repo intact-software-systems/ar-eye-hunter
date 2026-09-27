@@ -25,6 +25,7 @@ import {
 } from '../alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -406,7 +407,7 @@ function createManager(
         multicasterFactory: () => {
             throw new Error('A direct send must not construct a room multicaster');
         },
-        qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, qosProvider),
         outboundDiagnostics: undefined,
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundRuntime: resources,

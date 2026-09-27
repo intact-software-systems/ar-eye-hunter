@@ -1,9 +1,12 @@
+import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import {
     isALDeliveryTerminal,
+    type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttempt,
     type ALDeliveryCarrier,
     type ALDeliveryEvidence,
     type ALDeliveryLifecycle,
+    type ALDeliveryReceiptDowngrade,
     type ALDeliveryRefusalReason,
     type ALDeliverySettlement,
     type ALDeliveryState,
@@ -101,7 +104,29 @@ function toTerminalLifecycle(
             lateSettlementCount
         };
     }
+    if (settlement.kind === 'admission') {
+        return { ...toLateAdmissionLifecycle(previous, settlement), lateSettlementCount };
+    }
     return { ...previous, lateSettlementCount };
+}
+
+/**
+ * A late admission on a terminal handle lands its evidence and never changes terminality: the tracked
+ * receipt applies only where the handle stays terminal under it.
+ */
+function toLateAdmissionLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryAdmissionSettlement
+): ALDeliveryLifecycle {
+    const verdict = settlement.verdict;
+    if (verdict.kind !== 'admitted' && verdict.kind !== 'duplicate') {
+        return previous;
+    }
+    const admitted = {
+        ...toAdmittedLifecycle(previous, toAdmittedAdmission(previous, settlement, verdict)),
+        state: previous.state
+    };
+    return isALDeliveryTerminal(admitted) ? admitted : { ...admitted, receiptAlgo: previous.receiptAlgo };
 }
 
 function toAdmissionLifecycle(
@@ -111,17 +136,8 @@ function toAdmissionLifecycle(
     const verdict = settlement.verdict;
     switch (verdict.kind) {
         case 'admitted':
-            return toAdmittedLifecycle(previous, {
-                state: verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
-                atMs: settlement.atMs,
-                durable: verdict.durable
-            });
         case 'duplicate':
-            return toAdmittedLifecycle(previous, {
-                state: 'accepted',
-                atMs: settlement.atMs,
-                durable: previous.evidence.admittedDurable
-            });
+            return toAdmittedLifecycle(previous, toAdmittedAdmission(previous, settlement, verdict));
         case 'pending':
             return { ...previous };
         case 'deferred':
@@ -190,17 +206,56 @@ interface AdmittedAdmission {
     readonly atMs: number;
     /** Undefined for a duplicate, which states nothing about the durability of the original admission. */
     readonly durable: boolean | undefined;
+    readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
+/** A duplicate states nothing about the durability of the original admission, so it keeps the recorded one. */
+function toAdmittedAdmission(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryAdmissionSettlement,
+    verdict: Extract<ALDeliveryAdmissionVerdict, Readonly<{ kind: 'admitted' | 'duplicate'; }>>
+): AdmittedAdmission {
+    return verdict.kind === 'admitted'
+        ? {
+            state: verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
+            atMs: settlement.atMs,
+            durable: verdict.durable,
+            trackedReceiptAlgo: settlement.trackedReceiptAlgo
+        }
+        : {
+            state: 'accepted',
+            atMs: settlement.atMs,
+            durable: previous.evidence.admittedDurable,
+            trackedReceiptAlgo: settlement.trackedReceiptAlgo
+        };
+}
+
+/**
+ * The handle waits for the receipt the admitting carrier tracks, never one it cannot settle (R-S3a-4).
+ * An admission that reaches the handle after the carrier already sent keeps `transport-accepted`.
+ */
 function toAdmittedLifecycle(
     previous: ALDeliveryLifecycle,
     admission: AdmittedAdmission
 ): ALDeliveryLifecycle {
     return {
         ...previous,
-        state: admission.state,
-        evidence: { ...previous.evidence, admittedAtMs: admission.atMs, admittedDurable: admission.durable }
+        state: previous.state === 'transport-accepted' ? previous.state : admission.state,
+        receiptAlgo: admission.trackedReceiptAlgo,
+        evidence: {
+            ...previous.evidence,
+            admittedAtMs: admission.atMs,
+            admittedDurable: admission.durable,
+            receiptDowngrade: toReceiptDowngrade(previous.receiptAlgo, admission.trackedReceiptAlgo) ??
+                previous.evidence.receiptDowngrade
+        }
     };
+}
+
+const AL_ACK_ALGO_STRENGTH: Readonly<Record<ALAckAlgo, number>> = { none: 0, hop: 1, subtree: 2, receiver: 3 };
+
+function toReceiptDowngrade(requested: ALAckAlgo, tracked: ALAckAlgo): ALDeliveryReceiptDowngrade | undefined {
+    return AL_ACK_ALGO_STRENGTH[tracked] < AL_ACK_ALGO_STRENGTH[requested] ? { requested, tracked } : undefined;
 }
 
 interface AdmissionAttemptFacts {

@@ -11,8 +11,10 @@ import {
 
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -87,6 +89,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         socket: new JsonWebSocketClient('ws://test', oldFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -102,7 +105,8 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     });
     const original = {
         ...newALUnicastMessage(sessionId, { topicId: 'reload', contextId: 'room', resourceId: 'one' }, 'receiver', 'reload.original', { original: true }, {
-            ttlMs: 30_000
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } }
         }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     } as const;
@@ -128,6 +132,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         socket: new JsonWebSocketClient('ws://test', freshFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -195,7 +200,7 @@ it('retains the restored room original until actual scoped presence authorizes i
     const original: ALMessage = {
         ...newALBroadcastMessage(sessionId, { topicId: 'room.reload', contextId: roomRef.groupId, resourceId: 'one' }, 'room', 'reload.room-original', {
             original: true
-        }, { groupRef: roomRef, ttlMs: 30_000 }),
+        }, { groupRef: roomRef, ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' } } }),
         delivery: { reliability: 'at-least-once', ack: 'none' }
     };
     expect((await old.service.enqueueOutboxIfAbsent(original)).verdict).toMatchObject({ kind: 'admitted', durable: true });
@@ -448,6 +453,7 @@ async function openRecoveryOwner(
         socket: new JsonWebSocketClient('ws://test', faults),
         clientData: { clientId: principalId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

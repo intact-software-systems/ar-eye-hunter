@@ -88,7 +88,12 @@ export class BlackBoxRallarDeliveryLedger {
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
         const snapshotFloorOption = this.#resolveSnapshotFloor(send, roomRef);
-        const channel = this.#input.typedChannels.open(config, { typeId: send.typeId, topicId: send.topicId, roomRef });
+        const channel = this.#input.typedChannels.open(config, {
+            typeId: send.typeId,
+            topicId: send.topicId,
+            roomRef,
+            durability: send.durability
+        });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
             handleId: send.handleId,
             carrier: send.carrier,

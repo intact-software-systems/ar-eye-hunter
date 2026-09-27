@@ -33,6 +33,7 @@ import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import {
     computeOutboundTestAdmission,
@@ -98,7 +99,9 @@ function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined): Delivery
 
 function sendThroughProductionSender(maxPayloadBytes: number): void {
     const sender = createBrowserMessageSenderFixture(maxPayloadBytes, facade.deliveries).sender;
-    facade.behavior.typedSend.mockImplementation(async (payload) => await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }));
+    facade.behavior.typedSend.mockImplementation(async (payload) =>
+        await sender.sendWs({ typeId: 'alm.conformance', topicId: 'room.conformance', payload }, undefined)
+    );
 }
 
 /** One live send per registry entry, so the send before them is the oldest one the registry evicts. */
@@ -301,7 +304,7 @@ it('observes a retained pending admission without storage reads and wakes on the
         return result;
     });
     facade.behavior.typedSend.mockImplementation(async (payload, options) =>
-        await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', topicId: 'room.conformance', payload })
+        await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', topicId: 'room.conformance', payload }, undefined)
     );
     await runtime.connect(connection);
     const sending = runtime.sendMessage({ ...send, timeoutMs: 37, ttlMs: 60_000 });
@@ -457,6 +460,28 @@ it('passes a stated QoS request to the typed send as given, and none without one
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-hop', carrier: 'ws' } };
     await expect(runtime.sendMessage({ ...replay, qos: { ack: { algo: 'hop' } } }))
         .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
+it('decodes a declared send durability and refuses an unknown one', () => {
+    const send = {
+        kind: 'messages.send',
+        timeoutMs: 1_000,
+        connection: 'sender',
+        carrier: 'ws',
+        typeId: 'alm.conformance',
+        handleId: 'handle-1',
+        payload: { n: 1 }
+    };
+
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'local-outbox' }).right)
+        .toMatchObject({ durability: 'local-outbox' });
+    expect(decodeBlackBoxRallarMessageSendInput(send).right).toMatchObject({
+        durability: undefined
+    });
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'forever' }).left)
+        .toEqual({
+            message: 'messages.send.durability must be volatile, local-outbox or local-inbox.'
+        });
 });
 
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
@@ -629,9 +654,9 @@ function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
     const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message): Promise<ALOutboundEnqueueResult> => {
         const verdict = await admission.promise;
-        return { message, verdict, entries: [] };
+        return { message, verdict, entries: [], trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message) };
     });
-    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     return admission;
 }
 
@@ -813,7 +838,7 @@ it('deducts sender connection time from the RTC admission deadline', async () =>
     const connection = Promise.withResolvers<typeof fixture.middleware>();
     fixture.connect.mockReturnValue(connection.promise);
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockReturnValue(new Promise(() => undefined));
-    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request, undefined));
     let settled = false;
     const running = native.send({ payload: true, ttlMs: 60_000 }, 1_037);
     void running.then(() => {
@@ -847,13 +872,14 @@ it.each(
         vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
             message,
             entries: [],
+            trackedReceiptAlgo: 'none',
             verdict: state === 'rejected'
                 ? { kind: 'refused', reason: 'unsupported', detail: 'Admission refused.' }
                 : { kind: 'failed', detail: 'Admission failed.' }
         }));
     }
     facade.behavior.typedSend.mockImplementation(async (payload, options) => {
-        const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload });
+        const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload }, undefined);
         await handle.wait({ until: ['queued'], timeoutMs: 100 });
         if (state === 'transport-accepted') {
             fixture.registry.record({ kind: 'attempt-started', carrier: 'rtc', msgId: handle.msgId, atMs: Date.now(), attemptId: 'attempt-1' });

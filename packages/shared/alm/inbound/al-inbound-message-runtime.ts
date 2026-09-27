@@ -4,47 +4,23 @@ import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
-import {
-    AL_WORK_PROBE_EVERY_ROUND,
-    ALWorkHandler,
-    type ALWorkBatchDiagnostics,
-    type ALWorkDiagnostics
-} from '../work/al-work-handler.ts';
-import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
-import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
-import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
-import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import {
     toALInboundAdmissionDiagnostics,
-    toALInboundClaimIdentity,
-    type ALInboundDeferredEffect,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
-import {
-    AL_INBOUND_WORK_LEASE_MS,
-    assertALInboundWorkCarrier,
-    decodeALInboundWorkEntry,
-    resolveALInboundWorkDueAtMs,
-    toALInboundWorkType,
-    type ALPersistedInboundEffect
-} from './al-inbound-work-entry.ts';
-import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
+import type { ALInboundControlAdmissionResult } from './control/al-inbound-control-admission.ts';
+import { isALOriginAcknowledgement } from './control/is-al-origin-acknowledgement.ts';
+import { ALInboundStoreLane } from './lane/al-inbound-store-lane.ts';
+import { resolveALInboundStoreDurability } from './lane/resolve-al-inbound-store-durability.ts';
 import {
     type ALInboundEffectPreparationDependencies
 } from './prepare-al-inbound-commit-bundle.ts';
-import {
-    AL_INBOUND_WORK_PAGE_SIZE,
-    createALInboundWorkSelector,
-    type ALInboundClaimedControlSend,
-    type ALInboundWorkSelector
-} from './read-al-inbound-work-selection.ts';
 import {
     toALInboundReceiver,
     validateALInboundMessage,
@@ -54,6 +30,11 @@ import {
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
     readonly workQueue: QueueBoxResourceEntryRepository;
+}
+
+/** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
+export interface ALVolatileInboundRuntimeStores extends ALInboundRuntimeStores {
+    evictExpired(): void;
 }
 
 export namespace ALInboundMessageRuntime {
@@ -82,8 +63,11 @@ export namespace ALInboundMessageRuntime {
     }
 
     export interface Resources {
+        /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALInboundAdmissionStore;
         readonly workQueue: QueueBoxResourceEntryRepository;
+        /** The memory pair a volatile message goes to; `undefined` keeps one backend for every message. */
+        readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
@@ -134,73 +118,48 @@ export namespace ALInboundMessageRuntime {
 }
 
 /**
- * How many empty rotation rounds one liveness event stands for. The rotation runs a batch every
- * engine round it still owes a page, so this is roughly one event every few seconds of scanning --
- * enough to separate a rotation that keeps finding nothing from one that stopped running, and far
- * too rare to bring back the per-round cost the empty batches were suppressed for.
+ * One carrier's inbound owner. It validates every arrival and routes it to a store lane; each lane
+ * admits, retains and delivers over its own store pair.
+ *
+ * - A data message goes to the lane `resolveALInboundStoreDurability(msg)` names: `durable` exactly
+ *   when the envelope's normalized durability is `local-inbox`. The decision reads the envelope alone,
+ *   so every copy and retry of one message resolves to the same lane.
+ * - An acknowledgement of a message this peer originated is `not-handled` and reads no store: the
+ *   origin keeps no inbound decision surface for its own message.
+ * - Any other control goes to the volatile lane first, and to the durable lane when that lane answers
+ *   `not-handled`, which writes nothing: a control about a durable message costs one memory read
+ *   before its IndexedDB admission. A control the memory lane handles never reaches IndexedDB; a late
+ *   or unresolved one (its rows swept, or from a peer its owner index does not name) costs one IndexedDB read.
+ * - Duplicate detection is per lane: a msgId the memory lane admitted is invisible to the IndexedDB
+ *   lane, and the reverse. The lane is fixed by the envelope, so a copy of one message always meets
+ *   its first admission.
+ * - An ordering or supersedence track whose messages declare different durabilities is split between
+ *   the lanes; no caller declares one that way.
+ * - The volatile lane's worker id is `${effectWorkerId}/volatile`. It sweeps its expired rows from its
+ *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
  */
-export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
-
 export class ALInboundMessageRuntime {
-    private readonly admissionStore: ALInboundAdmissionStore;
-    private readonly readyPromise: Promise<void>;
-
-    private readonly admission: ALInboundMessageAdmission;
-    private readonly controlAdmission: ALInboundControlAdmission;
-    private readonly delivery: ALInboundAdmittedDelivery;
-    private readonly workSelector: ALInboundWorkSelector;
-    private readonly work: ALWorkHandler;
-    private emptyRoundCount = 0;
-    private emptyRoundsFromMs: number | undefined;
-    private longestEmptyRoundMs = 0;
-    private deferredRoundCount = 0;
-    private latestDeferred: readonly ALInboundDeferredEffect[] = [];
-    /** The effects the running batch has started, in run order: only this owner holds them decoded. */
-    private batchRunOrder: ALInboundBatchRunOrder | undefined;
-    private controlRound: ALInboundControlSendRound | undefined;
+    private readonly durable: ALInboundStoreLane;
+    private readonly volatile: ALInboundStoreLane | undefined;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
 
     constructor(dependencies: ALInboundMessageRuntime.Dependencies) {
         this.dependencies = dependencies;
-        this.admissionStore = dependencies.admissionStore;
-        this.readyPromise = this.admissionStore.ready();
-        const workPort = createALWorkQueuePort({
-            queue: dependencies.workQueue,
-            workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace, dependencies.carrier)]),
-            leaseMs: AL_INBOUND_WORK_LEASE_MS,
-            nowMs: () => dependencies.clock.nowMs(),
-            random: dependencies.random
-        });
-        this.admission = new ALInboundMessageAdmission({ ...dependencies, workPort });
-        this.controlAdmission = new ALInboundControlAdmission({
-            admissionStore: this.admissionStore,
-            port: workPort,
-            clock: dependencies.clock,
-            newControlId: dependencies.effectPreparation.newControlId,
-            retention: this.admissionStore.retention
-        });
-        this.delivery = new ALInboundAdmittedDelivery(dependencies);
-        this.workSelector = createALInboundWorkSelector({
-            delivery: this.delivery,
-            namespace: this.admissionStore.namespace,
-            nowMs: () => dependencies.clock.nowMs()
-        });
-        this.work = new ALWorkHandler({
+        this.durable = new ALInboundStoreLane({
+            lane: 'durable',
+            stores: dependencies,
             workerId: dependencies.effectWorkerId,
-            port: workPort,
-            queueEngine: dependencies.queueEngine,
-            ownsQueueEngine: dependencies.ownsQueueEngine,
-            clock: dependencies.clock,
-            pageSize: AL_INBOUND_WORK_PAGE_SIZE,
-            // The rotation answers readiness: work the eligibility rules defer must not report as due.
-            readNextReadyAtMs: (port) => this.workSelector.readNextReadyAtMs(port),
-            // The rotation advances one status per probe, so an answer of its own never stands.
-            readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
-            selectReady: (port, pageSize) => this.workSelector.selectReady(port, pageSize),
-            runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
-            diagnostics: (event) => this.recordWorkDiagnostics(event)
+            evictExpired: undefined,
+            runtime: dependencies
+        });
+        this.volatile = dependencies.volatileStores === undefined ? undefined : new ALInboundStoreLane({
+            lane: 'volatile',
+            stores: dependencies.volatileStores,
+            workerId: `${dependencies.effectWorkerId}/volatile`,
+            evictExpired: dependencies.volatileStores.evictExpired,
+            runtime: dependencies
         });
         if (dependencies.ownsQueueEngine) {
             void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
@@ -208,16 +167,13 @@ export class ALInboundMessageRuntime {
     }
 
     async ready(): Promise<void> {
-        await this.readyPromise;
-
-        await this.work.ready();
+        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
     }
 
     dispose(): void {
         this.disposed = true;
-        this.admission.dispose();
-        this.work.dispose();
-        this.delivery.dispose();
+        this.durable.dispose();
+        this.volatile?.dispose();
     }
 
     async admitIncomingMessage(
@@ -236,91 +192,6 @@ export class ALInboundMessageRuntime {
         const admitted = await this.admitDecodedMessage(msg, source, planIncomingMessage);
         this.recordAdmissionOutcome(msg, source, admitted);
         return admitted;
-    }
-
-    /**
-     * A batch is relayed when it touched work; a probe is not relayed at all. The rotation's probe
-     * reads a page every engine round by construction, and in the conformance lane every relayed
-     * event is a round trip out of the page, so one event per round roughly doubled that page's
-     * traffic and with it its measured per-operation cost -- 8.2 to 20.9 ms/op -- which delayed RTC
-     * signaling far enough that the delivery baseline received nothing and the lane failed.
-     * Suppressed, the same cell passes at 10-13 ms/op (12.6 measured on the full lane here, 10.3 on
-     * the rtc-only run that isolated this relay). The probe's own `durationMs` is still measured and
-     * the outbound owners, whose probes are the invalidations they can name, still report theirs.
-     */
-    private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
-        if (event.kind === 'work-batch') {
-            this.recordWorkBatch(event);
-        }
-    }
-
-    /**
-     * The rotation runs a batch every engine round, so an empty one is its normal resting state: it
-     * claimed nothing, ran nothing and released nothing, and every number it could carry was already
-     * decided by the probe that preceded it. It is suppressed for the same reason the probe is, and
-     * `rotation-alive` below is what keeps a silent rotation distinguishable from a stopped one.
-     */
-    private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
-        const runOrder = this.batchRunOrder;
-        this.batchRunOrder = undefined;
-        if (event.claimedCount === 0 && event.rejectedCount === 0) {
-            this.recordEmptyRotationRound(event);
-            return;
-        }
-        this.dependencies.diagnostics?.({
-            kind: 'effect-drain',
-            workerId: event.workerId,
-            durationMs: event.durationMs,
-            claimedCount: event.claimedCount,
-            completedCount: event.completedCount,
-            rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount,
-            selectionDurationMs: event.selectionDurationMs,
-            claimDurationMs: event.claimDurationMs,
-            runDurationMs: event.runDurationMs,
-            releaseDurationMs: event.releaseDurationMs,
-            queueWaitMs: event.queueWaitMs,
-            startedAtMs: event.startedAtMs,
-            claimedEffectIds: runOrder?.batchStartedAtMs === event.startedAtMs ? runOrder.effectIds : [],
-            deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue())
-        });
-    }
-
-    /**
-     * Suppressing the empty rounds left the rotation itself unobservable: a committed admission that
-     * no drain follows reads the same whether no consumer is registered for its typeId or the
-     * rotation stopped running. One event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` of them says
-     * which, and carries the wall time they spanned so a slowed rotation reads as a long gap. A due row
-     * those rounds held back rides on the same event rather than one of its own, because one event per
-     * round is exactly the relay cost the suppression removed.
-     */
-    private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
-        const nowMs = this.dependencies.clock.nowMs();
-        this.emptyRoundCount += 1;
-        this.emptyRoundsFromMs ??= nowMs - event.durationMs;
-        this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
-        const unreservedDue = this.workSelector.getUnreservedDue();
-        if (unreservedDue.length > 0) {
-            this.deferredRoundCount += 1;
-            this.latestDeferred = toOldestFirstALInboundDeferredEffects(unreservedDue);
-        }
-        if (this.emptyRoundCount < AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS) {
-            return;
-        }
-        this.dependencies.diagnostics?.({
-            kind: 'rotation-alive',
-            workerId: event.workerId,
-            emptyRoundCount: this.emptyRoundCount,
-            durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs),
-            longestRoundMs: this.longestEmptyRoundMs,
-            deferredRoundCount: this.deferredRoundCount,
-            latestDeferred: this.latestDeferred
-        });
-        this.emptyRoundCount = 0;
-        this.emptyRoundsFromMs = undefined;
-        this.longestEmptyRoundMs = 0;
-        this.deferredRoundCount = 0;
-        this.latestDeferred = [];
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
@@ -362,49 +233,23 @@ export class ALInboundMessageRuntime {
         if (isALControlTypeId(msg.payload.typeId)) {
             return Either.ofRight(await this.admitControlMessage(msg, source));
         }
-        const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
-        if (attempt.left) {
-            return Either.ofLeft(attempt.left);
-        }
-        const result = attempt.right!;
-        if (result.kind === 'conflict') {
-            return Either.ofRight(await this.retainConflictedAdmission(result.pending));
-        }
-        if (result.wroteWork) {
-            this.commitWork();
-        }
-        return Either.ofRight(result.acceptance);
+        return await this.resolveDataLane(msg).admitData(msg, source, planIncomingMessage);
     }
 
-    /**
-     * Only a retention that left a claimable row is announced — `pending-admission`, whether this call
-     * wrote the row or found one a previous attempt wrote. A conflict the plan does not retain never
-     * reaches retention; a message past its deadline is rejected before the write, or as a row written
-     * already expired; and a row in a terminal status holds no work for the worker.
-     */
-    private async retainConflictedAdmission(
-        pending: ALInboundPendingAdmission | undefined
-    ): Promise<ALInboundMessageRuntime.Acceptance> {
-        if (pending === undefined) {
-            return { kind: 'not-admitted', reason: 'conflict' };
-        }
-        const acceptance = await this.admission.retainPending(pending);
-        if (acceptance.kind === 'pending-admission') {
-            this.commitWork();
-        }
-        return acceptance;
+    /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */
+    private resolveDataLane(msg: ALMessage): ALInboundStoreLane {
+        return this.volatile === undefined || resolveALInboundStoreDurability(msg) === 'durable'
+            ? this.durable
+            : this.volatile;
     }
 
     private async admitControlMessage(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundMessageRuntime.Acceptance> {
-        const admitted = await this.controlAdmission.admit(msg, source);
-        // A control the runtime does not handle or rejects has nothing for the worker to claim; retained work
-        // and a commit, which always relays at least the recipient the acknowledgement names, announce one.
-        if (admitted.kind === 'pending-control' || admitted.kind === 'committed') {
-            this.commitWork();
-        }
+        const admitted = isALOriginAcknowledgement(msg, this.dependencies.effectPreparation.selfPeerId)
+            ? { kind: 'not-handled' as const }
+            : await this.admitControlInLanes(msg, source);
         if (admitted.kind === 'pending-control') {
             return { kind: 'pending-admission' };
         }
@@ -417,160 +262,14 @@ export class ALInboundMessageRuntime {
         return { kind: 'control', handled: acceptance.handled };
     }
 
-    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
-    private commitWork(): void {
-        this.workSelector.restartScan();
-        this.work.committed();
+    /** Memory first, so a control the memory lane handles never reaches IndexedDB. */
+    private async admitControlInLanes(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundControlAdmissionResult> {
+        const volatile = await this.volatile?.admitControl(msg, source);
+        return volatile === undefined || volatile.kind === 'not-handled'
+            ? await this.durable.admitControl(msg, source)
+            : volatile;
     }
-
-    /**
-     * One claim, timed and named: the batch above reports the whole drain, and a drain that crawls is
-     * only readable once each claim says which message it ran and how long that one took. A row that
-     * cannot be decoded, and a claim that throws, name no payload here; the batch still counts them.
-     */
-    private async runInboundClaim(claim: ALWorkClaim, batchStartedAtMs: number): Promise<ALWorkOutcome> {
-        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
-        assertALInboundWorkCarrier(effect, this.dependencies.carrier);
-        this.recordClaimStarted(batchStartedAtMs, effect.effectId);
-        const startedAtMs = this.dependencies.clock.nowMs();
-        const outcome = await this.runInboundEffect(effect);
-        this.recordClaimSettled({
-            claim,
-            effect,
-            outcome,
-            durationMs: Math.max(0, this.dependencies.clock.nowMs() - startedAtMs),
-            batchStartedAtMs,
-            startedAtMs
-        });
-        return outcome;
-    }
-
-    /** A batch runs its claims one after another under one start, so a new start is a new batch. */
-    private recordClaimStarted(batchStartedAtMs: number, effectId: string): void {
-        if (this.batchRunOrder?.batchStartedAtMs !== batchStartedAtMs) {
-            this.batchRunOrder = { batchStartedAtMs, effectIds: [] };
-        }
-        this.batchRunOrder.effectIds.push(effectId);
-    }
-
-    private recordClaimSettled(settled: ALInboundClaimSettlement): void {
-        const dueAtMs = resolveALInboundWorkDueAtMs(settled.claim.entry);
-        this.dependencies.diagnostics?.({
-            kind: 'claim-settled',
-            workerId: this.dependencies.effectWorkerId,
-            effectId: settled.effect.effectId,
-            ...toALInboundClaimIdentity(settled.effect.payload),
-            payloadKind: settled.effect.payload.kind,
-            durationMs: settled.durationMs,
-            attempts: settled.claim.attempts,
-            outcome: settled.outcome.status,
-            queueWaitMs: Math.max(0, settled.batchStartedAtMs - dueAtMs),
-            dueAtMs,
-            batchStartedAtMs: settled.batchStartedAtMs,
-            startedAtMs: settled.startedAtMs
-        });
-    }
-
-    /**
-     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
-     * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
-     * instead of the next round the rotation happens to reach.
-     */
-    private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
-        const payload = effect.payload;
-        if (payload.kind === 'admit-message') {
-            const replayed = await this.admission.replay(payload);
-            if (replayed.wroteWork) {
-                this.commitWork();
-            }
-            return toALInboundReplayOutcome(replayed.outcome, this.dependencies.clock.nowMs());
-        }
-        if (payload.kind === 'admit-control') {
-            const replayed = await this.controlAdmission.replay(payload);
-            if (replayed.wroteWork) {
-                this.commitWork();
-            }
-            if (replayed.acceptance !== undefined && !this.disposed) {
-                await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
-            }
-            return replayed.outcome;
-        }
-        if (payload.kind === 'send-control') {
-            return await this.sendControlInRound(effect, payload.msg);
-        }
-        return {
-            status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
-        };
-    }
-
-    /**
-     * The first control claim of a batch sends every control message that batch reserved, and the
-     * rest await that one send. The round is the array the selection returned, so a retried row in a later
-     * batch never joins a finished round, and a claim a restarted scan left out of the array sends
-     * alone. A round that throws sends the message of each claim alone too, so each claim settles on its
-     * own message: the outbound admission is idempotent, so a message the round already admitted
-     * answers `duplicate`.
-     */
-    private async sendControlInRound(effect: ALPersistedInboundEffect, msg: ALMessage): Promise<ALWorkOutcome> {
-        if (this.disposed) {
-            return { status: 'retry' };
-        }
-        if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
-            throw new NonRetryableException('Inbound work expired before delivery');
-        }
-        const sends = this.workSelector.getClaimedControlSends();
-        if (!sends.some((send) => send.effectId === effect.effectId)) {
-            await this.dependencies.sendControlMessages([msg]);
-            return { status: 'completed' };
-        }
-        if (this.controlRound?.sends !== sends) {
-            this.controlRound = { sends, sent: this.dependencies.sendControlMessages(sends.map((send) => send.msg)) };
-        }
-        try {
-            await this.controlRound.sent;
-        }
-        catch {
-            await this.dependencies.sendControlMessages([msg]);
-        }
-        return { status: 'completed' };
-    }
-}
-
-/** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
-interface ALInboundControlSendRound {
-    readonly sends: readonly ALInboundClaimedControlSend[];
-    readonly sent: Promise<void>;
-}
-
-/** One settled claim's measurements, so the event that reports them is built from one input. */
-interface ALInboundClaimSettlement {
-    readonly claim: ALWorkClaim;
-    readonly effect: ALPersistedInboundEffect;
-    readonly outcome: ALWorkOutcome;
-    readonly durationMs: number;
-    readonly batchStartedAtMs: number;
-    readonly startedAtMs: number;
-}
-
-interface ALInboundBatchRunOrder {
-    readonly batchStartedAtMs: number;
-    readonly effectIds: string[];
-}
-
-function toOldestFirstALInboundDeferredEffects(
-    deferred: readonly ALInboundDeferredEffect[]
-): readonly ALInboundDeferredEffect[] {
-    return [...deferred].sort((left, right) => left.dueAtMs - right.dueAtMs);
-}
-
-function toALInboundReplayOutcome(
-    outcome: ALInboundMessageAdmission.ReplayOutcome,
-    nowMs: number
-): ALWorkOutcome {
-    if (typeof outcome === 'string') {
-        return { status: outcome };
-    }
-    return outcome.kind === 'not-ready'
-        ? { status: 'not-ready', readyAtMs: nowMs + outcome.retryAfterMs }
-        : { status: 'non-retryable' };
 }

@@ -1,3 +1,4 @@
+import { AL_WS_CLIENT_CAPABILITIES, toALCarrierQosInputProvider } from '../al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
@@ -16,12 +17,14 @@ import {
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
-import { toALReceiverAckNormalizationInput } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -29,7 +32,8 @@ import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-a
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
@@ -129,7 +133,9 @@ export namespace WsQueueBoxClientService {
         readonly sessionId: string;
         readonly qosProvider?: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
+        readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+        readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
@@ -143,7 +149,7 @@ export namespace WsQueueBoxClientService {
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
-        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly qosProvider: ALQosInputProvider;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
@@ -252,7 +258,7 @@ export class WsQueueBoxClientService {
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const socketOpen = this.isSocketOpen();
-        const normalizationInput = toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
+        const normalizationInput = resolveALQosNormalizationInput(
             msg,
             {
                 direction: 'outbound',
@@ -260,7 +266,7 @@ export class WsQueueBoxClientService {
                 connectedPeerIds: socketOpen ? [this.sessionId] : []
             },
             this.dependencies.qosProvider
-        ));
+        );
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const message = toALOutboundMessage(msg, normalized.effective);
         const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
@@ -271,7 +277,7 @@ export class WsQueueBoxClientService {
         return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>((refused) => refused, () => ({
             msg: message,
             dropReasonCode: undefined,
-            persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
+            persist: shouldPersistOutbox(normalized.effective),
             preparedMessages: [toALOutboundTransportMessage(message)],
             ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
@@ -474,7 +480,8 @@ export class WsQueueBoxClientService {
                 verdict,
                 message,
                 entries: [],
-                reason: verdict.detail
+                reason: verdict.detail,
+                trackedReceiptAlgo: 'none'
             }));
         }
 
@@ -640,9 +647,10 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
         socket: input.socket,
         sessionId: input.sessionId,
-        qosProvider: input.qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, input.qosProvider),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
@@ -651,6 +659,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             decodePrepared: decodeALOutboundTransportMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
+            volatileStores: input.outboundVolatileStores,
             queueEngine: input.queueEngine
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),

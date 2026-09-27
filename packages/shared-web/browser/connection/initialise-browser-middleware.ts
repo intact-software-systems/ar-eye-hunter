@@ -1,6 +1,9 @@
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type {
+    ALInboundRuntimeStores,
+    ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -49,8 +52,10 @@ import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/
 import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
@@ -165,6 +170,7 @@ interface InitialiseBrowserTransportInput {
     readonly session: AuthSession;
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
+    readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly options: MiddlewareInitOptions;
 }
 
@@ -191,11 +197,21 @@ export async function initialiseMiddleware(
     };
     initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
     const inboundStores = resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId);
+    const inboundVolatileStores = createBrowserALVolatileInboundRuntimeStores(
+        toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)
+    );
     const creation: BrowserMiddlewareCreation = {
         createMessage: newALUntargetedMessage,
         newConnectionRequestId: crypto.randomUUID.bind(crypto)
     };
-    const transportInput: InitialiseBrowserTransportInput = { session, clientData, inboundStores, options, creation };
+    const transportInput: InitialiseBrowserTransportInput = {
+        session,
+        clientData,
+        inboundStores,
+        inboundVolatileStores,
+        options,
+        creation
+    };
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
         ...transportInput,
@@ -254,6 +270,7 @@ async function initialiseBrowserWebSocketTransport(
         socket,
         clientData: input.clientData,
         inboundStores: input.inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -328,6 +345,7 @@ async function initialiseBrowserRtcTransport(
             qboxEngine: input.webSocketTransport.qboxEngine,
             clientData: input.clientData,
             inboundStores: input.inboundStores,
+            inboundVolatileStores: input.inboundVolatileStores,
             roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
             inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
         }

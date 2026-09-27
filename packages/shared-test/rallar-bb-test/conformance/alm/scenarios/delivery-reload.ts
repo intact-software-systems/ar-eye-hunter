@@ -64,8 +64,8 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
         toReloadHealthCommand(sender, 'health-before'),
         ...toHeldFaultCommands(sender, 'reload-hold', 'until-cleared'),
         toReloadOriginalSend(sender),
-        ...toRetainedEvidenceCommands({ ...sender, index: 1 }),
-        toStorageCountersCommand(sender, 'storage-counters-held'),
+        ...toRetainedEvidenceCommands({ ...sender, index: 1 }, true),
+        toStorageCountersCommand(sender, 'storage-counters-held', false),
         ...(['al-admission', 'al-work'] as const).map((owner) =>
             toResultAssertion({
                 step: sender,
@@ -104,7 +104,7 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
             operator: 'equals',
             expected: 'unobservable'
         }),
-        toStorageCountersCommand(sender, 'storage-counters-recovered')
+        toStorageCountersCommand(sender, 'storage-counters-recovered', false)
     ];
 }
 
@@ -115,6 +115,7 @@ function toReloadOriginalSend(sender: AlmConformanceStepInput): RallarBlackBoxTe
         payload: { marker: 'delivery-reload', carrier: sender.input.carrier },
         delivery: {
             ack: 'receiver',
+            durability: 'local-outbox',
             ttlMs: toReloadSurvivalTtlMs(sender.input.deadlineMs),
             commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
         }

@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { resolveALMessageExpireAtMs, type ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
@@ -13,6 +13,7 @@ import type {
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
+    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundSettlementFact
@@ -41,6 +42,8 @@ export interface ALOutboundComputedDto<TPrepared> {
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
     readonly entries: readonly ResourceEntry[];
+    /** What an admitted plan, or the original of a duplicate, tracks; `none` for a verdict that admitted nothing. */
+    readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
 export interface ComputeALOutboundDispatchInput<TPrepared> {
@@ -92,6 +95,9 @@ export function computeALOutboundDispatch<TPrepared>(
             [canonicalEntry]
         ),
         msg: read.msg,
+        trackedReceiptAlgo: verdict.kind === 'admitted'
+            ? toALOutboundTrackedReceiptAlgo(read.plan.ackTracking)
+            : 'none',
         bundle: {
             pendingAdmission: options.pendingAdmission,
             senderId: read.msg.id.senderId,
@@ -111,7 +117,15 @@ function toALOutboundComputedResult<TPrepared>(
     reason: string | undefined,
     entries: readonly ResourceEntry[] = []
 ): ALOutboundComputedDto<TPrepared> {
-    return { verdict, reason, entries };
+    return { verdict, reason, entries, trackedReceiptAlgo: 'none' };
+}
+
+/**
+ * The receipt an admission tracks: the ack tracking the plan of its carrier wrote, `none` when it wrote none.
+ * The WS client writes none for a `hop` or `subtree` room send, so its handle must not wait for one (R-S3a-4).
+ */
+function toALOutboundTrackedReceiptAlgo(ackTracking: ALOutboundAckTrackingPlan | null | undefined): ALAckAlgo {
+    return ackTracking?.enabled === true ? ackTracking.mode : 'none';
 }
 
 /** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */
@@ -224,11 +238,14 @@ function toDuplicateDispatchResult<TPrepared>(
     const entry = read.sentSnapshot?.outboxKey
         ? { ...outboxEntry, key: read.sentSnapshot.outboxKey }
         : undefined;
-    return toALOutboundComputedResult(
-        { kind: 'duplicate' },
-        `Duplicate outbound message ${read.msg.id.msgId}`,
-        entry ? [entry] : []
-    );
+    return {
+        ...toALOutboundComputedResult(
+            { kind: 'duplicate' },
+            `Duplicate outbound message ${read.msg.id.msgId}`,
+            entry ? [entry] : []
+        ),
+        trackedReceiptAlgo: toALOutboundTrackedReceiptAlgo(read.storedMessage?.policy.ackTracking)
+    };
 }
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */

@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
@@ -72,6 +73,8 @@ export namespace ALOutboundDispatchAdmission {
     }
 
     export interface Dependencies<TPrepared> {
+        /** The store pair this admission commits to, named on its commit-phases diagnostic. */
+        readonly lane: ALStoreDurability;
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly workPort: ALWorkQueuePort;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
@@ -160,6 +163,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     private createCommitPhases(dispatch: ALOutboundDispatchAdmission.Input<TPrepared>): ALOutboundCommitPhases {
         return new ALOutboundCommitPhases({
+            lane: this.dependencies.lane,
             senderId: dispatch.msg.id.senderId,
             msgId: dispatch.msg.id.msgId,
             typeId: dispatch.msg.payload.typeId,
@@ -585,7 +589,7 @@ function toALOutboundVerdictComputed<TPrepared>(
     verdict: ALDeliveryAdmissionVerdict,
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
-    return { ...fields, verdict };
+    return { ...fields, verdict, trackedReceiptAlgo: 'none' };
 }
 
 /** Members read the version of the sender one after another, so a version that moved between them splits the group. */

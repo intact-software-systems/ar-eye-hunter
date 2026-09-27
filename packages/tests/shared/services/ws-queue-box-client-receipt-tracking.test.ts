@@ -213,7 +213,8 @@ describe('WS client receipt admission edges', () => {
                 typeId: AL_CONTROL_RECEIPT_TYPE_ID,
                 targetMsgId: 'room-message-1',
                 outcome: 'committed',
-                reason: 'none'
+                reason: 'none',
+                phase: 'admitted'
             },
             {
                 kind: 'control-admission',
@@ -221,9 +222,24 @@ describe('WS client receipt admission edges', () => {
                 typeId: AL_CONTROL_RECEIPT_TYPE_ID,
                 targetMsgId: 'unsent-message',
                 outcome: 'rejected',
-                reason: 'AL receipt names no retained outbound message of its origin'
+                reason: 'AL receipt names no retained outbound message of its origin',
+                phase: 'complete'
             }
         ]);
+    });
+
+    // R-S3a-9: a recipe waits for the `complete` receipt by matching the serialized event in its key order. The
+    // phase comes last, so a wait that names no phase still matches the same event.
+    it('states the receipt phase after the outcome and reason of the serialized diagnostic', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent(roomMessage());
+
+        await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+
+        const [admission] = fixture.diagnostics.filter((event) => event.kind === 'control-admission');
+        expect(JSON.stringify(admission)).toContain(
+            `"typeId":"${AL_CONTROL_RECEIPT_TYPE_ID}","targetMsgId":"room-message-1","outcome":"committed","reason":"none","phase":"admitted"`
+        );
     });
 
     it('reads afresh after a version conflict and refuses once the conflicts outlast its attempts', async () => {

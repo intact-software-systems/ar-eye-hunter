@@ -287,7 +287,8 @@ function readAlmStorageCounters(
         context: input.context,
         connection: undefined,
         topic: 'rallar.bb.storage.counters',
-        invoke: async (runtime) => decodeAlmStorageCountersResultValue(await runtime.readStorageCounters(counters))
+        invoke: async (runtime) =>
+            decodeAlmStorageCountersResultValue(await runtime.readStorageCounters(counters), counters.reset === true)
     });
 }
 

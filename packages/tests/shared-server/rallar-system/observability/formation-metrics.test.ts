@@ -207,6 +207,7 @@ describe('group formation metrics recorder', () => {
 
         recorder.outboundWork({
             kind: 'effect-drain',
+            lane: 'durable',
             workerId: 'al-outbound:test',
             durationMs: 4,
             claimedCount: 3,

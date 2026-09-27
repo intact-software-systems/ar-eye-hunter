@@ -134,7 +134,12 @@ export class BrowserDirectorRelayTransport {
     ): Promise<RallarDirectorRelaySendResult> {
         const ttlMs = BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS;
         const receipt = await this.input.messages
-            .room<RallarDirectorRelayEnvelope<T>>({ topicId: input.topicId, typeId: input.typeId, roomRef })
+            .room<RallarDirectorRelayEnvelope<T>>({
+                topicId: input.topicId,
+                typeId: input.typeId,
+                roomRef,
+                purpose: 'notification'
+            })
             .send(createEnvelope(input), {
                 strategy: 'rtc-with-ws-fallback',
                 reliability: 'at-least-once',

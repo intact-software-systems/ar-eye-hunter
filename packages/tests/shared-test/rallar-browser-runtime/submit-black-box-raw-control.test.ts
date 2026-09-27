@@ -6,6 +6,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../shared-web/api-middleware-test-double.ts';
 
 const ADMITTED = { kind: 'admitted', durable: true, queuedAttempts: 1 } as const;
@@ -21,7 +22,7 @@ const CONTROL = {
 function toAdmittingContext(submitted: ALMessage[], wake: () => void) {
     const enqueueOutboxIfAbsent = async (message: ALMessage): Promise<ALOutboundEnqueueResult> => {
         submitted.push(message);
-        return { verdict: ADMITTED, message, entries: [] };
+        return { verdict: ADMITTED, message, entries: [], trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message) };
     };
     return createDefaultApiMiddlewareTestDouble({
         session: { sessionId: 'recipient-b' },

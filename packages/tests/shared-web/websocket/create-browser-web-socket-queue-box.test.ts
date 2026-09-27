@@ -7,8 +7,10 @@ import {
     vi
 } from 'vitest';
 
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -60,6 +62,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             socket,
             clientData,
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -109,6 +112,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             socket,
             clientData,
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -146,6 +150,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             socket,
             clientData,
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -197,6 +202,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             socket,
             clientData,
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
             connectTimeoutMs,
             signal: controller.signal
         });

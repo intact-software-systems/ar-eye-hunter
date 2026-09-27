@@ -138,21 +138,27 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-baseline",
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+                "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
                 "alm.conformance.rtc.delivery-baseline",
                 "alm.conformance.rtc.delivery-lifecycle",
                 "alm.conformance.rtc.delivery-reload",
+                "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.volatile-default",
                 "alm.conformance.ws.bounded-rejection",
                 "alm.conformance.ws.deadline-expiry",
                 "alm.conformance.ws.delivery-baseline",
                 "alm.conformance.ws.delivery-lifecycle",
                 "alm.conformance.ws.delivery-reload",
-                "alm.conformance.ws.ordering-resync"
+                "alm.conformance.ws.durable-opt-in",
+                "alm.conformance.ws.ordering-resync",
+                "alm.conformance.ws.volatile-default"
               ]
             },
             "timeoutMs": 45000,
@@ -211,6 +217,7 @@
             "handleId": "alm-ws-delivery-reload-send-1",
             "timeoutMs": 10000,
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -332,21 +339,27 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-baseline",
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+                "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
                 "alm.conformance.rtc.delivery-baseline",
                 "alm.conformance.rtc.delivery-lifecycle",
                 "alm.conformance.rtc.delivery-reload",
+                "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.volatile-default",
                 "alm.conformance.ws.bounded-rejection",
                 "alm.conformance.ws.deadline-expiry",
                 "alm.conformance.ws.delivery-baseline",
                 "alm.conformance.ws.delivery-lifecycle",
                 "alm.conformance.ws.delivery-reload",
-                "alm.conformance.ws.ordering-resync"
+                "alm.conformance.ws.durable-opt-in",
+                "alm.conformance.ws.ordering-resync",
+                "alm.conformance.ws.volatile-default"
               ]
             },
             "timeoutMs": 45000,
@@ -439,6 +452,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -560,21 +574,27 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-baseline",
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+                "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
                 "alm.conformance.rtc.delivery-baseline",
                 "alm.conformance.rtc.delivery-lifecycle",
                 "alm.conformance.rtc.delivery-reload",
+                "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.volatile-default",
                 "alm.conformance.ws.bounded-rejection",
                 "alm.conformance.ws.deadline-expiry",
                 "alm.conformance.ws.delivery-baseline",
                 "alm.conformance.ws.delivery-lifecycle",
                 "alm.conformance.ws.delivery-reload",
-                "alm.conformance.ws.ordering-resync"
+                "alm.conformance.ws.durable-opt-in",
+                "alm.conformance.ws.ordering-resync",
+                "alm.conformance.ws.volatile-default"
               ]
             },
             "timeoutMs": 45000,
@@ -679,6 +699,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 77000
           },
           {
@@ -800,21 +821,27 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-baseline",
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+                "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
                 "alm.conformance.rtc.delivery-baseline",
                 "alm.conformance.rtc.delivery-lifecycle",
                 "alm.conformance.rtc.delivery-reload",
+                "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.volatile-default",
                 "alm.conformance.ws.bounded-rejection",
                 "alm.conformance.ws.deadline-expiry",
                 "alm.conformance.ws.delivery-baseline",
                 "alm.conformance.ws.delivery-lifecycle",
                 "alm.conformance.ws.delivery-reload",
-                "alm.conformance.ws.ordering-resync"
+                "alm.conformance.ws.durable-opt-in",
+                "alm.conformance.ws.ordering-resync",
+                "alm.conformance.ws.volatile-default"
               ]
             },
             "timeoutMs": 45000,
@@ -851,6 +878,88 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-sender-start",
+            "barrierId": "alm-ws-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-sender-armed",
+            "barrierId": "alm-ws-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-volatile-default-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-volatile-default-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-volatile-default-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.volatile-default",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "volatile-default"
+            },
+            "handleId": "alm-ws-volatile-default-send-1",
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-volatile-default-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-volatile-default-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-volatile-default-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-ws-volatile-default-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-volatile-default-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-volatile-default-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-ws-volatile-default-sender-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-volatile-default-sender-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-ws-volatile-default-sender-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-volatile-default-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -1103,14 +1212,6 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "assert",
-            "commandId": "alm-ws-delivery-baseline-sender-assert-storage-counters-total",
-            "source": "resultCache.alm-ws-delivery-baseline-sender-storage-counters.value.total",
-            "operator": "gt",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
             "kind": "stats",
             "commandId": "alm-ws-delivery-baseline-sender-stats",
             "timeoutMs": 3000
@@ -1236,7 +1337,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -1344,7 +1445,7 @@
             "commandId": "alm-ws-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -1457,6 +1558,17 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-lifecycle-sender-receipt-complete-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.receipt.v1\",\"targetMsgId\":\"{resultCache.alm-ws-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\",\"reason\":\"none\",\"phase\":\"complete\""
+            },
+            "timeoutMs": 27000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-ws-delivery-lifecycle-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -1505,6 +1617,98 @@
           {
             "kind": "stats",
             "commandId": "alm-ws-delivery-lifecycle-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-sender-start",
+            "barrierId": "alm-ws-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-sender-armed",
+            "barrierId": "alm-ws-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-durable-opt-in-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-durable-opt-in-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-durable-opt-in-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.durable-opt-in",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "durable-opt-in"
+            },
+            "handleId": "alm-ws-durable-opt-in-send-1",
+            "timeoutMs": 10000,
+            "durability": "local-inbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-durable-opt-in-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-durable-opt-in-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-durable-opt-in-sender-assert-admitted-1",
+            "source": "resultCache.alm-ws-durable-opt-in-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-ws-durable-opt-in-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-durable-opt-in-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-durable-opt-in-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-durable-opt-in-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-ws-durable-opt-in-sender-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-durable-opt-in-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -1629,6 +1833,93 @@
           {
             "kind": "stats",
             "commandId": "alm-ws-ordering-resync-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-sender-start",
+            "barrierId": "alm-rtc-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-sender-armed",
+            "barrierId": "alm-rtc-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-volatile-default-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-volatile-default-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-volatile-default-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.volatile-default",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "volatile-default"
+            },
+            "handleId": "alm-rtc-volatile-default-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-volatile-default-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-volatile-default-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-volatile-default-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-volatile-default-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-volatile-default-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-volatile-default-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-volatile-default-sender-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-volatile-default-sender-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-rtc-volatile-default-sender-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-volatile-default-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -1896,14 +2187,6 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "assert",
-            "commandId": "alm-rtc-delivery-baseline-sender-assert-storage-counters-total",
-            "source": "resultCache.alm-rtc-delivery-baseline-sender-storage-counters.value.total",
-            "operator": "gt",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
             "kind": "stats",
             "commandId": "alm-rtc-delivery-baseline-sender-stats",
             "timeoutMs": 3000
@@ -2039,7 +2322,7 @@
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -2152,7 +2435,7 @@
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -2270,6 +2553,17 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-ack-admitted-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+            },
+            "timeoutMs": 27000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-delivery-lifecycle-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -2318,6 +2612,103 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-delivery-lifecycle-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-sender-start",
+            "barrierId": "alm-rtc-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-sender-armed",
+            "barrierId": "alm-rtc-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-durable-opt-in-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-durable-opt-in-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-durable-opt-in-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.durable-opt-in",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "durable-opt-in"
+            },
+            "handleId": "alm-rtc-durable-opt-in-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-inbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-durable-opt-in-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-durable-opt-in-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-durable-opt-in-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-durable-opt-in-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-durable-opt-in-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-durable-opt-in-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-durable-opt-in-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-durable-opt-in-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-durable-opt-in-sender-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-durable-opt-in-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -2535,6 +2926,93 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-not-yet-in-sync-expires-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.volatile-default",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "volatile-default"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-volatile-default-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            }
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-volatile-default-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-volatile-default-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-with-ws-fallback-volatile-default-sender-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-rtc-with-ws-fallback-volatile-default-sender-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -2814,14 +3292,6 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-assert-storage-counters-total",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-baseline-sender-storage-counters.value.total",
-            "operator": "gt",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-stats",
             "timeoutMs": 3000
@@ -2969,7 +3439,7 @@
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-enqueued-2",
             "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-admitted-2.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -3106,7 +3576,7 @@
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-enqueued-3",
             "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-admitted-3.value.enqueued",
             "operator": "equals",
-            "expected": true,
+            "expected": false,
             "timeoutMs": 2000
           },
           {
@@ -3236,6 +3706,17 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-ack-admitted-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+            },
+            "timeoutMs": 27000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -3284,6 +3765,103 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "durable-opt-in"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-durable-opt-in-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-inbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-durable-opt-in-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-durable-opt-in-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-durable-opt-in-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-with-ws-fallback-durable-opt-in-sender-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -3446,6 +4024,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 30000
           },
           {
@@ -3541,6 +4120,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 30000
           },
           {
@@ -3828,21 +4408,27 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-baseline",
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+                "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
                 "alm.conformance.rtc.delivery-baseline",
                 "alm.conformance.rtc.delivery-lifecycle",
                 "alm.conformance.rtc.delivery-reload",
+                "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.volatile-default",
                 "alm.conformance.ws.bounded-rejection",
                 "alm.conformance.ws.deadline-expiry",
                 "alm.conformance.ws.delivery-baseline",
                 "alm.conformance.ws.delivery-lifecycle",
                 "alm.conformance.ws.delivery-reload",
-                "alm.conformance.ws.ordering-resync"
+                "alm.conformance.ws.durable-opt-in",
+                "alm.conformance.ws.ordering-resync",
+                "alm.conformance.ws.volatile-default"
               ]
             },
             "timeoutMs": 45000,
@@ -4022,6 +4608,71 @@
           },
           {
             "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-receiver-start",
+            "barrierId": "alm-ws-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-volatile-default-receiver-armed",
+            "barrierId": "alm-ws-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-volatile-default-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-ws-volatile-default-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.ws.volatile-default",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-volatile-default-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-volatile-default-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-ws-volatile-default-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-volatile-default-receiver-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-ws-volatile-default-receiver-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-ws-volatile-default-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.ws.volatile-default",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-volatile-default-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
             "commandId": "alm-ws-bounded-rejection-receiver-start",
             "barrierId": "alm-ws-bounded-rejection-start",
             "timeoutMs": 60000
@@ -4184,6 +4835,63 @@
           },
           {
             "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-receiver-start",
+            "barrierId": "alm-ws-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-durable-opt-in-receiver-armed",
+            "barrierId": "alm-ws-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-durable-opt-in-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-ws-durable-opt-in-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.ws.durable-opt-in",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-durable-opt-in-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-durable-opt-in-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-ws-durable-opt-in-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-ws-durable-opt-in-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.ws.durable-opt-in",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-durable-opt-in-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
             "commandId": "alm-ws-ordering-resync-receiver-start",
             "barrierId": "alm-ws-ordering-resync-start",
             "timeoutMs": 60000
@@ -4217,6 +4925,71 @@
           {
             "kind": "stats",
             "commandId": "alm-ws-ordering-resync-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-receiver-start",
+            "barrierId": "alm-rtc-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-volatile-default-receiver-armed",
+            "barrierId": "alm-rtc-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-volatile-default-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-volatile-default-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc.volatile-default",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-volatile-default-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-volatile-default-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-volatile-default-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-volatile-default-receiver-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-rtc-volatile-default-receiver-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-volatile-default-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc.volatile-default",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-volatile-default-receiver-stats",
             "timeoutMs": 3000
           },
           {
@@ -4383,6 +5156,63 @@
           },
           {
             "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-receiver-start",
+            "barrierId": "alm-rtc-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-durable-opt-in-receiver-armed",
+            "barrierId": "alm-rtc-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-durable-opt-in-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-durable-opt-in-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc.durable-opt-in",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-durable-opt-in-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-durable-opt-in-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-durable-opt-in-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-durable-opt-in-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc.durable-opt-in",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-durable-opt-in-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
             "commandId": "alm-rtc-ordering-resync-receiver-start",
             "barrierId": "alm-rtc-ordering-resync-start",
             "timeoutMs": 60000
@@ -4465,6 +5295,71 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-not-yet-in-sync-expires-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-volatile-default-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.volatile-default",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-with-ws-fallback-volatile-default-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-assert-storage-window-non-probe-work",
+            "source": "resultCache.alm-rtc-with-ws-fallback-volatile-default-receiver-storage-window.value.workNonProbeCount",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.volatile-default",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-volatile-default-receiver-stats",
             "timeoutMs": 3000
           },
           {
@@ -4627,6 +5522,63 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-durable-opt-in-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-storage-window-open",
+            "reset": true,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-storage-window",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-assert-storage-window-admission",
+            "source": "resultCache.alm-rtc-with-ws-fallback-durable-opt-in-receiver-storage-window.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-stats",
             "timeoutMs": 3000
           },
           {
@@ -4883,14 +5835,16 @@
     ],
     "scenarios": [
       "delivery-reload",
+      "volatile-default",
       "bounded-rejection",
       "deadline-expiry",
       "delivery-baseline",
       "delivery-lifecycle",
+      "durable-opt-in",
       "ordering-resync",
       "not-yet-in-sync",
       "cross-carrier-duplicate"
     ]
   },
-  "description": "ALM conformance family (bounded rejection, deadline expiry, delivery baseline, lifecycle, durable reload, ordering resync, the cross-carrier duplicate, and not-yet-in-sync) across ws, rtc, and rtc-with-ws-fallback carriers."
+  "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, and not-yet-in-sync) across ws, rtc, and rtc-with-ws-fallback carriers."
 }

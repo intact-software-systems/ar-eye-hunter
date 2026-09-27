@@ -353,7 +353,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -381,13 +380,13 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 stored.dequeueAudit.attempts < maxAttempts &&
                 isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
         });
+        this.#observeReservation(selection.mutations);
         return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
     }
 
     async reserveEntries(
         { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -415,15 +414,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
         });
         // An unreservable row that is also expired is swept by the write this claim already owes.
-        return await this.#write(db, {
-            mutations: [
-                ...selection.mutations,
-                ...selection.ineligible
-                    .filter((stored) => isStoredQueueEntryExpired(stored, now))
-                    .map(computeIndexedDbQueueDelete)
-            ],
-            result: selection.reserved
-        });
+        const mutations = [
+            ...selection.mutations,
+            ...selection.ineligible
+                .filter((stored) => isStoredQueueEntryExpired(stored, now))
+                .map(computeIndexedDbQueueDelete)
+        ];
+        this.#observeReservation(mutations);
+        return await this.#write(db, { mutations, result: selection.reserved });
     }
 
     async reserveOverdueRetryEntries(
@@ -431,7 +429,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -446,7 +443,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (maxToScan < typeIds.size) {
             throw new Error('maxToScan must be at least the number of requested types');
         }
-
         const db = await this.#connection.open();
         const now = this.#now();
         const requestedTypes = [...typeIds];
@@ -466,6 +462,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             now,
             requestedTypes
         });
+        this.#observeReservation(computed.mutations);
         return await this.#write(db, computed);
     }
 
@@ -473,7 +470,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
@@ -519,6 +515,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             reserved.set(updated.key, { entry: updated, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, updated));
         }
+        this.#observeReservation(mutations);
         return await this.#write(db, { mutations, result: reserved });
     }
 
@@ -602,6 +599,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
         });
         return candidates.filter((stored) => isStoredQueueEntryExpired(stored, now));
+    }
+
+    /** A reservation read that changed nothing is the owner's idle inspection; one that writes is a reservation. */
+    #observeReservation(mutations: readonly ComputedIndexedDbQueueMutation[]): void {
+        this.#observer.observe({ owner: 'al-work', kind: mutations.length === 0 ? 'work-probe' : 'work-reserve' });
     }
 
     async #write<Result>(

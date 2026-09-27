@@ -322,6 +322,7 @@ export type RallarBlackBoxTestMessagesSendCommand =
         scope?: 'room' | 'world' | 'all';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
+        durability?: 'volatile' | 'local-outbox' | 'local-inbox';
         ttlMs?: number;
         orderingKey?: string;
         seq?: number;

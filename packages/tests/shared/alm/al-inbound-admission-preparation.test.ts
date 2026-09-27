@@ -510,6 +510,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        volatileStores: undefined,
         carrier: 'ws',
         planIncomingMessage,
         dispatchInboxEntry: async () => {},

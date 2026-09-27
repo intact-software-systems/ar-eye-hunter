@@ -42,6 +42,60 @@ That one resolved store is injected as a required dependency into both
 carrier services — the WS client's `WsQueueBoxClientService` and RTC's
 `WebRtcRxStreamerService` — and neither resolves its own.
 
+### The memory and IndexedDB lanes
+
+Since S3a the session's inbound store has two lanes (D54), and each is still one per
+session shared by both carriers (D20 kept): the IndexedDB pair above, and a memory pair
+the same composition root creates once
+([`createBrowserALVolatileInboundRuntimeStores`](../../../shared-web/browser/al-runtime/browser-al-runtime-stores.ts),
+namespace `browser:<name>:volatile`) and hands to both carriers beside it. So a
+volatile duplicate over the other carrier still meets its first admission. The WS
+server's runtime has no memory pair and keeps one backend for every message.
+[`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
+[`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
+its own pair on the shared engine.
+
+- **The durability is the sender's, carried on the envelope.** A data message goes to
+  the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
+  names from the envelope's normalized `qos.durability`: the IndexedDB lane exactly when
+  it is `local-inbox`. `local-outbox` keeps the sender's copy only, so it does not make
+  the receiver durable; `volatile` and the default do not either. No receiver-side
+  policy moves the decision, and every copy and retry of one message resolves to the
+  same lane.
+- **The origin's own ACK short-circuits.** An acknowledgement of a message this peer
+  originated (its `originPeerId` is this peer,
+  [`isALOriginAcknowledgement`](./control/is-al-origin-acknowledgement.ts)) is answered
+  `not-handled` and reads no store: the origin keeps no inbound decision surface for its
+  own message, and its outbound receipt admission owns the ACK.
+- **Every other control tries memory first.** It goes to the volatile lane, and to the
+  IndexedDB lane only when the memory lane answers `not-handled`, which writes nothing.
+  A control about a durable message therefore costs one memory read before its
+  IndexedDB admission, and a control the memory lane handles never reaches IndexedDB. A
+  late or unresolved control (its rows swept, or from a peer its owner index does not
+  name) costs one IndexedDB read.
+- **Duplicate detection is per lane.** A msgId the memory lane admitted is invisible to
+  the IndexedDB lane, and the reverse. The lane is fixed by the envelope, so a copy of
+  one message always meets its first admission.
+- **Tracks do not span stores.** An ordering or supersedence track whose messages
+  declare different durabilities is split between the lanes; no caller declares one
+  that way.
+- **Eviction on the owner's round.** Session cleanup and a storage reset never reach the
+  memory pair; it dies with the middleware. Each lane over it (worker id
+  `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
+  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. The rows it sweeps
+  carry the repository's 1 h retention, not the message's deadline (`toDefaultInMemoryInput`),
+  so heap growth is send rate × 1 h until S3c's deadline-scale bound. Both inbound lanes sweep
+  the shared pair on their own 60 s schedule; this is idempotent.
+- **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
+  carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
+
+[`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts)
+pins the cost: one message admitted and delivered over a durable pair spends 8
+admission operations, as before S3a, and so does a `local-inbox` message beside a
+volatile pair; a volatile message beside a durable pair spends 0 admission and 0
+non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
+rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
+
 Every stored key stays session-logical: dedup, message-owner, ordering,
 supersedence, and control rows are shared across carriers, because a given
 message and its control history are one identity no matter which carrier

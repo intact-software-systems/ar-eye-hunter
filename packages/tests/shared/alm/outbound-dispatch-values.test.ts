@@ -25,6 +25,7 @@ describe('outbound dispatch value ownership', () => {
         const message = createOutboundMessage('intended-message');
         const wrongEntry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage('other-message'), 'outbox');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            lane: 'durable',
             admissionStore: store,
             workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => wrongEntry,
@@ -114,6 +115,7 @@ describe('outbound dispatch value ownership', () => {
         const message = createOutboundMessage('observed-outbox');
         const observedOutboxEntry = freezeValues(QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'));
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            lane: 'durable',
             admissionStore: store,
             workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
             toOutboxEntry: () => {

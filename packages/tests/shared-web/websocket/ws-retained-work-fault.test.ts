@@ -9,8 +9,10 @@ import {
 } from 'vitest';
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -67,6 +69,7 @@ describe('WS retained-work faults', () => {
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -143,6 +146,7 @@ describe('WS retained-work faults', () => {
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -167,8 +171,9 @@ describe('WS retained-work faults', () => {
                 ttlMs: 60_000
             }),
             delivery: { reliability: 'at-least-once', ack: 'receiver' },
-            // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
-            qos: { ack: { algo: 'hop' } }
+            // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The retained
+            // row this test holds is IndexedDB work, which only a durable opt-in writes (S3a).
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
         } as const;
         expect((await service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
         await drain();

@@ -29,7 +29,11 @@ The cell also prints one line to the job log:
 
 ```text
 ALM observation ws-smoke: regime=normal perOperation=8.67 ms/op over 15 commits outcome=passed page=normal (2 ms/probe over 34)
+ALM observation ws-smoke: regime=normal (page) perOperation=unmeasured (1 commits) outcome=passed page=normal (1 ms/probe over 52)
 ```
+
+The second shape is a cell with too few durable send commits to measure: `(page)` says the page regime
+decided `regime`.
 
 ## The budgets stay
 
@@ -53,15 +57,33 @@ All three live in
 ([`conformance/alm/compute-alm-observation-regime.ts`](../conformance/alm/compute-alm-observation-regime.ts))
 records what the runner was doing while the cell ran:
 
-- `regime` — `normal`, `slow`, or `unclassified`.
-- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over
-  `send`-origin commits inside the opening window, from the `commit-phases` events of the
+- `regime` — `normal`, `slow`, or `unclassified`: `perOperation`'s class when it is measured,
+  otherwise `pageRegime.regime` (R-S3a-16).
+- `regimeSource` — `per-operation` or `page`: which of the two decided `regime`. The job-log line
+  prints `(page)` after `regime=` for the second.
+- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over the
+  `send`-origin commits of the whole cell, from the `commit-phases` events of the
   [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
-  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples.
-- `windowMs` — the opening window the median is taken over, measured from the run's earliest event.
-  Only `send`-origin commits count. A failing cell's own degradation dominates a whole-cell median,
-  and a drain's commit measures a different read chain than a caller's own admission, so neither
-  belongs in a reading of the runner.
+  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only `send`-origin commits count, because a
+  drain's commit measures a different read chain than a caller's own admission.
+  - Only commits whose `lane` is `durable` count (R-S3a-15). The 30 / 35 ms thresholds were
+    calibrated on IndexedDB read chains; a memory lane's commit reads no IndexedDB, and its cost is
+    the page's event-loop contention instead: 0–5 ms per operation for a send and up to 39 ms for a
+    repair on a local run, figures that say nothing about the runner's storage. An event recorded
+    before S3a names no lane and is read as `durable`. That default is exact only for artifacts
+    recorded before the volatile lane existed: an artifact from an S3a branch head between the store
+    lanes (S3a Tasks 4–5) and R-S3a-15 carries memory-lane events with no `lane`, reads them as
+    durable, and is no regime baseline.
+  - The calibration read the cell's opening window. Since S3a's volatile default a cell's first
+    durable send comes from `durable-opt-in`, well past it, so the reading spans the whole cell
+    (R-S3a-16). A cell that sent too few durable messages leaves `regime` to the page.
+  - The trade-off: the durable send commits now come after whatever degradation the cell causes
+    itself, so a failing cell that reaches the sample floor can read `slow` from its own IndexedDB
+    contention, and a product red then reads as a slow runner — the misread this file exists to
+    prevent. When `regime` says `slow` and `pageRegime.regime` says `normal`, suspect the cell before
+    the runner, and read the snapshot.
+- `windowMs` — `ALM_OBSERVATION_WINDOW_MS`, measured from the run's earliest event: where the
+  `pageRegime` window opens.
 - `pageRegime` — the page's storage queue, beside `regime`'s admission chain. It is the median
   `durationMs` of the outbound `age-bound` `readiness-probe` events, over both roles, from
   `ALM_OBSERVATION_WINDOW_MS` to `ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event: an
@@ -70,13 +92,20 @@ records what the runner was doing while the cell ran:
   rather than anything about the admission chain itself. The window is deferred past the outbound
   regime's own opening window because page start-up contends too. `{ outcome: 'unmeasured',
   sampleCount, regime: 'unclassified' }` below `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples;
-  otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`.
+  otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`. Only probes whose
+  `lane` is `durable` count: a memory lane's `…/volatile` owner probes at 0 ms and would pull the
+  median of a slow page toward `normal`.
 - `peerReadiness` — per lifecycle stream and peer, the time from first known to first ready, or
   `never-ready` with how long the peer was observed.
 - `scenarioSends` — each recipe run's wall clock, or, for a run that failed, the failing step's
   error code. A failed recipe run carries no result object, so it has no duration to report.
-- `workPageRate` — `work-page` storage operations per second between the cell's first and last
-  `storage.counters` reading.
+- `workPageRate` — `work-page` storage operations per second over the span from the cell's first to
+  its last `storage.counters` reading, summed over every page that read its counters (senders and,
+  since S3a's storage windows, receivers). Each page counts from its own previous reading; it counts
+  from zero after a reading that reset the counter, and after a reading lower than its previous one,
+  which is a reloaded page whose counter started again. That rule catches only a lower reading: a
+  reloaded page whose counter passed the old page's last reading before its next reading is
+  under-counted by that last reading.
 - `inbound` — one entry per direction (`sender`, `receiver`, `unattributed`), from the
   `admission-outcome`, `effect-drain` and `claim-settled` events of the
   [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from
@@ -97,9 +126,11 @@ records what the runner was doing while the cell ran:
     drain medians beside it are still reported in that case.
   - `phases` — the median of each `effect-drain` phase (`selectionMedianMs`, `claimMedianMs`,
     `runMedianMs`, `releaseMedianMs`, `queueWaitMedianMs`) and of `durationMs` itself
-    (`drainMedianMs`), over `drainCount` drains. Unlike `perOperation`, these medians are taken over
-    the whole cell, not the opening window, because this block reads the receiver rather than the
-    runner. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
+    (`drainMedianMs`), over `drainCount` drains, taken over the whole cell: this block reads the
+    receiver rather than the runner. Only drains whose `lane` is `durable` count, as in `regime`
+    (R-S3a-15): the F2b and F2c figures were measured when every inbound owner was IndexedDB, and a
+    memory lane's single-digit drains would pull a slow receiver's medians into the normal band. An
+    event recorded before S3a names no lane and is read as `durable`. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
     but no drain — the mirror of `pendingShare`'s `unmeasured` case above. As the diagnostic contract
     explains, the four phases do not sum to `durationMs`, and — since Task 2 of the F2c slice —
     `releaseMedianMs` is the median of one release flush per batch, not one flush per claim. F2c's
@@ -112,8 +143,8 @@ records what the runner was doing while the cell ran:
     `phases` medians carry for subtracting — and `intraBatchWaitMedianMs`, the median
     `startedAtMs − batchStartedAtMs` over the same claims, the serialization behind earlier claims in
     the same run loop and nothing else, over `dispatchClaimCount` claims; and `sendControlClaimMedianMs`, the median
-    `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians, like
-    `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
+    `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians over
+    the `durable` lane's claims, like `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
     `claim-settled` event missing `durationMs`, `dueAtMs`, `batchStartedAtMs` or `startedAtMs` (one
     emitted before the three instants existed) is skipped rather than counted. `dueAtMs` is read from
     the reserved entry, and a reservation clears a retried row's retry stamp, so a claim of a row that

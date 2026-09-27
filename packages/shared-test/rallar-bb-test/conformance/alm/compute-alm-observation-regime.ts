@@ -24,10 +24,11 @@ import {
  * that cannot: every head whose rtc cell opened at or below 24 ms per admission read operation went
  * 6 ready / 0 timeout, and every head at or above 36 ms went 0 ready / 6 timeout — including a
  * same-day re-execution of a green head, which failed identically. The band between the two
- * constants stays unclassified rather than guessed. The measurement is confined to the cell's
- * opening window and to `send`-origin commits so that it reads the runner rather than the cell: a
- * failing cell's own degradation dominates a whole-cell median, and a drain's commit measures a
- * different read chain than a caller's own admission.
+ * constants stays unclassified rather than guessed. Only `send`-origin commits count, because a
+ * drain's commit measures a different read chain than a caller's own admission. The calibration read
+ * the cell's opening window; since S3a's volatile default a cell's first durable send comes from
+ * `durable-opt-in`, well past it, so the measurement spans the durable send commits of the whole cell
+ * (R-S3a-16). A cell with none leaves the verdict to the page regime.
  */
 export const ALM_OBSERVATION_NORMAL_REGIME_MAX_MS_PER_OPERATION = 30;
 export const ALM_OBSERVATION_SLOW_REGIME_MIN_MS_PER_OPERATION = 35;
@@ -45,6 +46,9 @@ const ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT = 20;
 export type ALMObservationRegimeName = 'normal' | 'slow' | 'unclassified';
 
 export type ALMObservationCellOutcome = 'passed' | 'failed';
+
+/** Which instrument decided `regime`: the durable send commits, or the page's probes when there were none. */
+export type ALMObservationRegimeSource = 'per-operation' | 'page';
 
 export type ALMObservationPerOperation =
     | Readonly<{ outcome: 'measured'; medianMs: number; sampleCount: number; }>
@@ -117,6 +121,7 @@ export interface ALMObservationRegime {
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
     readonly regime: ALMObservationRegimeName;
+    readonly regimeSource: ALMObservationRegimeSource;
     readonly windowMs: number;
     readonly perOperation: ALMObservationPerOperation;
     readonly peerReadiness: readonly ALMObservationPeerReadiness[];
@@ -153,12 +158,18 @@ interface ALMObservationPeerObservation {
 
 export function computeALMObservationRegime(input: ALMObservationRegimeInput): ALMObservationRegime {
     const perOperation = computePerOperationCost(input.snapshot);
+    const pageRegime = computePageRegime(
+        input.snapshot,
+        input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS
+    );
+    const measured = perOperation.outcome === 'measured';
     return {
         runId: input.snapshot.runId,
         carrier: input.carrier,
         scope: input.scope,
         cellOutcome: input.cellOutcome,
-        regime: resolveRegimeName(perOperation),
+        regime: measured ? resolveRegimeName(perOperation) : pageRegime.regime,
+        regimeSource: measured ? 'per-operation' : 'page',
         windowMs: ALM_OBSERVATION_WINDOW_MS,
         perOperation,
         peerReadiness: computePeerReadiness(input.snapshot.rtcLifecycles),
@@ -166,7 +177,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         workPageRate: computeWorkPageRate(input.snapshot.storageCounters),
         inbound: computeInboundDirections(input.snapshot),
         pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
-        pageRegime: computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS),
+        pageRegime,
         snapshotIssues: []
     };
 }
@@ -181,6 +192,7 @@ export function createUnreadableALMObservationRegime(
         scope: input.scope,
         cellOutcome: input.cellOutcome,
         regime: 'unclassified',
+        regimeSource: 'page',
         windowMs: ALM_OBSERVATION_WINDOW_MS,
         perOperation: { outcome: 'too-few-samples', sampleCount: 0 },
         peerReadiness: [],
@@ -224,7 +236,8 @@ export function toALMObservationRegimeSummary(regime: ALMObservationRegime): str
     const perOperation = regime.perOperation.outcome === 'measured'
         ? `${regime.perOperation.medianMs} ms/op over ${regime.perOperation.sampleCount} commits`
         : `unmeasured (${regime.perOperation.sampleCount} commits)`;
-    return `ALM observation ${regime.carrier}-${regime.scope}: regime=${regime.regime} ` +
+    const source = regime.regimeSource === 'page' ? ' (page)' : '';
+    return `ALM observation ${regime.carrier}-${regime.scope}: regime=${regime.regime}${source} ` +
         `perOperation=${perOperation} outcome=${regime.cellOutcome} ${toPageRegimeSummary(regime.pageRegime)}`;
 }
 
@@ -235,9 +248,8 @@ function toPageRegimeSummary(pageRegime: ALMObservationPageRegime): string {
 }
 
 function computePerOperationCost(snapshot: ALMObservationSnapshot): ALMObservationPerOperation {
-    const windowEndEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS;
     const costs = snapshot.commitPhases
-        .filter((phase) => phase.origin === ALM_OBSERVATION_COMMIT_ORIGIN && phase.atEpochMs <= windowEndEpochMs)
+        .filter((phase) => phase.lane === 'durable' && phase.origin === ALM_OBSERVATION_COMMIT_ORIGIN)
         .map((phase) => phase.readDurationMs / phase.readOperationCount);
     return costs.length < ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT
         ? { outcome: 'too-few-samples', sampleCount: costs.length }
@@ -329,10 +341,34 @@ function computeWorkPageRate(
     const spanMs = last.atEpochMs - first.atEpochMs;
     return {
         outcome: 'measured',
-        perSecond: toTwoDecimals((last.workPageCount - first.workPageCount) / (spanMs / 1000)),
+        perSecond: toTwoDecimals(computeWorkPageIncrements(ordered) / (spanMs / 1000)),
         readingCount: ordered.length,
         spanMs
     };
+}
+
+/**
+ * Each agent counts from its own previous reading, or from zero after a reading that reset the counter or
+ * after a reload: a reading below the previous one comes from a new page whose counter started at zero.
+ */
+function computeWorkPageIncrements(ordered: readonly ALMObservationStorageCounters[]): number {
+    const previousByAgent = new Map<string, ALMObservationStorageCounters>();
+    let increments = 0;
+    for (const reading of ordered) {
+        const previous = previousByAgent.get(reading.agentId);
+        if (previous !== undefined) {
+            increments += reading.workPageCount - computeWorkPageBaseline(previous, reading);
+        }
+        previousByAgent.set(reading.agentId, reading);
+    }
+    return increments;
+}
+
+function computeWorkPageBaseline(
+    previous: ALMObservationStorageCounters,
+    reading: ALMObservationStorageCounters
+): number {
+    return previous.reset || reading.workPageCount < previous.workPageCount ? 0 : previous.workPageCount;
 }
 
 /**
@@ -363,6 +399,11 @@ interface ALMObservationInboundRoleEvents {
     readonly claims: readonly ALMObservationInboundClaim[];
 }
 
+/**
+ * The drain phases and claim waits read the IndexedDB lane only, as the runner regime does (R-S3a-15):
+ * F2c's acceptance figures were measured when every inbound owner was IndexedDB, and a memory lane's
+ * single-digit drains would pull a slow receiver's medians into the normal band.
+ */
 function toInboundDirection(
     role: ALMObservationAgentRole,
     events: ALMObservationInboundRoleEvents
@@ -374,8 +415,8 @@ function toInboundDirection(
             role,
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
-            phases: computeInboundPhases(drains),
-            claimWaits: computeInboundClaimWaits(claims)
+            phases: computeInboundPhases(drains.filter((drain) => drain.lane === 'durable')),
+            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable'))
         };
 }
 

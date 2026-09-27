@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
@@ -33,6 +33,8 @@ import {
     holdOutboundClaims,
     peekOutboundWorkReadyAt,
     runOutboundWorkTask,
+    toOutboundTestAck,
+    trackOutboundTestAcks,
     waitUntil
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
@@ -110,15 +112,19 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
             msgId: message.id.msgId,
             typeId: message.payload.typeId,
             ackMode: 'receiver',
+            receiptAlgo: 'receiver',
             expiresAtMs: undefined,
             submittedAtMs: 0
         }),
-        { kind: 'admission', msgId: message.id.msgId, carrier: 'ws', atMs: 0, verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 } }
+        {
+            kind: 'admission',
+            msgId: message.id.msgId,
+            carrier: 'ws',
+            atMs: 0,
+            verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
+            trackedReceiptAlgo: 'receiver'
+        }
     );
-}
-
-function trackAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
-    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds, nextHopPeerIds: expectedPeerIds, mode: 'hop' };
 }
 
 it.each(BACKEND_KINDS)(
@@ -219,29 +225,14 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores(kind),
         settlements: (settlement) => settlements.push(settlement),
-        planOutgoingMessage: planSend(trackAcks(['peer-1', 'peer-2'])),
+        planOutgoingMessage: planSend(trackOutboundTestAcks(['peer-1', 'peer-2'])),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const message = createOutboundMessage('msg-acknowledged');
     await enqueueOutboundOrThrow(runtime, message);
 
     for (const fromPeerId of ['peer-1', 'peer-2']) {
-        const admitted = await runtime.acceptControlMessage(
-            newALAckControlMessage(
-                { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
-                {
-                    ackedMsgId: message.id.msgId,
-                    originPeerId: 'self',
-                    logicalRecipientPeerId: fromPeerId,
-                    fromPeerId,
-                    toPeerId: 'self',
-                    status: 'accepted',
-                    observedAtEpochMs: 1,
-                    carrier: 'ws'
-                }
-            ),
-            'peer'
-        );
+        const admitted = await runtime.acceptControlMessage(toOutboundTestAck(message, fromPeerId), 'peer');
         expect(admitted.kind).toBe('committed');
     }
 
@@ -284,7 +275,7 @@ it.each(BACKEND_KINDS)(
             stores: createStores(kind),
             carrier: 'rtc',
             settlements: (settlement) => settlements.push(settlement),
-            planOutgoingMessage: planSend({ ...trackAcks(['peer-1']), timeoutMs: ACK_TIMEOUT_WINDOW_MS }),
+            planOutgoingMessage: planSend({ ...trackOutboundTestAcks(['peer-1']), timeoutMs: ACK_TIMEOUT_WINDOW_MS }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.kind));
                 return { status: 'sent', submissionAttempted: true };

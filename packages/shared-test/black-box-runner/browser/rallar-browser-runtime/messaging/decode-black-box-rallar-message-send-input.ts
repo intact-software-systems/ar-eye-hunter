@@ -1,3 +1,4 @@
+import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
 import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -25,7 +26,7 @@ type MessageSendIdentity = Pick<
 
 type MessageSendOptions = Pick<
     BlackBoxRallarMessageSendInput,
-    'roomRef' | 'scope' | 'reliability' | 'ack' | 'minSnapshotVersion' | 'qos'
+    'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'minSnapshotVersion' | 'qos'
 >;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
@@ -46,6 +47,7 @@ const REPLAY_REFUSED_FIELDS = [
     'scope',
     'reliability',
     'ack',
+    'durability',
     'ttlMs',
     'orderingKey',
     'seq',
@@ -134,14 +136,16 @@ function decodeMessageSendIdentity(
         : Either.ofRight({ timeoutMs, connection, carrier, typeId, handleId });
 }
 
-/** A null scope or reliability reads as absent, the way the recipe schema writes an unset option. */
+/** A null scope, reliability or durability reads as absent, the way the recipe schema writes an unset option. */
 function decodeMessageSendOptions(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
     const scope = record.scope ?? undefined;
     const reliability = record.reliability ?? undefined;
+    const durability = record.durability ?? undefined;
     const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
     const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
+    const knownDurability = AL_DURABILITY_ALGOS.find((candidate) => candidate === durability);
     const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
     const qos = decodeMessageQos(record.qos);
     return decodeBlackBoxCommandRouting(record).flatMap(
@@ -153,6 +157,11 @@ function decodeMessageSendOptions(
             if (reliability !== undefined && knownReliability === undefined) {
                 return Either.ofLeft({ message: 'messages.send.reliability must be best-effort or at-least-once.' });
             }
+            if (durability !== undefined && knownDurability === undefined) {
+                return Either.ofLeft({
+                    message: 'messages.send.durability must be volatile, local-outbox or local-inbox.'
+                });
+            }
             if (minSnapshotVersion !== undefined && 'message' in minSnapshotVersion) {
                 return Either.ofLeft(minSnapshotVersion);
             }
@@ -163,6 +172,7 @@ function decodeMessageSendOptions(
                 ...routing,
                 scope: knownScope,
                 reliability: knownReliability,
+                durability: knownDurability,
                 minSnapshotVersion,
                 qos
             });

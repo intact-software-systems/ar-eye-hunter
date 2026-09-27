@@ -61,7 +61,12 @@ describe('the RTC enqueue circuit breaker', () => {
             { verdict: { kind: 'unroutable', reason: 'no-route', detail: 'none' }, success: true }
         ] as const
     )('reads a $verdict.kind verdict as success=$success', ({ verdict, success }) => {
-        expect(isRtcEnqueueBreakerSuccess({ verdict, message: createOriginReceiverMulticast('verdict'), entries: [] }))
+        expect(isRtcEnqueueBreakerSuccess({
+            verdict,
+            message: createOriginReceiverMulticast('verdict'),
+            entries: [],
+            trackedReceiptAlgo: 'receiver'
+        }))
             .toBe(success);
     });
 });

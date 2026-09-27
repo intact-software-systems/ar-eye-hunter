@@ -10,6 +10,7 @@ import {
     vi
 } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
     newALMulticastMessage,
     newALUnicastMessage,
@@ -67,7 +68,7 @@ describe('WebRtc overlay services', () => {
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: resources,
@@ -132,7 +133,7 @@ describe('WebRtc overlay services', () => {
             groupCache: groups,
             overlayCache: createReadableCache({ 'group-1': context.overlay }),
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: resources,
@@ -235,7 +236,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -273,6 +274,51 @@ describe('WebRtc overlay services', () => {
         expect(reserved.size).toBe(0);
     });
 
+    // Ruling 3 (S3a): the missing-channel tolerance keys on awaiting a route, not on persisting. A volatile
+    // at-least-once send retries, so it waits for its hop's channel instead of falling back.
+    it('admits a volatile at-least-once immediate send whose next hop has no rtc channel yet', async () => {
+        const connectionService = createConnectionService(['peer-1']);
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService: connectionService,
+            groupCache: createReadableCache({}),
+            overlayCache: createReadableCache({}),
+            multicasterFactory: (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService
+                ),
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            circuitBreaker: toCircuitBreaker(),
+            rateLimiter: toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        onTestFinished(() => manager.dispose());
+
+        const msg: ALMessage = {
+            ...newALUnicastMessage(
+                'sender-2',
+                {
+                    topicId: 'chat',
+                    resourceId: 'msg-awaits-channel',
+                    contextId: 'conversation-1'
+                },
+                'peer-1',
+                'chat.private-text.v1',
+                {
+                    text: 'send once the channel opens'
+                }
+            ),
+            delivery: { reliability: 'at-least-once', ack: 'none' }
+        };
+
+        await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
+            verdict: { kind: 'admitted', durable: false }
+        });
+    });
+
     it('skips outbound messages without targets or next hop', async () => {
         const warnings = captureWarnings();
 
@@ -286,7 +332,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -329,7 +375,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -376,7 +422,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -444,7 +490,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -517,7 +563,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -566,7 +612,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -613,7 +659,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -665,7 +711,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -705,7 +751,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -721,7 +767,8 @@ describe('WebRtc overlay services', () => {
                     verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
                     message: msg,
                     entries: [],
-                    reason: refusedDetail
+                    reason: refusedDetail,
+                    trackedReceiptAlgo: 'none'
                 }))
         );
         onTestFinished(() => enqueueSpy.mockRestore());
@@ -748,7 +795,7 @@ describe('WebRtc overlay services', () => {
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
@@ -789,7 +836,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -840,7 +887,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -895,7 +942,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -945,7 +992,7 @@ describe('WebRtc overlay services', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),

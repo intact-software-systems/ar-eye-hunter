@@ -22,6 +22,7 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -347,7 +348,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
         originalRoom: admission.originalRoom,
         attempts: admission.attempts,
         settlements: epoch.settlements,
-        channel: channels.channel<{ action: string; }>({ topicId: 'room.ready', typeId: 'ready' })
+        channel: channels.channel<{ action: string; }>({ topicId: 'room.ready', typeId: 'ready', purpose: 'notification' })
     };
 }
 
@@ -398,6 +399,6 @@ class ChannelAdmission {
             constraints: { ...message.constraints, expiresAtMs: message.id.ts + this.input.selectedLifetimeMs }
         };
         const verdict = this.attempts.length === 1 ? this.input.firstVerdict : ADMITTED_VERDICT;
-        return { verdict, message: admitted, entries: [] };
+        return { verdict, message: admitted, entries: [], trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(admitted) };
     }
 }

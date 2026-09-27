@@ -1,5 +1,9 @@
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import {
+    createDefaultInMemoryALInboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import * as shared from '@shared/mod.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { OnWebSocketMessageCallback } from '@shared/websocket/json-web-socket-client.ts';
@@ -690,6 +694,61 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         await socket.receive(seq1);
 
         await expect.poll(() => deliveredTexts).toEqual([seq1.payload.resource, seq2.payload.resource]);
+    });
+
+    it('admits an at-least-once send that requests no durability as volatile, even while the socket is closed', async () => {
+        const socket = createFakeWsSocket();
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket.client,
+            sessionId: 'self'
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+        const msg = shared.newALBroadcastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'msg-volatile-closed', contextId: 'all' },
+            'all',
+            'chat.message.v1',
+            { text: 'later' },
+            { reliability: 'at-least-once', ttlMs: 30_000 }
+        );
+
+        socket.native.readyState = 3;
+        const result = await enqueueOutboxAndDrain(service, msg);
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(socket.sentJsonStrings).toEqual([]);
+    });
+
+    it('sends a best-effort volatile message made on a closed socket from its memory lane once the socket opens', async () => {
+        const socket = createFakeWsSocket();
+        const volatileStores = createVolatileALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: new shared.InMemoryQueueBox(new Map()),
+            socket: socket.client,
+            sessionId: 'self',
+            outboundVolatileStores: volatileStores
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+        const msg = shared.newALBroadcastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'msg-best-effort-closed', contextId: 'all' },
+            'all',
+            'chat.message.v1',
+            { text: 'when open' }
+        );
+
+        socket.native.readyState = 3;
+        const result = await enqueueOutboxAndDrain(service, msg);
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(await volatileStores.admissionStore.hasSentMessageAdmission(msg.id.msgId)).toBe(true);
+        expect(socket.sentJsonStrings).toEqual([]);
+
+        // No durable wake reaches the owner: its memory lane reschedules the not-ready attempt itself.
+        socket.native.readyState = 1;
+        await expect.poll(() => socket.sentJsonStrings.length).toBe(1);
+        expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
     });
 });
 

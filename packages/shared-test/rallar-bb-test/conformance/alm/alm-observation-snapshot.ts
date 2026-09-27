@@ -1,3 +1,4 @@
+import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
@@ -20,6 +21,8 @@ const RECEIVER_AGENT_ID_PREFIX = 'alm-receiver-';
 
 export interface ALMObservationCommitPhase {
     readonly atEpochMs: number;
+    /** The store pair the commit ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly origin: string;
     readonly readDurationMs: number;
     readonly readOperationCount: number;
@@ -34,7 +37,10 @@ export interface ALMObservationRtcLifecycle {
 
 export interface ALMObservationStorageCounters {
     readonly atEpochMs: number;
+    readonly agentId: string;
     readonly workPageCount: number;
+    /** The reading reset the page's counter, so that page's next reading counts from zero. */
+    readonly reset: boolean;
 }
 
 export type ALMObservationCommandResult =
@@ -65,6 +71,8 @@ export interface ALMObservationInboundOutcome {
 export interface ALMObservationInboundDrain {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the drain ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly workerId: string;
     readonly durationMs: number;
     readonly selectionDurationMs: number;
@@ -78,6 +86,8 @@ export interface ALMObservationInboundDrain {
 export interface ALMObservationInboundClaim {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the claim ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly workerId: string;
     /** `dispatch-local`, `send-control` or another effect kind, as the topic emits it. */
     readonly payloadKind: string;
@@ -91,6 +101,8 @@ export interface ALMObservationInboundClaim {
 export interface ALMObservationReadinessProbe {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the probe read; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     /** `age-bound`, `own-commit`, `batch`, `retained-release`, `external-wake` or `no-memory`, as the topic emits it. */
     readonly cause: string;
     readonly durationMs: number;
@@ -210,10 +222,11 @@ function toCommitPhase(
     const origin = decodeText(diagnostic.detail.origin);
     const readDurationMs = decodeFiniteNumber(diagnostic.detail.readDurationMs);
     const readOperationCount = decodeFiniteNumber(diagnostic.detail.readOperationCount);
-    return diagnostic.detail.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined ||
+    const lane = decodeLane(diagnostic.detail.lane);
+    return diagnostic.detail.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined || lane === undefined ||
             readDurationMs === undefined || readOperationCount === undefined || readOperationCount <= 0
         ? undefined
-        : { atEpochMs: diagnostic.atEpochMs, origin, readDurationMs, readOperationCount };
+        : { atEpochMs: diagnostic.atEpochMs, lane, origin, readDurationMs, readOperationCount };
 }
 
 function toRtcLifecycle(
@@ -233,9 +246,12 @@ function toStorageCounter(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationStorageCounters | undefined {
     const workPageCount = decodeFiniteNumber(decodeRecord(diagnostic.detail.byKind)?.[WORK_PAGE_COUNTER_KIND]);
-    return workPageCount === undefined
-        ? undefined
-        : { atEpochMs: diagnostic.atEpochMs, workPageCount };
+    return workPageCount === undefined ? undefined : {
+        atEpochMs: diagnostic.atEpochMs,
+        agentId: diagnostic.agentId,
+        workPageCount,
+        reset: decodeBoolean(diagnostic.detail.reset) ?? false
+    };
 }
 
 function toInboundOutcome(
@@ -270,8 +286,9 @@ function toInboundDrain(
     const runDurationMs = decodeFiniteNumber(diagnostic.detail.runDurationMs);
     const releaseDurationMs = decodeFiniteNumber(diagnostic.detail.releaseDurationMs);
     const queueWaitMs = decodeFiniteNumber(diagnostic.detail.queueWaitMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     if (
-        diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined ||
+        diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         durationMs === undefined || selectionDurationMs === undefined || claimDurationMs === undefined ||
         runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined
     ) {
@@ -280,6 +297,7 @@ function toInboundDrain(
     return {
         atEpochMs: diagnostic.atEpochMs,
         role: resolveALMObservationAgentRole(diagnostic.agentId),
+        lane,
         workerId,
         durationMs,
         selectionDurationMs,
@@ -299,8 +317,9 @@ function toInboundClaim(
     const dueAtMs = decodeFiniteNumber(diagnostic.detail.dueAtMs);
     const batchStartedAtMs = decodeFiniteNumber(diagnostic.detail.batchStartedAtMs);
     const startedAtMs = decodeFiniteNumber(diagnostic.detail.startedAtMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     if (
-        diagnostic.detail.kind !== CLAIM_SETTLED_DIAGNOSTIC_KIND || workerId === undefined ||
+        diagnostic.detail.kind !== CLAIM_SETTLED_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         payloadKind === undefined || durationMs === undefined || dueAtMs === undefined ||
         batchStartedAtMs === undefined || startedAtMs === undefined
     ) {
@@ -309,6 +328,7 @@ function toInboundClaim(
     return {
         atEpochMs: diagnostic.atEpochMs,
         role: resolveALMObservationAgentRole(diagnostic.agentId),
+        lane,
         workerId,
         payloadKind,
         durationMs,
@@ -323,12 +343,14 @@ function toReadinessProbe(
 ): ALMObservationReadinessProbe | undefined {
     const cause = decodeText(diagnostic.detail.cause);
     const durationMs = decodeFiniteNumber(diagnostic.detail.durationMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     return diagnostic.detail.kind !== READINESS_PROBE_DIAGNOSTIC_KIND || cause === undefined ||
-            durationMs === undefined
+            durationMs === undefined || lane === undefined
         ? undefined
         : {
             atEpochMs: diagnostic.atEpochMs,
             role: resolveALMObservationAgentRole(diagnostic.agentId),
+            lane,
             cause,
             durationMs
         };
@@ -388,6 +410,18 @@ function decodeTextArray(value: unknown): readonly string[] {
 
 function decodeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Absent in an artifact recorded before S3a gave the runtime a memory lane: every store then was IndexedDB. */
+function decodeLane(value: unknown): ALStoreDurability | undefined {
+    if (value === undefined) {
+        return 'durable';
+    }
+    return value === 'durable' || value === 'volatile' ? value : undefined;
+}
+
+function decodeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
 }
 
 function decodeFiniteNumber(value: unknown): number | undefined {

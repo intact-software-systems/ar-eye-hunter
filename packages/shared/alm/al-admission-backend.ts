@@ -78,6 +78,17 @@ export class InMemoryAdmissionBackend implements ALAdmissionWorkBackend {
     async ready(): Promise<void> {
     }
 
+    /** The lazy expiry `read` and `list` apply, run over the whole pair; the owning lane calls it. */
+    evictExpired(): void {
+        const nowMs = this.nowMs();
+        for (const [key, stored] of this.state.data) {
+            if (stored.expireAtTimestamp <= nowMs) {
+                this.state.data.delete(key);
+            }
+        }
+        this.workQueue.cleanup();
+    }
+
     /**
      * The map holds no snapshot to keep open, so the backend is its own read session. It returns the
      * chain's own promise rather than awaiting it: a session must not cost a caller an extra turn.

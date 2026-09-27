@@ -1,11 +1,12 @@
 import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'realtime' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
+export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
 
 export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
@@ -106,6 +107,10 @@ export interface RallarMessageLane<TSendInput, TSelector = string> {
 export interface RallarTypedMessageChannelDefinition {
     readonly topicId?: string;
     readonly typeId: string;
+    /** Fixes the send defaults (D2): at-least-once, receipted, volatile, 30 s; a send option overrides each. */
+    readonly purpose: ALChannelPurpose;
+    /** Absent, the purpose's `volatile`; `local-outbox`/`local-inbox` opt the channel into browser storage. */
+    readonly durability?: ALDurabilityAlgo;
 }
 
 export type RallarTypedPayloadHandler<T> = (

@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import { ASSERT_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
@@ -14,7 +13,6 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toCommandId } from '../alm-conformance-step-identities.ts';
 
 export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-baseline',
@@ -38,8 +36,7 @@ function toDeliveryBaselineSenderCommands(
         }),
         ...toAdmissionCommands({ ...sender, index: 1 }),
         toReceiptsCommand({ ...sender, index: 1 }),
-        toStorageCountersCommand(sender, 'storage-counters'),
-        toStorageCountersAssertCommand(sender)
+        toStorageCountersCommand(sender, 'storage-counters', false)
     ];
 }
 
@@ -52,16 +49,4 @@ function toDeliveryBaselineReceiverCommands(
         count: 1,
         absent: false
     })];
-}
-
-/** The spec's own acceptance criterion: an admitted ALM send leaves AL-owned IndexedDB work behind. */
-function toStorageCountersAssertCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    return {
-        kind: 'assert',
-        commandId: toCommandId(step, 'assert-storage-counters-total'),
-        source: `resultCache.${toCommandId(step, 'storage-counters')}.value.total`,
-        operator: 'gt',
-        expected: 0,
-        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
-    };
 }

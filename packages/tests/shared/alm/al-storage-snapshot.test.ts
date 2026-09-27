@@ -15,9 +15,14 @@ import {
 } from '@shared/al-contracts/al-policy.ts';
 import {
     createDefaultIndexedDbALInboundRuntimeStores,
-    createDefaultIndexedDbALOutboundRuntimeStores
+    createDefaultIndexedDbALOutboundRuntimeStores,
+    createVolatileALInboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import {
+    ALInboundMessageRuntime,
+    type ALVolatileInboundRuntimeStores
+} from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import {
@@ -25,9 +30,10 @@ import {
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import type { ALVolatileOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
-import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
+import { NOT_COMPLETED_RETRYABLE_STATUSES, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     createOutboundTestRuntimeFor,
@@ -53,6 +59,8 @@ const WORKLOAD = {
  *
  * `AL_ADMISSION` moved from 101,570 bytes for one reason: F2c gives every admission row its own
  * `revision` field, which the per-row fence compares in place of the deleted store-global scalar.
+ *
+ * S3a: these are the durable opt-in's figures; the volatile default adds 0 rows.
  */
 const EXPECTED_BYTES_BY_TOPIC = {
     AL_OUTBOUND: 1_813_460,
@@ -67,6 +75,8 @@ const BYTES_TOLERANCE = 0.02;
  * The inbound leg of the same workload on its own store set. Every admitted message keeps its
  * canonical envelope and its settled delivery work; the canonical row now dies with that work
  * rather than at a provenance lifetime of its own, so a change to either must move these figures.
+ *
+ * S3a: these are the durable opt-in's figures; the volatile default adds 0 rows.
  */
 const EXPECTED_INBOUND_BYTES_BY_TOPIC = {
     AL_ADMISSION: 1_764_355,
@@ -96,49 +106,48 @@ interface ALStorageLeg {
     readonly bytesByTopic: Readonly<Record<string, number>>;
 }
 
+/** The rows the same workload adds to IndexedDB when it takes the volatile default (D55). */
+interface ALVolatileStorageLeg {
+    readonly outboundRowsAdded: number;
+    readonly inboundRowsAdded: number;
+}
+
 interface ALStorageSnapshot extends ALStorageLeg {
     readonly workload: typeof WORKLOAD;
     readonly inbound: ALStorageLeg;
+    readonly volatile: ALVolatileStorageLeg;
     readonly measuredAt: string;
 }
 
 describe('ALM browser storage snapshot', () => {
     it('records what the standard superseding workload leaves in IndexedDB', async () => {
-        const stores = createDefaultIndexedDbALOutboundRuntimeStores<OutboundTestPayload>({
-            dbName: DB_NAME,
-            namespace: NAMESPACE,
-            canonicalScope: NAMESPACE,
-            decodePrepared: decodeOutboundTestPayload
-        });
-        const runtime = createOutboundTestRuntimeFor<OutboundTestPayload>({
-            stores,
-            decodePreparedMessage: decodeOutboundTestPayload,
-            planOutgoingMessage: (msg) => ({
-                msg,
-                dropReasonCode: undefined,
-                persist: true,
-                preparedMessages: [{ message: JSON.stringify(msg) }],
-                supersedenceTracking: {
-                    enabled: true,
-                    algo: 'latest-wins',
-                    key: toSupersedenceKey(msg)
-                }
-            }),
-            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
-        });
-        await runtime.ready();
+        await sendOutboundWorkload(undefined);
+        await admitInboundWorkload(undefined);
+        const durable = await readALStorageSnapshot();
 
-        for (const payloadBytes of WORKLOAD.payloadBytes) {
-            for (let update = 0; update < WORKLOAD.updateCount; update += 1) {
-                for (const peerId of WORKLOAD.recipientPeerIds) {
-                    await enqueueOutboundOrThrow(runtime, createUpdate({ payloadBytes, update, peerId }));
-                }
+        // The same workload once more over the same IndexedDB pairs, taking the volatile default.
+        await sendOutboundWorkload(
+            createVolatileALOutboundRuntimeStores<OutboundTestPayload>({ decodePrepared: decodeOutboundTestPayload })
+        );
+        await admitInboundWorkload(createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` }));
+        const afterVolatile = await readALStorageSnapshot();
+        expect(afterVolatile.rowsByStatus, 'the volatile outbound workload adds no IndexedDB row')
+            .toEqual(durable.rowsByStatus);
+        expect(afterVolatile.inbound.rowsByStatus, 'the volatile inbound workload adds no IndexedDB row')
+            .toEqual(durable.inbound.rowsByStatus);
+        expectBytesWithinBand(sumTopicBytes(afterVolatile), sumTopicBytes(durable), 'outbound total after volatile');
+        expectBytesWithinBand(
+            sumTopicBytes(afterVolatile.inbound),
+            sumTopicBytes(durable.inbound),
+            'inbound total after volatile'
+        );
+        const snapshot: ALStorageSnapshot = {
+            ...durable,
+            volatile: {
+                outboundRowsAdded: countRows(afterVolatile) - countRows(durable),
+                inboundRowsAdded: countRows(afterVolatile.inbound) - countRows(durable.inbound)
             }
-        }
-        await runOutboundWorkTask(runtime);
-        await admitInboundWorkload();
-
-        const snapshot = await readALStorageSnapshot();
+        };
         writeALStorageSnapshot(snapshot);
 
         expect(readWrittenSnapshotKeys()).toEqual([
@@ -146,8 +155,10 @@ describe('ALM browser storage snapshot', () => {
             'inbound',
             'measuredAt',
             'rowsByStatus',
+            'volatile',
             'workload'
         ]);
+        expect(snapshot.volatile).toEqual({ outboundRowsAdded: 0, inboundRowsAdded: 0 });
         // Every admitted message retains three rows until its deadline -- its canonical envelope,
         // that envelope's identity fact, and the settled send work -- and supersedence does not
         // delete a predecessor's envelope. A change to either fact must move this snapshot.
@@ -163,11 +174,7 @@ describe('ALM browser storage snapshot', () => {
         for (const [topicId, expected] of Object.entries(EXPECTED_BYTES_BY_TOPIC)) {
             expectBytesWithinBand(snapshot.bytesByTopic[topicId], expected, `outbound ${topicId}`);
         }
-        expectBytesWithinBand(
-            Object.values(snapshot.bytesByTopic).reduce((total, bytes) => total + bytes, 0),
-            EXPECTED_TOTAL_BYTES,
-            'outbound total'
-        );
+        expectBytesWithinBand(sumTopicBytes(snapshot), EXPECTED_TOTAL_BYTES, 'outbound total');
 
         // The inbound leg admitted the same workload: one canonical envelope and one settled
         // delivery row per message, with no supersedence track to retain predecessors.
@@ -179,13 +186,68 @@ describe('ALM browser storage snapshot', () => {
         for (const [topicId, expected] of Object.entries(EXPECTED_INBOUND_BYTES_BY_TOPIC)) {
             expectBytesWithinBand(snapshot.inbound.bytesByTopic[topicId], expected, `inbound ${topicId}`);
         }
-        expectBytesWithinBand(
-            Object.values(snapshot.inbound.bytesByTopic).reduce((total, bytes) => total + bytes, 0),
-            EXPECTED_INBOUND_TOTAL_BYTES,
-            'inbound total'
-        );
+        expectBytesWithinBand(sumTopicBytes(snapshot.inbound), EXPECTED_INBOUND_TOTAL_BYTES, 'inbound total');
     }, 120_000);
 });
+
+/**
+ * The standard outbound workload over the snapshot's IndexedDB pair. With a memory pair beside it, every
+ * update takes the volatile default under its own msgId and the durable pair should see none of it.
+ */
+async function sendOutboundWorkload(
+    volatileStores: ALVolatileOutboundRuntimeStores<OutboundTestPayload> | undefined
+): Promise<void> {
+    const runtime = createOutboundTestRuntimeFor<OutboundTestPayload>({
+        stores: createDefaultIndexedDbALOutboundRuntimeStores<OutboundTestPayload>({
+            dbName: DB_NAME,
+            namespace: NAMESPACE,
+            canonicalScope: NAMESPACE,
+            decodePrepared: decodeOutboundTestPayload
+        }),
+        volatileStores,
+        decodePreparedMessage: decodeOutboundTestPayload,
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            persist: volatileStores === undefined,
+            preparedMessages: [{ message: JSON.stringify(msg) }],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: toSupersedenceKey(msg) }
+        }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    try {
+        await runtime.ready();
+        for (const payloadBytes of WORKLOAD.payloadBytes) {
+            for (let update = 0; update < WORKLOAD.updateCount; update += 1) {
+                for (const peerId of WORKLOAD.recipientPeerIds) {
+                    await enqueueOutboundOrThrow(
+                        runtime,
+                        toVolatileIdentity(createUpdate({ payloadBytes, update, peerId }), volatileStores)
+                    );
+                }
+            }
+        }
+        await runOutboundWorkTask(runtime);
+        if (volatileStores !== undefined) {
+            await settleWork(volatileStores.workQueue, () => true);
+        }
+    }
+    finally {
+        runtime.dispose();
+    }
+}
+
+function toVolatileIdentity(msg: ALMessage, volatileStores: object | undefined): ALMessage {
+    return volatileStores === undefined ? msg : { ...msg, id: { ...msg.id, msgId: `${msg.id.msgId}-volatile` } };
+}
+
+function sumTopicBytes(leg: ALStorageLeg): number {
+    return Object.values(leg.bytesByTopic).reduce((total, bytes) => total + bytes, 0);
+}
+
+function countRows(leg: ALStorageLeg): number {
+    return Object.values(leg.rowsByStatus).reduce((total, rows) => total + rows, 0);
+}
 
 /** A footprint regression has to move these figures deliberately, not drift into them. */
 function expectBytesWithinBand(actual: number | undefined, expected: number, topic: string): void {
@@ -209,7 +271,8 @@ function createInboundUpdate(
     );
 }
 
-async function admitInboundWorkload(): Promise<void> {
+/** With a memory pair beside the IndexedDB pair, the messages request no durability and take the volatile lane. */
+async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStores | undefined): Promise<void> {
     const stores = createDefaultIndexedDbALInboundRuntimeStores({
         dbName: INBOUND_DB_NAME,
         namespace: INBOUND_NAMESPACE
@@ -219,7 +282,8 @@ async function admitInboundWorkload(): Promise<void> {
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: SELF_PEER_ID,
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
-            stores
+            stores,
+            volatileStores
         }),
         planIncomingMessage: (msg, source, observations) => planInboundMessage(msg, source, observations),
         dispatchInboxEntry: async (entry) => {
@@ -234,13 +298,15 @@ async function admitInboundWorkload(): Promise<void> {
             for (let update = 0; update < WORKLOAD.updateCount; update += 1) {
                 for (const peerId of WORKLOAD.recipientPeerIds) {
                     await runtime.admitIncomingMessage(
-                        createInboundUpdate({ payloadBytes, update, peerId }),
+                        toVolatileIdentity(createInboundUpdate({ payloadBytes, update, peerId }), volatileStores),
                         { kind: 'ws-client', peerId }
                     );
                 }
             }
         }
-        await settleInboundWork(stores.workQueue, stores.admissionStore.namespace);
+        const settled = volatileStores ?? stores;
+        const typeId = toALInboundWorkType(settled.admissionStore.namespace, 'ws');
+        await settleWork(settled.workQueue, (entry) => entry.typeId === typeId);
     }
     finally {
         runtime.dispose();
@@ -259,27 +325,26 @@ function planInboundMessage(
     });
 }
 
-/** The inbound worker owns its own engine, so the snapshot waits for its rows to reach a terminal status. */
-async function settleInboundWork(
+/** A worker that owns its own engine runs on its own schedule, so the snapshot waits for its rows to reach a terminal status. */
+async function settleWork(
     workQueue: QueueBoxResourceEntryRepository,
-    namespace: string
+    isOwned: (entry: ResourceEntry) => boolean
 ): Promise<void> {
-    const typeId = toALInboundWorkType(namespace, 'ws');
     for (let attempt = 0; attempt < INBOUND_SETTLE_ATTEMPT_LIMIT; attempt += 1) {
-        if (!await hasPendingInboundWork(workQueue, typeId)) {
+        if (!await hasPendingWork(workQueue, isOwned)) {
             return;
         }
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    expect(await hasPendingInboundWork(workQueue, typeId)).toBe(false);
+    expect(await hasPendingWork(workQueue, isOwned)).toBe(false);
 }
 
-async function hasPendingInboundWork(
+async function hasPendingWork(
     workQueue: QueueBoxResourceEntryRepository,
-    typeId: string
+    isOwned: (entry: ResourceEntry) => boolean
 ): Promise<boolean> {
     const entries = await Promise.all((await workQueue.getAllKeys()).map((key) => workQueue.getItem(key)));
-    return entries.some((entry) => entry !== undefined && entry.typeId === typeId && NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
+    return entries.some((entry) => entry !== undefined && isOwned(entry) && NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
 }
 
 function toSupersedenceKey(msg: ALMessage): string {
@@ -303,7 +368,7 @@ function createUpdate(input: Readonly<{ payloadBytes: number; update: number; pe
     );
 }
 
-async function readALStorageSnapshot(): Promise<ALStorageSnapshot> {
+async function readALStorageSnapshot(): Promise<Omit<ALStorageSnapshot, 'volatile'>> {
     const db = await openIndexedDbAdmissionDatabase({
         dbName: DB_NAME,
         storeName: ADMISSION_STORE_NAME,
@@ -366,7 +431,7 @@ function decodeStoredSnapshotRow(value: unknown): StoredSnapshotRow {
     const keyString = 'keyString' in value && typeof value.keyString === 'string' ? value.keyString : '';
     return {
         topicId: keyString.split('/')[0] ?? ADMISSION_TOPIC_ID,
-        status: 'status' in value && typeof value.status === 'string' ? value.status : 'unknown',
+        status: 'status' in value && typeof value.status === 'string' ? value.status : 'missing',
         bytes: new TextEncoder().encode(JSON.stringify(value)).byteLength
     };
 }

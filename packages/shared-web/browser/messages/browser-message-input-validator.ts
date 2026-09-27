@@ -2,8 +2,10 @@ import type {
     RallarMessageSendBase,
     RallarMessageTransport,
     RallarRtcSendInput,
+    RallarTypedMessageChannelDefinition,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { validateRallarTypedChannelPolicy } from '@shared-web/browser/messages/validate-rallar-typed-channel-policy.ts';
 import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
@@ -144,15 +146,16 @@ export class BrowserMessageInputValidator {
         return validateRallarGroupRef(roomRef, path).issues;
     }
 
-    public validateTypedChannel(topicId: string | undefined, typeId: string): readonly RallarValidationIssue[] {
+    public validateTypedChannel(definition: RallarTypedMessageChannelDefinition): readonly RallarValidationIssue[] {
         const issues: RallarValidationIssue[] = [];
         this.pushOptionalRouteId({
-            value: topicId,
+            value: definition.topicId,
             path: '$.topicId',
             label: 'Topic ID',
             issues
         });
-        issues.push(...validateRallarRouteId(typeId, '$.typeId', 'Type ID').issues);
+        issues.push(...validateRallarRouteId(definition.typeId, '$.typeId', 'Type ID').issues);
+        issues.push(...validateRallarTypedChannelPolicy(definition));
         return issues;
     }
 

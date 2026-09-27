@@ -162,7 +162,7 @@ Requirements:
 - Check the returned room send status and diagnostics.
 - Use rtc.waitForRoomLane(..., { expect }) only for low-level peer targeting or
   custom readiness diagnostics.
-- Use rallar.messages.room<T>(...) when important messages need typed RTC/WS fallback behavior.
+- Use rallar.messages.room<T>({ ..., purpose: 'notification' }) when important messages need typed RTC/WS fallback behavior.
 - Add tests for open, partial, timeout, over-capacity, and no-peer readiness.
 ```
 
@@ -172,7 +172,7 @@ Requirements:
 Wrap a domain payload in a typed Rallar message channel.
 
 Requirements:
-- Use rallar.messages.channel<T> with a stable topicId/typeId.
+- Use rallar.messages.channel<T> with a stable topicId/typeId and a required purpose ('command' or 'notification').
 - Expose sendWs, sendRtc, onWs, and onRtc through a small domain module.
 - Add tests that verify topic/type selectors and payload forwarding.
 ```

@@ -9,6 +9,7 @@ import {
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { CreateRoomSessionInput } from '@shared-web/browser/rooms/room-session.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -279,3 +280,38 @@ function createEmptyTopology(groupRef: GroupRef): GroupTopologyManagementView {
         pending: null
     };
 }
+
+it('gives a named room message the notification purpose and passes a declared one through', async () => {
+    const { createRoomSession } = await import('@shared-web/browser/rooms/room-session.ts');
+    const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+    const room: CreateRoomSessionInput['messages']['room'] = vi.fn();
+    const session = createRoomSession({
+        roomRef,
+        stateStore: {} as CreateRoomSessionInput['stateStore'],
+        messages: { room } as CreateRoomSessionInput['messages'],
+        realtime: {} as CreateRoomSessionInput['realtime'],
+        leaveRoom: vi.fn(),
+        refreshRoom: vi.fn(),
+        createFormation: vi.fn()
+    });
+
+    session.message('chat');
+    session.message({
+        topicId: 'room.cmd',
+        typeId: 'room.cmd.v1',
+        purpose: 'command',
+        durability: 'local-outbox'
+    });
+
+    const definitions = vi.mocked(room).mock.calls.map(([definition]) => definition);
+    expect(definitions).toEqual([
+        { topicId: 'room.chat', typeId: 'room.chat.v1', roomRef, purpose: 'notification' },
+        {
+            topicId: 'room.cmd',
+            typeId: 'room.cmd.v1',
+            roomRef,
+            purpose: 'command',
+            durability: 'local-outbox'
+        }
+    ]);
+});

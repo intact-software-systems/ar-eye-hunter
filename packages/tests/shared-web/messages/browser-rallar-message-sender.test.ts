@@ -2,6 +2,7 @@ import type * as MiddlewareModule from '@shared-web/browser/connection/initialis
 import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -60,7 +61,8 @@ describe('Rallar message send', () => {
         const facade = createFacade();
         const channel = facade.messages.room({
             typeId: 'app.ready',
-            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            purpose: 'notification'
         });
         await expect(channel.send(true, { scope: 'all', membershipEpoch: 1 })).rejects.toMatchObject({
             name: 'RallarValidationError',
@@ -141,7 +143,8 @@ describe('Rallar message send', () => {
                 },
                 message,
                 entries: [],
-                reason: 'Skipping RTC outbound dispatch without planned transport messages'
+                reason: 'Skipping RTC outbound dispatch without planned transport messages',
+                trackedReceiptAlgo: 'none'
             })
         );
         const room = createGroupSnapshot('room-1', ['session-1', 'peer-1']);
@@ -207,7 +210,8 @@ describe('Rallar message send', () => {
                 status: 'enqueued',
                 verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];
@@ -260,7 +264,8 @@ describe('Rallar message send', () => {
         mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7));
         const channel = createFacade().messages.room({
             typeId: 'chat.message.v1',
-            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            purpose: 'notification'
         });
 
         await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
@@ -272,12 +277,13 @@ describe('Rallar message send', () => {
         ]);
     });
 
-    it('carries a typed send\'s stated QoS request on the envelope over both carriers, and none without one', async () => {
+    it('carries a typed send\'s stated QoS request on the envelope over both carriers, and only the purpose\'s durability without one', async () => {
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
         const channel = createFacade().messages.room({
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            purpose: 'notification'
         });
         const qos: ALQosPolicyRequest = { ack: { algo: 'hop' } };
 
@@ -288,7 +294,7 @@ describe('Rallar message send', () => {
         const [rtcStated, rtcDefault] = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
         expect(rtcStated).toMatchObject({ delivery: { ack: 'receiver' }, qos });
         expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0]).toMatchObject({ delivery: { ack: 'receiver' }, qos });
-        expect(rtcDefault.qos).toBeUndefined();
+        expect(rtcDefault.qos).toEqual({ durability: { algo: 'volatile' } });
     });
 
     it('rejects a QoS request the envelope cannot carry', async () => {
@@ -357,7 +363,8 @@ describe('Rallar message send', () => {
                 status: 'accepted',
                 verdict: { kind: 'admitted' as const, durable: false, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];
@@ -425,7 +432,8 @@ describe('Rallar message send', () => {
                 status: 'enqueued',
                 verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
                 message,
-                entries: []
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
             })
         );
         const engineEvents: string[] = [];
@@ -519,6 +527,21 @@ describe('Rallar message send', () => {
             },
             minSnapshotVersion: 13
         });
+    });
+
+    it('keeps a lane send on today\'s defaults: at-least-once, no receipt, no durability request', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const facade = createFacade();
+
+        await facade.messages.rtc.send({
+            roomId: 'room-1',
+            typeId: 'chat.message.v1',
+            payload: { text: 'lane' }
+        });
+
+        const message = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'none' });
+        expect(message.qos).toBeUndefined();
     });
 });
 

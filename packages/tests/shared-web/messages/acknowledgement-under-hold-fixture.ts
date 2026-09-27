@@ -1,7 +1,9 @@
 import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult } from 'vitest';
 
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
@@ -213,14 +215,23 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     };
 }
 
-/** The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence. */
+/**
+ * The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence.
+ * It opts into `local-outbox`, since the scenario reads its receipt row back from the carrier's durable store.
+ */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs, qos: { ack: { algo: 'hop' } } });
+        }, {
+            ack: 'receiver',
+            reliability: 'at-least-once',
+            seq,
+            ttlMs,
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        });
     };
 }
 
@@ -260,6 +271,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId('self')),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -314,8 +326,9 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
             ttlMs
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
-        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
-        qos: { ack: { algo: 'hop' } }
+        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The scenario reads
+        // its receipt row back from the carrier's durable store, so the send opts into `local-outbox`.
+        qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
     };
 }
 
@@ -330,6 +343,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         socket: new JsonWebSocketClient('ws://test', runtime.faults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

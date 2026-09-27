@@ -13,6 +13,7 @@ import {
     vi
 } from 'vitest';
 
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
@@ -263,7 +264,12 @@ describe('browser runtime construction', () => {
         let result: ALOutboundEnqueueResult | undefined;
         const originalEnqueue = runtime.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent;
         runtime.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => {
-            result = { verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }, message, entries: [] };
+            result = {
+                verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 },
+                message,
+                entries: [],
+                trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+            };
             return admission.promise;
         };
         const handle = await second.messages.ws.send({ scope: 'all', typeId: 'app.ready', payload: true });

@@ -7,7 +7,11 @@ import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
-import { ALOutboundMessageRuntime, type ALOutboundRuntimeStores } from './al-outbound-message-runtime.ts';
+import {
+    ALOutboundMessageRuntime,
+    type ALOutboundRuntimeStores,
+    type ALVolatileOutboundRuntimeStores
+} from './al-outbound-message-runtime.ts';
 
 const DEQUEUE_CIRCUIT_OPEN_MS = 10_000;
 const DEQUEUE_MAX_CONSECUTIVE_FAILURES = 10;
@@ -32,6 +36,8 @@ export function createDefaultALOutboundDequeueResilience(): ResourceInboxResilie
 export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
+    /** The memory pair a browser carrier routes volatile admissions to; a server keeps one backend. */
+    readonly volatileStores?: ALVolatileOutboundRuntimeStores<TPrepared>;
     readonly canonicalQueue?: QueueBoxResourceEntryRepository;
     readonly nowMs?: () => number;
     readonly random?: () => number;
@@ -106,6 +112,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        volatileStores: input.volatileStores,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs },
         random: input.random ?? Math.random,

@@ -1,3 +1,5 @@
+import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
@@ -5,6 +7,7 @@ import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toCancelCommand,
+    toCommittedControlAdmissionWait,
     toObserveCommand,
     toReceiptsCommand,
     toResultAssertion,
@@ -41,7 +44,7 @@ function toDeliveryLifecycleSenderCommands(sender: AlmConformanceStepInput): rea
 /**
  * D28: the receiver's own wait is the local receipt for the submission, so the sender only proves
  * carrier-level submission here; `toSubmissionReceiptCommands` reads the sender's receipts and
- * releases the handle afterwards, once the whole scenario has elapsed.
+ * releases the handle afterwards, at the end of the scenario.
  */
 function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const state = 'transport-accepted';
@@ -77,11 +80,28 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
  * A ws receipt confirms logical recipients and names no hop, so its recipient lists are read; an rtc receipt
  * confirms hops. Which peer the ws receipt confirms is joined to the session of the receiver by
  * `assessAlmAcknowledgedIdentity`.
+ *
+ * Elapsed time is not a turn of the sender's event loop: when every command settles in microtasks, the
+ * peer's ACK is still a queued task at the read. So the read first waits for a local event, not an
+ * `acknowledged` observe (D28): the sender's committed ACK admission over rtc, and over ws its committed
+ * `complete` receipt from the server, whose `admitted` receipt arrives first (R-S3a-9).
  */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const isWs = sender.input.carrier === 'ws';
     const peerLists = isWs ? 'RecipientPeerIds' : 'HopPeerIds';
     return [
+        isWs
+            ? toCommittedControlAdmissionWait({
+                step: { ...sender, index: 1 },
+                name: 'receipt-complete-1',
+                controlTypeId: AL_CONTROL_RECEIPT_TYPE_ID,
+                receiptPhase: 'complete'
+            })
+            : toCommittedControlAdmissionWait({
+                step: { ...sender, index: 1 },
+                name: 'ack-admitted-1',
+                controlTypeId: AL_CONTROL_ACK_TYPE_ID
+            }),
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
             step: sender,
@@ -134,7 +154,7 @@ function toRetainedCancellationCommands(sender: AlmConformanceStepInput): readon
             payload: toLifecyclePayload(sender, 'cancellation'),
             delivery: { ack: 'receiver' }
         }),
-        ...toRetainedEvidenceCommands({ ...sender, index: 2 }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 2 }, false),
         toCancelCommand({ ...sender, index: 2 }),
         toResultAssertion({
             step: sender,
@@ -157,7 +177,7 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             payload: toLifecyclePayload(sender, 'supersedence', 'old'),
             delivery: { ack: 'receiver' }
         }),
-        ...toRetainedEvidenceCommands({ ...sender, index: 3 }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 3 }, false),
         toSendCommand({
             ...sender,
             index: 4,

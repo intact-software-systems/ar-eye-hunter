@@ -172,9 +172,14 @@ every session the page opens. The event's `data` is the event itself:
   delta — a concurrent commit on the same store (another sender, or the same
   sender's drain) lands in that window and is counted too
 
+- `commit-phases`, `effect-drain` and `readiness-probe` carry `lane`: `durable`
+  when the owner runs over the IndexedDB pair, `volatile` when it runs over the
+  session's memory pair (a `…/volatile` worker id). The WS server's single-lane
+  runtime is always `durable`. The observation's runner regime reads the
+  `durable` lane only (R-S3a-15)
 - `readiness-probe` carries `workerId`, `cause`, `readyAtMs` and `durationMs`:
   one event for every storage read an owner spends deciding whether it has work,
-  which is the read the page's `work-page` and `work-reserve` counters charge.
+  which is the read the page's `work-page` counter charges.
   `cause` is why the owner had no remembered answer to give -- `own-commit`,
   `batch` and `retained-release` are this owner's own progress, `external-wake`
   is the announcement another writer made to every owner on the engine,
@@ -191,9 +196,10 @@ every session the page opens. The event's `data` is the event itself:
   bullet's `age-bound` probes as the page's storage-queue regime (`pageRegime`,
   `alm-observation-artifact.md`)
 
-- `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome` and
-  `reason`: one event for every inbound ACK, NACK, repair or receipt control
-  the outbound owner decides, recorded when it decides it. Every carrier discards
+- `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
+  `reason`, and for a receipt `phase` (below): one event for every inbound
+  ACK, NACK, repair or receipt control the outbound owner decides, recorded
+  when it decides it. Every carrier discards
   that verdict: the inbound topic's `admission-outcome` for the same control
   reads `not-handled`/`control` whatever the outbound owner answered, so this
   event is the only record of it. `msgId` is the control's own id, the join key
@@ -215,7 +221,13 @@ every session the page opens. The event's `data` is the event itself:
   origin's receipt row, or `rejected` with its reasons — a receipt that moves
   nothing reads `AL receipt moves no receipt of its message`, and one about a
   message the origin never sent reads `AL receipt names no retained outbound
-  message of its origin`. Its arrival is also the inbound topic's
+  message of its origin`. It also carries the receipt's `phase` (`admitted`,
+  `complete` or `timed-out`) as its last field. No other control has a phase, so
+  the field is absent from every other `control-admission` event; it is optional
+  only for that reason. Because it comes last, a wait that matches `typeId`,
+  `targetMsgId` and `outcome` in their emitted order still matches a receipt,
+  and one that appends `"reason":"none","phase":"complete"` matches only the
+  committed terminal receipt. Its arrival is also the inbound topic's
   `admission-outcome` with that `typeId`, carrier `ws` and
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
@@ -246,7 +258,10 @@ independent of any connection. The event's `data` is the event itself:
   is its liveness witness instead
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
   to, on every kind. One page runs a WS inbound owner and an RTC inbound
-  owner, so this says which lane an event came from
+  owner, so this says which carrier an event came from
+- `lane`, on `effect-drain`, `claim-settled` and `rotation-alive`: `durable` for
+  the owner over the IndexedDB pair, `volatile` for the one over the session's
+  memory pair (worker id `…/volatile`)
 - `admission-outcome` carries `msgId`, `typeId`, `carrier`, `outcome` and
   `reason` for every message that reached ingress with a decodable identity —
   one event per `admitIncomingMessage` call. A value that never decoded has no
