@@ -2129,6 +2129,17 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-ack-admitted-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+            },
+            "timeoutMs": 27000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-delivery-lifecycle-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -3021,6 +3032,17 @@
             "operator": "equals",
             "expected": true,
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-ack-admitted-1",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.outbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"al.control.ack.v2\",\"targetMsgId\":\"{resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+            },
+            "timeoutMs": 27000
           },
           {
             "kind": "messages.receipts",
