@@ -6,7 +6,6 @@ import {
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
-import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
@@ -39,6 +38,7 @@ import type {
 } from '../configuration/api-v1-configuration.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
+import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import { readAuthorisedWsConnectionIdentity } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
@@ -53,6 +53,7 @@ import {
     createApiStateSnapshotReadSelectors,
     type ApiStateSnapshotReadSelectors
 } from '../services/create-api-state-snapshot-read-selectors.ts';
+import { filterEligibleLiveWsSessionIds } from '../services/filter-eligible-live-ws-session-ids.ts';
 import {
     runRuntimeStateExpiryStartupBarrier,
     type RuntimeStateExpiryStartupGeneration
@@ -115,6 +116,7 @@ interface CreateSharedMiddlewareInput {
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
     readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
+    readonly nowEpochMs: () => number;
 }
 
 export interface ApiV1RuntimeConstructionOperations {
@@ -204,7 +206,8 @@ export function constructApiV1Runtime(
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
         timing: input.timing,
-        almReceiptDiagnostics
+        almReceiptDiagnostics,
+        nowEpochMs: input.nowEpochMs
     });
     rtcTopology.topologyReplay.attach({
         wsQueueBoxServerService: runtime.wsQBoxServerService
@@ -273,6 +276,7 @@ function createSharedMiddleware(
     input: CreateSharedMiddlewareInput
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology, topology } = input;
+    const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
     return createRallarMiddleware({
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
@@ -281,7 +285,7 @@ function createSharedMiddleware(
         wsRuntimeName: input.wsRuntimeName,
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
-        inboundStores: resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName),
+        inboundStores,
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
@@ -341,6 +345,25 @@ function createSharedMiddleware(
             timing: input.timing,
             wakeReplay: () => rtcTopology.topologyReplay.wake('notification')
         }),
+        liveWsNoticeSubscriber: input.databasePubSubMode === 'disabled' ? undefined : {
+            transport: createApiV1LiveWsNoticeTransport({
+                mode: input.databasePubSubMode,
+                publisherId: input.queuePubSubPublisherId,
+                notification: input.databaseNotification,
+                localBus: input.queuePubSubLocalBus,
+                nowMs: input.nowEpochMs
+            }),
+            channel: input.queuePubSubChannel,
+            publisherId: input.queuePubSubPublisherId,
+            nowMs: input.nowEpochMs,
+            filterEligibleRecipientSessionIds: (candidateSessionIds, notice) =>
+                filterEligibleLiveWsSessionIds({
+                    socketServer: mutation.webSocketServer,
+                    candidateSessionIds,
+                    notice,
+                    nowMs: input.nowEpochMs()
+                })
+        },
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });

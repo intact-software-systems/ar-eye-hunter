@@ -10,6 +10,12 @@ interface AuthorisedWsClientDisconnectInput {
 
 const AUTHORISED_CONNECTIONS = new Map<string, ClientAuthorisedWsSessionConnectAppInboxPayload>();
 
+export interface AuthorisedWsConnectionEligibility {
+    readonly scope: ClientAuthorisedWsSessionConnectAppInboxPayload['scope'];
+    readonly principalId: string;
+    readonly expiresAtEpochMs: number;
+}
+
 export function rememberAuthorisedWsConnection(
     sessionId: string,
     generationId: string,
@@ -34,6 +40,25 @@ export function readAuthorisedWsConnectionIdentity(
         return undefined;
     }
     return { principalId: authorised.principalId };
+}
+
+export function readAuthorisedWsConnectionEligibility(
+    connection: ConnectionContext
+): AuthorisedWsConnectionEligibility | undefined {
+    const authorised = AUTHORISED_CONNECTIONS.get(
+        toAuthorisedConnectionKey(connection.id, connection.generationId)
+    );
+    if (
+        !authorised || authorised.generationId !== connection.generationId ||
+        authorised.generationStartedAtEpochMs !== connection.generationStartedAtEpochMs
+    ) {
+        return undefined;
+    }
+    return {
+        scope: authorised.scope,
+        principalId: authorised.principalId,
+        expiresAtEpochMs: authorised.expiresAtEpochMs
+    };
 }
 
 export function toAuthorisedWsClientDisconnectInput(

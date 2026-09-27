@@ -23,6 +23,7 @@ import type { ClientStateRepository } from '../client-state/persistence/client-s
 import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
+import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
@@ -112,6 +113,10 @@ export interface CreateRallarMiddlewareOptions {
     readonly rtcTopologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
     readonly queuePubSubBridge?: Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
+    readonly liveWsNoticeSubscriber?: Omit<
+        InstallLiveWsNoticeSubscriberInput,
+        'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
+    >;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }
@@ -123,6 +128,7 @@ export interface RallarMiddlewareInfrastructure {
     readonly appInboxResilience: ResourceInboxResilience;
     readonly appOutboxResilience: ResourceInboxResilience;
     readonly queuePubSubBridgeReadiness: Promise<void>;
+    readonly liveWsNoticeSubscriberReadiness: Promise<void>;
     readonly wakeQueueEngine: () => void;
 }
 

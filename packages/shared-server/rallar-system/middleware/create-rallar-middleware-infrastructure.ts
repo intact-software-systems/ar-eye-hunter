@@ -7,9 +7,11 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
@@ -53,6 +55,20 @@ export function createRallarMiddlewareInfrastructure(
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
+    const liveWsNoticeSubscriberReadiness = options.liveWsNoticeSubscriber
+        ? installLiveWsNoticeSubscriber({
+            ...options.liveWsNoticeSubscriber,
+            inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
+            resolveBroadRecipientSessionIds: (message) =>
+                new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver })
+                    .resolveOutboundRecipients(message)
+                    .map((recipient) => recipient.connectionId),
+            filterEligibleRecipientSessionIds: options.liveWsNoticeSubscriber.filterEligibleRecipientSessionIds,
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                wsQBoxServerService.sendToTargetsWithResult(message, recipientSessionIds);
+            }
+        })
+        : Promise.resolve();
 
     return {
         wsQBoxServerService,
@@ -64,6 +80,7 @@ export function createRallarMiddlewareInfrastructure(
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
+        liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
 }

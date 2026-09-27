@@ -39,7 +39,8 @@ export function assembleRallarMiddlewareRuntime(
         rtcTopologyReplay: options.rtcTopologyReplay,
         readiness: Promise.all([
             options.readiness ?? Promise.resolve(),
-            infrastructure.queuePubSubBridgeReadiness
+            infrastructure.queuePubSubBridgeReadiness,
+            infrastructure.liveWsNoticeSubscriberReadiness
         ]).then(() => undefined),
         healthFailure: options.healthFailure
     };
