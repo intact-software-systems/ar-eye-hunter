@@ -2091,9 +2091,13 @@ maintained test and diagnostic-project typechecks pass. The unchanged headless
 bundle boundary now measures **282.6005859375 KiB against the approved strict
 `<282 KiB` limit**, while the five shared-web bundle checks pass. Main's newer
 D62 recipe-barrier measurement and the existing 282-KiB ceiling were retained
-during conflict resolution. The added causal diagnostic is reachable from the
-headless browser runtime; removing its required fields or weakening the
-boundary solely to pass the size check is not selected. A separate, explicit
+during conflict resolution. An in-memory same-settings build replacing only
+the new causal-state reader with a no-op measured 282.611328125 KiB, slightly
+_larger_ than the unchanged 282.6005859375-KiB build. Thus that diagnostic
+is not a useful standalone size reduction; the experiment does not attribute
+the combined overage to a specific production owner. Removing required RTC
+behavior or weakening the boundary solely to pass the size check is not
+selected. A separate, explicit
 maintainer bundle-budget decision or a reviewed behavior-preserving reduction
 is needed before PR readiness. This size result is not runtime performance
 evidence and does not authorize the IndexedDB lifecycle correction.
