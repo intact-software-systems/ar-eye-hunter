@@ -10,17 +10,21 @@ import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
     createOutboundMessage,
+    createVolatileOutboundTestStores,
     holdOutboundClaims,
     runOutboundWorkTask,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
 
-function createHandOverFixture() {
-    const stores = createDefaultOutboundTestStores();
+/** `persist` routes the message to the durable pair or to the volatile memory pair, whose `endReceipt` is its own. */
+function createHandOverFixture(persist: boolean) {
+    const durableStores = createDefaultOutboundTestStores();
+    const volatileStores = createVolatileOutboundTestStores();
     const settlements: ALDeliverySettlement[] = [];
     const sent: string[] = [];
     const runtime = createDefaultOutboundTestRuntime({
-        stores,
+        stores: durableStores,
+        volatileStores,
         // A supplied engine is never started, so only this test's batches ask the held queue for work.
         queueEngine: new InboxOutboxEngine(),
         carrier: 'rtc',
@@ -28,7 +32,7 @@ function createHandOverFixture() {
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            persist,
             preparedMessages: [{ message: msg.id.msgId }],
             ackTracking: trackOutboundTestAcks(['peer-1'])
         }),
@@ -37,12 +41,12 @@ function createHandOverFixture() {
             return { status: 'sent' as const, submissionAttempted: true };
         }
     });
-    return { stores, settlements, sent, runtime };
+    return { stores: persist ? durableStores : volatileStores, settlements, sent, runtime };
 }
 
 describe('the settlement-free hand-over (D56, Q3)', () => {
-    it('ends the receipt row and every later effect of the message, and states no cancellation', async () => {
-        const fixture = createHandOverFixture();
+    it.each([true, false])('ends the receipt row and every later effect of the message, and states no cancellation (persist: %s)', async (persist) => {
+        const fixture = createHandOverFixture(persist);
         const claims = holdOutboundClaims(fixture.stores);
         const message = createOutboundMessage('hand-over');
         const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
@@ -61,7 +65,7 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
     });
 
     it('is idempotent, and a later cancel still states its own settlement', async () => {
-        const fixture = createHandOverFixture();
+        const fixture = createHandOverFixture(true);
         const claims = holdOutboundClaims(fixture.stores);
         const message = createOutboundMessage('hand-over-twice');
         await fixture.runtime.enqueueIfAbsent(message);

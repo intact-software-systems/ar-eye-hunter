@@ -468,7 +468,7 @@ interface SubmissionUnderHold {
     readonly handle: RallarMessageHandle;
 }
 
-/** The submission is sent before the hold; a second send of its typeId is held while the ACK arrives. */
+/** Sends the submission, arms the hold, and sends a second message of its typeId behind it. */
 async function sendSubmissionUnderHold(sender: HoldSender, armed: boolean): Promise<SubmissionUnderHold> {
     const witness = watchControlAdmission();
     const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
@@ -501,6 +501,7 @@ async function deliverReceiverAckInsideDeadline(
     return ack;
 }
 
+/** The submission is sent before the hold; a second send of its typeId is held while the ACK arrives. */
 export async function expectAcknowledgedUnderHold(
     sender: HoldSender,
     armed: boolean,

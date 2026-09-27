@@ -53,6 +53,22 @@ interface OutboundObligationInput {
     readonly retryTracking: ALOutboundRetryTrackingPlan | undefined;
 }
 
+const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
+
+/** A NACK by which the receiving hop refuses the message for good. */
+function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason,
+            observedAtEpochMs: 1
+        }
+    );
+}
+
 describe('outbound control admission identity', () => {
     it.each(['ack', 'nack', 'repair'] as const)('does not create state or repair effects for an unknown %s', async (type) => {
         const { admissionStore, workQueue, control, state } = createFixture();
@@ -618,22 +634,6 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
         expect(await admissionStore.readReceiptState({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
     });
 });
-
-const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
-
-/** A NACK by which the receiving hop refuses the message for good. */
-function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
-    return newALNackControlMessage(
-        { v: 2, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
-        {
-            fromPeerId: 'receiver',
-            toPeerId: 'sender',
-            msgId: 'message',
-            reason,
-            observedAtEpochMs: 1
-        }
-    );
-}
 
 function createFixture(settlements?: ALOutboundSettlementFact[]) {
     const state = createInMemoryALAdmissionState();

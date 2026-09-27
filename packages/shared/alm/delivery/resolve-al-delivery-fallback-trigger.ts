@@ -53,7 +53,10 @@ export function isALDeliveryAdmissionFallbackVerdict(verdict: ALDeliveryAdmissio
     }
 }
 
-/** A `sent` attempt or an acknowledgement proves the leg carries, so it restarts the `not-ready` count. */
+/**
+ * A `sent` attempt or an acknowledgement proves the leg carries, so it restarts the `not-ready` count.
+ * Stateless per settlement: the caller hands over once per msgId and only inside the deadline.
+ */
 export function resolveALDeliveryFallbackTrigger(
     input: ResolveALDeliveryFallbackTriggerInput
 ): ALDeliveryFallbackTrigger {
