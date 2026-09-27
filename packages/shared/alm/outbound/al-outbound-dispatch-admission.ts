@@ -105,7 +105,7 @@ interface ALOutboundGroupMember<TPrepared> {
     readonly phases: ALOutboundCommitPhases;
 }
 
-/** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
+/** Owns optimistic read/compute/commit; ordinary data serializes by sender, while initial controls bypass that wait. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly commitQueuesBySenderId = new Map<string, ALOutboundDispatchAdmission.SenderCommitQueue>();

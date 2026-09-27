@@ -339,9 +339,8 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
-     * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
-     * instead of the next round the rotation happens to reach.
+     * A replay can commit work after this batch selected its page. Announce it to wake a follow-up
+     * scan; the bounded rotation reaches the new row without rewinding to its status immediately.
      */
     private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
         const payload = effect.payload;
