@@ -1876,7 +1876,7 @@ weakening current room authorization, frozen audiences, receipts, or lease check
 failure is explicitly classified. No runtime behavior change is selected by this
 fixture diagnosis alone.
 
-## Current execution after the second retained E3-memory failure (2026-09-27)
+## Current execution after the third retained E3-memory failure (2026-09-27)
 
 PR #566 was rebased without conflict onto `6407a9d275c2b22ba7bbe65361540b58d1684320`
 at the maintainer's request; its reviewed head is
@@ -1900,8 +1900,8 @@ does not justify a control-API rewrite or prove zero contribution.
 
 The first E3-memory `retention-100 / warmup / 1` on preceding source
 `140c549977fdfa6e3ef1f275a72f318bf282a9fa` failed reconnect cycle 43,
-retaining checkpoints 0/10/20/30/40 only. The one fresh attempt on current
-source `ae475f5a69f262edeefa1e18d56e02d6c2fe9480`, rooted at
+retaining checkpoints 0/10/20/30/40 only. The next fresh attempt on source
+`ae475f5a69f262edeefa1e18d56e02d6c2fe9480`, rooted at
 `tmp/perf/rtc-baseline/20260927T071755000Z-ae475f5a69f2-e3-memory-local/`,
 also failed at cycle 43 with those five checkpoints. It used fresh memory
 services, Node 24.21.0, one worker, zero retries, 100 requested cycles and the
@@ -1926,33 +1926,69 @@ scheduling remain unresolved. No behavioral scheduler correction is yet
 justified.
 
 The three-page post-GC heap sum increased from 111.0 to 232.7 MiB through
-cycle 40 in the latest incomplete run, while mean reconnect time increased
+cycle 40 in that second incomplete run, while mean reconnect time increased
 across cycle groups. Visible peers, lanes, channel callbacks and buffered work
 returned to their checkpoint counts, but no heap dominators or retained-owner
 inventory was captured. Do not infer a specific leak owner or a cycle-100
-retention verdict. The failed staging artifact incorrectly labels the last
-partial checkpoint's heap as `post-gc-heap.cycle-100`; acceptance correctly
-rejects the incomplete checkpoints, but evidence labeling must be corrected.
+retention verdict. That staging artifact incorrectly labels the last partial
+checkpoint's heap as `post-gc-heap.cycle-100`; acceptance correctly rejects the
+incomplete checkpoints. The next commit corrected labeling for future captures
+without altering the preserved historical artifact.
 
-The next two concrete slices are:
+Those two slices are complete: commit `0870d5b2522a3fa4ff401528987b9bfa8ca70e55`
+corrects failed-sample heap labels and preserves bounded due/batch/claim plus
+keyed control/rotation context without changing runtime behavior. Focused
+RED/GREEN tests, maintained test typing, changed-style checks and independent
+reviews passed. One unchanged, source-labelled E3 attempt then ran and its
+first failed result was retained as described next.
 
-1. Correct failed-sample checkpoint metric labels and preserve existing bounded
-   QueueBox due/batch/claim plus preceding control/rotation provenance in the
-   causal projection. Use focused RED/GREEN tests, touched-file closure,
-   maintained test typing and independent review; do not change hot-path
-   behavior or add new telemetry. Publish both in the existing PR.
-2. Use the corrected projection to run one source-labelled, unchanged
-   100-cycle E3-memory attempt, retaining its first outcome. Partition any
-   repeated pre-batch wait before selecting a scheduler change; if it reaches
-   cycle 100, require all eleven checkpoints and the existing settled-state and
-   strict heap rules. Failed or incomplete evidence remains diagnostic, not a
-   B06 primary. Consider heap-retainer instrumentation only if that run again
-   shows growth without ownership attribution, and keep it out of acceptance
-   metrics.
+The next source-labelled attempt on `0870d5b2522a3fa4ff401528987b9bfa8ca70e55`
+used the corrected projection, the unchanged 100-cycle workload/deadline, fresh
+E3-memory services, Node 24, one worker and zero retries. It failed at cycle
+42 after 41 completed reconnects. The same five checkpoints through cycle 40
+were retained; `record-external` rejected the failed producer and incomplete
+checkpoints once, without a cohort or primary. Its staging metric now correctly
+names `post-gc-heap.cycle-40`. Three-page post-GC heap rose from 106.74 to
+238.44 MiB through cycle 40, and ten-cycle mean reconnect readiness rose from
+10.53 to 41.05 seconds. These are repeated partial trends, not a cycle-100
+verdict or proof of a retaining owner.
 
-No E4/ranking or Phase 1 completion can be claimed from either failed E3
-attempt. No new queue, retry, fence, lock, timer, dependency, migration,
-legacy path, relaxed deadline or reduced workload is authorized.
+The new trace retains 200 primary causal events and 16 keyed control events;
+the upstream 2,000-event tail is full and completeness remains unknown. On C,
+one ICE claim had 9,165 ms due-to-batch delay plus 4,018 ms behind earlier
+claims in that batch. Other C claims waited 10,383 and 15,092 ms before batch
+start. Preceding serialized claim execution and batched release demonstrably
+consume much of those intervals; the remaining 2.4–4.4-second inter-batch gaps
+are not attributed to rediscovery, selector preparation, IndexedDB, or event-
+loop scheduling. The approved original-claims-first continuation cannot remove
+mandatory original work/release and is **not selected** from this evidence.
+The projection also cannot distinguish filtered effect IDs from IDs never
+recorded by the runtime: some drain `claimedCount` values exceed their retained
+identity-list lengths despite a false array-cap flag. Do not infer exactly
+which claims are missing or that an unretained rotation never occurred.
+
+The next two bounded diagnostic slices are proposed, pending maintainer review
+of their in-chat designs under the brainstorming workflow:
+
+1. Use the existing handler/selector test seams with held claims and a
+   controlled clock to measure mandatory original-batch work versus removable
+   successor rediscovery, including spare-capacity and full-page cases. In the
+   test-only projection, report raw/retained/filtered effect-ID counts as well
+   as the array cap so a later trace does not imply a complete identity list
+   when it is not. No runtime behavior change is selected yet.
+2. Run a separate diagnostic-only 20-cycle E3 reconnection workload using
+   existing CDP support, taking post-GC heap snapshots of each of the same
+   three pages at settled cycles 0 and 20. Keep snapshots local and uncommitted,
+   compare retaining paths per page, and do not use perturbed latency or the
+   shortened workload as RTC-B06 acceptance evidence. Choose a memory-owner
+   correction only after that evidence identifies one.
+
+After these diagnostics, select a minimal code correction only if supported;
+then recapture the unchanged 100-cycle E3 acceptance workload on its exact
+source. No E4/ranking or Phase 1 completion can be claimed from any of the
+three failed E3 attempts. No new queue, retry, fence, lock, timer, dependency,
+migration, legacy path, relaxed deadline or reduced acceptance workload is
+authorized.
 
 ## Later outcomes, not additional speculative implementation slices
 
