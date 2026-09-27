@@ -21,6 +21,10 @@ import {
     computeALDeliveryUnobservable
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import {
+    BrowserMessageFallbackController,
+    type BrowserMessageFallbackCandidate
+} from './browser-message-fallback-controller.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
@@ -68,10 +72,12 @@ export namespace BrowserRallarDeliveryRegistry {
 export class BrowserRallarDeliveryRegistry {
     private readonly entries = new Map<string, DeliveryEntry>();
     private readonly input: BrowserRallarDeliveryRegistry.Input;
+    private readonly fallback: BrowserMessageFallbackController;
     private waitCount = 0;
 
     constructor(input: BrowserRallarDeliveryRegistry.Input) {
         this.input = input;
+        this.fallback = new BrowserMessageFallbackController({ nowMs: input.nowMs });
     }
 
     /** Returns the existing handle for the same msgId, because a fallback re-sends the same envelope. */
@@ -106,6 +112,14 @@ export class BrowserRallarDeliveryRegistry {
         }
     }
 
+    /** The dispatch hands the admitted RTC leg of an `rtc-with-ws-fallback` send to the one fallback owner (D56). */
+    watchFallback(candidate: BrowserMessageFallbackCandidate): void {
+        const observation = this.entries.get(candidate.message.id.msgId)?.observation;
+        if (observation !== undefined && !isALDeliveryTerminal(observation.lifecycle)) {
+            this.fallback.watch(candidate);
+        }
+    }
+
     /** A msgId the registry never opened is ignored: it observes only the messages it handed a handle for. */
     record(settlement: ALDeliverySettlement): void {
         const entry = this.entries.get(settlement.msgId);
@@ -113,11 +127,13 @@ export class BrowserRallarDeliveryRegistry {
             return;
         }
 
-        entry.observation.carrier = settlement.carrier;
-        this.publishLifecycle(
-            entry.observation,
-            computeALDeliveryLifecycle(entry.observation.lifecycle, settlement)
-        );
+        for (const recorded of this.fallback.observe(settlement)) {
+            entry.observation.carrier = recorded.carrier;
+            this.publishLifecycle(
+                entry.observation,
+                computeALDeliveryLifecycle(entry.observation.lifecycle, recorded)
+            );
+        }
     }
 
     /** Ends one observation whose captured transport no longer exists. */
@@ -178,6 +194,7 @@ export class BrowserRallarDeliveryRegistry {
         observation.lifecycle = next;
         if (observation.terminalAtMs === undefined && isALDeliveryTerminal(next)) {
             observation.terminalAtMs = this.input.nowMs();
+            this.fallback.release(observation.msgId);
         }
 
         settleReachedWaits(observation, next);

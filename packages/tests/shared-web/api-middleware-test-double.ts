@@ -172,6 +172,7 @@ function createRtcRxStreamerDouble(
             entries: [],
             trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
         })),
+        handOverOutbox: vi.fn(async () => undefined),
         onInboxMessageDo: vi.fn(() => rtcRxStreamer),
         removeInboxMessageCallback: vi.fn(() => true),
         onRemoteStreamDo: vi.fn(() => rtcRxStreamer),
