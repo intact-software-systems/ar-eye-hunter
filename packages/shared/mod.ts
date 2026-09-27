@@ -1,3 +1,4 @@
+export * from './al-contracts/al-carrier-capabilities.ts';
 export * from './al-contracts/al-contract.ts';
 export * from './al-contracts/al-control-type-ids.ts';
 export * from './al-contracts/al-control.ts';

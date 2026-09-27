@@ -12,6 +12,7 @@ import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput
 } from '@shared/al-contracts/al-policy.ts';
+import * as sharedEntry from '@shared/mod.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const route = { topicId: 'chat', contextId: 'room', resourceId: 'message' };
@@ -26,6 +27,16 @@ describe('carrier capabilities', () => {
             });
         }
     );
+
+    // Task 7 review M1: the entry that exports `WebRtcOverlayMulticastManager`, whose `qosProvider` is required,
+    // must also let an outside caller install the carrier's declaration under its own provider.
+    it('exports each carrier declaration and the installer from the package entry beside the multicast manager', () => {
+        expect(sharedEntry.WebRtcOverlayMulticastManager).toBeDefined();
+        expect(sharedEntry.AL_WS_CLIENT_CAPABILITIES).toBe(AL_WS_CLIENT_CAPABILITIES);
+        expect(sharedEntry.AL_RTC_OVERLAY_CAPABILITIES).toBe(AL_RTC_OVERLAY_CAPABILITIES);
+        expect(sharedEntry.AL_WS_SERVER_CAPABILITIES).toBe(AL_WS_SERVER_CAPABILITIES);
+        expect(sharedEntry.toALCarrierQosInputProvider).toBe(toALCarrierQosInputProvider);
+    });
 
     it('installs the carrier capabilities under the application provider', () => {
         const provider = toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, {
