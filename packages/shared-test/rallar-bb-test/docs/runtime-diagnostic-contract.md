@@ -197,8 +197,9 @@ every session the page opens. The event's `data` is the event itself:
   `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
-  `reason`, and for a receipt `phase` (below): one event for every inbound ACK, NACK, repair or receipt control
-  the outbound owner decides, recorded when it decides it. Every carrier discards
+  `reason`, and for a receipt `phase` (below): one event for every inbound
+  ACK, NACK, repair or receipt control the outbound owner decides, recorded
+  when it decides it. Every carrier discards
   that verdict: the inbound topic's `admission-outcome` for the same control
   reads `not-handled`/`control` whatever the outbound owner answered, so this
   event is the only record of it. `msgId` is the control's own id, the join key

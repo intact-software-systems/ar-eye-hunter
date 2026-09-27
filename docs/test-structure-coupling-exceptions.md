@@ -121,7 +121,7 @@ moved or changed test.
         "ownedPort": "ALVolatileOutboundRuntimeStores.evictExpired called by ALOutboundStoreLane.evictWhenDue",
         "observableEffect": "Each call walks every row of the memory pair's admission map and queue, and it is the only thing that removes rows that no read reaches.",
         "requiredConstraint": "The lane calls the sweep once on its first round, not again on a round inside the interval, and once more on the first round at or past it.",
-        "failureRationale": "Without the call, the memory pair keeps every volatile send's sent snapshot and owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome, so only the count shows them."
+        "failureRationale": "Without the call, the memory pair keeps every volatile send's sent snapshot and owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome; the missing call also leaves the admission map full, but a sweep on every round is visible only in the count."
       }
     },
     {
@@ -181,7 +181,7 @@ moved or changed test.
         "ownedPort": "ALVolatileInboundRuntimeStores.evictExpired called by ALInboundStoreLane.evictWhenDue",
         "observableEffect": "Each call walks every row of the memory pair's admission map and queue, and it is the only thing that removes rows that no read reaches.",
         "requiredConstraint": "The lane calls the sweep once on its first round, not again on a round inside the interval, and once more on the first round at or past it.",
-        "failureRationale": "Without the call, the memory pair keeps every volatile message's owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome, so only the count shows them."
+        "failureRationale": "Without the call, the memory pair keeps every volatile message's owner rows for the tab's lifetime. Without the interval guard, every batch walks every row. Neither changes a delivery outcome; the missing call also leaves the admission map full, but a sweep on every round is visible only in the count."
       }
     },
     {
