@@ -13,16 +13,21 @@ import type {
 import { toALOutboundSentPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import type {
-    ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundSettlementFact
 } from './al-outbound-message-runtime.ts';
+import {
+    toALOutboundDispatchCompletionReceipt,
+    type ALOutboundDispatchCompletionRead
+} from './control/to-al-outbound-dispatch-completion-receipt.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
+    isALOutboundAckTrackingWritable,
     toALOutboundAckRetryScheduleEndTimestamp,
     toALOutboundEmptyAudienceReceipt,
+    toALOutboundTrackedReceiptAlgo,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
 
@@ -118,14 +123,6 @@ function toALOutboundComputedResult<TPrepared>(
     entries: readonly ResourceEntry[] = []
 ): ALOutboundComputedDto<TPrepared> {
     return { verdict, reason, entries, trackedReceiptAlgo: 'none' };
-}
-
-/**
- * The receipt an admission tracks: the ack tracking the plan of its carrier wrote, `none` when it wrote none.
- * The WS client writes none for a `hop` or `subtree` room send, so its handle must not wait for one (R-S3a-4).
- */
-function toALOutboundTrackedReceiptAlgo(ackTracking: ALOutboundAckTrackingPlan | null | undefined): ALAckAlgo {
-    return ackTracking?.enabled === true ? ackTracking.mode : 'none';
 }
 
 /** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */
@@ -249,8 +246,8 @@ function toDuplicateDispatchResult<TPrepared>(
 }
 
 /** Keyed on the planner's drop code, never the human-readable `dropReason` string. */
-function toALOutboundAdmissionVerdict(
-    plan: Pick<ALOutboundDispatchPlan<unknown>, 'dropReason' | 'dropReasonCode'>
+function toALOutboundAdmissionVerdict<TPrepared>(
+    plan: Pick<ALOutboundDispatchPlan<TPrepared>, 'dropReason' | 'dropReasonCode'>
 ): ALDeliveryAdmissionVerdict {
     const detail = plan.dropReason ?? '';
     switch (plan.dropReasonCode) {
@@ -322,22 +319,34 @@ function appendSupersedenceMutations<TPrepared>(
 export interface ALOutboundCommitSettlementsInput<TPrepared> {
     readonly bundle: ALOutboundCommitBundle<TPrepared>;
     readonly msg: ALMessage;
-    readonly plan: ALOutboundDispatchPlan<TPrepared>;
+    readonly read: ALOutboundDispatchCompletionRead<TPrepared>;
     readonly intent: ALOutboundComputeIntent;
 }
 
-/** What a committed dispatch states at once: each message it superseded, and a receipt nobody is left to confirm. */
+/**
+ * What a committed dispatch states at once: each message it superseded, a receipt nobody is left to
+ * confirm, and the receipt its re-plan completed -- only when this commit deletes that row, since a
+ * dispatch with no prepared copy writes no receipt mutation at all.
+ */
 export function toALOutboundCommitSettlements<TPrepared>(
     input: ALOutboundCommitSettlementsInput<TPrepared>
 ): readonly ALOutboundSettlementFact[] {
-    const superseded = toALOutboundSupersededMsgIds(input.bundle).map((msgId): ALOutboundSettlementFact => ({
+    const superseded = toALOutboundSupersededMsgIds(input.bundle).map((
+        msgId
+    ): ALOutboundSettlementFact => ({
         kind: 'superseded',
         msgId,
         replacementMsgId: input.msg.id.msgId,
         detail: 'A newer message replaced this one at its admission.'
     }));
-    const receipt = input.intent === 'enqueue' ? toALOutboundEmptyAudienceReceipt(input.plan) : undefined;
-    return receipt === undefined ? superseded : [...superseded, receipt];
+    const emptyAudience = input.intent === 'enqueue'
+        ? toALOutboundEmptyAudienceReceipt(input.read.plan)
+        : undefined;
+    const deletesReceipt = input.bundle.mutations.some((mutation) => mutation.kind === 'delete-pending-ack');
+    const completion = deletesReceipt
+        ? toALOutboundDispatchCompletionReceipt(input.read)
+        : undefined;
+    return [...superseded, emptyAudience, completion].filter((fact) => fact !== undefined);
 }
 
 function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
@@ -361,7 +370,7 @@ function computeAckTrackingWrites<TPrepared>(
     messageExpiresAtMs: number
 ): ALOutboundAckTrackingWrites<TPrepared> {
     const tracking = read.plan.ackTracking;
-    if (!tracking?.enabled || tracking.expectedPeerIds.length === 0 || tracking.timeoutMs <= 0) {
+    if (tracking === undefined || !isALOutboundAckTrackingWritable(tracking)) {
         return { mutations: [], durableEffects: [] };
     }
 

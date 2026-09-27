@@ -12,6 +12,7 @@ import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     createALOutboundAdmissionStore,
     type ALOutboundAdmissionStore,
@@ -26,6 +27,7 @@ import {
     decodeALOutboundWorkEntry,
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -34,6 +36,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 import {
@@ -484,6 +487,76 @@ describe('outbound control admission identity', () => {
         expect(write).toHaveBeenCalledTimes(1);
         expect((await readRetainedWork(admissionStore, workQueue)).map((payload) => payload.kind))
             .toEqual(['admit-control']);
+    });
+
+    it('states the not-yet-in-sync exhaustion when its retry budget is spent (D56)', async () => {
+        const { admissionStore, workQueue } = createFixture();
+        await seedDirectObligation(admissionStore, {
+            enabled: true,
+            maxAttempts: 2,
+            retryDelayMs: 5_000
+        });
+        const settlements: ALDeliverySettlement[] = [];
+        const runtime = createOutboundTestRuntimeFor<ALOutboundTransportMessage>({
+            stores: { admissionStore, workQueue },
+            carrier: 'rtc',
+            settlements: (settlement) => settlements.push(settlement),
+            decodePreparedMessage: decodeALOutboundTransportMessage,
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: []
+            }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        });
+        await runtime.ready();
+        const exhausted = vi.spyOn(ALOutboundControlAdmission.prototype, 'scheduleNotYetInSyncRetry')
+            .mockResolvedValue({ status: 'exhausted' });
+        onTestFinished(() => exhausted.mockRestore());
+
+        expect(await runtime.acceptControlMessage(notYetInSyncNack(), 'peer')).toEqual({
+            kind: 'committed'
+        });
+
+        expect(settlements.filter((settlement) => settlement.kind === 'not-yet-in-sync-exhausted'))
+            .toEqual([{
+                kind: 'not-yet-in-sync-exhausted',
+                msgId: 'message',
+                carrier: 'rtc',
+                atMs: expect.any(Number),
+                detail: 'The not-yet-in-sync retry budget of 2 ran out.'
+            }]);
+    });
+
+    it('ends a receipt a hop refused for good: its acknowledgement, then receipt-exhausted', async () => {
+        const facts: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(facts);
+        await seedDirectObligation(admissionStore);
+        const stale = newALNackControlMessage(
+            { v: 2, msgId: 'control-stale', senderId: 'receiver', ts: 1 },
+            {
+                fromPeerId: 'receiver',
+                toPeerId: 'sender',
+                msgId: 'message',
+                reason: 'stale',
+                observedAtEpochMs: 1
+            }
+        );
+
+        expect(await control.admit(stale, 'peer')).toEqual({ kind: 'committed' });
+
+        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' }))
+            .toBeUndefined();
+        expect(facts.map((fact) => fact.kind)).toEqual(['acknowledgement', 'receipt-exhausted']);
+        expect(facts[1]).toEqual({
+            kind: 'receipt-exhausted',
+            msgId: 'message',
+            mode: 'hop',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['receiver'],
+            detail: 'Hop receiver refused the message: stale.'
+        });
     });
 });
 

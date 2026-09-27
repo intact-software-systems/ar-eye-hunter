@@ -72,9 +72,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // measures about 0.1 KiB above this machine), its tracked receipt at admission (R-S3a-4) 281.1708984375 KiB
         // here, and its store lanes (a memory pair beside the IndexedDB pair on each outbound carrier, routed by
         // durability) 282.255859375 KiB here; the S3a tree with the barrier merged in measures 283.7880859375 KiB here.
-        // The next whole-KiB ceiling is 284; all operator dependency exclusions above remain enforced. The
-        // final whole-branch review head (e417fe749) measures 283.62 of 284.
-        expect(result.brotliKiB).toBeLessThan(284);
+        // The ceiling was 284 (the final S3a review head e417fe749 measured 283.62 of 284). S3b's receipt ends
+        // (receipt-exhausted, the not-yet-in-sync exhaustion, completion at dispatch and the untracked receipt)
+        // measure 284.0087890625 KiB here. The next whole-KiB ceiling is 285; all operator dependency exclusions
+        // above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(285);
     });
 });
 

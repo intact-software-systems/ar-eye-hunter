@@ -87,8 +87,8 @@ export interface HoldSender {
  * A lane variable added on top of the hold, to the armed and the unarmed case alike: the submission's
  * own retransmission under the held typeId (`ack-timeout`), the lane's cancel of the held send, or,
  * over IndexedDB only, an expired row in the ACK's read set that a concurrent chain evicts first
- * (`expired-row-evicted`). The three `ack-*-retry-schedule` / `ack-after-retries-exhausted` variables
- * move the ACK's arrival against the receipt's retry schedule, always inside the message deadline.
+ * (`expired-row-evicted`). The two `ack-*-retry-schedule` variables move the ACK's arrival against the
+ * receipt's retry schedule, always inside the message deadline.
  */
 export type HoldEscalation =
     | 'none'
@@ -96,8 +96,7 @@ export type HoldEscalation =
     | 'cancel-held'
     | 'expired-row-evicted'
     | 'ack-inside-retry-schedule'
-    | 'ack-after-retry-schedule'
-    | 'ack-after-retries-exhausted';
+    | 'ack-after-retry-schedule';
 
 /** Every carrier, with the hold armed or not, under every lane variable. */
 export const ACK_UNDER_HOLD_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
@@ -111,14 +110,19 @@ export const ACK_UNDER_CONCURRENT_EVICTION_CASES = (['rtc', 'ws'] as const).flat
 
 /**
  * Every carrier, with the hold armed or not, as the ACK arrives just before the retry schedule ends,
- * after it ended with no retry claimed, or after every retry ran; each inside the message deadline.
+ * or after it ended with no retry claimed; each inside the message deadline.
  */
 export const ACK_AGAINST_RETRY_SCHEDULE_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
     ([false, true] as const).flatMap((armed) =>
-        (['ack-inside-retry-schedule', 'ack-after-retry-schedule', 'ack-after-retries-exhausted'] as const).map((
+        (['ack-inside-retry-schedule', 'ack-after-retry-schedule'] as const).map((
             escalation
         ) => [carrier, armed, escalation] as const)
     )
+);
+
+/** Every carrier, with the hold armed or not, as the ACK arrives after every retry ran, inside the message deadline. */
+export const ACK_AFTER_RECEIPT_EXHAUSTED_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
+    ([false, true] as const).map((armed) => [carrier, armed] as const)
 );
 
 /** Where an inbound ACK's admission stopped, read from the two spied hops: a value, never a throw. */
@@ -500,17 +504,62 @@ export async function expectAcknowledgedUnderHold(
     expect(sender.readFaultedTypeIds()).not.toContain(AL_CONTROL_ACK_TYPE_ID);
 }
 
-/** Without an ACK inside the deadline the send ends `expired`, and an ACK after it is refused. */
-export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<void> {
+/**
+ * D63: an ACK that arrives after every retry ran, though inside the message deadline, finds no receipt
+ * row -- the exhaustion commit deleted it -- so it completes nothing and the handle stays `failed`.
+ */
+export async function expectAckIgnoredAfterReceiptExhausted(sender: HoldSender, armed: boolean): Promise<void> {
     const witness = watchControlAdmission();
     const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
     const handle = await sender.send(submission);
     await sender.drain();
+    if (armed) {
+        sender.faults.inject(sender.hold);
+    }
+    await sender.send(sender.createMessage('held', ACK_UNDER_HOLD_MESSAGE_TTL_MS));
+    await sender.drain();
+    await sender.advance(100);
+    const msgId = submission.id.msgId;
+    const receipt = await readPendingAckOrThrow(sender, msgId);
+    const endMs = await readRetryScheduleEndMs(sender, msgId);
+    await runAckTimeoutClaimsToExhaustion(sender, msgId);
+    await advanceToRetryScheduleEnd(sender, endMs, 2_000);
+    const ack = toReceiverAck(submission, sender);
+    expect(handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
+    const retried = sender.drain();
+    sender.deliver(ack);
+    await retried;
+    await sender.settle();
+    await sender.drain();
+    await sender.settle();
+
+    expect(sender.faults.getObservations().length > 0).toBe(armed);
+    expect(readControlAdmissionStop(witness, ack)).toEqual({
+        stop: 'outbound-answered',
+        result: { kind: 'rejected', reason: expect.stringContaining('AL acknowledgement') }
+    });
+    expect(await sender.readPendingAck(msgId)).toBeUndefined();
+    expectReceiptExhausted(handle, receipt);
+}
+
+/**
+ * Without an ACK the receipt runs out of retries: the send ends `failed` at exhaustion, inside the
+ * deadline, and stays `failed` past it (a terminal handle never reopens, R-S3a-8) while an ACK is refused.
+ */
+export async function expectFailedAtReceiptExhaustion(sender: HoldSender): Promise<void> {
+    const witness = watchControlAdmission();
+    const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+    const handle = await sender.send(submission);
+    await sender.drain();
+    const receipt = await readPendingAckOrThrow(sender, submission.id.msgId);
     await runAckTimeoutClaimsToExhaustion(sender, submission.id.msgId);
     const deadlineMs = handle.lifecycle().expiresAtMs;
     if (deadlineMs === undefined) {
         throw new Error(`No deadline for ${submission.id.msgId}`);
     }
+    expect(Date.now()).toBeLessThan(deadlineMs);
+    expectReceiptExhausted(handle, receipt);
+
     await sender.advance(deadlineMs - Date.now() + 1);
     await sender.drain();
     const ack = toReceiverAck(submission, sender);
@@ -519,7 +568,28 @@ export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<
 
     expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered', result: { kind: 'rejected' } });
     expect(await sender.readPendingAck(submission.id.msgId)).toBeUndefined();
-    expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { confirmedHopPeerIds: [] } });
+    expectReceiptExhausted(handle, receipt);
+}
+
+/** The `receipt-exhausted` end: `failed`, its reason, and the row's peers, none of them confirmed. */
+function expectReceiptExhausted(handle: RallarMessageHandle, receipt: ALOutboundPendingAckSnapshot): void {
+    expect(handle.lifecycle()).toMatchObject({
+        state: 'failed',
+        evidence: {
+            reason: `The receipt ran out of retries after ${receipt.maxAttempts} of ${receipt.maxAttempts}.`,
+            receiptMode: receipt.mode,
+            confirmedRecipientPeerIds: [],
+            unconfirmedRecipientPeerIds: receipt.expectedPeerIds
+        }
+    });
+}
+
+async function readPendingAckOrThrow(sender: HoldSender, msgId: string): Promise<ALOutboundPendingAckSnapshot> {
+    const pending = await sender.readPendingAck(msgId);
+    if (pending === undefined) {
+        throw new Error(`No pending receipt for ${msgId}`);
+    }
+    return pending;
 }
 
 /**
@@ -566,11 +636,6 @@ async function runHoldEscalation(
             return await advanceToRetryScheduleEnd(sender, await readRetryScheduleEndMs(sender, msgId), -1_000);
         case 'ack-after-retry-schedule':
             return await advanceToRetryScheduleEnd(sender, await readRetryScheduleEndMs(sender, msgId), 2_000);
-        case 'ack-after-retries-exhausted': {
-            const endMs = await readRetryScheduleEndMs(sender, msgId);
-            await runAckTimeoutClaimsToExhaustion(sender, msgId);
-            return await advanceToRetryScheduleEnd(sender, endMs, 2_000);
-        }
     }
 }
 

@@ -17,6 +17,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
+import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
@@ -105,26 +106,51 @@ export function computeALOutboundControlAdmission(
 }
 
 /**
- * The delivery fact a committed control states: the `resync-required` refusal of the message by a
- * relay (D50), or the receipt the control moved. A control that changed no receipt states nothing: the
- * acknowledgement it carried was already counted.
+ * The delivery facts a committed control states: the `resync-required` refusal of the message by a relay
+ * (D50), or the receipt the control moved -- followed by `receipt-exhausted` when a hop refused the
+ * message for good and so ended a receipt it still owed. A control that changed no receipt states nothing.
  */
-export function toALOutboundControlSettlement(
+export function toALOutboundControlSettlements(
     candidate: ALControlAdmissionCandidate
-): ALOutboundSettlementFact | undefined {
+): readonly ALOutboundSettlementFact[] {
     const { read, history } = candidate;
     if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'resync-required') {
-        return toRelayRejectedFact(read, read.parsed.payload);
+        return [toRelayRejectedFact(read, read.parsed.payload)];
     }
     const snapshot = resolveAcceptedReceipt(candidate);
-    return snapshot === undefined ? undefined : toALOutboundAcknowledgementFact({
+    if (snapshot === undefined) {
+        return [];
+    }
+    const acknowledgement = toALOutboundAcknowledgementFact({
         receipt: snapshot,
         hops: {
             nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
-            completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
+            completedHopPeerIds: toALOutboundCompletedHopPeerIds(
+                history.kind === 'acks' ? history.values : []
+            )
         },
         complete: isALOutboundReceiptComplete(snapshot)
     });
+    const refused = toRefusedReceiptFact(read, snapshot);
+    return refused === undefined ? [acknowledgement] : [acknowledgement, refused];
+}
+
+/** An `expired`, `unauthorized` or `stale` NACK removed a receipt its hop will never confirm. */
+function toRefusedReceiptFact(
+    read: ALControlAdmissionRead,
+    receipt: ALOutboundPendingAckSnapshot
+): ALOutboundSettlementFact | undefined {
+    if (
+        read.parsed.type !== 'nack' || !isTerminalNack(read.parsed.payload) ||
+        isALOutboundReceiptComplete(receipt)
+    ) {
+        return undefined;
+    }
+    const nack = read.parsed.payload;
+    return toALOutboundReceiptExhaustedFact(
+        receipt,
+        `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`
+    );
 }
 
 function toRelayRejectedFact(read: ALControlAdmissionRead, nack: ALNackPayload): ALOutboundSettlementFact {

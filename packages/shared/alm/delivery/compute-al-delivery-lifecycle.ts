@@ -18,6 +18,7 @@ type ALDeliveryAttemptStartedSettlement = Extract<ALDeliverySettlement, Readonly
 type ALDeliveryAttemptSettledSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'attempt-settled'; }>>;
 type ALDeliveryAcknowledgementSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'acknowledgement'; }>>;
 type ALDeliveryRelayRejectedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'relay-rejected'; }>>;
+type ALDeliveryReceiptExhaustedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'receipt-exhausted'; }>>;
 
 export function computeALDeliveryLifecycle(
     previous: ALDeliveryLifecycle,
@@ -44,6 +45,10 @@ export function computeALDeliveryLifecycle(
             return toAcknowledgementLifecycle(previous, settlement);
         case 'relay-rejected':
             return toRelayRejectedLifecycle(previous, settlement);
+        case 'receipt-exhausted':
+            return toReceiptExhaustedLifecycle(previous, settlement);
+        case 'not-yet-in-sync-exhausted':
+            return { ...previous };
         case 'attempts-exhausted':
             return toReasonedLifecycle(previous, 'failed', settlement.detail);
         case 'expired':
@@ -191,6 +196,34 @@ function toRelayRejectedLifecycle(
 ): ALDeliveryLifecycle {
     const rejected = toReasonedLifecycle(previous, 'rejected', settlement.detail);
     return { ...rejected, evidence: { ...rejected.evidence, relayRejection: settlement.relayRejection } };
+}
+
+/** The receipt ended unconfirmed: terminal `failed`, and the peers it did confirm stay in evidence. */
+function toReceiptExhaustedLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryReceiptExhaustedSettlement
+): ALDeliveryLifecycle {
+    const failed = toReasonedLifecycle(previous, 'failed', settlement.detail);
+    const hopReceipt = settlement.mode !== 'receiver';
+    return {
+        ...failed,
+        evidence: {
+            ...failed.evidence,
+            receiptMode: settlement.mode,
+            confirmedHopPeerIds: hopReceipt
+                ? [...settlement.confirmedPeerIds]
+                : failed.evidence.confirmedHopPeerIds,
+            unconfirmedHopPeerIds: hopReceipt
+                ? [...settlement.unconfirmedPeerIds]
+                : failed.evidence.unconfirmedHopPeerIds,
+            expectedRecipientPeerIds: [
+                ...settlement.confirmedPeerIds,
+                ...settlement.unconfirmedPeerIds
+            ],
+            confirmedRecipientPeerIds: [...settlement.confirmedPeerIds],
+            unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds]
+        }
+    };
 }
 
 function toReasonedLifecycle(

@@ -137,6 +137,29 @@ export type ALDeliverySettlement =
         unconfirmedRecipientPeerIds: readonly string[];
         complete: boolean;
     }>
+    /**
+     * A receipt ended before every expected peer confirmed: its retry budget ran out, or a hop refused the
+     * message for good. Terminal. The peer lists are the receipt row's own -- next hops under `hop` and
+     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence.
+     */
+    | Readonly<{
+        kind: 'receipt-exhausted';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        mode: ALReceiptMode;
+        confirmedPeerIds: readonly string[];
+        unconfirmedPeerIds: readonly string[];
+        detail: string;
+    }>
+    /** The `not-yet-in-sync` retry budget ran out: a fallback trigger (D56); the receipt budget still ends the message. */
+    | Readonly<{
+        kind: 'not-yet-in-sync-exhausted';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        detail: string;
+    }>
     /** A hop refused the message with an admitted NACK (D50): terminal evidence, and no resend follows it. */
     | Readonly<{
         kind: 'relay-rejected';

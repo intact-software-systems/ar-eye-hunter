@@ -470,7 +470,8 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
         clock: runtime.clock,
         planOutgoingMessage: runtime.planOutgoingMessage,
         planRepairMessage: runtime.planRepairMessage,
-        diagnostics: runtime.diagnostics
+        diagnostics: runtime.diagnostics,
+        settlements
     });
 }
 

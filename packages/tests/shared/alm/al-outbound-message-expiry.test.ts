@@ -232,7 +232,8 @@ describe('outbound message expiry', () => {
             }),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             planRepairMessage: undefined,
-            diagnostics: undefined
+            diagnostics: undefined,
+            settlements: () => {}
         });
         vi.setSystemTime(1_050);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
