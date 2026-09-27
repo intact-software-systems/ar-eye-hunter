@@ -27,28 +27,42 @@ explicitly, rather than silently upgrading or downgrading QoS.
 
 | Effective intent | Cluster carrier | Receiver behavior |
 | --- | --- | --- |
-| Best-effort, volatile, no retry | One Postgres notification after the sole publisher has authorized and frozen its audience | Every listening process attempts one direct send to its own eligible open sockets. No receiving QueueBox/inbox row, polling, replay, delivery retry, or handler invocation. |
+| Best-effort, volatile, no retry | One Postgres notification after the sole publisher has finalized the message and its applicable audience policy | Every listening process attempts one direct send to its own eligible open sockets. Room and explicit-peer recipients are fixed at publication; broad `all`/`world` recipients are selected locally when the notice arrives. No receiving QueueBox/inbox row, polling, replay, delivery retry, or handler invocation. |
 | At-least-once or otherwise requiring durable outbound work | Existing canonical `WS_OUTBOX` row and its key notification | Use existing retry/receipt ownership. Remote sends must obey the row's frozen admitted audience, including absent/late sessions. |
 | `none` | No cluster publication | Existing handler-only behavior. |
 
-The publisher must finish admission, authorization, transformation, target
-resolution, and expiry checks once before announcing the result. The cluster
-notice carries or identifies the **final message and frozen addressed session
-IDs**, not a room name to re-resolve on subscribers. Subscribers validate
-notice version, source, scope, deadline, targets, and audience; intersect that
-audience with locally open sockets. They never execute a topic handler, proxy,
-RTC/RTT mutation, admission decision, or database inbox processing. A lost
+The publisher must finish admission, authorization, transformation, and expiry
+checks once before announcing the final message. For room-scoped and
+explicit-peer sends, it also freezes authorized addressed session IDs; the
+notice carries or identifies that final message and audience, not a room name
+to re-resolve later. For broad `all`/`world` best-effort broadcasts, the
+notice instead identifies that target mode and each subscriber uses its
+existing scope-aware local target resolver at notice receipt. A socket that
+opens in the short publication-to-receipt interval can therefore receive a
+broad broadcast. This is accepted best-effort timing behavior, not a frozen
+membership promise. Subscribers validate notice version, source, scope,
+deadline, targets, and the audience mode. They never execute a topic handler,
+proxy, RTC/RTT mutation, admission decision, or database inbox processing. A lost
 notification or disconnected listener can lose best-effort delivery. A failed
 `NOTIFY` is reported; it is not treated as successful delivery. Retries of the
 upstream shared `dispatch-local` effect can re-publish; best-effort is **not**
 an exactly-once promise.
 
+For example, process A publishes a broad best-effort message at 10:00:00.000.
+A socket opens on process B at 10:00:00.002, and B receives the notification
+at 10:00:00.004. That socket may receive the message because it is locally
+eligible when B handles the notice. If this were a room message, the socket
+would not be added to the publisher's already-frozen room audience. This is a
+millisecond-scale boundary choice, not evidence of an additional handler run
+or a security issue when the normal scope checks hold.
+
 For best-effort publication, the public result cannot claim a global
 `sentCount` or `no-recipients`: a publisher sees only its local socket attempts.
-Expose an accepted-for-cluster-publication status/count separate from observed
-local sends, retaining a local-only result only where the caller explicitly
-requests local delivery. Callers/tests that use `sentCount` must be audited.
-This is a public-result compatibility decision, not an internal refactor.
+Expose a `cluster-published` status distinct from observed local sends;
+it means that publication succeeded, not that remote sockets received the
+message. Retain a local-only result only where the caller explicitly requests
+local delivery. Callers/tests that use `sentCount` must be audited. The
+maintainer approved this public-result change; it is not an internal refactor.
 
 ## Size recommendation
 
@@ -70,8 +84,8 @@ exceed the notification budget even when the message body does not. Therefore:
    canonical inbound row. For the first implementation, reject an oversized
    publication with a typed result/error before claiming success. The caller
    may *explicitly* choose at-least-once/outbox if that is its intended QoS.
-   Never silently persist or upgrade it. This is a proposed compatibility
-   limit requiring maintainer approval before code changes.
+   Never silently persist or upgrade it. The maintainer approved this
+   compatibility limit for the first implementation.
 4. If that limit is unacceptable, design a separately reviewed large-message
    carrier before implementation. A temporary payload table would be a new
    storage/retention boundary, not merely a larger `NOTIFY`; fragmentation
@@ -88,10 +102,12 @@ cluster publication.
 - Three API processes sharing Postgres deliver to a socket connected to a
   different process from the sole inbound claimant; the same run covers
   server-generated and proxy replies, and no handler runs twice.
-- A late joiner, unauthorized session, wrong room/application scope, expired
-  message, malformed notice, or publisher's own duplicate receive causes no
-  extra socket delivery. A disconnected listener is a legitimate best-effort
-  miss; at-least-once follows existing outbox retry behavior.
+- A late room joiner, unauthorized session, wrong room/application scope,
+  expired message, malformed notice, or publisher's own duplicate receive
+  causes no extra room/explicit-peer socket delivery. Broad `all`/`world`
+  delivery uses locally eligible open sockets when the notice arrives, so a
+  just-opened socket may receive it. A disconnected listener is a legitimate
+  best-effort miss; at-least-once follows existing outbox retry behavior.
 - The relevant API-v1 WS topic, social app-data, CRDT exemption, room isolation,
   and game/realtime tests pass without weakening their workload or deadlines.
 - No new library, receiving inbox/queue, retry/fence/lock/timer, migration, or
@@ -103,3 +119,32 @@ The placement of the live cluster publisher, its notice codec, and the
 application wiring is deliberately a review checkpoint in the accompanying
 plan. This design fixes behavior and boundaries; it does not yet bless a file
 split or public API shape.
+
+## Ownership and audience questions found during code review
+
+The current Postgres adapter validates every publication with the
+`WS_OUTBOX`-only `decodeQueueBoxPubSubMessage`. Its bridge interface also accepts
+only that outbox notice. Live notices therefore need a distinct typed transport
+port and codec over the existing database notification connection; merely
+adding a `live-only` case to the router cannot make the existing bridge carry
+it. Keep the outbox key codec's meaning unchanged.
+
+The admitted inbound `route()` call can pass its captured room audience and
+`groupRecipientPeerIds` to `publishToFanout`. In contrast, `publish()` and
+proxy `toTargets`/`toPeer`/`toRoom`/`toAll` currently call it without an
+audience. A room publication needs a publisher-side authoritative snapshot
+of its final targets; a unicast names its peer directly. A proxy may transform
+targets after inbound authorization, so it cannot inherit that old audience
+without rechecking the final scope. For broad `all`/`world` sends, the
+maintainer selected subscriber-local eligibility at notice receipt instead
+of a cluster-wide frozen list. The notice must distinguish these modes;
+absence of a room audience is never permission to re-resolve a room.
+
+The local `sendToTargetsWithResult(message, recipientSessionIds)` path uses
+those explicit IDs and open sockets directly; it bypasses the normal local
+target resolver. A cluster receiver using this path must receive a validated,
+publisher-authorized list whose scope is bound to the final message, not just
+an untrusted list of session IDs. The game publisher also maps the router's
+`sent-live`/`queued-outbox` statuses to its own `sent` result. A new
+cluster-accepted status must update that consumer and describe publication,
+not an unobservable global socket-send count.

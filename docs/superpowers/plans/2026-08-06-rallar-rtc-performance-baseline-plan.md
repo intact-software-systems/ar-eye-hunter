@@ -65,7 +65,7 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-26
+**Updated:** 2026-09-27
 
 **Status:** Task 10 correction-and-proof work remains active; there is still no
 valid B06 E3-memory primary. Critical review superseded the mandatory successor-
@@ -73,15 +73,23 @@ continuation recommendation with the
 [committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
 and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-**Current next step:** Reconcile this correction with current main and review the
-combined runtime before selecting another browser observation. Main now owns
-delivery-before-control scheduling, batched release/control handling, canonical
-delivery observations and receipt audiences, and replacement of a peer whose
-SCTP association closed. Keep these capabilities and remove branch implementations
-they supersede. Preserve the remaining overlay-gap recovery, heartbeat authority
-renewal, Offer/Answer correlation and bounded evidence behavior through the current
-contracts. The requested rebase and its semantic conflict resolution take
-precedence over the historical next-run instructions below.
+**Current next step:** PR #566 is reconciled with current `main` and mergeable;
+do not rebase it for `BEHIND` alone. Its earlier code review and browser
+diagnostics leave three separate outcomes open before another B06 acceptance
+capture: prove cluster-wide delivery of `live-only` WS publications across API
+processes, correct the reviewed heartbeat lease-renewal edge when an HTTP
+response crosses the browser cache TTL, and review the written IndexedDB
+connection-lifetime design before implementing that correction. The
+[cluster live-WS design](../specs/2026-09-27-cluster-live-ws-delivery-design.md)
+and [implementation plan](2026-09-27-cluster-live-ws-delivery-plan.md) record
+the maintainer's size, result, and broad-audience decisions; the revised
+artifacts and final ownership map await review. Preserve main's
+delivery-before-control scheduling, batched release/control handling,
+canonical delivery observations and receipt audiences, and closed-SCTP peer
+replacement. Keep the branch's overlay-gap recovery, heartbeat authority
+renewal, Offer/Answer correlation, and bounded evidence through current
+contracts. A green branch gate and unchanged 100-cycle E3-memory primary remain
+unproven; none of the diagnostic runs supplies RTC-B06 acceptance.
 
 Task 24's existing first result is retained: readiness failed during reconnect
 cycle 3 and only the cycle-0 checkpoint exists. Recording completed and released
@@ -614,15 +622,18 @@ cast in the touched semantics owner; all seven dependent recipe-test files pass
 **Historical note:** Replacement exact-head CI was mandatory before PR #557
 was ready.
 
-### Current execution horizon
+### Historical 2026-09-12 execution horizon (superseded)
 
 | Order | Slice                                             | Completion evidence                                                                                                                                                                                                                                |
 | ----- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | Restore committed-work progress                   | Follow Slice 1 of the focused plan: semantic RED/GREEN for fresh/deferred data/control notification, callbacks, and finite-backlog recovery without per-commit scan rewind. Preserve existing QueueBox ownership and remove obsolete restart code. |
 | 2     | Measure and select the smallest sufficient result | Follow Slice 2: native timing and causal comparison, then retain original-first bounded continuation only if residual successor rediscovery is material and the comparison proves benefit without harming ordinary work.                           |
 
-The current request publishes this design and plan, not runtime changes. PR #567
-is a related implementation to reconcile, not an automatic merge/close decision.
+At this checkpoint, the request published the committed-work design and plan,
+not runtime changes. PR #567 was a related implementation to reconcile, not an
+automatic merge/close decision. PR #566 has since implemented and reviewed the
+selected committed-work correction; the current work is stated at the top of
+this plan.
 The synthetic RED alone does not require continuation. Keep implementation and
 proof together; repair real conflicts but do not rebase for `BEHIND` alone.
 

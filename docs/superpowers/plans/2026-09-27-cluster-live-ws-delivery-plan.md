@@ -8,9 +8,11 @@
 process-local sockets throughout an API-v1 Postgres cluster without changing
 its requested effective QoS.
 
-**Architecture:** The one authoritative publisher freezes message and audience,
-then announces best-effort work over the existing Postgres notification port;
-each process sends directly to its own sockets without a receiver inbox. Work
+**Architecture:** The one authoritative publisher finalizes the message and
+freezes room/explicit-peer audiences, then announces best-effort work over the
+existing Postgres notification port. Broad `all`/`world` best-effort
+broadcasts use each subscriber's locally eligible open sockets at notice
+receipt. Each process sends directly without a receiver inbox. Work
 requiring durable outbound delivery uses the existing `WS_OUTBOX` path, corrected
 to honor the frozen audience on remote processes. An oversized canonical
 inbound message uses a key-only read; an oversized noncanonical best-effort
@@ -23,15 +25,19 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
 
 ## Global Constraints
 
-- This is a proposed plan. Obtain maintainer approval of the oversize policy
-  and public result semantics before changing production behavior.
+- The maintainer approved the oversize refusal, `cluster-published` result,
+  and subscriber-local broad-broadcast audience policy. The revised written
+  spec/plan and final ownership map still require review before production
+  behavior changes.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
   silently change best-effort into durable outbox, or at-least-once into one
   untracked local send.
 - Preserve one authoritative handler/mutation execution and the admission-time
-  audience; each subscriber may only perform a direct local socket send.
+  room audience. Broad `all`/`world` best-effort broadcasts use locally
+  eligible open sockets at notice receipt; each subscriber may only perform
+  a direct local socket send.
 - Do not add a library, receiving inbox/queue, retry, fence, lock, timer,
   migration, or legacy path. Reuse current Postgres notifications and outbound
   QueueBox/receipt machinery.
@@ -55,19 +61,23 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   classified according to best-effort; no hidden replay or second handler run.
 - A single-process local or disabled pub/sub configuration: local delivery
   works and no result falsely reports cluster publication.
+- A proxy that changes room targets must authorize and freeze the final room
+  audience. A proxy `toAll` or server-generated broad publication selects
+  local eligible sockets at notice receipt; a just-opened socket may receive
+  that best-effort broad broadcast without widening room authority.
 
 ---
 
 ## Candidate ownership map and placement review
 
 The behavioral seams below are concrete; exact new file locations are a
-**pre-implementation review decision** with the maintainer after this PR.
+**pre-implementation review decision** with the maintainer within this PR.
 Do not bury live publication in `apps/api-v1` or extend the `WS_OUTBOX` codec
 with a misleading second meaning just to avoid a file. Candidate ownership:
 
 | Responsibility | Existing owner / candidate location |
 | --- | --- |
-| Select fanout/effective QoS and freeze final audience | `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts` and router contracts |
+| Select fanout/effective QoS and final audience mode | `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts` and router contracts |
 | Cluster live notice codec and subscription/direct-send behavior | Focused neighbor of `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts`, sharing the existing notification port rather than its `WS_OUTBOX` schema |
 | Canonical inbound key lookup for oversized notices | `packages/shared/alm/inbound/al-inbound-admission-store.ts` existing `readDeliverySurface` boundary, exposed through its current service owner |
 | Correct remote outbox audience | `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts` plus existing outbound captured-policy reader |
@@ -80,6 +90,30 @@ owner-to-result path, and amend this map with exact files/signatures. The first
 two implementation slices are codec/transport and publisher routing; later
 slices remain outcome-shaped until those interfaces are validated.
 
+### Placement findings from the current code
+
+- `apps/api-v1/src/db/create-postgres-queue-pub-sub-bridge.ts` accepts only
+  `WS_OUTBOX` keys, and its `QueueBoxPubSubBridge` contract has the same narrow
+  type. A live notice needs a separate typed bridge/codec sharing the existing
+  `ApiV1DatabaseNotificationPort`, not a second meaning for an outbox key.
+  `apps/api-v1/src/db/local-queue-pubsub-bridge.ts` and the disabled mode need
+  corresponding explicit local/no-cluster behavior.
+- `RallarServerWsRouter.route()` passes captured audience to default fanout;
+  `publish()` and proxy publications do not. The existing room authorizer reads
+  a durable group snapshot and can provide a room audience. `toAll` and
+  server-generated broad broadcasts instead use locally eligible sockets at
+  notice receipt. The notice must carry an explicit room/peer/broad audience
+  mode; absent room authority never falls through to broad resolution.
+- `WsQueueBoxServerLiveDelivery.sendToTargetsWithResult` uses explicit session
+  IDs with local open-socket lookup, bypassing target resolution. Scope must
+  be bound and validated before those IDs are accepted by a subscriber. The
+  remote outbox path currently calls this method without the admitted list;
+  its fix belongs to the later durable-outbox outcome.
+- `packages/shared-server/game/install-rallar-game-authority-server.ts`
+  translates `sent-live` and `queued-outbox` into a game `sent` result. Review
+  that exact consumer, Relic snapshot publication, AI result publication, and
+  the public router result contract when defining cluster-accepted semantics.
+
 ### Task 1: Bound and validate best-effort cluster notices
 
 **Candidate files:** New focused live-notice codec beside
@@ -88,8 +122,9 @@ new neighboring Vitest module; existing Postgres adapter tests in
 `apps/api-v1/test/db/postgres-queue-pubsub-bridge.test.ts`.
 
 **Interface to settle at placement review:** A discriminated live notice with
-`publisherId`, version, final AL message or canonical inbound key, frozen
-addressed session IDs, scope, and logical deadline; a pure decoder returning a
+`publisherId`, version, final AL message or canonical inbound key, explicit
+room/peer/broad audience mode with frozen IDs where required, scope, and
+logical deadline; a pure decoder returning a
 validated notice or `undefined`; a UTF-8 encoder returning inline, key-only,
 or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 
@@ -112,7 +147,7 @@ or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 live bridge beside the current QueueBox pub/sub bridge.
 
 **Interface to settle at placement review:** The publisher accepts the final
-message, effective policy, frozen audience, and optional canonical inbound
+message, effective policy, audience mode, and optional canonical inbound
 reference; the listener accepts only a validated notice and a local-send port.
 The result distinguishes cluster publication from locally observed sends.
 
@@ -120,7 +155,8 @@ The result distinguishes cluster publication from locally observed sends.
   a different process owns the addressed socket, and exactly one authorized
   local send occurs; a subscriber never invokes the router handler.
 - [ ] Add failing tests for generated and proxy publications, wrong scope, late
-  joiner, expiry, duplicate/self notice, absent canonical row, listener loss,
+  room joiner, broad just-opened socket, expiry, duplicate/self notice,
+  absent canonical row, listener loss,
   upstream dispatch retry, and local/disabled bridge modes. Pin the proposed
   result semantics at the public boundary rather than asserting an unknowable
   global `sentCount`.
@@ -130,60 +166,45 @@ The result distinguishes cluster publication from locally observed sends.
   `npx vitest run packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/local-queue-pubsub-bridge.test.ts`
   green and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
 - [ ] Review all result consumers and affected examples; commit this slice only
-  after the size/result compatibility decision has been approved.
+  after the revised written spec/plan and ownership map have been approved.
 
-### Task 3: Keep durable live publications on the existing outbox
+### Later outcome: durable live publications use the existing outbox
 
-**Candidate files:** `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts`,
-`packages/shared/alm/outbound/` captured-policy access, existing queue-pubsub
-tests, and any truly affected game/AI callers.
+An at-least-once `live-only` publication must either create canonical durable
+outbound work or explicitly refuse an incompatible effective policy. A remote
+outbox listener must honor the captured audience, excluding late or
+unauthorized sessions while retaining current retry and receipt behavior. No
+parallel durable carrier is selected. Choose the exact code and test slice
+from Task 1–2 evidence before implementing this outcome.
 
-- [ ] Write failing tests proving an at-least-once `live-only` publication has
-  durable work (or is refused when its effective policy cannot create it) and
-  a remote outbox listener excludes late/unauthorized sessions while preserving
-  existing retry/receipt behavior.
-- [ ] Run focused tests red; route durable intent through canonical outbox
-  admission and apply its captured audience during remote local sends. Do not
-  create a parallel retry path.
-- [ ] Run focused tests green, package typechecks, and affected game/realtime
-  tests/builds. Update the outbound README's known limitation only when the
-  corrected behavior is verified; commit the durable slice.
+### Later outcome: prove three-process API behavior and branch readiness
 
-### Task 4: Prove the actual three-process API behavior
-
-**Candidate files:** `packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-topic-routing.json`
-and neighboring social app-data/CRDT/room recipes; no test-only PR.
-
-- [ ] Extend behavior-named recipes to place the claim and addressed socket on
-  different API processes, with one handler execution, scope isolation, and
-  both best-effort and at-least-once assertions.
-- [ ] Run the focused recipe locally against a managed three-process Postgres
-  cluster, then `npm run test:api-v1:black-box:postgres` and
-  `npm run test:api-v1:black-box:postgres:medium-scale`; inspect all three API
-  logs and classify failures before changing code.
-- [ ] Run affected shared-server tests, `cd apps/api-v1 && deno task check`,
-  `npm run check:repo-style`, and the branch gate. If a production mutation or
-  concurrency domain changed, also run the required state-write candidate
-  comparison from `rallar-testing`.
-- [ ] Compare representative notification size, database-read rate, send
-  latency, and listener-loss behavior with current code. Keep profiles under
-  `tmp/perf/`, not in Git; report environment and workload with every number.
-- [ ] Conduct branch review, resolve actionable findings, update PR Goal,
-  Changes, Acceptance, Validation, Risk and rollback, Follow-up, and hand off
-  only with exact passing/failing/skipped evidence.
+Behavior-named black-box recipes must prove a sole claimant on one API process
+delivers to an addressed socket on another, without a second handler run or
+scope widening. Cover admitted, proxy, and generated best-effort publications
+and durable at-least-once behavior. The unchanged standard and medium-scale
+Postgres profiles, affected shared-server and API checks, representative size,
+read-rate, latency and listener-loss measurements, exact-head Branch Release
+Gate, and independent branch review determine readiness. Classify failures
+from all three API logs; keep profiles under `tmp/perf/`, not in Git. Select
+specific commands and files from the then-current implementation and
+`rallar-testing` guidance rather than precommitting a later work batch now.
 
 ## Approval and rollback gates
 
-The next discussion must confirm (1) the noncanonical best-effort oversize
-refusal, (2) the public publication-result shape, and (3) the final ownership
-map before production implementation. If any is rejected, revise this plan and
-its spec first. Rollback is a normal PR revert of the new publication path;
+The maintainer approved (1) noncanonical best-effort oversize refusal, (2)
+the `cluster-published` result instead of global send counts, and (3)
+subscriber-local eligibility for broad `all`/`world` best-effort broadcasts,
+while room authority remains frozen at the publisher. Review the revised
+written spec/plan and final ownership map before production implementation.
+If that review changes a decision, revise both artifacts first. Rollback is
+a normal PR revert of the new publication path;
 `WS_OUTBOX` remains the existing durable carrier. A green single-process test
 or mere successful `NOTIFY` is not evidence of cluster delivery.
 
 ## PR #566 readiness boundary
 
-Keep the PR draft. Review the size policy, result semantics, and code ownership
+Keep the PR draft. Review the revised written design, plan, and code ownership
 above **before** implementing the live-delivery correction. Then resolve and
 prove cross-process WS behavior, address the known heartbeat cache-TTL edge,
 obtain the unchanged 100-cycle E3 acceptance evidence, and require a green

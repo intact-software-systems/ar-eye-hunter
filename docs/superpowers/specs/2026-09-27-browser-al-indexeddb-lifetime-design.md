@@ -12,6 +12,12 @@ A bounded, opt-in local diagnostic completed 20 reconnect cycles. Its C page had
 
 Each `IndexedDbAdmissionBackend` owns one `IndexedDbConnection` shared with its `IndexedDbQueueBox`. `IndexedDbConnection.open()` caches an open promise and installs an `onversionchange` listener capturing the connection. Browser shutdown stops transport and QueueBox consumers but never closes that native database. A rejected initializer can escape before it returns a middleware for the existing stale-generation cleanup; a successful initializer can also return after a newer generation has started.
 
+The existing `browser-al-runtime-cleanup.ts` closes the temporary database handle
+used for row eviction; it does not own or close the backends created by runtime
+store factories. The black-box replay and RTC NACK diagnostic paths each call
+the registered outbound-store resolvers during an active browser generation,
+confirming that tracking only the three initial resolutions would be incomplete.
+
 ## Selected architecture
 
 Give each middleware initialization one internal browser AL persistence lifetime. Its registry factories create stores through the existing AL store implementation and synchronously register **every newly constructed, owned IndexedDB backend** with that exact lifetime before returning the stores. This includes later resolver calls in the same generation. In-memory stores require no native close. An explicitly injected backend is borrowed and is never closed by this lifetime.
