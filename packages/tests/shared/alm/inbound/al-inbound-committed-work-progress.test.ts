@@ -139,6 +139,46 @@ it('delivers work committed after an empty probe without a test wake', async () 
     await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
 });
 
+it('delivers WS work committed while a live scan holds an empty NEW page', async () => {
+    const fixture = createInboundTestRuntime({
+        carrier: 'ws',
+        stores: createInboundTestStores({ namespace: 'held-empty-new', storage: 'memory', observer: createPassThroughIndexedDbOperationObserver() }),
+        effectWorkerId: 'held-empty-new'
+    });
+    await fixture.runtime.ready();
+
+    const emptyNewObserved = Promise.withResolvers<void>();
+    const releaseEmptyNew = Promise.withResolvers<void>();
+    const scanned: EntityStatus[] = [];
+    const readPage = fixture.stores.workQueue.readWorkPage.bind(fixture.stores.workQueue);
+    let held = false;
+    vi.spyOn(fixture.stores.workQueue, 'readWorkPage').mockImplementation(async (request) => {
+        const page = await readPage(request);
+        scanned.push(request.status);
+        if (!held && request.status === EntityStatus.NEW && page.entries.length === 0) {
+            held = true;
+            emptyNewObserved.resolve();
+            await releaseEmptyNew.promise;
+        }
+        return page;
+    });
+
+    fixture.queueEngine.start();
+    onTestFinished(() => fixture.queueEngine.stop());
+    try {
+        await emptyNewObserved.promise;
+        expect((await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'held-new-successor' }), INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        expect(fixture.delivered).toEqual([]);
+    }
+    finally {
+        releaseEmptyNew.resolve();
+    }
+
+    await expect.poll(() => fixture.delivered, { timeout: 500 }).toEqual(['dispatched']);
+    expect(scanned.slice(0, 3)).toEqual([EntityStatus.RETRY, EntityStatus.RESERVED, EntityStatus.NEW]);
+});
+
 it.each(['page-read', 'reservation'] as const)(
     'delivers later NEW, due RETRY and expired RESERVED work while bounded commits continue during %s',
     async (boundary) => {
