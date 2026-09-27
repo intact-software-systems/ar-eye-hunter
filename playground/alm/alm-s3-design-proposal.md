@@ -370,12 +370,12 @@ the heartbeat frames reaching admission (noted: it adds noise to any fallback di
 lane hardening (useful for the S3 family; not required), the `subtree` lost-terminal recovery (A2
 owns `group-leader`), the two round-2 nits, and the both-normal hosted full read (process).
 
-## 9. S3b execution questions (2026-09-27)
+## 9. S3b execution questions and decisions (2026-09-27)
 
 Written after S3a merged (461b54cfe, #597), from a fresh code survey of the fallback, receipt and
 registry paths (session scratchpad `s3b-code-survey.md`; 15 corrections to §1.2/§2.2, the material
-ones folded into the questions). The recommended answer is first in each case; the S3b plan is written
-under the recommendations and re-cut where a decision differs.
+ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-27: the maintainer took every recommended
+answer, Q1–Q12** (roadmap: D56 "As applied", D63–D66); the S3b plan is written under them.
 
 **What the survey changed in §2.2's picture**
 
