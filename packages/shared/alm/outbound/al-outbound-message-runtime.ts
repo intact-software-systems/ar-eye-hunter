@@ -194,7 +194,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         reason: string;
         /**
          * The receipt's phase, present exactly when the control is a WS server receipt: no other control has one,
-         * so absence means "not a receipt" rather than an unknown phase.
+         * so absence means "not a receipt" rather than a missing phase.
          */
         phase?: ALReceiptPayload['phase'];
     }>
@@ -346,7 +346,7 @@ export namespace ALOutboundMessageRuntime {
  *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
  * - An ordering or supersedence track whose messages declare different durabilities is split between
  *   the lanes; no caller declares one that way.
- * - Duplicate detection is per lane: a msgId the memory lane admitted is unknown to the IndexedDB lane,
+ * - Duplicate detection is per lane: a msgId the memory lane admitted is invisible to the IndexedDB lane,
  *   and the reverse. That is sound because a message's durability is fixed by its policy, so the same
  *   msgId always resolves to the same lane. A caller that re-sent one msgId under another durability
  *   would get a second copy in the other lane, whose receipt never completes, because every control
