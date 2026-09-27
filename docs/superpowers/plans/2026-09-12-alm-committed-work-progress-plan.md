@@ -27,7 +27,7 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
   affected support files under current repo guidance, not historical line caps.
 - Do not change protocol/public exports or weaken deadlines, workloads, or gates.
 - Preserve the maintainer-approved current branch ceilings: strict `<221 KiB`
-  for the browser facade and `<282 KiB` for headless, with unchanged compression
+  for the browser facade and `<283 KiB` for headless, with unchanged compression
   and dependency exclusions. Earlier limits below are historical measurements;
   further increases require approval.
 - The maintainer approved the spec's narrow RTC offer/answer correlation contract,
@@ -2118,10 +2118,20 @@ _larger_ than the unchanged 282.6005859375-KiB build. Thus that diagnostic
 is not a useful standalone size reduction; the experiment does not attribute
 the combined overage to a specific production owner. Removing required RTC
 behavior or weakening the boundary solely to pass the size check is not
-selected. A separate, explicit
-maintainer bundle-budget decision or a reviewed behavior-preserving reduction
-is needed before PR readiness. This size result is not runtime performance
+selected. At that checkpoint, a separate, explicit maintainer bundle-budget
+decision or a reviewed behavior-preserving reduction was needed before PR
+readiness. This size result is not runtime performance
 evidence and does not authorize the IndexedDB lifecycle correction.
+
+The maintainer subsequently approved the smallest whole-KiB headless ceiling
+above the measured 282.6005859375 KiB: strict `<283 KiB`. This changes only
+the size acceptance threshold; the bundling method, operator-dependency
+exclusions, and browser-facade ceiling remain unchanged. The older `<282 KiB`
+result above remains historical failed evidence, not the current budget. The
+focused headless boundary test passes at the unchanged 282.6005859375-KiB
+measurement, and the affected headless application build passes with Vite's
+existing large-chunk warning. This budget approval does not validate E3 memory
+retention or resolve the other Release Gate failures.
 
 Read-only cross-package analysis traces three AL backend/connection/queue owners
 per constructed browser middleware: session inbound, WS outbound and RTC
