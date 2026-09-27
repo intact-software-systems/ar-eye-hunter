@@ -180,3 +180,21 @@ map before production implementation. If any is rejected, revise this plan and
 its spec first. Rollback is a normal PR revert of the new publication path;
 `WS_OUTBOX` remains the existing durable carrier. A green single-process test
 or mere successful `NOTIFY` is not evidence of cluster delivery.
+
+## PR #566 readiness boundary
+
+Keep the PR draft. Review the size policy, result semantics, and code ownership
+above **before** implementing the live-delivery correction. Then resolve and
+prove cross-process WS behavior, address the known heartbeat cache-TTL edge,
+obtain the unchanged 100-cycle E3 acceptance evidence, and require a green
+exact-head Branch Release Gate and independent review before marking the whole
+branch ready for `main`. The WS correction alone does not satisfy the RTC-B06
+evidence gate; the [committed-work plan](2026-09-12-alm-committed-work-progress-plan.md)
+and [RTC baseline plan](2026-08-06-rallar-rtc-performance-baseline-plan.md)
+continue to own those other outcomes.
+
+For each fix, review and remediate every changed human-authored file in full;
+include every support file changed by remediation recursively until closure;
+leave independent untouched code outside that closure. No passing focused test,
+mergeable Git state, or plan-only commit substitutes for the full readiness
+sequence.
