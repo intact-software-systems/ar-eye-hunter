@@ -1,4 +1,5 @@
 import { expect, type BrowserContext } from '@playwright/test';
+
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 
@@ -46,6 +47,18 @@ export interface OpenLiveRtcBrowserAgentInput {
 
 export interface LiveRtcBrowserContextFactory {
     newContext(): Promise<Pick<BrowserContext, 'newPage' | 'close'>>;
+}
+
+export class LiveRtcBrowserAgentStartupFailure extends Error {
+    override readonly cause: Error;
+    readonly cleanupErrors: readonly Error[];
+
+    constructor(cause: Error, cleanupErrors: readonly Error[]) {
+        super(cause.message, { cause });
+        this.name = 'LiveRtcBrowserAgentStartupFailure';
+        this.cause = cause;
+        this.cleanupErrors = cleanupErrors;
+    }
 }
 
 export async function openLiveRtcBrowserAgent(
@@ -96,7 +109,7 @@ export async function openLiveRtcBrowserAgent(
             await context.close();
         }
         catch (cleanupCause) {
-            console.error('Failed to close browser context after startup failure', toError(cleanupCause));
+            throw new LiveRtcBrowserAgentStartupFailure(toError(error), [toError(cleanupCause)]);
         }
         throw toError(error);
     }

@@ -6,6 +6,7 @@ import {
 
 import {
     closeLiveRtcBrowserAgentContexts,
+    LiveRtcBrowserAgentStartupFailure,
     openLiveRtcBrowserAgent,
     type LiveRtcBrowserAgentAuth,
     type LiveRtcBrowserAgentConfig,
@@ -26,16 +27,6 @@ export type LiveRtcAgentTrio = readonly [
     LiveRtcControlClient.Agent,
     LiveRtcControlClient.Agent
 ];
-
-export class LiveRtcAgentTrioStartupFailure extends Error {
-    readonly cleanupErrors: readonly Error[];
-
-    constructor(cause: Error, cleanupErrors: readonly Error[]) {
-        super(cause.message, { cause });
-        this.name = 'LiveRtcAgentTrioStartupFailure';
-        this.cleanupErrors = cleanupErrors;
-    }
-}
 
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
 export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
@@ -193,8 +184,14 @@ export async function openAgentTrio(
     catch (error) {
         const cleanupErrors = await closeLiveRtcBrowserAgentContexts(handles);
         const openingFailure = toError(error);
+        if (openingFailure instanceof LiveRtcBrowserAgentStartupFailure) {
+            throw new LiveRtcBrowserAgentStartupFailure(openingFailure.cause, [
+                ...openingFailure.cleanupErrors,
+                ...cleanupErrors
+            ]);
+        }
         throw cleanupErrors.length > 0
-            ? new LiveRtcAgentTrioStartupFailure(openingFailure, cleanupErrors)
+            ? new LiveRtcBrowserAgentStartupFailure(openingFailure, cleanupErrors)
             : openingFailure;
     }
 }

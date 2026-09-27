@@ -9,9 +9,11 @@ import {
 const startup = vi.hoisted(() => ({
     failure: new Error('second-agent-open-failed'),
     cleanupFailure: new Error('first-agent-close-failed'),
+    currentCleanupFailure: new Error('second-agent-close-failed'),
     closedAgents: [] as string[],
     openedAgents: 0,
-    cleanupFails: false
+    cleanupFails: false,
+    currentCleanupFails: false
 }));
 
 vi.mock('../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts', async (importOriginal) => {
@@ -21,6 +23,9 @@ vi.mock('../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts',
         openLiveRtcBrowserAgent: async () => {
             startup.openedAgents++;
             if (startup.openedAgents === 2) {
+                if (startup.currentCleanupFails) {
+                    throw new original.LiveRtcBrowserAgentStartupFailure(startup.failure, [startup.currentCleanupFailure]);
+                }
                 throw startup.failure;
             }
             return {
@@ -38,10 +43,16 @@ vi.mock('../../../tests/playwright/rallar-black-box/live-rtc-browser-agents.ts',
 });
 
 describe('live RTC trio startup failure', () => {
-    it.each([false, true])('preserves the opening failure and partial cleanup evidence when cleanup fails=%s', async (cleanupFails) => {
+    it.each([
+        { cleanupFails: false, currentCleanupFails: false, expected: [] },
+        { cleanupFails: true, currentCleanupFails: false, expected: ['first-agent-close-failed'] },
+        { cleanupFails: false, currentCleanupFails: true, expected: ['second-agent-close-failed'] },
+        { cleanupFails: true, currentCleanupFails: true, expected: ['second-agent-close-failed', 'first-agent-close-failed'] }
+    ])('preserves opening and all cleanup failures: %j', async ({ cleanupFails, currentCleanupFails, expected }) => {
         startup.openedAgents = 0;
         startup.closedAgents = [];
         startup.cleanupFails = cleanupFails;
+        startup.currentCleanupFails = currentCleanupFails;
         for (const prefix of ['A', 'B', 'C']) {
             vi.stubEnv(`VITE_RALLAR_AGENT_${prefix}_USERNAME`, 'fixture-user');
             vi.stubEnv(`VITE_RALLAR_AGENT_${prefix}_PASSWORD`, 'fixture-password');
@@ -62,11 +73,11 @@ describe('live RTC trio startup failure', () => {
             suffix: 'failure',
             label: 'failure'
         });
-        if (cleanupFails) {
+        if (expected.length > 0) {
             await expect(opening).rejects.toMatchObject({
                 message: 'second-agent-open-failed',
                 cause: startup.failure,
-                cleanupErrors: [startup.cleanupFailure]
+                cleanupErrors: expected.map((message) => new Error(message))
             });
         }
         else {

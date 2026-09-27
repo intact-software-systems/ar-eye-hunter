@@ -3,7 +3,8 @@ import {
     mkdtempSync,
     readFileSync,
     rmSync,
-    symlinkSync
+    symlinkSync,
+    writeSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +12,8 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import {
@@ -19,6 +21,11 @@ import {
     createLiveRtcHeapDirectory,
     validateLiveRtcHeapDiagnostic
 } from '../../../tests/playwright/rallar-black-box/live-rtc-heap-snapshot.ts';
+
+vi.mock('node:fs', async (importOriginal) => {
+    const filesystem = await importOriginal<typeof import('node:fs')>();
+    return { ...filesystem, writeSync: vi.fn(filesystem.writeSync) };
+});
 
 describe('local RTC heap ownership evidence', () => {
     it('rejects acceptance recording, retries, multiple workers and a non-memory run', () => {
@@ -59,6 +66,32 @@ describe('local RTC heap ownership evidence', () => {
         expect(result.cleanupErrors).toEqual(['detach failed']);
         expect(result.byteSize).toBe(9);
         expect(session.detached).toBe(true);
+    });
+
+    it('retains the first chunk and reports a later disk write failure while detaching CDP', async () => {
+        const directory = createLiveRtcHeapDirectory(createRoot(), 'source-disk-failure');
+        const path = join(directory, 'B-cycle-20.heapsnapshot');
+        const session = new HeapSession(path, false, false);
+        const diskWrite = vi.mocked(writeSync);
+        const realWrite = diskWrite.getMockImplementation();
+        if (!realWrite) {
+            throw new Error('Filesystem write implementation is required.');
+        }
+        diskWrite.mockImplementationOnce(realWrite).mockImplementationOnce(() => {
+            throw new Error('disk-write-failed');
+        });
+        onTestFinished(() => {
+            diskWrite.mockReset();
+        });
+
+        const result = await captureLiveRtcHeapSnapshot({ session, path, pageId: 'agent-b', cycle: 20, now: () => 10 });
+
+        expect(readFileSync(path, 'utf8')).toBe('{"nodes":');
+        expect(result.byteSize).toBe(9);
+        expect(result.captureErrors).toEqual(['disk-write-failed']);
+        expect(result.cleanupErrors).toEqual([]);
+        expect(session.detached).toBe(true);
+        expect(session.listenerCount('HeapProfiler.addHeapSnapshotChunk')).toBe(0);
     });
 
     it('rejects traversal, symlink directories and reuse of a first-attempt directory', () => {

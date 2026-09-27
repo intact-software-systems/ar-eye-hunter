@@ -8,6 +8,7 @@ import {
 
 import {
     closeLiveRtcBrowserAgentContexts,
+    LiveRtcBrowserAgentStartupFailure,
     openLiveRtcBrowserAgent,
     refreshLiveRtcBrowserRoom,
     type OpenLiveRtcBrowserAgentInput
@@ -53,8 +54,52 @@ describe('live RTC browser agent startup', () => {
             }
         };
 
-        await expect(openLiveRtcBrowserAgent(browser, agentInput)).rejects.toBe(startupFailure);
+        const opening = openLiveRtcBrowserAgent(browser, agentInput);
+        if (cleanupFails) {
+            await expect(opening).rejects.toMatchObject({
+                message: 'page-start-failed',
+                cause: startupFailure,
+                cleanupErrors: [new Error('cleanup-failed')]
+            });
+        }
+        else {
+            await expect(opening).rejects.toBe(startupFailure);
+        }
         expect(allocatedContexts).toBe(0);
+    });
+
+    it('carries a failed context close through the real single-agent opener and trio boundary', async () => {
+        vi.stubEnv('VITE_RALLAR_AGENT_A_USERNAME', 'fixture-user');
+        vi.stubEnv('VITE_RALLAR_AGENT_A_PASSWORD', 'fixture-password');
+        onTestFinished(() => {
+            vi.unstubAllEnvs();
+        });
+        const { openAgentTrio } = await import('../../../tests/playwright/rallar-black-box/live-rtc-agent-environment.ts');
+        const openingFailure = new Error('new-page-failed');
+        const cleanupFailure = new Error('context-close-failed');
+        const browser = {
+            newContext: async () => ({
+                newPage: async (): Promise<never> => {
+                    throw openingFailure;
+                },
+                close: async (): Promise<void> => {
+                    throw cleanupFailure;
+                }
+            })
+        };
+
+        const opening = openAgentTrio(browser, {
+            runId: 'failed-startup',
+            groupId: 'failure-room',
+            suffix: 'failure',
+            label: 'failure'
+        });
+        await expect(opening).rejects.toBeInstanceOf(LiveRtcBrowserAgentStartupFailure);
+        await expect(opening).rejects.toMatchObject({
+            message: 'new-page-failed',
+            cause: openingFailure,
+            cleanupErrors: [cleanupFailure]
+        });
     });
     it('settles every owned context even when one close fails, so evidence finalization can continue', async () => {
         const closed: string[] = [];

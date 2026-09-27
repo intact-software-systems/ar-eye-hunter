@@ -11,13 +11,12 @@ import {
     CONTROL_BASE_URL,
     hasThreeAgentConfig,
     LIVE_RTC_SKIP_MESSAGE,
-    LiveRtcAgentTrioStartupFailure,
     openAgentTrio,
     roomSeed,
     workspaceId,
     type LiveRtcAgentTrio
 } from './live-rtc-agent-environment.ts';
-import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
+import { closeLiveRtcBrowserAgentContexts, LiveRtcBrowserAgentStartupFailure } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
@@ -162,7 +161,7 @@ test('diagnostic-only E3 heap owners at settled cycles 0 and 20', async ({ brows
     catch (cause) {
         const failure = toError(cause);
         diagnostic.errors.push(failure.message);
-        if (failure instanceof LiveRtcAgentTrioStartupFailure) {
+        if (failure instanceof LiveRtcBrowserAgentStartupFailure) {
             diagnostic.cleanupErrors.push(...failure.cleanupErrors.map((error) => error.message));
         }
         throw failure;
