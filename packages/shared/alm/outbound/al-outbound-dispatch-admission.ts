@@ -2,7 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
-import type { ALStoreDurability } from '../al-store-durability.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {

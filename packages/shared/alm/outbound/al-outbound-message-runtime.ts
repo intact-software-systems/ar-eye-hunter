@@ -5,7 +5,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
-import type { ALStoreDurability } from '../al-store-durability.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,

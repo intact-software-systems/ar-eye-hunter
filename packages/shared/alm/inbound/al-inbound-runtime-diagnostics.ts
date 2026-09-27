@@ -2,7 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
-import type { ALStoreDurability } from '../al-store-durability.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';

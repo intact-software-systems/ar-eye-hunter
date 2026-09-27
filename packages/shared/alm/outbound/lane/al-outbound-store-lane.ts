@@ -2,7 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
-import type { ALStoreDurability } from '../../al-store-durability.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import {

@@ -1,4 +1,4 @@
-import type { ALStoreDurability } from '../../../../shared/alm/al-store-durability.ts';
+import type { ALStoreDurability } from '../../../../shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';

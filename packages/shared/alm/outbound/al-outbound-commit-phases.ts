@@ -1,4 +1,4 @@
-import type { ALStoreDurability } from '../al-store-durability.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
     ALOutboundCommitBundleOutcome,
     ALOutboundCommitOrigin,
