@@ -192,6 +192,13 @@ async function captureCheckpoint(
         writeDiagnostic(diagnostic);
         expect(snapshot.captureErrors, `Heap capture failed for ${agent.prefix} at cycle ${cycle}`).toEqual([]);
         expect(snapshot.cleanupErrors, `Heap cleanup failed for ${agent.prefix} at cycle ${cycle}`).toEqual([]);
+        expect(snapshot.byteSize, `Heap snapshot is empty for ${agent.prefix} at cycle ${cycle}`).toBeGreaterThan(0);
+        expect(
+            Number.isFinite(snapshot.postGcUsedBytes),
+            `Post-GC heap usage is invalid for ${agent.prefix} at cycle ${cycle}`
+        ).toBe(true);
+        expect(snapshot.postGcUsedBytes, `Post-GC heap usage is negative for ${agent.prefix} at cycle ${cycle}`)
+            .toBeGreaterThanOrEqual(0);
     }
 }
 

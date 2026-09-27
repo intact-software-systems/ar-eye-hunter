@@ -95,9 +95,16 @@ export async function captureLiveRtcHeapSnapshot(capture: LiveRtcHeapCapture): P
         capture.session.on('HeapProfiler.addHeapSnapshotChunk', writeChunk);
         await capture.session.send('HeapProfiler.enable');
         await capture.session.send('HeapProfiler.collectGarbage');
-        postGcUsedBytes = (await capture.session.send('Runtime.getHeapUsage')).usedSize;
+        const usedBytes = (await capture.session.send('Runtime.getHeapUsage')).usedSize;
+        if (!Number.isFinite(usedBytes) || usedBytes < 0) {
+            throw new Error('Post-GC heap usage must be a finite nonnegative number.');
+        }
+        postGcUsedBytes = usedBytes;
         snapshotStartedAt = capture.now();
         await capture.session.send('HeapProfiler.takeHeapSnapshot');
+        if (writer.byteSize === 0) {
+            throw new Error('Heap snapshot completed without writing any bytes.');
+        }
     }
     catch (cause) {
         captureErrors.push(toError(cause).message);

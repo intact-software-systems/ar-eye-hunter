@@ -27,6 +27,13 @@ vi.mock('node:fs', async (importOriginal) => {
     return { ...filesystem, writeSync: vi.fn(filesystem.writeSync) };
 });
 
+interface HeapSessionOptions {
+    readonly failCapture: boolean;
+    readonly failDetach: boolean;
+    readonly emitSnapshotChunks: boolean;
+    readonly usedSize: number;
+}
+
 describe('local RTC heap ownership evidence', () => {
     it('rejects acceptance recording, retries, multiple workers and a non-memory run', () => {
         expect(validateLiveRtcHeapDiagnostic({ apiMode: 'memory', baselineId: undefined, workers: 1, retries: 0 })).toEqual([]);
@@ -36,7 +43,12 @@ describe('local RTC heap ownership evidence', () => {
         const root = createRoot();
         const directory = createLiveRtcHeapDirectory(root, 'source-abc-dirty');
         const path = join(directory, 'A-cycle-0.heapsnapshot');
-        const session = new HeapSession(path, false, false);
+        const session = new HeapSession(path, {
+            failCapture: false,
+            failDetach: false,
+            emitSnapshotChunks: true,
+            usedSize: 1234
+        });
         const result = await captureLiveRtcHeapSnapshot({ session, path, pageId: 'agent-a', cycle: 0, now: () => 12 });
 
         expect(readFileSync(path, 'utf8')).toBe('{"nodes":[]}');
@@ -55,10 +67,51 @@ describe('local RTC heap ownership evidence', () => {
         expect(session.listenerCount('HeapProfiler.addHeapSnapshotChunk')).toBe(0);
     });
 
+    it('reports a successful snapshot command that emits no snapshot bytes', async () => {
+        const directory = createLiveRtcHeapDirectory(createRoot(), 'source-empty-snapshot');
+        const path = join(directory, 'A-cycle-0.heapsnapshot');
+        const session = new HeapSession(path, {
+            failCapture: false,
+            failDetach: false,
+            emitSnapshotChunks: false,
+            usedSize: 1234
+        });
+
+        const result = await captureLiveRtcHeapSnapshot({ session, path, pageId: 'agent-a', cycle: 0, now: () => 12 });
+
+        expect(result.captureErrors).toEqual(['Heap snapshot completed without writing any bytes.']);
+        expect(result.byteSize).toBe(0);
+        expect(session.listenerCount('HeapProfiler.addHeapSnapshotChunk')).toBe(0);
+        expect(session.detached).toBe(true);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])('rejects invalid post-GC heap usage %s', async (usedSize) => {
+        const directory = createLiveRtcHeapDirectory(createRoot(), `source-invalid-usage-${String(usedSize)}`);
+        const path = join(directory, 'A-cycle-0.heapsnapshot');
+        const session = new HeapSession(path, {
+            failCapture: false,
+            failDetach: false,
+            emitSnapshotChunks: true,
+            usedSize
+        });
+
+        const result = await captureLiveRtcHeapSnapshot({ session, path, pageId: 'agent-a', cycle: 0, now: () => 12 });
+
+        expect(result.postGcUsedBytes).toBeUndefined();
+        expect(result.captureErrors).toContain('Post-GC heap usage must be a finite nonnegative number.');
+        expect(session.listenerCount('HeapProfiler.addHeapSnapshotChunk')).toBe(0);
+        expect(session.detached).toBe(true);
+    });
+
     it('retains partial bytes and both capture and cleanup failures without retrying', async () => {
         const directory = createLiveRtcHeapDirectory(createRoot(), 'source-first-failure');
         const path = join(directory, 'C-cycle-20.heapsnapshot');
-        const session = new HeapSession(path, true, true);
+        const session = new HeapSession(path, {
+            failCapture: true,
+            failDetach: true,
+            emitSnapshotChunks: true,
+            usedSize: 1234
+        });
         const result = await captureLiveRtcHeapSnapshot({ session, path, pageId: 'agent-c', cycle: 20, now: () => 10 });
 
         expect(readFileSync(path, 'utf8')).toBe('{"nodes":');
@@ -71,7 +124,12 @@ describe('local RTC heap ownership evidence', () => {
     it('retains the first chunk and reports a later disk write failure while detaching CDP', async () => {
         const directory = createLiveRtcHeapDirectory(createRoot(), 'source-disk-failure');
         const path = join(directory, 'B-cycle-20.heapsnapshot');
-        const session = new HeapSession(path, false, false);
+        const session = new HeapSession(path, {
+            failCapture: false,
+            failDetach: false,
+            emitSnapshotChunks: true,
+            usedSize: 1234
+        });
         const diskWrite = vi.mocked(writeSync);
         const realWrite = diskWrite.getMockImplementation();
         if (!realWrite) {
@@ -114,14 +172,18 @@ class HeapSession extends EventEmitter {
     readonly path: string;
     readonly failCapture: boolean;
     readonly failDetach: boolean;
+    readonly emitSnapshotChunks: boolean;
+    readonly usedSize: number;
     detached = false;
     collected = false;
 
-    constructor(path: string, failCapture: boolean, failDetach: boolean) {
+    constructor(path: string, options: HeapSessionOptions) {
         super();
         this.path = path;
-        this.failCapture = failCapture;
-        this.failDetach = failDetach;
+        this.failCapture = options.failCapture;
+        this.failDetach = options.failDetach;
+        this.emitSnapshotChunks = options.emitSnapshotChunks;
+        this.usedSize = options.usedSize;
     }
 
     async send(method: string): Promise<{ usedSize: number; }> {
@@ -130,14 +192,16 @@ class HeapSession extends EventEmitter {
         }
         if (method === 'HeapProfiler.takeHeapSnapshot') {
             expect(this.collected).toBe(true);
-            this.emit('HeapProfiler.addHeapSnapshotChunk', { chunk: '{"nodes":' });
-            expect(readFileSync(this.path, 'utf8')).toBe('{"nodes":');
-            if (this.failCapture) {
-                throw new Error('snapshot failed');
+            if (this.emitSnapshotChunks) {
+                this.emit('HeapProfiler.addHeapSnapshotChunk', { chunk: '{"nodes":' });
+                expect(readFileSync(this.path, 'utf8')).toBe('{"nodes":');
+                if (this.failCapture) {
+                    throw new Error('snapshot failed');
+                }
+                this.emit('HeapProfiler.addHeapSnapshotChunk', { chunk: '[]}' });
             }
-            this.emit('HeapProfiler.addHeapSnapshotChunk', { chunk: '[]}' });
         }
-        return { usedSize: 1234 };
+        return { usedSize: this.usedSize };
     }
 
     async detach(): Promise<void> {
