@@ -100,6 +100,16 @@ message within ten seconds. This repeats the known failure shape; this run's
 standard artifact does not by itself identify the claiming API process. The
 topology-artifact upload failure followed the skipped replay and is secondary.
 
+On the later documentation/comment-only head `3f3b41d9fffd3278e1c217d28a096f16b36a8be4`,
+Branch Release Gate `36332004664` has not yet finished, but its ALM
+conformance observation is terminal: WS and RTC delivery-lifecycle cells
+failed, while RTC-with-WS-fallback passed. The WS sender's second send aborted
+at its command deadline and the receiver did not observe the replacement. The
+RTC sender's first handle expired after one reported transport send without a
+confirmed hop receipt. These outcomes do not identify a common queue cause;
+the retained source-labelled events need separate causal review before a
+production change is selected.
+
 Task 24's existing first result is retained: readiness failed during reconnect
 cycle 3 and only the cycle-0 checkpoint exists. Recording completed and released
 its writer lock. Both causal cuts were captured, but upstream event completeness
