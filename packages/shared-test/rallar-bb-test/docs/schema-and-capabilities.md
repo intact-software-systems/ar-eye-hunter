@@ -470,6 +470,22 @@ waits. Pair every absence wait with a same-scope positive control delivery so
 a broken transport cannot masquerade as proven absence. Evaluation lives in
 `wait/wait-for-event.ts`; match semantics live in `wait/wait-event-match.ts`.
 
+## Recipe Barrier
+
+`barrier` stops an agent until every participant of the started distributed run has reached the same
+`barrierId`. The agent records `rallar.bb.barrier.arrived` (`barrierId`, `timeoutMs`, `participants`),
+which its control client forwards like any event, and completes on the control server's
+`rallar.bb.barrier.resolved`. Absent `participants`, every agent the run started takes part; present,
+the role names resolve through the run's start links. The server opens the window at the first
+arrival and decides once: `released`, or `failed` with `timed-out`, `participant-failed` (a missing
+participant's run already failed), `not-a-participant`, `conflicting-arrival` (another `timeoutMs` or
+participant set), `unknown-participant-role` or `no-distributed-run`, naming the arrived and missing
+agents. A late arrival hears the recorded verdict. The agent waits `timeoutMs` plus a 10 s grace and
+fails `RALLAR_BLACK_BOX_BARRIER_TIMEOUT` only when no resolution came; a failed resolution is
+`RALLAR_BLACK_BOX_BARRIER_FAILED`. A barrier id is single-use per control run
+(`RALLAR_BLACK_BOX_BARRIER_REUSED` on the same page). Barrier state is in-memory on the control server:
+a restart forgets open barriers. Outside a control agent nothing resolves the barrier.
+
 ## Assert Operators
 
 `assert` evaluates a dot-path `source` over the runtime evidence roots

@@ -217,16 +217,16 @@
             }
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-aggregated-receipt-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-sender-start",
+            "barrierId": "alm-ws-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-sender-armed",
+            "barrierId": "alm-ws-aggregated-receipt-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -353,16 +353,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-missing-recipient-retry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-sender-start",
+            "barrierId": "alm-ws-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-sender-armed",
+            "barrierId": "alm-ws-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -478,16 +478,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-ws-frozen-audience-membership-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-sender-start",
+            "barrierId": "alm-ws-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-sender-armed",
+            "barrierId": "alm-ws-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -603,16 +603,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-aggregated-receipt-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-sender-start",
+            "barrierId": "alm-rtc-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-sender-armed",
+            "barrierId": "alm-rtc-aggregated-receipt-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -733,16 +733,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-missing-recipient-retry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-start",
+            "barrierId": "alm-rtc-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-armed",
+            "barrierId": "alm-rtc-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -863,16 +863,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-unknown-ack-version-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-sender-start",
+            "barrierId": "alm-rtc-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-sender-armed",
+            "barrierId": "alm-rtc-unknown-ack-version-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1004,16 +1004,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-frozen-audience-membership-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-start",
+            "barrierId": "alm-rtc-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-armed",
+            "barrierId": "alm-rtc-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1134,16 +1134,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1264,16 +1264,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1394,16 +1394,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1535,16 +1535,16 @@
             "timeoutMs": 3000
           },
           {
-            "kind": "wait",
-            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-combined-pacing",
-            "match": {
-              "kind": "diagnostic",
-              "topic": "rallar.browser.alm.inbound_diagnostics",
-              "payloadPath": "data",
-              "contains": "\"kind\":\"alm-combined-sender-pacing-never\""
-            },
-            "timeoutMs": 3000,
-            "absent": true
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "storage.counters",
@@ -1779,6 +1779,18 @@
             "timeoutMs": 45000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-receiver-start",
+            "barrierId": "alm-ws-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-receiver-armed",
+            "barrierId": "alm-ws-aggregated-receipt-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-aggregated-receipt-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -1802,6 +1814,18 @@
             "kind": "stats",
             "commandId": "alm-ws-aggregated-receipt-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-receiver-start",
+            "barrierId": "alm-ws-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-receiver-armed",
+            "barrierId": "alm-ws-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -1831,6 +1855,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-receiver-start",
+            "barrierId": "alm-ws-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-receiver-armed",
+            "barrierId": "alm-ws-frozen-audience-membership-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-frozen-audience-membership-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -1844,6 +1880,18 @@
             "kind": "stats",
             "commandId": "alm-ws-frozen-audience-membership-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-receiver-start",
+            "barrierId": "alm-rtc-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-receiver-armed",
+            "barrierId": "alm-rtc-aggregated-receipt-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -1869,6 +1917,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-aggregated-receipt-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-receiver-start",
+            "barrierId": "alm-rtc-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-receiver-armed",
+            "barrierId": "alm-rtc-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -1898,6 +1958,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-receiver-start",
+            "barrierId": "alm-rtc-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-receiver-armed",
+            "barrierId": "alm-rtc-unknown-ack-version-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-unknown-ack-version-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -1923,6 +1995,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-receiver-start",
+            "barrierId": "alm-rtc-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-receiver-armed",
+            "barrierId": "alm-rtc-frozen-audience-membership-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-frozen-audience-membership-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -1936,6 +2020,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-frozen-audience-membership-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -1961,6 +2057,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -1990,6 +2098,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-receiver-received-1",
             "connection": "almConformanceReceiver",
@@ -2013,6 +2133,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2144,6 +2276,18 @@
             "timeoutMs": 45000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-recipient-b-start",
+            "barrierId": "alm-ws-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-aggregated-receipt-recipient-b-armed",
+            "barrierId": "alm-ws-aggregated-receipt-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-ws-aggregated-receipt-recipient-b-received-1",
             "connection": "almConformanceReceiver",
@@ -2169,6 +2313,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-recipient-b-start",
+            "barrierId": "alm-ws-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-ws-missing-recipient-retry-recipient-b-hold-ack-ws",
             "faultId": "hold-ack-ws-alm.conformance.ws.missing-recipient-retry",
@@ -2179,6 +2329,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-missing-recipient-retry-recipient-b-armed",
+            "barrierId": "alm-ws-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2220,6 +2376,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-recipient-b-start",
+            "barrierId": "alm-ws-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-ws-frozen-audience-membership-recipient-b-hold-ack-ws",
             "faultId": "hold-ack-ws-alm.conformance.ws.frozen-audience-membership",
@@ -2230,6 +2392,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-frozen-audience-membership-recipient-b-armed",
+            "barrierId": "alm-ws-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2297,6 +2465,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-recipient-b-start",
+            "barrierId": "alm-rtc-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-aggregated-receipt-recipient-b-armed",
+            "barrierId": "alm-rtc-aggregated-receipt-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-aggregated-receipt-recipient-b-received-1",
             "connection": "almConformanceReceiver",
@@ -2322,6 +2502,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-recipient-b-start",
+            "barrierId": "alm-rtc-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-missing-recipient-retry-recipient-b-hold-ack-rtc",
             "faultId": "hold-ack-rtc-alm.conformance.rtc.missing-recipient-retry",
@@ -2332,6 +2518,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-missing-recipient-retry-recipient-b-armed",
+            "barrierId": "alm-rtc-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2370,6 +2562,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-missing-recipient-retry-recipient-b-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-recipient-b-start",
+            "barrierId": "alm-rtc-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-unknown-ack-version-recipient-b-armed",
+            "barrierId": "alm-rtc-unknown-ack-version-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -2420,6 +2624,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-recipient-b-start",
+            "barrierId": "alm-rtc-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-frozen-audience-membership-recipient-b-hold-ack-rtc",
             "faultId": "hold-ack-rtc-alm.conformance.rtc.frozen-audience-membership",
@@ -2430,6 +2640,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-frozen-audience-membership-recipient-b-armed",
+            "barrierId": "alm-rtc-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2497,6 +2713,18 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-recipient-b-start",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-recipient-b-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-aggregated-receipt-armed",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "messages.received",
             "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-recipient-b-received-1",
             "connection": "almConformanceReceiver",
@@ -2522,6 +2750,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-recipient-b-start",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-recipient-b-hold-ack-rtc",
             "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.missing-recipient-retry",
@@ -2532,6 +2766,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-recipient-b-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-missing-recipient-retry-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",
@@ -2570,6 +2810,18 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-recipient-b-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-start",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-unknown-ack-version-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "wait",
@@ -2620,6 +2872,12 @@
             "timeoutMs": 3000
           },
           {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-recipient-b-start",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-start",
+            "timeoutMs": 60000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-recipient-b-hold-ack-rtc",
             "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.frozen-audience-membership",
@@ -2630,6 +2888,12 @@
             "action": "drop",
             "remaining": "until-cleared",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-recipient-b-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-frozen-audience-membership-armed",
+            "timeoutMs": 60000
           },
           {
             "kind": "messages.received",

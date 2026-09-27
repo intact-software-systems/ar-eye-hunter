@@ -16,6 +16,7 @@ import {
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type {
+    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
@@ -41,15 +42,8 @@ const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
 
 const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
 
-const ALM_COMBINED_SENDER_PACING_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
-
-/**
- * The combined recipe has no per-scenario barrier: the lane starts each scenario's recipients before its sender, so
- * a recipient arms that scenario's fault while the sender is still running the previous scenario's own commands. An
- * `absent: true` wait whose match never occurs simply holds its full window, giving every recipient the same time to
- * arm before the sender's next send.
- */
-export const ALM_COMBINED_SENDER_PACING_MS = 3_000;
+/** Long enough for the slowest role to finish the previous scenario's windows while the others wait (D62). */
+export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
 
 /** Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is never reached. */
 const HETZNER_WITHHELD_ALM_SCENARIO_KEYS: readonly string[] = [
@@ -228,32 +222,48 @@ function toAlmConformanceCombinedCommands(
             if (scenarioConnectAt < 0) {
                 throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
             }
-            const scenarioCommands = commands.slice(scenarioConnectAt + 1).map((command) =>
-                command.kind === 'rtc.connect' ? toConnect(command) : command
+            return toBarrieredScenarioCommands(
+                scenario,
+                role,
+                commands.slice(scenarioConnectAt + 1).map((command) =>
+                    command.kind === 'rtc.connect' ? toConnect(command) : command
+                )
             );
-            return role === 'sender'
-                ? [toSenderCombinedPacingCommand(scenario), ...scenarioCommands]
-                : scenarioCommands;
         })
     ];
 }
 
 /**
- * Pacing exists only for `sender`: the lane orders roles per scenario (recipients start before the sender), so only
- * the sender's combined recipe risks racing a recipient's not-yet-armed fault. See `ALM_COMBINED_SENDER_PACING_MS`.
+ * The combined recipe runs every role at once, so only barriers order one role's block against another's (D62).
+ * `start`: every role finished the previous scenario, so no ACK of it is still owed when a fault is armed.
+ * `armed`: every role armed the faults leading its block, so the sender sends into them.
  */
-function toSenderCombinedPacingCommand(scenario: AlmConformanceScenario): RallarBlackBoxTestCommand {
+function toBarrieredScenarioCommands(
+    scenario: AlmConformanceScenario,
+    role: AlmConformanceRole,
+    commands: readonly RallarBlackBoxTestCommand[]
+): readonly RallarBlackBoxTestCommand[] {
+    const firstStep = commands.findIndex((command) => command.kind !== 'fault.inject');
+    const armedEnd = firstStep < 0 ? commands.length : firstStep;
+    const scenarioPrefix = toScenarioCarrierAndKey(scenario);
+    return [
+        toScenarioBarrier(scenarioPrefix, role, 'start'),
+        ...commands.slice(0, armedEnd),
+        toScenarioBarrier(scenarioPrefix, role, 'armed'),
+        ...commands.slice(armedEnd)
+    ];
+}
+
+function toScenarioBarrier(
+    scenarioPrefix: string,
+    role: AlmConformanceRole,
+    phase: 'start' | 'armed'
+): RallarBlackBoxTestBarrierCommand {
     return {
-        kind: 'wait',
-        commandId: `${toScenarioCarrierAndKey(scenario)}-sender-combined-pacing`,
-        match: {
-            kind: 'diagnostic',
-            topic: ALM_COMBINED_SENDER_PACING_TOPIC,
-            payloadPath: 'data',
-            contains: '"kind":"alm-combined-sender-pacing-never"'
-        },
-        timeoutMs: ALM_COMBINED_SENDER_PACING_MS,
-        absent: true
+        kind: 'barrier',
+        commandId: `${scenarioPrefix}-${role}-${phase}`,
+        barrierId: `${scenarioPrefix}-${phase}`,
+        timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS
     };
 }
 
