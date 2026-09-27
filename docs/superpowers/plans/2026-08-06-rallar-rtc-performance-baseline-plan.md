@@ -90,7 +90,7 @@ cluster delivery or RTC-B06 acceptance. `BEHIND` alone does not require
 another rebase. Focused branch review found introduced repeated full-room-cache
 scans in RTC planning: inbound decisions now scan twice and some outgoing/native
 decisions three times, versus once at the merge base. Subject to the scoped
-design approval, the next code slice reuses one observation within each
+design approval, the RTC code slice reuses one observation within each
 synchronous decision while preserving fresh observations for later callbacks;
 prove semantics with the existing RTC suites, shared package typing, and a
 representative multiroom measurement. Then review the written cluster live-WS
@@ -108,6 +108,29 @@ replacement. Keep the branch's overlay-gap recovery, heartbeat authority
 renewal, Offer/Answer correlation, and bounded evidence through current
 contracts. A green branch gate and unchanged 100-cycle E3-memory primary remain
 unproven; none of the diagnostic runs supplies RTC-B06 acceptance.
+
+The latest published-head Branch Release Gate
+[`36340567727`](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/36340567727)
+on `6401d0e753a76193edfbd18bc64ca3b295fb8e68` passed root CI, builds,
+Deno checks, and PostgreSQL shared-server integration, then failed the API-v1
+matrix at 57/59. `api-v1-drop-in-social-preset` lost Bob's best-effort
+`room.match` message to Alice, and `api-v1-group-data-policy` lost Bob's
+best-effort `room.crdt` sync request to Alice; both sender sockets reported
+`sent`. These repeat the live-only loss shape and are consistent with the
+known cross-process fanout gap; these artifacts alone do not prove the
+publishing process for either message. They do not prove RTC-B06 passed.
+Review and approve the cluster-live-WS design and
+its public-input/result ownership before implementing that separate correction.
+The concurrent diagnostic-only RTC-B06 run
+[`36341736117`](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/36341736117)
+used the same source. All three runners passed default and all-scenarios
+cases; their unchanged 100-reconnect retention cases failed readiness at
+cycles 2, 3, and 6. In each failure, at least one expected peer was not ready
+despite another edge opening. The retained signaling/peer-lifecycle traces
+support further attribution, but upstream event completeness is marked
+unknown. No cycle-20 retention verdict or valid E3 primary was produced. Do
+not rerun the unchanged source; classify these traces and select a bounded
+correction before another observation.
 
 Exact-head Branch Release Gate `36327899084` on
 `46611c342a766b98432705b2b485135af0fa48ac` passed root CI, builds,
@@ -5341,6 +5364,13 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       during reconnect cycle 3 after both bracketing causal cuts; only the
       cycle-0 checkpoint exists. Preserve that failed result without rerunning
       unchanged source or constructing/finalizing a diagnostic cohort.
+- [x] Retain published-head gate `36340567727` and diagnostic-only B06 run
+      `36341736117` unchanged. The gate failed two live-only API recipes;
+      all three B06 runners passed short cases but failed retention at cycles
+      2, 3, and 6. Neither result authorizes acceptance or an unchanged rerun.
+- [ ] Classify the three retained reconnect traces, review the written
+      cluster-live-WS ownership and public contract with the maintainer, and
+      select only evidence-backed, separately approved corrections.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
