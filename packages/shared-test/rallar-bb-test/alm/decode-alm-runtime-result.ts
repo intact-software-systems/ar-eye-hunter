@@ -127,6 +127,7 @@ export function decodeAlmDeliveryResultValue(
 ): RallarBlackBoxTestMessagesObserveResultValue {
     const record = decodeAlmRuntimeRecord(value);
     const path = 'delivery observation';
+    const attemptOutcomes = requireAlmAttemptOutcomesField(record, path);
     return {
         handleId: requireAlmStringField(record, path, 'handleId'),
         state: requireAlmDeliveryState(record, path, 'state'),
@@ -136,11 +137,24 @@ export function decodeAlmDeliveryResultValue(
         relayRejection: readAlmRelayRejectionField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
-        expectedRecipientPeerIds: requireAlmStringListField(record, path, 'expectedRecipientPeerIds'),
-        confirmedRecipientPeerIds: requireAlmStringListField(record, path, 'confirmedRecipientPeerIds'),
-        unconfirmedRecipientPeerIds: requireAlmStringListField(record, path, 'unconfirmedRecipientPeerIds'),
+        expectedRecipientPeerIds: requireAlmStringListField(
+            record,
+            path,
+            'expectedRecipientPeerIds'
+        ),
+        confirmedRecipientPeerIds: requireAlmStringListField(
+            record,
+            path,
+            'confirmedRecipientPeerIds'
+        ),
+        unconfirmedRecipientPeerIds: requireAlmStringListField(
+            record,
+            path,
+            'unconfirmedRecipientPeerIds'
+        ),
         attempts: requireAlmNumberField(record, path, 'attempts'),
-        attemptOutcomes: requireAlmAttemptOutcomesField(record, path),
+        attemptOutcomes,
+        attemptCarriers: requireAlmAttemptCarriersField(record, path, attemptOutcomes.length),
         reason: readAlmOptionalStringField(record, path, 'reason')
     };
 }
@@ -266,6 +280,25 @@ function requireAlmAttemptOutcomesField(
         throw toAlmInvalidRuntimeResultError(`${path}.attemptOutcomes`);
     }
     return outcomes as readonly ALDeliveryAttemptOutcome[];
+}
+
+/**
+ * One carrier leg per settled attempt, index-aligned with `attemptOutcomes`; the legs are the schema's own
+ * `messagesCarrierLeg` list, which `requireAlmCarrierLegField` already decodes against.
+ */
+function requireAlmAttemptCarriersField(
+    record: RallarBlackBoxTestRecord,
+    path: string,
+    settledAttempts: number
+): readonly ALDeliveryCarrier[] {
+    const values = requireAlmStringListField(record, path, 'attemptCarriers');
+    const carriers = values.flatMap((value) =>
+        RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg.filter((carrier) => carrier === value)
+    );
+    if (values.length !== settledAttempts || carriers.length !== values.length) {
+        throw toAlmInvalidRuntimeResultError(`${path}.attemptCarriers`);
+    }
+    return carriers;
 }
 
 function requireAlmNumberField(

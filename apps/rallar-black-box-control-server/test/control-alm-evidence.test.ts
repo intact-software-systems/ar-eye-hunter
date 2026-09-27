@@ -404,6 +404,7 @@ function toReceiptsFabricatedValue(
         unconfirmedRecipientPeerIds: [],
         attempts: 1,
         attemptOutcomes: ['sent'],
+        attemptCarriers: [send?.carrier === 'ws' ? 'ws' : 'rtc'],
         relayRejection: undefined,
         reason: undefined
     };

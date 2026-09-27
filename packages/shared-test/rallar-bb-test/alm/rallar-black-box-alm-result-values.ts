@@ -45,6 +45,8 @@ export interface RallarBlackBoxTestMessagesObserveResultValue
     readonly enqueued: boolean;
     readonly attempts: number;
     readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
+    /** The carrier of every settled attempt, index-aligned with `attemptOutcomes`: a hand-over reads `rtc` then `ws` (D56). */
+    readonly attemptCarriers: readonly ALDeliveryCarrier[];
     readonly reason: string | undefined;
 }
 
