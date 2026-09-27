@@ -3,11 +3,9 @@ import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     decideGroupSnapshotCausalRevision,
-    isGroupSnapshotSessionLeaseAdvance,
     isTuplePreservingGroupLivenessReduction
 } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { acceptAuthoritativeGroupSessionLeaseAdvance } from './state-cache-snapshot-adoption.ts';
 
 export function adoptGroupSnapshotsFromHeartbeat(
     observedBeforeHeartbeat: readonly GroupSnapshot[],
@@ -28,15 +26,6 @@ export function adoptGroupSnapshotsFromHeartbeat(
         ) {
             decideGroupSnapshotCausalRevision(observed, returned);
             if (isGroupHeartbeatSnapshotRenewal(observed, returned)) {
-                if (isGroupSnapshotSessionLeaseAdvance(observed, returned)) {
-                    acceptAuthoritativeGroupSessionLeaseAdvance({
-                        expected: observed,
-                        acquired: returned,
-                        scope: returned.group,
-                        assertCanMutate() {}
-                    });
-                    continue;
-                }
                 const replacement = Object.is(observed, returned)
                     ? { ...returned }
                     : returned;

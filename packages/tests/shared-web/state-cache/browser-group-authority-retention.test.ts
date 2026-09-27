@@ -24,6 +24,7 @@ import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snap
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     findGroupStateSnapshotsBySessionIds,
+    getAllGroupStateSnapshots,
     observeGroupStateSnapshot,
     onGroupStateSnapshotChange,
     readableGroupStateSnapshotCache,
@@ -154,6 +155,22 @@ describe('browser group authority retention', () => {
         expect(findGroupStateSnapshotsBySessionIds(['origin', 'receiver'])).toEqual([
             renewed
         ]);
+    });
+
+    it('adopts an unchanged cached observation when its in-flight heartbeat response crosses the cache TTL', () => {
+        const observed = createRoomAuthority(120_000, 1_000);
+        const renewed = createRoomAuthority(140_000, 60_000);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+
+        vi.setSystemTime(50_000);
+        const observedBeforeHeartbeat = getAllGroupStateSnapshots();
+        expect(observedBeforeHeartbeat).toEqual([observed]);
+        vi.setSystemTime(61_001);
+        expect(readRtcRoomAuthority()).toBeUndefined();
+
+        adoptGroupSnapshotsFromHeartbeat(observedBeforeHeartbeat, [renewed]);
+
+        expect(readRtcRoomAuthority()).toBe(renewed);
     });
 
     it.each([
