@@ -197,14 +197,17 @@ interface AdmittedAdmission {
     readonly trackedReceiptAlgo: ALAckAlgo;
 }
 
-/** The handle waits for the receipt the admitting carrier tracks, never one it cannot settle (R-S3a-4). */
+/**
+ * The handle waits for the receipt the admitting carrier tracks, never one it cannot settle (R-S3a-4).
+ * An admission that reaches the handle after the carrier already sent keeps `transport-accepted`.
+ */
 function toAdmittedLifecycle(
     previous: ALDeliveryLifecycle,
     admission: AdmittedAdmission
 ): ALDeliveryLifecycle {
     return {
         ...previous,
-        state: admission.state,
+        state: previous.state === 'transport-accepted' ? previous.state : admission.state,
         receiptAlgo: admission.trackedReceiptAlgo,
         evidence: {
             ...previous.evidence,

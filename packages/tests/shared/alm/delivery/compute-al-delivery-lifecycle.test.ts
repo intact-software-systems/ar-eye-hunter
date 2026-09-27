@@ -864,6 +864,22 @@ describe('the receipt the admitting carrier tracks (R-S3a-4)', () => {
     it('starts with no downgrade', () => {
         expect(createLifecycle('receiver').evidence.receiptDowngrade).toBeUndefined();
     });
+
+    // Task 2 re-review N1: the admission reaches the handle after the carrier's own work only if the
+    // work outruns the admission's return, which a memory lane shortens. The late admission still
+    // applies its receipt and evidence, but never moves the state back to `queued`.
+    it.each([
+        { tracked: 'none' as const, terminal: true },
+        { tracked: 'hop' as const, terminal: false }
+    ])('keeps transport-accepted when the admission tracking $tracked lands after the sent attempt', ({ tracked, terminal }) => {
+        const opened = { ...createLifecycle('receiver'), receiptAlgo: 'hop' as const };
+
+        const admitted = computeALDeliveryLifecycle(toSentLifecycle(opened), toAdmissionSettlement(opened, ADMITTED, tracked));
+
+        expect(admitted).toMatchObject({ state: 'transport-accepted', receiptAlgo: tracked });
+        expect(admitted.evidence.admittedAtMs).toBe(AT_MS);
+        expect(isALDeliveryTerminal(admitted)).toBe(terminal);
+    });
 });
 
 function toSentLifecycle(admitted: ALDeliveryLifecycle): ALDeliveryLifecycle {
