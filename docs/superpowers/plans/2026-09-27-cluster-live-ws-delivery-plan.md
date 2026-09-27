@@ -56,6 +56,9 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   delivers to the frozen audience without creating receiver work.
 - A generated/proxy payload over budget with no canonical row: typed refusal,
   never false success or implicit durable persistence.
+- An oversized canonical principal or unicast message whose persisted source
+  lacks the frozen scoped recipient proof: typed refusal, never a key notice
+  that a safe subscriber must discard.
 - A late room joiner or same session ID in another scope: no unauthorized
   receipt on any process, including the existing outbox path. For the same-ID
   case, reconnect the authenticated socket in a different application or
@@ -185,8 +188,8 @@ new neighboring Vitest module; existing Postgres adapter tests in
 
 **Interface to settle at placement review:** A discriminated live notice with
 `publisherId`, version, final AL message or canonical inbound key, explicit
-room/principal/peer/broad audience mode with frozen IDs where required, scope, and
-logical deadline; a pure decoder returning a
+room/principal/peer/broad audience mode with frozen IDs where required, a
+full scope for scoped modes, and a logical deadline; a pure decoder returning a
 validated notice or `undefined`; a UTF-8 encoder returning inline, key-only,
 or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 
@@ -203,6 +206,28 @@ or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
       `53597fb3b`). Independent fix re-review found both issues addressed.
 
 ### Task 2: Publish once and send locally on each listener
+
+Execute this integration as reviewed sub-slices on the same draft PR: first
+the receiving/local-eligibility boundary, then the sole publisher and
+effective-QoS/result selection, then the scoped game/Relic callers and
+composition. Review each sub-slice before building on it; the acceptance
+checks below apply to the completed Task 2, not to an intermediate commit.
+
+The receiving/local-eligibility sub-slice is complete in `1a1c0803d` and
+`54073b04c`: its focused shared-server and API tests and typechecks passed,
+and independent review cleared the touched construction functions. The
+notice-contract correction is complete in `05394f2de`; independent task
+review found no blocking issue. Neither sub-slice alone proves publisher or
+cross-process delivery behavior.
+
+Placement review after Task 1 found one notice-contract correction needed
+before publisher wiring: `all`/`world` AL targets have no application/workspace
+scope. Amend the codec and its focused tests so genuinely broad notices omit
+scope instead of inventing one. Room, principal, and peer notices remain
+explicitly scoped. In the same focused correction, prevent key-only
+principal/peer publication from claiming success when the canonical source
+cannot prove a frozen principal audience or recipient scope. That correction
+was separately reviewed before publisher wiring.
 
 **Candidate files:** `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts`,
 `rallar-server-ws-router-contracts.ts`, neighboring router tests,

@@ -44,16 +44,24 @@ principal-scoped, and explicit-peer sends, it also freezes authorized addressed 
 notice carries or identifies that final message and audience, not a room name
 to re-resolve later. For broad `all`/`world` best-effort broadcasts, the
 notice instead identifies that target mode and each subscriber uses its
-existing scope-aware local target resolver at notice receipt. A socket that
+existing local target resolver at notice receipt. A socket that
 opens in the short publication-to-receipt interval can therefore receive a
 broad broadcast. This is accepted best-effort timing behavior, not a frozen
-membership promise. Subscribers validate notice version, source, scope,
-deadline, targets, and the audience mode. They never execute a topic handler,
+membership promise. Subscribers validate notice version, source, applicable
+scope, deadline, targets, and the audience mode. They never execute a topic handler,
 proxy, RTC/RTT mutation, admission decision, or database inbox processing. A lost
 notification or disconnected listener can lose best-effort delivery. A failed
 `NOTIFY` is reported; it is not treated as successful delivery. Retries of the
 upstream shared `dispatch-local` effect can re-publish; best-effort is **not**
 an exactly-once promise.
+
+Placement review found that `all`/`world` targets do not carry a
+`GroupScope`; in particular, the public AI broad publisher has no
+application/workspace reference. A broad notice therefore carries its exact
+target mode but no invented application/workspace scope. Scoped room,
+principal, and peer notices still require an explicit full scope and
+send-time connection validation. This discriminant preserves the current
+broad-target semantics without treating a placeholder as authority.
 
 For example, process A publishes a broad best-effort message at 10:00:00.000.
 A socket opens on process B at 10:00:00.002, and B receives the notification
@@ -83,26 +91,36 @@ exceed the notification budget even when the message body does not. Therefore:
    count. Preserve the existing `<8,000`-byte wire bound: a 7,999-byte notice
    is accepted and an 8,000-byte notice is not sent inline. Tests cover the
    exact boundary.
-2. For an admitted inbound best-effort message that exceeds the inline budget,
-   notify by a small key and read the already-retained canonical inbound
-   delivery surface on each receiver. Its persisted message owner supplies the
-   frozen `groupRecipientPeerIds` alongside the final message, so a large
-   audience need not be copied into the notice. This is a read-only carrier lookup, **not** a
-   receiver inbox or a new durable-delivery promise. Publish after admission
-   commits; a missing/expired row is an observable best-effort miss.
-3. A server-generated/proxy-created best-effort publication may have no
+2. For an admitted inbound best-effort room message that exceeds the inline
+   budget, notify by a small key and read the already-retained canonical
+   inbound delivery surface on each receiver. The read returns the final
+   message with its full `groupRef` and the persisted source with frozen
+   `groupRecipientPeerIds`, so a large audience need not be copied into the
+   notice. Broad `all`/`world` key reads retain their receipt-time
+   local-audience policy.
+   This is a read-only carrier lookup, **not** a receiver inbox or a new
+   durable-delivery promise. Publish after admission commits; a
+   missing/expired row is an observable best-effort miss.
+3. The current canonical inbound source does not prove a frozen principal
+   audience or the recipient scope for unicast. A key-only notice cannot
+   supply its own authority. Until an independently approved persisted proof
+   exists, an oversized principal or unicast publication must be refused
+   explicitly rather than accepted for a receiver that must drop it. Their
+   ordinary inline form remains supported.
+4. A server-generated/proxy-created best-effort publication may have no
    canonical inbound row. For the first implementation, reject an oversized
    publication with a typed result/error before claiming success. The caller
    may _explicitly_ choose at-least-once/outbox if that is its intended QoS.
    Never silently persist or upgrade it. The maintainer approved this
    compatibility limit for the first implementation.
-4. If that limit is unacceptable, design a separately reviewed large-message
+5. If that limit is unacceptable, design a separately reviewed large-message
    carrier before implementation. A temporary payload table would be a new
    storage/retention boundary, not merely a larger `NOTIFY`; fragmentation
    would need ordering, loss, and memory bounds. Neither is authorized here.
 
-This approach preserves the 64 KiB inbound message allowance while making the
-unavoidable limit on noncanonical generated best-effort messages explicit.
+This approach preserves the 64 KiB inbound room-message allowance while making
+the limits on generated, proxy, and other unproven oversized best-effort
+messages explicit.
 The single-process in-memory and deliberately disabled pub/sub modes also need
 explicit behavior: local sockets keep working; the disabled mode must not claim
 cluster publication.
