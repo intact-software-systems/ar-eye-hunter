@@ -48,8 +48,8 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
   explicitly authorized the bounded control-handoff correction currently in PR
   #566: delete affected obsolete code, retain no legacy or migration path,
   reuse the existing QueueBox and retry owners, and add no fence, retry
-  mechanism, lock, queue, or library. The current user request selects critical
-  design analysis and plan publication, not a new runtime implementation. Use explicitly
+  mechanism, lock, queue, or library. The written cluster live-WS and IndexedDB
+  lifetime designs remain proposals pending their own review. Use explicitly
   non-publishing diagnostics while the hypothesis is tested; do not merge test-
   only slices merely to learn from the next run. Merge only the human-selected,
   proved correction path, then dispatch a fresh observation from moving `main`.
@@ -73,21 +73,31 @@ continuation recommendation with the
 [committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
 and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-**Current next step:** PR #566 has been rebased over main's S3a volatile and
-durable ALM store lanes and published. Obsolete single-store inbound methods
-were removed; each lane owns its bounded rotation progress. The rebased
-branch's WS, RTC, and RTC-with-WS-fallback ALM smoke cells all passed, but
-their browser-storage page regimes were slow, so they are not B06 acceptance
-evidence. The first full exact-head release gate failed three stopped-engine
-inbound-lane tests that assumed the removed scan rewind, plus one RTC control
-assertion made before owned queue settlement. Local tests now drive the natural
-rotation and await the control outcome; a new exact-head gate is still required.
-Later `BEHIND` alone does not require another rebase. Code review and browser diagnostics
-leave three separate outcomes open before another B06 acceptance
-capture: prove cluster-wide delivery of `live-only` WS publications across API
-processes, correct the reviewed heartbeat lease-renewal edge when an HTTP
-response crosses the browser cache TTL, and review the written IndexedDB
-connection-lifetime design before implementing that correction. The
+**Current next step:** PR #566 remains a mergeable draft rebased over main's S3a
+volatile and durable ALM store lanes. Obsolete single-store inbound methods
+were removed; each lane owns its bounded rotation progress. The branch's WS,
+RTC, and RTC-with-WS-fallback ALM smoke cells passed, but they are not B06
+acceptance evidence. The stopped-engine fixture and premature RTC-control
+assertion failures were corrected. A later exact-head release gate passed its
+unit, build, Deno, and shared-server PostgreSQL stages but failed two of 59
+API-v1 black-box recipes: best-effort `room.crdt` and `room.match` messages did
+not reach their addressed sockets. The receiving sockets opened on the primary
+API process, while the tertiary process attempted local fanout for those topics
+inside the failure windows. The warning lacks message IDs, so that correlation
+does not prove the exact failed-send identity. The published heartbeat
+correction still requires its exact-head gate; that gate alone cannot prove
+cluster delivery or RTC-B06 acceptance. `BEHIND` alone does not require
+another rebase. Focused branch review found introduced repeated full-room-cache
+scans in RTC planning: inbound decisions now scan twice and some outgoing/native
+decisions three times, versus once at the merge base. Subject to the scoped
+design approval, the next code slice reuses one observation within each
+synchronous decision while preserving fresh observations for later callbacks;
+prove semantics with the existing RTC suites, shared package typing, and a
+representative multiroom measurement. Then review the written cluster live-WS
+design, implementation plan, and ownership map before changing that production
+path. The IndexedDB lifetime design remains a later review gate before its
+implementation. The heartbeat cache-TTL correction is published and locally
+verified. The
 [cluster live-WS design](../specs/2026-09-27-cluster-live-ws-delivery-design.md)
 and [implementation plan](2026-09-27-cluster-live-ws-delivery-plan.md) record
 the maintainer's size, result, and broad-audience decisions; the revised
@@ -109,8 +119,8 @@ standard artifact does not by itself identify the claiming API process. The
 topology-artifact upload failure followed the skipped replay and is secondary.
 
 On the later documentation/comment-only head `3f3b41d9fffd3278e1c217d28a096f16b36a8be4`,
-Branch Release Gate `36332004664` has not yet finished, but its ALM
-conformance observation is terminal: WS and RTC delivery-lifecycle cells
+Branch Release Gate `36332004664` was cancelled after its ALM
+conformance observation completed: WS and RTC delivery-lifecycle cells
 failed, while RTC-with-WS-fallback passed. The WS sender's second send aborted
 at its command deadline and the receiver did not observe the replacement. The
 RTC sender's first handle expired after one reported transport send without a
@@ -5326,10 +5336,11 @@ the next pushed head restarts the three-run diagnostic proof from zero.
       no aliases/legacy shape, keep existing bounds/sanitizers, and require TDD,
       maintained typing, changed checks and independent review before another
       retention observation.
-- [ ] Execute Task 24 once on the published Task 23 candidate with a new
-      source-labelled retention capture. Preserve the first result, require both
-      bracketing causal cuts on readiness failure, and do not rerun unchanged
-      source or construct/finalize a diagnostic cohort.
+- [x] Execute Task 24 once on the published Task 23 candidate with a new
+      source-labelled retention capture. Its first result failed readiness
+      during reconnect cycle 3 after both bracketing causal cuts; only the
+      cycle-0 checkpoint exists. Preserve that failed result without rerunning
+      unchanged source or constructing/finalizing a diagnostic cohort.
 - [ ] After that changed-candidate proof and final plan reconciliation, complete
       whole-branch review and take only the necessary delivery through
       `pr:delivery`. `BEHIND` alone creates no rebase work.
