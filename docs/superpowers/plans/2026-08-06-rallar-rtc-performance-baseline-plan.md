@@ -73,14 +73,17 @@ continuation recommendation with the
 [committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
 and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-**Current next step:** PR #566 is being reconciled with `main` at
-`461b54cfedc97a1950659b91eac36edfbedce958`, whose S3a change adds
-separate volatile and durable ALM store lanes. The branch's old single-store
-inbound methods have been removed from that owner, and its bounded rotation
-progress behavior is owned by each lane. Publish the rebased branch and
-obtain a fresh exact-head gate after local validation; later `BEHIND` alone
-does not require another rebase. Its earlier code review and browser
-diagnostics leave three separate outcomes open before another B06 acceptance
+**Current next step:** PR #566 has been rebased over main's S3a volatile and
+durable ALM store lanes and published. Obsolete single-store inbound methods
+were removed; each lane owns its bounded rotation progress. The rebased
+branch's WS, RTC, and RTC-with-WS-fallback ALM smoke cells all passed, but
+their browser-storage page regimes were slow, so they are not B06 acceptance
+evidence. The first full exact-head release gate failed three stopped-engine
+inbound-lane tests that assumed the removed scan rewind, plus one RTC control
+assertion made before owned queue settlement. Local tests now drive the natural
+rotation and await the control outcome; a new exact-head gate is still required.
+Later `BEHIND` alone does not require another rebase. Code review and browser diagnostics
+leave three separate outcomes open before another B06 acceptance
 capture: prove cluster-wide delivery of `live-only` WS publications across API
 processes, correct the reviewed heartbeat lease-renewal edge when an HTTP
 response crosses the browser cache TTL, and review the written IndexedDB

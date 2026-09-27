@@ -25,11 +25,11 @@ policy says not to. Route by the **effective** policy and reject incompatible
 combinations (including at-least-once without durable outbound work)
 explicitly, rather than silently upgrading or downgrading QoS.
 
-| Effective intent | Cluster carrier | Receiver behavior |
-| --- | --- | --- |
-| Best-effort, volatile, no retry | One Postgres notification after the sole publisher has finalized the message and its applicable audience policy | Every listening process attempts one direct send to its own eligible open sockets. Room and explicit-peer recipients are fixed at publication; broad `all`/`world` recipients are selected locally when the notice arrives. No receiving QueueBox/inbox row, polling, replay, delivery retry, or handler invocation. |
-| At-least-once or otherwise requiring durable outbound work | Existing canonical `WS_OUTBOX` row and its key notification | Use existing retry/receipt ownership. Remote sends must obey the row's frozen admitted audience, including absent/late sessions. |
-| `none` | No cluster publication | Existing handler-only behavior. |
+| Effective intent                                           | Cluster carrier                                                                                                 | Receiver behavior                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Best-effort, volatile, no retry                            | One Postgres notification after the sole publisher has finalized the message and its applicable audience policy | Every listening process attempts one direct send to its own eligible open sockets. Room and explicit-peer recipients are fixed at publication; broad `all`/`world` recipients are selected locally when the notice arrives. No receiving QueueBox/inbox row, polling, replay, delivery retry, or handler invocation. |
+| At-least-once or otherwise requiring durable outbound work | Existing canonical `WS_OUTBOX` row and its key notification                                                     | Use existing retry/receipt ownership. Remote sends must obey the row's frozen admitted audience, including absent/late sessions.                                                                                                                                                                                     |
+| `none`                                                     | No cluster publication                                                                                          | Existing handler-only behavior.                                                                                                                                                                                                                                                                                      |
 
 The publisher must finish admission, authorization, transformation, and expiry
 checks once before announcing the final message. For room-scoped and
@@ -72,7 +72,7 @@ message payload default is 64 KiB, and the envelope plus a large audience can
 exceed the notification budget even when the message body does not. Therefore:
 
 1. Measure the **serialized UTF-8 notice**, including message, audience, and
-   metadata. Do not advertise an 8 KiB *message* limit or guess from character
+   metadata. Do not advertise an 8 KiB _message_ limit or guess from character
    count. Keep an explicit safety margin within the existing `<8,000` parser
    bound; tests must cover the exact boundary.
 2. For an admitted inbound best-effort message that exceeds the inline budget,
@@ -83,7 +83,7 @@ exceed the notification budget even when the message body does not. Therefore:
 3. A server-generated/proxy-created best-effort publication may have no
    canonical inbound row. For the first implementation, reject an oversized
    publication with a typed result/error before claiming success. The caller
-   may *explicitly* choose at-least-once/outbox if that is its intended QoS.
+   may _explicitly_ choose at-least-once/outbox if that is its intended QoS.
    Never silently persist or upgrade it. The maintainer approved this
    compatibility limit for the first implementation.
 4. If that limit is unacceptable, design a separately reviewed large-message
@@ -148,3 +148,34 @@ an untrusted list of session IDs. The game publisher also maps the router's
 `sent-live`/`queued-outbox` statuses to its own `sent` result. A new
 cluster-accepted status must update that consumer and describe publication,
 not an unobservable global socket-send count.
+
+The current client room authorizer calls `canSendGroupMessage` with the
+message's sender ID as an actor session. It cannot be reused unchanged for a
+trusted server-generated room snapshot: Relic's publisher, for example, uses a
+server sender ID rather than a room-member session. The publisher needs a
+separate authoritative room-audience read that checks the final `GroupRef` and
+freezes eligible member sessions without pretending the server is a client
+member. A proxy whose final targets differ from its inbound message still
+needs authorization against those final targets; it does not inherit the
+trusted-server path merely because it runs inside a handler.
+
+Relic's current snapshot publication supplies only `roomId` to
+`newALBroadcastMessage`, so its room target has no `groupRef`. The current
+scoped room target resolver returns no recipients in that case. Its embedded
+server already uses the API-v1 default application and workspace for room
+policy reads, so it can construct the full `GroupRef` at publication without
+changing the persisted game state. Generic Rallar Game server broadcast inputs
+also make `roomRef` optional; changing that public input contract requires a
+separate maintainer compatibility decision. A cluster notice must never treat
+a bare room ID as authority for a scoped room audience.
+
+An authenticated WebSocket upgrade records application/workspace scope and
+connection generation in API-v1's authorised-connection registry, but
+`JsonWebSocketServer.connections` is keyed only by session ID. The same issued
+session may reconnect in another scope, replacing its local socket while an
+older room publication is in flight. Direct delivery of a frozen room audience
+must compare the currently open socket's registered scope and generation with
+the notice's room scope before sending. Missing or mismatched local facts mean
+no local recipient; they do not cause reauthorization, a receiver inbox, a
+retry, or a new delivery fence. This preserves the frozen publication audience
+while preventing a same-ID connection in another scope from receiving it.

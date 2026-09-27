@@ -1,5 +1,7 @@
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
@@ -32,8 +34,6 @@ import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 import {
     createInboundTestMessage,
@@ -51,6 +51,7 @@ import {
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 const NOW_MS = 1_700_000_000_000;
 const INBOUND_NAMESPACE = 'al-inbound-counts';
@@ -221,8 +222,7 @@ describe('outbound default send IndexedDB volume', () => {
         await runOutboundWorkTask(runtime);
 
         const counts = observer.getCounts();
-        // Task 12 re-runs this exact pin as the delivery-lifecycle slice's "no new default write"
-        // proof, so a later change must show up as an edit to these two hardcoded figures.
+        // These figures protect the default send's admission and work I/O budget.
         expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
         expect(counts.byOwner['al-work'], 'one default send spends 15 al-work operations today').toBe(15);
         runtime.dispose();
@@ -260,8 +260,8 @@ describe('outbound volatile send IndexedDB volume', () => {
         await vi.waitFor(() => expect(sent).toEqual(['send']));
 
         const counts = observer.getCounts();
-        // S3a (D55): a volatile default leaves nothing in IndexedDB; only the idle durable owner's
-        // probes (work-page, work-probe) may read it.
+        // A volatile default leaves nothing in IndexedDB; only the idle durable owner's probes
+        // (work-page, work-probe) may read it.
         expect(counts.byOwner['al-admission'], 'a volatile send commits nothing to IndexedDB').toBe(
             0
         );
@@ -270,10 +270,10 @@ describe('outbound volatile send IndexedDB volume', () => {
     });
 });
 
-// R-S3a-13: a runtime's first use runs its durable owner's lazy bootstrap batch (`enqueueIfAbsent` awaits
-// `ready()`), whose finalize, claim and timeout claim read an empty queue. Reads that change nothing are probes.
+// The first use runs the durable owner's lazy bootstrap batch (`enqueueIfAbsent` awaits
+// `ready()`); empty finalize, claim, and timeout-claim reads are probes.
 describe('an idle durable outbound owner beside a volatile send', () => {
-    // Review m1: the lane's cold runtime pays that bootstrap inside the first send's window, and never again.
+    // The cold runtime pays bootstrap inside the first send's window, and never again.
     it('spends only probes on a cold runtime\'s first volatile send and nothing on its second', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
@@ -409,7 +409,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
 
         expect(admitted.acceptance).toEqual({ kind: 'admitted' });
         expect(admitted.delivered).toEqual(['dispatched']);
-        // S3a (D55): the volatile default admits to the memory pair.
+        // The volatile default admits to the memory pair.
         expect(admitted.admissionOperations).toBe(0);
         expect(admitted.nonProbeWorkOperations).toBe(0);
     });
@@ -478,11 +478,11 @@ describe('inbound work owner IndexedDB scan volume', () => {
         }
     );
 
-    it('spends only probes on an idle rotation over an empty queue (R-S3a-11)', async () => {
+    it('spends only probes on an idle rotation over an empty queue', async () => {
         const idle = await readIdleInboundRotation('empty-queue');
 
         // A claim that observed nothing opens no transaction, and an exhausted-retry finalization that
-        // finds nothing is the idle owner's probe: D55's non-probe window reads zero beside an idle owner.
+        // finds nothing is the idle owner's probe: the non-probe window reads zero beside it.
         expect(idle.nonProbeWorkOperations).toBe(0);
         expect(idle.workProbes).toBeGreaterThan(0);
     });
@@ -655,10 +655,9 @@ async function readAdmittedInboundDelivery(
         await runInboundRotationUntilSettled(fixture, fixture.stores.workQueue);
     }
     else {
-        // The memory lane's own commit runs the batch that delivers. An engine round would also run
-        // the idle IndexedDB rotation's batch -- 1 work-page and 1 work-probe per batch, measured
-        // with no message at all -- which is that idle owner's cost, not this message's.
-        await vi.waitFor(async () => expect(await readSettledInboundWork(volatileStores.workQueue)).toBe(true));
+        // The test engine is stopped, so drive its natural scan until the volatile pair settles.
+        // An idle IndexedDB rotation may only add probes, not admission or work mutations.
+        await runInboundRotationUntilSettled(fixture, volatileStores.workQueue);
     }
 
     const counts = observer.getCounts();
@@ -694,7 +693,7 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
     return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
 }
 
-/** D55: the durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */
+/** The durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */
 function computeNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {
     return counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0) - (counts.byKind['work-probe'] ?? 0);
 }

@@ -1,3 +1,6 @@
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { assembleGroupStateSnapshot } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
 import { BlackBoxRallarRuntimeDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import { blackBoxRallarScopeDiagnosticsOf } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
 import {
@@ -7,30 +10,14 @@ import {
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDeliveryLedger } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-ledger.ts';
 import { BlackBoxRallarTypedChannels } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts';
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { createBlackBoxRallarMessagingResourceController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { browserDeliveryComposition } from '@shared-web/browser/composition/browser-delivery-composition.ts';
-import {
-    describe,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
-
-import { assembleGroupStateSnapshot } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import * as browserMiddleware from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
-import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import * as auth from '@shared/api/auth.ts';
-import { configureClientStateSnapshotRepository } from '@shared/repository/client-state-snapshots-repository.ts';
-import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
-
 import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
@@ -38,8 +25,11 @@ import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@share
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -47,18 +37,20 @@ import {
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import * as auth from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
+import { configureClientStateSnapshotRepository } from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     configureGroupStateSnapshotRepository,
     findGroupStateSnapshotByRef,
     readableGroupStateSnapshotCache,
     setGroupStateSnapshot
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { configureOverlayRepositories, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
@@ -395,6 +387,7 @@ describe('latest-wins receiver delivery and independent ordering', () => {
             expect(sender.messages().map((message) => message.id.msgId))
                 .toEqual(scenario === 'ordinary-ordered' ? [old.id.msgId, replacement.id.msgId] : [replacement.id.msgId]);
             await sender.transferTo(receiver);
+            await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
             const controls = receiver.messages().map(parseALControlMessage);
             if (scenario === 'ordered-latest') {
                 expect(receiver.delivered).toEqual([]);

@@ -1,6 +1,5 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
-
 import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -27,7 +26,7 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import { readInboundTestMessageOwner } from './read-inbound-test-message-owner.ts';
 
-describe('inbound store lanes (S3a, D20, D54)', () => {
+describe('inbound store lanes', () => {
     it.each([
         { durability: undefined, lane: 'volatile' },
         { durability: 'local-outbox' as const, lane: 'volatile' },
@@ -108,8 +107,7 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         expect(durableRead).not.toHaveBeenCalled();
     });
 
-    // Task 5 m2 (D20): the session's one memory pair is shared by both carriers, so a volatile message that
-    // arrives over WS and again over RTC meets its first admission and is dispatched once.
+    // Both carriers share the session's memory pair, so duplicate volatile ingress dispatches once.
     it('answers duplicate for a second copy of a volatile message over the other carrier and dispatches it once', async () => {
         const pairs = createObservedInboundPairs();
         const overWs = await createReadyInboundLaneRuntime(pairs);
@@ -133,13 +131,12 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
                 .right
         ).toEqual({ kind: 'duplicate' });
 
-        await vi.waitFor(() => expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']));
         await runInboundRounds(overWs);
         await runInboundRounds(overRtc);
         expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']);
     });
 
-    // R-S3a-15: the runner regime reads the IndexedDB lane only, so every event a lane states names the lane.
+    // The runner reads the IndexedDB lane only, so diagnostics must identify their owning lane.
     it('names the lane on the drain and claim events each store lane states', async () => {
         const pairs = createObservedInboundPairs();
         const fixture = await createReadyInboundLaneRuntime(pairs);
@@ -176,7 +173,8 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         // The bootstrap round sweeps first.
         expect(pairs.volatile.evictExpired).toHaveBeenCalledTimes(1);
         await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'expiring' }), INBOUND_TEST_SOURCE);
-        await vi.waitFor(() => expect(fixture.delivered).toEqual(['dispatched']));
+        await runInboundRounds(fixture);
+        expect(fixture.delivered).toEqual(['dispatched']);
         const rowsAfterDelivery = pairs.volatile.state.data.size;
         expect(rowsAfterDelivery).toBeGreaterThan(0);
 

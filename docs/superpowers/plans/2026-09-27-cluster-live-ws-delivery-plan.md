@@ -56,7 +56,10 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
 - A generated/proxy payload over budget with no canonical row: typed refusal,
   never false success or implicit durable persistence.
 - A late room joiner or same session ID in another scope: no unauthorized
-  receipt on any process, including the existing outbox path.
+  receipt on any process, including the existing outbox path. For the same-ID
+  case, reconnect the authenticated socket in a different application or
+  workspace after the publisher freezes the room audience but before a
+  subscriber sends.
 - A `NOTIFY` listener restart or upstream dispatch retry: loss/duplicates are
   classified according to best-effort; no hidden replay or second handler run.
 - A single-process local or disabled pub/sub configuration: local delivery
@@ -65,6 +68,9 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   audience. A proxy `toAll` or server-generated broad publication selects
   local eligible sockets at notice receipt; a just-opened socket may receive
   that best-effort broad broadcast without widening room authority.
+- A server-generated room broadcast with only a bare `roomId` cannot infer an
+  application/workspace. It fails explicitly; Relic's default-scope caller
+  supplies a full `GroupRef` and then reaches a different-process room socket.
 
 ---
 
@@ -75,14 +81,14 @@ The behavioral seams below are concrete; exact new file locations are a
 Do not bury live publication in `apps/api-v1` or extend the `WS_OUTBOX` codec
 with a misleading second meaning just to avoid a file. Candidate ownership:
 
-| Responsibility | Existing owner / candidate location |
-| --- | --- |
-| Select fanout/effective QoS and final audience mode | `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts` and router contracts |
+| Responsibility                                                  | Existing owner / candidate location                                                                                                                                            |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Select fanout/effective QoS and final audience mode             | `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts` and router contracts                                                               |
 | Cluster live notice codec and subscription/direct-send behavior | Focused neighbor of `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts`, sharing the existing notification port rather than its `WS_OUTBOX` schema |
-| Canonical inbound key lookup for oversized notices | `packages/shared/alm/inbound/al-inbound-admission-store.ts` existing `readDeliverySurface` boundary, exposed through its current service owner |
-| Correct remote outbox audience | `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts` plus existing outbound captured-policy reader |
-| Runtime wiring | `packages/shared-server/rallar-system/middleware/` and `apps/api-v1/src/db/` existing pub/sub composition |
-| Contract and distributed proof | Neighboring `packages/tests/shared-server/rallar-system/**`, `apps/api-v1/test/db/**`, and `packages/shared-test/black-box-runner/tests/api-v1/**` |
+| Canonical inbound key lookup for oversized notices              | `packages/shared/alm/inbound/al-inbound-admission-store.ts` existing `readDeliverySurface` boundary, exposed through its current service owner                                 |
+| Correct remote outbox audience                                  | `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts` plus existing outbound captured-policy reader                                                  |
+| Runtime wiring                                                  | `packages/shared-server/rallar-system/middleware/` and `apps/api-v1/src/db/` existing pub/sub composition                                                                      |
+| Contract and distributed proof                                  | Neighboring `packages/tests/shared-server/rallar-system/**`, `apps/api-v1/test/db/**`, and `packages/shared-test/black-box-runner/tests/api-v1/**`                             |
 
 Before implementation, trace current callers and result consumers (including
 RTC signaling, RTT, game, Relic, AI, custom topic examples), settle the exact
@@ -109,6 +115,28 @@ slices remain outcome-shaped until those interfaces are validated.
   be bound and validated before those IDs are accepted by a subscriber. The
   remote outbox path currently calls this method without the admitted list;
   its fix belongs to the later durable-outbox outcome.
+- `apps/api-v1/src/routes/ws-routes.ts` records authenticated connection scope
+  and generation in `authorised-ws-connection-registry.ts`, while the generic
+  socket map is keyed only by session ID. The listener's direct room send must
+  read those current local facts and match the frozen room scope and socket
+  generation; an absent or different scope is a local miss, not a reason to
+  recompute the audience or enqueue receiver work. Keep this read behind a
+  narrow injected port rather than importing the API application registry
+  into `packages/shared-server`.
+- `createGroupRoomWsAuthorizer` applies client sender-membership policy, so
+  calling it unchanged for server-generated game or Relic snapshots would
+  reject legitimate publication. A trusted server publication instead reads
+  current room authority to freeze active member sessions for its final
+  `GroupRef`; a proxy changing targets remains subject to final-target client
+  authorization. Do not conflate those two publisher origins.
+- `apps/relic-hunter-server-v1/src/relic-game-service.ts` currently builds a
+  room broadcast without `groupRef`; the existing scoped room target resolver
+  returns no recipients for it. The embedded Relic server already knows its
+  API-v1 default application/workspace, so construct the full publication
+  `GroupRef` at this call site without a persisted game-state migration.
+  `packages/shared-server/game/install-rallar-game-authority-server.ts`
+  exposes optional `roomRef` on public server broadcast inputs; require an
+  explicit maintainer compatibility decision before changing that API.
 - `packages/shared-server/game/install-rallar-game-authority-server.ts`
   translates `sent-live` and `queued-outbox` into a game `sent` result. Review
   that exact consumer, Relic snapshot publication, AI result publication, and
@@ -136,15 +164,15 @@ validated notice or `undefined`; a UTF-8 encoder returning inline, key-only,
 or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 
 - [ ] Write failing codec tests for malformed/spoofed scope, expiry, exact
-  serialized-byte boundaries, non-ASCII payloads, large audience, and a
-  noncanonical oversize publication.
+      serialized-byte boundaries, non-ASCII payloads, large audience, and a
+      noncanonical oversize publication.
 - [ ] Run those focused Vitest tests and confirm the intended failures.
 - [ ] Implement the smallest codec/adapter change with the existing `<8,000`
-  bound; run the same tests green with
-  `npx vitest run packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/postgres-queue-pubsub-bridge.test.ts`
-  and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
+      bound; run the same tests green with
+      `npx vitest run packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/postgres-queue-pubsub-bridge.test.ts`
+      and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
 - [ ] Review the changed files for touched-file standards closure; commit the
-  independently testable codec slice on the PR branch.
+      independently testable codec slice on the PR branch.
 
 ### Task 2: Publish once and send locally on each listener
 
@@ -159,21 +187,23 @@ reference; the listener accepts only a validated notice and a local-send port.
 The result distinguishes cluster publication from locally observed sends.
 
 - [ ] Write failing two-process fake-bridge tests: the publisher has no socket,
-  a different process owns the addressed socket, and exactly one authorized
-  local send occurs; a subscriber never invokes the router handler.
+      a different process owns the addressed socket, and exactly one authorized
+      local send occurs; a subscriber never invokes the router handler.
 - [ ] Add failing tests for generated and proxy publications, wrong scope, late
-  room joiner, broad just-opened socket, expiry, duplicate/self notice,
-  absent canonical row, listener loss,
-  upstream dispatch retry, and local/disabled bridge modes. Pin the proposed
-  result semantics at the public boundary rather than asserting an unknowable
-  global `sentCount`.
+      room joiner, a same-ID authenticated socket reconnected under another scope,
+      bare-room-ID refusal, a scoped Relic publication, broad just-opened socket,
+      expiry, duplicate/self notice,
+      absent canonical row, listener loss,
+      upstream dispatch retry, and local/disabled bridge modes. Pin the proposed
+      result semantics at the public boundary rather than asserting an unknowable
+      global `sentCount`.
 - [ ] Run the focused router/bridge tests red; implement QoS-aware publication
-  after sole-owner authorization, then direct local listener sends with no
-  receiving inbox. Run
-  `npx vitest run packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/local-queue-pubsub-bridge.test.ts`
-  green and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
+      after sole-owner authorization, then direct local listener sends with no
+      receiving inbox. Run
+      `npx vitest run packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts apps/api-v1/test/db/local-queue-pubsub-bridge.test.ts`
+      green and `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
 - [ ] Review all result consumers and affected examples; commit this slice only
-  after the revised written spec/plan and ownership map have been approved.
+      after the revised written spec/plan and ownership map have been approved.
 
 ### Later outcome: durable live publications use the existing outbox
 
