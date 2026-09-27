@@ -116,6 +116,7 @@ it.each(['memory', 'indexeddb'] as const)(
         }]);
 
         await expect.poll(() => delivered).toEqual(['dispatched']);
+        await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         // Only batches that touched work report; the rotation's empty rounds stay silent.
         const claimed = drainsOf(diagnostics);
         expect(claimed.map((event) => ({
