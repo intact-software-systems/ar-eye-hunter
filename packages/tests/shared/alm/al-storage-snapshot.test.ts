@@ -431,7 +431,7 @@ function decodeStoredSnapshotRow(value: unknown): StoredSnapshotRow {
     const keyString = 'keyString' in value && typeof value.keyString === 'string' ? value.keyString : '';
     return {
         topicId: keyString.split('/')[0] ?? ADMISSION_TOPIC_ID,
-        status: 'status' in value && typeof value.status === 'string' ? value.status : 'unknown',
+        status: 'status' in value && typeof value.status === 'string' ? value.status : 'missing',
         bytes: new TextEncoder().encode(JSON.stringify(value)).byteLength
     };
 }
