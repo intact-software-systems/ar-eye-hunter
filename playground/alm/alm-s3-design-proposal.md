@@ -202,6 +202,11 @@ retries and what the proofs (1.4) consume; budgets (1.5) bound the volatile stor
   failure → WS delivery inside the original deadline), `receipt-exhausted-fallback`, and the negative
   `no-fallback-after-deadline`.
 
+**As applied (S3b, PR #604):** no RTC fault kind was added (the `drop` fault's `not-ready` run is D65's
+trigger); the harness shows each attempt's carrier as `attemptCarriers`; `no-fallback-after-deadline`
+expires inside the RTC receipt budget (C7); `receipt-exhausted` reads `failed` when no fallback carrier
+remains (C1).
+
 ### 2.3 S3c — consumer proofs and the volatile bound
 
 - **AR Eye Hunter.** Match intents (pickup, match start, combat) move from the realtime targeted lane
@@ -376,6 +381,8 @@ Written after S3a merged (461b54cfe, #597), from a fresh code survey of the fall
 registry paths (session scratchpad `s3b-code-survey.md`; 15 corrections to §1.2/§2.2, the material
 ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-27: the maintainer took every recommended
 answer, Q1–Q12** (roadmap: D56 "As applied", D63–D66); the S3b plan is written under them.
+**Delivered by PR #604** (branch `claude/alm-s3b-fallback-within-deadline`); the rulings R-S3b-1
+through R-S3b-19 live in the plan's "Rulings during execution".
 
 **What the survey changed in §2.2's picture**
 

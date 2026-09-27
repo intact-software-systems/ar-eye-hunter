@@ -318,18 +318,35 @@ two-agent manifest withholds it for that reason. `expires` states
 absence for the rest of that lifetime and past it, and the sender observes
 `expired`.
 
+The fallback family runs over `rtc-with-ws-fallback` only (D56, D63–D66), two agents each.
+`fallback-within-deadline` (smoke) arms an RTC `drop` fault on the sender's own frames of the send until
+the scenario ends; the third consecutive `not-ready` attempt hands the message to WS, the sender observes
+`acknowledged` with `attemptCarriers` containing `rtc` and `ws`, and the receiver delivers it once and
+waits for its `admission-outcome` `committed`/`admitted` on carrier `ws`. `receipt-exhausted-fallback`
+(full) holds the receiver's RTC ACKs; the RTC receipt runs out of retries after about 8 s and hands the
+message over, the receiver refuses the WS copy as `not-handled`/`duplicate` and, its first admission
+having been on RTC, sends its own ACK again over WS (R-S3b-1), and the sender observes `acknowledged`
+within a 15 s budget. `no-fallback-after-deadline` (full) holds the
+receiver's RTC ACKs on a 7.5 s send, which expires before the RTC receipt budget ends: the sender
+observes `expired`, and no `admission-outcome` on carrier `ws` reaches the receiver for the whole window.
+The lifecycle keeps one attempt row per send-prepared row, overwritten on each retry: `attemptOutcomes`
+shows the last outcome per row, not a count of retries, so `fallback-within-deadline`'s three consecutive
+`not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
+three `not-ready` entries).
+
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `attemptOutcomes`, `relayRejection`, `receiptMode`,
+`submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `receiptMode`,
 `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
 `backpressured`, and `enqueued`. `attempts` counts every attempt row,
 including a carrier admission that never reached the transport: an `unroutable`
 leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
-the outcome of every settled row in attempt order. `receiptMode` is the latest
+the outcome of every settled row in attempt order. `attemptCarriers` names the carrier of each of
+those settled rows, index for index, so a hand-over reads `rtc` rows then a `ws` row. `receiptMode` is the latest
 receipt's mode (`hop`, `subtree` or `receiver`), absent until a receipt
 settles. Under `hop` and `subtree` the recipient lists equal the hop lists.
 Under `receiver` the recipient lists count the frozen logical audience:

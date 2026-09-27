@@ -96,6 +96,13 @@ volatile pair; a volatile message beside a durable pair spends 0 admission and 0
 non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
 rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
 
+A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
+receipted: the WS copy meets the first admission in the shared session store, is refused
+`not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
+its own ACK again over WS (R-S3b-1, see the duplicate answers above) -- the receipt the WS leg needs.
+The WS server narrows its current room to the frozen audience, so a session that left after the RTC
+freeze is absent from the WS receipt rather than read unconfirmed.
+
 Every stored key stays session-logical: dedup, message-owner, ordering,
 supersedence, and control rows are shared across carriers, because a given
 message and its control history are one identity no matter which carrier

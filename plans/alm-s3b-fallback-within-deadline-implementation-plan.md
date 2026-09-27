@@ -4308,6 +4308,30 @@ git push
   is recorded in Task 1's commit body and the PR body; Q11's file trigger otherwise stands. Why: Task 1's
   shared repair owner deletes a server-side pending-ACK row at exhaustion, a mutation-path change CLAUDE.md
   gates, although no `ws-queue-box-server/**` file changes. Cost if wrong: about 3 minutes.
+- **R-S3b-17 (Task 1 NEEDS_CONTEXT finding).** Thirteen existing test pins encode the pre-D63 behaviour and
+  move to the D63 shape: (a) `ack-after-retries-exhausted` (the acknowledgement-under-hold fixture, 8 tests
+  over both hold files) is replaced by the D63 case — an ACK after the budget is a no-op (row gone), the
+  handle reads `failed` with the exhaustion detail in `evidence.reason` (prose, per C1) and the
+  confirmed/unconfirmed peers; (b) `expectExpiredPastTheDeadline` (4 tests) pins `failed` at exhaustion
+  (≈8 s) and that the state is still `failed` past the 30 s deadline (a terminal handle never reopens,
+  R-S3a-8); (c) `web-rtc-overlay-frozen-audience.test.ts:46-71` advances 6 s (inside the ≈8 s budget) so it
+  still reads the frozen audience on the live row, plus one assertion that at 10 s the row is gone. Why:
+  D63 is the maintainer's decision, the old pins describe the behaviour it replaced; every moved pin is
+  named in the PR body. Cost if wrong: a late ACK inside the remaining deadline is lost (D63's stated
+  cost).
+- **R-S3b-18 (Task 5 finding).** On the fallback cell, `delivery-reload`'s original now arrives over ws
+  (the hand-over lands 1.7 s into the hold; the WS copy is admitted 2.1 s after the reload): the identity
+  check accepts `rtc` or `ws` on that cell only, every other cell keeps its single pinned transport. Why:
+  this is an evidence move under Q10/R-S3b-0, not an expectation change — the old handle is unobservable
+  after the reload, so the assessor cannot see which leg the hand-over used. Cost if wrong: the assessor
+  would need hand-over evidence it cannot read today to pin the transport exactly.
+- **R-S3b-19 (Task 5 finding).** `full-stack-alm-conformance.spec.ts`'s `CARRIER_TEST_TIMEOUT_MS` moves
+  360 000 → 480 000 ms by its own "next whole minute above the widest cell" rule: the fallback family now
+  measures 7.0, 7.0 and 7.1 minutes (up from 4.8–5.3 minutes on `rtc-with-ws-fallback` before the new
+  scenarios). Why: this is the Playwright test's own ceiling, not one of the four fixed recipe budgets
+  (30 000 / 18 000 / 10 000 / 7 500 ms), which stay untouched; the first run at 360 000 ms failed with
+  "Test timeout of 360000ms exceeded". Cost if wrong: hosted manifest 18 is now ≈80 s longer for its
+  fallback carrier against its 300 s terminal timeout, which Task 6's hosted read checks.
 
 Later rulings follow as R-S3b-n with why and the cost if wrong.
 
