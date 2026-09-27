@@ -26,8 +26,11 @@ const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/ral
 // Both fixtures are trimmed copies of hosted observation runs of the rtc cell: the green head
 // `c99cf654e` and the red head `902fa30a7`. Events the regime does not read were dropped, and the
 // run's own earliest event was kept so the opening window still starts where it started on the
-// runner. The normal fixture keeps every in-window `send`-origin commit phase (18) so the pinned
-// figure matches the real cell; the slow fixture keeps its original trim.
+// runner. The normal fixture keeps every in-window `send`-origin commit phase (18); the slow fixture
+// keeps its original trim. Each also kept one send commit just past the opening window. Since R-S3a-16
+// the per-operation regime spans the whole cell, so the pinned figures are the trimmed files' own:
+// 26 ms/op over 19 (the opening window read 24.06 over 18) and 39.44 over 8 (36 over 7). Neither class
+// moved. They are not the original runs' whole-cell figures, whose later commits the trim dropped.
 const NORMAL_FIXTURE = 'alm-observation-normal-regime-snapshot.json';
 const SLOW_FIXTURE = 'alm-observation-slow-regime-snapshot.json';
 
@@ -277,8 +280,8 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('normal');
         expect(regime.perOperation).toEqual({
             outcome: 'measured',
-            medianMs: 24.06,
-            sampleCount: 18
+            medianMs: 26,
+            sampleCount: 19
         });
         expect(regime.runId).toBe('alm-rtc-1789077925043-04591945-9cb6-4db4-a5');
         expect(regime.carrier).toBe('rtc');
@@ -380,8 +383,8 @@ describe('computeALMObservationRegime', () => {
         expect(regime.regime).toBe('slow');
         expect(regime.perOperation).toEqual({
             outcome: 'measured',
-            medianMs: 36,
-            sampleCount: 7
+            medianMs: 39.44,
+            sampleCount: 8
         });
         expect(regime.cellOutcome).toBe('failed');
         expect(regime.inbound).toEqual([]);
@@ -511,15 +514,31 @@ describe('computeALMObservationRegime', () => {
         });
     });
 
-    it('measures the opening window rather than the whole cell', () => {
+    // R-S3a-16: the volatile default moved a cell's first durable send to `durable-opt-in`, well past the
+    // opening window, so the per-operation regime reads the durable send commits of the whole cell.
+    it('measures the durable send commits of the whole cell, not only the opening window', () => {
+        // A drain commit at 1 000 opens the run, so every send commit lands after the opening window.
         const regime = toSyntheticRegime([
-            ...toEvenlySpacedCommitPhases(12, 5),
-            toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 1, 400, 'send'),
-            toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 2, 400, 'send')
+            toCommitPhaseEvent(1_000, 400, 'drain'),
+            ...Array.from(
+                { length: 5 },
+                (_unused, index) => toCommitPhaseEvent(1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1), 40, 'send')
+            )
         ]);
 
-        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 12, sampleCount: 5 });
-        expect(regime.regime).toBe('normal');
+        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 40, sampleCount: 5 });
+        expect(regime.regime).toBe('slow');
+        expect(regime.regimeSource).toBe('per-operation');
+    });
+
+    it('lets the page regime decide a cell with no durable send, and says so in the line', () => {
+        // A drain commit at 1 000 opens the run and is no send commit, so no durable send ran.
+        const regime = toSyntheticRegime([toCommitPhaseEvent(1_000, 400, 'drain'), ...toPageWindowProbes(120, 10).slice(1)]);
+
+        expect(regime.perOperation).toEqual({ outcome: 'too-few-samples', sampleCount: 0 });
+        expect(regime.regime).toBe('slow');
+        expect(regime.regimeSource).toBe('page');
+        expect(toALMObservationRegimeSummary(regime)).toContain('regime=slow (page) perOperation=unmeasured (0 commits)');
     });
 
     it('measures a caller admission rather than the drain commit behind it', () => {
@@ -709,7 +728,7 @@ describe('computeALMObservationRegime', () => {
 
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
-            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed ' +
+            'ALM observation rtc-smoke: regime=slow perOperation=39.44 ms/op over 8 commits outcome=failed ' +
                 'page=unclassified (unmeasured, 0 probes)'
         );
         expect(
@@ -722,7 +741,7 @@ describe('computeALMObservationRegime', () => {
                 })
             )
         ).toBe(
-            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed ' +
+            'ALM observation ws-smoke: regime=unclassified (page) perOperation=unmeasured (0 commits) outcome=failed ' +
                 'page=unclassified (unmeasured, 0 probes)'
         );
     });

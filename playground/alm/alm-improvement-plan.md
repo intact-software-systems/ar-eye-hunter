@@ -852,6 +852,8 @@ split F2b added attributes the batches to the claims' own work and their release
 share: the inbound fence re-reads the whole decision surface, so every concurrent control or ACK commit
 conflicts the data admission in flight. Narrowing that fence and batching releases are admission-design
 changes for the next slice, the maintainer's call.
+Since S3a (R-S3a-15, R-S3a-16) the per-operation regime spans the cell's durable (IndexedDB) send commits,
+and the page regime decides a cell in which no durable send ran.
 
 ## Storage, cutover, reset, and rollback
 

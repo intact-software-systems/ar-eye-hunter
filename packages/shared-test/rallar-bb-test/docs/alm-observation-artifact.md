@@ -29,7 +29,11 @@ The cell also prints one line to the job log:
 
 ```text
 ALM observation ws-smoke: regime=normal perOperation=8.67 ms/op over 15 commits outcome=passed page=normal (2 ms/probe over 34)
+ALM observation ws-smoke: regime=normal (page) perOperation=unmeasured (1 commits) outcome=passed page=normal (1 ms/probe over 52)
 ```
+
+The second shape is a cell with too few durable send commits to measure: `(page)` says the page regime
+decided `regime`.
 
 ## The budgets stay
 
@@ -53,18 +57,25 @@ All three live in
 ([`conformance/alm/compute-alm-observation-regime.ts`](../conformance/alm/compute-alm-observation-regime.ts))
 records what the runner was doing while the cell ran:
 
-- `regime` — `normal`, `slow`, or `unclassified`.
-- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over
-  `send`-origin commits inside the opening window, from the `commit-phases` events of the
+- `regime` — `normal`, `slow`, or `unclassified`: `perOperation`'s class when it is measured,
+  otherwise `pageRegime.regime` (R-S3a-16).
+- `regimeSource` — `per-operation` or `page`: which of the two decided `regime`. The job-log line
+  prints `(page)` after `regime=` for the second.
+- `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over the
+  `send`-origin commits of the whole cell, from the `commit-phases` events of the
   [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
-  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only commits whose `lane` is `durable` count
-  (R-S3a-15): the thresholds were calibrated on IndexedDB read chains, and a memory lane's commit
-  costs nothing a runner can slow, so a cell whose sends are all volatile reads `too-few-samples`
-  rather than `normal`. An event recorded before S3a names no lane and is read as `durable`.
-- `windowMs` — the opening window the median is taken over, measured from the run's earliest event.
-  Only `send`-origin commits count. A failing cell's own degradation dominates a whole-cell median,
-  and a drain's commit measures a different read chain than a caller's own admission, so neither
-  belongs in a reading of the runner.
+  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only `send`-origin commits count, because a
+  drain's commit measures a different read chain than a caller's own admission.
+  - Only commits whose `lane` is `durable` count (R-S3a-15). The 30 / 35 ms thresholds were
+    calibrated on IndexedDB read chains; a memory lane's commit reads no IndexedDB, and its cost is
+    the page's event-loop contention instead: 0–5 ms per operation for a send and up to 39 ms for a
+    repair on a local run, figures that say nothing about the runner's storage. An event recorded
+    before S3a names no lane and is read as `durable`.
+  - The calibration read the cell's opening window. Since S3a's volatile default a cell's first
+    durable send comes from `durable-opt-in`, well past it, so the reading spans the whole cell
+    (R-S3a-16). A cell that sent too few durable messages leaves `regime` to the page.
+- `windowMs` — `ALM_OBSERVATION_WINDOW_MS`, measured from the run's earliest event: where the
+  `pageRegime` window opens.
 - `pageRegime` — the page's storage queue, beside `regime`'s admission chain. It is the median
   `durationMs` of the outbound `age-bound` `readiness-probe` events, over both roles, from
   `ALM_OBSERVATION_WINDOW_MS` to `ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event: an
