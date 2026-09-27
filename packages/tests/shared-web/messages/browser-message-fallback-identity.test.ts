@@ -179,7 +179,6 @@ describe('typed message fallback identity', () => {
             ['superseded', 'superseded', { kind: 'superseded', detail: 'superseded' }],
             ['skipped', 'failed', { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' }],
             ['failed', 'failed', { kind: 'failed', detail: 'failed' }],
-            ['rate-limited', 'failed', { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' }],
             ['unauthorized', 'rejected', { kind: 'refused', reason: 'unauthorized', detail: 'unauthorized' }],
             ['malformed', 'rejected', { kind: 'refused', reason: 'malformed', detail: 'malformed' }],
             ['accepted', 'queued', { kind: 'admitted', durable: false, queuedAttempts: 1 }],
@@ -193,6 +192,31 @@ describe('typed message fallback identity', () => {
             const result = await fixture.channel.send({ action: 'ready' });
             expect((await result.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe(state);
             expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
+        }
+    );
+
+    it.each(
+        [
+            ['rtc-with-ws-fallback', ['rtc', 'ws'], 'queued'],
+            ['rtc', ['rtc'], 'failed']
+        ] as const
+    )(
+        'hands a rate-limited RTC admission to WS at once on %s (D56, Q5)',
+        async (strategy, carriers, state) => {
+            const fixture = createChannel({
+                firstVerdict: { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' }
+            });
+            const handle = await fixture.channel.send({ action: 'ready' }, { strategy });
+
+            expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe(
+                state
+            );
+            expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(carriers);
+            expect(handle.lifecycle().evidence.attempts[0]).toMatchObject({
+                carrier: 'rtc',
+                outcome: 'unroutable',
+                unroutableReason: 'rate-limited'
+            });
         }
     );
 

@@ -19,11 +19,15 @@ type ALDeliveryAttemptSettledSettlement = Extract<ALDeliverySettlement, Readonly
 type ALDeliveryAcknowledgementSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'acknowledgement'; }>>;
 type ALDeliveryRelayRejectedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'relay-rejected'; }>>;
 type ALDeliveryReceiptExhaustedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'receipt-exhausted'; }>>;
+type ALDeliveryCarrierFallbackSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'carrier-fallback'; }>>;
 
 export function computeALDeliveryLifecycle(
     previous: ALDeliveryLifecycle,
     settlement: ALDeliverySettlement
 ): ALDeliveryLifecycle {
+    if (isLeftCarrierReceipt(previous, settlement)) {
+        return { ...previous };
+    }
     if (isALDeliveryTerminal(previous)) {
         return toTerminalLifecycle(previous, settlement);
     }
@@ -38,6 +42,8 @@ export function computeALDeliveryLifecycle(
                 detail: settlement.detail,
                 reason: settlement.reason
             });
+        case 'carrier-fallback':
+            return toCarrierFallbackLifecycle(previous, settlement);
         case 'attempt-started':
         case 'attempt-settled':
             return toAttemptLifecycle(previous, settlement);
@@ -223,6 +229,27 @@ function toReceiptExhaustedLifecycle(
             confirmedRecipientPeerIds: [...settlement.confirmedPeerIds],
             unconfirmedRecipientPeerIds: [...settlement.unconfirmedPeerIds]
         }
+    };
+}
+
+/** After a hand-over only the carrier that took the message may move its receipt; the left one speaks for its own leg. */
+function isLeftCarrierReceipt(
+    lifecycle: ALDeliveryLifecycle,
+    settlement: ALDeliverySettlement
+): boolean {
+    return lifecycle.evidence.carrierFallback?.from === settlement.carrier &&
+        (settlement.kind === 'acknowledgement' || settlement.kind === 'receipt-exhausted' ||
+            settlement.kind === 'relay-rejected');
+}
+
+function toCarrierFallbackLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryCarrierFallbackSettlement
+): ALDeliveryLifecycle {
+    const { carrier: from, to, reason, atMs, detail } = settlement;
+    return {
+        ...previous,
+        evidence: { ...previous.evidence, carrierFallback: { from, to, reason, atMs, detail } }
     };
 }
 

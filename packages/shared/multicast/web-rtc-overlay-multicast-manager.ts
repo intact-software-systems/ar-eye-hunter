@@ -213,6 +213,10 @@ export class WebRtcOverlayMulticastManager {
         return this.outboundRuntime.cancel(msgId);
     }
 
+    async handOver(msgId: string): Promise<void> {
+        await this.outboundRuntime.handOver(msgId);
+    }
+
     async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         const [result] = await this.enqueueAllIfAbsent([msg]);
         return result!;

@@ -7,6 +7,7 @@ import type {
     ALDeliveryCarrier,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { isALDeliveryAdmissionFallbackVerdict } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -166,13 +167,13 @@ export async function writeCarrierOutboxAdmission(
         : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 
-/** A carrier that cannot route, or cannot honour the ack algorithm (D42 keeps the algorithm, not the carrier), hands over. */
+/** A verdict the declared list hands to the fallback carrier at admission (D42, D56), inside the deadline. */
 export function computeFallbackDisposition(
     verdict: ALDeliveryAdmissionVerdict,
     expiresAtMs: number | undefined,
     nowMs: number
 ): BrowserFallbackDisposition {
-    if (!isFallbackVerdict(verdict)) {
+    if (!isALDeliveryAdmissionFallbackVerdict(verdict)) {
         return 'stop';
     }
     return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
@@ -198,17 +199,6 @@ function toCarrierAdmissionEndSettlement(
     return verdict.kind === 'unroutable'
         ? { kind: 'attempts-exhausted', msgId, carrier, atMs, detail: verdict.detail }
         : undefined;
-}
-
-function isFallbackVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
-    switch (verdict.kind) {
-        case 'unroutable':
-            return verdict.reason === 'no-route' || verdict.reason === 'circuit-open';
-        case 'refused':
-            return verdict.reason === 'unsupported';
-        default:
-            return false;
-    }
 }
 
 export function wakeQueueBoxEngineIfQueued(

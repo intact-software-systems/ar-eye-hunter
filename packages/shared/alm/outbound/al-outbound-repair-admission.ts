@@ -221,6 +221,21 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
+    /**
+     * Ends this owner's receipt of a message another carrier now owns (D56): both rows go in one commit and
+     * nothing is stated -- the message is not cancelled. A conflict leaves an inert row: the hand-over
+     * completes every later effect of the message silently, so nothing retries it before it expires.
+     */
+    async endReceipt(msgId: string): Promise<void> {
+        const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
+        if (read.pendingAck === undefined || read.clientRecord === undefined) {
+            return;
+        }
+        await this.admissionStore.commitBundle(
+            toEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
+        );
+    }
+
     /** A receipt whose message is gone has nothing left to retry. */
     private async commitOrphanedReceiptCleanup(
         msgId: string,
