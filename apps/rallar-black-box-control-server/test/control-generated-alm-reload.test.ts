@@ -317,6 +317,24 @@ class GeneratedAlmPorts {
         };
     }
 
+    /** Over RTC the receiver's hop ACK reaches the sender, whose outbound owner commits it as the product does. */
+    private admitReceiverAck(message: PortMessage): void {
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'control-admission',
+                    msgId: `${message.msgId}-ack`,
+                    typeId: 'al.control.ack.v2',
+                    targetMsgId: message.msgId,
+                    outcome: 'committed',
+                    reason: 'none'
+                }
+            }
+        });
+    }
+
     private isHeld(typeId: string): boolean {
         return [...this.holds.values()].includes(typeId);
     }
@@ -324,6 +342,9 @@ class GeneratedAlmPorts {
     private deliver(message: PortMessage): void {
         message.submitted = true;
         message.state = message.command.carrier === 'ws' && message.command.ack !== 'receiver' ? 'transport-accepted' : 'acknowledged';
+        if (message.command.carrier !== 'ws') {
+            this.admitReceiverAck(message);
+        }
         this.receiver.recordEvent({
             kind: 'message',
             connection: 'almConformanceReceiver',
