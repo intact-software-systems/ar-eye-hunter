@@ -86,6 +86,7 @@ question.
 | D59 | S3 owns the volatile store's per-session count and byte bound, a typed `refused/capacity` admission verdict and that bound as the first `overloaded` producer for the congestion aspect; track, intake, age budgets and fairness stay V1's.                                                                                                                                                                                                 |
 | D60 | S3: all AR Eye Hunter match intents (pickup, match start, combat) move from the realtime targeted lane to one `command` channel unicast to the director over `rtc-with-ws-fallback` with the director's receipt; the realtime first leg is removed for intents.                                                                                                                                                                             |
 | D61 | S3c owns S2's undelivered Relic row — per-session confirmation visible in server diagnostics — as part of the snapshot move, since it needs the same server settlement sink.                                                                                                                                                                                                                                                                |
+| D62 | S3a: the combined Hetzner ALM recipes (manifests 18, 22) order every scenario with two in-recipe `barrier`s: `<scenario>-start` once every role finished the previous scenario, then `<scenario>-armed` once every role armed its faults, before the sender sends. The control server releases all run agents or fails a barrier typed; ids are single-use. Replaces #599's 3 s sender pacing (2026-09-27).                                 |
 
 ### Standing direction
 
@@ -800,7 +801,11 @@ dead-RTC-peer reconnect race (a maintainer chip).
   outbound carrier runtime holds a memory and an IndexedDB store pair and routes each admission by its
   effective durability, the inbound session store stays one per backend shared by both carriers (D54);
   the volatile proof is zero `al-admission` and zero non-probe `al-work` IndexedDB operations per
-  volatile scenario with the durable owners' idle probes reported beside it (D55); delivery-level
+  volatile scenario with the durable owners' idle probes reported beside it (D55); the combined
+  Hetzner ALM recipes (manifests 18 and 22) order every scenario with two recipe barriers — every role
+  finished the previous scenario, then every role armed its faults — in place of #599's sender pacing
+  (D62; the barrier landed as PR #601, merged `dc12f8930`, and PRs #598, #599, #600 and #603 were the
+  hosted-manifest fixes found on the way); delivery-level
   fallback for `rtc-with-ws-fallback` on the declared retryable outcomes — `not-ready` for three
   consecutive RTC attempts, `rate-limited`, the `not-yet-in-sync` budget exhausted, and the new
   `receipt-exhausted` settlement — within the unchanged deadline (D56); the S3 share of budgets is the
@@ -1024,6 +1029,12 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-25: S2c-i merged as 786ced4ff (#591); the four open S2c-ii questions settled as D48–D51 and
   the S2c-ii plan amended (Task 2b, Task 3, Task 7, the carried list).
 - 2026-09-26: S2c-ii executed on `claude/alm-s2c-ii-frozen-audience` (PR #595); rulings R-S2c-ii-0 to
-- 2026-09-26: S3 designed from `alm-s3-design-proposal.md` after S2c-ii merged (#595): decisions D52–D61, the S3 bullet rewritten from the code survey (the carried-in fallback text, the authority client, the per-carrier backends), matrix rows F1 and F4 restated, the `realtime` purpose row notes the retired strategy name.
   R-S2c-ii-11 recorded in its plan; the S2c-ii section added, the S2 outcome marked delivered, and
   D25, D38, D43, D45, D46, D50 and D51 annotated as applied, amended or extended.
+- 2026-09-26: S3 designed from `alm-s3-design-proposal.md` after S2c-ii merged (#595): decisions D52–D61, the S3 bullet rewritten from the code survey (the carried-in fallback text, the authority client, the per-carrier backends), matrix rows F1 and F4 restated, the `realtime` purpose row notes the retired strategy name.
+- 2026-09-27: S3a delivered by PR #597 (branch `claude/alm-s3-defaults-fallback-volatile`): the S3
+  bullet names it and its rulings R-S3a-0 to R-S3a-16 are in its plan. D62 recorded — the combined
+  Hetzner ALM recipes (manifests 18, 22) order every scenario with a `start` and an `armed` recipe
+  barrier in place of #599's sender pacing, landed as PR #601 (`dc12f8930`) with #598, #599, #600 and
+  #603 as the hosted-manifest fixes found on the way; the S3 bullet's S3a clauses and
+  `alm-s3-design-proposal.md` §2.1 name it.

@@ -174,6 +174,14 @@ retries and what the proofs (1.4) consume; budgets (1.5) bound the volatile stor
   client, RTC overlay, WS server) replaces the default constant plus wrappers, passed through the one
   seam that exists (`qosProvider`, `create-rallar-facade.ts:167` → `initialise-browser-middleware.ts:251`,
   `:319`); the `unsupported` refusal reads it. No behaviour change beyond ownership.
+- **The combined Hetzner recipes order each scenario (D62).** Manifests 18 and 22 run every role's
+  scenarios back to back in one recipe, so nothing ordered one role's scenario against another's. Two
+  races followed: a recipient armed scenario N's fault after the sender had sent N (#599 made it unlikely
+  with 3 s of sender pacing), and recipient-b armed scenario N+1's ACK hold while its own ACK for N was
+  still owed (manifest 22, run 4). Two recipe barriers per scenario replace the pacing:
+  `<scenario>-start` once every role finished the previous scenario, then `<scenario>-armed` once every
+  role armed its faults; the sender sends only after it. The control server releases every run agent
+  together or fails the barrier typed.
 
 ### 2.2 S3b — fallback within the deadline
 
