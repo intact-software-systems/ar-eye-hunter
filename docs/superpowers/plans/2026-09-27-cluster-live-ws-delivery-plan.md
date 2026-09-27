@@ -113,6 +113,13 @@ slices remain outcome-shaped until those interfaces are validated.
   translates `sent-live` and `queued-outbox` into a game `sent` result. Review
   that exact consumer, Relic snapshot publication, AI result publication, and
   the public router result contract when defining cluster-accepted semantics.
+- `packages/shared-server/rallar-ai/rallar-server-ai-result-publication.ts`
+  returns the router publication result without reclassifying its status.
+  `packages/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts`
+  instead calls `sendToTargetsWithResult` directly and uses `sent-live` to
+  classify a local replay send. Keep that separate local-only result contract;
+  a cluster publication acknowledgment must not make replay claim a local
+  delivery it did not observe.
 
 ### Task 1: Bound and validate best-effort cluster notices
 
