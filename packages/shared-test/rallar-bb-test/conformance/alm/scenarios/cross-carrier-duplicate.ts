@@ -39,6 +39,7 @@ export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] 
 /**
  * One envelope over both carriers, which the product never does (it falls back only after an
  * `unroutable` verdict): the replay reuses the first handle's captured envelope on the other carrier.
+ * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
  * duplicate-outcome wait proves the second copy arrived and was refused, in both orders.
@@ -52,7 +53,12 @@ function toCrossCarrierDuplicateSenderCommands(
         ...sender,
         index: 1,
         payload: { marker: sender.scenarioId, order },
-        delivery: { ack: 'receiver', ttlMs: NON_EXPIRING_TTL_MS, commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS }
+        delivery: {
+            ack: 'receiver',
+            durability: 'local-outbox',
+            ttlMs: NON_EXPIRING_TTL_MS,
+            commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
+        }
     });
     return [
         { ...firstSend, carrier: first },

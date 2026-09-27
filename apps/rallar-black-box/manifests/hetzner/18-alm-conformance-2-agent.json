@@ -3209,6 +3209,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 30000
           },
           {
@@ -3292,6 +3293,7 @@
               "groupId": "hetzner-headless-room"
             },
             "ack": "receiver",
+            "durability": "local-outbox",
             "ttlMs": 30000
           },
           {
