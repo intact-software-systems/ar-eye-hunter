@@ -265,14 +265,48 @@ describe('outbound volatile send IndexedDB volume', () => {
         expect(counts.byOwner['al-admission'], 'a volatile send commits nothing to IndexedDB').toBe(
             0
         );
-        expect(toNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
+        expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         runtime.dispose();
     });
 });
 
-// R-S3a-13: in the lane a volatile send over a carrier is followed, once, by a batch of that carrier's idle
-// durable owner, whose claim and timeout claim read an empty queue. Reads that change nothing are probes.
+// R-S3a-13: a runtime's first use runs its durable owner's lazy bootstrap batch (`enqueueIfAbsent` awaits
+// `ready()`), whose finalize, claim and timeout claim read an empty queue. Reads that change nothing are probes.
 describe('an idle durable outbound owner beside a volatile send', () => {
+    // Review m1: the lane's cold runtime pays that bootstrap inside the first send's window, and never again.
+    it('spends only probes on a cold runtime\'s first volatile send and nothing on its second', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createIndexedDbOutboundCountStores(observer, 'outbound-cold-durable-owner'),
+            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: false,
+                preparedMessages: [{ kind: 'send' }]
+            }),
+            sendPreparedMessage: async () => {
+                sent.push('send');
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-cold-volatile-first'));
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        const first = observer.getCounts();
+        observer.reset();
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-cold-volatile-second'));
+        await vi.waitFor(() => expect(sent).toHaveLength(2));
+        const second = observer.getCounts();
+
+        expect(first.byOwner['al-admission'], 'the bootstrap reads no admission row').toBe(0);
+        expect(first.byKind['work-probe'] ?? 0, 'the bootstrap inspects the empty queue').toBeGreaterThan(0);
+        expect(computeNonProbeWorkOperations(first), 'the bootstrap changes nothing').toBe(0);
+        expect(second.total, 'a warm runtime spends nothing on a volatile send').toBe(0);
+        runtime.dispose();
+    });
+
     it('spends only probes on batches over an empty queue across the readiness memory and the rate window', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
@@ -308,7 +342,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         const counts = observer.getCounts();
         expect(counts.byOwner['al-admission']).toBe(0);
         expect(counts.byKind['work-probe'] ?? 0, 'the idle owner still inspects its queue').toBeGreaterThan(0);
-        expect(toNonProbeWorkOperations(counts), 'a reservation that changed nothing is not work').toBe(0);
+        expect(computeNonProbeWorkOperations(counts), 'a reservation that changed nothing is not work').toBe(0);
         runtime.dispose();
     });
 });
@@ -550,7 +584,7 @@ async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'):
     return {
         workPages: counts.byKind['work-page'] ?? 0,
         workProbes: counts.byKind['work-probe'] ?? 0,
-        nonProbeWorkOperations: toNonProbeWorkOperations(counts),
+        nonProbeWorkOperations: computeNonProbeWorkOperations(counts),
         relayedKinds: fixture.diagnostics.slice(eventsBefore).map((event) => event.kind)
     };
 }
@@ -632,7 +666,7 @@ async function readAdmittedInboundDelivery(
         acceptance: admitted.right,
         delivered: fixture.delivered,
         admissionOperations: counts.byOwner['al-admission'],
-        nonProbeWorkOperations: toNonProbeWorkOperations(counts)
+        nonProbeWorkOperations: computeNonProbeWorkOperations(counts)
     };
 }
 
@@ -661,7 +695,7 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
 }
 
 /** D55: the durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */
-function toNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {
+function computeNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {
     return counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0) - (counts.byKind['work-probe'] ?? 0);
 }
 

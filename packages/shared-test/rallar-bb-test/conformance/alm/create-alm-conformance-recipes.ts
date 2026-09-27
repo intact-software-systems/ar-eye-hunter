@@ -65,7 +65,10 @@ const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
     MINIMUM_POST_EXPIRY_OBSERVATION_MS +
     RESPONSE_MARGIN_MS;
 
-/** `volatileDefault` runs first on its pages, before any scenario leaves durable work there. */
+/**
+ * `volatileDefault` runs first on its pages, before any scenario leaves durable work there. The hosted
+ * combined recipe hoists every `delivery-reload` ahead of it, so there it runs after durable work.
+ */
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     volatileDefault,
     boundedRejection,

@@ -558,6 +558,25 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    // Review m3: a window that opens after the send, or reads before the arrival, would pass its zero vacuously.
+    it.each(ALM_CONFORMANCE_CARRIERS)('opens each storage window before the send and reads it after the outcome over %s', (carrier) => {
+        const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+            recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+        for (const scenarioId of ['volatile-default', 'durable-opt-in']) {
+            const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .find((candidate) => candidate.scenarioId === scenarioId)!;
+            const outcome = scenarioId === 'volatile-default' ? '-observe-acknowledged-1' : '-receipts-1';
+            const sender = ['-storage-window-open', '-send-1', outcome, '-storage-window']
+                .map((suffix) => indexOf(scenario.sender, suffix));
+            const receiver = ['-storage-window-open', '-received-1', '-storage-window']
+                .map((suffix) => indexOf(scenario.receiver, suffix));
+            for (const indices of [sender, receiver]) {
+                expect(indices.every((index) => index >= 0), `${scenarioId} ${indices.join(',')}`).toBe(true);
+                expect(indices, scenarioId).toEqual([...indices].sort((left, right) => left - right));
+            }
+        }
+    });
+
     describe('receipted-audience scenarios (three agents)', () => {
         const receiptedOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) => {
             const scenario = createAlmConformanceRecipes(toConformanceInput(carrier)).find((candidate) => candidate.scenarioKey === key);
