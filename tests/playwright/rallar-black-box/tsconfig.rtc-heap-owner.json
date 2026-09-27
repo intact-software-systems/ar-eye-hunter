@@ -1,0 +1,8 @@
+{
+  "extends": "../../../apps/rallar-black-box/tsconfig.json",
+  "files": [
+    "full-stack-live-rtc-heap-owner.spec.ts",
+    "live-rtc-heap-snapshot.ts"
+  ],
+  "include": []
+}
