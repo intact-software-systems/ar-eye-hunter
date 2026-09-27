@@ -127,17 +127,17 @@ export class BrowserRallarMessageDispatch {
         const validated = decodeALMessageValue(message);
         const issue = delivery.payloadIssues[0];
         if (issue) {
-            return toUnadmittedMessage(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
+            return toUnadmittedAdmission(message, { kind: 'refused', reason: 'oversized', detail: issue.message });
         }
         if (validated.left) {
-            return toUnadmittedMessage(message, {
+            return toUnadmittedAdmission(message, {
                 kind: 'refused',
                 reason: validated.left.code,
                 detail: validated.left.message
             });
         }
         if (message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= this.input.nowMs()) {
-            return toUnadmittedMessage(message, {
+            return toUnadmittedAdmission(message, {
                 kind: 'expired',
                 detail: 'Message deadline elapsed before carrier admission.'
             });
@@ -146,12 +146,12 @@ export class BrowserRallarMessageDispatch {
             return await writeCarrierOutboxAdmission(context, carrier, message);
         }
         catch (caught) {
-            return toUnadmittedMessage(message, { kind: 'failed', detail: toError(caught).message });
+            return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
         }
     }
 }
 
-function toUnadmittedMessage(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
+function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
     return { message, verdict, trackedReceiptAlgo: 'none' };
 }
 

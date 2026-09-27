@@ -197,7 +197,7 @@ it later is evidence only: the handle keeps `transport-accepted` and names the r
 `relayRejection` (R-S2c-ii-5a). A caller that checks `state === 'rejected'` alone misses that case;
 `relayRejection` is the fact. A default typed send tracks a receipt, so the case is left to a send
 that names `ack: 'none'` explicitly, or asks WS for a `hop` or `subtree` room receipt the WS client
-does not track. Over RTC such a send keeps no receipt row, so control admission refuses its hop's
+does not track. Over RTC an explicit `ack: 'none'` send keeps no receipt row, so control admission refuses its hop's
 `resync-required` NACK and states no `relay-rejected` at all. Every control arrives
 with its source (`ALOutboundControlSource`), and trust follows the source, never the carrier. A WS client hands its server's controls over as `trusted-server`: the
 server never relays a peer NACK, so its `resync-required` NACK is the relay's own verdict, admitted
