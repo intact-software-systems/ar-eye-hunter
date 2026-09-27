@@ -9,6 +9,7 @@ import {
 } from 'vitest';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -49,7 +50,7 @@ interface OverlayFixture {
     readonly groups: LatestRepository<string, GroupSnapshot>;
     readonly overlays: LatestRepository<string, OverlayInfo>;
     readonly resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
-    readonly qosProvider: ALQosInputProvider | undefined;
+    readonly qosProvider: ALQosInputProvider;
 }
 
 beforeEach(() => {
@@ -731,8 +732,9 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
     const overlays = new LatestRepository<string, OverlayInfo>();
     groups.accept('room', createSnapshot());
     const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, random: () => 0.5 });
-    const manager = createManager({ connection, groups, overlays, resources, qosProvider });
-    return { manager, connection, groups, overlays, resources, qosProvider };
+    const carrierQosProvider = toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, qosProvider);
+    const manager = createManager({ connection, groups, overlays, resources, qosProvider: carrierQosProvider });
+    return { manager, connection, groups, overlays, resources, qosProvider: carrierQosProvider };
 }
 
 function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayMulticastManager {

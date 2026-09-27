@@ -73,8 +73,13 @@ continuation recommendation with the
 [committed-work progress design](../specs/2026-09-12-alm-committed-work-progress-design.md)
 and its [two-slice plan](2026-09-12-alm-committed-work-progress-plan.md).
 
-**Current next step:** PR #566 is reconciled with current `main` and mergeable;
-do not rebase it for `BEHIND` alone. Its earlier code review and browser
+**Current next step:** PR #566 is being reconciled with `main` at
+`461b54cfedc97a1950659b91eac36edfbedce958`, whose S3a change adds
+separate volatile and durable ALM store lanes. The branch's old single-store
+inbound methods have been removed from that owner, and its bounded rotation
+progress behavior is owned by each lane. Publish the rebased branch and
+obtain a fresh exact-head gate after local validation; later `BEHIND` alone
+does not require another rebase. Its earlier code review and browser
 diagnostics leave three separate outcomes open before another B06 acceptance
 capture: prove cluster-wide delivery of `live-only` WS publications across API
 processes, correct the reviewed heartbeat lease-renewal edge when an HTTP
@@ -111,9 +116,13 @@ handoff; the ACK then reached the sender, where admission reported
 `pending-control`. No settlement of that pending control is visible before the
 handle expired. This narrows the RTC failure to pending-control replay or its
 observation window, not a missing receiver ACK, but does not identify why it
-failed to settle in time. The WS timeout remains separately unclassified; do
-not infer one common queue cause or select a production change from aggregate
-timing.
+failed to settle in time. The WS sender's source-labelled `send-2` admission
+reported 1,048 ms in twelve reads, 5,576 ms in its commit, and 6,625 ms
+holding the outbound browser lock. It committed about 2.7 seconds before the
+ten-second command deadline, but no `send_completed` event appeared. Storage
+consumed much of the deadline; what kept the send promise unresolved after its
+commit remains unclassified. Do not infer one common queue cause or select a
+production change from aggregate timing.
 
 Task 24's existing first result is retained: readiness failed during reconnect
 cycle 3 and only the cycle-0 checkpoint exists. Recording completed and released

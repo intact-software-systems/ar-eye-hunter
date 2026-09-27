@@ -182,9 +182,8 @@ export class ALInboundStoreLane {
         return acceptance;
     }
 
-    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
+    /** A commit wakes the worker; the bounded rotation reaches the new row without rewinding. */
     private commitWork(): void {
-        this.workSelector.restartScan();
         this.work.committed();
     }
 
@@ -374,7 +373,7 @@ export class ALInboundStoreLane {
     /**
      * The first control claim of a batch sends every control message that batch reserved, and the
      * rest await that one send. The round is the array the selection returned, so a retried row in a later
-     * batch never joins a finished round, and a claim a restarted scan left out of the array sends
+     * batch never joins a finished round, and a claim absent from the selected batch sends
      * alone. A round that throws sends the message of each claim alone too, so each claim settles on its
      * own message: the outbound admission is idempotent, so a message the round already admitted
      * answers `duplicate`.

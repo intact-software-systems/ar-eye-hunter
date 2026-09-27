@@ -74,7 +74,14 @@ it.each(
         });
         const admitted = await runtime.enqueueIfAbsent(message);
         expect(admitted.verdict, JSON.stringify(admitted.verdict)).toMatchObject({ kind: 'admitted' });
-        registry.record({ kind: 'admission', msgId: message.id.msgId, carrier: 'rtc', atMs: nowMs, verdict: admitted.verdict });
+        registry.record({
+            kind: 'admission',
+            msgId: message.id.msgId,
+            carrier: 'rtc',
+            atMs: nowMs,
+            verdict: admitted.verdict,
+            trackedReceiptAlgo: admitted.trackedReceiptAlgo
+        });
         await runOutboundWorkTask(runtime);
         expect(handle.lifecycle().state).toBe('transport-accepted');
 

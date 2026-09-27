@@ -59,7 +59,8 @@ it.each(
         messages.map((message) => ({
             verdict,
             message,
-            entries: []
+            entries: [],
+            trackedReceiptAlgo: 'none'
         }))
     );
     const message = newALUnicastMessage(
