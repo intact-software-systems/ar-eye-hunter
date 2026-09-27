@@ -6,6 +6,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -19,6 +20,13 @@ import type {
     CreateRallarMiddlewareOptions,
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
+
+interface InstallMiddlewareLiveWsNoticeSubscriberInput {
+    readonly options: CreateRallarMiddlewareOptions;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly targetResolver: WsServerTargetResolver;
+    readonly wsQBoxServerService: RallarMiddlewareInfrastructure['wsQBoxServerService'];
+}
 
 export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
@@ -55,20 +63,12 @@ export function createRallarMiddlewareInfrastructure(
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
-    const liveWsNoticeSubscriberReadiness = options.liveWsNoticeSubscriber
-        ? installLiveWsNoticeSubscriber({
-            ...options.liveWsNoticeSubscriber,
-            inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
-            resolveBroadRecipientSessionIds: (message) =>
-                new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver })
-                    .resolveOutboundRecipients(message)
-                    .map((recipient) => recipient.connectionId),
-            filterEligibleRecipientSessionIds: options.liveWsNoticeSubscriber.filterEligibleRecipientSessionIds,
-            sendToTargetsWithResult: (message, recipientSessionIds) => {
-                wsQBoxServerService.sendToTargetsWithResult(message, recipientSessionIds);
-            }
-        })
-        : Promise.resolve();
+    const liveWsNoticeSubscriberReadiness = installMiddlewareLiveWsNoticeSubscriber({
+        options,
+        webSocketServer,
+        targetResolver,
+        wsQBoxServerService
+    });
 
     return {
         wsQBoxServerService,
@@ -83,6 +83,25 @@ export function createRallarMiddlewareInfrastructure(
         liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function installMiddlewareLiveWsNoticeSubscriber(
+    input: InstallMiddlewareLiveWsNoticeSubscriberInput
+): Promise<void> {
+    const { options, webSocketServer, targetResolver, wsQBoxServerService } = input;
+    if (!options.liveWsNoticeSubscriber) {
+        return Promise.resolve();
+    }
+    const targetResolution = new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver });
+    return installLiveWsNoticeSubscriber({
+        ...options.liveWsNoticeSubscriber,
+        inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
+        resolveBroadRecipientSessionIds: (message) =>
+            targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
+        sendToTargetsWithResult: (message, recipientSessionIds) => {
+            wsQBoxServerService.sendToTargetsWithResult(message, recipientSessionIds);
+        }
+    });
 }
 
 function validateMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {

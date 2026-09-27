@@ -8,6 +8,7 @@ import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgre
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
+import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import {
     createRallarAlmReceiptDiagnosticsRecorder,
@@ -27,6 +28,7 @@ import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbo
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type {
     GroupPolicyCapacityConfig
@@ -119,6 +121,11 @@ interface CreateSharedMiddlewareInput {
     readonly nowEpochMs: () => number;
 }
 
+interface ApiV1RuntimeTopology {
+    readonly rtcTopology: ApiRtcTopologyRuntime;
+    readonly topology: ApiV1TopologyServices;
+}
+
 export interface ApiV1RuntimeConstructionOperations {
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
@@ -156,6 +163,50 @@ export function constructApiV1Runtime(
         capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
     });
     const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input));
+    const { rtcTopology, topology } = createRuntimeTopology(input, mutation, operations);
+    input.backgroundTasks.register(rtcTopology.stop);
+    operations.configureWsRuntimeStores(input.wsRuntimeName, mutation.runtimeStateRepository);
+    operations.startResourceInboxExpiry(mutation.resourceInboxRepository);
+    operations.startRuntimeStateExpiry({
+        database: input.database,
+        nowEpochMs: input.nowEpochMs,
+        runtimeStateRepository: mutation.runtimeStateRepository,
+        startupGeneration
+    });
+    const runtime = operations.createMiddleware({
+        mutation,
+        rtcTopology,
+        topology,
+        wsRuntimeName: input.wsRuntimeName,
+        queuePubSubChannel: input.queuePubSubChannel,
+        queuePubSubPublisherId: input.queuePubSubPublisherId,
+        queuePubSubLocalBus: input.queuePubSubLocalBus,
+        databasePubSubMode: input.databasePubSubMode,
+        databaseNotification: input.databaseNotification,
+        timing: input.timing,
+        almReceiptDiagnostics,
+        nowEpochMs: input.nowEpochMs
+    });
+    rtcTopology.topologyReplay.attach({ wsQueueBoxServerService: runtime.wsQBoxServerService });
+    void operations.startPresenceReconciliation(runtime)
+        .catch((error) => console.error('Failed to initialise presence expiry reconciliation:', error));
+    const selectors = operations.createSnapshotSelectors(mutation, input.timing);
+    return operations.requireRuntime({
+        runtime,
+        authSessionRepository: mutation.authSessionRepository,
+        ...selectors,
+        groupFormationMetrics: mutation.groupFormationMetrics,
+        almReceiptDiagnostics,
+        topologyServices: topology,
+        backgroundTasks: input.backgroundTasks
+    });
+}
+
+function createRuntimeTopology(
+    input: CreateApiV1RuntimeInput,
+    mutation: ApiV1MutationRuntime,
+    operations: ApiV1RuntimeConstructionOperations
+): ApiV1RuntimeTopology {
     const rtcTopology = operations.createRtcTopologyRuntime({
         database: input.database,
         runtimeStateRepository: mutation.runtimeStateRepository,
@@ -183,47 +234,7 @@ export function constructApiV1Runtime(
         rttRefinementGateConfig: input.rttRefinementGateConfig,
         nowEpochMs: input.nowEpochMs
     });
-    input.backgroundTasks.register(rtcTopology.stop);
-    operations.configureWsRuntimeStores(
-        input.wsRuntimeName,
-        mutation.runtimeStateRepository
-    );
-    operations.startResourceInboxExpiry(mutation.resourceInboxRepository);
-    operations.startRuntimeStateExpiry({
-        database: input.database,
-        nowEpochMs: input.nowEpochMs,
-        runtimeStateRepository: mutation.runtimeStateRepository,
-        startupGeneration
-    });
-    const runtime = operations.createMiddleware({
-        mutation,
-        rtcTopology,
-        topology,
-        wsRuntimeName: input.wsRuntimeName,
-        queuePubSubChannel: input.queuePubSubChannel,
-        queuePubSubPublisherId: input.queuePubSubPublisherId,
-        queuePubSubLocalBus: input.queuePubSubLocalBus,
-        databasePubSubMode: input.databasePubSubMode,
-        databaseNotification: input.databaseNotification,
-        timing: input.timing,
-        almReceiptDiagnostics,
-        nowEpochMs: input.nowEpochMs
-    });
-    rtcTopology.topologyReplay.attach({
-        wsQueueBoxServerService: runtime.wsQBoxServerService
-    });
-    void operations.startPresenceReconciliation(runtime)
-        .catch((error) => console.error('Failed to initialise presence expiry reconciliation:', error));
-    const selectors = operations.createSnapshotSelectors(mutation, input.timing);
-    return operations.requireRuntime({
-        runtime,
-        authSessionRepository: mutation.authSessionRepository,
-        ...selectors,
-        groupFormationMetrics: mutation.groupFormationMetrics,
-        almReceiptDiagnostics,
-        topologyServices: topology,
-        backgroundTasks: input.backgroundTasks
-    });
+    return { rtcTopology, topology };
 }
 
 function toMutationRuntimeInput(
@@ -275,7 +286,7 @@ function startResourceInboxExpiry(
 function createSharedMiddleware(
     input: CreateSharedMiddlewareInput
 ): RallarMiddlewareRuntime {
-    const { mutation, rtcTopology, topology } = input;
+    const { mutation, rtcTopology } = input;
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
     return createRallarMiddleware({
         inbox: mutation.queueBox,
@@ -292,39 +303,9 @@ function createSharedMiddleware(
         wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
-            new TopologyInboxService(
-                {
-                    inboxQueueReader,
-                    resourceInboxRepository: mutation.resourceInboxRepository.entries,
-                    resourceInboxResultsRepository: mutation.resourceInboxResultsRepository,
-                    database: mutation.database,
-                    groupStateService: mutation.groupStateService,
-                    mutationOwners: topology.topologyMutationOwners
-                },
-                {
-                    serviceId: mutation.serviceId,
-                    timing: input.timing,
-                    options: mutation.appInboxOptions,
-                    wakeOwningQueue: wakeQueueEngine
-                }
-            ),
+            createTopologyInboxService(input, inboxQueueReader, wakeQueueEngine),
         createRtcRttInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
-            new RtcRttInboxService(
-                {
-                    inboxQueueReader,
-                    resourceInboxRepository: mutation.resourceInboxRepository.entries,
-                    resourceInboxResultsRepository: mutation.resourceInboxResultsRepository,
-                    database: mutation.database,
-                    groupStateService: mutation.groupStateService,
-                    mutationDependencies: topology.rtcRttMutationDependencies
-                },
-                {
-                    serviceId: mutation.serviceId,
-                    timing: input.timing,
-                    options: mutation.appInboxOptions,
-                    wakeOwningQueue: wakeQueueEngine
-                }
-            ),
+            createRtcRttInboxService(input, inboxQueueReader, wakeQueueEngine),
         createAppClientInboxService: mutation.createAppClientInboxService,
         createAppAuthInboxService: mutation.createAppAuthInboxService,
         createAppAdminInboxService: mutation.createAppAdminInboxService,
@@ -345,28 +326,79 @@ function createSharedMiddleware(
             timing: input.timing,
             wakeReplay: () => rtcTopology.topologyReplay.wake('notification')
         }),
-        liveWsNoticeSubscriber: input.databasePubSubMode === 'disabled' ? undefined : {
-            transport: createApiV1LiveWsNoticeTransport({
-                mode: input.databasePubSubMode,
-                publisherId: input.queuePubSubPublisherId,
-                notification: input.databaseNotification,
-                localBus: input.queuePubSubLocalBus,
-                nowMs: input.nowEpochMs
-            }),
-            channel: input.queuePubSubChannel,
-            publisherId: input.queuePubSubPublisherId,
-            nowMs: input.nowEpochMs,
-            filterEligibleRecipientSessionIds: (candidateSessionIds, notice) =>
-                filterEligibleLiveWsSessionIds({
-                    socketServer: mutation.webSocketServer,
-                    candidateSessionIds,
-                    notice,
-                    nowMs: input.nowEpochMs()
-                })
-        },
+        liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });
+}
+
+function createTopologyInboxService(
+    input: CreateSharedMiddlewareInput,
+    inboxQueueReader: InboxQueueReader,
+    wakeQueueEngine: () => void
+): TopologyInboxService {
+    const { mutation, topology } = input;
+    return new TopologyInboxService({
+        inboxQueueReader,
+        resourceInboxRepository: mutation.resourceInboxRepository.entries,
+        resourceInboxResultsRepository: mutation.resourceInboxResultsRepository,
+        database: mutation.database,
+        groupStateService: mutation.groupStateService,
+        mutationOwners: topology.topologyMutationOwners
+    }, {
+        serviceId: mutation.serviceId,
+        timing: input.timing,
+        options: mutation.appInboxOptions,
+        wakeOwningQueue: wakeQueueEngine
+    });
+}
+
+function createRtcRttInboxService(
+    input: CreateSharedMiddlewareInput,
+    inboxQueueReader: InboxQueueReader,
+    wakeQueueEngine: () => void
+): RtcRttInboxService {
+    const { mutation, topology } = input;
+    return new RtcRttInboxService({
+        inboxQueueReader,
+        resourceInboxRepository: mutation.resourceInboxRepository.entries,
+        resourceInboxResultsRepository: mutation.resourceInboxResultsRepository,
+        database: mutation.database,
+        groupStateService: mutation.groupStateService,
+        mutationDependencies: topology.rtcRttMutationDependencies
+    }, {
+        serviceId: mutation.serviceId,
+        timing: input.timing,
+        options: mutation.appInboxOptions,
+        wakeOwningQueue: wakeQueueEngine
+    });
+}
+
+function createApiV1LiveWsNoticeSubscriber(
+    input: CreateSharedMiddlewareInput
+): CreateRallarMiddlewareOptions['liveWsNoticeSubscriber'] {
+    if (input.databasePubSubMode === 'disabled') {
+        return undefined;
+    }
+    return {
+        transport: createApiV1LiveWsNoticeTransport({
+            mode: input.databasePubSubMode,
+            publisherId: input.queuePubSubPublisherId,
+            notification: input.databaseNotification,
+            localBus: input.queuePubSubLocalBus,
+            nowMs: input.nowEpochMs
+        }),
+        channel: input.queuePubSubChannel,
+        publisherId: input.queuePubSubPublisherId,
+        nowMs: input.nowEpochMs,
+        filterEligibleRecipientSessionIds: (candidateSessionIds, notice) =>
+            filterEligibleLiveWsSessionIds({
+                socketServer: input.mutation.webSocketServer,
+                candidateSessionIds,
+                notice,
+                nowMs: input.nowEpochMs()
+            })
+    };
 }
 
 function startRuntimeStateExpiry(input: StartRuntimeStateExpiryInput): void {
