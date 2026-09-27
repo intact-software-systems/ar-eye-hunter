@@ -42,6 +42,8 @@ interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
 
 interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
     readonly state: 'admitted' | ALDeliveryState;
+    /** Absent: the state's own budget; a scenario whose wait outlasts a carrier's retry budget names its own. */
+    readonly budgetMs?: number;
 }
 
 interface AlmConformanceControlAdmissionWaitInput {
@@ -58,7 +60,7 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'matches' | 'gt';
+    readonly operator: 'equals' | 'matches' | 'gt' | 'contains';
     readonly expected: string | number | boolean;
 }
 
@@ -95,7 +97,7 @@ export function toObserveCommand(observe: AlmConformanceObserveInput): RallarBla
         connection: observe.input.senderConnection,
         handleId: toSendHandleId(observe),
         state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : [observe.state],
-        timeoutMs: toBudgetMs(toObserveBudgetMs(observe.state), observe.input.deadlineMs)
+        timeoutMs: toBudgetMs(observe.budgetMs ?? toObserveBudgetMs(observe.state), observe.input.deadlineMs)
     };
 }
 
@@ -211,6 +213,36 @@ export function toResultAssertion(
         expected,
         timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
     };
+}
+
+/**
+ * The handle reached its receipt after a hand-over: acknowledged, with a settled attempt on each carrier
+ * (D56). Which copy the receiver delivered is the receiver's own evidence.
+ */
+export function toHandedOverAssertions(
+    sender: AlmConformanceStepInput,
+    resultName: string
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toResultAssertion({
+            step: sender,
+            name: 'assert-acknowledged-1',
+            resultName,
+            field: 'state',
+            operator: 'equals',
+            expected: 'acknowledged'
+        }),
+        ...(['rtc', 'ws'] as const).map((carrier) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-${carrier}-attempt-1`,
+                resultName,
+                field: 'attemptCarriers',
+                operator: 'contains',
+                expected: carrier
+            })
+        )
+    ];
 }
 
 export function toStorageCountersCommand(

@@ -147,7 +147,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
         'not-yet-in-sync-delivered-after-refresh',
-        'not-yet-in-sync-expires'
+        'not-yet-in-sync-expires',
+        'fallback-within-deadline',
+        'receipt-exhausted-fallback',
+        'no-fallback-after-deadline'
     ]
 } as const;
 
@@ -317,6 +320,8 @@ describe('alm-conformance recipe family', () => {
             'cross-carrier-duplicate',
             'not-yet-in-sync',
             'not-yet-in-sync',
+            'receipt-exhausted-fallback',
+            'no-fallback-after-deadline',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',

@@ -7,7 +7,7 @@ import {
     NON_EXPIRING_TTL_MS,
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toObserveCommand,
     toReceiptsCommand,
@@ -22,15 +22,13 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toSendHandleId } from '../alm-conformance-step-identities.ts';
 
-/** The only cell that connects both transports, so one envelope can reach the receiver over each. */
-const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
 const CROSS_CARRIER_ORDERS = ['rtc-then-ws', 'ws-then-rtc'] as const;
 
 export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] = CROSS_CARRIER_ORDERS.map((order) => ({
     scenarioId: 'cross-carrier-duplicate' as const,
     scenarioKey: `cross-carrier-duplicate-${order}`,
     tags: FULL_TAGS,
-    carriers: FALLBACK_CARRIERS,
+    carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
     toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
     toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)

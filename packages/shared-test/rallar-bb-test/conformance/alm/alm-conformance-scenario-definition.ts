@@ -23,8 +23,11 @@ export type AlmConformanceScenarioId =
     | 'delivery-lifecycle'
     | 'delivery-reload'
     | 'durable-opt-in'
+    | 'fallback-within-deadline'
+    | 'no-fallback-after-deadline'
     | 'not-yet-in-sync'
     | 'ordering-resync'
+    | 'receipt-exhausted-fallback'
     | 'receipted-audience'
     | 'volatile-default';
 

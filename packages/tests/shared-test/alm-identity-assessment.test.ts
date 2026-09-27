@@ -185,6 +185,21 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
 
+    it.each(
+        [
+            ['rtc-with-ws-fallback', 'ws', true],
+            ['rtc-with-ws-fallback', 'rtc', true],
+            ['rtc', 'ws', false],
+            ['ws', 'rtc', false]
+        ] as const
+    )('on the %s cell, a recovered original that arrived over %s is accepted: %s', (carrier, transport, accepted) => {
+        // D56: the fallback cell hands a held RTC leg to WS, so either leg may deliver the recovered original.
+        const transcript = new IdentityTranscript('reload', carrier);
+        recordAt(transcript.receiver.result(transcript.receiver.command('wait', 1)).value, 'event', 'payload', 'data')
+            .transport = transport;
+        expect(assessAlmConformanceIdentity(transcript.input()).length === 0).toBe(accepted);
+    });
+
     it.each(['state', 'enqueued', 'submitted', 'handleId'] as const)('rejects invalid retained %s', (field) => {
         const transcript = new IdentityTranscript('reload');
         recordAt(transcript.sender.result(transcript.sender.command('messages.observe')).value)[field] = field === 'enqueued'

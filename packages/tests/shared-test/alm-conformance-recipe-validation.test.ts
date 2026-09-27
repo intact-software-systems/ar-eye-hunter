@@ -20,6 +20,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
 /**
  * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
+ * The fallback family (D56) needs the fallback cell.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -59,6 +60,9 @@ const CARRIER_SCENARIO_IDS = {
         'cross-carrier-duplicate',
         'not-yet-in-sync',
         'not-yet-in-sync',
+        'fallback-within-deadline',
+        'receipt-exhausted-fallback',
+        'no-fallback-after-deadline',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ]
 } as const;

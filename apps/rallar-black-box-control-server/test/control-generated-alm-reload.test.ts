@@ -29,7 +29,23 @@ interface PortMessage {
     readonly msgId: string;
     state: string;
     submitted: boolean;
+    attemptCarriers: readonly ('rtc' | 'ws')[];
 }
+
+interface HandedOverOutcome {
+    readonly outcome: 'committed' | 'not-handled';
+    readonly reason: 'admitted' | 'duplicate';
+}
+
+/**
+ * D56: the first RTC leg of these sends never completes (its frames are dropped, or the receiver withholds its ACK until
+ * the receipt runs out), so each hands over to WS. The receiver admits the WS copy, or refuses it as a duplicate of the
+ * RTC copy it already delivered.
+ */
+const HANDED_OVER_WS_OUTCOMES: Readonly<Record<string, HandedOverOutcome>> = {
+    'fallback-within-deadline': { outcome: 'committed', reason: 'admitted' },
+    'receipt-exhausted-fallback': { outcome: 'not-handled', reason: 'duplicate' }
+};
 
 /** Controlled external facts prove recipe/control composition, never native storage or transport behavior. */
 class GeneratedAlmPorts {
@@ -122,7 +138,13 @@ class GeneratedAlmPorts {
                 const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile';
                 return {
                     status: 'ok',
-                    value: { handleId: command.handleId, state: message?.state ?? 'unobservable', enqueued, submitted: message?.submitted ?? false }
+                    value: {
+                        handleId: command.handleId,
+                        state: message?.state ?? 'unobservable',
+                        enqueued,
+                        submitted: message?.submitted ?? false,
+                        attemptCarriers: message?.attemptCarriers ?? []
+                    }
                 };
             }
             case 'messages.cancel': {
@@ -225,11 +247,13 @@ class GeneratedAlmPorts {
     private send(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
         assert(isJsonRecordValue(command.payload));
         const rejected = command.payload.marker === 'bounded-rejection';
+        const handedOver = HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)];
         const message: PortMessage = {
             command,
             msgId: `port-message-${this.messages.length + 1}`,
             state: rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
-            submitted: false
+            submitted: false,
+            attemptCarriers: []
         };
         this.messages.push(message);
         assert(command.handleId);
@@ -250,6 +274,9 @@ class GeneratedAlmPorts {
         else if (command.payload.seq === 300) {
             this.refuseGappedSend(message);
         }
+        else if (handedOver !== undefined) {
+            this.handOver(message, handedOver);
+        }
         else if (!rejected && !this.isHeld(command.typeId)) {
             this.deliver(message);
         }
@@ -263,6 +290,27 @@ class GeneratedAlmPorts {
                 reason: rejected ? 'Payload exceeds fixture carrier limit' : undefined
             }
         };
+    }
+
+    /** Delivered with an attempt on each carrier; the receiver states its verdict on the WS copy. */
+    private handOver(message: PortMessage, handedOver: HandedOverOutcome): void {
+        this.deliver(message);
+        message.attemptCarriers = ['rtc', 'ws'];
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: message.msgId,
+                    typeId: message.command.typeId,
+                    carrier: 'ws',
+                    outcome: handedOver.outcome,
+                    reason: handedOver.reason
+                }
+            }
+        });
     }
 
     /** The receiver's snapshot is below the send's floor: it refuses the copy over RTC and writes nothing. */

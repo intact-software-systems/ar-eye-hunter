@@ -169,12 +169,19 @@ function assessReceivedIdentity({ send, msgId, receiver, issues }: ReceivedIdent
     const payload = decodePayloadPathValue(value, 'event.payload.data.payload');
     if (
         !isJsonRecordValue(value) || value.matched !== true || !receivedId.exists || receivedId.value !== msgId ||
-        !transport.exists || transport.value !== (send.carrier === 'ws' ? 'ws' : 'rtc') ||
+        !transport.exists || !toArrivalTransports(send.carrier).some((carrier) => carrier === transport.value) ||
         !receivedType.exists || receivedType.value !== send.typeId || !payload.exists ||
         !isSameJsonValue(payload.value, decodeJsonValue(send.payload))
     ) {
         issues.push(`${send.commandId}: receiver envelope does not match the actual generated message.`);
     }
+}
+
+/** The fallback cell hands a held RTC leg to WS inside its deadline (D56), so either leg may deliver the send. */
+function toArrivalTransports(
+    carrier: RallarBlackBoxTestMessagesSendCommand['carrier']
+): readonly ('rtc' | 'ws')[] {
+    return carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [carrier];
 }
 
 interface AlmIdentitySendPayload {
