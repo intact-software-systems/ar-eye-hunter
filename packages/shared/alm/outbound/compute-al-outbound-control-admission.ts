@@ -125,9 +125,7 @@ export function toALOutboundControlSettlements(
         receipt: snapshot,
         hops: {
             nextHopPeerIds: read.sent?.policy.ackTracking?.nextHopPeerIds ?? [],
-            completedHopPeerIds: toALOutboundCompletedHopPeerIds(
-                history.kind === 'acks' ? history.values : []
-            )
+            completedHopPeerIds: toALOutboundCompletedHopPeerIds(history.kind === 'acks' ? history.values : [])
         },
         complete: isALOutboundReceiptComplete(snapshot)
     });

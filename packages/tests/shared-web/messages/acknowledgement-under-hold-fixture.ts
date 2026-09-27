@@ -460,12 +460,16 @@ export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 's
     );
 }
 
+/** The submission sent before the hold, the second send of its typeId held behind it, and the witness of both. */
+interface SubmissionUnderHold {
+    readonly witness: ControlAdmissionWitness;
+    readonly submission: ALMessage;
+    readonly held: ALMessage;
+    readonly handle: RallarMessageHandle;
+}
+
 /** The submission is sent before the hold; a second send of its typeId is held while the ACK arrives. */
-export async function expectAcknowledgedUnderHold(
-    sender: HoldSender,
-    armed: boolean,
-    escalation: HoldEscalation
-): Promise<void> {
+async function sendSubmissionUnderHold(sender: HoldSender, armed: boolean): Promise<SubmissionUnderHold> {
     const witness = watchControlAdmission();
     const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
     const handle = await sender.send(submission);
@@ -477,9 +481,16 @@ export async function expectAcknowledgedUnderHold(
     await sender.send(held);
     await sender.drain();
     await sender.advance(100);
-    await runHoldEscalation(sender, escalation, { submission, held });
-    const ack = toReceiverAck(submission, sender);
-    expect(handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
+    return { witness, submission, held, handle };
+}
+
+/** The receiver's ACK arrives inside the message deadline while a batch is running. */
+async function deliverReceiverAckInsideDeadline(
+    sender: HoldSender,
+    sent: SubmissionUnderHold
+): Promise<ALMessage> {
+    const ack = toReceiverAck(sent.submission, sender);
+    expect(sent.handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
     const retried = sender.drain();
     sender.deliver(ack);
     await retried;
@@ -487,6 +498,18 @@ export async function expectAcknowledgedUnderHold(
     // One more batch: a conflicted control is retained as `admit-control` work, and its replay is the value path.
     await sender.drain();
     await sender.settle();
+    return ack;
+}
+
+export async function expectAcknowledgedUnderHold(
+    sender: HoldSender,
+    armed: boolean,
+    escalation: HoldEscalation
+): Promise<void> {
+    const sent = await sendSubmissionUnderHold(sender, armed);
+    const { witness, handle } = sent;
+    await runHoldEscalation(sender, escalation, sent);
+    const ack = await deliverReceiverAckInsideDeadline(sender, sent);
 
     expect(sender.faults.getObservations().length > 0).toBe(armed);
     // A conflict with a concurrent ack-timeout claim answers `pending-control`, and its replay acknowledges.
@@ -509,29 +532,14 @@ export async function expectAcknowledgedUnderHold(
  * row -- the exhaustion commit deleted it -- so it completes nothing and the handle stays `failed`.
  */
 export async function expectAckIgnoredAfterReceiptExhausted(sender: HoldSender, armed: boolean): Promise<void> {
-    const witness = watchControlAdmission();
-    const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
-    const handle = await sender.send(submission);
-    await sender.drain();
-    if (armed) {
-        sender.faults.inject(sender.hold);
-    }
-    await sender.send(sender.createMessage('held', ACK_UNDER_HOLD_MESSAGE_TTL_MS));
-    await sender.drain();
-    await sender.advance(100);
-    const msgId = submission.id.msgId;
+    const sent = await sendSubmissionUnderHold(sender, armed);
+    const { witness, handle } = sent;
+    const msgId = sent.submission.id.msgId;
     const receipt = await readPendingAckOrThrow(sender, msgId);
     const endMs = await readRetryScheduleEndMs(sender, msgId);
     await runAckTimeoutClaimsToExhaustion(sender, msgId);
     await advanceToRetryScheduleEnd(sender, endMs, 2_000);
-    const ack = toReceiverAck(submission, sender);
-    expect(handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
-    const retried = sender.drain();
-    sender.deliver(ack);
-    await retried;
-    await sender.settle();
-    await sender.drain();
-    await sender.settle();
+    const ack = await deliverReceiverAckInsideDeadline(sender, sent);
 
     expect(sender.faults.getObservations().length > 0).toBe(armed);
     expect(readControlAdmissionStop(witness, ack)).toEqual({
@@ -641,10 +649,7 @@ async function runHoldEscalation(
 
 /** The receipt's retry schedule ends when its last `ack-timeout` window closes: one timeout per attempt left. */
 async function readRetryScheduleEndMs(sender: HoldSender, msgId: string): Promise<number> {
-    const pending = await sender.readPendingAck(msgId);
-    if (pending === undefined) {
-        throw new Error(`No pending receipt for ${msgId}`);
-    }
+    const pending = await readPendingAckOrThrow(sender, msgId);
     return pending.deadlineAtMs + pending.timeoutMs * (pending.maxAttempts - pending.attempts + 1);
 }
 
@@ -654,10 +659,7 @@ async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offs
 
 /** Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. */
 async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
-    const before = await sender.readPendingAck(msgId);
-    if (before === undefined) {
-        throw new Error(`No pending receipt for ${msgId}`);
-    }
+    const before = await readPendingAckOrThrow(sender, msgId);
     for (let claim = 0; claim <= before.maxAttempts; claim += 1) {
         await sender.advance(before.timeoutMs + 1);
         await sender.drain();
@@ -667,10 +669,7 @@ async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string
 
 /** E1: past the receipt's timeout the ack-timeout claim retransmits under the scenario typeId. */
 async function runAckTimeoutClaim(sender: HoldSender, msgId: string): Promise<void> {
-    const before = await sender.readPendingAck(msgId);
-    if (before === undefined) {
-        throw new Error(`No pending receipt for ${msgId}`);
-    }
+    const before = await readPendingAckOrThrow(sender, msgId);
     await sender.advance(before.timeoutMs + 1);
     for (let batch = 0; batch < ACK_UNDER_HOLD_SETTLE_TURNS; batch += 1) {
         await sender.drain();

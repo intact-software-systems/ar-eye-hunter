@@ -529,34 +529,43 @@ describe('outbound control admission identity', () => {
             }]);
     });
 
-    it('ends a receipt a hop refused for good: its acknowledgement, then receipt-exhausted', async () => {
+    it.each(TERMINAL_NACK_REASONS)(
+        'ends a receipt a hop refused for good (%s): its acknowledgement, then receipt-exhausted',
+        async (reason) => {
+            const facts: ALOutboundSettlementFact[] = [];
+            const { admissionStore, control } = createFixture(facts);
+            await seedDirectObligation(admissionStore);
+
+            expect(await control.admit(terminalNack(reason), 'peer')).toEqual({ kind: 'committed' });
+
+            expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' }))
+                .toBeUndefined();
+            expect(facts.map((fact) => fact.kind)).toEqual(['acknowledgement', 'receipt-exhausted']);
+            expect(facts[1]).toEqual({
+                kind: 'receipt-exhausted',
+                msgId: 'message',
+                mode: 'hop',
+                confirmedPeerIds: [],
+                unconfirmedPeerIds: ['receiver'],
+                detail: `Hop receiver refused the message: ${reason}.`
+            });
+        }
+    );
+
+    it('states only the acknowledgement when a hop refuses a receipt that already completed', async () => {
         const facts: ALOutboundSettlementFact[] = [];
         const { admissionStore, control } = createFixture(facts);
-        await seedDirectObligation(admissionStore);
-        const stale = newALNackControlMessage(
-            { v: 2, msgId: 'control-stale', senderId: 'receiver', ts: 1 },
-            {
-                fromPeerId: 'receiver',
-                toPeerId: 'sender',
-                msgId: 'message',
-                reason: 'stale',
-                observedAtEpochMs: 1
-            }
-        );
-
-        expect(await control.admit(stale, 'peer')).toEqual({ kind: 'committed' });
-
-        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' }))
-            .toBeUndefined();
-        expect(facts.map((fact) => fact.kind)).toEqual(['acknowledgement', 'receipt-exhausted']);
-        expect(facts[1]).toEqual({
-            kind: 'receipt-exhausted',
-            msgId: 'message',
-            mode: 'hop',
-            confirmedPeerIds: [],
-            unconfirmedPeerIds: ['receiver'],
-            detail: 'Hop receiver refused the message: stale.'
+        await seedObligation(admissionStore, {
+            targets: { mode: 'unicast', toPeerId: 'receiver' },
+            expectedPeerIds: ['receiver'],
+            ackedPeerIds: ['receiver'],
+            ordering: undefined,
+            retryTracking: undefined
         });
+
+        expect(await control.admit(terminalNack('stale'), 'peer')).toEqual({ kind: 'committed' });
+
+        expect(facts.map((fact) => fact.kind)).toEqual(['acknowledgement']);
     });
 });
 
@@ -609,6 +618,22 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
         expect(await admissionStore.readReceiptState({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
     });
 });
+
+const TERMINAL_NACK_REASONS = ['expired', 'unauthorized', 'stale'] as const;
+
+/** A NACK by which the receiving hop refuses the message for good. */
+function terminalNack(reason: (typeof TERMINAL_NACK_REASONS)[number]): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `control-${reason}`, senderId: 'receiver', ts: 1 },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            msgId: 'message',
+            reason,
+            observedAtEpochMs: 1
+        }
+    );
+}
 
 function createFixture(settlements?: ALOutboundSettlementFact[]) {
     const state = createInMemoryALAdmissionState();
