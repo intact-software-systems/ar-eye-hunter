@@ -9,6 +9,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
+    RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -106,7 +107,7 @@ describe('ALM combined recipient-b ACK-hold ordering', () => {
             const recipientBRecipe = recipes.find((recipe) => recipe.metadata?.role === 'recipient-b')!;
 
             const windowByPrefix = new Map<string, number>();
-            const endingByPrefix = new Map<string, unknown>();
+            const endingByPrefix = new Map<string, RallarBlackBoxTestAssertCommand['expected']>();
             for (const command of senderRecipe.commands) {
                 if (
                     command.kind === 'messages.received' && typeof command.commandId === 'string' &&
