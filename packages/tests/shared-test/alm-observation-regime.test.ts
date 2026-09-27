@@ -726,6 +726,62 @@ describe('computeALMObservationRegime', () => {
         ]);
     });
 
+    // Task 6 re-review: F2c's acceptance figures (drain phases, claim waits) were read when every inbound
+    // owner was IndexedDB. A memory lane's single-digit drains must not pull a slow receiver's medians down.
+    it('reads the durable lane only in the inbound block: slow drains and claims stay slow beside fast volatile ones', () => {
+        const slowDrain = (atEpochMs: number, durationMs: number) =>
+            toInboundDrainEvent(atEpochMs, RECEIVER_AGENT_ID, {
+                durationMs,
+                selectionDurationMs: durationMs / 10,
+                claimDurationMs: durationMs / 20,
+                runDurationMs: durationMs / 2,
+                releaseDurationMs: durationMs / 5,
+                queueWaitMs: durationMs / 4
+            });
+        const fastDrains = Array.from({ length: 5 }, (_unused, index) =>
+            toInboundDrainEvent(1_100 + index, RECEIVER_AGENT_ID, {
+                durationMs: 2,
+                selectionDurationMs: 0,
+                claimDurationMs: 0,
+                runDurationMs: 1,
+                releaseDurationMs: 0,
+                queueWaitMs: 0
+            }));
+        const fastClaims = Array.from({ length: 5 }, (_unused, index) => toDispatchClaimEvent(1_200 + index, 1, 1));
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, RECEIVER_AGENT_ID, 'committed'),
+            slowDrain(1_001, 5_000),
+            slowDrain(1_002, 7_000),
+            toDispatchClaimEvent(1_003, 3_000, 400),
+            toDispatchClaimEvent(1_004, 5_000, 600),
+            ...toVolatileLaneEvents([...fastDrains, ...fastClaims])
+        ]);
+
+        const receiver = regime.inbound.find((direction) => direction.role === 'receiver');
+        expect(receiver).toEqual({
+            role: 'receiver',
+            outcome: 'measured',
+            pendingShare: { outcome: 'measured', pendingSharePercent: 0, outcomeCount: 1 },
+            phases: {
+                selectionMedianMs: 600,
+                claimMedianMs: 300,
+                runMedianMs: 3_000,
+                releaseMedianMs: 1_200,
+                queueWaitMedianMs: 1_500,
+                drainMedianMs: 6_000,
+                drainCount: 2
+            },
+            claimWaits: {
+                reservationWaitMedianMs: 4_000,
+                intraBatchWaitMedianMs: 500,
+                dispatchClaimCount: 2,
+                sendControlClaimMedianMs: 0,
+                sendControlClaimCount: 0
+            }
+        });
+    });
+
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
             'ALM observation rtc-smoke: regime=slow perOperation=39.44 ms/op over 8 commits outcome=failed ' +
@@ -875,6 +931,33 @@ describe('decodeALMObservationSnapshot', () => {
         expect(decoded.right?.readinessProbes.map((probe) => probe.lane)).toEqual(['volatile']);
     });
 
+    it('decodes the lane an inbound drain and claim name, and skips one that names no lane it knows', () => {
+        const drain = toInboundDrainEvent(1_000, RECEIVER_AGENT_ID, {
+            durationMs: 2,
+            selectionDurationMs: 0,
+            claimDurationMs: 0,
+            runDurationMs: 1,
+            releaseDurationMs: 0,
+            queueWaitMs: 0
+        });
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-inbound-lanes',
+            results: [],
+            events: [
+                drain,
+                toLaneNamedEvent(drain, 'volatile'),
+                toLaneNamedEvent(drain, 'memory'),
+                toDispatchClaimEvent(1_001, 100, 4_000),
+                toLaneNamedEvent(toDispatchClaimEvent(1_002, 100, 4_000), 'volatile'),
+                toLaneNamedEvent(toDispatchClaimEvent(1_003, 100, 4_000), 7)
+            ]
+        });
+
+        // An artifact recorded before S3a names no lane: every inbound store then was IndexedDB.
+        expect(decoded.right?.inboundDrains.map((entry) => entry.lane)).toEqual(['durable', 'volatile']);
+        expect(decoded.right?.inboundClaims.map((entry) => entry.lane)).toEqual(['durable', 'volatile']);
+    });
+
     it('rejects a value that is not an object', () => {
         expect(decodeALMObservationSnapshot(42).left).toEqual(['snapshot is not an object']);
     });
@@ -982,6 +1065,7 @@ describe('decodeALMObservationSnapshot', () => {
         expect(decoded.right?.inboundClaims).toEqual([{
             atEpochMs: 1_001,
             role: 'receiver',
+            lane: 'durable',
             workerId: INBOUND_WORKER_ID,
             payloadKind: 'dispatch-local',
             durationMs: 5,

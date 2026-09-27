@@ -399,6 +399,11 @@ interface ALMObservationInboundRoleEvents {
     readonly claims: readonly ALMObservationInboundClaim[];
 }
 
+/**
+ * The drain phases and claim waits read the IndexedDB lane only, as the runner regime does (R-S3a-15):
+ * F2c's acceptance figures were measured when every inbound owner was IndexedDB, and a memory lane's
+ * single-digit drains would pull a slow receiver's medians into the normal band.
+ */
 function toInboundDirection(
     role: ALMObservationAgentRole,
     events: ALMObservationInboundRoleEvents
@@ -410,8 +415,8 @@ function toInboundDirection(
             role,
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
-            phases: computeInboundPhases(drains),
-            claimWaits: computeInboundClaimWaits(claims)
+            phases: computeInboundPhases(drains.filter((drain) => drain.lane === 'durable')),
+            claimWaits: computeInboundClaimWaits(claims.filter((claim) => claim.lane === 'durable'))
         };
 }
 

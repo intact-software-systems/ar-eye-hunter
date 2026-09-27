@@ -127,7 +127,10 @@ records what the runner was doing while the cell ran:
   - `phases` — the median of each `effect-drain` phase (`selectionMedianMs`, `claimMedianMs`,
     `runMedianMs`, `releaseMedianMs`, `queueWaitMedianMs`) and of `durationMs` itself
     (`drainMedianMs`), over `drainCount` drains, taken over the whole cell: this block reads the
-    receiver rather than the runner. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
+    receiver rather than the runner. Only drains whose `lane` is `durable` count, as in `regime`
+    (R-S3a-15): the F2b and F2c figures were measured when every inbound owner was IndexedDB, and a
+    memory lane's single-digit drains would pull a slow receiver's medians into the normal band. An
+    event recorded before S3a names no lane and is read as `durable`. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
     but no drain — the mirror of `pendingShare`'s `unmeasured` case above. As the diagnostic contract
     explains, the four phases do not sum to `durationMs`, and — since Task 2 of the F2c slice —
     `releaseMedianMs` is the median of one release flush per batch, not one flush per claim. F2c's
@@ -140,8 +143,8 @@ records what the runner was doing while the cell ran:
     `phases` medians carry for subtracting — and `intraBatchWaitMedianMs`, the median
     `startedAtMs − batchStartedAtMs` over the same claims, the serialization behind earlier claims in
     the same run loop and nothing else, over `dispatchClaimCount` claims; and `sendControlClaimMedianMs`, the median
-    `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians, like
-    `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
+    `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians over
+    the `durable` lane's claims, like `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
     `claim-settled` event missing `durationMs`, `dueAtMs`, `batchStartedAtMs` or `startedAtMs` (one
     emitted before the three instants existed) is skipped rather than counted. `dueAtMs` is read from
     the reserved entry, and a reservation clears a retried row's retry stamp, so a claim of a row that

@@ -71,6 +71,8 @@ export interface ALMObservationInboundOutcome {
 export interface ALMObservationInboundDrain {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the drain ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly workerId: string;
     readonly durationMs: number;
     readonly selectionDurationMs: number;
@@ -84,6 +86,8 @@ export interface ALMObservationInboundDrain {
 export interface ALMObservationInboundClaim {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the claim ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly workerId: string;
     /** `dispatch-local`, `send-control` or another effect kind, as the topic emits it. */
     readonly payloadKind: string;
@@ -282,8 +286,9 @@ function toInboundDrain(
     const runDurationMs = decodeFiniteNumber(diagnostic.detail.runDurationMs);
     const releaseDurationMs = decodeFiniteNumber(diagnostic.detail.releaseDurationMs);
     const queueWaitMs = decodeFiniteNumber(diagnostic.detail.queueWaitMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     if (
-        diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined ||
+        diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         durationMs === undefined || selectionDurationMs === undefined || claimDurationMs === undefined ||
         runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined
     ) {
@@ -292,6 +297,7 @@ function toInboundDrain(
     return {
         atEpochMs: diagnostic.atEpochMs,
         role: resolveALMObservationAgentRole(diagnostic.agentId),
+        lane,
         workerId,
         durationMs,
         selectionDurationMs,
@@ -311,8 +317,9 @@ function toInboundClaim(
     const dueAtMs = decodeFiniteNumber(diagnostic.detail.dueAtMs);
     const batchStartedAtMs = decodeFiniteNumber(diagnostic.detail.batchStartedAtMs);
     const startedAtMs = decodeFiniteNumber(diagnostic.detail.startedAtMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     if (
-        diagnostic.detail.kind !== CLAIM_SETTLED_DIAGNOSTIC_KIND || workerId === undefined ||
+        diagnostic.detail.kind !== CLAIM_SETTLED_DIAGNOSTIC_KIND || workerId === undefined || lane === undefined ||
         payloadKind === undefined || durationMs === undefined || dueAtMs === undefined ||
         batchStartedAtMs === undefined || startedAtMs === undefined
     ) {
@@ -321,6 +328,7 @@ function toInboundClaim(
     return {
         atEpochMs: diagnostic.atEpochMs,
         role: resolveALMObservationAgentRole(diagnostic.agentId),
+        lane,
         workerId,
         payloadKind,
         durationMs,
