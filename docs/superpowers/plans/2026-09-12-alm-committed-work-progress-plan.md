@@ -1967,8 +1967,9 @@ recorded by the runtime: some drain `claimedCount` values exceed their retained
 identity-list lengths despite a false array-cap flag. Do not infer exactly
 which claims are missing or that an unretained rotation never occurred.
 
-The next two bounded diagnostic slices are proposed, pending maintainer review
-of their in-chat designs under the brainstorming workflow:
+The maintainer approved the next two bounded diagnostic slices by asking to
+continue after their in-chat design. They are diagnostic work, not a selected
+runtime scheduler or memory fix:
 
 1. Use the existing handler/selector test seams with held claims and a
    controlled clock to measure mandatory original-batch work versus removable
@@ -1989,6 +1990,96 @@ source. No E4/ranking or Phase 1 completion can be claimed from any of the
 three failed E3 attempts. No new queue, retry, fence, lock, timer, dependency,
 migration, legacy path, relaxed deadline or reduced acceptance workload is
 authorized.
+
+### Task 34: Characterize QueueBox cost boundaries and identity projection
+
+**Status: complete on `7f3253cc7596cd656b363dd33b27e26ac94edbc3`; independently reviewed.** Work in existing handler/selector
+test seams and the private live-RTC causal projection. Use a controlled clock
+and held original claims to distinguish time that the existing QueueBox worker
+must spend running and releasing an original batch from possible successor
+rediscovery time. Include one page with spare capacity and one full 16-claim
+page; observe the real handler/selector public seams, not a mock scheduler or
+an implementation of continuation. The test's imposed delays are logical
+costs, never reported as browser IndexedDB timings.
+
+Add projection-only identity-list accounting for inbound drain events: raw
+array length, retained valid effect-ID count, filtered invalid effect-ID count,
+and the existing 100-entry cap flag. Keep runtime `claimedCount` separate from
+these projection counts; a missing runtime ID and a filtered ID are different
+unknowns. Keep the existing redaction and bounded primary/context event limits.
+First add focused failing tests, then the minimum test/projection changes.
+Run the focused handler/selector and projection tests, their maintained typing,
+format and changed-file checks. Do not change production scheduling, readiness,
+retry, lease, CAS, release or public protocol behavior.
+
+**Exit:** Reviewed, deterministic characterization and truthful projection
+coverage; the result may rule out successor continuation. It cannot authorize
+a scheduler correction by itself.
+
+The real handler/selector-seam test held a successor during an original batch,
+then read completed original QueueBox rows and rediscovered the successor. With
+imposed logical costs, four originals took 91 ms of mandatory run/release and
+three further 8 ms scans; a full 16-claim page took 295 ms mandatory
+run/release and one further 8 ms scan. These are deterministic logical test
+costs, **not** browser IndexedDB timings. The private drain projection now
+reports raw identity-array length, valid retained count and invalid filtered
+count alongside its 100-entry cap flag; `claimedCount` remains independent.
+Focused tests passed 64/64 on a fresh controller rerun. No production
+scheduler behavior changed, and the diagnostic does not select continuation.
+
+### Task 35: Capture diagnostic heap ownership at settled 0 and 20 cycles
+
+**Status: complete after reviewed fix `e2ef6723ecede4410507e3f928e6e83b593df81b`.** Add a separate explicitly gated
+diagnostic-only E3-memory three-page reconnect case using the existing browser
+agent, control and CDP facilities. Reuse the 100-cycle test's actual group
+formation and reconnect flow, but run exactly 20 cycles for this _diagnostic_,
+with no change to the 100-cycle acceptance case, workload or deadlines. After
+settled cycle 0 and cycle 20, collect garbage and take one Chromium heap
+snapshot per page sequentially. Stream snapshot chunks to confined files under
+ignored `tmp/perf/rtc-heap-owner/<source-labelled-run>/` without buffering whole
+snapshots in process memory. Record source commit/dirty state, Node/Chromium,
+page identity, cycle, post-GC used bytes, snapshot duration, byte size, and
+capture/cleanup errors. Detach CDP sessions and close agents in `finally`.
+Snapshot content may include user data: keep local, do not commit, upload or
+attach it to public evidence. Compare per-page object counts/shallow sizes and
+retaining paths only after both settled checkpoints exist. One failed first
+attempt remains evidence, not a reason to silently retry.
+
+First add focused failing helper/harness tests, then implement the separate
+diagnostic case and run one source-labelled local E3 capture with fresh memory
+services, one worker and zero Playwright retries. Run focused typecheck,
+format/changed-file checks and relevant browser correctness checks. Do not
+record this shortened, snapshot-perturbed run as RTC-B06 acceptance evidence,
+relax deadlines, change the recorder's acceptance schema, or choose a production
+memory-owner fix without retained-path evidence.
+
+**Exit:** Local, ignored owner evidence or an explicit failed/incomplete
+diagnostic with reason; no 100-cycle retention verdict follows from this case.
+
+The first local E3 diagnostic on source `7f3253cc7596cd656b363dd33b27e26ac94edbc3`
+completed 20 cycles and six snapshots, with zero reported capture/cleanup
+errors. Its source tree was dirty with the new diagnostic code; Node was 26.10.0
+and Chromium 149.0.7827.55. A build and broad validation overlapped its first
+nine cycles, so its durations are **not** representative. The ignored local
+evidence is under `tmp/perf/rtc-heap-owner/7f3253cc7596-dirty-1790499927262/`;
+snapshots can contain user data and must not be committed or uploaded.
+Post-GC heap increased on all three pages between settled cycles 0 and 20.
+Page C had 3→63 instances each of `IndexedDbConnection`,
+`IndexedDbAdmissionBackend` and `IndexedDbQueueBox`; A and B stayed at 3 for
+those names. Sampled strong paths run from an `IDBDatabase` event listener
+through the connection and admission backend to the work queue. This is a
+concrete lifecycle-ownership lead, not a retained-size/dominator calculation
+or proof that those objects explain all heap growth. Generic Object/Array and
+React FiberNode counts also rose. No production fix, 100-cycle verdict, or
+RTC-B06 acceptance follows from the diagnostic. The first independent review
+found a failed-startup cleanup-metadata gap in the new harness; its focused
+repair passed scoped re-review and did not rerun the capture. The separate
+partial-trio test now preserves opening and cleanup failures. Direct helper and
+agent tests passed 27/27, maintained typing 1,310 files, and affected build,
+structure, style, coupling and legacy checks passed. The broad browser-support
+Vitest invocation timed out seven tests while overlapping capture and build;
+all 29 tests in the five affected files later passed sequentially with one
+worker. The initial failure remains recorded, not relabelled as green.
 
 ## Later outcomes, not additional speculative implementation slices
 
