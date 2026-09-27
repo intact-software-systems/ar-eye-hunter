@@ -22,7 +22,10 @@ import {
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
-import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type {
+    IndexedDbOperationCounts,
+    IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -256,14 +259,11 @@ describe('outbound volatile send IndexedDB volume', () => {
 
         const counts = observer.getCounts();
         // S3a (D55): a volatile default leaves nothing in IndexedDB; only the idle durable owner's
-        // readiness probes (work-page) may read it.
+        // probes (work-page, work-probe) may read it.
         expect(counts.byOwner['al-admission'], 'a volatile send commits nothing to IndexedDB').toBe(
             0
         );
-        expect(
-            counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0),
-            'no non-probe al-work operation'
-        ).toBe(0);
+        expect(toNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         runtime.dispose();
     });
 });
@@ -398,6 +398,15 @@ describe('inbound work owner IndexedDB scan volume', () => {
             expect(idle.relayedKinds.filter((kind) => kind !== 'rotation-alive')).toEqual([]);
         }
     );
+
+    it('spends only probes on an idle rotation over an empty queue (R-S3a-11)', async () => {
+        const idle = await readIdleInboundRotation('empty-queue');
+
+        // A claim that observed nothing opens no transaction, and an exhausted-retry finalization that
+        // finds nothing is the idle owner's probe: D55's non-probe window reads zero beside an idle owner.
+        expect(idle.nonProbeWorkOperations).toBe(0);
+        expect(idle.workProbes).toBeGreaterThan(0);
+    });
 });
 
 describe('work batch release volume', () => {
@@ -459,6 +468,9 @@ async function readCompletedBatchReleaseOperations(claimCount: number): Promise<
 
 interface IdleInboundRotation {
     readonly workPages: number;
+    readonly workProbes: number;
+    /** Every `al-work` operation but the probes (`work-page`, `work-probe`). */
+    readonly nonProbeWorkOperations: number;
     readonly relayedKinds: readonly ALInboundRuntimeDiagnosticsEvent['kind'][];
 }
 
@@ -489,8 +501,11 @@ async function readIdleInboundRotation(scanned: 'empty-queue' | 'deferred-row'):
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
+    const counts = observer.getCounts();
     return {
-        workPages: observer.getCounts().byKind['work-page'] ?? 0,
+        workPages: counts.byKind['work-page'] ?? 0,
+        workProbes: counts.byKind['work-probe'] ?? 0,
+        nonProbeWorkOperations: toNonProbeWorkOperations(counts),
         relayedKinds: fixture.diagnostics.slice(eventsBefore).map((event) => event.kind)
     };
 }
@@ -532,7 +547,7 @@ interface AdmittedInboundDelivery {
     readonly acceptance: ALInboundMessageRuntime.Acceptance | undefined;
     readonly delivered: readonly string[];
     readonly admissionOperations: number;
-    /** Every `al-work` operation but the idle owners' readiness probes (`work-page`). */
+    /** Every `al-work` operation but the idle owners' probes (`work-page`, `work-probe`). */
     readonly nonProbeWorkOperations: number;
 }
 
@@ -562,7 +577,7 @@ async function readAdmittedInboundDelivery(
     }
     else {
         // The memory lane's own commit runs the batch that delivers. An engine round would also run
-        // the idle IndexedDB rotation's batch -- 1 work-page and 3 work-reserve per batch, measured
+        // the idle IndexedDB rotation's batch -- 1 work-page and 1 work-probe per batch, measured
         // with no message at all -- which is that idle owner's cost, not this message's.
         await vi.waitFor(async () => expect(await readSettledInboundWork(volatileStores.workQueue)).toBe(true));
     }
@@ -572,7 +587,7 @@ async function readAdmittedInboundDelivery(
         acceptance: admitted.right,
         delivered: fixture.delivered,
         admissionOperations: counts.byOwner['al-admission'],
-        nonProbeWorkOperations: counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0)
+        nonProbeWorkOperations: toNonProbeWorkOperations(counts)
     };
 }
 
@@ -598,6 +613,11 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
     const keys = await workQueue.getAllKeys();
     const rows = await Promise.all(keys.map(async (key) => await workQueue.getItem(key)));
     return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
+}
+
+/** D55: the durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */
+function toNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {
+    return counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0) - (counts.byKind['work-probe'] ?? 0);
 }
 
 function createOutboundWorkPort(observer: IndexedDbOperationObserver): ALWorkQueuePort {

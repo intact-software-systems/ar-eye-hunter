@@ -353,7 +353,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -362,6 +361,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (observations?.size === 0 || maxToReserve === 0) {
             return new Map();
         }
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         const candidates = await this.#readReservationCandidates({
@@ -387,7 +387,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -396,6 +395,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (observations?.size === 0 || maxToReserve === 0) {
             return new Map();
         }
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         // The index pages a claim in keyString order, not in readiness order; overdue rows that
@@ -431,7 +431,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         overdueBeforeEpochMs: number,
         reservationInput: ResourceInboxFairnessReservationInput
     ): Promise<Map<Key, ResourceInboxFairnessSelection>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFairnessReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
@@ -446,7 +445,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (maxToScan < typeIds.size) {
             throw new Error('maxToScan must be at least the number of requested types');
         }
-
+        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         const requestedTypes = [...typeIds];
@@ -473,7 +472,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const options = toResourceInboxFinalizationReservationOptions(input);
         if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
@@ -519,6 +517,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             reserved.set(updated.key, { entry: updated, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, updated));
         }
+        this.#observer.observe({ owner: 'al-work', kind: mutations.length === 0 ? 'work-probe' : 'work-reserve' });
         return await this.#write(db, { mutations, result: reserved });
     }
 
