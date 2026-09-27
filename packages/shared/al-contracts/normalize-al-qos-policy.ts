@@ -86,6 +86,8 @@ interface ALAlgorithmAuthorizationPolicy<TAlgo extends string, TOpts extends obj
     readonly supported: readonly TAlgo[];
 }
 
+export const AL_DURABILITY_ALGOS: readonly ALDurabilityAlgo[] = ['volatile', 'local-outbox', 'local-inbox'];
+
 export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     supportedDelivery: ['best-effort', 'at-least-once'],
     supportedForwarding: ['target'],
@@ -97,7 +99,7 @@ export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     supportedSupersedence: ['none', 'latest-wins'],
     supportedFanout: ['all', 'limit', 'random-k'],
     supportedCongestion: ['drop-low', 'defer', 'reject'],
-    supportedDurability: ['volatile', 'local-outbox', 'local-inbox'],
+    supportedDurability: AL_DURABILITY_ALGOS,
     supportedOwnership: ['shared', 'exclusive'],
     maxTtlHops: 32,
     maxFanout: 16,

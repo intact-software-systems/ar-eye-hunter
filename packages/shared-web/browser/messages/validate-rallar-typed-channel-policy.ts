@@ -1,4 +1,4 @@
-import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
 import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
@@ -7,8 +7,6 @@ export interface RallarTypedChannelPolicyInput {
     readonly purpose?: string;
     readonly durability?: string;
 }
-
-const AL_DURABILITIES: readonly ALDurabilityAlgo[] = ['volatile', 'local-outbox', 'local-inbox'];
 
 /** A realtime purpose belongs to `rallar.realtime` (D15, D52). */
 export function validateRallarTypedChannelPolicy(
@@ -31,7 +29,7 @@ export function validateRallarTypedChannelPolicy(
     }
     if (
         definition.durability !== undefined &&
-        !AL_DURABILITIES.some((candidate) => candidate === definition.durability)
+        !AL_DURABILITY_ALGOS.some((candidate) => candidate === definition.durability)
     ) {
         issues.push({
             path: '$.durability',

@@ -98,7 +98,7 @@ export namespace WsQueueBoxServerService {
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
         readonly name: string;
-        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly qosProvider: ALQosInputProvider;
         readonly targetResolver: WsServerTargetResolver;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
@@ -133,7 +133,7 @@ export class WsQueueBoxServerService {
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
-    private readonly qosProvider?: ALQosInputProvider;
+    private readonly qosProvider: ALQosInputProvider;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
     private readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
@@ -180,7 +180,7 @@ export class WsQueueBoxServerService {
         });
         this.outboundPlanning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: dependencies.name,
-            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, dependencies.qosProvider),
+            qosProvider: dependencies.qosProvider,
             targetResolution: this.targetResolution,
             deliveryReporting: this.deliveryReporting
         });
@@ -761,7 +761,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
     return new WsQueueBoxServerService({
         socket: input.socket,
         name: input.name,
-        qosProvider: input.qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
         targetResolver: input.targetResolver ?? {},
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,

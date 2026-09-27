@@ -1,4 +1,5 @@
-import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
+import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -34,7 +35,6 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
     'best-effort',
     'at-least-once'
 ];
-const MESSAGE_DURABILITIES: readonly ALDurabilityAlgo[] = ['volatile', 'local-outbox', 'local-inbox'];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
@@ -145,7 +145,7 @@ function decodeMessageSendOptions(
     const durability = record.durability ?? undefined;
     const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
     const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
-    const knownDurability = MESSAGE_DURABILITIES.find((candidate) => candidate === durability);
+    const knownDurability = AL_DURABILITY_ALGOS.find((candidate) => candidate === durability);
     const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
     const qos = decodeMessageQos(record.qos);
     return decodeBlackBoxCommandRouting(record).flatMap(

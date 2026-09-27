@@ -1,3 +1,4 @@
+import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
 import type { RallarBlackBoxTestCommandKind } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxCommandFieldSet {
@@ -289,7 +290,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesScope: ['room', 'world', 'all'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
-    messagesDurability: ['volatile', 'local-outbox', 'local-inbox'],
+    messagesDurability: AL_DURABILITY_ALGOS,
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],

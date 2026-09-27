@@ -176,7 +176,7 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     private toStoreVerdict(verdict: ALDeliveryAdmissionVerdict): ALDeliveryAdmissionVerdict {
-        return verdict.kind === 'admitted' && this.input.evictExpired !== undefined
+        return verdict.kind === 'admitted' && this.input.lane === 'volatile'
             ? { ...verdict, durable: false }
             : verdict;
     }

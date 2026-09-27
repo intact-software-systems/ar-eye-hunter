@@ -6,6 +6,7 @@ import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos
 import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
 
 export {
+    AL_DURABILITY_ALGOS,
     DEFAULT_AL_QOS_CAPABILITIES,
     normalizeALQosPolicy
 } from './normalize-al-qos-policy.ts';
