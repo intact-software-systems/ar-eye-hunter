@@ -169,10 +169,18 @@ Relic's current snapshot publication supplies only `roomId` to
 scoped room target resolver returns no recipients in that case. Its embedded
 server already uses the API-v1 default application and workspace for room
 policy reads, so it can construct the full `GroupRef` at publication without
-changing the persisted game state. Generic Rallar Game server broadcast inputs
-also make `roomRef` optional; changing that public input contract requires a
-separate maintainer compatibility decision. A cluster notice must never treat
-a bare room ID as authority for a scoped room audience.
+changing the persisted game state. Generic Rallar Game server snapshot/event
+publication inputs also make `roomRef` optional. The maintainer approved making
+their `roomRef` mandatory, updating every affected caller, and deleting the
+optional form without a compatibility overload or fallback. Require the full
+`GroupRef` even when the publication selects one peer: that keeps room context
+explicit at the single public input boundary. Inbound command/sync handlers
+must reject a missing authorised `roomRef` before calling application command
+or snapshot handlers, so they cannot mutate truth and then discover they
+cannot publish the result. They must not invent application/workspace scope
+from `roomId`. Relic's known default scope can supply the full reference at
+its publication call. A cluster
+notice must never treat a bare room ID as authority for a scoped room audience.
 
 An authenticated WebSocket upgrade records application/workspace scope and
 connection generation in API-v1's authorised-connection registry, but

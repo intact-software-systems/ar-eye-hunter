@@ -26,9 +26,10 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
 ## Global Constraints
 
 - The maintainer approved the oversize refusal, `cluster-published` result,
-  and subscriber-local broad-broadcast audience policy. The revised written
-  spec/plan and final ownership map still require review before production
-  behavior changes.
+  subscriber-local broad-broadcast audience policy, and a mandatory full
+  `roomRef` on public Rallar Game server snapshot/event inputs without a
+  compatibility path. The revised written spec/plan and final ownership map
+  still require review before production behavior changes.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
@@ -69,32 +70,54 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   local eligible sockets at notice receipt; a just-opened socket may receive
   that best-effort broad broadcast without widening room authority.
 - A server-generated room broadcast with only a bare `roomId` cannot infer an
-  application/workspace. It fails explicitly; Relic's default-scope caller
-  supplies a full `GroupRef` and then reaches a different-process room socket.
+  application/workspace. It fails explicitly; public Rallar Game server
+  snapshot/event inputs require `roomRef`, and inbound command/sync handlers
+  reject missing scope before application work. Relic's default-scope caller
+  supplies a full `GroupRef` and then reaches a different-process room socket. No optional
+  public overload, bare-ID fallback, or migration path remains.
 
 ---
 
-## Candidate ownership map and placement review
+## Proposed ownership map for design review
 
-The behavioral seams below are concrete; exact new file locations are a
-**pre-implementation review decision** with the maintainer within this PR.
-Do not bury live publication in `apps/api-v1` or extend the `WS_OUTBOX` codec
-with a misleading second meaning just to avoid a file. Candidate ownership:
+The current call trace identifies these ownership seams. New files and
+signatures are proposed, not yet authorized for implementation. Do not bury
+live publication in `apps/api-v1` or extend the `WS_OUTBOX` codec with a
+misleading second meaning just to avoid a file:
 
-| Responsibility                                                  | Existing owner / candidate location                                                                                                                                            |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Select fanout/effective QoS and final audience mode             | `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts` and router contracts                                                               |
-| Cluster live notice codec and subscription/direct-send behavior | Focused neighbor of `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts`, sharing the existing notification port rather than its `WS_OUTBOX` schema |
-| Canonical inbound key lookup for oversized notices              | `packages/shared/alm/inbound/al-inbound-admission-store.ts` existing `readDeliverySurface` boundary, exposed through its current service owner                                 |
-| Correct remote outbox audience                                  | `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts` plus existing outbound captured-policy reader                                                  |
-| Runtime wiring                                                  | `packages/shared-server/rallar-system/middleware/` and `apps/api-v1/src/db/` existing pub/sub composition                                                                      |
-| Contract and distributed proof                                  | Neighboring `packages/tests/shared-server/rallar-system/**`, `apps/api-v1/test/db/**`, and `packages/shared-test/black-box-runner/tests/api-v1/**`                             |
+- `packages/shared-server/rallar-system/websocket/router/` owns effective-QoS
+  selection, final audience mode, and the honest result. `route()` supplies its
+  admitted audience; `publish()` and proxy paths establish authority for their
+  final targets. The existing publisher and router contracts are the entry
+  points.
+- A focused live-notice contract and bridge beside the shared-server
+  `queue-pubsub` files own bounded encoding, decoding, and direct local sends.
+  They use a separate typed port; `WS_OUTBOX` remains key-only.
+- `apps/api-v1/src/db/create-postgres-queue-pub-sub-bridge.ts` and
+  `api-v1-queue-pubsub-bridge.ts` carry notices on the existing
+  `ApiV1DatabaseNotificationPort`. Their local/disabled equivalents own the
+  corresponding non-cluster behavior.
+- The existing inbound admission store's `readDeliverySurface` owns canonical
+  key lookup for oversized inbound messages; no receiver inbox or new table.
+- API-v1 room-authority composition freezes a room audience at publication.
+  A narrow local-eligibility port reads the current authenticated socket's
+  scope and generation from `authorised-ws-connection-registry.ts` before a
+  shared-server subscriber sends. Shared-server never imports that registry.
+- The existing QueueBox pub/sub bridge and outbound captured-policy reader
+  own remote durable-outbox audience correction, preserving their retry and
+  receipt boundary.
+- `packages/shared-server/game/install-rallar-game-authority-server.ts` and
+  `to-rallar-game-authority-server-publication.ts` own mandatory scoped game
+  publication. Update Relic's `relic-game-service.ts` and affected tests and
+  examples; add no compatibility overload.
+- Existing shared-server middleware composes the ports. Neighboring
+  shared-server and API-v1 tests plus API-v1 black-box recipes prove behavior.
 
-Before implementation, trace current callers and result consumers (including
-RTC signaling, RTT, game, Relic, AI, custom topic examples), settle the exact
-owner-to-result path, and amend this map with exact files/signatures. The first
-two implementation slices are codec/transport and publisher routing; later
-slices remain outcome-shaped until those interfaces are validated.
+Before implementation, finish tracing result consumers (including RTC
+signaling, RTT, game, Relic, AI, and custom topic examples), and check these
+proposed signatures against the smallest existing ports. The first two
+implementation slices are codec/transport and publisher routing; later slices
+remain outcome-shaped until those interfaces are validated.
 
 ### Placement findings from the current code
 
@@ -135,8 +158,11 @@ slices remain outcome-shaped until those interfaces are validated.
   API-v1 default application/workspace, so construct the full publication
   `GroupRef` at this call site without a persisted game-state migration.
   `packages/shared-server/game/install-rallar-game-authority-server.ts`
-  exposes optional `roomRef` on public server broadcast inputs; require an
-  explicit maintainer compatibility decision before changing that API.
+  exposes optional `roomRef` on public snapshot/event inputs. The maintainer
+  approved making it mandatory, including unicast publications, without an
+  overload or fallback. Guard inbound command/sync processing before the
+  application handler if its authorised context lacks `roomRef`; update all
+  verified consumers and tests.
 - `packages/shared-server/game/install-rallar-game-authority-server.ts`
   translates `sent-live` and `queued-outbox` into a game `sent` result. Review
   that exact consumer, Relic snapshot publication, AI result publication, and
@@ -197,6 +223,11 @@ The result distinguishes cluster publication from locally observed sends.
       upstream dispatch retry, and local/disabled bridge modes. Pin the proposed
       result semantics at the public boundary rather than asserting an unknowable
       global `sentCount`.
+- [ ] Make the Rallar Game server snapshot/event input require `roomRef`, guard
+      inbound command/sync handling before application work when that
+      reference is absent, and update Relic and every affected caller/test.
+      Delete the optional path; run the
+      focused game and Relic tests plus shared-server typecheck.
 - [ ] Run the focused router/bridge tests red; implement QoS-aware publication
       after sole-owner authorization, then direct local listener sends with no
       receiving inbox. Run
@@ -230,10 +261,12 @@ specific commands and files from the then-current implementation and
 ## Approval and rollback gates
 
 The maintainer approved (1) noncanonical best-effort oversize refusal, (2)
-the `cluster-published` result instead of global send counts, and (3)
+the `cluster-published` result instead of global send counts, (3)
 subscriber-local eligibility for broad `all`/`world` best-effort broadcasts,
-while room authority remains frozen at the publisher. Review the revised
-written spec/plan and final ownership map before production implementation.
+while room authority remains frozen at the publisher, and (4) mandatory full
+`roomRef` for Rallar Game server snapshot/event publication without legacy.
+Review the revised written spec/plan and proposed ownership map before
+production implementation.
 If that review changes a decision, revise both artifacts first. Rollback is
 a normal PR revert of the new publication path;
 `WS_OUTBOX` remains the existing durable carrier. A green single-process test
