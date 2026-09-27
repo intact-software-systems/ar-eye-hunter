@@ -139,6 +139,32 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']);
     });
 
+    // R-S3a-15: the runner regime reads the IndexedDB lane only, so every event a lane states names the lane.
+    it('names the lane on the drain and claim events each store lane states', async () => {
+        const pairs = createObservedInboundPairs();
+        const fixture = await createReadyInboundLaneRuntime(pairs);
+
+        await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'lane-volatile' }), INBOUND_TEST_SOURCE);
+        await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'lane-durable', durability: 'local-inbox' }),
+            INBOUND_TEST_SOURCE
+        );
+        await vi.waitFor(async () => {
+            await runInboundRounds(fixture);
+            expect(fixture.delivered).toHaveLength(2);
+        });
+
+        const laneEvents = fixture.diagnostics.filter((event) =>
+            event.kind === 'effect-drain' || event.kind === 'claim-settled' || event.kind === 'rotation-alive'
+        );
+        const laneOf = (workerId: string) => workerId.endsWith('/volatile') ? 'volatile' : 'durable';
+        for (const event of laneEvents) {
+            expect(event, `${event.kind} ${event.workerId}`).toMatchObject({ lane: laneOf(event.workerId) });
+        }
+        expect(new Set(laneEvents.filter((event) => event.kind === 'claim-settled').map((event) => laneOf(event.workerId))))
+            .toEqual(new Set(['durable', 'volatile']));
+    });
+
     it('sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {

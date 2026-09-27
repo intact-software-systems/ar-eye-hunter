@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { Either } from '../../../resilience/Either.ts';
+import type { ALStoreDurability } from '../../al-store-durability.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import {
     AL_WORK_PROBE_EVERY_ROUND,
@@ -51,6 +52,8 @@ export const AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS = 64;
 
 export namespace ALInboundStoreLane {
     export interface Input {
+        /** Named on every diagnostic this lane states. */
+        readonly lane: ALStoreDurability;
         readonly stores: ALInboundRuntimeStores;
         readonly workerId: string;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
@@ -231,6 +234,7 @@ export class ALInboundStoreLane {
         }
         this.dependencies.diagnostics?.({
             kind: 'effect-drain',
+            lane: this.input.lane,
             workerId: event.workerId,
             durationMs: event.durationMs,
             claimedCount: event.claimedCount,
@@ -271,6 +275,7 @@ export class ALInboundStoreLane {
         }
         this.dependencies.diagnostics?.({
             kind: 'rotation-alive',
+            lane: this.input.lane,
             workerId: event.workerId,
             emptyRoundCount: this.emptyRoundCount,
             durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs),
@@ -319,6 +324,7 @@ export class ALInboundStoreLane {
         const dueAtMs = resolveALInboundWorkDueAtMs(settled.claim.entry);
         this.dependencies.diagnostics?.({
             kind: 'claim-settled',
+            lane: this.input.lane,
             workerId: this.input.workerId,
             effectId: settled.effect.effectId,
             ...toALInboundClaimIdentity(settled.effect.payload),

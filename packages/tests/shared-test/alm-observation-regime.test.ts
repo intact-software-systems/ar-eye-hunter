@@ -98,6 +98,17 @@ function toSyntheticRegimeWithStorageCounters(
     })));
 }
 
+/** The same events as the memory lane states them: the lane rides in each event's `data`. */
+function toVolatileLaneEvents(events: readonly RallarBlackBoxTestRecord[]): readonly RallarBlackBoxTestRecord[] {
+    return events.map((event) => {
+        const envelope = event.payload as { topic: string; payload: { data: Record<string, unknown>; }; };
+        return {
+            ...event,
+            payload: { ...envelope, payload: { ...envelope.payload, data: { ...envelope.payload.data, lane: 'volatile' } } }
+        };
+    });
+}
+
 function toReadinessProbeEvent(
     atEpochMs: number,
     agentId: string,
@@ -313,6 +324,22 @@ describe('computeALMObservationRegime', () => {
         });
     });
 
+    // Review m2: a reload replaces the page and its counter with it, under the same agent id and with no reset.
+    it('counts a reading below the page\'s previous one as a new page counting from zero, not as a negative increment', () => {
+        const regime = toSyntheticRegimeWithStorageCounters([
+            { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 100, reset: false },
+            { atEpochMs: 10_000, agentId: 'alm-sender-1', workPageCount: 140, reset: false },
+            { atEpochMs: 20_000, agentId: 'alm-sender-1', workPageCount: 6, reset: false }
+        ]);
+
+        expect(regime.workPageRate).toEqual({
+            outcome: 'measured',
+            perSecond: 2.3,
+            readingCount: 3,
+            spanMs: 20_000
+        });
+    });
+
     it('counts each agent from its own previous reading when two pages read their counters', () => {
         const regime = toSyntheticRegimeWithStorageCounters([
             { atEpochMs: 0, agentId: 'alm-sender-1', workPageCount: 100, reset: false },
@@ -409,6 +436,29 @@ describe('computeALMObservationRegime', () => {
             sampleCount: 10,
             regime: 'normal'
         });
+    });
+
+    // R-S3a-15: the regime is calibrated on IndexedDB read chains and IndexedDB probes. A memory lane's
+    // 0 ms commits and probes never enter it, however many there are.
+    it('reads the durable lane only: slow durable commits and probes stay slow beside volatile 0 ms ones', () => {
+        const durable = [...toEvenlySpacedCommitPhases(40, 7), ...toPageWindowProbes(120, 10)];
+        const volatile = toVolatileLaneEvents([...toEvenlySpacedCommitPhases(0.01, 20), ...toPageWindowProbes(0, 30)]);
+
+        const regime = toSyntheticRegime([...durable, ...volatile]);
+
+        expect(regime.regime).toBe('slow');
+        expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 40, sampleCount: 8 });
+        expect(regime.pageRegime).toEqual({ outcome: 'measured', storageProbeMedianMs: 120, sampleCount: 10, regime: 'slow' });
+    });
+
+    it('reads unmeasured, not normal, when only the volatile lane committed and probed', () => {
+        const regime = toSyntheticRegime(
+            toVolatileLaneEvents([...toEvenlySpacedCommitPhases(0.01, 20), ...toPageWindowProbes(0, 30)])
+        );
+
+        expect(regime.regime).toBe('unclassified');
+        expect(regime.perOperation).toEqual({ outcome: 'too-few-samples', sampleCount: 0 });
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
     it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {
@@ -784,6 +834,26 @@ describe('page diagnostics on the regime', () => {
 });
 
 describe('decodeALMObservationSnapshot', () => {
+    it('decodes the lane a commit and a probe name, and skips one that names no lane it knows', () => {
+        const named = (event: RallarBlackBoxTestRecord, lane: unknown): RallarBlackBoxTestRecord => {
+            const envelope = event.payload as { topic: string; payload: { data: Record<string, unknown>; }; };
+            return { ...event, payload: { ...envelope, payload: { data: { ...envelope.payload.data, lane } } } };
+        };
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-lanes',
+            results: [],
+            events: [
+                named(toCommitPhaseEvent(1_000, 12, 'send'), 'volatile'),
+                named(toCommitPhaseEvent(1_001, 12, 'send'), 'memory'),
+                named(toReadinessProbeEvent(1_002, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 'volatile'),
+                named(toReadinessProbeEvent(1_003, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 7)
+            ]
+        });
+
+        expect(decoded.right?.commitPhases.map((phase) => phase.lane)).toEqual(['volatile']);
+        expect(decoded.right?.readinessProbes.map((probe) => probe.lane)).toEqual(['volatile']);
+    });
+
     it('rejects a value that is not an object', () => {
         expect(decodeALMObservationSnapshot(42).left).toEqual(['snapshot is not an object']);
     });
@@ -923,8 +993,9 @@ describe('decodeALMObservationSnapshot', () => {
         });
 
         expect(decoded.right?.readinessProbes).toEqual([
-            { atEpochMs: 1_000, role: 'sender', cause: 'age-bound', durationMs: 12 },
-            { atEpochMs: 1_001, role: 'receiver', cause: 'own-commit', durationMs: 8 }
+            // An artifact recorded before S3a names no lane: every store then was IndexedDB.
+            { atEpochMs: 1_000, role: 'sender', lane: 'durable', cause: 'age-bound', durationMs: 12 },
+            { atEpochMs: 1_001, role: 'receiver', lane: 'durable', cause: 'own-commit', durationMs: 8 }
         ]);
     });
 

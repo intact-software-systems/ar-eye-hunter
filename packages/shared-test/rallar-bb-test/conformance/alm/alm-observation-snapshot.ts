@@ -1,3 +1,4 @@
+import type { ALStoreDurability } from '../../../../shared/alm/al-store-durability.ts';
 import type { ALDeliveryCarrier } from '../../../../shared/alm/delivery/al-delivery-lifecycle.ts';
 import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
@@ -20,6 +21,8 @@ const RECEIVER_AGENT_ID_PREFIX = 'alm-receiver-';
 
 export interface ALMObservationCommitPhase {
     readonly atEpochMs: number;
+    /** The store pair the commit ran over; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     readonly origin: string;
     readonly readDurationMs: number;
     readonly readOperationCount: number;
@@ -94,6 +97,8 @@ export interface ALMObservationInboundClaim {
 export interface ALMObservationReadinessProbe {
     readonly atEpochMs: number;
     readonly role: ALMObservationAgentRole;
+    /** The store pair the probe read; an event from before lanes existed is the IndexedDB lane's. */
+    readonly lane: ALStoreDurability;
     /** `age-bound`, `own-commit`, `batch`, `retained-release`, `external-wake` or `no-memory`, as the topic emits it. */
     readonly cause: string;
     readonly durationMs: number;
@@ -213,10 +218,11 @@ function toCommitPhase(
     const origin = decodeText(diagnostic.detail.origin);
     const readDurationMs = decodeFiniteNumber(diagnostic.detail.readDurationMs);
     const readOperationCount = decodeFiniteNumber(diagnostic.detail.readOperationCount);
-    return diagnostic.detail.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined ||
+    const lane = decodeLane(diagnostic.detail.lane);
+    return diagnostic.detail.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined || lane === undefined ||
             readDurationMs === undefined || readOperationCount === undefined || readOperationCount <= 0
         ? undefined
-        : { atEpochMs: diagnostic.atEpochMs, origin, readDurationMs, readOperationCount };
+        : { atEpochMs: diagnostic.atEpochMs, lane, origin, readDurationMs, readOperationCount };
 }
 
 function toRtcLifecycle(
@@ -329,12 +335,14 @@ function toReadinessProbe(
 ): ALMObservationReadinessProbe | undefined {
     const cause = decodeText(diagnostic.detail.cause);
     const durationMs = decodeFiniteNumber(diagnostic.detail.durationMs);
+    const lane = decodeLane(diagnostic.detail.lane);
     return diagnostic.detail.kind !== READINESS_PROBE_DIAGNOSTIC_KIND || cause === undefined ||
-            durationMs === undefined
+            durationMs === undefined || lane === undefined
         ? undefined
         : {
             atEpochMs: diagnostic.atEpochMs,
             role: resolveALMObservationAgentRole(diagnostic.agentId),
+            lane,
             cause,
             durationMs
         };
@@ -394,6 +402,14 @@ function decodeTextArray(value: unknown): readonly string[] {
 
 function decodeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Absent in an artifact recorded before S3a gave the runtime a memory lane: every store then was IndexedDB. */
+function decodeLane(value: unknown): ALStoreDurability | undefined {
+    if (value === undefined) {
+        return 'durable';
+    }
+    return value === 'durable' || value === 'volatile' ? value : undefined;
 }
 
 function decodeBoolean(value: unknown): boolean | undefined {

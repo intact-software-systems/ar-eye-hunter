@@ -1,7 +1,6 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, shouldPersistInbox } from '../../../al-contracts/al-policy.ts';
-
-export type ALStoreDurability = 'volatile' | 'durable';
+import type { ALStoreDurability } from '../../al-store-durability.ts';
 
 /**
  * The sending channel's declared durability, carried as the envelope's `qos.durability`, decides the

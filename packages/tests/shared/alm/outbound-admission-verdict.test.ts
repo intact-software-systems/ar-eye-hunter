@@ -361,6 +361,7 @@ function createTestOutboundDispatchAdmission(
     settlements: ALOutboundSettlementEmitter = () => {}
 ): ALOutboundDispatchAdmission<OutboundTestPayload> {
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
+        lane: 'durable',
         admissionStore: stores.admissionStore,
         workPort: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),

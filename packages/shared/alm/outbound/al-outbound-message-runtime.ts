@@ -5,6 +5,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { ALStoreDurability } from '../al-store-durability.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
@@ -170,6 +171,8 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'commit-phases';
+        /** The store pair this commit read and wrote; only the IndexedDB lane's timings describe the runner. */
+        lane: ALStoreDurability;
         senderId: string;
         /** The message this commit admitted, so one signaling offer can be followed across the phases. */
         msgId: string;
@@ -200,6 +203,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'effect-drain';
+        lane: ALStoreDurability;
         workerId: string;
         durationMs: number;
         claimedCount: number;
@@ -209,6 +213,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'readiness-probe';
+        lane: ALStoreDurability;
         workerId: string;
         /** Which invalidation emptied this owner's readiness memory, or that it had none yet. */
         cause: ALWorkReadinessProbeCause;
@@ -363,6 +368,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.dependencies = dependencies;
         const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
         this.durable = new ALOutboundStoreLane({
+            lane: 'durable',
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             dequeueTypes: dependencies.dequeue.types,
@@ -373,6 +379,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             settlements
         });
         this.volatile = dependencies.volatileStores === undefined ? undefined : new ALOutboundStoreLane({
+            lane: 'volatile',
             stores: dependencies.volatileStores,
             workerId: `${dependencies.effectWorkerId}/volatile`,
             dequeueTypes: new Set<string>(),

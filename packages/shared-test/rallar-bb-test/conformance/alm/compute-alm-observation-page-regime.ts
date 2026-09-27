@@ -46,8 +46,8 @@ export function computePageRegime(
     const windowEndEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_PAGE_WINDOW_END_MS;
     const durations = snapshot.readinessProbes
         .filter((probe) =>
-            probe.cause === ALM_OBSERVATION_STORAGE_PROBE_CAUSE && probe.atEpochMs > windowStartEpochMs &&
-            probe.atEpochMs <= windowEndEpochMs
+            probe.lane === 'durable' && probe.cause === ALM_OBSERVATION_STORAGE_PROBE_CAUSE &&
+            probe.atEpochMs > windowStartEpochMs && probe.atEpochMs <= windowEndEpochMs
         )
         .map((probe) => probe.durationMs);
     if (durations.length < ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT) {

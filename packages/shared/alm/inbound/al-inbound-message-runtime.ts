@@ -148,12 +148,14 @@ export class ALInboundMessageRuntime {
     constructor(dependencies: ALInboundMessageRuntime.Dependencies) {
         this.dependencies = dependencies;
         this.durable = new ALInboundStoreLane({
+            lane: 'durable',
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             evictExpired: undefined,
             runtime: dependencies
         });
         this.volatile = dependencies.volatileStores === undefined ? undefined : new ALInboundStoreLane({
+            lane: 'volatile',
             stores: dependencies.volatileStores,
             workerId: `${dependencies.effectWorkerId}/volatile`,
             evictExpired: dependencies.volatileStores.evictExpired,

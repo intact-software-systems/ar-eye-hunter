@@ -2,6 +2,7 @@ import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import type { ALStoreDurability } from '../../al-store-durability.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
 import {
@@ -42,6 +43,8 @@ import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
 
 export namespace ALOutboundStoreLane {
     export interface Input<TPrepared> {
+        /** Named on every diagnostic this lane states. */
+        readonly lane: ALStoreDurability;
         readonly stores: ALOutboundRuntimeStores<TPrepared>;
         readonly workerId: string;
         /** Foreign queue rows only the durable lane admits; the volatile lane names none. */
@@ -369,6 +372,7 @@ export class ALOutboundStoreLane<TPrepared> {
         if (event.kind === 'readiness-probe') {
             diagnostics?.({
                 kind: 'readiness-probe',
+                lane: this.input.lane,
                 workerId: event.workerId,
                 cause: event.cause,
                 readyAtMs: event.readyAtMs,
@@ -378,6 +382,7 @@ export class ALOutboundStoreLane<TPrepared> {
         }
         diagnostics?.({
             kind: 'effect-drain',
+            lane: this.input.lane,
             workerId: event.workerId,
             durationMs: event.durationMs,
             claimedCount: event.claimedCount,
@@ -419,6 +424,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
 ): ALOutboundLaneAdmissions<TPrepared> {
     const { stores, runtime } = input;
     const dispatchAdmission = new ALOutboundDispatchAdmission({
+        lane: input.lane,
         admissionStore: stores.admissionStore,
         workPort,
         toOutboxEntry: runtime.toOutboxEntry,

@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
+import type { ALStoreDurability } from '../al-store-durability.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
@@ -33,6 +34,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'effect-drain';
+        /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
+        lane: ALStoreDurability;
         workerId: string;
         durationMs: number;
         claimedCount: number;
@@ -61,6 +64,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'claim-settled';
+        /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
+        lane: ALStoreDurability;
         workerId: string;
         effectId: string;
         /** The claimed message. Null for `release-buffered`, which names a track and a sequence and no message. */
@@ -88,6 +93,8 @@ export type ALInboundRuntimeDiagnosticsEvent =
     }>
     | Readonly<{
         kind: 'rotation-alive';
+        /** The store pair of the lane that states it; only the IndexedDB lane's timings describe the runner. */
+        lane: ALStoreDurability;
         workerId: string;
         /** Empty rounds this one event stands for; the cadence is `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS`. */
         emptyRoundCount: number;

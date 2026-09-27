@@ -37,6 +37,7 @@ describe('outbound admission observation order', () => {
         });
         const admission = () =>
             new ALOutboundDispatchAdmission<OutboundTestPayload>({
+                lane: 'durable',
                 admissionStore: store,
                 workPort: createTestALOutboundWorkPort({
                     admissionStore: store,
@@ -120,6 +121,7 @@ describe('outbound admission observation order', () => {
         });
         const message = createOutboundMessage('repair-read-race');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            lane: 'durable',
             admissionStore: store,
             workPort: createTestALOutboundWorkPort({
                 admissionStore: store,
@@ -189,6 +191,7 @@ describe('outbound admission observation order', () => {
         });
         const message = createOutboundMessage('repair-read-race-psql');
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            lane: 'durable',
             admissionStore: store,
             workPort: createTestALOutboundWorkPort({
                 admissionStore: store,

@@ -14,7 +14,8 @@ import '../../setup-browser-indexeddb.ts';
 import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
-    createOutboundMessage
+    createOutboundMessage,
+    createVolatileOutboundTestStores
 } from './outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
@@ -240,3 +241,44 @@ it.each(['memory', 'indexeddb'] as const)(
         runtime.dispose();
     }
 );
+
+// R-S3a-15: the runner regime reads the IndexedDB lane only, so every event a lane states names the lane.
+it('names the lane on the commit, readiness and drain events each store lane states', async () => {
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    const sent: string[] = [];
+    const durable = createOutboundMessage('lane-durable');
+    const volatile = createOutboundMessage('lane-volatile');
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: createStores('memory'),
+        volatileStores: createVolatileOutboundTestStores(),
+        diagnostics: (event) => diagnostics.push(event),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            persist: msg.id.msgId === durable.id.msgId,
+            preparedMessages: [{ kind: 'send' }]
+        }),
+        sendPreparedMessage: async () => {
+            sent.push('send');
+            return { status: 'sent' as const, submissionAttempted: true };
+        }
+    });
+    await runtime.ready();
+
+    await runtime.enqueueIfAbsent(durable);
+    await runtime.enqueueIfAbsent(volatile);
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+
+    expect(commitPhasesOf(diagnostics).map(({ msgId, lane }) => ({ msgId, lane }))).toEqual([
+        { msgId: durable.id.msgId, lane: 'durable' },
+        { msgId: volatile.id.msgId, lane: 'volatile' }
+    ]);
+    const laneOf = (workerId: string) => workerId.endsWith('/volatile') ? 'volatile' : 'durable';
+    const workEvents = diagnostics.filter((event) => event.kind === 'readiness-probe' || event.kind === 'effect-drain');
+    expect(workEvents.map((event) => event.kind)).toEqual(expect.arrayContaining(['readiness-probe', 'effect-drain']));
+    for (const event of workEvents) {
+        expect(event, event.workerId).toMatchObject({ lane: laneOf(event.workerId) });
+    }
+    expect(new Set(workEvents.map((event) => laneOf(event.workerId)))).toEqual(new Set(['durable', 'volatile']));
+    runtime.dispose();
+});

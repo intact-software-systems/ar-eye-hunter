@@ -57,7 +57,10 @@ records what the runner was doing while the cell ran:
 - `perOperation` — the median admission read cost, `readDurationMs / readOperationCount`, over
   `send`-origin commits inside the opening window, from the `commit-phases` events of the
   [outbound admission diagnostics](./runtime-diagnostic-contract.md). It is `too-few-samples` below
-  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples.
+  `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` samples. Only commits whose `lane` is `durable` count
+  (R-S3a-15): the thresholds were calibrated on IndexedDB read chains, and a memory lane's commit
+  costs nothing a runner can slow, so a cell whose sends are all volatile reads `too-few-samples`
+  rather than `normal`. An event recorded before S3a names no lane and is read as `durable`.
 - `windowMs` — the opening window the median is taken over, measured from the run's earliest event.
   Only `send`-origin commits count. A failing cell's own degradation dominates a whole-cell median,
   and a drain's commit measures a different read chain than a caller's own admission, so neither
@@ -70,13 +73,18 @@ records what the runner was doing while the cell ran:
   rather than anything about the admission chain itself. The window is deferred past the outbound
   regime's own opening window because page start-up contends too. `{ outcome: 'unmeasured',
   sampleCount, regime: 'unclassified' }` below `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples;
-  otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`.
+  otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`. Only probes whose
+  `lane` is `durable` count: a memory lane's `…/volatile` owner probes at 0 ms and would pull the
+  median of a slow page toward `normal`.
 - `peerReadiness` — per lifecycle stream and peer, the time from first known to first ready, or
   `never-ready` with how long the peer was observed.
 - `scenarioSends` — each recipe run's wall clock, or, for a run that failed, the failing step's
   error code. A failed recipe run carries no result object, so it has no duration to report.
-- `workPageRate` — `work-page` storage operations per second between the cell's first and last
-  `storage.counters` reading.
+- `workPageRate` — `work-page` storage operations per second over the span from the cell's first to
+  its last `storage.counters` reading, summed over every page that read its counters (senders and,
+  since S3a's storage windows, receivers). Each page counts from its own previous reading; it counts
+  from zero after a reading that reset the counter, and after a reading lower than its previous one,
+  which is a reloaded page whose counter started again.
 - `inbound` — one entry per direction (`sender`, `receiver`, `unattributed`), from the
   `admission-outcome`, `effect-drain` and `claim-settled` events of the
   [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from

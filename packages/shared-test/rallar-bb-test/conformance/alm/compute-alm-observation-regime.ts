@@ -237,7 +237,10 @@ function toPageRegimeSummary(pageRegime: ALMObservationPageRegime): string {
 function computePerOperationCost(snapshot: ALMObservationSnapshot): ALMObservationPerOperation {
     const windowEndEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS;
     const costs = snapshot.commitPhases
-        .filter((phase) => phase.origin === ALM_OBSERVATION_COMMIT_ORIGIN && phase.atEpochMs <= windowEndEpochMs)
+        .filter((phase) =>
+            phase.lane === 'durable' && phase.origin === ALM_OBSERVATION_COMMIT_ORIGIN &&
+            phase.atEpochMs <= windowEndEpochMs
+        )
         .map((phase) => phase.readDurationMs / phase.readOperationCount);
     return costs.length < ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT
         ? { outcome: 'too-few-samples', sampleCount: costs.length }
@@ -335,18 +338,28 @@ function computeWorkPageRate(
     };
 }
 
-/** Each agent counts from its own previous reading, or from zero after a reading that reset the counter. */
+/**
+ * Each agent counts from its own previous reading, or from zero after a reading that reset the counter or
+ * after a reload: a reading below the previous one comes from a new page whose counter started at zero.
+ */
 function computeWorkPageIncrements(ordered: readonly ALMObservationStorageCounters[]): number {
     const previousByAgent = new Map<string, ALMObservationStorageCounters>();
     let increments = 0;
     for (const reading of ordered) {
         const previous = previousByAgent.get(reading.agentId);
         if (previous !== undefined) {
-            increments += reading.workPageCount - (previous.reset ? 0 : previous.workPageCount);
+            increments += reading.workPageCount - computeWorkPageBaseline(previous, reading);
         }
         previousByAgent.set(reading.agentId, reading);
     }
     return increments;
+}
+
+function computeWorkPageBaseline(
+    previous: ALMObservationStorageCounters,
+    reading: ALMObservationStorageCounters
+): number {
+    return previous.reset || reading.workPageCount < previous.workPageCount ? 0 : previous.workPageCount;
 }
 
 /**
