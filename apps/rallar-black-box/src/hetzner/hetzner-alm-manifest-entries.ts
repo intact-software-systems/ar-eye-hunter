@@ -42,7 +42,7 @@ const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
 
 const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
 
-/** Long enough for the slowest role to finish the previous scenario's windows while the others wait (D62). */
+/** Long enough for the slowest role to finish the windows of the previous scenario while the others wait (D62). */
 export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
 
 /** Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is never reached. */

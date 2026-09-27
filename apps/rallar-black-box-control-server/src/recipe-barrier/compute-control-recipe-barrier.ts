@@ -37,6 +37,12 @@ export interface ControlRecipeBarrierDelivery {
     readonly envelopes: readonly ControlBarrierEnvelope[];
 }
 
+interface DeliveredBarrier {
+    readonly barrier: ControlRecipeBarrierState;
+    /** Undefined when this agent has nothing new to hear on its current connection. */
+    readonly envelope: ControlBarrierEnvelope | undefined;
+}
+
 const EVERY_STARTED_AGENT = 'every-started-agent';
 
 /** The barrier one forwarded event opens or joins; undefined when the event is no barrier arrival. */
@@ -171,10 +177,7 @@ function toAuthoredParticipants(roles: readonly string[] | undefined): string {
     return roles === undefined ? EVERY_STARTED_AGENT : JSON.stringify([...roles].sort());
 }
 
-function toDeliveredBarrier(
-    barrier: ControlRecipeBarrierState,
-    agent: ControlAgentState
-): Readonly<{ barrier: ControlRecipeBarrierState; envelope: ControlBarrierEnvelope | undefined; }> {
+function toDeliveredBarrier(barrier: ControlRecipeBarrierState, agent: ControlAgentState): DeliveredBarrier {
     const resolution = barrier.resolution;
     if (
         resolution === undefined || !barrier.arrivedAgentIds.includes(agent.agentId) ||

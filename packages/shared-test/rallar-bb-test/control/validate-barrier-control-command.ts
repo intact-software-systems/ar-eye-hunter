@@ -9,11 +9,12 @@ export function validateBarrierControlCommand(command: RallarBlackBoxTestRecord)
             ? []
             : [toControlCommandIssue('barrier.barrierId must be a non-empty string.')]),
         ...validateIntegerField({ record: command, key: 'timeoutMs', path: 'barrier', minimum: 1 }),
-        ...validateBarrierParticipants(command.participants)
+        ...validateBarrierParticipants(command)
     ];
 }
 
-function validateBarrierParticipants(participants: unknown): readonly ControlCommandIssue[] {
+function validateBarrierParticipants(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const participants = command.participants;
     if (participants === undefined) {
         return [];
     }

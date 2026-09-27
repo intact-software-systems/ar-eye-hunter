@@ -41,7 +41,7 @@ interface ArrivalInput {
 
 const BARRIER_ID = 'alm-ws-delivery-baseline-armed';
 
-/** The event the agent's control client forwards when its runtime reaches a barrier. */
+/** The event an agent control client forwards when its runtime reaches a barrier. */
 function toArrival(input: ArrivalInput): ControlEventEnvelope {
     const barrierId = input.barrierId ?? BARRIER_ID;
     const commandId = `${barrierId}-${input.agentId}`;
