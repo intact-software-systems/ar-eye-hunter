@@ -255,6 +255,7 @@ function toUnknownAckVersionRecipientCommands(
             field: 'verdict',
             operator: 'equals',
             expected: 'admitted'
-        })
+        }),
+        toReceivedCommand({ ...recipient, index: 2, count: 2, absent: true })
     ];
 }
