@@ -108,6 +108,37 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         expect(durableRead).not.toHaveBeenCalled();
     });
 
+    // Task 5 m2 (D20): the session's one memory pair is shared by both carriers, so a volatile message that
+    // arrives over WS and again over RTC meets its first admission and is dispatched once.
+    it('answers duplicate for a second copy of a volatile message over the other carrier and dispatches it once', async () => {
+        const pairs = createObservedInboundPairs();
+        const overWs = await createReadyInboundLaneRuntime(pairs);
+        const overRtc = createInboundTestRuntime({
+            carrier: 'rtc',
+            stores: createInboundTestBackendStores({
+                namespace: 'lane-durable-rtc',
+                storage: 'memory',
+                observer: createPassThroughIndexedDbOperationObserver()
+            }).stores,
+            volatileStores: pairs.volatile.stores,
+            effectWorkerId: 'al-inbound:lanes-rtc'
+        });
+        await overRtc.runtime.ready();
+        const message = createInboundTestMessage({ msgId: 'volatile-both-carriers' });
+
+        expect((await overWs.runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        expect(
+            (await overRtc.runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }))
+                .right
+        ).toEqual({ kind: 'duplicate' });
+
+        await vi.waitFor(() => expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']));
+        await runInboundRounds(overWs);
+        await runInboundRounds(overRtc);
+        expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']);
+    });
+
     it('sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {

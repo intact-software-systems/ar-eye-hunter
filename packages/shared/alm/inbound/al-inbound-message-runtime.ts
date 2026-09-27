@@ -127,9 +127,9 @@ export namespace ALInboundMessageRuntime {
  * - An acknowledgement of a message this peer originated is `not-handled` and reads no store: the
  *   origin keeps no inbound decision surface for its own message.
  * - Any other control goes to the volatile lane first, and to the durable lane when that lane answers
- *   `not-handled`. A `not-handled` answer writes nothing, so a control about a durable message costs
- *   one memory read before its IndexedDB admission, and a control about a volatile message never
- *   reaches IndexedDB.
+ *   `not-handled`, which writes nothing: a control about a durable message costs one memory read
+ *   before its IndexedDB admission. A control the memory lane handles never reaches IndexedDB; a late
+ *   or unresolved one (its rows swept, or from a peer its owner index does not name) costs one IndexedDB read.
  * - Duplicate detection is per lane: a msgId the memory lane admitted is invisible to the IndexedDB
  *   lane, and the reverse. The lane is fixed by the envelope, so a copy of one message always meets
  *   its first admission.
@@ -260,7 +260,7 @@ export class ALInboundMessageRuntime {
         return { kind: 'control', handled: acceptance.handled };
     }
 
-    /** Memory first, so a control about a volatile message never reaches IndexedDB. */
+    /** Memory first, so a control the memory lane handles never reaches IndexedDB. */
     private async admitControlInLanes(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source
