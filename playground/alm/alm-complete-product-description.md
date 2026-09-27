@@ -295,13 +295,33 @@ The effective policy is frozen for an admitted attempt or explicitly revised by
 a recorded fallback/repair transition. A transport cannot silently claim an
 unsupported guarantee.
 
-**PARTIAL:** Normalization and provider hooks exist.
+**CURRENT — S3a, the purpose table and carrier capabilities:** A typed channel
+declares `purpose: 'command' | 'notification'` (required), and the purpose table
+in `al-contracts`
+([`AL_CHANNEL_SEND_DEFAULTS`](../../packages/shared/al-contracts/resolve-al-channel-send-defaults.ts))
+fixes the channel's send defaults (D52):
 
-**PLANNED — S3, production providers:** Browser composition does not install
-transport-aware capability, authorization, or live-congestion providers; the
-default capability set claims every declared algorithm except `receiver`, which
-S2 added as a logical algorithm declared per carrier by a wrapper. S3a installs
-carrier-aware capabilities in the composition (D52–D55).
+| Purpose        | Reliability     | Ack                      | Deadline | Durability |
+| -------------- | --------------- | ------------------------ | -------- | ---------- |
+| `command`      | `at-least-once` | `receiver`               | 30 s     | `volatile` |
+| `notification` | `at-least-once` | `all-logical-recipients` | 30 s     | `volatile` |
+
+The two acks are one frozen-audience algorithm (D41). A `world` or `all`
+broadcast names no logical audience, so it keeps `ack: 'none'` until A1. The
+2-second ACK timeout and three receipt retries are the at-least-once
+normalization defaults these fields select. A channel may declare `durability`,
+and a send may override each field, durability through `qos.durability`. `realtime` is refused at a typed channel and
+the colliding `'realtime'` typed-send strategy is retired. Each carrier — the WS
+client, the RTC overlay and the WS server — owns its capability declaration
+([`al-carrier-capabilities.ts`](../../packages/shared/al-contracts/al-carrier-capabilities.ts):
+the default set plus `receiver`), and its composition root installs it under the
+application's QoS provider, whose own capabilities override the carrier's. The
+`unsupported` ack refusal reads the carrier's own declaration.
+
+**PLANNED — S3c and V1, live providers:** Browser composition installs no
+transport-aware authorization or live-congestion provider. S3c's volatile bound
+is the first `overloaded` producer (D59); the other budgets and fairness are
+V1's.
 
 ## Reliability and acknowledgement
 
@@ -334,10 +354,14 @@ durability must be selected separately. Matching duplicate data can repeat its
 receipt without redelivery or unbounded history growth. Late receipts are no-ops
 once their obligation is terminal.
 
-An explicit at-least-once request with `ack: none` is invalid — and the pre-S3
-default typed send has exactly that shape; S3a's purpose default (D52) removes it. A WebSocket frame
-accepted by the browser API or an RTC payload accepted by `RTCDataChannel.send`
-is not a logical delivery receipt.
+The default is receipted. An explicit at-least-once request with `ack: 'none'`
+retries without a receipt: S3a removed the default of that shape and adds no
+validation, because the director relay's WS unicast fallback and the
+receipt-less RTC carry rely on explicit shapes (S3a ruling 6). A per-send
+`reliability: 'best-effort'` that names no `ack` resolves `ack: 'none'`, since a
+receipted best-effort send is a contradiction; with an explicit `ack` the
+caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
+RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
 
 ### Acknowledgement modes
 
@@ -368,10 +392,15 @@ ACKs the admitted upstream relay. Current coverage includes
 [room snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
 and [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts).
 
-**PLANNED — S3, truthful at-least-once:** Default browser RTC and WS send paths
-still request at-least-once with no ACK. S1 delivered the lifecycle on the
-caller's handle and S2 the logical receipt; S3 sets the reliable, receipted,
-volatile default (roadmap decision D2).
+**CURRENT — S3a, truthful at-least-once:** A typed send with no options is
+at-least-once, receipted and volatile (D2): its channel's purpose picks the
+receipt, and the handle's `receiptAlgo` is the receipt its admitting carrier
+tracks. A WS room send asking `hop` or `subtree`, which the WS client does not
+track, ends terminal at `transport-accepted` with the downgrade in the handle's
+evidence (R-S3a-4); the WS server's hop ACK as a real receipt is S3b's (D56).
+Durability is decoupled from reliability, so a lane send (`messages.rtc.send`,
+`messages.ws.send`) that names no durability is volatile too; CRDT sync keeps its
+own HTTP/WS catch-up.
 
 **PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
 behavior; all-recipient is the frozen logical audience since S2. A2 defines the
@@ -487,9 +516,25 @@ deletes an ended session's entries by key prefix; admission and QueueBox work
 commit in one IndexedDB transaction; outbound messages have one canonical
 envelope that sent metadata, recipient actions, and repair work reference.
 
-**PLANNED — S3, volatile semantics:** Volatile RTC/WS still persists admission
-state and work because the browser selects the IndexedDB backend whenever it is
-supported. S3 routes each channel to one backend by its declared durability.
+**CURRENT — S3a, volatile semantics:** Each browser outbound carrier runtime
+holds a memory and an IndexedDB store pair, and the session's inbound store keeps
+one pair per backend shared by both carriers (D54). An outbound admission goes to
+the pair its effective durability names; an inbound message goes to IndexedDB
+only when the sender's channel declared `local-inbox`, carried on the envelope.
+The memory pair is its runtime's own: session cleanup and a storage reset never
+reach it, and each lane over it evicts its expired rows on its own work round, at
+most once a minute, with no timer. The volatile proof (D55) is zero `al-admission`
+and zero non-probe `al-work` IndexedDB operations: a unit pin per direction, and
+the `volatile-default` conformance scenario on both pages of every carrier over a
+reset window, with the durable owners' idle probes (`work-page`, `work-probe`)
+reported beside the zero. The `durable-opt-in` scenario shows the opt-in pays for
+storage; one durable send still spends 10 `al-admission` and 15 `al-work`
+operations, and the storage snapshot's durable figures are unchanged while the
+volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
+Web Lock, so it completes within the caller's microtask turn: a burst loop of
+awaited volatile sends yields no task turn until it ends and should yield or
+batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2's; the
+volatile store's per-session count and byte bound is S3c's (D59).
 
 **PLANNED — F2 and I2, bounded IndexedDB and one durable owner:** Seven
 `getAll()` call sites remain in the IndexedDB queue box, browser cleanup scans

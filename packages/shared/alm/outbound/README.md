@@ -45,6 +45,60 @@ are reconstructed from a canonical envelope and compact persisted transport
 descriptors. Admitted send-action replay does not regenerate its recipients or
 policy by rerunning a planner.
 
+## Store lanes and routing by durability
+
+Each browser carrier runtime (the WS client's and the RTC overlay's) holds two store pairs (D54): the
+IndexedDB pair its scope resolved before S3a, the durable lane, and a memory pair of its own
+([`createBrowserALVolatileOutboundRuntimeStores`](../../../shared-web/browser/al-runtime/browser-al-runtime-stores.ts),
+namespace `browser:<name>:volatile`), the volatile lane. `ALOutboundMessageRuntime` routes; each
+[`ALOutboundStoreLane`](./lane/al-outbound-store-lane.ts) owns the admission, control and receipt
+admission, repair retransmission, work handler and engine task over its one pair, all on the carrier's
+shared engine. The WS server builds the runtime without a memory pair (`volatileStores: undefined`), so
+every server message keeps its one backend.
+
+- **Routing by durability.** An admission goes to the lane its plan's `persist` names, and every
+  browser planner states `persist` as `shouldPersistOutbox(effective)`: the message's effective
+  durability alone. `local-outbox` and `local-inbox` go to IndexedDB; `volatile`, the default for
+  every send that names none, goes to memory. Reliability no longer implies durability: a default
+  typed send is at-least-once, receipted and volatile (D2, D52), and a lane send that names no
+  durability is volatile too (R-S3a-0). The plan is computed once and handed to that lane's admission. The admission verdict's
+  `durable` says whether rows were persisted: the memory lane states every admission `durable: false`.
+- **Grouped sends.** A group whose members differ in durability commits as one group per lane: there
+  is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
+- **Controls, receipts and retransmission** go to the volatile lane when it owns the target message
+  (one memory read), else to the durable lane.
+- **One cancel.** `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
+- **Only the durable lane admits foreign dequeue rows.** The volatile lane names no dequeue type and
+  takes no browser lock: Web Locks guard cross-tab IndexedDB commits, and memory is per tab.
+- **Eviction on the owner's round.** Nothing outside the lane touches the memory pair: session cleanup
+  and a storage reset never reach it, and it dies with its runtime. The volatile lane (worker id
+  `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most once per
+  `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s, the IndexedDB eviction's cadence) of its clock; no
+  timer runs for it.
+- **Duplicate detection is per lane.** A msgId the memory lane admitted is invisible to the IndexedDB
+  lane, and the reverse. That is sound because a message's durability is fixed by its policy, so one
+  msgId always resolves to one lane. A caller that re-sent one msgId under another durability would get
+  a second copy in the other lane whose receipt never completes, because every control for that id
+  goes to the memory lane first. No caller does this.
+- **Tracks do not span stores.** An ordering or supersedence track whose messages declare different
+  durabilities is split between the lanes; no caller declares one that way.
+- **A volatile admission never leaves the caller's turn.** It reads no IndexedDB and takes no Web Lock,
+  so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
+  task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1's.
+- **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
+  `readiness-probe` carry a required `lane: 'durable' | 'volatile'` (R-S3a-15), so a reader of the
+  runner's storage speed can leave the memory lane out.
+
+The storage cost is pinned in
+[`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
+one durable send spends 10 `al-admission` and 15 `al-work` IndexedDB operations, unchanged by S3a; one
+volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
+idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
+(D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
+empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,
+times out or finalizes nothing counts as `work-probe`; one that writes counts as the work it did
+(R-S3a-11, R-S3a-13).
+
 ## The admission directory
 
 [`admission/`](./admission) holds the state this scope persists and the transaction
@@ -85,8 +139,8 @@ Every stored key is `topicId/resourceId/contextId`. Outbound work is
 mirrors that locator under `AL_OUTBOUND_IDENTITY`. The owner leads the key so one
 browser session's rows are a bounded key-range delete rather than a scan.
 
-Browser RTC and WS for the same local session share the canonical scope and queue,
-with separate admission/action namespaces. The bounded hashed physical key is a
+Browser RTC and WS for the same local session share the durable lane's canonical scope and
+queue, with separate admission/action namespaces; each keeps its own memory pair. The bounded hashed physical key is a
 locator; the retained full-identity fact and exact content establish valid reuse.
 Different sessions cannot share authority through a matching locator.
 
@@ -466,7 +520,8 @@ QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and 
 admission decision together. Browser composition supplies its existing engine to the
 outbound runtime. Due-work inspection uses the bounded QueueBox `readWorkPage` port;
 the existing browser cleanup owner removes expired and session-owned work from the
-shared store through those bounded key ranges.
+shared store through those bounded key ranges. That owner and a storage reset are
+IndexedDB-only; the memory pair is swept by its own lane (Store lanes, above).
 
 A browser database whose stores or recorded schema identity do not match is deleted
 and recreated once, and the reset is reported through the required `onStorageReset`
@@ -483,6 +538,8 @@ transport queues have been removed. The application-facing delivery handle
 audience receipts exist on WS room sends through the server's receipts, and on RTC room sends
 through the frozen audience and the retry to the missing recipients through the tree (S2c-ii).
 [`al-storage-snapshot.test.ts`](../../../tests/shared/alm/al-storage-snapshot.test.ts)
-records what one standard supersession workload leaves in browser storage; existing
+records what one standard supersession workload leaves in browser storage: as a durable opt-in, the
+figures it held before S3a (216 outbound and 72 inbound rows, the same byte bands); taking the volatile
+default, 0 rows added on either leg. Existing
 paged due-work reads still do not establish that every backend query or cleanup path
 has met its performance goal.

@@ -388,8 +388,23 @@ readable from a recipe in this release, so a fault's effect can only be inferred
 from what the receiver did or did not get.
 
 `storage.counters` reads the AL-owned IndexedDB operation counters as
-`{ total, byOwner: { 'al-admission', 'al-work' }, byKind }`, and `reset: true`
-reads and then clears them. The scripted storage observer and transport fault
+`{ total, byOwner: { 'al-admission', 'al-work' }, byKind, workProbeCount,
+workNonProbeCount, reset }`, and `reset: true` reads and then clears them.
+`reset` echoes whether this reading cleared the counters, so the next reading
+counts from zero. `workProbeCount` is the durable owners' idle probes —
+`byKind['work-page']` plus `byKind['work-probe']` — and `workNonProbeCount` is
+every other `al-work` operation. The counters count IndexedDB only; a memory
+store never moves them.
+
+A storage window is two readings around the work it measures: a
+`storage-window-open` reading with `reset: true`, the scenario's commands, then
+a `storage-window` reading without a reset that the assertions read (each
+command id carries the scenario and role). `volatile-default` asserts
+`byOwner.al-admission` and `workNonProbeCount` equal to 0 on the sender and the
+receiver, with the probes reported beside the zero (D55); `durable-opt-in` sends
+with `durability: 'local-inbox'` and asserts `byOwner.al-admission` above 0 on
+both pages. The receiver's window closes after its arrival and before a trailing absence
+window, so its acknowledgement has left before the scenario ends. The scripted storage observer and transport fault
 port are attached only when the active connection names an application, so both
 `storage.counters` and `fault.inject` refuse a connection without one instead of
 reporting zeros.

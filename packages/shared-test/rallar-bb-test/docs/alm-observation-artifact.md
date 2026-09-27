@@ -70,10 +70,18 @@ records what the runner was doing while the cell ran:
     calibrated on IndexedDB read chains; a memory lane's commit reads no IndexedDB, and its cost is
     the page's event-loop contention instead: 0–5 ms per operation for a send and up to 39 ms for a
     repair on a local run, figures that say nothing about the runner's storage. An event recorded
-    before S3a names no lane and is read as `durable`.
+    before S3a names no lane and is read as `durable`. That default is exact only for artifacts
+    recorded before the volatile lane existed: an artifact from an S3a branch head between the store
+    lanes (S3a Tasks 4–5) and R-S3a-15 carries memory-lane events with no `lane`, reads them as
+    durable, and is no regime baseline.
   - The calibration read the cell's opening window. Since S3a's volatile default a cell's first
     durable send comes from `durable-opt-in`, well past it, so the reading spans the whole cell
     (R-S3a-16). A cell that sent too few durable messages leaves `regime` to the page.
+  - The trade-off: the durable send commits now come after whatever degradation the cell causes
+    itself, so a failing cell that reaches the sample floor can read `slow` from its own IndexedDB
+    contention, and a product red then reads as a slow runner — the misread this file exists to
+    prevent. When `regime` says `slow` and `pageRegime.regime` says `normal`, suspect the cell before
+    the runner, and read the snapshot.
 - `windowMs` — `ALM_OBSERVATION_WINDOW_MS`, measured from the run's earliest event: where the
   `pageRegime` window opens.
 - `pageRegime` — the page's storage queue, beside `regime`'s admission chain. It is the median
@@ -95,7 +103,9 @@ records what the runner was doing while the cell ran:
   its last `storage.counters` reading, summed over every page that read its counters (senders and,
   since S3a's storage windows, receivers). Each page counts from its own previous reading; it counts
   from zero after a reading that reset the counter, and after a reading lower than its previous one,
-  which is a reloaded page whose counter started again.
+  which is a reloaded page whose counter started again. That rule catches only a lower reading: a
+  reloaded page whose counter passed the old page's last reading before its next reading is
+  under-counted by that last reading.
 - `inbound` — one entry per direction (`sender`, `receiver`, `unattributed`), from the
   `admission-outcome`, `effect-drain` and `claim-settled` events of the
   [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from
@@ -116,9 +126,8 @@ records what the runner was doing while the cell ran:
     drain medians beside it are still reported in that case.
   - `phases` — the median of each `effect-drain` phase (`selectionMedianMs`, `claimMedianMs`,
     `runMedianMs`, `releaseMedianMs`, `queueWaitMedianMs`) and of `durationMs` itself
-    (`drainMedianMs`), over `drainCount` drains. Unlike `perOperation`, these medians are taken over
-    the whole cell, not the opening window, because this block reads the receiver rather than the
-    runner. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
+    (`drainMedianMs`), over `drainCount` drains, taken over the whole cell: this block reads the
+    receiver rather than the runner. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
     but no drain — the mirror of `pendingShare`'s `unmeasured` case above. As the diagnostic contract
     explains, the four phases do not sum to `durationMs`, and — since Task 2 of the F2c slice —
     `releaseMedianMs` is the median of one release flush per batch, not one flush per claim. F2c's

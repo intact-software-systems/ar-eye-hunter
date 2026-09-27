@@ -791,7 +791,10 @@ dead-RTC-peer reconnect race (a maintainer chip).
   `packages/shared/alm/outbound/al-outbound-repair-admission.ts`); S2b owes it a scenario, not code.
 - **S3 Defaults, fallback, volatile path, consumer proofs** — planned as three PRs (S3a purpose and the
   volatile default, S3b fallback within the deadline, S3c consumer proofs and the volatile bound) from
-  [alm-s3-design-proposal.md](alm-s3-design-proposal.md), decisions D52–D61. A typed channel declares
+  [alm-s3-design-proposal.md](alm-s3-design-proposal.md), decisions D52–D61. S3a delivered by PR #597
+  (branch `claude/alm-s3-defaults-fallback-volatile`): the purpose table, the receipted volatile default,
+  the store lanes and the volatile proof, and each carrier's capability declaration in its composition
+  root; its rulings R-S3a-0 to R-S3a-16 are in its plan. A typed channel declares
   `purpose: 'command' | 'notification'` and the purpose fixes the D2 default: at-least-once, receipted,
   volatile, 30 s (D52); `receiver` on a WS unicast addressed to a session is supported (D53); each
   outbound carrier runtime holds a memory and an IndexedDB store pair and routes each admission by its
