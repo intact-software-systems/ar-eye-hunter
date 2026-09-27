@@ -8,16 +8,34 @@ import {
     closeLiveRtcBrowserAgentContexts,
     openLiveRtcBrowserAgent,
     type LiveRtcBrowserAgentAuth,
+    type LiveRtcBrowserAgentConfig,
     type LiveRtcBrowserContextFactory
 } from './live-rtc-browser-agents.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 
-/**
- * The environment every live three-browser spec reads and the trio it opens. Extracted so the
- * lifecycle acceptance spec and the matrix spec resolve the same variables from one place rather
- * than each carrying its own copy of the fallback chains.
- */
+export interface OpenAgentTrioInput {
+    readonly runId: string;
+    readonly groupId: string;
+    readonly suffix: string;
+    readonly label: string;
+}
+
+export type LiveRtcAgentTrio = readonly [
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent,
+    LiveRtcControlClient.Agent
+];
+
+export class LiveRtcAgentTrioStartupFailure extends Error {
+    readonly cleanupErrors: readonly Error[];
+
+    constructor(cause: Error, cleanupErrors: readonly Error[]) {
+        super(cause.message, { cause });
+        this.name = 'LiveRtcAgentTrioStartupFailure';
+        this.cleanupErrors = cleanupErrors;
+    }
+}
 
 export const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176';
 export const CONTROL_BASE_URL = readFullStackControlBaseUrl();
@@ -136,20 +154,7 @@ export function actorFor(prefix: AgentPrefix, suffix: string): string {
         `agent-${prefix.toLowerCase()}-${suffix}`;
 }
 
-export interface OpenAgentTrioInput {
-    readonly runId: string;
-    readonly groupId: string;
-    readonly suffix: string;
-    readonly label: string;
-}
-
-export type LiveRtcAgentTrio = readonly [
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent,
-    LiveRtcControlClient.Agent
-];
-
-export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>[1]['config'] {
+export function liveRtcAgentConfig(): LiveRtcBrowserAgentConfig {
     return {
         spaBaseUrl: SPA_BASE_URL,
         controlWsUrl: CONTROL_WS_URL,
@@ -186,7 +191,10 @@ export async function openAgentTrio(
         return [a, b, c];
     }
     catch (error) {
-        await closeLiveRtcBrowserAgentContexts(handles);
-        throw toError(error);
+        const cleanupErrors = await closeLiveRtcBrowserAgentContexts(handles);
+        const openingFailure = toError(error);
+        throw cleanupErrors.length > 0
+            ? new LiveRtcAgentTrioStartupFailure(openingFailure, cleanupErrors)
+            : openingFailure;
     }
 }

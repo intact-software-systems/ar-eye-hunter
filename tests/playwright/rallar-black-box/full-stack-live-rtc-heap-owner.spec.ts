@@ -11,6 +11,7 @@ import {
     CONTROL_BASE_URL,
     hasThreeAgentConfig,
     LIVE_RTC_SKIP_MESSAGE,
+    LiveRtcAgentTrioStartupFailure,
     openAgentTrio,
     roomSeed,
     workspaceId,
@@ -159,8 +160,12 @@ test('diagnostic-only E3 heap owners at settled cycles 0 and 20', async ({ brows
         diagnostic.completed = true;
     }
     catch (cause) {
-        diagnostic.errors.push(toError(cause).message);
-        throw toError(cause);
+        const failure = toError(cause);
+        diagnostic.errors.push(failure.message);
+        if (failure instanceof LiveRtcAgentTrioStartupFailure) {
+            diagnostic.cleanupErrors.push(...failure.cleanupErrors.map((error) => error.message));
+        }
+        throw failure;
     }
     finally {
         const cleanupErrors = await closeLiveRtcBrowserAgentContexts(openHandles);
