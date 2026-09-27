@@ -4,11 +4,16 @@
 
 An admitted inbound WS message is dispatched by one worker in a shared Postgres
 cluster, but socket connections are process-local. A worker on process B can
-complete `dispatch-local` while all addressed sockets are on process A. The
-observed three-process API-v1 black-box failures are consistent with that
-ownership mismatch; they do not prove why this branch changed which process
-claimed the work. The fix covers **all** `live-only` WS publications: admitted
-inbound traffic, proxy/handler replies, and server-generated messages. It must
+complete `dispatch-local` while all addressed sockets are on process A. In the
+failed three-process API-v1 recipes, the receiving WS connections opened on
+the primary process, while the tertiary process logged `no recipients` for
+`room.match` and `room.crdt` inside the respective failed-send windows. This
+shows a non-socket-owning process attempted local fanout for those topics and
+strongly supports the cluster-gap diagnosis. The warnings do not carry message
+IDs, so they do not prove that these were the exact failed sends or explain why
+this branch changed which process claimed the work. The fix covers
+**all** `live-only` WS publications: admitted inbound traffic, proxy/handler
+replies, and server-generated messages. It must
 not run router handlers or authoritative mutations on every subscriber.
 
 The existing `QueueBoxPubSubBridge` publishes `WS_OUTBOX` keys. It does not
