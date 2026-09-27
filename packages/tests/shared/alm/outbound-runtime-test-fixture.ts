@@ -1,11 +1,18 @@
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { expect, onTestFinished, vi } from 'vitest';
 
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundAckTrackingPlan,
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import {
@@ -45,6 +52,8 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly queueEngine?: InboxOutboxEngine;
     readonly outbox?: InMemoryQueueBox;
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
+    /** The memory pair a volatile plan is admitted to; absent, every admission uses `stores`. */
+    readonly volatileStores?: ALVolatileOutboundRuntimeStores<TPrepared>;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
     /** The carrier every settlement this runtime states is stamped with; `ws` unless a test says otherwise. */
@@ -78,11 +87,13 @@ export async function drainEngine(engine: InboxOutboxEngine): Promise<void> {
 export function captureOutboundWorkRunnable(engine: InboxOutboxEngine): () => Promise<void> {
     const includeTask = vi.spyOn(engine, 'includeTask');
     return async () => {
-        const registration = includeTask.mock.calls.find(([name]) => name.startsWith('al-outbound:'))?.[1];
-        if (!registration) {
+        const registrations = includeTask.mock.calls.filter(([name]) => name.startsWith('al-outbound:'));
+        if (registrations.length === 0) {
             throw new Error('Expected the outbound runtime to have registered its own work task');
         }
-        await registration.runnable();
+        for (const [, registration] of registrations) {
+            await registration.runnable();
+        }
     };
 }
 
@@ -146,6 +157,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             queueEngine: options.queueEngine,
             outbox: options.outbox ?? new InMemoryQueueBox(new Map()),
             stores: options.stores,
+            volatileStores: options.volatileStores,
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
             carrier: options.carrier ?? 'ws',
@@ -171,7 +183,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
 export function createOutboundRuntimeWithWorkTask<TPrepared>(
     create: () => ALOutboundMessageRuntime<TPrepared>
 ): ALOutboundMessageRuntime<TPrepared> {
-    let runnable: (() => void | Promise<void>) | undefined;
+    const runnables: (() => void | Promise<void>)[] = [];
     const includeTask = InboxOutboxEngine.prototype.includeTask;
     const spy = vi.spyOn(InboxOutboxEngine.prototype, 'includeTask').mockImplementation(function (
         this: InboxOutboxEngine,
@@ -179,7 +191,7 @@ export function createOutboundRuntimeWithWorkTask<TPrepared>(
         task
     ) {
         if (id.startsWith('al-outbound:')) {
-            runnable = task.runnable;
+            runnables.push(task.runnable);
         }
         return includeTask.call(this, id, task);
     });
@@ -190,11 +202,15 @@ export function createOutboundRuntimeWithWorkTask<TPrepared>(
     finally {
         spy.mockRestore();
     }
-    if (runnable === undefined) {
+    if (runnables.length === 0) {
         throw new Error('Expected the outbound runtime to register its own work task');
     }
-    const runBatch = runnable;
-    outboundWorkBatches.set(runtime, async () => await runBatch());
+    // Every lane in registration order: the durable lane first, then the volatile one.
+    outboundWorkBatches.set(runtime, async () => {
+        for (const runnable of runnables) {
+            await runnable();
+        }
+    });
     return runtime;
 }
 
@@ -258,6 +274,11 @@ export async function waitUntil(predicate: () => boolean): Promise<void> {
 /** The store bundle plus the backend it was built over, so a test can fail one commit at its source. */
 export interface OutboundTestStores extends ALOutboundRuntimeStores<OutboundTestPayload> {
     readonly backend: InMemoryAdmissionBackend;
+}
+
+/** The memory pair a runtime routes its volatile admissions to. */
+export function createVolatileOutboundTestStores(): ALVolatileOutboundRuntimeStores<OutboundTestPayload> {
+    return createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload });
 }
 
 export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): OutboundTestStores {
@@ -368,4 +389,26 @@ export async function computeOutboundTestAdmission<TPrepared>(
         throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);
     }
     return computed.bundle;
+}
+
+/** A `hop` receipt expecting these peers, each its own next hop. */
+export function trackOutboundTestAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
+    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds, nextHopPeerIds: expectedPeerIds, mode: 'hop' };
+}
+
+/** A v2 ACK one peer states for a message `self` originated over WS. */
+export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+        {
+            ackedMsgId: message.id.msgId,
+            originPeerId: 'self',
+            logicalRecipientPeerId: fromPeerId,
+            fromPeerId,
+            toPeerId: 'self',
+            status: 'accepted',
+            observedAtEpochMs: 1,
+            carrier: 'ws'
+        }
+    );
 }

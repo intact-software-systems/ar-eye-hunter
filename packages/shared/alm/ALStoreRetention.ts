@@ -1,5 +1,7 @@
 export const DEFAULT_AL_EPHEMERAL_TTL_MS = 30 * 60_000;
 export const DEFAULT_AL_REPOSITORY_TTL_MS = 60 * 60_000;
+/** How often a volatile lane sweeps its memory pair, on its own work round -- the IndexedDB eviction's cadence. */
+export const AL_VOLATILE_STORE_EVICTION_INTERVAL_MS = 60_000;
 
 export type ALRuntimeStoreRetentionConfig = Readonly<{
     ephemeralTtlMs?: number;

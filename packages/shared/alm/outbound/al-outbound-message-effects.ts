@@ -7,6 +7,7 @@ import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecyc
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
+    ALOutboundAdmissionStore,
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
 } from './admission/al-outbound-admission-store.ts';
@@ -25,6 +26,8 @@ import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ac
 export namespace ALOutboundMessageEffects {
     export interface Dependencies<TPrepared> {
         readonly runtime: ALOutboundMessageRuntime.Dependencies<TPrepared>;
+        /** The store of the lane these effects run for, which is not always the owner's durable pair. */
+        readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
         readonly commitDispatchPlan: (
             dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
@@ -120,7 +123,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
         }
-        if (await runtime.admissionStore.isMessageSuperseded(msg)) {
+        if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
             return { status: 'completed' };
         }
         const computed = await this.dependencies.commitDispatchPlan({
@@ -177,7 +180,7 @@ export class ALOutboundMessageEffects<TPrepared> {
         const runtime = this.dependencies.runtime;
         const { lifecycle } = send;
         const msgId = send.payload.message.msgId;
-        if (await runtime.admissionStore.isMessageSuperseded(lifecycle.canonicalMessage)) {
+        if (await this.dependencies.admissionStore.isMessageSuperseded(lifecycle.canonicalMessage)) {
             this.dependencies.settlements({
                 kind: 'attempt-settled',
                 msgId,
@@ -190,7 +193,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             return { status: 'completed' };
         }
         // A complete receipt already stated the delivery; this attempt owes no settlement of its own.
-        const receipts = await runtime.admissionStore.readReceiptState({
+        const receipts = await this.dependencies.admissionStore.readReceiptState({
             originPeerId: lifecycle.canonicalMessage.id.senderId,
             msgId
         });

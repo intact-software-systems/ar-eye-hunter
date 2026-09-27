@@ -6,6 +6,7 @@ import {
     createDefaultIndexedDbALOutboundRuntimeStores,
     createDefaultInMemoryALInboundRuntimeStores,
     createDefaultInMemoryALOutboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores,
     isIndexedDbALRuntimeStoreSupported
 } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -16,7 +17,10 @@ import {
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
@@ -113,6 +117,16 @@ export function createBrowserALOutboundRuntimeStores(
     return isIndexedDbALRuntimeStoreSupported()
         ? createDefaultIndexedDbALOutboundRuntimeStores({ ...outbound, dbName: BROWSER_AL_RUNTIME_DB_NAME })
         : createDefaultInMemoryALOutboundRuntimeStores(outbound);
+}
+
+/** Always memory, whatever the browser supports: the pair a carrier routes volatile admissions to. */
+export function createBrowserALVolatileOutboundRuntimeStores(
+    name: string
+): ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage> {
+    return createVolatileALOutboundRuntimeStores({
+        namespace: `browser:${name}:volatile`,
+        decodePrepared: decodeALOutboundTransportMessage
+    });
 }
 
 export function configureBrowserALRuntimeStores(

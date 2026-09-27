@@ -1,8 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
@@ -12,47 +11,24 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
-import {
-    AL_WORK_READINESS_MEMORY_MS,
-    ALWorkHandler,
-    type ALWorkAttemptResult,
-    type ALWorkDiagnostics,
-    type ALWorkReadinessProbeCause,
-    type ALWorkReadySelection
-} from '../work/al-work-handler.ts';
-import {
-    createALWorkQueuePort,
-    type ALWorkClaim,
-    type ALWorkQueuePort
-} from '../work/al-work-queue-port.ts';
+import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
 import type {
     ALOutboundAdmissionStore,
-    ALOutboundDurableEffect,
-    ALOutboundEffectSnapshot,
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
-import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
-import { ALOutboundMessageEffects } from './al-outbound-message-effects.ts';
-import { ALOutboundRepairAdmission } from './al-outbound-repair-admission.ts';
-import { ALOutboundRepairRetransmission } from './al-outbound-repair-retransmission.ts';
-import {
-    AL_OUTBOUND_WORK_LEASE_MS,
-    AL_OUTBOUND_WORK_PAGE_SIZE,
-    readALOutboundWorkReadyAt,
-    toALOutboundDequeueWork,
-    toALOutboundWorkType,
-    type ALOutboundDequeueDeferral
-} from './al-outbound-work-entry.ts';
-import type { ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
+import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
+import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
-import { ALOutboundReceiptAdmission } from './control/al-outbound-receipt-admission.ts';
+import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
+import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
 export type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult
 } from './control/al-outbound-control-admission.ts';
+export type { ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
@@ -154,6 +130,12 @@ export interface ALOutboundRuntimeStores<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly workQueue: QueueBoxResourceEntryRepository;
 }
+
+/** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
+export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
+    evictExpired(): void;
+}
+
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
 export type ALOutboundCommitOrigin = 'send' | 'drain' | 'repair';
 
@@ -289,8 +271,11 @@ export namespace ALOutboundMessageRuntime {
     }
 
     export interface Resources<TPrepared> {
+        /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly workQueue: QueueBoxResourceEntryRepository;
+        /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
+        readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
         readonly clock: Clock;
         readonly random: () => number;
@@ -337,128 +322,71 @@ export namespace ALOutboundMessageRuntime {
     }
 }
 
-/** What a `cancel` call decided: a message the owner never saw still moves the set and returns `cancelled`. */
-export type ALOutboundCancelOutcome = 'cancelled' | 'already-cancelled';
-
-/** One message's live transport controller, shared by its concurrent attempts, and how many hold it open. */
-interface ALOutboundLiveSendControl {
-    readonly controller: AbortController;
-    liveAttempts: number;
-}
-
+/**
+ * One carrier's outbound owner. It routes every admission to a store lane and keeps what spans them:
+ * cancellation, the settlement guard and disposal.
+ *
+ * - An admission (`enqueueIfAbsent`, each member of `enqueueAllIfAbsent`) goes to the lane its plan's
+ *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
+ *   is computed once and handed to that lane's admission of the same message, so the admission never
+ *   plans the message twice. The lane over the memory pair states no admission durable.
+ * - A group whose members differ in durability commits as one group per lane: there is no
+ *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
+ * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
+ *   message (a memory read), else to the durable lane.
+ * - `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
+ * - Only the durable lane admits foreign dequeue rows. The volatile lane names none and takes no
+ *   browser lock, since Web Locks guard cross-tab IndexedDB commits and memory is per tab.
+ * - The volatile lane's worker id is `${effectWorkerId}/volatile`. It sweeps its expired rows from its
+ *   own work round, at most once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` of its clock.
+ * - An ordering or supersedence track whose messages declare different durabilities is split between
+ *   the lanes; no caller declares one that way.
+ */
 export class ALOutboundMessageRuntime<TPrepared> {
-    private readonly sendAbortController = new AbortController();
-    /** Held for the owner's lifetime (README "Transport attempt settlement"): never drained, never persisted. */
-    private readonly cancelledMsgIds = new Set<string>();
-    private readonly liveMessageSendControllers = new Map<string, ALOutboundLiveSendControl>();
-    private readonly readyPromise: Promise<void>;
-    private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
-    private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
-    private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
-    private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
-    private readonly work: ALWorkHandler;
-    private readonly effects: ALOutboundMessageEffects<TPrepared>;
+    private readonly sendControls = new ALOutboundSendControls();
+    private readonly durable: ALOutboundStoreLane<TPrepared>;
+    private readonly volatile: ALOutboundStoreLane<TPrepared> | undefined;
     private disposed = false;
     private readonly dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>;
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
-        this.readyPromise = dependencies.admissionStore.ready();
-        const workPort = createALWorkQueuePort({
-            queue: dependencies.workQueue,
-            workTypes: new Set([
-                toALOutboundWorkType(dependencies.admissionStore.namespace),
-                ...dependencies.dequeue.types
-            ]),
-            leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
-            nowMs: () => dependencies.clock.nowMs(),
-            random: dependencies.random
-        });
         const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
-        const controlAdmission = dependencies.admissionStore.createControlAdmission({
-            port: workPort,
-            clock: dependencies.clock,
-            settlements,
-            carrier: dependencies.carrier
-        });
-        this.dispatchAdmission = new ALOutboundDispatchAdmission({
-            admissionStore: dependencies.admissionStore,
-            workPort,
-            toOutboxEntry: dependencies.toOutboxEntry,
-            decodePreparedMessage: dependencies.decodePreparedMessage,
-            clock: dependencies.clock,
+        this.durable = new ALOutboundStoreLane({
+            stores: dependencies,
+            workerId: dependencies.effectWorkerId,
+            dequeueTypes: dependencies.dequeue.types,
             browserLocks: dependencies.browserLocks,
-            diagnostics: dependencies.diagnostics,
+            evictExpired: undefined,
+            runtime: dependencies,
+            sendControls: this.sendControls,
             settlements
         });
-        this.repairAdmission = new ALOutboundRepairAdmission({
-            admissionStore: dependencies.admissionStore,
-            controlAdmission,
-            clock: dependencies.clock,
-            planOutgoingMessage: dependencies.planOutgoingMessage,
-            planRepairMessage: dependencies.planRepairMessage,
-            diagnostics: dependencies.diagnostics
-        });
-        this.receiptAdmission = new ALOutboundReceiptAdmission({
-            admissionStore: dependencies.admissionStore,
-            clock: dependencies.clock,
-            settlements,
-            diagnostics: dependencies.diagnostics
-        });
-        this.repairRetransmission = new ALOutboundRepairRetransmission({
-            admissionStore: dependencies.admissionStore,
-            dispatchAdmission: this.dispatchAdmission,
-            planOutgoingMessage: dependencies.planOutgoingMessage,
-            planRepairMessage: dependencies.planRepairMessage
-        });
-        this.work = new ALWorkHandler({
-            workerId: dependencies.effectWorkerId,
-            port: workPort,
-            queueEngine: dependencies.queueEngine,
-            ownsQueueEngine: dependencies.ownsQueueEngine,
-            clock: dependencies.clock,
-            pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readDequeueDeferral()),
-            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
-            selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
-            runClaim: (claim) => this.runOutboundClaim(claim),
-            diagnostics: (event) => this.recordWorkDiagnostics(event)
-        });
-        this.effects = new ALOutboundMessageEffects({
+        this.volatile = dependencies.volatileStores === undefined ? undefined : new ALOutboundStoreLane({
+            stores: dependencies.volatileStores,
+            workerId: `${dependencies.effectWorkerId}/volatile`,
+            dequeueTypes: new Set<string>(),
+            browserLocks: undefined,
+            evictExpired: dependencies.volatileStores.evictExpired,
             runtime: dependencies,
-            dispatchAdmission: this.dispatchAdmission,
-            commitDispatchPlan: (dispatch) => this.commitDispatchPlan(dispatch),
-            sendSignal: this.sendAbortController.signal,
+            sendControls: this.sendControls,
             settlements
         });
     }
 
     async ready(): Promise<void> {
-        await this.readyPromise;
-
-        if (this.disposed) {
-            return;
-        }
-
-        await this.work.ready();
+        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
     }
 
     dispose(): void {
         this.disposed = true;
-        this.work.dispose();
-        this.dispatchAdmission.dispose();
-        // Every live message controller first: disposal ends local transport work, same as cancellation
-        // does, but states no `cancelled` fact of its own. Each interrupted attempt still terminates
-        // through its own `attempt-settled cancelled` -- the effects layer states it directly when the
-        // abort lands before the carrier runs, the carrier's own settlement when it lands during the send.
-        for (const live of this.liveMessageSendControllers.values()) {
-            live.controller.abort();
-        }
-        this.sendAbortController.abort();
+        this.durable.dispose();
+        this.volatile?.dispose();
+        this.sendControls.dispose();
     }
 
     get sendSignal(): AbortSignal {
-        return this.sendAbortController.signal;
+        return this.sendControls.signal;
     }
 
     /**
@@ -468,13 +396,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
      * `cancelled` settlement.
      */
     cancel(msgId: string): ALOutboundCancelOutcome {
-        if (this.cancelledMsgIds.has(msgId)) {
-            return 'already-cancelled';
+        const outcome = this.sendControls.cancel(msgId);
+        if (outcome === 'cancelled') {
+            this.emitSettlement({ kind: 'cancelled', msgId });
         }
-        this.cancelledMsgIds.add(msgId);
-        this.liveMessageSendControllers.get(msgId)?.controller.abort();
-        this.emitSettlement({ kind: 'cancelled', msgId });
-        return 'cancelled';
+        return outcome;
     }
 
     async enqueueIfAbsent(
@@ -484,22 +410,16 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
-
         await this.ready();
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
-
-        const computed = await this.commitDispatchPlan({
-            msg,
-            planner: dispatchPlan === undefined
-                ? this.dependencies.planOutgoingMessage
-                : () => dispatchPlan,
-            intent: 'enqueue',
-            phase: 'immediate',
-            origin: 'send',
-            options: { explicitPlan: dispatchPlan !== undefined }
-        });
+        const admission = dispatchPlan === undefined
+            ? this.planAdmission(msg)
+            : { lane: this.selectLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
+        const computed = await admission.lane.commit(
+            this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
+        );
         return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
     }
 
@@ -510,7 +430,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(retransmission.msg);
         }
-        const computed = await this.commitDispatchPlan({
+        const lane = await this.selectLaneForMessage(retransmission.msg.id.msgId);
+        const computed = await lane.commit({
             msg: retransmission.msg,
             planner: () => retransmission.plan,
             intent: 'repair',
@@ -521,33 +442,35 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return ALOutboundMessageRuntime.toEnqueueResult(computed, retransmission.msg);
     }
 
-    /** The messages of one sender admitted as one commit, each planned as `enqueueIfAbsent` plans it; one result per message, in order. */
+    /** The messages of one sender admitted as one commit per lane, each planned once; one result per message, in order. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
         }
-
         await this.ready();
         if (this.disposed) {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
         }
-
-        const results = await this.dispatchAdmission.commitAll(msgs.map((msg) => ({
-            msg,
-            planner: this.dependencies.planOutgoingMessage,
-            intent: 'enqueue' as const,
-            phase: 'immediate' as const,
-            origin: 'send' as const,
-            options: { explicitPlan: false }
-        }))).catch((error) => {
-            // A group rethrows only after every member ran, so members before the throw may have landed.
-            this.work.committed();
-            throw error;
+        const planned = msgs.map((msg) => {
+            const { lane, planner } = this.planAdmission(msg);
+            return { lane, dispatch: this.toEnqueueDispatch(msg, planner, false) };
         });
-        if (results.some((result) => ALOutboundMessageRuntime.hasWrittenWork(result))) {
-            this.work.committed();
+        const lanes = [...new Set(planned.map(({ lane }) => lane))];
+        const members = lanes.map((lane) =>
+            planned.filter((member) => member.lane === lane).map(({ dispatch }) => dispatch)
+        );
+        // Every lane commits its members before a throw of one of them is rethrown, as one group does.
+        const settled = await Promise.allSettled(lanes.map((lane, index) => lane.commitAll(members[index]!)));
+        const computed = new Map<ALOutboundDispatchAdmission.Input<TPrepared>, ALOutboundComputedDto<TPrepared>>();
+        for (const [index, outcome] of settled.entries()) {
+            if (outcome.status === 'rejected') {
+                throw outcome.reason;
+            }
+            members[index]!.forEach((dispatch, position) => computed.set(dispatch, outcome.value[position]!));
         }
-        return results.map((result, index) => ALOutboundMessageRuntime.toEnqueueResult(result.computed, msgs[index]!));
+        return planned.map(({ dispatch }) =>
+            ALOutboundMessageRuntime.toEnqueueResult(computed.get(dispatch)!, dispatch.msg)
+        );
     }
 
     /** The source decides trust: only the trusted server of a WS client speaks for a relay it does not name. */
@@ -559,35 +482,62 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return { kind: 'not-handled' };
         }
-
-        const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
-        // A foreign control and a rejected one write nothing, so they owe no batch.
-        if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
-            this.work.committed();
-        }
-        return admitted;
+        return await (await this.selectLaneForControl(msg)).acceptControlMessage(msg, source);
     }
 
     /** A server receipt control about a message this owner originated; it writes the receipt row, never work. */
     async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         await this.ready();
-        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(control);
-    }
-
-    private async commitDispatchPlan(
-        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
-    ): Promise<ALOutboundComputedDto<TPrepared>> {
-        const result = await this.dispatchAdmission.commit(dispatch);
-
-        if (ALOutboundMessageRuntime.hasWrittenWork(result)) {
-            this.work.committed();
+        if (this.disposed) {
+            return { kind: 'not-handled' };
         }
-
-        return result.computed;
+        return await (await this.selectLaneForControl(control)).acceptReceipt(control);
     }
 
-    private static hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
-        return result.committed || result.computed.verdict.kind === 'pending';
+    /**
+     * Plans the message once, for the lane its plan names. A planner that throws is left to the durable
+     * lane's admission, which plans it again and states that failure where a single send always has.
+     */
+    private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
+        const planOutgoingMessage = this.dependencies.planOutgoingMessage;
+        try {
+            const plan = planOutgoingMessage(msg);
+            return { lane: this.selectLaneForPlan(plan), planner: toPlannedOnce(msg, plan, planOutgoingMessage) };
+        }
+        catch {
+            return { lane: this.durable, planner: planOutgoingMessage };
+        }
+    }
+
+    /** The lane a durable plan names, or the only lane of a runtime with one backend. */
+    private selectLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
+        return plan.persist || this.volatile === undefined ? this.durable : this.volatile;
+    }
+
+    /** A memory read, so a control about a volatile message never reaches IndexedDB. */
+    private async selectLaneForMessage(msgId: string): Promise<ALOutboundStoreLane<TPrepared>> {
+        return this.volatile !== undefined && await this.volatile.ownsMessage(msgId) ? this.volatile : this.durable;
+    }
+
+    /** An undecodable control goes to the durable lane, which answers it `not-handled`. */
+    private async selectLaneForControl(control: ALMessage): Promise<ALOutboundStoreLane<TPrepared>> {
+        const decoded = decodeALControlMessage(control).right;
+        return decoded === undefined ? this.durable : await this.selectLaneForMessage(controlTargetMsgId(decoded));
+    }
+
+    private toEnqueueDispatch(
+        msg: ALMessage,
+        planner: ALOutboundPlanner<TPrepared>,
+        explicitPlan: boolean
+    ): ALOutboundDispatchAdmission.Input<TPrepared> {
+        return {
+            msg,
+            planner,
+            intent: 'enqueue',
+            phase: 'immediate',
+            origin: 'send',
+            options: { explicitPlan }
+        };
     }
 
     private static toEnqueueResult<TPrepared>(
@@ -614,283 +564,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    /** The outbound owner reserves straight from the queue, so it reads no page and observes no row's wait. */
-    private async selectOutboundWork(
-        port: ALWorkQueuePort,
-        pageSize: number
-    ): Promise<ALWorkReadySelection> {
-        const startedAtMs = this.readNowMs();
-        const claims = await port.claim({ maxCount: pageSize, observedEntries: undefined });
-        return {
-            claims,
-            nextReadyAtMs: undefined,
-            selectionDurationMs: 0,
-            claimDurationMs: Math.max(0, this.readNowMs() - startedAtMs),
-            earliestDueAtMs: undefined
-        };
-    }
-
-    /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
-    private readDequeueDeferral(): ALOutboundDequeueDeferral {
-        const { types, resilience } = this.dependencies.dequeue;
-        return {
-            types,
-            readyAtMs: resilience.isNotAllowedThroughToDequeue()
-                ? this.readNowMs() + resilience.toCircuitOpenBackoffMs()
-                : undefined
-        };
-    }
-
-    private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
-        try {
-            const work = await this.readExpirableOutboundWork(claim.entry);
-            return work === undefined ? { status: 'completed' } : await this.runDurableEffect(work);
-        }
-        catch (error) {
-            // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
-            if (error instanceof Error && isNotReadyException(error)) {
-                return { status: 'not-ready', readyAtMs: this.readNowMs() + error.delayMs };
-            }
-            throw error;
-        }
-    }
-
-    /** A deadline crossed during the read is expiry, not a defect: the work is dropped, not rejected. */
-    private async readExpirableOutboundWork(
-        entry: ResourceEntry
-    ): Promise<ALOutboundEffectSnapshot<TPrepared> | undefined> {
-        try {
-            return await this.readOutboundWork(entry);
-        }
-        catch (error) {
-            if (this.hasReachedDeadline(entry)) {
-                return undefined;
-            }
-            throw error;
-        }
-    }
-
-    private hasReachedDeadline(entry: ResourceEntry): boolean {
-        return entry.audit.expiryTs.epochMilliseconds <= this.readNowMs();
-    }
-
-    private async readOutboundWork(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
-        return this.dependencies.dequeue.types.has(entry.typeId)
-            ? toALOutboundDequeueWork(entry, this.dependencies.readMessageFromEntry)
-            : await this.dependencies.admissionStore.readWorkSnapshot(entry);
-    }
-
-    private async runDurableEffect(
-        effect: ALOutboundEffectSnapshot<TPrepared>
-    ): Promise<ALWorkAttemptResult> {
-        // Before anything else: a cancelled message's remaining work completes silently, of any kind --
-        // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
-        // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
-        // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        if (this.isCancelledEffect(effect)) {
-            return { status: 'completed' };
-        }
-        if (effect.expireAtTimestamp <= this.readNowMs()) {
-            this.emitWorkExpiry(effect);
-            return { status: 'completed' };
-        }
-
-        switch (effect.payload.kind) {
-            case 'admit-message':
-                return await this.effects.admitPendingMessage(effect);
-            case 'dequeue-message':
-                return await this.effects.admitDequeuedMessage(effect);
-            case 'admit-control':
-                return await this.repairAdmission.replayControlAdmission(effect.payload);
-            case 'send-prepared':
-                return await this.runPreparedSend(effect, effect.payload);
-            case 'ack-timeout':
-                await this.repairAdmission.retryPendingAck(effect.payload.msgId);
-                return { status: 'completed' };
-            case 'repair-hint':
-                await this.repairRetransmission.retransmitFromRepairHint(
-                    effect.payload.msgId,
-                    effect.payload.request,
-                    effect.effectId
-                );
-                return { status: 'completed' };
-            case 'nack-retry':
-                await this.repairRetransmission.retransmitByMsgId(effect.payload.msgId, {
-                    attemptIdentity: effect.effectId
-                });
-                return { status: 'completed' };
-        }
-    }
-
-    private isCancelledEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
-        const msgId = resolveALOutboundEffectMsgId(effect);
-        return msgId !== undefined && this.cancelledMsgIds.has(msgId);
-    }
-
-    /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
-    private async runPreparedSend(
-        effect: ALOutboundEffectSnapshot<TPrepared>,
-        payload: Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }>
-    ): Promise<ALWorkAttemptResult> {
-        const canonicalMessage = effect.canonicalMessage;
-        if (!canonicalMessage) {
-            throw new NonRetryableException('Prepared work has no canonical message');
-        }
-        const msgId = canonicalMessage.id.msgId;
-        const signal = this.acquireMessageSendSignal(msgId);
-        this.emitSettlement({
-            kind: 'attempt-started',
-            msgId,
-            attemptId: effect.effectId
-        });
-        try {
-            const result = await this.effects.writePreparedMessage({
-                attemptId: effect.effectId,
-                payload,
-                lifecycle: {
-                    canonicalMessage,
-                    signal,
-                    expiresAtMs: effect.expireAtTimestamp,
-                    leaseUntilMs: effect.leaseUntilMs
-                },
-                attempts: effect.attempts
-            });
-            this.releaseMessageSendAttemptWhenSettled(msgId, result);
-            return result;
-        }
-        catch (error) {
-            this.releaseMessageSendSignal(msgId);
-            throw error;
-        }
-    }
-
-    /**
-     * One controller per message, shared by concurrent attempts on it -- the RTC owner commits one
-     * `send-prepared` row per next-hop peer, and `cancel` must abort all of them together.
-     */
-    private acquireMessageSendSignal(msgId: string): AbortSignal {
-        const live = this.liveMessageSendControllers.get(msgId);
-        if (live) {
-            live.liveAttempts += 1;
-            return live.controller.signal;
-        }
-        const controller = new AbortController();
-        this.liveMessageSendControllers.set(msgId, { controller, liveAttempts: 1 });
-        return controller.signal;
-    }
-
-    /** A retained attempt keeps its message controller open until the transport truly settles it. */
-    private releaseMessageSendAttemptWhenSettled(msgId: string, result: ALWorkAttemptResult): void {
-        if (result.status !== 'retained') {
-            this.releaseMessageSendSignal(msgId);
-            return;
-        }
-        const release = () => this.releaseMessageSendSignal(msgId);
-        void result.settled.then(release, release);
-    }
-
-    private releaseMessageSendSignal(msgId: string): void {
-        const live = this.liveMessageSendControllers.get(msgId);
-        if (!live) {
-            return;
-        }
-        live.liveAttempts -= 1;
-        if (live.liveAttempts <= 0) {
-            this.liveMessageSendControllers.delete(msgId);
-        }
-    }
-
-    /**
-     * Only a row whose own deadline *is* the message deadline may call the message expired. A
-     * `send-prepared` or `admit-message` row carries the message's `expiresAtMs` as its queue
-     * expiry, and a foreign dequeue row is stamped from the same deadline; every other kind expires
-     * on a budget of its own -- an `ack-timeout` on the receipt's retry windows, a `nack-retry` on
-     * its schedule -- and says nothing about the message.
-     */
-    private emitWorkExpiry(effect: ALOutboundEffectSnapshot<TPrepared>): void {
-        const msgId = effect.canonicalMessage?.id.msgId;
-        if (msgId === undefined || !statesMessageDeadline(effect.payload.kind)) {
-            return;
-        }
-        this.emitSettlement({
-            kind: 'expired',
-            msgId,
-            detail: 'Outbound work reached the message deadline before its attempt ran.'
-        });
-    }
-
     /** The one guard over every settlement this owner states: a throwing sink changes no work. */
     private emitSettlement(fact: ALOutboundSettlementFact): void {
         try {
             this.dependencies.settlements?.({
                 ...fact,
                 carrier: this.dependencies.carrier,
-                atMs: this.readNowMs()
+                atMs: this.dependencies.clock.nowMs()
             });
         }
         catch (error) {
             console.error('AL outbound delivery settlement sink failed', error);
         }
     }
-
-    /**
-     * A probe is reported as it happens rather than folded into the batch: a batch that runs is one
-     * of six reasons a probe read storage, and only the reason separates an owner re-reading because
-     * it committed from one re-reading because another writer woke every owner on the engine.
-     */
-    private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
-        if (event.kind === 'readiness-probe') {
-            this.dependencies.diagnostics?.({
-                kind: 'readiness-probe',
-                workerId: event.workerId,
-                cause: event.cause,
-                readyAtMs: event.readyAtMs,
-                durationMs: event.durationMs
-            });
-            return;
-        }
-        this.dependencies.diagnostics?.({
-            kind: 'effect-drain',
-            workerId: event.workerId,
-            durationMs: event.durationMs,
-            claimedCount: event.claimedCount,
-            completedCount: event.completedCount,
-            rescheduledCount: event.rescheduledCount,
-            rejectedCount: event.rejectedCount
-        });
-    }
-
-    private readNowMs(): number {
-        return this.dependencies.clock.nowMs();
-    }
 }
 
-/** The effect kinds whose queue row expires exactly when the message it carries does. */
-function statesMessageDeadline(kind: ALOutboundDurableEffect<unknown>['kind']): boolean {
-    return kind === 'send-prepared' || kind === 'admit-message' || kind === 'dequeue-message';
+/** The lane one admission goes to and the planner its admission reads the plan through. */
+interface ALOutboundPlannedAdmission<TPrepared> {
+    readonly lane: ALOutboundStoreLane<TPrepared>;
+    readonly planner: ALOutboundPlanner<TPrepared>;
 }
 
-/** The message a durable effect names, read from whichever field its own kind carries the id in. */
-function resolveALOutboundEffectMsgId<TPrepared>(
-    effect: ALOutboundEffectSnapshot<TPrepared>
-): string | undefined {
-    const { payload } = effect;
-    switch (payload.kind) {
-        case 'admit-message':
-        case 'send-prepared':
-            return payload.message.msgId;
-        case 'ack-timeout':
-        case 'repair-hint':
-        case 'nack-retry':
-            return payload.msgId;
-        case 'admit-control':
-            return payload.msg.id.msgId;
-        case 'dequeue-message':
-            return effect.canonicalMessage?.id.msgId;
-    }
-    // `noImplicitReturns` is off: without this, a payload kind missing a case above would compile
-    // silently and fall through returning `undefined`, escaping cancellation instead of failing the build.
-    // The switch narrows `payload` itself exhaustively, not `payload.kind` -- assign `payload` here.
-    const exhaustivePayload: never = payload;
-    return exhaustivePayload;
+/** The plan the router already made for this message, so its admission does not plan it twice. */
+function toPlannedOnce<TPrepared>(
+    planned: ALMessage,
+    plan: ALOutboundDispatchPlan<TPrepared>,
+    planner: ALOutboundPlanner<TPrepared>
+): ALOutboundPlanner<TPrepared> {
+    return (msg, admittedAudience) =>
+        msg === planned && admittedAudience === undefined ? plan : planner(msg, admittedAudience);
 }

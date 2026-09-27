@@ -25,7 +25,10 @@ import {
     createALOutboundAdmissionStore,
     type ALOutboundPreparedMessageDecoder
 } from './outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
+} from './outbound/al-outbound-message-runtime.ts';
 
 export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;
@@ -190,6 +193,28 @@ export function createDefaultInMemoryALOutboundRuntimeStores<TPrepared>(
         ...toDefaultInMemoryInput(options),
         decodePrepared: options.decodePrepared
     });
+}
+
+/** The memory pair a browser carrier routes volatile admissions to; it persists nothing. */
+export function createVolatileALOutboundRuntimeStores<TPrepared>(
+    options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
+): ALVolatileOutboundRuntimeStores<TPrepared> {
+    const input = toDefaultInMemoryInput(options);
+    const backend = new InMemoryAdmissionBackend(
+        createInMemoryALAdmissionState(
+            new InMemoryQueueBox(
+                undefined,
+                () => Temporal.Instant.fromEpochMilliseconds(input.nowMs())
+            )
+        ),
+        input.nowMs
+    );
+    const stores = createInMemoryALOutboundRuntimeStores({
+        ...input,
+        outboundBackend: backend,
+        decodePrepared: options.decodePrepared
+    });
+    return { ...stores, evictExpired: () => backend.evictExpired() };
 }
 
 export function createDefaultIndexedDbALInboundRuntimeStores(

@@ -5,7 +5,7 @@ import {
     type ALFrozenMulticastAudience
 } from '../al-contracts/al-frozen-multicast-audience.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
-import type { ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
+import { shouldPersistOutbox, type ALQosEffectivePolicy } from '../al-contracts/al-policy.ts';
 import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import { Either } from '../resilience/Either.ts';
@@ -111,6 +111,7 @@ export function toRtcFrozenAudienceRepairPlan(
 /**
  * An origin alone in its room freezes an empty audience. Its `receiver` send has no copy to plan, yet
  * it is admitted: the receipt of zero recipients is complete at once, as the WS server answers it.
+ * Its store is the one its durability names, like any other send of the origin.
  */
 export function toRtcEmptyAudienceDispatchPlan(
     plan: ALOutboundDispatchPlan<ALOutboundTransportMessage>,
@@ -125,7 +126,7 @@ export function toRtcEmptyAudienceDispatchPlan(
     }
     return {
         dropReasonCode: undefined,
-        persist: true,
+        persist: shouldPersistOutbox(effective),
         msg: plan.msg,
         preparedMessages: [],
         ackTracking: toRtcAckTrackingPlan(effective, [])

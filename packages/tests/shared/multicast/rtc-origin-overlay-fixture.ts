@@ -4,7 +4,11 @@ import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/a
 import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundMessageRuntime,
+    ALVolatileOutboundRuntimeStores
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
@@ -49,6 +53,8 @@ export interface RtcOriginOverlayFixtureInput {
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
+    readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
 }
 
 export interface OriginAcknowledgementInput {
@@ -70,7 +76,10 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
     overlays.accept('room', createOriginOverlay(input.nextHopPeerIds));
-    const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+    const resources = createDefaultALOutboundRuntimeResources({
+        decodePrepared: decodeALOutboundTransportMessage,
+        volatileStores: input.volatileStores
+    });
     const settlements: ALDeliverySettlement[] = [];
     const manager = new WebRtcOverlayMulticastManager({
         connectionService: connection,

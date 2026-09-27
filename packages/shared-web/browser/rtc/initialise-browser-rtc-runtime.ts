@@ -1,4 +1,8 @@
-import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toBrowserRtcOverlayALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    createBrowserALVolatileOutboundRuntimeStores,
+    resolveBrowserRtcOverlayALOutboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -59,7 +63,10 @@ export function initialiseRtcOverlayMulticastManager(
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeALOutboundTransportMessage,
             queueEngine: qboxEngine,
-            stores
+            stores,
+            volatileStores: createBrowserALVolatileOutboundRuntimeStores(
+                toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId)
+            )
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,

@@ -167,8 +167,9 @@ describe('WS retained-work faults', () => {
                 ttlMs: 60_000
             }),
             delivery: { reliability: 'at-least-once', ack: 'receiver' },
-            // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
-            qos: { ack: { algo: 'hop' } }
+            // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The retained
+            // row this test holds is IndexedDB work, which only a durable opt-in writes (S3a).
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
         } as const;
         expect((await service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
         await drain();

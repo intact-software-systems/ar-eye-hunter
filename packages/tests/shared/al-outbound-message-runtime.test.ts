@@ -58,6 +58,7 @@ describe('ALOutboundMessageRuntime', () => {
             settlements: undefined,
             admissionStore,
             workQueue: stores.workQueue,
+            volatileStores: undefined,
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },

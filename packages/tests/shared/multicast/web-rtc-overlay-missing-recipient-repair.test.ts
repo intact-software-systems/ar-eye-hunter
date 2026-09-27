@@ -11,6 +11,8 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { computeMissingRecipientRepair } from '@shared/multicast/web-rtc-overlay-missing-recipient-repair.ts';
 
 import {
@@ -249,6 +251,36 @@ describe('the RTC origin retry of a receiver receipt', () => {
                 unconfirmedRecipientPeerIds: [],
                 complete: true
             })
+        ]);
+    });
+
+    // S3a (D54): the store an alone origin's admission lands in is the one its durability names, and its
+    // verdict says whether that store persists. A volatile default must never reach IndexedDB here.
+    it.each(
+        [
+            { label: 'a volatile default', durability: undefined, lane: 'memory', durable: false },
+            { label: 'a local-outbox', durability: 'local-outbox', lane: 'durable', durable: true }
+        ] as const
+    )('admits $label receiver send from an origin alone in its room to the $lane pair', async ({ durability, lane, durable }) => {
+        const volatileStores = createVolatileALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a'], 4),
+            nextHopPeerIds: [],
+            volatileStores
+        });
+        const original = createOriginReceiverMulticast(`alone-${lane}`);
+        const message = durability === undefined ? original : { ...original, qos: { durability: { algo: durability } } };
+
+        const admitted = await enqueueAndDrain(fixture.manager, message);
+
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted', durable });
+        const [owning, other] = lane === 'memory'
+            ? [volatileStores.admissionStore, fixture.resources.admissionStore]
+            : [fixture.resources.admissionStore, volatileStores.admissionStore];
+        expect(await owning.hasSentMessageAdmission(message.id.msgId)).toBe(true);
+        expect(await other.hasSentMessageAdmission(message.id.msgId)).toBe(false);
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement')).toEqual([
+            expect.objectContaining({ msgId: message.id.msgId, complete: true })
         ]);
     });
 });

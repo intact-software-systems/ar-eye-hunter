@@ -213,14 +213,23 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     };
 }
 
-/** The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence. */
+/**
+ * The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence.
+ * It opts into `local-outbox`, since the scenario reads its receipt row back from the carrier's durable store.
+ */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs, qos: { ack: { algo: 'hop' } } });
+        }, {
+            ack: 'receiver',
+            reliability: 'at-least-once',
+            seq,
+            ttlMs,
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        });
     };
 }
 
@@ -314,8 +323,9 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
             ttlMs
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
-        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
-        qos: { ack: { algo: 'hop' } }
+        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The scenario reads
+        // its receipt row back from the carrier's durable store, so the send opts into `local-outbox`.
+        qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
     };
 }
 

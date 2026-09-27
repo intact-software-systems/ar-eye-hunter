@@ -29,7 +29,8 @@ import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-a
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
@@ -130,6 +131,7 @@ export namespace WsQueueBoxClientService {
         readonly qosProvider?: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
+        readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
         readonly outboundSettlements?: ALDeliverySettlementSink;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
@@ -652,6 +654,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             decodePrepared: decodeALOutboundTransportMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
+            volatileStores: input.outboundVolatileStores,
             queueEngine: input.queueEngine
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
