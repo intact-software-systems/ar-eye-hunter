@@ -32,7 +32,7 @@ import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 import {
@@ -65,6 +65,8 @@ const INBOUND_IDLE_ROUNDS = 100;
 /** Far above the 4 per hundred rounds the outbound owner spends, whose probe answer stands for the idle ceiling. */
 const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
+/** The resource inbox's timeout-claim and fairness rate-limit window, so the pin crosses at least one of each. */
+const IDLE_OWNER_RATE_WINDOW_MS = 60_000;
 const NO_DEFERRAL: ALOutboundDequeueDeferral = { types: new Set<string>(), readyAtMs: undefined };
 
 describe('AL-owned IndexedDB operation counts', () => {
@@ -264,6 +266,49 @@ describe('outbound volatile send IndexedDB volume', () => {
             0
         );
         expect(toNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
+        runtime.dispose();
+    });
+});
+
+// R-S3a-13: in the lane a volatile send over a carrier is followed, once, by a batch of that carrier's idle
+// durable owner, whose claim and timeout claim read an empty queue. Reads that change nothing are probes.
+describe('an idle durable outbound owner beside a volatile send', () => {
+    it('spends only probes on batches over an empty queue across the readiness memory and the rate window', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const observer = createCountingIndexedDbOperationObserver();
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createIndexedDbOutboundCountStores(observer, 'outbound-idle-durable-owner'),
+            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: false,
+                preparedMessages: [{ kind: 'send' }]
+            }),
+            sendPreparedMessage: async () => {
+                sent.push('send');
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+        await runtime.ready();
+        observer.reset();
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-volatile-beside-idle-owner'));
+        await vi.waitFor(() => expect(sent).toEqual(['send']));
+        const startedAtMs = Date.now();
+        while (Date.now() - startedAtMs <= AL_WORK_READINESS_MEMORY_MS + IDLE_OWNER_RATE_WINDOW_MS) {
+            vi.setSystemTime(Date.now() + 5_000);
+            await runOutboundWorkTask(runtime);
+        }
+
+        const counts = observer.getCounts();
+        expect(counts.byOwner['al-admission']).toBe(0);
+        expect(counts.byKind['work-probe'] ?? 0, 'the idle owner still inspects its queue').toBeGreaterThan(0);
+        expect(toNonProbeWorkOperations(counts), 'a reservation that changed nothing is not work').toBe(0);
         runtime.dispose();
     });
 });

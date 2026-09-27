@@ -1,5 +1,6 @@
 export type IndexedDbOperationOwner = 'al-admission' | 'al-work';
 
+/** `work-probe` is an idle read that changed nothing; `work-reserve` and `work-write` mean a change happened. */
 export type IndexedDbOperationKind =
     | 'read'
     | 'list'

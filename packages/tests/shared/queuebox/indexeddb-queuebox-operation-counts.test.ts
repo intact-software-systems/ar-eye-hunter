@@ -17,6 +17,7 @@ const FINALIZATION_OPTIONS = { processingAttempts: 20, maxToReserve: 1, staleAft
 
 // R-S3a-11: the observer counts the IndexedDB operations a call performs, not the calls. A volatile
 // page's storage window (D55) reads zero only if a call that opens no transaction counts nothing.
+// R-S3a-13: an operation that reads and changes nothing is a `work-probe`; one that writes is a `work-reserve`.
 describe('IndexedDbQueueBox operation counts', () => {
     it.each([
         { name: 'an observed claim that observed nothing', observedEntries: [], reservationInput: 4 },
@@ -52,6 +53,27 @@ describe('IndexedDbQueueBox operation counts', () => {
 
         expect(reserved.size).toBe(1);
         expect(observer.getCounts().byKind).toEqual({ 'work-reserve': 1 });
+    });
+
+    // R-S3a-13: a claim that reads storage and changes nothing is the durable owner's idle inspection.
+    it('counts a claim, a timeout claim and a fairness scan that change nothing as work-probes', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const queue = new IndexedDbQueueBox({ dbName: `counted-empty-${crypto.randomUUID()}`, observer });
+
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([TYPE_ID]),
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: 4
+        });
+        const timedOut = await queue.reserveTimeoutEntries({
+            typeIds: new Set([TYPE_ID]),
+            reservationInput: 4,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
+        const overdue = await queue.reserveOverdueRetryEntries(new Set([TYPE_ID]), Date.now(), 4);
+
+        expect([reserved.size, timedOut.size, overdue.size]).toEqual([0, 0, 0]);
+        expect(observer.getCounts().byKind).toEqual({ 'work-probe': 3 });
     });
 
     it('counts an exhausted-retry finalization that finds nothing to finalize as a work-probe', async () => {

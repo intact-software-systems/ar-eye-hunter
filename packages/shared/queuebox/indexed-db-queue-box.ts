@@ -361,7 +361,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (observations?.size === 0 || maxToReserve === 0) {
             return new Map();
         }
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         const candidates = await this.#readReservationCandidates({
@@ -381,6 +380,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 stored.dequeueAudit.attempts < maxAttempts &&
                 isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
         });
+        this.#observeReservation(selection.mutations);
         return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
     }
 
@@ -395,7 +395,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (observations?.size === 0 || maxToReserve === 0) {
             return new Map();
         }
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         // The index pages a claim in keyString order, not in readiness order; overdue rows that
@@ -415,15 +414,14 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
         });
         // An unreservable row that is also expired is swept by the write this claim already owes.
-        return await this.#write(db, {
-            mutations: [
-                ...selection.mutations,
-                ...selection.ineligible
-                    .filter((stored) => isStoredQueueEntryExpired(stored, now))
-                    .map(computeIndexedDbQueueDelete)
-            ],
-            result: selection.reserved
-        });
+        const mutations = [
+            ...selection.mutations,
+            ...selection.ineligible
+                .filter((stored) => isStoredQueueEntryExpired(stored, now))
+                .map(computeIndexedDbQueueDelete)
+        ];
+        this.#observeReservation(mutations);
+        return await this.#write(db, { mutations, result: selection.reserved });
     }
 
     async reserveOverdueRetryEntries(
@@ -445,7 +443,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (maxToScan < typeIds.size) {
             throw new Error('maxToScan must be at least the number of requested types');
         }
-        this.#observer.observe({ owner: 'al-work', kind: 'work-reserve' });
         const db = await this.#connection.open();
         const now = this.#now();
         const requestedTypes = [...typeIds];
@@ -465,6 +462,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             now,
             requestedTypes
         });
+        this.#observeReservation(computed.mutations);
         return await this.#write(db, computed);
     }
 
@@ -517,7 +515,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             reserved.set(updated.key, { entry: updated, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, updated));
         }
-        this.#observer.observe({ owner: 'al-work', kind: mutations.length === 0 ? 'work-probe' : 'work-reserve' });
+        this.#observeReservation(mutations);
         return await this.#write(db, { mutations, result: reserved });
     }
 
@@ -601,6 +599,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             maxToRead: INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE
         });
         return candidates.filter((stored) => isStoredQueueEntryExpired(stored, now));
+    }
+
+    /** A reservation read that changed nothing is the owner's idle inspection; one that writes is a reservation. */
+    #observeReservation(mutations: readonly ComputedIndexedDbQueueMutation[]): void {
+        this.#observer.observe({ owner: 'al-work', kind: mutations.length === 0 ? 'work-probe' : 'work-reserve' });
     }
 
     async #write<Result>(
