@@ -7,6 +7,7 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
+    type ALDeliveryAdmissionVerdict,
     type ALDeliveryCarrier,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -23,6 +24,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const FROZEN_AUDIENCE = { recipientPeerIds: ['peer-1'], snapshotVersion: 4 };
 const EXHAUSTED_DETAIL = 'The receipt ran out of retries after 3 of 3.';
+const ADMITTED: ALDeliveryAdmissionVerdict = { kind: 'admitted', durable: false, queuedAttempts: 1 };
 
 interface FallbackAdmission {
     readonly carrier: ALDeliveryCarrier;
@@ -33,11 +35,15 @@ interface FallbackFixture {
     readonly admissions: FallbackAdmission[];
     readonly handedOver: string[];
     settle(settlement: ALDeliverySettlement): void;
-    send(firstCarrier: ALDeliveryCarrier, ttlMs: number): Promise<RallarMessageHandle>;
+    /** `canFallback: false` is a plain single-carrier send (D65). */
+    send(firstCarrier: ALDeliveryCarrier, ttlMs: number, canFallback?: boolean): Promise<RallarMessageHandle>;
 }
 
-/** The production dispatch, registry and session owner over carrier doubles that admit everything. */
-function createFallbackFixture(): FallbackFixture {
+/**
+ * The production dispatch, registry and session owner over carrier doubles: RTC admits everything, and WS
+ * answers with `wsVerdict`.
+ */
+function createFallbackFixture(wsVerdict: ALDeliveryAdmissionVerdict = ADMITTED): FallbackFixture {
     const admissions: FallbackAdmission[] = [];
     const handedOver: string[] = [];
     const admit = async (
@@ -50,7 +56,7 @@ function createFallbackFixture(): FallbackFixture {
             : message;
         admissions.push({ carrier, message: admitted });
         return {
-            verdict: { kind: 'admitted', durable: false, queuedAttempts: 1 },
+            verdict: carrier === 'rtc' ? ADMITTED : wsVerdict,
             message: admitted,
             entries: [],
             trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(admitted)
@@ -89,7 +95,7 @@ function createFallbackFixture(): FallbackFixture {
         admissions,
         handedOver,
         settle: (settlement) => epoch.settlements[settlement.carrier](settlement),
-        send: async (firstCarrier, ttlMs) => {
+        send: async (firstCarrier, ttlMs, canFallback = true) => {
             const message = newALMulticastMessage(
                 context.session.sessionId,
                 { topicId: 'room.command', resourceId: crypto.randomUUID(), contextId: 'room-1' },
@@ -103,7 +109,7 @@ function createFallbackFixture(): FallbackFixture {
                 context,
                 carrier: firstCarrier,
                 message,
-                canFallback: true,
+                canFallback,
                 payloadIssues: []
             });
             await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
@@ -139,6 +145,16 @@ function toExhausted(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettl
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['peer-1'],
         detail: EXHAUSTED_DETAIL
+    };
+}
+
+function toNotYetInSyncExhausted(msgId: string): ALDeliverySettlement {
+    return {
+        kind: 'not-yet-in-sync-exhausted',
+        msgId,
+        carrier: 'rtc',
+        atMs: Date.now(),
+        detail: 'The not-yet-in-sync retry budget of 3 ran out.'
     };
 }
 
@@ -232,13 +248,7 @@ describe('post-admission fallback within the deadline (D56)', () => {
         const fixture = createFallbackFixture();
         const handle = await fixture.send('rtc', 30_000);
 
-        fixture.settle({
-            kind: 'not-yet-in-sync-exhausted',
-            msgId: handle.msgId,
-            carrier: 'rtc',
-            atMs: Date.now(),
-            detail: 'The not-yet-in-sync retry budget of 3 ran out.'
-        });
+        fixture.settle(toNotYetInSyncExhausted(handle.msgId));
 
         await waitForCarriers(fixture, ['rtc', 'ws']);
         expect(handle.lifecycle().evidence.carrierFallback).toMatchObject({
@@ -251,6 +261,13 @@ describe('post-admission fallback within the deadline (D56)', () => {
         const handle = await fixture.send('rtc', 30_000);
         fixture.settle(toExhausted(handle.msgId, 'rtc'));
         await waitForCarriers(fixture, ['rtc', 'ws']);
+
+        // The RTC owner states its NYIS exhaustion on every later NACK; the open handle hands over only once.
+        fixture.settle(toNotYetInSyncExhausted(handle.msgId));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(fixture.handedOver).toEqual([handle.msgId]);
+        expect(fixture.admissions.map((admission) => admission.carrier)).toEqual(['rtc', 'ws']);
+        expect(handle.lifecycle().state).toBe('queued');
 
         fixture.settle(toReceipt(handle.msgId, 'ws', ['peer-1']));
         const acknowledged = handle.lifecycle();
@@ -275,7 +292,7 @@ describe('post-admission fallback within the deadline (D56)', () => {
         expect(fixture.admissions.map((admission) => admission.carrier)).toEqual(['rtc']);
     });
 
-    it('never watches the WS-first leg of ws-then-rtc (Q1)', async () => {
+    it('leaves the receipt end of a WS-first leg the message end (Q1)', async () => {
         const fixture = createFallbackFixture();
         const handle = await fixture.send('ws', 30_000);
 
@@ -283,5 +300,45 @@ describe('post-admission fallback within the deadline (D56)', () => {
 
         expect(handle.lifecycle().state).toBe('failed');
         expect(fixture.admissions.map((admission) => admission.carrier)).toEqual(['ws']);
+    });
+
+    it('never watches a plain RTC send: its receipt end is the message end (D65)', async () => {
+        const fixture = createFallbackFixture();
+        const handle = await fixture.send('rtc', 30_000, false);
+
+        fixture.settle(toExhausted(handle.msgId, 'rtc'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(handle.lifecycle().state).toBe('failed');
+        expect(fixture.handedOver).toEqual([]);
+        expect(fixture.admissions.map((admission) => admission.carrier)).toEqual(['rtc']);
+    });
+
+    it('ends the handle rejected when WS refuses the handed-over message, after one hand-over', async () => {
+        const fixture = createFallbackFixture({
+            kind: 'refused',
+            reason: 'oversized',
+            detail: 'The frame exceeds the WS limit.'
+        });
+        const handle = await fixture.send('rtc', 30_000);
+
+        fixture.settle(toExhausted(handle.msgId, 'rtc'));
+        await waitForCarriers(fixture, ['rtc', 'ws']);
+
+        expect(handle.lifecycle().state).toBe('rejected');
+        expect(fixture.handedOver).toEqual([handle.msgId]);
+    });
+
+    it('releases the candidate when the handle is cancelled: a later RTC trigger hands nothing over', async () => {
+        const fixture = createFallbackFixture();
+        const handle = await fixture.send('rtc', 30_000);
+
+        handle.cancel();
+        fixture.settle(toExhausted(handle.msgId, 'rtc'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(handle.lifecycle().state).toBe('cancelled');
+        expect(fixture.handedOver).toEqual([]);
+        expect(fixture.admissions.map((admission) => admission.carrier)).toEqual(['rtc']);
     });
 });
