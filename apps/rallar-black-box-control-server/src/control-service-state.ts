@@ -1,4 +1,8 @@
 import type {
+    ControlBarrierFailureReason,
+    ControlBarrierResolution
+} from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
+import type {
     ControlCommandEnvelope,
     ControlEventEnvelope,
     ControlHeartbeatEnvelope,
@@ -70,6 +74,29 @@ export interface ControlRunState {
     tokens: Map<string, ControlTokenState>;
     retentionRevision: number;
     issuedRunTokenStateRevision: number;
+    barriers: Map<string, ControlRecipeBarrierState>;
+}
+
+export interface ControlRecipeBarrierParticipant {
+    readonly agentId: string;
+    /** Its distributed start root: a failed result ends the barrier for the agents that arrived. */
+    readonly startCommandId: string;
+}
+
+/** One recipe barrier of a control run, in memory only: a restarted control server forgets it. */
+export interface ControlRecipeBarrierState {
+    readonly barrierId: string;
+    readonly timeoutMs: number;
+    /** The authored participant roles, sorted and JSON-encoded, or `every-started-agent`; arrivals must agree. */
+    readonly authoredParticipants: string;
+    readonly participants: readonly ControlRecipeBarrierParticipant[];
+    readonly openedAtEpochMs: number;
+    readonly arrivedAgentIds: readonly string[];
+    /** Undefined until an arrival makes the barrier unpassable. */
+    readonly issue: ControlBarrierFailureReason | undefined;
+    /** Undefined until every participant arrived or the barrier failed; then it never changes. */
+    readonly resolution: ControlBarrierResolution | undefined;
+    readonly deliveredConnectionSequences: Readonly<Record<string, number>>;
 }
 
 export interface ControlDistributedRunState {

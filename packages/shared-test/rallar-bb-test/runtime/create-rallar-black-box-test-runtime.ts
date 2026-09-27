@@ -1,6 +1,7 @@
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
+import { waitForBarrier } from '../barrier/wait-for-barrier.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import { LoopCommandExecution } from '../loop/loop-command-execution.ts';
 import { ParallelCommandExecution } from '../parallel/parallel-command-execution.ts';
@@ -24,7 +25,7 @@ import type {
 import { runRecipeCommands } from '../recipe/run-recipe-commands.ts';
 import { validateExecutableRecipe } from '../recipe/validate-executable-recipe.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
-import { waitForEvent } from '../wait/wait-for-event.ts';
+import { waitForEvent, type WaitForEventInput } from '../wait/wait-for-event.ts';
 import {
     decodeRuntimeTestError,
     decodeThrownCommandOutcome,
@@ -384,16 +385,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             case 'parallel':
                 return await new ParallelCommandExecution(command, this.toCompositePorts()).run();
             case 'wait':
-                return await waitForEvent({
+                return await waitForEvent({ command, ...this.toWaitPorts() });
+            case 'barrier':
+                return await waitForBarrier({
                     command,
-                    now: this.dependencies.now,
-                    sleep: this.dependencies.sleep,
-                    cancellationSignal: this.cancellationController.signal,
-                    cancelRequested: () => this.cancellationController.signal.aborted,
-                    currentStatus: () => this.currentState.status,
-                    currentEvents: () => this.currentState.events,
-                    resultCache: this.currentState.resultCache,
-                    subscribe: (listener) => this.subscribe(() => listener())
+                    recordEvent: (event) => this.appendEvent(event),
+                    ...this.toWaitPorts()
                 });
             case 'assert':
                 return computeAssertCommandOutcome({ command, state: this.currentState, config: this.currentConfig });
@@ -414,6 +411,19 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             default:
                 return this.recordSimulatedCommand(command);
         }
+    }
+
+    private toWaitPorts(): Omit<WaitForEventInput, 'command'> {
+        return {
+            now: this.dependencies.now,
+            sleep: this.dependencies.sleep,
+            cancellationSignal: this.cancellationController.signal,
+            cancelRequested: () => this.cancellationController.signal.aborted,
+            currentStatus: () => this.currentState.status,
+            currentEvents: () => this.currentState.events,
+            resultCache: this.currentState.resultCache,
+            subscribe: (listener) => this.subscribe(() => listener())
+        };
     }
 
     private recordSimulatedCommand(command: CommandWithId): RallarBlackBoxTestCommandOutcome {

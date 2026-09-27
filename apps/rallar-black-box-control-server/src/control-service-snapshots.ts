@@ -204,7 +204,8 @@ function toRestoredControlRun(
         heartbeats: [...runSnapshot.heartbeats],
         tokens: new Map(),
         retentionRevision: 0,
-        issuedRunTokenStateRevision: 0
+        issuedRunTokenStateRevision: 0,
+        barriers: new Map()
     };
 }
 

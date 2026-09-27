@@ -529,6 +529,11 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         operator: assertOperatorSchema,
         expected: anySchema
     }),
+    barrier: strictCommandSchema('barrier', {
+        barrierId: stringSchema,
+        timeoutMs: { type: 'integer', minimum: 1 },
+        participants: { type: 'array', minItems: 1, items: stringSchema }
+    }),
     'rtc.connect': strictCommandSchema('rtc.connect', {
         connection: stringSchema,
         actor: stringSchema,

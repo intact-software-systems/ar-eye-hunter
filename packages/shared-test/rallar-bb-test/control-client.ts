@@ -1,6 +1,7 @@
 import { toError } from '@shared/resilience/to-error.ts';
 
 import { toAgentReloadResult, writeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
+import { decodeControlBarrierEnvelope, toBarrierResolvedEvent } from './barrier/control-barrier-protocol.ts';
 import { deleteBrowserStorageEntries } from './control-client/delete-browser-storage-entries.ts';
 import {
     decodeControlAgentFleetLocation,
@@ -280,10 +281,13 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
             lastMessageAtEpochMs: Date.now()
         });
 
-        const parsed = parseControlServerMessage(event.data, {
-            runId: connection.runId,
-            agentId: connection.agentId
-        });
+        const identity = { runId: connection.runId, agentId: connection.agentId };
+        const barrier = decodeControlBarrierEnvelope(event.data, identity);
+        if (barrier.right !== undefined) {
+            this.options.runtime.recordEvent(toBarrierResolvedEvent(barrier.right));
+            return;
+        }
+        const parsed = parseControlServerMessage(event.data, identity);
         if (!parsed.ok) {
             this.recordDiagnostic({
                 topic: 'rallar.bb.control.protocol_error',
