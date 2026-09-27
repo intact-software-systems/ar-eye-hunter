@@ -1,3 +1,4 @@
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -52,7 +53,7 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         multicasterFactory: () => {
             throw new Error('Cancellation does not construct multicast messages');
         },
-        qosProvider: undefined,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
         outboundDiagnostics: undefined,
         outboundSettlements: (event) => {
             settlements.push(event);

@@ -1,3 +1,4 @@
+import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import {
@@ -179,7 +180,7 @@ export class WsQueueBoxServerService {
         });
         this.outboundPlanning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: dependencies.name,
-            qosProvider: dependencies.qosProvider,
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, dependencies.qosProvider),
             targetResolution: this.targetResolution,
             deliveryReporting: this.deliveryReporting
         });

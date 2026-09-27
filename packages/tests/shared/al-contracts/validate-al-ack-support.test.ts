@@ -1,24 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    AL_RTC_OVERLAY_CAPABILITIES,
+    AL_WS_CLIENT_CAPABILITIES,
+    toALCarrierQosInputProvider
+} from '@shared/al-contracts/al-carrier-capabilities.ts';
+import {
     newALBroadcastMessage,
     newALMulticastMessage,
     newALUnicastMessage,
     type ALAckMode,
     type ALTargets
 } from '@shared/al-contracts/al-contract.ts';
-import { DEFAULT_AL_QOS_CAPABILITIES, normalizeALQosPolicy, type ALQosCapabilities } from '@shared/al-contracts/al-policy.ts';
 import {
-    toALReceiverAckNormalizationInput,
-    validateALAckSupport
-} from '@shared/al-contracts/validate-al-ack-support.ts';
+    DEFAULT_AL_QOS_CAPABILITIES,
+    normalizeALQosPolicy,
+    resolveALQosNormalizationInput
+} from '@shared/al-contracts/al-policy.ts';
+import { validateALAckSupport } from '@shared/al-contracts/validate-al-ack-support.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const route = { topicId: 'chat', contextId: 'room', resourceId: 'message' };
-const receiverCapabilities: ALQosCapabilities = {
-    ...DEFAULT_AL_QOS_CAPABILITIES,
-    supportedAck: [...DEFAULT_AL_QOS_CAPABILITIES.supportedAck, 'receiver']
-};
+const wsCapabilities = AL_WS_CLIENT_CAPABILITIES.qos;
+const rtcCapabilities = AL_RTC_OVERLAY_CAPABILITIES.qos;
 const worldTargets: ALTargets = { mode: 'broadcast', scope: 'world' };
 const roomBroadcastTargets: ALTargets = { mode: 'broadcast', scope: 'room', groupRef: room };
 const roomMulticastTargets: ALTargets = { mode: 'multicast', groupRef: room };
@@ -36,22 +40,22 @@ describe('validateALAckSupport', () => {
     });
 
     it('refuses receiver on world targets even where the capabilities declare it', () => {
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: worldTargets, capabilities: receiverCapabilities }))
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: worldTargets, capabilities: wsCapabilities }))
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws world targets' }]);
     });
 
     it('admits receiver on room targets where the capabilities declare it', () => {
         for (const targets of [roomBroadcastTargets, roomMulticastTargets]) {
-            expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets, capabilities: receiverCapabilities })).toEqual([]);
+            expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets, capabilities: wsCapabilities })).toEqual([]);
         }
     });
 
     it('refuses receiver on a WS unicast, whose receiver ACK no relay carries back to the origin (D42)', () => {
         const unicast: ALTargets = { mode: 'unicast', toPeerId: 'peer' };
 
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: unicast, capabilities: receiverCapabilities }))
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: unicast, capabilities: wsCapabilities }))
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws unicast targets' }]);
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets: unicast, capabilities: receiverCapabilities }))
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets: unicast, capabilities: rtcCapabilities }))
             .toEqual([]);
     });
 
@@ -59,7 +63,7 @@ describe('validateALAckSupport', () => {
         expect(DEFAULT_AL_QOS_CAPABILITIES.supportedAck).not.toContain('receiver');
         expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets: roomMulticastTargets, capabilities: DEFAULT_AL_QOS_CAPABILITIES }))
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for rtc multicast targets' }]);
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: undefined, capabilities: receiverCapabilities }))
+        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: undefined, capabilities: wsCapabilities }))
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws untargeted targets' }]);
     });
 
@@ -96,10 +100,18 @@ describe('validateALAckSupport', () => {
             ...newALUnicastMessage('sender', route, 'peer', 'chat.v1', {}),
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
         } as const;
-        const declared = normalizeALQosPolicy(message, toALReceiverAckNormalizationInput({}));
+        const context = { direction: 'outbound' } as const;
+        const declared = normalizeALQosPolicy(
+            message,
+            resolveALQosNormalizationInput(message, context, toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, undefined))
+        );
         const narrowed = normalizeALQosPolicy(
             message,
-            toALReceiverAckNormalizationInput({ capabilities: { supportedAck: ['none', 'hop'] } })
+            resolveALQosNormalizationInput(
+                message,
+                context,
+                toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, { capabilitiesForMessage: () => ({ supportedAck: ['none', 'hop'] }) })
+            )
         );
 
         expect(declared.capabilities.supportedAck).toContain('receiver');

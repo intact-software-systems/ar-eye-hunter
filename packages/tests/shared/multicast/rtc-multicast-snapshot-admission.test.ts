@@ -5,6 +5,7 @@ import {
     it
 } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
     newALBroadcastMessage,
     newALMulticastMessage,
@@ -235,7 +236,7 @@ function createDefaultSnapshotAdmissionManager(
         multicasterFactory: () => {
             throw new Error('Admission does not construct an outbound multicaster');
         },
-        qosProvider: undefined,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, nowMs: () => 1_000 }),

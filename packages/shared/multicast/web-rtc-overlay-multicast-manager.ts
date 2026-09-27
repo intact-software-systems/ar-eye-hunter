@@ -15,7 +15,6 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { toALReceiverAckQosInputProvider } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -118,7 +117,7 @@ export namespace WebRtcOverlayMulticastManager {
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
-        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly qosProvider: ALQosInputProvider;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly outboundSettlements: ALDeliverySettlementSink | undefined;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
@@ -136,7 +135,7 @@ export class WebRtcOverlayMulticastManager {
 
     private readonly multicasterByOverlayId = new Map<OverlayId, WebRtcOverlayMulticaster>();
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
-    private readonly qosProvider: ALQosInputProvider | undefined;
+    private readonly qosProvider: ALQosInputProvider;
     private disposed = false;
 
     public readonly outbox: QueueBoxResourceEntryRepository;
@@ -157,7 +156,7 @@ export class WebRtcOverlayMulticastManager {
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
-        this.qosProvider = toALReceiverAckQosInputProvider(dependencies.qosProvider);
+        this.qosProvider = dependencies.qosProvider;
         this.clock = dependencies.outboundRuntime.clock;
         this.submission = new RtcOutboundSubmission(dependencies.connectionService, this.clock);
         this.outboundRuntime = new ALOutboundMessageRuntime<ALOutboundTransportMessage>(

@@ -1,5 +1,6 @@
 import { onTestFinished } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -53,7 +54,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connection.service),
-        qosProvider: undefined,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),

@@ -1,5 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -140,6 +141,7 @@ describe('WS server outbound planning', () => {
         const server = new JsonWebSocketServer();
         const planning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
             targetResolution: new WsQueueBoxServerTargetResolution({
                 socket: server,
                 targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }

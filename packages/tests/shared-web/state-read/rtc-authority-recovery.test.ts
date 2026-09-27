@@ -34,6 +34,7 @@ import { configureOverlayRepositories } from '@shared/repository/overlays-reposi
 import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -859,7 +860,7 @@ class NativeAuthorityEndpoint {
             groupCache: input.groups,
             overlayCache: this.overlays,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection.service),
-            qosProvider: input.qosProvider,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
             outboundDiagnostics: (event) => this.outboundDiagnostics.push(event),
             outboundSettlements: (event) => {
                 this.settlements.push(event);

@@ -15,7 +15,6 @@ import {
     shouldAwaitALRoute,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
-import { toALReceiverAckNormalizationInput } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -50,7 +49,7 @@ export type WsQueueBoxServerOutboundPhase = 'immediate' | 'dequeue';
 export namespace WsQueueBoxServerOutboundPlanning {
     export interface Dependencies {
         readonly serverPeerId: string;
-        readonly qosProvider?: ALQosInputProvider;
+        readonly qosProvider: ALQosInputProvider;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     }
@@ -74,7 +73,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
 
 export class WsQueueBoxServerOutboundPlanning {
     readonly #serverPeerId: string;
-    readonly #qosProvider?: ALQosInputProvider;
+    readonly #qosProvider: ALQosInputProvider;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #deliveryReporting: WsQueueBoxServerDeliveryReporting;
 
@@ -204,11 +203,11 @@ export class WsQueueBoxServerOutboundPlanning {
     private normalizePolicy(message: ALMessage): ReturnType<typeof normalizeALQosPolicy> {
         return normalizeALQosPolicy(
             message,
-            toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
+            resolveALQosNormalizationInput(
                 message,
                 { direction: 'outbound', selfPeerId: this.#serverPeerId },
                 this.#qosProvider
-            ))
+            )
         );
     }
 }

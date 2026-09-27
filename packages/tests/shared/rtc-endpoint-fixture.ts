@@ -1,6 +1,7 @@
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { vi } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -85,7 +86,7 @@ export class RtcEndpointFixture {
             groupCache: this.groups,
             overlayCache: this.overlays,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, stores: this.outbound }),

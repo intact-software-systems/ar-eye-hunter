@@ -1,5 +1,6 @@
 import { onTestFinished, vi } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -86,7 +87,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
-        qosProvider: undefined,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
         outboundDiagnostics: undefined,
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundRuntime: resources,

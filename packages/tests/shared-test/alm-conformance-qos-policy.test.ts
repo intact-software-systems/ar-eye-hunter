@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { computeFallbackDisposition } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
+import {
+    AL_RTC_OVERLAY_CAPABILITIES,
+    AL_WS_CLIENT_CAPABILITIES,
+    toALCarrierQosInputProvider
+} from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
-import { toALReceiverAckNormalizationInput, toALReceiverAckQosInputProvider } from '@shared/al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALOutboundAckRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 
@@ -80,9 +84,8 @@ function toLegAdmission(message: ALMessage, carrier: ALDeliveryCarrier) {
     return { carrier, algo: policy.effective.ack.algo, verdict };
 }
 
-/** Both carriers declare receiver: the ws runtimes on their input, the rtc overlay on its provider. */
+/** Both carriers declare receiver: each composition root installs its carrier capabilities under the provider. */
 function toCarrierNormalizationInput(message: ALMessage, carrier: ALDeliveryCarrier) {
-    return carrier === 'ws'
-        ? toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(message, { direction: 'outbound' }, provider))
-        : resolveALQosNormalizationInput(message, { direction: 'outbound' }, toALReceiverAckQosInputProvider(provider));
+    const capabilities = carrier === 'ws' ? AL_WS_CLIENT_CAPABILITIES : AL_RTC_OVERLAY_CAPABILITIES;
+    return resolveALQosNormalizationInput(message, { direction: 'outbound' }, toALCarrierQosInputProvider(capabilities, provider));
 }

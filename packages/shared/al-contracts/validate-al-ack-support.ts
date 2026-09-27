@@ -5,8 +5,6 @@ import type {
     ALAckOptions,
     ALEffectiveAlgorithm,
     ALQosCapabilities,
-    ALQosInputProvider,
-    ALQosNormalizationInput,
     ALRequestedAlgorithm
 } from './al-policy.ts';
 
@@ -23,8 +21,6 @@ export interface ALAckSupportInput {
     readonly capabilities: ALQosCapabilities;
 }
 
-const AL_RECEIVER_DECLARING_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
-
 /**
  * One issue naming an unsupported algorithm/carrier/target pair (D42). `receiver` needs a logical audience, which
  * only a unicast addressee or a room has; a world, all or principal broadcast has none. A WS unicast has an
@@ -37,22 +33,6 @@ export function validateALAckSupport(input: ALAckSupportInput): readonly ALQosIs
     return supported
         ? []
         : [{ aspect: 'ack', detail: `ack ${algo} is unsupported for ${carrier} ${toTargetsName(targets)} targets` }];
-}
-
-export function toALReceiverAckNormalizationInput(input: ALQosNormalizationInput): ALQosNormalizationInput {
-    return { ...input, capabilities: { supportedAck: AL_RECEIVER_DECLARING_ACK_ALGOS, ...input.capabilities } };
-}
-
-export function toALReceiverAckQosInputProvider(provider: ALQosInputProvider | undefined): ALQosInputProvider {
-    return {
-        defaultsForMessage: (msg, context) => provider?.defaultsForMessage?.(msg, context),
-        capabilitiesForMessage: (msg, context) => ({
-            supportedAck: AL_RECEIVER_DECLARING_ACK_ALGOS,
-            ...provider?.capabilitiesForMessage?.(msg, context)
-        }),
-        authorizationForMessage: (msg, context) => provider?.authorizationForMessage?.(msg, context),
-        liveForMessage: (msg, context) => provider?.liveForMessage?.(msg, context)
-    };
 }
 
 /** A requested or defaulted `receiver` is kept: its support is admission's refusal, never a downgrade (D42). */

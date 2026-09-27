@@ -3,6 +3,10 @@ import {
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    AL_RTC_OVERLAY_CAPABILITIES,
+    toALCarrierQosInputProvider
+} from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
@@ -74,7 +78,7 @@ export function initialiseRtcOverlayMulticastManager(
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
-        qosProvider: input.qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });

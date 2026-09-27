@@ -9,6 +9,7 @@ import {
     vi
 } from 'vitest';
 
+import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -65,7 +66,7 @@ describe('multicast QoS integration', () => {
                 groupCache: groups,
                 overlayCache: overlays,
                 multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
-                qosProvider: undefined,
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
                 outboundDiagnostics: undefined,
                 outboundSettlements: undefined,
                 outboundRuntime: resources,
@@ -137,7 +138,7 @@ describe('multicast QoS integration', () => {
             groupCache: groups,
             overlayCache: overlays,
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
@@ -267,7 +268,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -327,7 +328,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -384,7 +385,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -437,7 +438,7 @@ describe('multicast QoS integration', () => {
                         overlayId,
                         connectionService
                     ),
-                qosProvider: undefined,
+                qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
                 outboundDiagnostics: undefined,
                 outboundSettlements: undefined,
                 outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -531,7 +532,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -609,7 +610,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -660,7 +661,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
@@ -708,7 +709,7 @@ describe('multicast QoS integration', () => {
                     overlayId,
                     connectionService
                 ),
-            qosProvider: undefined,
+            qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
             outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),

@@ -1,3 +1,4 @@
+import { AL_WS_CLIENT_CAPABILITIES, toALCarrierQosInputProvider } from '../al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
@@ -16,7 +17,6 @@ import {
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
-import { toALReceiverAckNormalizationInput } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -149,7 +149,7 @@ export namespace WsQueueBoxClientService {
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
-        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly qosProvider: ALQosInputProvider;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
@@ -258,7 +258,7 @@ export class WsQueueBoxClientService {
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const socketOpen = this.isSocketOpen();
-        const normalizationInput = toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
+        const normalizationInput = resolveALQosNormalizationInput(
             msg,
             {
                 direction: 'outbound',
@@ -266,7 +266,7 @@ export class WsQueueBoxClientService {
                 connectedPeerIds: socketOpen ? [this.sessionId] : []
             },
             this.dependencies.qosProvider
-        ));
+        );
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const message = toALOutboundMessage(msg, normalized.effective);
         const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
@@ -647,7 +647,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
         socket: input.socket,
         sessionId: input.sessionId,
-        qosProvider: input.qosProvider,
+        qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, input.qosProvider),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
