@@ -13,9 +13,17 @@ interface Versioned {
     readonly payload: string;
 }
 
+class WriteRecordingPersistenceProvider<V> extends InMemoryPersistenceProvider<string, V> {
+    public readonly writes: Array<readonly [string, V]> = [];
+
+    public override async setItem(key: string, value: V, options: PersistenceSetItemOptions): Promise<void> {
+        this.writes.push([key, value]);
+        await super.setItem(key, value, options);
+    }
+}
+
 describe('WriteBehindObservableLatestRepository', () => {
     afterEach(() => {
-        vi.restoreAllMocks();
         vi.useRealTimers();
     });
 
@@ -36,10 +44,9 @@ describe('WriteBehindObservableLatestRepository', () => {
     });
 
     it('does not mirror hydration writes back to disk', async () => {
-        const persistence = new InMemoryPersistenceProvider<string, number>([
+        const persistence = new WriteRecordingPersistenceProvider<number>([
             ['a', 1]
         ]);
-        const setItem = vi.spyOn(persistence, 'setItem');
         const repository = new WriteBehindObservableLatestRepository<string, number>({
             persistence
         });
@@ -47,7 +54,7 @@ describe('WriteBehindObservableLatestRepository', () => {
         await repository.hydrate();
         await repository.whenIdle();
 
-        expect(setItem).not.toHaveBeenCalled();
+        expect(persistence.writes).toEqual([]);
     });
 
     it('mirrors writes made before hydration', async () => {
@@ -132,8 +139,7 @@ describe('WriteBehindObservableLatestRepository', () => {
     });
 
     it('skips persistence writes for refreshed events', async () => {
-        const persistence = new InMemoryPersistenceProvider<string, Versioned>();
-        const setItem = vi.spyOn(persistence, 'setItem');
+        const persistence = new WriteRecordingPersistenceProvider<Versioned>();
         const repository = new WriteBehindObservableLatestRepository<string, Versioned>({
             persistence,
             equals: (left, right) => left.version === right.version
@@ -148,8 +154,10 @@ describe('WriteBehindObservableLatestRepository', () => {
 
         // Created + Updated: two writes.
         // The equality predicate classifies the v1->v1 write as Refreshed: skipped.
-        expect(setItem).toHaveBeenCalledTimes(2);
-        expect((await persistence.getItem('item'))?.payload).toBe('B');
+        expect(persistence.writes).toEqual([
+            ['item', { version: 1, payload: 'A' }],
+            ['item', { version: 2, payload: 'B' }]
+        ]);
     });
 
     it('mirrors deletes via removeItem and clearAll wipes disk', async () => {
@@ -279,8 +287,7 @@ describe('WriteBehindObservableLatestRepository', () => {
     });
 
     it('dispose stops mirroring further events', async () => {
-        const persistence = new InMemoryPersistenceProvider<string, number>();
-        const setItem = vi.spyOn(persistence, 'setItem');
+        const persistence = new WriteRecordingPersistenceProvider<number>();
         const repository = new WriteBehindObservableLatestRepository<string, number>({
             persistence
         });
@@ -288,14 +295,13 @@ describe('WriteBehindObservableLatestRepository', () => {
         await repository.hydrate();
         repository.set('a', 1);
         await repository.whenIdle();
-        expect(setItem).toHaveBeenCalledTimes(1);
+        expect(persistence.writes).toEqual([['a', 1]]);
 
         await repository.dispose();
         repository.set('a', 2);
         await repository.whenIdle();
 
-        expect(setItem).toHaveBeenCalledTimes(1);
-        expect(await persistence.getItem('a')).toBe(1);
+        expect(persistence.writes).toEqual([['a', 1]]);
     });
 
     it('whenIdle drains both observer queue and pending persistence writes', async () => {
