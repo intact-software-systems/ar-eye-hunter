@@ -16,6 +16,7 @@ import {
     captureALOutboundCreationExpiry,
     toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
+    toALOutboundIdentityKey,
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -56,6 +57,53 @@ describe('WS first dequeue authority', () => {
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
             expect(fixture.native.sent).toEqual([]);
             expect(await fixture.stores.admissionStore.hasSentMessageAdmission(message.id.msgId)).toBe(false);
+        }
+    );
+
+    it.each(['colliding-raw', 'canonical-without-identity', 'canonical-with-identity'] as const)(
+        'validates superseded %s before deciding that no send is needed',
+        async (shape) => {
+            const fixture = createFixture();
+            const older: ALMessage = {
+                ...createMessage('unicast'),
+                ordering: { seq: 1 },
+                qos: {
+                    durability: { algo: 'local-outbox' },
+                    supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'snapshot' } }
+                }
+            };
+            const admitted = await fixture.service.enqueueOutboxIfAbsent(older, [], SCOPE);
+            expect(admitted.verdict.kind).toBe('admitted');
+            const canonical = admitted.entries[0]!;
+            const newer: ALMessage = { ...older, id: { ...older.id, msgId: `${older.id.msgId}-newer` }, ordering: { seq: 2 } };
+            expect((await fixture.service.enqueueOutboxIfAbsent(newer, [], SCOPE)).verdict.kind).toBe('admitted');
+            expect(await fixture.stores.admissionStore.isMessageSuperseded(older)).toBe(true);
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => (await fixture.stores.workQueue.getItem(canonical.key))?.status).toBe(EntityStatus.COMPLETED);
+            const completed = await fixture.stores.workQueue.getItem(canonical.key);
+            if (!completed || completed.key.topicId !== 'AL_OUTBOUND_MESSAGE') {
+                throw new Error('Missing admitted canonical row');
+            }
+
+            const observed = shape === 'colliding-raw'
+                ? QueueBoxUtilities.toResourceEntryFromMsg(older, EnqueuedType.WS_OUTBOX)
+                : { ...completed, status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } };
+            if (shape === 'colliding-raw') {
+                await fixture.stores.workQueue.enqueue(observed);
+            }
+            else {
+                await fixture.stores.workQueue.replaceIfObserved(completed, observed);
+            }
+            if (shape === 'canonical-without-identity') {
+                await fixture.stores.workQueue.removeItem(toALOutboundIdentityKey(canonical.key));
+            }
+
+            fixture.engine.wakeAfterExternalWrite();
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => (await fixture.stores.workQueue.getItem(observed.key))?.status)
+                .toBe(shape === 'canonical-with-identity' ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE);
+            expect((await fixture.stores.workQueue.getItem(observed.key))?.dequeueAudit.attempts).toBe(1);
+            expect(fixture.native.sent).toEqual([]);
         }
     );
 

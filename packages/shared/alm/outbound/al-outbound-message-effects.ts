@@ -123,10 +123,10 @@ export class ALOutboundMessageEffects<TPrepared> {
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
         }
+        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
         if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
             return { status: 'completed' };
         }
-        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
         const computed = await this.dependencies.commitDispatchPlan({
             msg,
             dequeueAuthority,
