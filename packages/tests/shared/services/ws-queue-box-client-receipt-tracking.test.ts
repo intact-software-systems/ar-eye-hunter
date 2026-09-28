@@ -199,6 +199,31 @@ describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)
         });
     });
 
+    it('tracks a subtree room send against its server and completes on the server\'s own delivered ACK', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        await fixture.service.enqueueOutboxIfAbsent({
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        });
+        expect(await readReceipt(fixture)).toMatchObject({
+            mode: 'subtree',
+            expectedPeerIds: ['server'],
+            ackedPeerIds: []
+        });
+
+        await fixture.service.acceptIncomingMessage(serverAck('room-message-1'));
+
+        expect(
+            fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)
+        ).toMatchObject({
+            msgId: 'room-message-1',
+            mode: 'subtree',
+            confirmedHopPeerIds: ['server'],
+            unconfirmedHopPeerIds: [],
+            complete: true
+        });
+    });
+
     it('expects the server itself for a receiver command addressed to it and completes on the server\'s own ACK', async () => {
         const fixture = await createReceiptTrackingFixture();
         const command: ALMessage = {

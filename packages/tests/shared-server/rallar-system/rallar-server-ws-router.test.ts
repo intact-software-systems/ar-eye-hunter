@@ -360,6 +360,43 @@ describe('RallarServerWsRouter', () => {
         expect(await outboundStores.admissionStore.readSentMessage(durable.id.msgId)).toBeUndefined();
     });
 
+    it('keeps the default fanout for a unicast addressed to another peer, in a room or on an outbox topic (R-S3c-i-5)', async () => {
+        const { router, socket, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
+        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        const handled: string[] = [];
+        router.on({ topicId: 'room.command' }, async (message) => {
+            handled.push(message.raw.id.msgId);
+        });
+        const roomUnicast = newALUnicastMessage(
+            'peer-1',
+            newALRoute('room.command', 'room-1', 'command-1'),
+            'peer-2',
+            'app.command.v1',
+            { go: true },
+            { groupRef: createGroupSnapshot('room-1', ['peer-1', 'peer-2'], 1).group }
+        );
+        const durable = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.durable', 'all', 'command-2'),
+            'peer-2',
+            'app.command.v1',
+            { go: true },
+            { reliability: 'at-least-once', ack: 'none' }
+        );
+
+        await router.route(roomUnicast);
+        await router.route(durable);
+
+        expect(handled).toEqual([roomUnicast.id.msgId]);
+        expect(socket.sent.map((entry) => [entry.connectionId, entry.data.id.msgId])).toEqual([
+            ['conn-2', roomUnicast.id.msgId]
+        ]);
+        expect((await outboundStores.admissionStore.readSentMessage(durable.id.msgId))?.msg).toMatchObject({
+            id: durable.id,
+            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+        });
+    });
+
     it('publishes a proxy room message with its full scoped identity', async () => {
         const { router, outboundStores } = createRouter();
         const roomRef: GroupRef = {

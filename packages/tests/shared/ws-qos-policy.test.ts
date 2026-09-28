@@ -234,22 +234,6 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
             expect(socket.sentJsonStrings).toHaveLength(2);
             expect(decodePersistedALMessage(socket.sentJsonStrings[1]).id.msgId).toBe(msg.id.msgId);
-
-            await socket.receive(
-                shared.newALAckControlMessage(
-                    { v: 2, msgId: 'control-ack', ts: 0, senderId: 'peer-1' },
-                    {
-                        ackedMsgId: msg.id.msgId,
-                        originPeerId: 'self',
-                        logicalRecipientPeerId: 'peer-1',
-                        fromPeerId: 'peer-1',
-                        toPeerId: 'self',
-                        status: 'delivered',
-                        observedAtEpochMs: 0,
-                        carrier: 'ws'
-                    }
-                )
-            );
         }
         finally {
             vi.useRealTimers();
