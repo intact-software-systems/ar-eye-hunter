@@ -960,15 +960,83 @@ Whole-tests-project typing also remains non-green on dependency/PGlite type
 identity diagnostics outside the touched files. No additive principal index
 was introduced or justified by these logout results.
 
-After these slices, select the remaining CRDT and RTC-topology producer work
-from current evidence. CRDT's persisted command-format decision remains a
-separate explicit maintainer approval; do not use the pending decision as
-permission to infer scope from the optional document workspace. Before calling
-this PR ready, reconcile all remaining direct producers and old product tests,
-obtain controlled performance evidence, run exact-head cross-process acceptance
-and release gates, review the full branch, and publish one concise PR
-behavior/evidence map. Do not split a test-only proof PR from this draft
+**2026-09-29 CRDT-head checkpoint:** CRDT append reply and room/principal/app
+fanout now write versioned per-row proof in the existing AppInbox transaction
+(`9c2c3730a`). Focused shared-server CRDT/WS-provenance tests passed 156/156,
+API CRDT tests passed 56/56, and WS planning/pub-sub bridge tests passed 32/32;
+shared-server TypeScript and API Deno checks passed. At this head, the remote
+formation-large, medium-scale, topology-replay, governance, and CodeQL checks
+passed, as did the separate ALM conformance observation. Release Gate stopped
+at changed-repository-style review before its product suites; seven
+touched-file/structure findings remain. These results do not prove
+RTC topology first-dequeue delivery or E3 acceptance.
+
+### Task 13: Bind RTC topology pages to their frozen publication
+
+The topology owner already validates `RtcTopologyPublication`, materializes
+each deterministic page with the full `groupRef` and frozen
+`snapshot.activeSessionIds`, and writes pages through
+`writeRtcTopologyPublicationTransaction`. Add a version-1 `rtc-topology`
+producer proof for every raw `WS_OUTBOX` page. Bind the exact queue row,
+message identity, deadline, full group scope, and the page's existing
+recipient IDs; verify that those recipients are the validated publication
+audience. Keep proof computation before the domain-owned SQL transaction and
+insert each proof atomically with its page and reservation/delivery append.
+Existing replay validation must still reject missing or conflicting pages;
+first foreign dequeue must accept only the proved row. No payload-type bypass,
+receiver inbox, retry, lock, migration, or legacy proof reader is authorized.
+
+- [x] Write a failing producer-to-first-dequeue test and an atomic
+      commit/rollback test for a real topology publication, including a
+      late-page collision. Retain the existing large-page and stale-topology
+      assertions.
+- [x] Compute and validate persistence-ready proofs from the accepted
+      publication before transaction entry. If asynchronous hashing makes the
+      existing work computation asynchronous, carry that change through its
+      real callers and tests rather than adding a post-compute preparation
+      phase.
+- [x] Insert pages and their proofs in the same existing transaction; test
+      exact row/collision failures and a wrong-scope or late-joiner negative.
+- [x] Run focused topology, WS first-dequeue, API PGlite, and affected package
+      checks. Review every touched human-authored file in full and obtain
+      independent task spec/quality review before proceeding.
+
+Task 13 landed locally in `0377a8283` with independent task spec/quality
+approval. Final focused topology/outbox tests passed 630/630 with five opt-in
+skips; shared-server tests passed 2,553/2,553 with 12 opt-in skips. The focused
+API PGlite topology file passed 6/6 and the adjacent API topology set passed
+23/23. Shared-server TypeScript, API Deno checks, and Task 13 changed-style
+and structure checks passed. The test-first producer/dequeue and PGlite
+collision cases prove exact proof binding and atomic rollback, not a separate
+OS-process recipient or E3 browser result. Full touched-file review was
+reported by the implementer; the independent diff reviewer found no blocking
+defect and explicitly could not certify every complete file from a contextual
+diff. This remains a Task 14 whole-branch review obligation.
+
+### Task 14: Close exact-head evidence and branch review
+
+After Task 13, close this PR against the approved design, not against a subset
+of currently green tests. Do not split a test-only proof PR from this draft
 implementation PR.
+
+- [ ] Reconcile every direct raw `WS_OUTBOX` producer and the old product tests;
+      an unproven row remains fail-closed, never exempted by payload type.
+- [ ] Resolve the remaining changed-style/structure findings through
+      coherent touched-file remediation or evidence-backed exact dispositions.
+      Review every changed human-authored file in full, recursively including
+      support files changed by that remediation.
+- [ ] Obtain a controlled, environment-matched state-write comparison and
+      exact-head cross-process WS/browser evidence, including unchanged E3
+      acceptance. Distinguish publication from observed socket delivery.
+- [ ] Run focused checks before the exact-head Release Gate and affected app
+      gates. Complete whole-branch review and publish one concise PR
+      behavior/evidence map. Keep the PR draft until the acceptance evidence
+      is green or a genuine blocker has been presented to the maintainer.
+
+CRDT's persisted command format remains unchanged; any future public
+compatibility change requires separate approval.
+
+### Earlier investigation and gate checkpoints
 
 **Next candidate after Task 12:** The current CRDT authorization read already
 checks a durable client or group snapshot for the actor's active session, but
