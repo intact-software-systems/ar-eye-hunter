@@ -66,7 +66,7 @@ describe('WS client receipt tracking for a receiver room send', () => {
             msgId: 'room-message-1',
             carrier: 'ws',
             mode: 'receiver',
-            // A WS origin names no hop: its one hop is its server, which no client learns.
+            // A `receiver` receipt at a WS origin names no hop; its server's peer id is the hop of a `hop` or `subtree` send only.
             confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],
             confirmedRecipientPeerIds: ['b', 'c'],

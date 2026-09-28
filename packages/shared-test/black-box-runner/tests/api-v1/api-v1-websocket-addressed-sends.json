@@ -297,6 +297,80 @@
       }
     },
     {
+      "name": "bobAcknowledgesTheUnicastToItsOrigin",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "ack-addressed-to-bob-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "addressed-to-bob-{runId}",
+            "contextId": "{aliceSessionId}"
+          },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "qos": {
+            "delivery": { "algo": "best-effort" },
+            "durability": { "algo": "volatile" },
+            "ack": { "algo": "none", "opts": { "timeoutMs": 250 } }
+          },
+          "payload": {
+            "typeId": "al.control.ack.v2",
+            "contentType": "application/json",
+            "resource": "{\"ackedMsgId\":\"addressed-to-bob-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceReceivesTheCompleteReceipt",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "request": {
+        "outputs": { "completeReceiptResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.receipt.v1" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseCompleteReceipt",
+      "type": "set",
+      "output": "completeReceipt",
+      "transform": { "jsonParse": { "path": "outputs.completeReceiptResource" } }
+    },
+    {
+      "name": "assertBobsAckCompletesTheReceipt",
+      "type": "assert",
+      "actual": {
+        "msgId": "{completeReceipt.msgId}",
+        "phase": "{completeReceipt.phase}",
+        "firstConfirmed": "{completeReceipt.confirmedRecipientPeerIds.0}",
+        "secondConfirmed": "{completeReceipt.confirmedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "addressed-to-bob-{runId}",
+          "phase": "complete",
+          "firstConfirmed": "{bobSessionId}",
+          "secondConfirmed": "MISSING"
+        }
+      }
+    },
+    {
       "name": "unicastToANonMemberIsRefused",
       "type": "ws.send",
       "connection": "wsAlice",

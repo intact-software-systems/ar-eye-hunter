@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 
 import { createDefaultRallarServer } from '../../src/composition/create-default-rallar-server.ts';
@@ -31,40 +31,45 @@ Deno.test({
                 databaseLifecycle,
                 ws: { allowImplicitUserTopics: false, defaultFanout: 'live-only' }
             });
-            server.installSystemTopics().installWebSocketLifecycle();
-            await server.runtime.readiness;
-            const serverPeerId = server.ws.serverPeerId;
-            assert.ok(serverPeerId.length > RESOURCE_INBOX_CREATED_BY_WIDTH);
+            try {
+                server.installSystemTopics().installWebSocketLifecycle();
+                await server.runtime.readiness;
+                const serverPeerId = server.ws.serverPeerId;
+                assert.ok(serverPeerId.length > RESOURCE_INBOX_CREATED_BY_WIDTH);
 
-            const published = await server.ws.publish(
-                newALBroadcastMessage(
-                    serverPeerId,
-                    newALRoute('room.notification', 'room-1', 'room-1:1'),
-                    'room',
-                    'room.notification.v1',
-                    { round: 1 },
-                    {
-                        groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' },
-                        reliability: 'at-least-once',
-                        ack: 'receiver',
-                        ttlMs: 15_000
-                    }
-                ),
-                'outbox'
-            );
+                const published = await server.ws.publish(toServerRoomNotification(serverPeerId), 'outbox');
 
-            assert.equal(published?.status, 'queued-outbox');
-            const row = await waitForCompletedOutboxRow(databaseLifecycle.database);
-            assert.equal(row.created_by, toAppQueueCreatedBy(serverPeerId));
-            assert.ok(row.created_by.length <= RESOURCE_INBOX_CREATED_BY_WIDTH);
-            assert.equal(JSON.parse(row.ri_resource).audit.createdBy, serverPeerId);
-            await server.runtime.backgroundTasks.stop();
+                assert.equal(published?.status, 'queued-outbox');
+                const row = await waitForCompletedOutboxRow(databaseLifecycle.database);
+                assert.equal(row.created_by, toAppQueueCreatedBy(serverPeerId));
+                assert.ok(row.created_by.length <= RESOURCE_INBOX_CREATED_BY_WIDTH);
+                assert.equal(JSON.parse(row.ri_resource).audit.createdBy, serverPeerId);
+            }
+            finally {
+                await server.runtime.backgroundTasks.stop();
+            }
         }
         finally {
             await databaseLifecycle.close();
         }
     }
 });
+
+function toServerRoomNotification(serverPeerId: string): ALMessage {
+    return newALBroadcastMessage(
+        serverPeerId,
+        newALRoute('room.notification', 'room-1', 'room-1:1'),
+        'room',
+        'room.notification.v1',
+        { round: 1 },
+        {
+            groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' },
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 15_000
+        }
+    );
+}
 
 type OutboxRowQuery = (strings: TemplateStringsArray) => Promise<readonly OutboxRow[]>;
 

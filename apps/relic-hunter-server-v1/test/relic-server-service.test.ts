@@ -11,6 +11,7 @@ import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@share
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
+import { RELIC_SNAPSHOT_TTL_MS } from '../src/to-relic-snapshot-message.ts';
 
 type TopicDefinition = Readonly<{
     topicId: string;
@@ -68,6 +69,7 @@ describe('Relic Hunter server game service', () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
+        const publishedAfterMs = Date.now();
         const snapshot = await service.applyCommand(joinCommand('room-1'), 'alice-session');
 
         expect(snapshot.players[0]).toMatchObject({
@@ -95,7 +97,10 @@ describe('Relic Hunter server game service', () => {
                 delivery: { reliability: 'at-least-once', ack: 'receiver' }
             }
         });
-        expect(fake.published[0].message.constraints?.expiresAtMs).toBeGreaterThan(Date.now());
+        const expiresAtMs = fake.published[0].message.constraints?.expiresAtMs ?? 0;
+        expect(expiresAtMs).toBeGreaterThanOrEqual(publishedAfterMs + RELIC_SNAPSHOT_TTL_MS);
+        expect(expiresAtMs).toBeLessThanOrEqual(Date.now() + RELIC_SNAPSHOT_TTL_MS);
+        expect(RELIC_SNAPSHOT_TTL_MS).toBe(15_000);
         expect(JSON.parse(fake.published[0].message.payload.resource).snapshot.players[0].playerId)
             .toBe('alice-session');
     });
@@ -187,6 +192,44 @@ describe('Relic Hunter server game service', () => {
         expect(fake.published).toHaveLength(0);
     });
 
+    it('ends a WebSocket command whose snapshot publish fails after the write as applied, not published (C12)', async () => {
+        const fake = createFakeRallar(new Error('outbox admission failed'));
+        await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
+
+        const warnings = await captureWarnings(async () => {
+            await expect(
+                fake.commandHandler?.({ payload: joinCommand('room-1') }, { senderId: 'alice-session' })
+            ).resolves.toBeUndefined();
+        });
+
+        expect(fake.store.get('room-1')?.players[0]?.playerId).toBe('alice-session');
+        expect(warnings).toEqual([[
+            '[relic] WS command from alice-session was applied, but its snapshot was not published.',
+            new Error('outbox admission failed')
+        ]]);
+    });
+
+    it('ends a WebSocket command whose session read fails as a value: nothing is thrown into an inbox retry (C12)', async () => {
+        const fake = createFakeRallar();
+        await installRelicHunterGame(fake.rallar, {
+            ...TEST_GAME_SERVICE_OPTIONS,
+            readSessionUsername: () => Promise.reject(new Error('auth store unavailable'))
+        });
+
+        const warnings = await captureWarnings(async () => {
+            await expect(
+                fake.commandHandler?.({ payload: joinCommand('room-1') }, { senderId: 'alice-session' })
+            ).resolves.toBeUndefined();
+        });
+
+        expect(fake.store.get('room-1')).toBeUndefined();
+        expect(fake.published).toHaveLength(0);
+        expect(warnings).toEqual([[
+            '[relic] WS command from alice-session was not applied: its session could not be read.',
+            new Error('auth store unavailable')
+        ]]);
+    });
+
     it('drops a WebSocket command whose sender has no issued session', async () => {
         const fake = createFakeRallar();
         await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
@@ -246,7 +289,22 @@ describe('Relic Hunter server game service', () => {
     });
 });
 
-function createFakeRallar(): Readonly<{
+async function captureWarnings(run: () => Promise<void>): Promise<readonly unknown[][]> {
+    const warnings: unknown[][] = [];
+    const warn = console.warn;
+    console.warn = (...values: unknown[]) => {
+        warnings.push(values);
+    };
+    try {
+        await run();
+    }
+    finally {
+        console.warn = warn;
+    }
+    return warnings;
+}
+
+function createFakeRallar(publishFailure: Error | undefined = undefined): Readonly<{
     rallar: Parameters<typeof installRelicHunterGame>[0];
     store: Map<string, RelicGameState>;
     published: PublishedMessage[];
@@ -304,6 +362,9 @@ function createFakeRallar(): Readonly<{
                 commandHandler = handler;
             },
             publish: (message: PublishedMessage['message'], fanout?: string) => {
+                if (publishFailure !== undefined) {
+                    return Promise.reject(publishFailure);
+                }
                 published.push({ message, fanout: fanout ?? 'live-only' });
                 return Promise.resolve();
             }

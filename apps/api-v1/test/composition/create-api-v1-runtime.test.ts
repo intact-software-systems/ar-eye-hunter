@@ -65,6 +65,26 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
     ]);
 });
 
+Deno.test('runtime construction hands one receipt recorder to the middleware and to the admin runtime', () => {
+    const operations = createOperations([]);
+    const handedRecorders: unknown[] = [];
+    constructApiV1Runtime(createInput([]), {
+        ...operations,
+        createMiddleware: (input) => {
+            handedRecorders.push(input.almReceiptDiagnostics);
+            return SHARED_RUNTIME;
+        },
+        requireRuntime: (input) => {
+            handedRecorders.push(input.almReceiptDiagnostics);
+            return COMPLETE_RUNTIME;
+        }
+    });
+
+    assert.equal(handedRecorders.length, 2);
+    assert.ok(handedRecorders[0] !== undefined);
+    assert.equal(handedRecorders[0], handedRecorders[1]);
+});
+
 const MUTATION_RUNTIME: ApiV1MutationRuntime = {
     groupFormationMetrics: { rttMutation: {} },
     resourceInboxRepository: {

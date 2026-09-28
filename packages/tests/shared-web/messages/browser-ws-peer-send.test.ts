@@ -112,6 +112,31 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
         }, undefined)).rejects.toMatchObject({ issues: [{ path: '$.peerId', code }] });
     });
 
+    it('refuses a peer target while the server names no peer id, which an older server would refuse (R-S3c-i-32)', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        Object.assign(fixture.middleware.middleware.webSocketQueueBox, { serverPeerId: undefined });
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware.webSocketQueueBox,
+            'enqueueOutboxIfAbsent'
+        );
+
+        await expect(fixture.sender.sendTyped({
+            typeId: 'relic.command.v1',
+            topicId: 'room.relic.command',
+            payload: { kind: 'start-expedition' },
+            roomId: 'room',
+            peerId: 'server',
+            strategy: 'ws'
+        }, COMMAND_CHANNEL)).rejects.toMatchObject({
+            issues: [{
+                path: '$.peerId',
+                code: 'unsupported',
+                message: 'A peer-addressed send needs a server that names its peer id; this server names none.'
+            }]
+        });
+        expect(envelope).not.toHaveBeenCalled();
+    });
+
     it('sends a typed ws-strategy send to its peer as the same room unicast', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const envelope = vi.spyOn(

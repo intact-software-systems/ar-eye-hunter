@@ -397,6 +397,33 @@ describe('RallarServerWsRouter', () => {
         });
     });
 
+    it('refuses a member\'s room unicast whose route names another room than the one it is addressed in (R-S3c-i-33)', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        onTestFinished(() => warn.mockRestore());
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2'],
+            currentSessionIds: ['peer-1', 'peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const misattributed = newALUnicastMessage(
+            'peer-1',
+            newALRoute('room.chat', 'room-2', 'unicast-naming-room-2'),
+            'peer-2',
+            'chat.message.v1',
+            { text: 'for room 2?' },
+            { groupRef: AUDIENCE_ROOM }
+        );
+
+        await fixture.sockets['peer-1']!.receive(misattributed);
+
+        expect(readChatRecipients(fixture)).toEqual([]);
+        expect(fixture.sockets['peer-1']!.sent.map((sent) => parseALControlMessage(sent))).toMatchObject([{
+            type: 'nack',
+            payload: { msgId: misattributed.id.msgId, reason: 'unauthorized' }
+        }]);
+    });
+
     it('publishes a proxy room message with its full scoped identity', async () => {
         const { router, outboundStores } = createRouter();
         const roomRef: GroupRef = {

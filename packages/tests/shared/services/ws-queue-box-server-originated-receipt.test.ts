@@ -136,6 +136,93 @@ describe('receipts of the server\'s own room notifications (D58, D61)', () => {
         });
     });
 
+    it.each(['hop', 'subtree'] as const)(
+        'keeps the hop that confirmed a %s receipt across the retries to the rest, which never re-route (R-S3c-i-31)',
+        async (ack) => {
+            const clock = mockClock();
+            const recorder = createRallarAlmReceiptDiagnosticsRecorder({
+                nowEpochMs: () => clock.nowMs,
+                capacity: 256
+            });
+            const outbox = createOutbox(clock);
+            const local = await createInstance({
+                outbox,
+                state: createInMemoryALAdmissionState(outbox),
+                peerIds: ['a', 'b'],
+                recorder,
+                nowMs: () => clock.nowMs
+            });
+            const msgId = `snapshot-${ack}`;
+
+            await local.service.enqueueOutboxIfAbsent(serverNotification(msgId, ack), ['a', 'b']);
+            await expect.poll(async () => {
+                await local.engine.executeOnce();
+                return [countCopies(local.sockets.a, msgId), countCopies(local.sockets.b, msgId)];
+            }).toEqual([1, 1]);
+            await local.service.acceptIncomingMessage(sessionAck(msgId, 'a'), 'a');
+
+            await expect.poll(async () => {
+                clock.nowMs += CLOCK_STEP_MS;
+                await local.engine.executeOnce();
+                return recorder.readDiagnostics().messages[0]?.receiptExhausted;
+            }, { timeout: 5_000 }).toBe(true);
+            expect(countCopies(local.sockets.b, msgId)).toBeGreaterThan(1);
+            expect(countCopies(local.sockets.a, msgId)).toBe(1);
+            expect(recorder.readDiagnostics().messages[0]).toMatchObject({
+                mode: ack,
+                confirmedPeerIds: ['a'],
+                unconfirmedPeerIds: ['b']
+            });
+        }
+    );
+
+    it('completes a notification to an empty room at admission: nothing is sent and nothing is recorded', async () => {
+        const clock = mockClock();
+        const recorder = createRallarAlmReceiptDiagnosticsRecorder({
+            nowEpochMs: () => clock.nowMs,
+            capacity: 256
+        });
+        const outbox = createOutbox(clock);
+        const state = createInMemoryALAdmissionState(outbox);
+        const local = await createInstance({ outbox, state, peerIds: ['a'], recorder, nowMs: () => clock.nowMs });
+        const remote = await createInstance({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
+        await joinCluster(local, remote);
+
+        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), []);
+        for (let step = 0; step < 5; step += 1) {
+            clock.nowMs += CLOCK_STEP_MS;
+            await local.engine.executeOnce();
+            await remote.engine.executeOnce();
+        }
+
+        expect(enqueued.verdict.kind).toBe('admitted');
+        expect(countCopies(local.sockets.a, 'snapshot-empty')).toBe(0);
+        expect(countCopies(remote.sockets.c, 'snapshot-empty')).toBe(0);
+        expect(recorder.readDiagnostics().messages).toEqual([]);
+    });
+
+    it('sends a row with no captured audience to every current session, on the publishing instance and on every other one', async () => {
+        const clock = mockClock();
+        const outbox = createOutbox(clock);
+        const state = createInMemoryALAdmissionState(outbox);
+        const nowMs = () => clock.nowMs;
+        const local = await createInstance({ outbox, state, peerIds: ['a', 'b'], recorder: undefined, nowMs });
+        const remote = await createInstance({ outbox, state, peerIds: ['c', 'd'], recorder: undefined, nowMs });
+        await joinCluster(local, remote);
+
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-uncaptured'));
+
+        await expect.poll(async () => {
+            await local.engine.executeOnce();
+            return [
+                countCopies(local.sockets.a, 'snapshot-uncaptured'),
+                countCopies(local.sockets.b, 'snapshot-uncaptured'),
+                countCopies(remote.sockets.c, 'snapshot-uncaptured'),
+                countCopies(remote.sockets.d, 'snapshot-uncaptured')
+            ];
+        }).toEqual([1, 1, 1, 1]);
+    });
+
     it('sends the frozen audience only, on the publishing instance and on every other one (C9)', async () => {
         const clock = mockClock();
         const outbox = createOutbox(clock);
@@ -253,7 +340,7 @@ function createOutbox(clock: { nowMs: number; }): InMemoryQueueBox {
     );
 }
 
-function serverNotification(msgId: string): ALMessage {
+function serverNotification(msgId: string, ack: 'receiver' | 'hop' | 'subtree' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
         SERVER_ID,
         newALRoute('room.snapshot', ROOM.groupId, msgId),
@@ -263,7 +350,7 @@ function serverNotification(msgId: string): ALMessage {
         {
             groupRef: ROOM,
             reliability: 'at-least-once',
-            ack: 'receiver',
+            qos: { ack: { algo: ack } },
             ttlMs: NOTIFICATION_TTL_MS
         }
     );

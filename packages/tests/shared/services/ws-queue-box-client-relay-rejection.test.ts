@@ -18,6 +18,10 @@ import {
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type {
+    WsServerInboundAuthorization,
+    WsServerInboundAuthorizer
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -134,6 +138,32 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
+    it('states the room authorizer refusing a room broadcast before admission; the receipted handle reads rejected at once (C3)', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'unauthorized',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: member-not-active.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-refused', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(broadcast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await relayFrames(fixture.sockets.a, origin);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-refused')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-refused', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'unauthorized' });
+    });
+
     // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
     // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
     it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
@@ -184,7 +214,9 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
     });
 });
 
-async function createRelayFixture(): Promise<RelayFixture> {
+async function createRelayFixture(
+    authorize: WsServerInboundAuthorizer['authorize'] = authorizeEveryRoomMember
+): Promise<RelayFixture> {
     const socketServer = new JsonWebSocketServer();
     const sockets = { a: new SimulatedWebSocket('ws://a'), b: new SimulatedWebSocket('ws://b') };
     for (const [peerId, socket] of Object.entries(sockets)) {
@@ -204,15 +236,15 @@ async function createRelayFixture(): Promise<RelayFixture> {
             resolveBroadcastRecipients: recipients
         }
     });
-    server.authorizeInboundMessagesWith({
-        sendNacks: true,
-        authorize: async (message) =>
-            isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: 3 } }
-                : { authorized: true }
-    });
+    server.authorizeInboundMessagesWith({ sendNacks: true, authorize });
     onTestFinished(() => server.dispose());
     return { server, engine, sockets };
+}
+
+async function authorizeEveryRoomMember(message: ALMessage): Promise<WsServerInboundAuthorization> {
+    return isRoomScopedALMessage(message)
+        ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: 3 } }
+        : { authorized: true };
 }
 
 /** The origin WS client: every frame it reads came from its server, the only source it has. */

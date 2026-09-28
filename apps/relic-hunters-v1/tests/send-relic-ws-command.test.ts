@@ -10,6 +10,7 @@ import type {
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageChannel
 } from '@ar-eye-hunter/shared-web/browser/rallar.ts';
+import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     RELIC_COMMAND_RECEIPT_WAIT_MS,
@@ -25,10 +26,20 @@ const COMMAND: RelicCommand = {
 
 type RelicCommandFacade = Parameters<typeof sendRelicWsCommand>[0];
 
-const ACKNOWLEDGED = {
+const ACKNOWLEDGED: RallarMessageDeliveryOutcome = {
     status: 'settled',
-    lifecycle: { state: 'acknowledged', evidence: { reason: undefined } }
-} as RallarMessageDeliveryOutcome;
+    lifecycle: {
+        ...createInitialALDeliveryLifecycle({
+            msgId: 'command-1',
+            typeId: RELIC_TYPES.command,
+            ackMode: 'receiver',
+            receiptAlgo: 'receiver',
+            expiresAtMs: undefined,
+            submittedAtMs: 0
+        }),
+        state: 'acknowledged'
+    }
+};
 
 describe('a Relic command to the server (D57 as applied, D72)', () => {
     it('sends on the command channel to the server peer and reports the end of its receipt', async () => {
@@ -57,18 +68,28 @@ describe('a Relic command to the server (D57 as applied, D72)', () => {
 
 function createFacadeDouble(serverPeerId: string | undefined) {
     const wait = vi.fn(async () => ACKNOWLEDGED);
-    const handle: Partial<RallarMessageHandle> = { wait };
-    const sendWs = vi.fn(async () => handle as RallarMessageHandle);
+    const handle: RallarMessageHandle = {
+        msgId: ACKNOWLEDGED.lifecycle.msgId,
+        typeId: ACKNOWLEDGED.lifecycle.typeId,
+        lifecycle: () => ACKNOWLEDGED.lifecycle,
+        onEvent: () => () => {},
+        wait,
+        cancel: () => {}
+    };
+    const sendWs = vi.fn(async () => handle);
     const roomDefinitions: RallarRoomMessageChannelDefinition[] = [];
     function room<T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> {
         roomDefinitions.push(definition);
-        const channel: Partial<RallarTypedMessageChannel<T>> = { sendWs };
-        return channel as RallarTypedMessageChannel<T>;
+        return { send: unusedByACommand, sendRtc: unusedByACommand, sendWs, onRtc: unusedByACommand, onWs: unusedByACommand };
     }
-    const messages: Partial<RelicCommandFacade['messages']> = { room };
+    const unusedLane = { send: unusedByACommand, onMessage: unusedByACommand };
     const facade: RelicCommandFacade = {
         serverPeerId: () => serverPeerId,
-        messages: messages as RelicCommandFacade['messages']
+        messages: { rtc: unusedLane, ws: unusedLane, channel: unusedByACommand, room }
     };
     return { facade, roomDefinitions, sendWs, wait };
+}
+
+function unusedByACommand(): never {
+    throw new Error('A Relic command sends on the room channel\'s sendWs alone.');
 }

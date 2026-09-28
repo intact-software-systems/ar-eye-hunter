@@ -589,8 +589,7 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
 
         await page.getByRole('button', { name: /Join as/ }).click();
-        // The joined snapshot now arrives as the WS double's reply frame, one page-to-runner round trip later.
-        await expect(page.getByText('Keeper: Alice')).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByText('Keeper: Alice')).toBeVisible();
         await expect(page.locator('.lobby-begin-btn')).toBeEnabled();
         await page.locator('.lobby-begin-btn').click();
         await expect.poll(() => commandBodies.length).toBe(2);

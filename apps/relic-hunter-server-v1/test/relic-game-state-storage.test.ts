@@ -2,11 +2,13 @@ import {
     createRelicGame,
     RELIC_PROTOCOL_VERSION,
     type RelicCommand,
+    type RelicExpeditionSetupMetadata,
     type RelicGameState
 } from '@relic-hunters/mod.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
+import { encodeRelicGameStateAppData } from '../src/encode-relic-game-state-app-data.ts';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
 
 type RelicServer = Parameters<typeof installRelicHunterGame>[0];
@@ -40,6 +42,24 @@ describe('Relic game state storage', () => {
 
         await expect(service.ensureSnapshot('room-2')).resolves.toMatchObject({ gameId: 'room-2', phase: 'lobby' });
         expect(store.read('room-2')?.adminPlayerId).toBeUndefined();
+    });
+
+    it('leaves out only undefined plain properties: a non-plain value and a cycle still reach the JSON-safety check', () => {
+        const game = createRelicGame('room-3', 'room-3', 1);
+        class ProceduralSetup {
+            readonly schemaVersion = 1;
+            readonly source = 'procedural';
+        }
+        const cyclicSetup: RelicExpeditionSetupMetadata & { self: object | undefined; } = {
+            schemaVersion: 1,
+            source: 'procedural',
+            self: undefined
+        };
+        cyclicSetup.self = cyclicSetup;
+
+        expect(() => encodeRelicGameStateAppData({ ...game, setup: new ProceduralSetup() }))
+            .toThrow('uses a non-plain object');
+        expect(() => encodeRelicGameStateAppData({ ...game, setup: cyclicSetup })).toThrow('contains a cycle');
     });
 });
 
