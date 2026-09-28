@@ -339,6 +339,7 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
         nextTs,
         attempts
     ] = values;
+    Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'));
     return {
         key: {
             resourceId: readStringParameter(resourceId, 'Outbox resource ID'),
@@ -349,9 +350,7 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
         typeId: readStringParameter(typeId, 'Outbox type ID'),
         status: readEntityStatus(status, 'Outbox status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'))
-                .toPlainDateTime()
-                .toPlainTime(),
+            date: toPlainDateTime(createdTs).toPlainTime(),
             createdBy: readStringParameter(createdBy, 'Outbox creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
@@ -378,6 +377,7 @@ function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
         createdTs,
         expiryTs
     ] = values;
+    Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'));
     return {
         key: {
             resourceId: readStringParameter(resourceId, 'Result resource ID'),
@@ -388,9 +388,7 @@ function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
         typeId: readStringParameter(typeId, 'Result type ID'),
         status: readEntityStatus(status, 'Result status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'))
-                .toPlainDateTime()
-                .toPlainTime(),
+            date: toPlainDateTime(createdTs).toPlainTime(),
             createdBy: readStringParameter(createdBy, 'Result creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)

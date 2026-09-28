@@ -166,6 +166,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 completedHopPeerIds: [],
                 repair,
                 recipientScope: plan.recipientScope,
+                sessionInvalidation: plan.sessionInvalidation,
                 admittedAudience: plan.admittedAudience,
                 referenceKey: read.storedMessage?.reference.key
             })
@@ -190,6 +191,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             ? await this.dependencies.planRepairMessage(msg, {
                 ...request,
                 recipientScope: plan.recipientScope,
+                sessionInvalidation: plan.sessionInvalidation,
                 admittedAudience: plan.admittedAudience,
                 referenceKey: read.storedMessage?.reference.key,
                 failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),

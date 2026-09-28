@@ -16,6 +16,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -35,6 +36,14 @@ import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export type WsQueueBoxServerPreparedMessage =
+    | Readonly<{
+        kind: 'invalidated-session';
+        peerId: string;
+        connectionId: string;
+        generationId: string;
+        sessionInvalidation: ALSessionInvalidationAuthority;
+        message: ALOutboundTransportMessage;
+    }>
     | Readonly<{
         kind: 'scoped-recipient';
         peerId: string;
@@ -76,6 +85,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         /** The audience the router admitted the message to, carried beside it; absent for every other message. */
         readonly admittedAudience: readonly string[] | undefined;
         readonly recipientScope?: StateScope;
+        readonly sessionInvalidation?: ALSessionInvalidationAuthority;
         readonly referenceKey?: Key;
     }
 
@@ -85,7 +95,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly allowClusterRecipients: boolean;
         /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
         readonly audience: readonly string[] | undefined;
-        readonly directBroadcast: boolean;
+        readonly capturedSessions: boolean;
     }
 }
 
@@ -144,7 +154,7 @@ export class WsQueueBoxServerOutboundPlanning {
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
             audience,
-            directBroadcast
+            capturedSessions: directBroadcast || request.sessionInvalidation !== undefined
         }).fold(
             (error) =>
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
@@ -157,7 +167,12 @@ export class WsQueueBoxServerOutboundPlanning {
                     : this.toRecipientPreparedMessages(
                         message,
                         recipients,
-                        directBroadcast || message.targets?.mode === 'unicast' ? recipientScope : undefined
+                        {
+                            recipientScope: directBroadcast || message.targets?.mode === 'unicast'
+                                ? recipientScope
+                                : undefined,
+                            sessionInvalidation: request.sessionInvalidation
+                        }
                     ),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
@@ -168,6 +183,9 @@ export class WsQueueBoxServerOutboundPlanning {
                 repairTracking: toRepairTrackingPlan(normalized.effective),
                 supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
                 ...(admittedAudience === undefined ? {} : { admittedAudience }),
+                ...(request.sessionInvalidation === undefined
+                    ? {}
+                    : { sessionInvalidation: request.sessionInvalidation }),
                 ...(recipientScope === undefined ? {} : { recipientScope })
             })
         );
@@ -176,8 +194,23 @@ export class WsQueueBoxServerOutboundPlanning {
     private toRecipientPreparedMessages(
         message: ALMessage,
         recipients: readonly WsServerResolvedRecipient[],
-        recipientScope: StateScope | undefined
+        authority: Pick<WsQueueBoxServerOutboundPlanning.Request, 'recipientScope' | 'sessionInvalidation'>
     ): readonly WsQueueBoxServerPreparedMessage[] {
+        const { recipientScope, sessionInvalidation } = authority;
+        if (sessionInvalidation !== undefined) {
+            return recipients.flatMap((recipient) => {
+                const generationId = this.#targetResolution.getConnectionGeneration(recipient.connectionId);
+                return generationId === undefined
+                    ? []
+                    : [{
+                        kind: 'invalidated-session' as const,
+                        ...recipient,
+                        generationId,
+                        sessionInvalidation,
+                        message: toALOutboundTransportMessage(message)
+                    }];
+            });
+        }
         if (recipientScope === undefined) {
             return toRecipientPreparedMessages(message, recipients);
         }
@@ -208,7 +241,7 @@ export class WsQueueBoxServerOutboundPlanning {
         }
         const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
         const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
-        const recipients = directBroadcast
+        const recipients = directBroadcast || request.sessionInvalidation !== undefined
             ? this.#targetResolution.resolveCapturedSessionRecipients(
                 message,
                 (request.admittedAudience ?? []).filter((sessionId) => requested.includes(sessionId))
@@ -226,10 +259,16 @@ export class WsQueueBoxServerOutboundPlanning {
             preparedMessages: this.toRecipientPreparedMessages(
                 message,
                 recipients,
-                directBroadcast || message.targets?.mode === 'unicast' ? request.recipientScope : undefined
+                {
+                    recipientScope: directBroadcast || message.targets?.mode === 'unicast'
+                        ? request.recipientScope
+                        : undefined,
+                    sessionInvalidation: request.sessionInvalidation
+                }
             ),
             admittedAudience: request.admittedAudience,
             recipientScope: request.recipientScope,
+            sessionInvalidation: request.sessionInvalidation,
             ackTracking: toAckTrackingPlan(
                 effective,
                 recipients.map((recipient) => recipient.peerId),
@@ -261,7 +300,7 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const resolved = resolution.directBroadcast
+        const resolved = resolution.capturedSessions
             ? this.#targetResolution.resolveCapturedSessionRecipients(message, resolution.audience ?? [])
             : this.#targetResolution.resolveOutboundRecipients(message);
         const audience = resolution.audience;

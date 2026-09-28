@@ -24,6 +24,7 @@ import type {
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
+import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
@@ -41,6 +42,7 @@ export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
 /** Carrier-owned first-dequeue authority; a later stored admission always wins over this read. */
 export interface ALOutboundDequeueAuthority {
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
 }
@@ -108,6 +110,7 @@ export interface ALOutboundRepairRequest {
     readonly referenceKey?: Key;
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
@@ -152,6 +155,7 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {

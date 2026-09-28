@@ -11,15 +11,23 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
     requiresWsQueueBoxServerRecipientScope,
-    validateWsQueueBoxServerDirectScopedBroadcastAuthority
+    validateWsQueueBoxServerDirectScopedBroadcastAuthority,
+    validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
-/** A producer reader authorizes a frozen scoped unicast or exact scoped broadcast at this boundary. */
-export interface WsOutboxProducerAuthority {
-    readonly admittedAudience: readonly string[];
-    readonly recipientScope: StateScope;
-}
+/** Auth invalidation is a separate session-global authority from ordinary scoped delivery. */
+export type WsOutboxProducerAuthority =
+    | {
+        readonly admittedAudience: readonly string[];
+        readonly recipientScope: StateScope;
+        readonly sessionInvalidation?: never;
+    }
+    | {
+        readonly admittedAudience: readonly string[];
+        readonly recipientScope: undefined;
+        readonly sessionInvalidation: NonNullable<ALOutboundDequeueAuthority['sessionInvalidation']>;
+    };
 
 export type WsOutboxProducerProvenanceReader = (
     message: ALMessage,
@@ -49,15 +57,14 @@ export class WsQueueBoxServerDequeueAuthority {
         }
         if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
             const policy = await admissionStore.readCapturedPolicy(message, entry);
-            if (
-                isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
-                    ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, policy).length > 0
-                    : requiresWsQueueBoxServerRecipientScope(message) &&
-                        validateALOutboundRecipientScope(policy.recipientScope).length > 0
-            ) {
+            if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
                 throw toDequeueCorruption(entry, 'Captured public unicast has no recipient scope');
             }
-            return { admittedAudience: policy.admittedAudience, recipientScope: policy.recipientScope };
+            return {
+                admittedAudience: policy.admittedAudience,
+                recipientScope: policy.recipientScope,
+                sessionInvalidation: policy.sessionInvalidation
+            };
         }
         if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || await outbox.getItem(toALOutboundIdentityKey(entry.key))) {
             throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
@@ -67,6 +74,12 @@ export class WsQueueBoxServerDequeueAuthority {
             throw toDequeueCorruption(entry, 'Raw WS outbox row has no supported producer authority');
         }
         const authority = await readProducerProvenance(message, entry);
+        if (authority.sessionInvalidation !== undefined) {
+            if (validateWsQueueBoxServerRecipientAuthority(message, authority, entry.key).length > 0) {
+                throw toDequeueCorruption(entry, 'Invalid exact-session producer authority');
+            }
+            return authority;
+        }
         const targets = message.targets;
         if (
             validateALOutboundRecipientScope(authority.recipientScope).length > 0 ||

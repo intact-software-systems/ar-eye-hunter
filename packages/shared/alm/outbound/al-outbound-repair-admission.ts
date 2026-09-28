@@ -128,6 +128,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             referenceKey: read.storedMessage?.reference.key,
             admittedAudience: read.plan?.admittedAudience,
             recipientScope: read.plan?.recipientScope,
+            sessionInvalidation: read.plan?.sessionInvalidation,
             trigger: control.type,
             requestedByPeerId: control.payload.fromPeerId,
             orderingTrackKey: control.payload.orderingKey,

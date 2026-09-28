@@ -1,6 +1,10 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../alm/al-admission-value-validation.ts';
 import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import {
+    decodeALSessionInvalidationAuthority,
+    validateALSessionInvalidationMessage
+} from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
@@ -19,34 +23,16 @@ export function decodeWsQueueBoxServerPreparedMessage(
         'peerId',
         'connectionId',
         'generationId',
-        'recipientScope'
+        'recipientScope',
+        'sessionInvalidation'
     ]);
-    const message = decodeALOutboundTransportMessage(prepared.message, msg);
-    if (prepared.kind === 'scoped-recipient') {
-        decodeALAdmissionRecord(value, ['kind', 'message', 'peerId', 'connectionId', 'generationId', 'recipientScope']);
-        if (isWsQueueBoxServerDirectScopedBroadcastRow(msg, referenceKey)) {
-            const scope = decodeALOutboundRecipientScope(prepared.recipientScope);
-            const targetScope = readWsQueueBoxServerScopedTargetScope(msg);
-            if (
-                !targetScope || scope.applicationId !== targetScope.applicationId ||
-                scope.workspaceId !== targetScope.workspaceId ||
-                prepared.peerId !== prepared.connectionId
-            ) {
-                throw new TypeError('Persisted scoped recipient differs from direct broadcast target');
-            }
-        }
-        else if (msg.targets?.mode !== 'unicast' || prepared.peerId !== msg.targets.toPeerId) {
-            throw new TypeError('Persisted scoped recipient differs from unicast target');
-        }
-        return {
-            kind: 'scoped-recipient',
-            peerId: decodeALAdmissionString(prepared.peerId),
-            connectionId: decodeALAdmissionString(prepared.connectionId),
-            generationId: decodeALAdmissionString(prepared.generationId),
-            recipientScope: decodeALOutboundRecipientScope(prepared.recipientScope),
-            message
-        };
+    if (prepared.kind === 'invalidated-session') {
+        return decodeInvalidatedSessionPrepared(value, msg);
     }
+    if (prepared.kind === 'scoped-recipient') {
+        return decodeScopedRecipientPrepared(value, msg, referenceKey);
+    }
+    const message = decodeALOutboundTransportMessage(prepared.message, msg);
     if (prepared.kind === 'recipient') {
         if (
             requiresWsQueueBoxServerRecipientScope(msg) ||
@@ -67,4 +53,66 @@ export function decodeWsQueueBoxServerPreparedMessage(
         return { kind: prepared.kind, message };
     }
     throw new TypeError('Persisted WS outbound prepared message kind is invalid');
+}
+
+function decodeScopedRecipientPrepared(
+    value: unknown,
+    message: ALMessage,
+    referenceKey: Key | undefined
+): WsQueueBoxServerPreparedMessage {
+    const prepared = decodeALAdmissionRecord(value, [
+        'kind',
+        'message',
+        'peerId',
+        'connectionId',
+        'generationId',
+        'recipientScope'
+    ]);
+    const scope = decodeALOutboundRecipientScope(prepared.recipientScope);
+    if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
+        const targetScope = readWsQueueBoxServerScopedTargetScope(message);
+        if (
+            !targetScope || scope.applicationId !== targetScope.applicationId ||
+            scope.workspaceId !== targetScope.workspaceId || prepared.peerId !== prepared.connectionId
+        ) {
+            throw new TypeError('Persisted scoped recipient differs from direct broadcast target');
+        }
+    }
+    else if (message.targets?.mode !== 'unicast' || prepared.peerId !== message.targets.toPeerId) {
+        throw new TypeError('Persisted scoped recipient differs from unicast target');
+    }
+    return {
+        kind: 'scoped-recipient',
+        peerId: decodeALAdmissionString(prepared.peerId),
+        connectionId: decodeALAdmissionString(prepared.connectionId),
+        generationId: decodeALAdmissionString(prepared.generationId),
+        recipientScope: scope,
+        message: decodeALOutboundTransportMessage(prepared.message, message)
+    };
+}
+
+function decodeInvalidatedSessionPrepared(value: unknown, message: ALMessage): WsQueueBoxServerPreparedMessage {
+    const prepared = decodeALAdmissionRecord(value, [
+        'kind',
+        'message',
+        'peerId',
+        'connectionId',
+        'generationId',
+        'sessionInvalidation'
+    ]);
+    const sessionInvalidation = decodeALSessionInvalidationAuthority(prepared.sessionInvalidation);
+    if (
+        validateALSessionInvalidationMessage(message, sessionInvalidation).length > 0 ||
+        prepared.peerId !== sessionInvalidation.sessionId || prepared.connectionId !== sessionInvalidation.sessionId
+    ) {
+        throw new TypeError('Prepared invalidation differs from exact session');
+    }
+    return {
+        kind: 'invalidated-session',
+        peerId: sessionInvalidation.sessionId,
+        connectionId: sessionInvalidation.sessionId,
+        generationId: decodeALAdmissionString(prepared.generationId),
+        sessionInvalidation,
+        message: decodeALOutboundTransportMessage(prepared.message, message)
+    };
 }

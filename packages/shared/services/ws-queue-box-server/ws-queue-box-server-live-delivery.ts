@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
@@ -43,6 +44,7 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly scope: StateScope | undefined;
         readonly principalId: string | undefined;
         readonly requireAuthenticatedRecipient: boolean;
+        readonly invalidatedSessionId: string | undefined;
         readonly generations: ReadonlyMap<string, string | undefined>;
     }
 
@@ -74,12 +76,7 @@ export class WsQueueBoxServerLiveDelivery {
     /** Unicast scope is recipient policy, not proof that a local recipient exists. */
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
         const { message, inboundScope } = input;
-        if (
-            requiresWsQueueBoxServerRecipientScope(message) && validateALOutboundRecipientScope(inboundScope).length > 0
-        ) {
-            return noRecipientResult(message);
-        }
-        if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
+        if (validateLiveSendAuthority(input).length > 0) {
             return noRecipientResult(message);
         }
         const expiresAtMs = input.expiresAtMs ??
@@ -87,7 +84,9 @@ export class WsQueueBoxServerLiveDelivery {
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
         }
-        const recipients = this.#recipientSelection.resolveLiveRecipients(input);
+        const recipients = input.sessionInvalidation === undefined
+            ? this.#recipientSelection.resolveLiveRecipients(input)
+            : this.#targetResolution.resolveCapturedSessionRecipients(message, [input.sessionInvalidation.sessionId]);
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -108,6 +107,7 @@ export class WsQueueBoxServerLiveDelivery {
 
         const sendAttempt = this.sendEncodedToRecipients({
             encoded: encodedAttempt.encoded,
+            invalidatedSessionId: input.sessionInvalidation?.sessionId,
             recipients,
             expiresAtMs,
             scope: input.recipientScope ??
@@ -157,6 +157,7 @@ export class WsQueueBoxServerLiveDelivery {
         }
         return this.sendEncodedToRecipients({
             encoded: encodedMessage,
+            invalidatedSessionId: undefined,
             recipients,
             expiresAtMs,
             scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
@@ -190,6 +191,15 @@ export class WsQueueBoxServerLiveDelivery {
         let sentCount = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
+            if (
+                input.invalidatedSessionId !== undefined &&
+                (recipient.connectionId !== input.invalidatedSessionId ||
+                    !this.#socket.connections.get(recipient.connectionId)?.isOpen ||
+                    this.#socket.connections.get(recipient.connectionId)?.generationId !==
+                        generations.get(recipient.connectionId))
+            ) {
+                continue;
+            }
             if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
                 return { sentCount, failures, expired: true };
             }
@@ -221,6 +231,23 @@ export class WsQueueBoxServerLiveDelivery {
         }
         return { sentCount, failures, expired: false };
     }
+}
+
+function validateLiveSendAuthority(input: WsServerLiveSendInputDto): readonly string[] {
+    const issues: string[] = [];
+    if (input.sessionInvalidation !== undefined) {
+        issues.push(...validateALSessionInvalidationMessage(input.message, input.sessionInvalidation));
+        if (input.recipientScope !== undefined || input.inboundScope !== undefined) {
+            issues.push('Session-global authority cannot carry a scoped authority');
+        }
+    }
+    else if (requiresWsQueueBoxServerRecipientScope(input.message)) {
+        issues.push(...validateALOutboundRecipientScope(input.inboundScope));
+    }
+    if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
+        issues.push('Principal audience requires its scope');
+    }
+    return issues;
 }
 
 function noRecipientResult(message: ALMessage): WsServerLiveSendResult {

@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALNackReason } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 
@@ -44,6 +45,7 @@ export interface WsServerLiveSendResult {
 }
 
 export interface WsServerLiveSendInputDto {
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly message: ALMessage;
     /** A cluster notice's already resolved deadline; ordinary live sends derive one from the message. */
     readonly expiresAtMs?: number;

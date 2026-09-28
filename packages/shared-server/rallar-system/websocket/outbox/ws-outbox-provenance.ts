@@ -9,6 +9,11 @@ import {
 } from '@shared/alm/al-admission-value-validation.ts';
 import { decodeALAdmissionResourceEntryKey } from '@shared/alm/decode-al-admission-resource-entry-key.ts';
 import { decodeALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import {
+    decodeALSessionInvalidationAuthority,
+    validateALSessionInvalidationMessage,
+    type ALSessionInvalidationAuthority
+} from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
@@ -31,7 +36,7 @@ export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
 
 export interface WsOutboxProvenance {
     readonly version: 1;
-    readonly producerKind: 'state-sync';
+    readonly producerKind: 'state-sync' | 'auth-session-invalidation';
     readonly queueKey: Key;
     readonly typeId: string;
     readonly messageId: string;
@@ -39,9 +44,16 @@ export interface WsOutboxProvenance {
     readonly expiresAtMs: number;
     readonly target:
         | WsOutboxScopedUnicastTarget
+        | WsOutboxInvalidatedSessionTarget
         | WsOutboxScopedRoomBroadcastTarget
         | WsOutboxScopedPrincipalBroadcastTarget;
     readonly digest: string;
+}
+
+export interface WsOutboxInvalidatedSessionTarget {
+    readonly kind: 'exact-invalidated-session';
+    readonly sessionInvalidation: ALSessionInvalidationAuthority;
+    readonly admittedAudience: readonly string[];
 }
 
 export interface WsOutboxScopedUnicastTarget {
@@ -98,6 +110,13 @@ export class WsOutboxProvenanceReader {
             }
             if (proof.expiresAtMs <= this.dependencies.nowMs()) {
                 throw new TypeError('WS producer provenance expired during verification');
+            }
+            if (proof.target.kind === 'exact-invalidated-session') {
+                return {
+                    admittedAudience: proof.target.admittedAudience,
+                    recipientScope: undefined,
+                    sessionInvalidation: proof.target.sessionInvalidation
+                };
             }
             const scope = proof.target.kind === 'scoped-unicast'
                 ? proof.target.scope
@@ -159,7 +178,10 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
         'target',
         'digest'
     ]);
-    if (proof.version !== 1 || proof.producerKind !== 'state-sync') {
+    if (
+        proof.version !== 1 ||
+        (proof.producerKind !== 'state-sync' && proof.producerKind !== 'auth-session-invalidation')
+    ) {
         throw new TypeError('Unsupported WS producer provenance version or kind');
     }
     const digest = decodeALAdmissionString(proof.digest);
@@ -184,7 +206,8 @@ function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['tar
         'peerId',
         'scope',
         'groupRef',
-        'principalRef'
+        'principalRef',
+        'sessionInvalidation'
     ]);
     if (!Array.isArray(target.admittedAudience)) {
         throw new TypeError('WS producer provenance requires a frozen audience');
@@ -192,6 +215,14 @@ function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['tar
     const admittedAudience = target.admittedAudience.map(decodeALAdmissionString);
     if (new Set(admittedAudience).size !== admittedAudience.length) {
         throw new TypeError('WS producer audience contains duplicates');
+    }
+    if (target.kind === 'exact-invalidated-session') {
+        decodeALAdmissionRecord(value, ['kind', 'sessionInvalidation', 'admittedAudience']);
+        const sessionInvalidation = decodeALSessionInvalidationAuthority(target.sessionInvalidation);
+        if (admittedAudience.length !== 1 || admittedAudience[0] !== sessionInvalidation.sessionId) {
+            throw new TypeError('Invalidation audience differs from its exact session');
+        }
+        return { kind: 'exact-invalidated-session', sessionInvalidation, admittedAudience };
     }
     if (target.kind === 'scoped-unicast') {
         decodeALAdmissionRecord(value, ['kind', 'peerId', 'scope', 'admittedAudience']);
@@ -217,22 +248,22 @@ function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['tar
     }
     if (target.kind === 'scoped-principal-broadcast') {
         decodeALAdmissionRecord(value, ['kind', 'principalRef', 'admittedAudience']);
-        const principalRef = decodeALAdmissionRecord(target.principalRef, [
-            'applicationId',
-            'workspaceId',
-            'principalId'
-        ]);
         return {
             kind: 'scoped-principal-broadcast',
-            principalRef: {
-                applicationId: decodeALAdmissionString(principalRef.applicationId),
-                workspaceId: decodeALAdmissionString(principalRef.workspaceId),
-                principalId: decodeALAdmissionString(principalRef.principalId)
-            },
+            principalRef: decodePrincipalRef(target.principalRef),
             admittedAudience
         };
     }
     throw new TypeError('WS producer provenance target kind is unsupported');
+}
+
+function decodePrincipalRef(value: unknown): ClientPrincipalRef {
+    const principalRef = decodeALAdmissionRecord(value, ['applicationId', 'workspaceId', 'principalId']);
+    return {
+        applicationId: decodeALAdmissionString(principalRef.applicationId),
+        workspaceId: decodeALAdmissionString(principalRef.workspaceId),
+        principalId: decodeALAdmissionString(principalRef.principalId)
+    };
 }
 
 interface WsOutboxProvenanceValidation {
@@ -246,6 +277,9 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     const { message, entry, proof, nowMs } = input;
     const issues: string[] = [];
     const expiresAtMs = resolveALMessageExpireAtMs(message);
+    if ((proof.producerKind === 'auth-session-invalidation') !== (proof.target.kind === 'exact-invalidated-session')) {
+        issues.push('WS producer kind differs from authority variant');
+    }
     if (
         !isKeysEqual(proof.queueKey, entry.key) || proof.typeId !== entry.typeId ||
         entry.typeId !== EnqueuedType.WS_OUTBOX || entry.key.topicId === 'AL_OUTBOUND_MESSAGE'
@@ -266,6 +300,9 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
 }
 
 function validateWsOutboxProvenanceTarget(message: ALMessage, target: WsOutboxProvenance['target']): readonly string[] {
+    if (target.kind === 'exact-invalidated-session') {
+        return validateALSessionInvalidationMessage(message, target.sessionInvalidation);
+    }
     const targets = message.targets;
     if (target.kind === 'scoped-room-broadcast') {
         return targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef &&

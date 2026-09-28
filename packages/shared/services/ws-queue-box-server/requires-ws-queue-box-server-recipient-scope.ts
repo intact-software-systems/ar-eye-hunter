@@ -4,6 +4,7 @@ import {
     validateALOutboundRecipientScope,
     type ALOutboundCapturedPolicy
 } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 
@@ -39,9 +40,15 @@ export function readWsQueueBoxServerScopedTargetScope(message: ALMessage): State
 /** Initial dispatch and repair apply the same captured recipient authority rules. */
 export function validateWsQueueBoxServerRecipientAuthority(
     message: ALMessage,
-    authority: Pick<ALOutboundCapturedPolicy, 'admittedAudience' | 'recipientScope'>,
+    authority: Pick<ALOutboundCapturedPolicy, 'admittedAudience' | 'recipientScope' | 'sessionInvalidation'>,
     referenceKey: Key | undefined
 ): readonly string[] {
+    if (authority.sessionInvalidation !== undefined) {
+        return authority.recipientScope === undefined && authority.admittedAudience?.length === 1 &&
+                authority.admittedAudience[0] === authority.sessionInvalidation.sessionId
+            ? validateALSessionInvalidationMessage(message, authority.sessionInvalidation)
+            : ['Session invalidation must name only its exact session'];
+    }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         return validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, authority);
     }

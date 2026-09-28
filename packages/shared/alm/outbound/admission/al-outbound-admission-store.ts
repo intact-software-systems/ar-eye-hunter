@@ -92,6 +92,7 @@ export type ALOutboundPreparedMessageDecoder<TPrepared> = (
 
 /** Transient authority from one verified observation; the physical key is never persisted again. */
 export interface ALOutboundPlanningAuthority {
+    readonly sessionInvalidation?: ALOutboundDequeueAuthority['sessionInvalidation'];
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
     readonly referenceKey: Key | undefined;

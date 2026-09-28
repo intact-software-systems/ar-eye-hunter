@@ -10,6 +10,7 @@ import {
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
+import { computeAuthLogoutProvenance, writeAuthLogoutProvenance } from '../mutation/compute/auth-logout-provenance.ts';
 import { readAuthMutationAttempt } from '../mutation/read-auth-mutation-attempt.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
 
@@ -55,6 +56,7 @@ export class AuthInboxHandler {
             read.authoritativeState,
             read.facts
         );
+        const logoutProvenance = await computeAuthLogoutProvenance(computedMutation);
         const validationInput = {
             command: read.command,
             read: read.authoritativeState,
@@ -80,6 +82,7 @@ export class AuthInboxHandler {
             computedCompletion,
             async (transaction) => {
                 await this.dependencies.mutationService.write(transaction, computedMutation);
+                await writeAuthLogoutProvenance(transaction, logoutProvenance);
             }
         );
     }

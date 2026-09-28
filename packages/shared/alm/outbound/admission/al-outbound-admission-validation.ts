@@ -16,6 +16,10 @@ import type {
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
+import {
+    decodeALSessionInvalidationAuthority,
+    type ALSessionInvalidationAuthority
+} from './al-session-invalidation-authority.ts';
 
 export interface ALStoredOutboundMessage {
     readonly msgId: string;
@@ -37,6 +41,7 @@ export interface ALOutboundCapturedPolicy {
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -47,6 +52,9 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
         ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
+        ...(plan.sessionInvalidation === undefined
+            ? {}
+            : { sessionInvalidation: decodeALSessionInvalidationAuthority(plan.sessionInvalidation) }),
         ...(plan.recipientScope === undefined
             ? {}
             : { recipientScope: decodeALOutboundRecipientScope(plan.recipientScope) })
@@ -93,7 +101,8 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         repairTracking: policy.repairTracking ?? undefined,
         supersedenceTracking: policy.supersedenceTracking ?? undefined,
         admittedAudience: policy.admittedAudience,
-        recipientScope: policy.recipientScope
+        recipientScope: policy.recipientScope,
+        sessionInvalidation: policy.sessionInvalidation
     };
 }
 
@@ -129,7 +138,13 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience', 'recipientScope']);
+    ], ['admittedAudience', 'recipientScope', 'sessionInvalidation']);
+    if (policy.sessionInvalidation !== undefined) {
+        decodeALSessionInvalidationAuthority(policy.sessionInvalidation);
+        if (policy.recipientScope !== undefined) {
+            throw new TypeError('Session-global authority cannot carry a scoped authority');
+        }
+    }
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (policy.recipientScope !== undefined) {
         decodeALOutboundRecipientScope(policy.recipientScope);

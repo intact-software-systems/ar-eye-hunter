@@ -201,7 +201,10 @@ function registerQueueBoxOutboxPublisher(
         const policy = requiresWsQueueBoxServerRecipientScope(message) || isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
             ? await options.wsQBoxServerService.readCapturedPolicy(message, entry)
             : undefined;
-        const result = sendToCapturedLocalTargets(message, entry, policy?.admittedAudience ?? admittedAudience, policy?.recipientScope, options);
+        const result = sendToCapturedLocalTargets(
+            message, entry, policy?.admittedAudience ?? admittedAudience, policy?.recipientScope,
+            policy?.sessionInvalidation, options
+        );
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -293,7 +296,10 @@ async function sendRemoteQueueBoxOutboxEntry(
         const policy = isWsQueueBoxServerReceiptRow(remoteMessage)
             ? undefined
             : await options.wsQBoxServerService.readCapturedPolicy(remoteMessage, entry);
-        result = sendToCapturedLocalTargets(remoteMessage, entry, policy?.admittedAudience, policy?.recipientScope, options);
+        result = sendToCapturedLocalTargets(
+            remoteMessage, entry, policy?.admittedAudience, policy?.recipientScope,
+            policy?.sessionInvalidation, options
+        );
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -360,8 +366,15 @@ function sendToCapturedLocalTargets(
     entry: ResourceEntry,
     captured: readonly string[] | undefined,
     recipientScope: ALOutboundCapturedPolicy['recipientScope'],
+    sessionInvalidation: ALOutboundCapturedPolicy['sessionInvalidation'],
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
 ): WsServerLiveSendResult {
+    if (sessionInvalidation !== undefined) {
+        return options.wsQBoxServerService.sendToTargetsWithResult({
+            message,
+            sessionInvalidation
+        });
+    }
     const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
     const eligible = (message.targets?.mode !== 'unicast' && !directBroadcast) ||
         captured === undefined || options.filterEligibleCapturedSessionIds === undefined

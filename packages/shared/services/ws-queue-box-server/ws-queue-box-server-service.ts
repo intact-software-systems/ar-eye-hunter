@@ -45,9 +45,7 @@ import type { OnWebSocketServerMessageCallback } from '../queue-message-callback
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import {
-    isWsQueueBoxServerDirectScopedBroadcastRow,
-    requiresWsQueueBoxServerRecipientScope,
-    validateWsQueueBoxServerDirectScopedBroadcastAuthority
+    validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -267,6 +265,7 @@ export class WsQueueBoxServerService {
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
                     admittedAudience: authority?.admittedAudience,
                     recipientScope: authority?.recipientScope,
+                    sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
             planDequeuedMessage: (message, authority) =>
@@ -276,6 +275,7 @@ export class WsQueueBoxServerService {
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
                     admittedAudience: authority?.admittedAudience,
                     recipientScope: authority?.recipientScope,
+                    sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
             afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
@@ -461,11 +461,7 @@ export class WsQueueBoxServerService {
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
         const policy = await this.admissionStore.readCapturedPolicy(message, entry);
-        if (
-            isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
-                ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, policy).length > 0
-                : requiresWsQueueBoxServerRecipientScope(message) && policy.recipientScope === undefined
-        ) {
+        if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(entry.key),
                 new TypeError('Persisted WS row has no valid captured recipient authority')
@@ -486,14 +482,20 @@ export class WsQueueBoxServerService {
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        if (prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient') {
+        if (
+            prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient' &&
+            prepared.kind !== 'invalidated-session'
+        ) {
             return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
         return await this.sendPreparedRecipient(prepared, lifecycle);
     }
 
     private async sendPreparedRecipient(
-        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'recipient' | 'scoped-recipient'; }>,
+        prepared: Extract<
+            WsQueueBoxServerPreparedMessage,
+            { kind: 'recipient' | 'scoped-recipient' | 'invalidated-session'; }
+        >,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
@@ -514,6 +516,13 @@ export class WsQueueBoxServerService {
                 };
             }
             if (prepared.kind === 'scoped-recipient' && !this.isCurrentScopedRecipient(prepared)) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
+            if (
+                prepared.kind === 'invalidated-session' &&
+                (prepared.connectionId !== prepared.sessionInvalidation.sessionId ||
+                    this.socket.connections.get(prepared.connectionId)?.generationId !== prepared.generationId)
+            ) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
             this.socket.sendEncoded(prepared.connectionId, encoded);
