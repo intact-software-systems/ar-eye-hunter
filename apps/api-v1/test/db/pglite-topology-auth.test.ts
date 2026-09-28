@@ -50,17 +50,6 @@ import {
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-/** Admission returns before the inbound worker delivers, so the topic consumer runs on a later batch. */
-async function waitForWsIngressCaptures(captured: readonly number[], expected: number): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (captured.length >= expected) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Timed out waiting for ${expected} inbound WS ingress captures`);
-}
-
 interface NumericCountRow {
     readonly count: string | number;
 }
@@ -527,9 +516,13 @@ Deno.test(
             });
             try {
                 const wsIngressCapturedAt: number[] = [];
+                const secondIngressCaptured = Promise.withResolvers<number>();
                 installRtcRttSystemTopic(wsService, {
                     enqueueMutation: async (input) => {
                         wsIngressCapturedAt.push(input.capturedAtEpochMs);
+                        if (wsIngressCapturedAt.length === 2) {
+                            secondIngressCaptured.resolve(input.capturedAtEpochMs);
+                        }
                         return await rtcRttInbox.enqueue(input);
                     }
                 });
@@ -560,11 +553,21 @@ Deno.test(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
                     createApiV1TestQueueResilience()
                 );
-                await new Promise((resolve) => setTimeout(resolve, 2));
+                assert.equal(wsIngressCapturedAt.length, 1);
+                const secondIngressStartedAtEpochMs = Date.now();
                 await dispatchRtt();
-                await waitForWsIngressCaptures(wsIngressCapturedAt, 2);
-                assert.equal(wsIngressCapturedAt.length, 2);
-                assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
+                const captureDeadline = setTimeout(
+                    () => secondIngressCaptured.reject(new Error('Timed out waiting for the second RTT ingress')),
+                    5_000
+                );
+                try {
+                    const secondCapturedAtEpochMs = await secondIngressCaptured.promise;
+                    assert.equal(wsIngressCapturedAt.length, 2);
+                    assert.ok(secondCapturedAtEpochMs >= secondIngressStartedAtEpochMs);
+                }
+                finally {
+                    clearTimeout(captureDeadline);
+                }
 
                 wsServer.addConnection(
                     new ConnectionContext({
