@@ -291,6 +291,49 @@ describe('Rallar data stores', () => {
         expect(verifier.read('1')).toBeUndefined();
     });
 
+    it('keeps a write-behind set made before lazy hydration over the stale persisted value', async () => {
+        const data = createRallarDataFacade({
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
+        });
+        const definition = data.define<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`,
+            durability: 'write-behind'
+        });
+
+        const seeder = await data.open(definition);
+        await seeder.set('1', { title: 'Stale', done: false });
+        await seeder.close();
+
+        // The set lands first; get() is the first call that hydrates the lazy writer.
+        const lazyWriter = await data.open(definition, { hydrate: 'lazy' });
+        await lazyWriter.set('1', { title: 'Fresh', done: true });
+        expect(await lazyWriter.get('1')).toEqual({ title: 'Fresh', done: true });
+        await lazyWriter.close();
+
+        const verifier = await data.open(definition);
+        expect(verifier.read('1')).toEqual({ title: 'Fresh', done: true });
+    });
+
+    it('persists a write-behind set from a lazy store that closes before hydrating', async () => {
+        const data = createRallarDataFacade({
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
+        });
+        const definition = data.define<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`,
+            durability: 'write-behind'
+        });
+
+        // Nothing hydrates the lazy writer, so close() alone has to flush the set to IndexedDB.
+        const lazyWriter = await data.open(definition, { hydrate: 'lazy' });
+        await lazyWriter.set('1', { title: 'Never hydrated', done: false });
+        await lazyWriter.close();
+
+        const verifier = await data.open(definition);
+        expect(verifier.read('1')).toEqual({ title: 'Never hydrated', done: false });
+    });
+
     it('supports convenience and maintenance operations', async () => {
         const data = createRallarDataFacade({
             manager: new RepositoryManager(),
