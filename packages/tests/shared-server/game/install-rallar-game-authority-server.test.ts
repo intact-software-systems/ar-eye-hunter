@@ -438,6 +438,68 @@ describe('Rallar Game Authority server installer', () => {
         expect(fake.published).toEqual([]);
     });
 
+    it.each(
+        [
+            { routerStatus: 'sent-live', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'queued-outbox', gameStatus: 'accepted', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'none', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'none' },
+            { routerStatus: 'no-recipients', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'no-recipients' },
+            { routerStatus: 'skipped', gameStatus: 'skipped', count: 0, routerReason: 'policy-denied', gameReason: 'policy-denied' },
+            { routerStatus: 'duplicate', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'duplicate' },
+            { routerStatus: 'superseded', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'superseded' },
+            { routerStatus: 'expired', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'expired' },
+            { routerStatus: 'partial-failure', gameStatus: 'partial', count: 0, routerReason: 'one-send-failed', gameReason: 'one-send-failed' },
+            { routerStatus: 'no-route', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'no-route' },
+            { routerStatus: 'rate-limited', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'rate-limited' },
+            { routerStatus: 'circuit-open', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'circuit-open' },
+            { routerStatus: 'failed', gameStatus: 'failed', count: 0, routerReason: 'transport-broken', gameReason: 'transport-broken' }
+        ] as const
+    )('reports $routerStatus as $gameStatus without inflating publication counts', async ({
+        routerStatus,
+        gameStatus,
+        count,
+        routerReason,
+        gameReason
+    }) => {
+        const fake = createFakeServerRallar();
+        const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' })
+        });
+        vi.spyOn(fake.ws, 'publish').mockImplementation(async (message, fanout) => ({
+            fanout: fanout ?? 'live-only',
+            status: routerStatus,
+            message,
+            reason: routerReason,
+            entries: []
+        }));
+
+        const snapshotResult = await server.publishSnapshot({
+            roomId: 'room-1',
+            roomRef,
+            snapshot: { tick: 73 }
+        });
+        const eventResult = await server.publishEvent({
+            roomId: 'room-1',
+            roomRef,
+            event: { kind: 'publication-result' }
+        });
+
+        expect(snapshotResult).toMatchObject({ status: gameStatus, reason: gameReason });
+        expect(eventResult).toMatchObject({ status: gameStatus, reason: gameReason });
+        expect(snapshotResult.raw).toMatchObject({ status: routerStatus, reason: routerReason });
+        expect(eventResult.raw).toMatchObject({ status: routerStatus, reason: routerReason });
+        expect(server.status()).toMatchObject({
+            publishedSnapshotCount: count,
+            publishedEventCount: count
+        });
+    });
+
     it('publishes events from one named publication input', async () => {
         const fake = createFakeServerRallar();
         const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({

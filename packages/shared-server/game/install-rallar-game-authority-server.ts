@@ -148,12 +148,24 @@ interface PublishRallarGameAuthorityEnvelopeInput<TPayload> {
 const DEFAULT_RALLAR_GAME_AUTHORITY_SERVER_ID = 'rallar-game-authority-server';
 const DEFAULT_RALLAR_GAME_AUTHORITY_SERVER_EPOCH = 1;
 const DEFAULT_RALLAR_GAME_AUTHORITY_TTL_MS = 15_000;
-const SUCCESSFUL_PUBLISH_STATUSES: ReadonlySet<RallarServerWsPublishResult['status']> = new Set([
-    'sent-live',
-    'queued-outbox',
-    'skipped',
-    'duplicate',
-    'superseded'
+const GAME_PUBLICATION_STATUS = {
+    'sent-live': 'sent',
+    'queued-outbox': 'accepted',
+    none: 'skipped',
+    'no-recipients': 'skipped',
+    skipped: 'skipped',
+    duplicate: 'skipped',
+    superseded: 'skipped',
+    expired: 'skipped',
+    'partial-failure': 'partial',
+    'no-route': 'failed',
+    'rate-limited': 'failed',
+    'circuit-open': 'failed',
+    failed: 'failed'
+} as const satisfies Record<RallarServerWsPublishResult['status'], RallarGameAuthoritySendResult['status']>;
+const COUNTED_PUBLICATION_STATUSES: ReadonlySet<RallarGameAuthoritySendResult['status']> = new Set([
+    'sent',
+    'accepted'
 ]);
 
 export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
@@ -354,7 +366,7 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
             toPeerId: input.toPeerId,
             fanout: config.snapshotFanout ?? 'live-only'
         });
-        if (result.status === 'sent') {
+        if (COUNTED_PUBLICATION_STATUSES.has(result.status)) {
             publishedSnapshotCount += 1;
         }
         return result;
@@ -372,7 +384,7 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
             toPeerId: input.toPeerId,
             fanout: config.eventFanout ?? 'live-only'
         });
-        if (result.status === 'sent') {
+        if (COUNTED_PUBLICATION_STATUSES.has(result.status)) {
             publishedEventCount += 1;
         }
         return result;
@@ -406,14 +418,14 @@ export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
             publication.message,
             input.fanout
         );
-        const successful = SUCCESSFUL_PUBLISH_STATUSES.has(result.status);
+        const status = GAME_PUBLICATION_STATUS[result.status];
 
         return {
-            status: successful ? 'sent' : 'failed',
+            status,
             transport: 'server',
             seq: publication.envelope.seq,
             raw: result,
-            reason: successful ? undefined : result.reason
+            reason: result.reason ?? (status === 'sent' || status === 'accepted' ? undefined : result.status)
         };
     }
 
