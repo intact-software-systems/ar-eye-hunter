@@ -12,13 +12,13 @@ import type {
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
     decodeAlmMessagesControlResultValue,
     decodeAlmMessagesReplayResultValue,
     decodeAlmMessagesSendResultValue,
-    decodeAlmRuntimeRecord,
     decodeAlmStorageCountersResultValue
 } from './decode-alm-runtime-result.ts';
 import type { RallarBlackBoxTestMessagesObserveResultValue } from './rallar-black-box-alm-result-values.ts';

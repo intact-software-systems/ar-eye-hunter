@@ -9,6 +9,7 @@ import type {
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 
 type AlmFailureDecoder = (failure: RallarBlackBoxTestRecord) => Either<string, ALDeliveryFailure>;
 
@@ -77,7 +78,7 @@ const ALM_FAILURE_DECODERS: Readonly<Record<ALDeliveryFailure['kind'], AlmFailur
 
 /** The failure the page stated, or the path of the field under the observation that it could not read. */
 export function decodeAlmDeliveryFailure(value: unknown): Either<string, ALDeliveryFailure> {
-    const failure = decodeAlmFailureRecord(value);
+    const failure = decodeAlmRuntimeRecord(value);
     const kind = failure.kind;
     return typeof kind === 'string' && Object.hasOwn(ALM_FAILURE_DECODERS, kind)
         ? ALM_FAILURE_DECODERS[kind as ALDeliveryFailure['kind']](failure)
@@ -92,7 +93,7 @@ export function decodeAlmRelayRejection(
     value: unknown,
     field: string
 ): Either<string, ALDeliveryRelayRejection> {
-    const rejection = decodeAlmFailureRecord(value);
+    const rejection = decodeAlmRuntimeRecord(value);
     if (
         (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized') &&
         rejection.relay === 'trusted-server' && rejection.peerId === undefined
@@ -148,8 +149,4 @@ function decodeAlmFailureKey<TKey extends string>(
     return typeof value === 'string' && Object.hasOwn(keys, value)
         ? Either.ofRight(value as TKey)
         : Either.ofLeft(`failure.${field}`);
-}
-
-function decodeAlmFailureRecord(value: unknown): RallarBlackBoxTestRecord {
-    return typeof value === 'object' && value !== null ? value as RallarBlackBoxTestRecord : {};
 }

@@ -280,6 +280,11 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
         [
             { meaning: 'a submitted send', settlements: [], state: 'submitted' },
             {
+                meaning: 'a superseded admission',
+                settlements: [toAdmission({ kind: 'superseded', detail: 'Replaced.' })],
+                state: 'superseded'
+            },
+            {
                 meaning: 'a refused leg the fallback carrier took over',
                 settlements: [{
                     kind: 'carrier-refused',

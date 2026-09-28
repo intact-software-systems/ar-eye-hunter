@@ -15,6 +15,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
 import { decodeAlmDeliveryFailure, decodeAlmRelayRejection } from './decode-alm-delivery-failure.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -183,12 +184,6 @@ export function decodeAlmStorageCountersResultValue(
         workNonProbeCount: work - workProbeCount,
         reset
     };
-}
-
-export function decodeAlmRuntimeRecord(value: unknown): RallarBlackBoxTestRecord {
-    return typeof value === 'object' && value !== null
-        ? value as RallarBlackBoxTestRecord
-        : {};
 }
 
 function requireAlmCountsByKind(
