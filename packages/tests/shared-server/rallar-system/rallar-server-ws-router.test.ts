@@ -11,6 +11,7 @@ import {
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -323,6 +324,40 @@ describe('RallarServerWsRouter', () => {
         });
         expect(message.constraints).toBeUndefined();
         expect(outboxWakeRequested).toBe(true);
+    });
+
+    it('publishes no default fanout for a unicast addressed to the server itself (R-S3c-i-5)', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        onTestFinished(() => warn.mockRestore());
+        const { router, socket, outboundStores } = createRouter();
+        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        const handled: string[] = [];
+        router.on({ topicId: 'app.command' }, async (message) => {
+            handled.push(message.raw.id.msgId);
+        });
+        const liveOnly = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.command', 'all', 'command-1'),
+            router.serverPeerId,
+            'app.command.v1',
+            { go: true }
+        );
+        const durable = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.durable', 'all', 'command-2'),
+            router.serverPeerId,
+            'app.command.v1',
+            { go: true },
+            { reliability: 'at-least-once', ack: 'none' }
+        );
+
+        await router.route(liveOnly);
+        await router.route(durable);
+
+        expect(handled).toEqual([liveOnly.id.msgId]);
+        expect(socket.sent).toHaveLength(0);
+        expect(warn).not.toHaveBeenCalledWith('Rallar server WS topic had no recipients: app.command');
+        expect(await outboundStores.admissionStore.readSentMessage(durable.id.msgId)).toBeUndefined();
     });
 
     it('publishes a proxy room message with its full scoped identity', async () => {

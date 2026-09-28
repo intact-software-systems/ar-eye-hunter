@@ -215,6 +215,21 @@ moved or changed test.
       }
     },
     {
+      "id": "ws-router-server-addressed-unicast-skips-default-fanout",
+      "domain": "Rallar server WS router",
+      "owner": "Shared realtime maintainers",
+      "summary": "A unicast addressed to the WS server ends at the server's handlers: the router publishes no default topic fanout for it, so a live-only topic reports no missing recipients and an outbox topic admits no row addressed to the server itself (R-S3c-i-5).",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts#publishes no default fanout for a unicast addressed to the server itself (R-S3c-i-5)",
+      "coverageRelation": "The test routes a live-only and an outbox unicast addressed to router.serverPeerId through a real router over a recording socket, and checks the handler ran, no frame was sent, the no-recipients warning was never logged, and no outbox row was admitted.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "console.warn called by publishRallarServerWsMessage for a live-only fanout with no recipients",
+        "observableEffect": "Routing a live-only unicast addressed to the server logs no 'had no recipients' warning.",
+        "requiredConstraint": "route() must skip the live-only default fanout for a unicast addressed to the server before resolving any recipients.",
+        "failureRationale": "A live-only fanout that finds no recipients sends nothing either, so the empty socket cannot tell a skipped fanout from an attempted one; the absent warning is the only witness that the fanout was never attempted."
+      }
+    },
+    {
       "id": "alm-invalid-queue-candidate-no-transaction",
       "domain": "ALM atomic IndexedDB admission",
       "owner": "Rallar shared maintainers",
@@ -6199,6 +6214,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The not-called assertion on the native socket's send pins a durable interaction boundary: a closed socket must never be written to. The socket-closed answer alone cannot show that no write was attempted.",
       "semanticCoverage": "packages/tests/shared/services/ws-queue-box-client-send-live.test.ts#reports the closed socket and writes nothing"
+    },
+    {
+      "id": "test-structure-coupling-aa1d6685ea03deae",
+      "path": "packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-router-server-addressed-unicast-skips-default-fanout",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared realtime maintainers",
+      "rationale": "The not-called assertion on console.warn pins that the live-only default fanout is never attempted for a unicast addressed to the server; an empty socket alone cannot distinguish a skipped fanout from one that found no recipients.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts#publishes no default fanout for a unicast addressed to the server itself (R-S3c-i-5)"
     },
     {
       "id": "test-structure-coupling-3cf15c4dbe54dee4",

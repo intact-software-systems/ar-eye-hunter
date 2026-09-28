@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import { AL_RECEIPT_DEADLINE_GRACE_MS, newALReceiptControlMessage, type ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import {
+    AL_RECEIPT_DEADLINE_GRACE_MS,
+    newALAckControlMessage,
+    newALReceiptControlMessage,
+    type ALReceiptPayload
+} from '@shared/al-contracts/al-control.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
@@ -159,6 +164,83 @@ describe('WS client receipt tracking for a receiver unicast that names its room 
     });
 });
 
+describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it('tracks a hop room send against its server, the one hop a WS origin has', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        const hop: ALMessage = {
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'hop' } }
+        };
+        await fixture.service.enqueueOutboxIfAbsent(hop);
+        expect(await readReceipt(fixture)).toMatchObject({
+            mode: 'hop',
+            expectedPeerIds: ['server'],
+            ackedPeerIds: []
+        });
+
+        await fixture.service.acceptIncomingMessage(serverAck('room-message-1'));
+
+        expect(
+            fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)
+        ).toMatchObject({
+            msgId: 'room-message-1',
+            mode: 'hop',
+            confirmedHopPeerIds: ['server'],
+            unconfirmedHopPeerIds: [],
+            complete: true
+        });
+    });
+
+    it('expects the server itself for a receiver command addressed to it and completes on the server\'s own ACK', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        const command: ALMessage = {
+            ...roomMessage(),
+            id: { ...roomMessage().id, msgId: 'server-command-1' },
+            targets: { mode: 'unicast', toPeerId: 'server', groupRef: ROOM }
+        };
+        await fixture.service.enqueueOutboxIfAbsent(command);
+        expect(
+            await fixture.outboundStores.admissionStore.readReceiptState({
+                originPeerId: 'self',
+                msgId: 'server-command-1'
+            })
+        )
+            .toMatchObject({ mode: 'receiver', expectedPeerIds: ['server'], ackedPeerIds: [] });
+
+        await fixture.service.acceptIncomingMessage(serverAck('server-command-1'));
+
+        expect(
+            fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)
+        ).toMatchObject({
+            msgId: 'server-command-1',
+            mode: 'receiver',
+            confirmedRecipientPeerIds: ['server'],
+            unconfirmedRecipientPeerIds: [],
+            complete: true
+        });
+    });
+
+    it('tracks no server hop while the server named no peer id: one that predates S3c-i (R-S3c-i-6)', async () => {
+        const fixture = await createReceiptTrackingFixture({ serverPeerId: undefined });
+
+        await fixture.service.enqueueOutboxIfAbsent({
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'hop' } }
+        });
+
+        expect(await readReceipt(fixture)).toBeUndefined();
+    });
+});
+
 describe('WS client receipt admission edges', () => {
     afterEach(() => {
         vi.useRealTimers();
@@ -307,7 +389,9 @@ describe('WS client receipt admission edges', () => {
     });
 });
 
-async function createReceiptTrackingFixture(): Promise<ReceiptTrackingFixture> {
+async function createReceiptTrackingFixture(
+    input: Readonly<{ serverPeerId: string | undefined; }> = { serverPeerId: 'server' }
+): Promise<ReceiptTrackingFixture> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
     const connected = client.connect();
@@ -321,6 +405,7 @@ async function createReceiptTrackingFixture(): Promise<ReceiptTrackingFixture> {
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'self',
+        serverPeerId: input.serverPeerId,
         outboundStores,
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundDiagnostics: (event) => diagnostics.push(event)
@@ -359,6 +444,23 @@ function receiptMessage(
             confirmedRecipientPeerIds,
             snapshotVersion: 7,
             phase,
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+/** The server's own ACK: it speaks for itself as the recipient and is addressed to the origin. */
+function serverAck(ackedMsgId: string): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: `server-ack-${ackedMsgId}`, senderId: 'server', ts: Date.now() },
+        {
+            ackedMsgId,
+            fromPeerId: 'server',
+            toPeerId: 'self',
+            originPeerId: 'self',
+            logicalRecipientPeerId: 'server',
+            carrier: 'ws',
+            status: 'delivered',
             observedAtEpochMs: Date.now()
         }
     );

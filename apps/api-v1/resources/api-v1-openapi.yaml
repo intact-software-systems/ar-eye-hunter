@@ -3992,7 +3992,7 @@ components:
 
     ApiConfig:
       type: object
-      required: [apiBaseUrl, wsBaseUrl, endpoints]
+      required: [apiBaseUrl, wsBaseUrl, endpoints, serverPeerId]
       properties:
         apiBaseUrl:
           type: string
@@ -4002,6 +4002,14 @@ components:
           format: uri
         endpoints:
           $ref: '#/components/schemas/ApiEndpoints'
+        serverPeerId:
+          type: string
+          minLength: 1
+          description: >-
+            The peer id the WebSocket server answers as. A client addresses the server with a unicast to it and
+            tracks the server as its one hop by it. Every server since S3c-i serves it; a browser reads a body
+            without it as a server that predates the field and falls back (no hop receipt, app commands over REST).
+          example: default-qbox-server
       additionalProperties: true
 
     ApiEndpoints:

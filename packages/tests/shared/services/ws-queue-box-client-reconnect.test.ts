@@ -264,6 +264,7 @@ function createDefaultReconnectService(
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         sessionId: 'session-1',
+        serverPeerId: 'server',
         newConnectionRequestId: config.newConnectionRequestId,
         reconnect: { ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS, ...config.reconnect }
     });

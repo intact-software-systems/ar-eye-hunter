@@ -10,7 +10,11 @@ import {
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -34,6 +38,7 @@ interface RelayFixture {
 
 interface OriginClient {
     readonly service: WsQueueBoxClientService;
+    readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly settlements: ALDeliverySettlement[];
 }
 
@@ -128,6 +133,35 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             reason: 'unauthorized'
         });
     });
+
+    // Task 1 review forward note: the origin now tracks the server as the hop of a `hop` room unicast (R-S3a-4), but
+    // its control admission takes a unicast's NACK from the addressee alone, so the server's refusal is not admitted
+    // and the receipt stays open until its retries are spent.
+    it('keeps the server hop receipt of a hop room unicast to a non-member open: its refusal NACK is not admitted yet', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const unicast: ALMessage = {
+            ...roomUnicast('hop-to-outsider', 'outsider'),
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'hop' } }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(unicast)).trackedReceiptAlgo).toBe('hop');
+
+        const refused = await fixture.server.acceptIncomingMessage(unicast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
+        await relayFrames(fixture.sockets.a, origin);
+        expect(
+            origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected' || settlement.kind === 'receipt-exhausted')
+        ).toEqual([]);
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({
+                originPeerId: 'a',
+                msgId: 'hop-to-outsider'
+            })
+        ).toMatchObject({ mode: 'hop', expectedPeerIds: ['server-1'], ackedPeerIds: [] });
+    });
 });
 
 async function createRelayFixture(): Promise<RelayFixture> {
@@ -170,15 +204,17 @@ async function createOriginClient(): Promise<OriginClient> {
     TestWebSocket.instances.at(-1)!.open();
     await connected;
     const settlements: ALDeliverySettlement[] = [];
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
     const service = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'a',
-        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
+        serverPeerId: 'server-1',
+        outboundStores,
         outboundSettlements: (settlement) => settlements.push(settlement)
     });
     onTestFinished(() => service.close());
-    return { service, settlements };
+    return { service, outboundStores, settlements };
 }
 
 async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Promise<void> {

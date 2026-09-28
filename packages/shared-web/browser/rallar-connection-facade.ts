@@ -129,6 +129,11 @@ export interface RallarConnectionOperations {
     status(): RallarConnectStatus;
     isConnected(): boolean;
     session(): AuthSession | undefined;
+    /**
+     * The peer id the WS server answers as, learned from `/api/config`; undefined until connected, and when the server
+     * names none (D57 as applied, R-S3c-i-6).
+     */
+    serverPeerId(): string | undefined;
     subscriptions(): RallarSubscriptionScope;
     flow<K, V>(policies?: CommandsOrchestratorPolicies<V>): CommandsOrchestrator<K, V>;
 }

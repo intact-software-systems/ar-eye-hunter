@@ -37,6 +37,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
+        /** The WS server's peer id from `/api/config`; undefined when the server names none (R-S3c-i-6). */
+        readonly serverPeerId: string | undefined;
         readonly inboundStores: ALInboundRuntimeStores;
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
@@ -85,6 +87,7 @@ function createBrowserWebSocketQueueBoxService(
         outbox: outboundStores.workQueue,
         socket,
         sessionId: clientData.sessionId,
+        serverPeerId: input.serverPeerId,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
         outboundStores,

@@ -1086,7 +1086,8 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
                 wsBaseUrl: 'ws://127.0.0.1:5175',
                 endpoints: {
                     createWs: '/api/ws/:id'
-                }
+                },
+                serverPeerId: 'default-qbox-server'
             });
         }
 

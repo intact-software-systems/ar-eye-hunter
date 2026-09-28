@@ -278,7 +278,10 @@ function createDefaultApiV1RouteInstallers({
             webSocketTicketTtlMs: configuration.authentication.webSocketTicketTtlMs
         },
         operatorToken: configuration.blackBox.operatorToken,
-        publicConfiguration: toApiV1PublicConfiguration(configuration.publicApi),
+        publicConfiguration: {
+            ...toApiV1PublicConfiguration(configuration.publicApi),
+            serverPeerId: runtime.wsQBoxServerService.name
+        },
         ice: configuration.ice,
         groupAdmission: configuration.group.admission,
         strictReadAuthorization: configuration.stateApi.strictReadAuthorization,

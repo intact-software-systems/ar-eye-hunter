@@ -28,6 +28,7 @@ describe('browser carrier cancellation ports', () => {
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',
+            serverPeerId: 'server',
             outboundSettlements: (event) => {
                 settlements.push(event);
             }

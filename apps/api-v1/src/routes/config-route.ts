@@ -2,7 +2,7 @@ import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-o
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { ApiConfig } from '@shared/api/api-config.ts';
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import type {
@@ -42,7 +42,7 @@ export interface ConfigRouteDependencies {
         | 'webSocketTicketTtlMs'
     >;
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
-    readonly publicConfiguration: ApiConfig;
+    readonly publicConfiguration: ApiConfigResponse;
 }
 
 export function registerConfigRoutes(

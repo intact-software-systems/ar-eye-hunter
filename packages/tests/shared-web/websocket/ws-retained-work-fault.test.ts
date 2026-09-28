@@ -68,6 +68,7 @@ describe('WS retained-work faults', () => {
             qboxEngine: engine,
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
+            serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
             connectTimeoutMs: 0
@@ -145,6 +146,7 @@ describe('WS retained-work faults', () => {
             qboxEngine: engine,
             socket,
             clientData: { clientId: sessionId, sessionId, isOnline: true },
+            serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
             connectTimeoutMs: 0

@@ -27,7 +27,13 @@ Deno.test('route installers mount representative API and websocket behavior in o
     }
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
-    assert.equal((await app.request('/api/config')).status, 200);
+    const config = await (await app.request('/api/config')).json();
+    assert.deepEqual(config, {
+        apiBaseUrl: 'http://localhost:8080',
+        wsBaseUrl: 'ws://localhost:8080',
+        endpoints: { createWs: '/api/ws/:id' },
+        serverPeerId: 'default-qbox-server'
+    });
     assert.equal((await app.request('/api/webrtc/ice')).status, 401);
     assert.equal(
         (await app.request('/api/state/apps/app/workspaces/workspace/clients/alice')).status,
@@ -164,7 +170,8 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
         publicConfiguration: {
             apiBaseUrl: 'http://localhost:8080',
             wsBaseUrl: 'ws://localhost:8080',
-            endpoints: { createWs: '/api/ws/:id' }
+            endpoints: { createWs: '/api/ws/:id' },
+            serverPeerId: 'default-qbox-server'
         },
         ice: {
             mode: 'local',

@@ -4,6 +4,7 @@ import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
@@ -81,6 +82,8 @@ export class RallarServerWsRouter {
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly service: WsQueueBoxServerService;
     private readonly nowEpochMs: () => number;
+    /** The peer id the WS server answers as: the id clients address it by and its own publishes carry (D57, D58). */
+    readonly serverPeerId: string;
     private installed = false;
 
     constructor(
@@ -88,6 +91,7 @@ export class RallarServerWsRouter {
         options: RallarServerWsRouterOptions = {}
     ) {
         this.service = service;
+        this.serverPeerId = service.name;
         this.maxPayloadBytes = options.maxPayloadBytes ??
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
@@ -168,7 +172,8 @@ export class RallarServerWsRouter {
             defaultFanout: this.defaultFanout,
             publish: async (targetMessage, fanout) => await this.publishToFanout(targetMessage, fanout)
         });
-        if (!suppressDefaultFanout) {
+        // A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
+        if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
             await this.publishToFanout(message, ingress.definition?.fanout ?? this.defaultFanout, {
                 current: audience,
                 admittedPeerIds

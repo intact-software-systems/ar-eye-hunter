@@ -26,7 +26,12 @@ describe('WS outbound callback deadline', () => {
         vi.setSystemTime(1_000);
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient(() => 'ws://deadline-test', createPassThroughTransportFaultPort());
-        const service = createDefaultWsQueueBoxClientService({ socket, sessionId: 'self', outbox: new InMemoryQueueBox() });
+        const service = createDefaultWsQueueBoxClientService({
+            socket,
+            sessionId: 'self',
+            serverPeerId: 'server',
+            outbox: new InMemoryQueueBox()
+        });
         onTestFinished(() => service.close());
         const connect = socket.connect();
         await Promise.resolve();

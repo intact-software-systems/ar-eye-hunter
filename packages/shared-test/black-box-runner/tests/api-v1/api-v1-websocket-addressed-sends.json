@@ -24,6 +24,20 @@
   },
   "steps": [
     {
+      "name": "readConfigNamesTheServerPeerId",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/config",
+        "outputs": { "serverPeerId": "body.serverPeerId" }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "serverPeerId": "string", "endpoints": { "createWs": "string" } }
+      }
+    },
+    {
       "name": "loginAlice",
       "type": "http",
       "connection": "primary",
@@ -343,6 +357,78 @@
       "expect": {
         "missingActualValue": "MISSING",
         "body": { "msgId": "addressed-to-outsider-{runId}", "reason": "unauthorized" }
+      }
+    },
+    {
+      "name": "commandAddressedToTheServerIsAcknowledgedByTheServer",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "addressed-to-server-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "addressed-to-server-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "addressed-to-server-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{serverPeerId}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "at-least-once", "ack": "receiver" },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"for the server\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": { "serverAckResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "id": { "senderId": "{serverPeerId}" },
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.ack.v2" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseServerAck",
+      "type": "set",
+      "output": "serverAck",
+      "transform": { "jsonParse": { "path": "outputs.serverAckResource" } }
+    },
+    {
+      "name": "assertTheServerSpeaksForItself",
+      "type": "assert",
+      "actual": {
+        "ackedMsgId": "{serverAck.ackedMsgId}",
+        "fromPeerId": "{serverAck.fromPeerId}",
+        "logicalRecipientPeerId": "{serverAck.logicalRecipientPeerId}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "ackedMsgId": "addressed-to-server-{runId}",
+          "fromPeerId": "{serverPeerId}",
+          "logicalRecipientPeerId": "{serverPeerId}"
+        }
       }
     },
     {

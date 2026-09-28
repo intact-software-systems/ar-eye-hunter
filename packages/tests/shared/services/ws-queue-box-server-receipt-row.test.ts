@@ -196,6 +196,7 @@ async function createOriginClient(): Promise<OriginClient> {
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'a',
+        serverPeerId: 'server',
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
         outboundSettlements: (settlement) => settlements.push(settlement)
     });

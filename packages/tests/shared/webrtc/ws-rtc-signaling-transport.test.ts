@@ -250,7 +250,8 @@ function createSignalingQueueBox(): WsQueueBoxClientService {
         socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
 
         outbox: new InMemoryQueueBox(new Map()),
-        sessionId: 'session-1'
+        sessionId: 'session-1',
+        serverPeerId: 'server'
     }).enableDefaultCallbacks();
     onTestFinished(() => service.close(1000, 'test-finished'));
     return service;

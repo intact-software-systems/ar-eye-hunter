@@ -269,6 +269,7 @@ async function initialiseBrowserWebSocketTransport(
         qboxEngine,
         socket,
         clientData: input.clientData,
+        serverPeerId: apiConfig.serverPeerId,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
         signal: input.options.signal,

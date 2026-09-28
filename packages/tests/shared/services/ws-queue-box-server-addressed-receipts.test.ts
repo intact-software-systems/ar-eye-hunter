@@ -161,6 +161,22 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
             'hop-to-b'
         ]);
     });
+
+    it('acknowledges a subtree room send itself: the router owns the fanout, so no subtree is waited for (R-S3a-4)', async () => {
+        const fixture = await createAddressedFixture();
+        const roomSend: ALMessage = {
+            ...roomUnicast('subtree-room', 'b', 'none'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
+            delivery: { reliability: 'at-least-once', ack: 'group-leader' }
+        };
+
+        await fixture.service.acceptIncomingMessage(roomSend, 'a');
+
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readAcks(fixture.sockets.a).map((ack) => [ack.ackedMsgId, ack.fromPeerId]);
+        }).toEqual([['subtree-room', SERVER_ID]]);
+    });
 });
 
 async function createAddressedFixture(): Promise<AddressedFixture> {
