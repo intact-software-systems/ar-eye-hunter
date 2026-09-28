@@ -43,20 +43,20 @@ normalize `adminPlayerId` when applying commands.
 
 ## Command Path
 
-The browser uses REST as the authoritative gameplay command transport:
+The browser sends gameplay commands to the server itself on the Rallar WS `command` channel (`room.relic.command`, a
+unicast to the WS server's peer id from `/api/config`, D57 as applied). The server's own ACK is the command's receipt:
+the server admitted it. The server applies it under the sender's session username and publishes the new snapshot
+through the outbox with receipts:
 
 ```text
-join expedition -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-start expedition -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-submit action -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-force resolve timed-out round -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-continue review -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-set round limit -> REST command -> server applyCommand -> persisted state -> WS snapshot publish -> REST response snapshot
-reset -> REST reset endpoint -> persisted new game -> WS snapshot publish -> REST response snapshot
+command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription
+reset -> REST reset endpoint -> persisted new game -> outbox snapshot -> REST response snapshot
 ```
 
-The server still defines the Rallar WS command topic for compatibility/future
-experiments, but the SPA does not send gameplay commands over that topic.
+REST (`POST /api/relic/games/:gameId/commands`) stays for one release: the browser uses it only before it knows the WS
+server's peer id, never after a WS attempt. A rule error the server meets on the WS path is logged there and not
+shown in the browser until a reply channel exists (D72's stated regression); the UI shows the command's receipt state
+and the applied snapshot's arrival.
 
 ## Expedition Setup Path
 

@@ -5500,6 +5500,45 @@ above is amended accordingly.
   with the bump into Task 1 Step 7 and the proposal's `:416` status line is updated in Task 6 (24); Task 6 names the
   post-merge Hetzner supported-manifests gate on the default-branch commit (27).
 
+- **R-S3c-i-28 (a unicast's NACK is admitted from its addressee or from any peer its pending receipt
+  expects).** A hop room unicast to a non-member: the server NACKs the send before admission, but the origin
+  admitted a unicast's NACK only from the addressee (`sent.unicastPeerId`), so the tracked server hop's refusal
+  was refused in turn and the receipt stayed open to exhaustion — contradicting C3. `isExpectedRepairPeer` now
+  reads `sent.unicastPeerId === peerId || pending?.expectedPeerIds.includes(peerId) === true`. A tracked hop's
+  admitted refusal on a send **with** a receipt row settles through the existing `toRefusedReceiptFact` as
+  `receipt-exhausted` ("Hop \<peer\> refused the message: unauthorized.", state `failed`), consistent with
+  S3b's terminal-NACK rule and R-S3c-i-21; C3's `relay-rejected` reading stays for the row-less case (a
+  `receiver` send with no receipt row). Cost if wrong: RTC unicasts are direct today, so their tracked hop is
+  their addressee and the widening reaches no RTC relay in practice; if an RTC unicast ever tracks a relay hop,
+  that relay's NACK becomes admissible and ends the receipt.
+- **R-S3c-i-29 (a WS `receiver` retry merges its expected set instead of replacing it).** Beyond the brief:
+  `WsQueueBoxServerOutboundPlanning.planRepairMessage` tracked every ack-timeout retry with
+  `expectedPeerIdsUpdate: 'replace'`, over only the recipients still connected on this instance. For a
+  `receiver` receipt that dropped every already-confirmed peer at the first retry (`receipt-exhausted` read
+  `confirmedPeerIds: []`) and silently dropped a leaver or a session on another instance, letting the receipt
+  complete without it — contradicting D43 and the frozen-audience "a leaver reads unconfirmed" invariant. The
+  new `toRepairExpectedPeerIdsUpdate(algo)` returns `'merge'` for `receiver` and `'replace'` otherwise; `hop`
+  and `subtree` keep their existing behaviour. Cost if wrong: a WS `receiver` receipt whose recipient is on
+  another cluster instance now waits for that recipient instead of silently dropping it; that recipient's
+  retries are only resent from the instance that owns the ack-timeout, so it reads unconfirmed at the deadline
+  rather than completing early.
+- **R-S3c-i-30 (three stacked full-stack Relic causes, one new from D77).** `npm run test:playwright:relic:full-stack`
+  (R-S3c-i-10's gate) was red for three causes. (c) **New, from D77:** a server-originated outbox publish's
+  `audit.createdBy` is the server peer id (`'default-qbox-server'`, 19 characters), which overflows
+  `resource_inbox.created_by varchar(16)` on Postgres/PGlite, so every Relic command (WS and REST) wrote game
+  state then threw at the snapshot publish; fixed by clamping at the storage boundary in
+  `QueueBoxUtilities.toResourceEntryFromMsg` with the existing `toAppQueueCreatedBy` (no migration; unchanged
+  at 16 characters or fewer; both server outbox paths share it), pinned by a Postgres test with a 19-character
+  sender. (b) **Pre-existing:** a server-applied join failed `decodeJsonWireValue` because
+  `rules.ts`'s optional state fields (`roundStartedAtEpochMs`, `adminPlayerId`, `events[].animationCue`) hold
+  `undefined`; fixed by a storage-boundary encoder that omits undefined properties at any depth instead of
+  changing the rules. (a) **Pre-existing:** the full-stack Playwright config started the Relic server on 8090
+  but served `/api/config` with the api-v1 default `wsBaseUrl` (8080); fixed by setting
+  `RALLAR_API_BASE_URL`/`RALLAR_WS_BASE_URL` to 8090 in that config. All three are named in the PR body as
+  fixes beyond the brief, (a) and (b) as pre-existing. Cost if wrong: (c) is silent data loss above 16
+  characters on every SQL-backed server notification Task 4's `'outbox'` path publishes, not only Relic's;
+  memory mode has no limit, which is why the unit tests, Deno tests and smoke lane all missed it.
+
 Later rulings follow as R-S3c-i-n with why and the cost if wrong.
 
 ## Self-review

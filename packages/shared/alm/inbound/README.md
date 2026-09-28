@@ -158,7 +158,9 @@ withholds the server's own ACK
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would re-originate the
 receivers' ACKs under the origin's name. A `receiver` message whose logical
-recipient is the server keeps its ACK. A receiver's ACK for a room message
+recipient is the server keeps its ACK. The server receives an authorized room unicast to another
+session itself (D71), so its router delivers it; a unicast to a session outside the room's admitted audience is
+refused before admission. A receiver's ACK for a room message
 is addressed to the origin, not to the server; the server admits it as the
 aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
 lives, the ACK speaks for its own sender, and it confirms an uncounted

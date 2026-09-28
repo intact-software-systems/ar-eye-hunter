@@ -297,7 +297,7 @@ the WS server freezes the audience and answers for it. Each recipient's ACK stay
 origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
 relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map per server instance. No client learns a server id. The server answers the origin with
+an in-memory map per server instance. The server answers the origin with
 `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
 socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
 frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
@@ -308,9 +308,21 @@ session on the instance that dequeues it is not settled by its first cluster pub
 publishes it again, each wait as long as the receipt has waited and the last one a second before the row
 expires, until the origin has a session there or the row expires, so an origin that reconnects on any
 instance up to a second before the row expires receives it; one that reconnects in that last second
-does not. A `receiver` message addressed
-to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
-(D42) until a slice aggregates unicasts.
+does not.
+
+Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
+([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
+A unicast addressed to the server, and every `hop` or `subtree` send, expects the server's own ACK: the server is the
+one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`targets.groupRef`) is aggregated like a
+room send over one member: the router delivers it to its addressee
+([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
+`admitted` receipt names the addressee, and the addressee's own ACK completes it. A unicast to a session outside the
+room's admitted audience is refused before admission with a NACK
+([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
+which the origin states as a trusted-server `relay-rejected` `unauthorized`; a `receiver` unicast that names no room
+is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
+audience verbatim, so a session that left since reads unconfirmed (D73).
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
@@ -326,6 +338,16 @@ never a session that joined after admission (D24, D43); a `hop` or `subtree` row
 instance sent to. A multicast frozen by its origin and sent without a router keeps planning against its
 own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
 naming the message and its origin.
+
+The server's own room notifications carry receipts too (D58, D77). The router freezes an `outbox` room broadcast whose
+sender is the server peer id to the room's live sessions at publish
+([`readRallarServerWsPublishAudience`](../../../shared-server/rallar-system/websocket/router/read-rallar-server-ws-publish-audience.ts));
+the server's pending row expects them, and both cluster sends — the publishing instance's and every other instance's —
+narrow to the audience captured in the shared admission store (`readAdmittedAudience`). Every settlement of the
+server's outbound owner feeds one bounded in-memory recorder per process
+([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
+256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
+sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 
 Known limitations:
 

@@ -23,9 +23,10 @@ server in `apps/relic-hunter-server-v1`, and the shared game model/rules in
   building, stable RallarAI request keys, deterministic mock generation,
   proposal validation, WS proposal sharing, and the React hook consumed by the
   side-panel companion UI.
-- `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs, relic REST
-  calls, WS snapshot fanout, and RTC snapshot repair. React consumes it through
-  `src/game/useRelicHunters.ts`.
+- `src/game/relic-hunters-runtime.ts` wraps Rallar/auth/room APIs, relic
+  commands on the Rallar WS `command` channel (REST before the server id is
+  known), WS snapshot fanout with receipts, and RTC snapshot repair. React
+  consumes it through `src/game/useRelicHunters.ts`.
 - `packages/relic-hunters/src/expedition-blueprint.ts` owns the server-side
   expedition blueprint contract, JSON schema, procedural fallback generator, and
   domain validation for optional maze/castle/reward variation.

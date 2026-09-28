@@ -230,6 +230,11 @@ remains (C1).
   pair with a typed `refused/capacity` admission verdict, and that bound as the first producer of the
   congestion aspect's `overloaded`; track, intake, age budgets and fairness stay V1 (Q8).
 
+**As applied (S3c-i, PR #605):** a room unicast names its room (`groupRef`, schema bump — the server target needs no
+envelope bump, D76); the WS `hop` receipt tracks the server; the snapshot sender is the server peer id and the sink a
+per-process recorder; the typed-channel `peerId` target landed WS-only for the Relic cutover (Q11's RTC half is
+S3c-ii's).
+
 ## 3. Recommendation
 
 **S3a, then S3b, then S3c, as three medium PRs.** S3a first because fallback and both proofs consume
@@ -413,7 +418,8 @@ through R-S3b-21 live in the plan's "Rulings during execution".
   holds (`deadline-expiry`, both `not-yet-in-sync` variants, `delivery-lifecycle` holds,
   `delivery-reload`'s hold); `frozen-audience-membership` sits within ~0.5 s of the ≈8 s receipt budget.
 - Bundle ceilings after S3a: facade 222 KiB (221.8 recorded), headless 284 KiB (283.62 recorded).
-  `AL_ADMISSION_SCHEMA_ID` is still `rallar-alm-2026-09-s2c-ii`.
+  `AL_ADMISSION_SCHEMA_ID` is still `rallar-alm-2026-09-s2c-ii`. S3c-i (PR #605) bumps it to
+  `rallar-alm-2026-09-s3c-i` (C1).
 
 **Questions**
 
@@ -576,3 +582,7 @@ answer, Q1–Q13** (roadmap: D57 "As applied", D70–D78); the S3c-i plan is wri
 - **Q13 — Gates.** Recommended: the medium-scale Postgres gate runs once in S3c-i (server mutation paths:
   the router-published unicast, the server outbox publish, the sink) and only on a
   `ws-queue-box-server/**` change in S3c-ii; hosted smoke on both PRs; ≤2 hosted full reads each (D51).
+
+**Delivered** by PR #605 (`claude/alm-s3c-consumer-proofs-volatile-bound`); the rulings recorded during execution,
+R-S3c-i-0 through R-S3c-i-30, live in the plan's "Rulings during execution"
+(`plans/alm-s3c-i-addressed-sends-and-server-receipts-implementation-plan.md`).
