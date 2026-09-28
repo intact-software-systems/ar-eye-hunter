@@ -11,11 +11,7 @@ export interface ApiConfig {
 
 /** What `/api/config` serves: the configuration and the peer id a client addresses the WS server by (D57 as applied). */
 export interface ApiConfigResponse extends ApiConfig {
-    /**
-     * Absent from a server that predates S3c-i: the server is not known, so a client neither addresses it nor
-     * tracks it as its hop, and an app that would address it falls back (Relic: REST). Every S3c-i server serves it.
-     */
-    readonly serverPeerId?: string;
+    readonly serverPeerId: string;
 }
 
 export interface AuthSession {
