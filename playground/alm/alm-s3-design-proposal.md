@@ -482,11 +482,12 @@ through R-S3b-21 live in the plan's "Rulings during execution".
 constant and the hand-over; the fallback controller; harness evidence (attempt carriers); the three
 scenarios and the five re-reads; docs and the D56 record.
 
-## 10. S3c execution questions (2026-09-28)
+## 10. S3c execution questions and decisions (2026-09-28)
 
 Written after S3b merged (bdb3ecd8b, #604), from a fresh code survey of the unicast, server-target, server
 publish, volatile-store and game-intent paths (session scratchpad `s3c-code-survey.md`; 20 corrections to
-§1.4/§2.3, the material ones folded into the questions). The recommended answer is first in each case.
+§1.4/§2.3, the material ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-28: the maintainer took every recommended
+answer, Q1–Q13** (roadmap: D57 "As applied", D70–D78); the S3c-i plan is written under them.
 
 **What the survey changed in §2.3's picture**
 
