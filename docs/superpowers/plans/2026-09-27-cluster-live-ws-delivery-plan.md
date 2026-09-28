@@ -359,7 +359,7 @@ The heartbeat cache-TTL edge is addressed in `a50ea8044`, with a red-before/
 green-after regression, 41 focused tests and independent review. It does not
 replace the pending cross-process proof, E3 evidence, or exact-head gate.
 
-## Next two concrete implementation slices
+## Scope-contract sequence and current status
 
 ### Task 2d: Capture authenticated WS scope in inbound provenance
 
@@ -412,6 +412,19 @@ and send-time eligibility. Run affected shared/shared-server/API tests,
 typechecks, examples, and focused Deno checks. Review every touched file and
 obtain independent task review before connecting the sole effective-QoS
 publisher or claiming cross-process proof.
+
+Task 2d is locally implemented and independently review-clean in
+`3bc5297df..3120d8666`; API-v1 ingress captures authenticated scope, stored
+client-unicast replay requires it, and direct sends check current socket
+scope/generation. The branch-gate fixture/evidence repair in
+`e3adaddbe..48a6adac7` and the authenticated lifecycle fixture and
+schedule-insensitive composite test correction in `1767be0e8` are also
+locally review-clean. The broad shared suite now has one remaining failure:
+the browser facade measures 223.08984375 KiB against the current strict
+223 KiB ceiling. These local commits have not yet been pushed, and none of
+this proves cross-process WS delivery or RTC-B06 E3 acceptance. Task 2e is
+the next concrete implementation slice; only after its review should the
+sole effective-QoS publisher be connected and proved across API processes.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
