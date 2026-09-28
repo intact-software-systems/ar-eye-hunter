@@ -473,7 +473,7 @@ reporting the replaced message as delivered.
 **PLANNED — I2a, dedup retention:** The default dedup window is a fixed 60 s
 that ignores the message deadline. A replay of a longer-lived message that
 arrives after 60 s is therefore admitted again. I2a makes the retention at least
-the deadline plus the receipt grace for every durability tier (D81).
+the deadline plus the receipt grace for every durability tier (D85).
 
 **PLANNED — R1, shared arbitration proof:** Since the first release both
 admission stores re-read the dedup and supersedence observations inside the
@@ -578,12 +578,12 @@ degraded to `volatile` with a note on the handle. It is never weakened silently.
   a durable send spends 10 `al-admission` and 15 `al-work` operations, and a
   durable inbound admission spends 8. The first levers are taking the Temporal
   polyfill off the storage hot path and cutting a durable send's 14 sequential
-  transactions (D86).
+  transactions (D90).
 - I2a gives every durable tier one owner per session store across tabs. It
   replaces today's silent memory fallback when IndexedDB is missing with the
   typed outcome, and adds typed recovery outcomes and one storage-health
   vocabulary.
-- I2b adds `local-checkpoint` behind the D85 gate.
+- I2b adds `local-checkpoint` behind the D89 gate.
 
 The [persistence and performance QoS plan](./alm-qos-product-plan.md) holds the
 contract and its evidence.
@@ -715,7 +715,7 @@ Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
 V1.
 
 **PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
-storage budget (D83):
+storage budget (D87):
 
 - no storage operation on the send path for `volatile` and `local-checkpoint`;
 - at most one readwrite transaction per checkpoint, and none while the lane is

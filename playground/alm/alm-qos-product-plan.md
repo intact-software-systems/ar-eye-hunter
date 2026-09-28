@@ -2,12 +2,12 @@
 
 Prepared: 2026-09-28\
 Reviewed source: `bdb3ecd8b` (`main` after S3b) and `bf03c965b` (the S3c-i branch, PR #605)\
-Decisions: D79 to D85 in the [roadmap's decision record](alm-improvement-plan.md#decision-record)
+Decisions: D83 to D89 in the [roadmap's decision record](alm-improvement-plan.md#decision-record)
 
 The [complete product description](alm-complete-product-description.md) owns the product contract
 and the [delivery roadmap](alm-improvement-plan.md) owns sequencing and decisions. This plan is the
 design behind both for ALM's persistence and performance QoS. It replaces the QueueBox persistence
-QoS plan first proposed in PR #606 (D79). That plan's profiles, acceptance scenarios and measurement
+QoS plan first proposed in PR #606 (D83). That plan's profiles, acceptance scenarios and measurement
 criteria map into ALM's durability vocabulary and evidence structure (section 12), and its document
 is deleted. Everything here is planned for Release 4 unless a statement names shipped behaviour.
 
@@ -17,17 +17,17 @@ ALM has two persistence tiers today. `volatile` is the default since S3a (D2) an
 IndexedDB work. The durable opt-in (`local-outbox`, `local-inbox`) commits every admission before
 dispatch. This plan makes performance a first-class, configurable part of ALM's QoS:
 
-- **One durability axis** (D80): `volatile` < `local-checkpoint` < `local-outbox` < `local-inbox`,
+- **One durability axis** (D84): `volatile` < `local-checkpoint` < `local-outbox` < `local-inbox`,
   chosen per channel or send exactly as today. `local-checkpoint` is the only new tier. Its sender
   dispatches from memory and checkpoints its recoverable state to IndexedDB. It trades a declared
   loss and replay window for zero storage work on the send path.
-- **A budget per tier** (D83): each tier's storage cost, on the send path and in the background, is
+- **A budget per tier** (D87): each tier's storage cost, on the send path and in the background, is
   a recorded budget pinned by tests. Pins may only fall.
-- **Release 4, performance and lifetime** (D84):
+- **Release 4, performance and lifetime** (D88):
   - P1 makes the durable tiers cheaper without weakening any guarantee.
   - I2a makes storage lifetime deterministic and observable for every durable tier.
-  - I2b adds `local-checkpoint` only if P1 leaves a measured gap and a consumer needs it (D85).
-- **One recovery rule** (D81): recovery never re-issues what the outside world has seen and never
+  - I2b adds `local-checkpoint` only if P1 leaves a measured gap and a consumer needs it (D89).
+- **One recovery rule** (D85): recovery never re-issues what the outside world has seen and never
   retracts a delivery.
 - **The test plan is ALM's evidence structure** (section 9): semantic tests through real owners,
   named storage-budget pins, the conformance lane, a storage fault port, regime-classified lane
@@ -108,7 +108,7 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   - Restored messages have no handle, like a resumed durable message (D13, D64).
 - **Restrictions.** A send with an ordering key or sequence (`seq`, `orderingKey`) or with
   latest-wins supersedence is refused with a typed `unsupported` on `local-checkpoint`. Such
-  traffic uses `volatile` or `local-outbox` (D81).
+  traffic uses `volatile` or `local-outbox` (D85).
 - **Wire.**
   - `local-checkpoint` joins `AL_DURABILITY_ALGOS`, so the persisted-QoS validator and the
     envelope's `qos.durability` accept it.
@@ -120,7 +120,7 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
 ## 5. The external-visibility rule
 
 Recovery never re-issues an identity or position that anyone outside the runtime has seen for
-different content, and never retracts a delivery (D81). For ALM that means four things:
+different content, and never retracts a delivery (D85). For ALM that means four things:
 
 - **Identities are unaffected.** `msgId` is a random UUID
   (`packages/shared/al-contracts/al-contract.ts`), and a restored message is re-sent with its own
@@ -186,11 +186,11 @@ each operation. It also waits in the queue behind the per-sender commit Web Lock
 - **Latency.** It is judged under the runner-regime rule: a red counts only against a same-regime
   green baseline. Every tier's scenario reports p50 and p95 per regime for admission to dispatch and
   admission to receipt.
-- **Reporting.** Every ALM PR body reports the storage figures beside the bundle figures (D83).
+- **Reporting.** Every ALM PR body reports the storage figures beside the bundle figures (D87).
 
 ### 7.3 P1: the durable path's cost
 
-P1 weakens no guarantee. Its levers come in the order the spike ranks them (section 7.5, D86), and
+P1 weakens no guarantee. Its levers come in the order the spike ranks them (section 7.5, D90), and
 each lands only with before-and-after pins and figures:
 
 1. **Take the Temporal polyfill off the storage hot path.**
@@ -210,7 +210,7 @@ each lands only with before-and-after pins and figures:
 3. **Batch commits across a work batch.** Today `commitAll` batches one sender's dispatches; P1
    extends it to the whole batch.
 
-The transaction durability hint is not a lever (D86):
+The transaction durability hint is not a lever (D90):
 
 - Chromium's default commit already behaves as `relaxed`, and `strict` only adds cost.
 - The durable owners keep the browser default, so on Chromium "committed" means the changes reached
@@ -253,7 +253,7 @@ rows that changed.
 | H2         | A steady-state durable send spends 22 logical operations (10 `al-admission`, 12 `al-work`; the pinned 15 include the cold runtime's first batch). Those are 14 IndexedDB transactions (11 readonly, 3 readwrite) and 46 requests. By call site: 3 are empty probes; 4 re-read the canonical envelope and identity already read; 6 read control history, receipt state and effects that are empty on a first dispatch.               | Confirmed. 7 of 22 are empty probes or repeats; 13 of 22 are avoidable on a first dispatch.                                       |
 | H3         | On disk, Chromium's default commit behaves as `relaxed`: 0.1 and 0.2 ms (p50) per one-put commit. `strict` adds about 0.5 ms per commit, and 0.6 ms per durable send.                                                                                                                                                                                                                                                               | Refuted as a performance lever: `relaxed` gains nothing over the default. `strict` is cheap here but unmeasured on phone storage. |
 | H4         | A full checkpoint at D74's bound (1,000 admissions, 4.1 MiB, 6,000 rows) spends 27 ms of main-thread time and commits in 0.28–0.30 s on disk. At 4× CPU the main-thread part is 114 ms, with long tasks of 117–153 ms. At 100 admissions (0.4 MiB) it spends 2.8 ms and commits in 26 ms.                                                                                                                                           | Refuted for slower devices: a full snapshot at the bound breaks the 100 ms budget at 4× CPU.                                      |
-| H5         | Not measured; it needs phones.                                                                                                                                                                                                                                                                                                                                                                                                      | Open, and needed only if D85 lets I2b go ahead.                                                                                   |
+| H5         | Not measured; it needs phones.                                                                                                                                                                                                                                                                                                                                                                                                      | Open, and needed only if D89 lets I2b go ahead.                                                                                   |
 
 Two measurements the hypotheses did not name:
 
@@ -275,7 +275,7 @@ Two measurements the hypotheses did not name:
 
 What the findings suggest, and where each stands:
 
-1. **Re-rank P1's levers.** Decided as D86 and applied in section 7.3:
+1. **Re-rank P1's levers.** Decided as D90 and applied in section 7.3:
    - **Take the Temporal polyfill off the storage hot path.** Use native Temporal where it exists,
      or epoch-millisecond values in the QueueBox entry codec.
    - **Run fewer sequential transactions.** In a game page, this is the lever that matters:
@@ -283,9 +283,9 @@ What the findings suggest, and where each stands:
      - skip the empty probes;
      - hand the committed canonical message to dispatch in memory;
      - skip the first-dispatch control reads.
-   - **Drop the transaction durability hint as a lever.** D82's condition, a measured gain, is not
+   - **Drop the transaction durability hint as a lever.** D86's condition, a measured gain, is not
      met.
-2. **Move D85's gate out of the lane.** Still open. Measure it in a plain page with a persistent
+2. **Move D89's gate out of the lane.** Still open. Measure it in a plain page with a persistent
    profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow
    regime measures its harness page.
 3. **Take storage-cost evidence from a persistent profile.** Still open. The lane's IndexedDB is in
@@ -421,7 +421,7 @@ The roadmap's recipe rules apply unchanged:
 ### 10.1 Release 4
 
 Release 4 follows Release 3 and precedes the arbitration, audience, scale and integration releases,
-which the roadmap renumbers 5 to 8 (D84). Its slices are:
+which the roadmap renumbers 5 to 8 (D88). Its slices are:
 
 - **P1, durable-path cost:** section 7.3.
 - **I2a, storage lifetime:** section 8.
@@ -432,7 +432,7 @@ The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evide
 ### 10.2 The I2b gate
 
 I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch, in the
-lane's slow regime, still exceeds 100 ms, the interactive response budget (D85).
+lane's slow regime, still exceeds 100 ms, the interactive response budget (D89).
 
 - **Consumer.** Relic Hunters' server-addressed commands (S3c-i) are the consumer. A reload
   mid-command resumes the command, and the server's ALM dedup and AppInbox request-id idempotency
