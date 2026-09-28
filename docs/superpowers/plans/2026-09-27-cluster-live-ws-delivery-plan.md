@@ -682,6 +682,13 @@ contract to scoped broadcast and approved exact-session auth logout.
 
 ### Task 5: Prove the generated RTC recovery test's delivery boundary
 
+**Status:** Complete locally in `3d0f91f48`; independent spec and code-quality
+review approved it. A controlled gate reproduced committed admission with
+pending owned delivery, then the existing owned-work wait preserved the exact
+generated message-ID and payload assertions. The full owner file passed 32
+tests and the shared-web suite passed 1,181. This proves that scheduling gap,
+not the unobserved cause of the historical CI run.
+
 **Scope:** The exact-head Release Gate at `be8d3c090` had one non-budget unit
 failure: `packages/tests/shared-web/state-read/rtc-authority-recovery.test.ts`
 asserted the generated supersedence replacement was delivered immediately
@@ -704,6 +711,46 @@ style/format checks. Review the entire touched test file and recursively any
 support file changed by its remediation. If the controlled evidence instead
 shows a refused admission or wrong message, stop this test-only hypothesis and
 diagnose the production path before editing it.
+
+### Task 6: Publish client snapshot unicast provenance atomically
+
+**Scope:** Restore the first missing real producer family, without treating a
+synthetic sidecar as production proof. The client-state mutation's accepted
+snapshot and `ComputedClientStateSync` already freeze the active sessions and
+materialize both principal broadcast and per-session unicast snapshot pages.
+For each unicast snapshot page only, derive the full application/workspace
+scope and exact recipient from those validated computed facts, then prepare the
+version-1 `state-sync-snapshot` sidecar for its exact `AppOutboxInsert.entry`.
+The proof must bind the storage-stable immutable row facts and the frozen
+one-session audience; it must not look up current sessions at dequeue. Reject
+any computed page/target/scope mismatch before entering the transaction.
+
+Compute hashes and validate the complete write set before the AppInbox owner
+opens its existing transaction. In that same transaction insert each sidecar
+into the existing `runtime_state_store` and its corresponding raw `WS_OUTBOX`
+row; either all commit or none do. Keep one visible client-state mutation owner
+and the existing AppInbox retry/CAS behavior. No table, public wire change,
+new queue, lock, retry, library, migration, or legacy reader. Leave principal
+broadcast, client event, group state-sync, CRDT, auth logout, and topology raw
+rows fail closed until their own reviewed producer/final-send slices. Do not
+broaden the Task 4 reader based on payload type.
+
+**TDD/verification:** Start with a failing real client mutation and foreign
+WS dequeue test, not a hand-inserted proof: the committed snapshot page should
+deliver to the frozen authorized session; an uncommitted/rolled-back mutation
+must expose neither row nor proof. Test late/replaced sessions, wrong scope,
+duplicate command/replay, every snapshot page, no active sessions, sidecar
+expiry, and read/write-interval behavior explicitly. Verify PostgreSQL row
+codec round-trip of the exact producer-built audit facts. Preserve the two
+unchanged group-broadcast product acceptance tests as pending signals rather
+than rewriting their expected delivery. Run focused client-state/AppInbox/WS
+tests, API composition/typechecks, the relevant three-process formation recipe,
+and changed-file standards closure. Because this changes the API-v1 state
+mutation path, capture a comparable `perf:api-v1:state-write` baseline and
+candidate, run its comparator and the unchanged medium-scale correctness gate;
+record transaction duration and SQL counts only from their artifacts. Keep
+profiles under ignored `tmp/perf/`. A recipe still failing on other unproven
+rows is reported precisely, not called a passing end-to-end result.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
