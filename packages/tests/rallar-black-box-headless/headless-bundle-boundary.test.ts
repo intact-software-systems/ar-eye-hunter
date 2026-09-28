@@ -75,9 +75,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // The ceiling was 284 (the final S3a review head e417fe749 measured 283.62 of 284). S3b's receipt ends
         // (receipt-exhausted, the not-yet-in-sync exhaustion, completion at dispatch and the untracked receipt)
         // measure 284.0087890625 KiB here. The next whole-KiB ceiling is 285. The S3b final review head measures
-        // 284.79 of 285, and its fix wave 284.82421875 here. All operator dependency exclusions above remain
-        // enforced.
-        expect(result.brotliKiB).toBeLessThan(285);
+        // 284.79 of 285, and its fix wave 284.82421875 here. S3c-i's room-naming unicast and the unicast receipt
+        // measure 285.017578125 KiB here. The next whole-KiB ceiling is 286. All operator dependency exclusions
+        // above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(286);
     });
 });
 

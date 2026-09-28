@@ -103,6 +103,7 @@ export class RallarServerWsRouter {
             throw new Error('Rallar server websocket router is already installed.');
         }
         this.service.authorizeInboundMessagesWith({
+            sendNacks: this.sendNacks,
             authorize: async (message) => await this.authorizeBeforeAdmission(message)
         });
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {

@@ -1032,6 +1032,29 @@
       "description": "No-browser API-v1 client principal, instance, and session recipe."
     },
     {
+      "id": "api-v1-websocket-addressed-sends",
+      "recipe": "tests/api-v1/api-v1-websocket-addressed-sends.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-websocket-addressed-sends",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt and the out-of-audience refusal."
+    },
+    {
       "id": "api-v1-websocket-topic-routing",
       "recipe": "tests/api-v1/api-v1-websocket-topic-routing.json",
       "category": "api-v1-black-box",

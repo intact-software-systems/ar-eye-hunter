@@ -117,6 +117,9 @@ export function toALOutboundControlSettlements(
     if (read.parsed.type === 'nack' && read.parsed.payload.reason === 'resync-required') {
         return [toRelayRejectedFact(read, read.parsed.payload)];
     }
+    if (isServerRefusalBeforeReceipt(read)) {
+        return [toServerRefusalFact(read)];
+    }
     const snapshot = resolveAcceptedReceipt(candidate);
     if (snapshot === undefined) {
         return [];
@@ -149,6 +152,21 @@ function toRefusedReceiptFact(
         receipt,
         `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`
     );
+}
+
+/** The trusted server refused a message this owner sent before admitting it (C3): no receipt row exists for its NACK to end. */
+function isServerRefusalBeforeReceipt(read: ALControlAdmissionRead): boolean {
+    return read.parsed.type === 'nack' && read.parsed.payload.reason === 'unauthorized' &&
+        read.source === 'trusted-server' && read.sent !== undefined && read.pending === undefined;
+}
+
+function toServerRefusalFact(read: ALControlAdmissionRead): ALOutboundSettlementFact {
+    return {
+        kind: 'relay-rejected',
+        msgId: read.targetMsgId,
+        relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
+        detail: 'The server refused the message before admitting it: unauthorized.'
+    };
 }
 
 function toRelayRejectedFact(read: ALControlAdmissionRead, nack: ALNackPayload): ALOutboundSettlementFact {

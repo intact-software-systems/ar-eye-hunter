@@ -108,10 +108,14 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
     }
 }
 
-/** The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer. */
+/**
+ * The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer, and
+ * neither does its `unauthorized` refusal of a message before any receipt row exists (S3c-i C3).
+ */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
-        read.parsed.payload.reason === 'resync-required';
+        (read.parsed.payload.reason === 'resync-required' ||
+            (read.parsed.payload.reason === 'unauthorized' && read.pending === undefined));
 }
 
 function isExpectedRepairPeer(

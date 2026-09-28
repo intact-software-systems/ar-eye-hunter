@@ -14,9 +14,9 @@ import {
     normalizeALQosPolicy,
     resolveALMessageExpireAtMs,
     resolveALQosNormalizationInput,
-    type ALMessageHandlingPlan,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
 import { DEFAULT_AL_EPHEMERAL_TTL_MS } from '../../alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type {
@@ -210,6 +210,7 @@ export class WsQueueBoxServerReceiptAggregation {
     /**
      * A `receiver` room message is aggregated; a message without a deadline answers within its ACK
      * timeout, and no aggregate outlives the server's receipt window, whatever deadline the client named.
+     * A message addressed to the server itself is answered by the server's own ACK, never aggregated.
      */
     private toAdmission(
         admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage,
@@ -223,7 +224,8 @@ export class WsQueueBoxServerReceiptAggregation {
             qosProvider
         );
         const effective = normalizeALQosPolicy(message, qos).effective;
-        return effective.ack.algo !== 'receiver' ? undefined : {
+        const aggregated = effective.ack.algo === 'receiver' && !isALUnicastAddressedTo(message, serverPeerId);
+        return !aggregated ? undefined : {
             msgId: message.id.msgId,
             originPeerId,
             expectedRecipientPeerIds: toFrozenAudience(message, originPeerId, roomAudience.recipientPeerIds),
@@ -279,20 +281,6 @@ export class WsQueueBoxServerReceiptAggregation {
 }
 
 /**
- * The server withholds its own ACK only for a `receiver` room message it aggregates: there the receipt
- * speaks for the audience, and a relay row would re-originate the receivers' ACKs as the origin. A
- * `receiver` message the server receives for itself keeps its ACK.
- */
-export function toWsQueueBoxServerInboundPlan(
-    plan: ALMessageHandlingPlan,
-    source: ALInboundMessageRuntime.Source
-): ALMessageHandlingPlan {
-    const aggregated = plan.ack.algo === 'receiver' && source.kind === 'ws-client' &&
-        source.groupRecipientPeerIds !== undefined;
-    return aggregated ? { ...plan, ack: { enabled: false, algo: plan.ack.algo, deferred: false } } : plan;
-}
-
-/**
  * A receipt is a durable outbox row: its immediate phase resolves nobody, and its dequeue reaches the
  * origin's socket on this instance or, through the cluster publisher, on another. The control message
  * itself stays volatile and best-effort, as every control must (`validateControlEnvelope`), so the QoS
@@ -332,17 +320,24 @@ function validateWsQueueBoxServerReceiptAck(
     return issues;
 }
 
+/** The unicast addressee alone when the room admitted it (D53); a room send's authorized sessions but its origin. */
 function toFrozenAudience(
     message: ALMessage,
     originPeerId: string,
     authorizedPeerIds: readonly string[]
 ): readonly string[] {
     const targets = message.targets;
+    if (targets?.mode === 'unicast') {
+        return targets.toPeerId !== originPeerId && authorizedPeerIds.includes(targets.toPeerId)
+            ? [targets.toPeerId]
+            : [];
+    }
     return [...new Set(authorizedPeerIds)].filter((peerId) =>
         peerId !== originPeerId &&
         (targets?.mode !== 'broadcast' ||
             (!targets.exceptPeerIds?.includes(peerId) &&
-                (targets.recipientPeerIds === undefined || targets.recipientPeerIds.includes(peerId))))
+                (targets.recipientPeerIds === undefined ||
+                    targets.recipientPeerIds.includes(peerId))))
     );
 }
 

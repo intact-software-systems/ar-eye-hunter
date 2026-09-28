@@ -108,5 +108,7 @@ export interface WsServerRoomAudience {
 }
 
 export interface WsServerInboundAuthorizer {
+    /** Whether a refusal answers its origin with a NACK; the service's addressee refusal follows it too (C3). */
+    readonly sendNacks: boolean;
     authorize(message: ALMessage): Promise<WsServerInboundAuthorization>;
 }

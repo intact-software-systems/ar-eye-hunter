@@ -598,6 +598,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         });
         onTestFinished(() => service.dispose());
         service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => ({ authorized: true })
         });
         const msg = shared.newALBroadcastMessage(

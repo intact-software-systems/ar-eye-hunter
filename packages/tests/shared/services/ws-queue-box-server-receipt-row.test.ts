@@ -160,6 +160,7 @@ async function createClusterInstance(input: CreateClusterInstanceInput): Promise
         }
     });
     service.authorizeInboundMessagesWith({
+        sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
                 ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION } }

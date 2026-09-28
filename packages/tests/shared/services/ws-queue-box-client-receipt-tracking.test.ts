@@ -110,6 +110,55 @@ describe('WS client receipt tracking for a receiver room send', () => {
     });
 });
 
+describe('WS client receipt tracking for a receiver unicast that names its room (D53)', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it('expects nobody at admission; the admitted receipt names the addressee and its complete receipt acknowledges it', async () => {
+        const fixture = await createReceiptTrackingFixture();
+        const unicast: ALMessage = {
+            ...roomMessage(),
+            id: { ...roomMessage().id, msgId: 'unicast-message-1' },
+            targets: { mode: 'unicast', toPeerId: 'b', groupRef: ROOM }
+        };
+        expect((await fixture.service.enqueueOutboxIfAbsent(unicast)).verdict.kind).toBe(
+            'admitted'
+        );
+        const readUnicastReceipt = async () =>
+            await fixture.outboundStores.admissionStore.readReceiptState({
+                originPeerId: 'self',
+                msgId: 'unicast-message-1'
+            });
+        expect(await readUnicastReceipt()).toBeUndefined();
+
+        await fixture.service.acceptIncomingMessage(
+            receiptMessage('admitted', [], 'unicast-message-1', ['b'])
+        );
+        expect(await readUnicastReceipt()).toMatchObject({
+            mode: 'receiver',
+            expectedPeerIds: ['b'],
+            ackedPeerIds: []
+        });
+        await fixture.service.acceptIncomingMessage(
+            receiptMessage('complete', ['b'], 'unicast-message-1', ['b'])
+        );
+
+        expect(
+            fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)
+        ).toMatchObject({
+            msgId: 'unicast-message-1',
+            mode: 'receiver',
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: [],
+            complete: true
+        });
+    });
+});
+
 describe('WS client receipt admission edges', () => {
     afterEach(() => {
         vi.useRealTimers();

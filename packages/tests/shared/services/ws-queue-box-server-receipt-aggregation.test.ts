@@ -454,6 +454,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     });
     const remoteOrigin = options.origin === 'remote' ? await createRemoteOriginInstance(service, outbox) : undefined;
     service.authorizeInboundMessagesWith({
+        sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
                 ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: SNAPSHOT_VERSION } }

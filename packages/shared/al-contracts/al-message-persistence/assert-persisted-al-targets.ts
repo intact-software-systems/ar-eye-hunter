@@ -12,8 +12,11 @@ import {
 export function assertPersistedALTargets(value: PersistedALValue): void {
     const targets = requirePersistedALRecord(value, 'targets');
     if (targets.mode === 'unicast') {
-        requirePersistedALFields(targets, ['mode', 'toPeerId'], ['mode', 'toPeerId']);
+        requirePersistedALFields(targets, ['mode', 'toPeerId', 'groupRef'], ['mode', 'toPeerId']);
         requirePersistedALNonEmptyString(targets.toPeerId, 'unicast peer');
+        if (targets.groupRef !== undefined) {
+            assertCanonicalGroupRef(targets.groupRef);
+        }
         return;
     }
     if (targets.mode === 'multicast') {

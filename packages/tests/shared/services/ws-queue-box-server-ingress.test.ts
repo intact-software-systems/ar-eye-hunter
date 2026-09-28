@@ -156,6 +156,7 @@ describe('WS server bounded and authorized admission', () => {
         }
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => {
                 authorityReads += 1;
                 if (authorityReads > 1) {
@@ -206,6 +207,7 @@ describe('WS server bounded and authorized admission', () => {
         const fixture = await createServerIngressFixture();
         let pending = false;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () =>
                 pending
                     ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack: false }
@@ -263,6 +265,7 @@ describe('WS server bounded and authorized admission', () => {
     it.each([true, false])('returns configured denial NACKs without accepting room traffic (sendNack=%s)', async (sendNack) => {
         const fixture = await createServerIngressFixture();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => ({
                 authorized: false,
                 reason: 'unauthorized',
@@ -299,6 +302,7 @@ describe('WS server bounded and authorized admission', () => {
     it.each(['unauthorized', 'not-yet-in-sync'] as const)('preserves %s denial when its advisory NACK exceeds the payload ceiling', async (reason) => {
         const fixture = await createServerIngressFixture();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
         });
         for (const msgId of ['x'.repeat(65536), 'é'.repeat(32768), '"'.repeat(32768), '"'.repeat(32700)]) {
@@ -323,6 +327,7 @@ describe('WS server bounded and authorized admission', () => {
             const peerId = 'p'.repeat(129);
             const fixture = await createServerIngressFixture(undefined, peerId);
             fixture.service.authorizeInboundMessagesWith({
+                sendNacks: true,
                 authorize: async () => ({ authorized: false, reason, logMessage: 'Room policy denied', sendNack: true })
             });
             const message: ALMessage = { ...roomMessage(), id: { ...roomMessage().id, senderId: peerId } };
@@ -343,6 +348,7 @@ describe('WS server bounded and authorized admission', () => {
     it('preserves advisory NACK transport error diagnostics', async () => {
         const fixture = await createServerIngressFixture();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => ({ authorized: false, reason: 'unauthorized', logMessage: 'Denied', sendNack: true })
         });
         const failure = new Error('Native send failed');
@@ -364,6 +370,7 @@ describe('WS server bounded and authorized admission', () => {
         fixture.server.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => {
                 authorityReads += 1;
                 await Promise.resolve();
@@ -379,6 +386,7 @@ describe('WS server bounded and authorized admission', () => {
     it('returns an explicit pending result for room evidence that is still catching up', async () => {
         const fixture = await createServerIngressFixture();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => ({
                 authorized: false,
                 reason: 'not-yet-in-sync',
@@ -416,6 +424,7 @@ describe('WS server bounded and authorized admission', () => {
         const fixture = await createServerIngressFixture();
         const gate = Promise.withResolvers<void>();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => {
                 await gate.promise;
                 return { authorized: true };
@@ -435,7 +444,7 @@ describe('WS server bounded and authorized admission', () => {
     it('runs a typed application validator before authorization or admission', async () => {
         const fixture = await createServerIngressFixture(() => Either.ofLeft({ code: 'malformed', message: 'Invalid command' }));
         const authorize = vi.fn(async () => ({ authorized: true as const }));
-        fixture.service.authorizeInboundMessagesWith({ authorize });
+        fixture.service.authorizeInboundMessagesWith({ sendNacks: true, authorize });
 
         expect((await fixture.service.acceptIncomingMessage(incomingMessage(), 'session-1')).left?.code).toBe('malformed');
         expect(authorize).not.toHaveBeenCalled();
@@ -447,6 +456,7 @@ describe('WS server bounded and authorized admission', () => {
         const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let authorized = true;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () =>
                 authorized
                     ? { authorized: true }
@@ -472,6 +482,7 @@ describe('WS server bounded and authorized admission', () => {
         const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let catchingUp = false;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () =>
                 catchingUp
                     ? { authorized: false, reason: 'not-yet-in-sync', logMessage: 'Waiting for room snapshot', sendNack: false }
@@ -497,6 +508,7 @@ describe('WS server bounded and authorized admission', () => {
         const fixture = await createServerIngressFixture();
         const gate = Promise.withResolvers<void>();
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
             authorize: async () => {
                 await gate.promise;
                 return { authorized: true };

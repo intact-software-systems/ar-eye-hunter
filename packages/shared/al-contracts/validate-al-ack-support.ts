@@ -23,8 +23,9 @@ export interface ALAckSupportInput {
 
 /**
  * One issue naming an unsupported algorithm/carrier/target pair (D42). `receiver` needs a logical audience, which
- * only a unicast addressee or a room has; a world, all or principal broadcast has none. A WS unicast has an
- * addressee but no relay that carries its receiver ACK back to the origin, so it is refused too.
+ * only a unicast addressee or a room has; a world, all or principal broadcast has none. A WS unicast has its
+ * addressee as its audience only when it names its room: the room's router delivers it and the server aggregates
+ * the addressee's ACK (D53). One that names no room has no aggregate on the server and is refused.
  */
 export function validateALAckSupport(input: ALAckSupportInput): readonly ALQosIssue[] {
     const { algo, carrier, targets, capabilities } = input;
@@ -44,9 +45,12 @@ export function toALNormalizableAckAlgos(
     return (requested ?? fallback).algo === 'receiver' ? [...supported, 'receiver'] : supported;
 }
 
-function hasLogicalReceiverAudience(targets: ALTargets | undefined, carrier: ALDeliveryCarrier): boolean {
+function hasLogicalReceiverAudience(
+    targets: ALTargets | undefined,
+    carrier: ALDeliveryCarrier
+): boolean {
     if (targets?.mode === 'unicast') {
-        return carrier !== 'ws';
+        return carrier !== 'ws' || targets.groupRef !== undefined;
     }
     return targets !== undefined && (targets.mode !== 'broadcast' || targets.scope === 'room');
 }

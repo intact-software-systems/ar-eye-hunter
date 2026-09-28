@@ -378,6 +378,7 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-reconfigure-landing-concurrency',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
+            'api-v1-websocket-addressed-sends',
             'api-v1-websocket-topic-routing'
         ]);
 
@@ -461,6 +462,7 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-reconfigure-landing-concurrency',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
+            'api-v1-websocket-addressed-sends',
             'api-v1-websocket-topic-routing'
         ]);
 

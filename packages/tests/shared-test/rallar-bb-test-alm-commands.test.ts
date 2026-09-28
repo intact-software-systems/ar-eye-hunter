@@ -505,6 +505,31 @@ describe('ALM browser adapter execution', () => {
         );
     });
 
+    it('reads a trusted server\'s refusal before admission from a delivery observation (S3c-i C3)', async () => {
+        const rejection = { relay: 'trusted-server', reason: 'unauthorized' } as const;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({
+                    ...DELIVERY_OBSERVATION,
+                    state: 'rejected',
+                    relayRejection: rejection
+                })
+            }
+        });
+
+        const observed = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-server-refusal',
+            handleId: 'handle-1',
+            state: ['rejected'],
+            timeoutMs: 2_500
+        });
+
+        expect(observed.ok, observed.error?.message).toBe(true);
+        expect(observed.value).toMatchObject({ state: 'rejected', relayRejection: rejection });
+    });
+
     it('reads a replay send as the replayed handle and its carrier verdict, and refuses an unknown verdict', async () => {
         const replayed = { handleId: 'handle-1', msgId: 'msg-1', carrier: 'ws', verdict: 'admitted' };
         const captures = createAlmRuntimeCaptures();
@@ -900,7 +925,8 @@ describe('ALM browser adapter execution', () => {
         { field: 'attemptCarriers', value: ['ws'] },
         { field: 'relayRejection', value: { relay: 'trusted-server' } },
         { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
-        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } }
+        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } },
+        { field: 'relayRejection', value: { relay: 'peer', peerId: 'relay-session', reason: 'unauthorized' } }
     ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {

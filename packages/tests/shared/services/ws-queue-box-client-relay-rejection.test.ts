@@ -97,6 +97,37 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(admitted.left).toBeDefined();
         expect(readSentNacks(fixture.sockets.a)).toEqual([]);
     });
+
+    it('states the server refusing a room unicast to a non-member before admission; the receipted handle reads rejected (C3)', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const unicast = roomUnicast('unicast-to-outsider', 'outsider');
+        expect((await origin.service.enqueueOutboxIfAbsent(unicast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(unicast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
+        await relayFrames(fixture.sockets.a, origin);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected')).toEqual(
+            [{
+                kind: 'relay-rejected',
+                msgId: 'unicast-to-outsider',
+                carrier: 'ws',
+                atMs: expect.any(Number),
+                relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
+                detail: 'The server refused the message before admitting it: unauthorized.'
+            }]
+        );
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'unicast-to-outsider')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('unicast-to-outsider', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({
+            relay: 'trusted-server',
+            reason: 'unauthorized'
+        });
+    });
 });
 
 async function createRelayFixture(): Promise<RelayFixture> {
@@ -120,6 +151,7 @@ async function createRelayFixture(): Promise<RelayFixture> {
         }
     });
     server.authorizeInboundMessagesWith({
+        sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
                 ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: 3 } }
@@ -165,6 +197,18 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
         ordering: { orderingKey: 'resync', epoch: 0, seq },
         delivery: { reliability: 'at-least-once', ack },
         payload: { typeId: 'ordered.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+/** A receipted command to one session of the room, which names its room so the room's authority admits it. */
+function roomUnicast(msgId: string, toPeerId: string): ALMessage {
+    return {
+        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
+        targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        payload: { typeId: 'command.v1', contentType: 'application/json', resource: '{}' }
     };
 }
 
