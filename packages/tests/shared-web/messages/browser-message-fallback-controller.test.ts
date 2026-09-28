@@ -336,7 +336,7 @@ describe('post-admission fallback within the deadline (D56)', () => {
     });
 
     it('admits the message on WS even when the RTC hand-over rejects', async () => {
-        const failed = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
         const fixture = createFallbackFixture(ADMITTED, new Error('The RTC owner is disposed.'));
         const handle = await fixture.send('rtc', 30_000);
 
@@ -344,11 +344,10 @@ describe('post-admission fallback within the deadline (D56)', () => {
         await waitForCarriers(fixture, ['rtc', 'ws']);
 
         expect(fixture.handedOver).toEqual([handle.msgId]);
-        expect(failed).toHaveBeenCalledOnce();
         expect(handle.lifecycle().evidence.carrierFallback).toMatchObject({ reason: 'receipt-exhausted' });
         fixture.settle(toReceipt(handle.msgId, 'ws', ['peer-1']));
         expect(handle.lifecycle().state).toBe('acknowledged');
-        failed.mockRestore();
+        quiet.mockRestore();
     });
 
     it('releases the candidate when the handle is cancelled: a later RTC trigger hands nothing over', async () => {

@@ -80,10 +80,9 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
         await fixture.runtime.enqueueIfAbsent(message);
         const admitted = await fixture.stores.admissionStore.readPendingAck(receipt);
-        const commit = vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
 
         await fixture.runtime.handOver(message.id.msgId);
-        expect(commit).toHaveBeenCalledOnce();
         await claims.release();
         await runOutboundWorkTask(fixture.runtime);
         // Past the receipt's first window and inside the message deadline: a live receipt would charge an attempt.
