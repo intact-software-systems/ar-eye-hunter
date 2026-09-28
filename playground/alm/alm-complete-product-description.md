@@ -114,10 +114,11 @@ A lost receipt does not establish non-delivery. Cancellation stops remaining
 owned attempts; it does not retract remote delivery or undo application work.
 An expired or cancelled room notification can still have confirmed recipients.
 
-**PLANNED — S1, result stages:** Transport settlement is truthful since the
-first release, but the public send result is still an admission snapshot with
-statuses such as `enqueued` and `sent-immediate`, and no observable delivery
-lifecycle or cancellation exists. S1 replaces it with the delivery handle.
+**CURRENT — S1, result stages:** `send()` returns a delivery handle before
+admission resolves. Its states are `submitted`, `rejected`, `pending-authority`,
+`accepted`, `queued`, `transport-accepted`, `acknowledged`, `expired`,
+`superseded`, `failed`, `cancelled` and `unobservable`. `cancel()` stops the
+remaining owned attempts. The admission-snapshot send result is deleted (D14).
 
 ## Envelope and compatibility
 
