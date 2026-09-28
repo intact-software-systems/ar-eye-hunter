@@ -1,4 +1,4 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installLiveWsNoticeSubscriber } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice-subscriber.ts';
 import type { LiveWsNotice, LiveWsNoticeTransport } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
@@ -6,8 +6,9 @@ import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/rou
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../../group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 
 describe('Rallar server WS live cluster publication', () => {
@@ -60,6 +61,53 @@ describe('Rallar server WS live cluster publication', () => {
         expect(result.sentCount).toBeUndefined();
         expect(sent).toEqual([`${message.id.msgId}:remote-session`]);
     });
+
+    it.each(['all', 'world'] as const)(
+        'does not locally send a %s notice to an open socket without current authentication',
+        async (targetMode) => {
+            const socket = new JsonWebSocketServer();
+            const native = new TestWebSocket('ws://stale');
+            native.open();
+            socket.addConnection(new ConnectionContext({ id: 'stale-session', socket: native }));
+            const service = createDefaultWsQueueBoxServerService({
+                outbox: new InMemoryQueueBox(new Map()),
+                socket,
+                name: 'server-a',
+                readAuthenticatedConnectionScope: () => undefined,
+                targetResolver: {
+                    resolveBroadcastRecipients: () => [{ peerId: 'stale-session', connectionId: 'stale-session' }]
+                }
+            });
+            onTestFinished(() => service.dispose());
+            let notices = 0;
+            const router = new RallarServerWsRouter(service, {
+                nowEpochMs: () => 100,
+                livePublication: {
+                    transport: {
+                        publish: async () => {
+                            notices += 1;
+                        },
+                        subscribe: async () => {}
+                    },
+                    channel: 'ws-channel',
+                    publisherId: 'server-a'
+                }
+            });
+            const message = newALBroadcastMessage(
+                'server-a',
+                newALRoute('app.live', 'message', targetMode),
+                targetMode,
+                'app.live.v1',
+                {}
+            );
+
+            const result = await router.publish({ message, fanout: 'live-only' });
+
+            expect(result.status).toBe('cluster-published');
+            expect(notices).toBe(1);
+            expect(native.sent).toEqual([]);
+        }
+    );
 
     it('refuses explicit live-only publication when effective delivery requires durable outbound work', async () => {
         let notices = 0;
@@ -126,6 +174,42 @@ describe('Rallar server WS live cluster publication', () => {
 
         expect(result.status).toBe('failed');
         expect(result.reason).toContain('notify failed');
+    });
+
+    it('reports successful publication with a local failure diagnostic after the notice was published', async () => {
+        let notices = 0;
+        const transport: LiveWsNoticeTransport = {
+            publish: async () => {
+                notices += 1;
+            },
+            subscribe: async () => {}
+        };
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'server-a'
+        });
+        onTestFinished(() => service.dispose());
+        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation(() => {
+            throw new Error('local socket diagnostics failed');
+        });
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
+        });
+        const message = newALBroadcastMessage(
+            'server-a',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(notices).toBe(1);
+        expect(result.status).toBe('cluster-published');
+        expect(result.reason).toContain('local socket diagnostics failed');
     });
 
     it('does not publish an already expired final message', async () => {
@@ -311,6 +395,219 @@ describe('Rallar server WS live cluster publication', () => {
             scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
             audience: { mode: 'room', groupRef, recipientSessionIds: ['remote-session'] }
         });
+    });
+
+    it('does not send the locally frozen room ID to a same-ID connection in another workspace', async () => {
+        const snapshot = createGroupSnapshot(2, ['local-session']);
+        const groupRef = {
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId: snapshot.group.groupId
+        };
+        const socket = new JsonWebSocketServer();
+        const native = new TestWebSocket('ws://local');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            readAuthenticatedConnectionScope: () => ({
+                scope: { applicationId: groupRef.applicationId, workspaceId: 'other' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            })
+        });
+        onTestFinished(() => service.dispose());
+        let notices = 0;
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: {
+                transport: {
+                    publish: async () => {
+                        notices += 1;
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a',
+                readServerRoomAudience: async (message) => ({
+                    targets: message.targets!,
+                    sessions: snapshot.activeSessions,
+                    snapshotVersion: 2
+                })
+            }
+        });
+        const message = newALBroadcastMessage(
+            'game-server',
+            newALRoute('room.match', 'message', groupRef.groupId),
+            'room',
+            'room.match.v1',
+            { tick: 1 },
+            { groupRef }
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(result.status).toBe('cluster-published');
+        expect(notices).toBe(1);
+        expect(native.sent).toEqual([]);
+    });
+
+    it('rechecks the connection generation after recipient resolution and before socket send', async () => {
+        const socket = new JsonWebSocketServer();
+        const oldNative = new TestWebSocket('ws://old');
+        const newNative = new TestWebSocket('ws://new');
+        oldNative.open();
+        newNative.open();
+        socket.addConnection(new ConnectionContext({ id: 'same-session', socket: oldNative, generationId: 'old' }));
+        const scope = { applicationId: 'app', workspaceId: 'space' };
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
+            targetResolver: {
+                resolveBroadcastRecipients: () => [{ peerId: 'same-session', connectionId: 'same-session' }]
+            }
+        });
+        onTestFinished(() => service.dispose());
+        const originalEncode = socket.encode.bind(socket);
+        vi.spyOn(socket, 'encode').mockImplementation((message) => {
+            socket.addConnection(new ConnectionContext({ id: 'same-session', socket: newNative, generationId: 'new' }));
+            return originalEncode(message);
+        });
+        let notices = 0;
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: {
+                transport: {
+                    publish: async () => {
+                        notices += 1;
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        const message = newALBroadcastMessage(
+            'server-a',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(result.status).toBe('cluster-published');
+        expect(notices).toBe(1);
+        expect(oldNative.sent).toEqual([]);
+        expect(newNative.sent).toEqual([]);
+    });
+
+    it('checks the current authenticated principal before a fixed local session send', () => {
+        const socket = new JsonWebSocketServer();
+        const native = new TestWebSocket('ws://principal');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'principal-session', socket: native }));
+        const scope = { applicationId: 'app', workspaceId: 'space' };
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            readAuthenticatedConnectionScope: () => ({
+                scope,
+                principalId: 'other-principal',
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            })
+        });
+        onTestFinished(() => service.dispose());
+        const message = newALBroadcastMessage(
+            'server-a',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
+        );
+
+        service.sendToTargetsWithResult({
+            message,
+            recipientSessionIds: ['principal-session'],
+            recipientScope: scope,
+            recipientPrincipalId: 'intended-principal',
+            requireAuthenticatedRecipient: true
+        });
+
+        expect(native.sent).toEqual([]);
+    });
+
+    it('refuses durable room work with only a bare room ID and no full group reference', async () => {
+        const outbox = new InMemoryQueueBox(new Map());
+        const service = createDefaultWsQueueBoxServerService({
+            outbox,
+            socket: new JsonWebSocketServer(),
+            name: 'server-a'
+        });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: {
+                transport: { publish: async () => {}, subscribe: async () => {} },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        const base = newALBroadcastMessage(
+            'game-server',
+            newALRoute('room.match', 'message', 'room-1'),
+            'room',
+            'room.match.v1',
+            { tick: 1 }
+        );
+        const message = {
+            ...base,
+            qos: { durability: { algo: 'local-outbox' as const }, ack: { algo: 'hop' as const } }
+        };
+
+        const result = await router.publish({ message, fanout: 'outbox' });
+
+        expect(result.status).toBe('failed');
+        expect(result.reason).toContain('full group reference');
+        expect(await outbox.getAllKeys()).toEqual([]);
+    });
+
+    it('returns a failed public result when the room audience reader rejects', async () => {
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'server-a'
+        });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: {
+                transport: { publish: async () => {}, subscribe: async () => {} },
+                channel: 'ws-channel',
+                publisherId: 'server-a',
+                readServerRoomAudience: async () => {
+                    throw new Error('snapshot unavailable');
+                }
+            }
+        });
+        const message = newALBroadcastMessage(
+            'game-server',
+            newALRoute('room.match', 'message', 'room-1'),
+            'room',
+            'room.match.v1',
+            { tick: 1 },
+            { groupRef: { applicationId: 'app', workspaceId: 'space', groupId: 'room-1' } }
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(result.status).toBe('failed');
+        expect(result.reason).toContain('snapshot unavailable');
     });
 
     it('refuses a room publication when the supplied audience belongs to different final targets', async () => {

@@ -6,6 +6,8 @@ import type { ConnectionContext } from '../../websocket/json-web-socket-server.t
 
 export interface WsServerInboundConnectionScopeProof {
     readonly scope: StateScope;
+    /** Present when the connection's authenticated principal is known. Required for principal publication. */
+    readonly principalId?: string;
     readonly expiresAtEpochMs: number;
 }
 
@@ -47,6 +49,11 @@ export interface WsServerLiveSendInputDto {
     readonly admittedPeerIds?: readonly string[];
     /** Explicit recipient scope; null or absent proof refuses generic unicast, including server-originated sends. */
     readonly inboundScope?: StateScope | null;
+    /** Rechecked at the final send for every fixed, scoped cluster notice audience. */
+    readonly recipientScope?: StateScope;
+    readonly recipientPrincipalId?: string;
+    /** Broad notices still require a current authenticated connection, without inventing a scope. */
+    readonly requireAuthenticatedRecipient?: boolean;
 }
 
 export interface WsServerTargetResolver {

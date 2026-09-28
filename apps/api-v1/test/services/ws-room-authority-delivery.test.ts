@@ -213,7 +213,11 @@ Deno.test('transformed proxy targets never inherit the source room authoritative
         });
         const message = roomMessage();
 
-        await harness.router.route(message);
+        await harness.router.route(message, {
+            kind: 'ws-client',
+            peerId: 'alice',
+            authenticatedScope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }
+        });
 
         assert.deepEqual(sourceFrames, []);
         assert.deepEqual(proxyFrames, [JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'outsider' } })]);

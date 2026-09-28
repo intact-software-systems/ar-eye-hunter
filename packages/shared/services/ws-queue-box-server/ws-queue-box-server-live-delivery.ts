@@ -13,6 +13,7 @@ import type {
     WsServerResolvedRecipient
 } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
+import { WsQueueBoxServerRecipientSelection } from './ws-queue-box-server-recipient-selection.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerLiveDelivery {
@@ -40,6 +41,8 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly recipients: readonly WsServerResolvedRecipient[];
         readonly expiresAtMs: number | undefined;
         readonly scope: StateScope | undefined;
+        readonly principalId: string | undefined;
+        readonly requireAuthenticatedRecipient: boolean;
         readonly generations: ReadonlyMap<string, string | undefined>;
     }
 
@@ -55,14 +58,13 @@ export class WsQueueBoxServerLiveDelivery {
     readonly #socket: JsonWebSocketServer;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #deliveryReporting: WsQueueBoxServerDeliveryReporting;
-    readonly #readAuthenticatedConnectionScope:
-        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+    readonly #recipientSelection: WsQueueBoxServerRecipientSelection;
 
     constructor(dependencies: WsQueueBoxServerLiveDelivery.Dependencies) {
         this.#socket = dependencies.socket;
         this.#targetResolution = dependencies.targetResolution;
         this.#deliveryReporting = dependencies.deliveryReporting;
-        this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
+        this.#recipientSelection = new WsQueueBoxServerRecipientSelection(dependencies);
     }
 
     sendToTargets(message: ALMessage): number {
@@ -77,11 +79,14 @@ export class WsQueueBoxServerLiveDelivery {
         ) {
             return noRecipientResult(message);
         }
+        if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
+            return noRecipientResult(message);
+        }
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
         }
-        const recipients = this.resolveLiveRecipients(input);
+        const recipients = this.#recipientSelection.resolveLiveRecipients(input);
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -104,7 +109,12 @@ export class WsQueueBoxServerLiveDelivery {
             encoded: encodedAttempt.encoded,
             recipients,
             expiresAtMs,
-            scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
+            scope: input.recipientScope ??
+                (message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined),
+            principalId: input.recipientPrincipalId,
+            requireAuthenticatedRecipient: input.requireAuthenticatedRecipient === true ||
+                input.recipientScope !== undefined ||
+                (message.targets?.mode === 'unicast' && inboundScope !== undefined),
             generations
         });
         this.#deliveryReporting.recordDiagnostics({
@@ -133,7 +143,7 @@ export class WsQueueBoxServerLiveDelivery {
             ? resolved
             : resolved.filter((recipient) =>
                 inboundScope !== null &&
-                this.isCurrentRecipientInScope(recipient, inboundScope)
+                this.#recipientSelection.isCurrentAuthorized(recipient, inboundScope)
             );
         const generations = new Map(
             recipients.map((
@@ -149,6 +159,8 @@ export class WsQueueBoxServerLiveDelivery {
             recipients,
             expiresAtMs,
             scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
+            principalId: undefined,
+            requireAuthenticatedRecipient: inboundScope !== undefined && message.targets?.mode === 'unicast',
             generations
         }).sentCount;
     }
@@ -156,36 +168,6 @@ export class WsQueueBoxServerLiveDelivery {
     tryEncodeDirectMessage(message: ALMessage): EncodedJsonWebSocketMessage | undefined {
         const attempt = this.toEncodedAttempt(message);
         return attempt.encoded ?? undefined;
-    }
-
-    private isCurrentRecipientInScope(recipient: WsServerResolvedRecipient, scope: StateScope): boolean {
-        const connection = this.#socket.connections.get(recipient.connectionId);
-        if (!connection?.isOpen) {
-            return false;
-        }
-        const proof = this.#readAuthenticatedConnectionScope(connection);
-        return proof !== undefined && proof.expiresAtEpochMs > Date.now() &&
-            proof.scope.applicationId === scope.applicationId && proof.scope.workspaceId === scope.workspaceId;
-    }
-
-    private resolveLiveRecipients(input: WsServerLiveSendInputDto): readonly WsServerResolvedRecipient[] {
-        const { message, recipientSessionIds, admittedPeerIds, inboundScope } = input;
-        // Explicit authority, including an empty audience, replaces cache-based
-        // target resolution; local socket liveness remains a send-time decision.
-        const currentRecipients = recipientSessionIds === undefined
-            ? this.#targetResolution.resolveOutboundRecipients(message)
-            : [...new Set(recipientSessionIds)]
-                .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
-                .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
-        const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
-        const admittedRecipients = admitted === undefined
-            ? currentRecipients
-            : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
-        return inboundScope === undefined || message.targets?.mode !== 'unicast'
-            ? admittedRecipients
-            : admittedRecipients.filter((recipient) =>
-                inboundScope !== null && this.isCurrentRecipientInScope(recipient, inboundScope)
-            );
     }
 
     private toEncodedAttempt(message: ALMessage): WsQueueBoxServerLiveDelivery.EncodedAttempt {
@@ -202,7 +184,8 @@ export class WsQueueBoxServerLiveDelivery {
     private sendEncodedToRecipients(
         input: WsQueueBoxServerLiveDelivery.SendInput
     ): WsQueueBoxServerLiveDelivery.SendAttempt {
-        const { encoded, recipients, expiresAtMs, scope, generations } = input;
+        const { encoded, recipients, expiresAtMs, scope, principalId, requireAuthenticatedRecipient, generations } =
+            input;
         let sentCount = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
@@ -210,10 +193,10 @@ export class WsQueueBoxServerLiveDelivery {
                 return { sentCount, failures, expired: true };
             }
             if (
-                scope !== undefined && (
+                requireAuthenticatedRecipient && (
                     this.#socket.connections.get(recipient.connectionId)?.generationId !==
                         generations.get(recipient.connectionId) ||
-                    !this.isCurrentRecipientInScope(recipient, scope)
+                    !this.#recipientSelection.isCurrentAuthorized(recipient, scope, principalId)
                 )
             ) {
                 continue;

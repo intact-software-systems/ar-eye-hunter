@@ -48,11 +48,27 @@ export async function publishRallarServerLiveWsNotice(
             return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
         }
         await publication.transport.publish(encoded.notice);
-        input.service.sendToTargetsWithResult({
-            message: input.message,
-            recipientSessionIds: audience.mode === 'broad' ? undefined : audience.recipientSessionIds,
-            inboundScope: scope
-        });
+        try {
+            input.service.sendToTargetsWithResult({
+                message: input.message,
+                recipientSessionIds: audience.mode === 'broad' ? undefined : audience.recipientSessionIds,
+                inboundScope: scope,
+                recipientScope: scope,
+                recipientPrincipalId: audience.mode === 'principal' ? audience.principalRef.principalId : undefined,
+                requireAuthenticatedRecipient: true
+            });
+        }
+        catch (error) {
+            return {
+                fanout: input.fanout,
+                status: 'cluster-published',
+                message: input.message,
+                entries: [],
+                reason: `Local WS send failed after publication: ${
+                    error instanceof Error ? error.message : String(error)
+                }`
+            };
+        }
     }
     catch (error) {
         return failedLivePublication(input, error instanceof Error ? error.message : String(error));

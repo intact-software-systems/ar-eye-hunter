@@ -16,10 +16,17 @@ const scope = { applicationId: 'app', workspaceId: 'workspace' };
 
 describe('middleware remote live WS notices', () => {
     it.each([
-        { mode: 'peer', workspaceId: 'workspace', sentCount: 1 },
-        { mode: 'peer', workspaceId: 'other', sentCount: 0 },
-        { mode: 'broad', workspaceId: 'other', sentCount: 1 }
-    ])('delivers $mode notice to workspace $workspaceId only when eligible', async ({ mode, workspaceId, sentCount }) => {
+        { mode: 'peer', workspaceId: 'workspace', principalId: undefined, sentCount: 1 },
+        { mode: 'peer', workspaceId: 'other', principalId: undefined, sentCount: 0 },
+        { mode: 'broad', workspaceId: 'other', principalId: undefined, sentCount: 1 },
+        { mode: 'principal', workspaceId: 'workspace', principalId: 'intended', sentCount: 1 },
+        { mode: 'principal', workspaceId: 'workspace', principalId: 'other', sentCount: 0 }
+    ])('delivers $mode notice to workspace $workspaceId and principal $principalId only when eligible', async ({
+        mode,
+        workspaceId,
+        principalId,
+        sentCount
+    }) => {
         let receive: ((notice: LiveWsNotice) => Promise<void> | void) | undefined;
         const transport: LiveWsNoticeTransport = {
             publish: async (notice) => {
@@ -49,7 +56,7 @@ describe('middleware remote live WS notices', () => {
             targetResolver: {},
             readAuthenticatedConnectionScope: (connection) =>
                 socket.connections.get(connection.id) === connection
-                    ? { scope: { applicationId: 'app', workspaceId }, expiresAtEpochMs: Date.now() + 60_000 }
+                    ? { scope: { applicationId: 'app', workspaceId }, principalId, expiresAtEpochMs: Date.now() + 60_000 }
                     : undefined,
             liveWsNoticeSubscriber: {
                 transport,
@@ -72,6 +79,24 @@ describe('middleware remote live WS notices', () => {
                 scope,
                 audience: { mode: 'peer', recipientSessionIds: ['remote-session'] },
                 message: newALUnicastMessage('sender', route, 'remote-session', 'notice.v1', { value: 'peer' })
+            })
+            : mode === 'principal'
+            ? encodeLiveWsNotice({
+                ...common,
+                scope,
+                audience: {
+                    mode: 'principal',
+                    principalRef: { ...scope, principalId: 'intended' },
+                    recipientSessionIds: ['remote-session']
+                },
+                message: {
+                    ...newALBroadcastMessage('sender', route, 'all', 'notice.v1', { value: mode }),
+                    targets: {
+                        mode: 'broadcast',
+                        scope: 'principal',
+                        principalRef: { ...scope, principalId: 'intended' }
+                    }
+                }
             })
             : encodeLiveWsNotice({
                 ...common,

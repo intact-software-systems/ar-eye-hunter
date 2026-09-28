@@ -99,8 +99,17 @@ function installMiddlewareLiveWsNoticeSubscriber(
         inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
         resolveBroadRecipientSessionIds: (message) =>
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
-        sendToTargetsWithResult: (message, recipientSessionIds, inboundScope) => {
-            wsQBoxServerService.sendToTargetsWithResult({ message, recipientSessionIds, inboundScope });
+        sendToTargetsWithResult: (message, recipientSessionIds, notice, audience) => {
+            wsQBoxServerService.sendToTargetsWithResult({
+                message,
+                recipientSessionIds,
+                inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,
+                recipientScope: notice.scope,
+                recipientPrincipalId: audience.mode === 'principal'
+                    ? audience.principalRef.principalId
+                    : undefined,
+                requireAuthenticatedRecipient: true
+            });
         }
     });
 }

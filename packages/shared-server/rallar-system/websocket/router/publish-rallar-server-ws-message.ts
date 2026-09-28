@@ -43,13 +43,25 @@ export interface PublishRallarServerWsMessageInput {
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
-    const audience = input.audience ?? await readRallarServerWsPublicationAudience({
-        message: input.message,
-        fanout: input.fanout,
-        origin: input.origin,
-        authorizeRoomMessage: input.authorizeRoomMessage,
-        readServerRoomAudience: input.livePublication?.readServerRoomAudience
-    });
+    let audience = input.audience;
+    if (audience === undefined) {
+        try {
+            audience = await readRallarServerWsPublicationAudience({
+                message: input.message,
+                fanout: input.fanout,
+                origin: input.origin,
+                authorizeRoomMessage: input.authorizeRoomMessage,
+                readServerRoomAudience: input.livePublication?.readServerRoomAudience
+            });
+        }
+        catch (error) {
+            // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
+            if (input.origin !== undefined) {
+                throw error;
+            }
+            return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
+        }
+    }
     return await publishAuthorizedRallarServerWsMessage({ ...input, audience });
 }
 
@@ -62,8 +74,16 @@ async function publishAuthorizedRallarServerWsMessage(
     if (input.fanout === 'none') {
         return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
     }
-    if (input.livePublication && readALTargetGroupRef(input.message) && !input.audience) {
-        return toFailedPublishResult(input, 'Room publication has no authorized frozen audience.');
+    const targets = input.message.targets;
+    const roomTarget = targets?.mode === 'multicast' ||
+        (targets?.mode === 'broadcast' && targets.scope === 'room');
+    if (input.livePublication && roomTarget) {
+        if (!readALTargetGroupRef(input.message)) {
+            return toFailedPublishResult(input, 'Room publication requires a full group reference.');
+        }
+        if (!input.audience) {
+            return toFailedPublishResult(input, 'Room publication has no authorized frozen audience.');
+        }
     }
     if (input.audience && !isAuthorizedRoomAudience(input.message, input.audience, input.nowEpochMs)) {
         return toFailedPublishResult(input, 'Room publication audience does not authorize the final message targets.');
