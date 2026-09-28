@@ -125,12 +125,11 @@ describe('WS server bounded and authorized admission', () => {
             targets: { mode: 'unicast', toPeerId: 'target-session' }
         };
 
-        const sent = fixture.service.sendToTargetsWithResult(
+        const sent = fixture.service.sendToTargetsWithResult({
             message,
-            ['target-session'],
-            undefined,
-            { applicationId: 'app', workspaceId: 'workspace' }
-        );
+            recipientSessionIds: ['target-session'],
+            inboundScope: { applicationId: 'app', workspaceId: 'workspace' }
+        });
 
         expect(sent.sentCount).toBe(0);
         expect(targetSocket.sent).toEqual([]);

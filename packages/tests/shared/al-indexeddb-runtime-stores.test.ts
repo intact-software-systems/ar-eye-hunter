@@ -55,6 +55,12 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+const SCOPED_PEER_1_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'peer-1',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
+
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -124,7 +130,7 @@ describe('IndexedDB AL runtime stores', () => {
         );
 
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const restartedStores = createDefaultIndexedDbALInboundRuntimeStores({ dbName, namespace });
@@ -134,7 +140,7 @@ describe('IndexedDB AL runtime stores', () => {
             dispatchedMsgIds: dispatchedMsgIds,
             stores: restartedStores
         });
-        await runtime2.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
 
         // The redelivered duplicate must not dispatch again: settle every retained row before reading.
         await waitForSettledALInboundWork(restartedStores.workQueue);
@@ -226,7 +232,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await inbox.getAllKeys();
         await runtime.ready();
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
 
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
         expect(await inbox.getAllKeys()).toEqual([]);

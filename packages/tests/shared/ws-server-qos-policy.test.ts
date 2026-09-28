@@ -13,7 +13,10 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import * as shared from '@shared/mod.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsServerInboundConnectionScopeReader,
+    WsServerTargetResolver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer
@@ -69,7 +72,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             nowMs = expiresAtMs + offsetMs;
         }
 
-        const result = service.sendToTargetsWithResult(msg);
+        const result = service.sendToTargetsWithResult({ message: msg });
 
         expect(result.status).toBe(offsetMs < 0 ? 'sent-live' : 'expired');
         expect(result.sentCount).toBe(offsetMs < 0 ? 1 : 0);
@@ -241,7 +244,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 { groupRef: groupRef('room-1') }
             );
 
-            const result = service.sendToTargetsWithResult(msg);
+            const result = service.sendToTargetsWithResult({ message: msg });
 
             expect(result.status).toBe('partial-failure');
             expect(result.recipientCount).toBe(3);
@@ -498,6 +501,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox,
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -552,6 +556,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -594,6 +599,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -634,6 +640,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver(),
             forwardsRoomScopedMessages: false
         });
@@ -662,6 +669,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -701,6 +709,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -785,6 +794,18 @@ interface RecordingWsServerInput {
 
 function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingJsonWebSocketServer {
     return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
+}
+
+function readTestAuthenticatedScope(
+    server: RecordingJsonWebSocketServer
+): WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'] {
+    return (connection) =>
+        server.connections.get(connection.id) === connection
+            ? {
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }
+            : undefined;
 }
 
 namespace RecordingJsonWebSocketServer {

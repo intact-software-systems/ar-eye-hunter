@@ -679,9 +679,9 @@ describe('RallarServerWsRouter', () => {
             }
         }, stores);
         const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
-        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((message, sessionIds) => {
-            publishedAudiences.push({ msgId: message.id.msgId, sessionIds: [...sessionIds ?? []] });
-            return sendToTargetsWithResult(message, sessionIds);
+        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((input) => {
+            publishedAudiences.push({ msgId: input.message.id.msgId, sessionIds: [...input.recipientSessionIds ?? []] });
+            return sendToTargetsWithResult(input);
         });
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);

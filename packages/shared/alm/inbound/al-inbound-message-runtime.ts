@@ -91,6 +91,13 @@ export namespace ALInboundMessageRuntime {
         readonly attemptIdentity: string;
     }
 
+    export interface ForwardMessageInputDto {
+        readonly msg: ALMessage;
+        readonly fromPeerId: string;
+        readonly plan: ALMessageHandlingPlan;
+        readonly source: Source;
+    }
+
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
@@ -107,12 +114,7 @@ export namespace ALInboundMessageRuntime {
         /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
         readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
-        readonly forwardMessage?: (
-            msg: ALMessage,
-            fromPeerId: string,
-            plan: ALMessageHandlingPlan,
-            source: Source
-        ) => Promise<void | 'completed' | 'retry'>;
+        readonly forwardMessage?: (input: ForwardMessageInputDto) => Promise<void | 'completed' | 'retry'>;
         /** Absence means a retried copy of an admitted message is never forwarded again. */
         readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */

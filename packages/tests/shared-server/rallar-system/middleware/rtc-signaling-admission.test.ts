@@ -62,6 +62,10 @@ describe('middleware pre-admission', () => {
             const runtime = createRallarMiddleware({
                 ...fixture.options,
                 webSocketServer: socket,
+                readAuthenticatedConnectionScope: (connection) =>
+                    socket.connections.get(connection.id) === connection
+                        ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                        : undefined,
                 inboundStores: {
                     admissionStore: createALInboundAdmissionStore({
                         nowMs: Date.now,

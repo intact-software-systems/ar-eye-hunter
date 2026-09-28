@@ -15,7 +15,10 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsServerLiveSendInputDto,
+    WsServerLiveSendResult
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import {
     recordRallarTiming,
@@ -41,11 +44,7 @@ export interface QueueBoxPubSubWsService {
             admittedAudience: readonly string[] | undefined
         ) => Promise<void>
     ): QueueBoxPubSubWsService;
-    sendToTargetsWithResult(
-        message: ALMessage,
-        recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[]
-    ): WsServerLiveSendResult;
+    sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
     readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined>;
 }
 
@@ -350,7 +349,11 @@ function sendToCapturedLocalTargets(
     const eligible = captured === undefined || options.filterEligibleCapturedSessionIds === undefined
         ? undefined
         : options.filterEligibleCapturedSessionIds(message, captured);
-    return options.wsQBoxServerService.sendToTargetsWithResult(message, eligible, captured);
+    return options.wsQBoxServerService.sendToTargetsWithResult({
+        message,
+        recipientSessionIds: eligible,
+        admittedPeerIds: captured
+    });
 }
 
 export interface ToPubSubMessageInput {

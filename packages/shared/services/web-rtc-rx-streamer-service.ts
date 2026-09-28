@@ -134,7 +134,7 @@ export class WebRtcRxStreamerService {
                 onControlMessage: async (msg) => {
                     await this.multicast.acceptControlMessage(msg);
                 },
-                forwardMessage: async (msg, fromPeerId) => {
+                forwardMessage: async ({ msg, fromPeerId }) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
                 },
                 forwardRetriedCopy: async (copy) => {

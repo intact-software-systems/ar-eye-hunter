@@ -52,17 +52,17 @@ export async function publishRallarServerWsMessage(
             return toOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
-            const result = input.service.sendToTargetsWithResult(
-                input.message,
-                input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
+            const result = input.service.sendToTargetsWithResult({
+                message: input.message,
+                recipientSessionIds: input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
                     message: input.message,
                     audience: input.audience,
                     admittedPeerIds: input.admittedPeerIds,
                     nowEpochMs: input.nowEpochMs
                 }),
-                input.admittedPeerIds,
-                input.inboundScope
-            );
+                admittedPeerIds: input.admittedPeerIds,
+                inboundScope: input.inboundScope
+            });
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
             }

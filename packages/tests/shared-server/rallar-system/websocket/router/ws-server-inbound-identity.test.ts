@@ -26,6 +26,10 @@ describe('WS server inbound identity', () => {
         const service = createDefaultWsQueueBoxServerService({
             outbox: new InMemoryQueueBox(),
             socket: server,
+            readAuthenticatedConnectionScope: (connection) =>
+                server.connections.get(connection.id) === connection
+                    ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                    : undefined,
             name: 'server-1',
             inboundDiagnostics: (event) => inboundDiagnostics.push(event)
         });

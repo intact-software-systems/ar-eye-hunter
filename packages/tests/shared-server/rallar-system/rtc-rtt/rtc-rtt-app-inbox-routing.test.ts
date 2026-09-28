@@ -89,6 +89,10 @@ async function createHarness(options: InstallRtcRttSystemTopicOptions): Promise<
     const service = createDefaultWsQueueBoxServerService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'server-1'
     });
     onTestFinished(() => service.dispose());

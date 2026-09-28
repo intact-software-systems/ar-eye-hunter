@@ -751,7 +751,11 @@ function createBridge(): TestQueueBoxPubSubBridge {
 interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly outbox?: InMemoryQueueBox;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
-    readonly sendToTargetsWithResult?: QueueBoxPubSubWsService['sendToTargetsWithResult'];
+    readonly sendToTargetsWithResult?: (
+        message: ALMessage,
+        recipientSessionIds?: readonly string[],
+        admittedPeerIds?: readonly string[]
+    ) => WsServerLiveSendResult;
     readonly readVerifiedAdmittedAudience?: QueueBoxPubSubWsService['readVerifiedAdmittedAudience'];
 }
 
@@ -764,7 +768,7 @@ function createTestQueueBoxPubSubWsService(
             input.registerOutboxPublisher?.(publisher);
             return service;
         },
-        sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds) {
+        sendToTargetsWithResult({ message, recipientSessionIds, admittedPeerIds }) {
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },

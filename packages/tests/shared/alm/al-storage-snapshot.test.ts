@@ -299,7 +299,11 @@ async function admitInboundWorkload(volatileStores: ALVolatileInboundRuntimeStor
                 for (const peerId of WORKLOAD.recipientPeerIds) {
                     await runtime.admitIncomingMessage(
                         toVolatileIdentity(createInboundUpdate({ payloadBytes, update, peerId }), volatileStores),
-                        { kind: 'ws-client', peerId }
+                        {
+                            kind: 'ws-client',
+                            peerId,
+                            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+                        }
                     );
                 }
             }

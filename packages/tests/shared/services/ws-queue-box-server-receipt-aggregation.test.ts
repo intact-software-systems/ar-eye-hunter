@@ -443,6 +443,10 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'server',
         queueEngine: engine,
         forwardsRoomScopedMessages: options.fanout === 'forward',
@@ -494,6 +498,10 @@ async function createRemoteOriginInstance(
     const remote = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'remote-server',
         queueEngine: engine,
         outboundStores,

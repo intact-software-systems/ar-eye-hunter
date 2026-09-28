@@ -72,6 +72,13 @@ export namespace RallarServerWsRouter {
         readonly current: RallarServerWsRoomAudience | undefined;
         readonly admittedPeerIds: readonly string[] | undefined;
     }
+
+    export interface PublishToFanoutInputDto {
+        readonly message: ALMessage;
+        readonly fanout: RallarServerWsFanout;
+        readonly audience?: PublishAudience;
+        readonly inboundScope?: StateScope | null;
+    }
 }
 
 export class RallarServerWsRouter {
@@ -158,7 +165,7 @@ export class RallarServerWsRouter {
             serverPeerId: this.serverPeerId,
             readRoomAudience: this.readServerPublishAudience
         });
-        return await this.publishToFanout(message, selected, frozen);
+        return await this.publishToFanout({ message, fanout: selected, audience: frozen });
     }
 
     status(): RallarServerWsStatus {
@@ -183,14 +190,16 @@ export class RallarServerWsRouter {
             context,
             defaultFanout: this.defaultFanout,
             publish: async (targetMessage, fanout) =>
-                await this.publishToFanout(targetMessage, fanout, undefined, inboundScope)
+                await this.publishToFanout({ message: targetMessage, fanout, inboundScope })
         });
         // A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
         if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
-            await this.publishToFanout(message, ingress.definition?.fanout ?? this.defaultFanout, {
-                current: audience,
-                admittedPeerIds
-            }, inboundScope);
+            await this.publishToFanout({
+                message,
+                fanout: ingress.definition?.fanout ?? this.defaultFanout,
+                audience: { current: audience, admittedPeerIds },
+                inboundScope
+            });
         }
     }
 
@@ -338,12 +347,8 @@ export class RallarServerWsRouter {
         return Either.ofRight(serverMessage);
     }
 
-    private publishToFanout(
-        message: ALMessage,
-        fanout: RallarServerWsFanout,
-        audience?: RallarServerWsRouter.PublishAudience,
-        inboundScope?: StateScope | null
-    ): Promise<RallarServerWsPublishResult> {
+    private publishToFanout(input: RallarServerWsRouter.PublishToFanoutInputDto): Promise<RallarServerWsPublishResult> {
+        const { message, fanout, audience, inboundScope } = input;
         return publishRallarServerWsMessage({
             service: this.service,
             message,
@@ -372,20 +377,23 @@ export class RallarServerWsRouter {
             senderId: message.id.senderId,
             proxy: {
                 toTargets: async (targetMessage, selectedFanout) =>
-                    await this.publishToFanout(targetMessage, selectedFanout ?? fanout, undefined, inboundScope),
+                    await this.publishToFanout({
+                        message: targetMessage,
+                        fanout: selectedFanout ?? fanout,
+                        inboundScope
+                    }),
                 toPeer: async (peerId, targetMessage, selectedFanout) =>
-                    await this.publishToFanout(
-                        {
+                    await this.publishToFanout({
+                        message: {
                             ...targetMessage,
                             targets: { mode: 'unicast', toPeerId: peerId }
                         },
-                        selectedFanout ?? fanout,
-                        undefined,
+                        fanout: selectedFanout ?? fanout,
                         inboundScope
-                    ),
+                    }),
                 toRoom: async (roomRef, targetMessage, options) =>
-                    await this.publishToFanout(
-                        {
+                    await this.publishToFanout({
+                        message: {
                             ...targetMessage,
                             route: { ...targetMessage.route, contextId: roomRef.groupId },
                             targets: {
@@ -395,13 +403,12 @@ export class RallarServerWsRouter {
                                 exceptPeerIds: options?.exceptPeerIds
                             }
                         },
-                        options?.fanout ?? fanout,
-                        undefined,
+                        fanout: options?.fanout ?? fanout,
                         inboundScope
-                    ),
+                    }),
                 toAll: async (targetMessage, options) =>
-                    await this.publishToFanout(
-                        {
+                    await this.publishToFanout({
+                        message: {
                             ...targetMessage,
                             targets: {
                                 mode: 'broadcast',
@@ -409,10 +416,9 @@ export class RallarServerWsRouter {
                                 exceptPeerIds: options?.exceptPeerIds
                             }
                         },
-                        options?.fanout ?? fanout,
-                        undefined,
+                        fanout: options?.fanout ?? fanout,
                         inboundScope
-                    )
+                    })
             }
         };
     }

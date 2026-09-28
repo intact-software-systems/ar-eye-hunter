@@ -38,6 +38,12 @@ interface OrderedRestartFixture {
     readonly engine: InboxOutboxEngine;
 }
 
+const SCOPED_WS_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'sender',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
+
 it('terminalizes a malformed reservation without starving independent timeout recovery', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     onTestFinished(() => {
@@ -67,7 +73,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), ordering: undefined }, SCOPED_WS_SOURCE);
     }
     const queue = resources.workQueue;
     const keys = await queue.getAllKeys();
@@ -196,7 +202,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
             });
         const initial = createRuntime();
         onTestFinished(() => initial.dispose());
-        await initial.admitIncomingMessage({ ...createOrderedMessage(1), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await initial.admitIncomingMessage({ ...createOrderedMessage(1), ordering: undefined }, SCOPED_WS_SOURCE);
         await expect.poll(() => deliveries).toEqual(['message-1']);
         const keys = await resources.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
@@ -262,8 +268,8 @@ it.each([
         dispatchInboxEntry: async (entry) => {
             deliveries.push(`local:${decodePersistedALMessage(entry.resource).id.msgId}`);
         },
-        forwardMessage: async (incoming) => {
-            deliveries.push(`forward:${incoming.id.msgId}`);
+        forwardMessage: async ({ msg }) => {
+            deliveries.push(`forward:${msg.id.msgId}`);
         },
         sendControlMessages: async () => {},
         diagnostics: undefined
@@ -276,7 +282,7 @@ it.each([
         constraints: { expiresAtMs: admittedAt + 1_000 }
     };
 
-    await runtime.admitIncomingMessage(incoming, { kind: 'ws-client', peerId: 'sender' });
+    await runtime.admitIncomingMessage(incoming, SCOPED_WS_SOURCE);
 
     await waitForSettledALInboundWork(resources.workQueue);
     expect(deliveries).toEqual(delivered);
@@ -390,10 +396,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, {
-            kind: 'ws-client',
-            peerId: 'sender'
-        });
+        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, SCOPED_WS_SOURCE);
     }
     if (loss === 'before-delivery') {
         await backend.write(async (tx) => await tx.remove(progressKey));

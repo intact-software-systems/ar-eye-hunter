@@ -5,6 +5,7 @@ import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../web
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
+    WsServerLiveSendInputDto,
     WsServerLiveSendResult,
     WsServerLiveSendStatus,
     WsServerResolvedRecipient
@@ -31,6 +32,13 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly failures: readonly WsServerLiveSendFailure[];
         readonly expired: boolean;
     }
+
+    export interface SendToResolvedPeerInputDto {
+        readonly peerId: string;
+        readonly message: ALMessage;
+        readonly encoded?: EncodedJsonWebSocketMessage;
+        readonly inboundScope?: StateScope | null;
+    }
 }
 
 export class WsQueueBoxServerLiveDelivery {
@@ -48,16 +56,12 @@ export class WsQueueBoxServerLiveDelivery {
     }
 
     sendToTargets(message: ALMessage): number {
-        return this.sendToTargetsWithResult(message).sentCount;
+        return this.sendToTargetsWithResult({ message }).sentCount;
     }
 
     /** Client unicast scope is recipient policy, not proof that a local recipient exists. */
-    sendToTargetsWithResult(
-        message: ALMessage,
-        recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[],
-        inboundScope?: StateScope | null
-    ): WsServerLiveSendResult {
+    sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
+        const { message, recipientSessionIds, admittedPeerIds, inboundScope } = input;
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
@@ -103,12 +107,8 @@ export class WsQueueBoxServerLiveDelivery {
         return toLiveSendResult(message, recipients, sendAttempt);
     }
 
-    sendToResolvedPeer(
-        peerId: string,
-        message: ALMessage,
-        encoded?: EncodedJsonWebSocketMessage,
-        inboundScope?: StateScope | null
-    ): number {
+    sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
+        const { peerId, message, encoded, inboundScope } = input;
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return 0;

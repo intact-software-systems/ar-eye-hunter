@@ -66,7 +66,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         onTestFinished(() => service.dispose());
         const message = principalMessage();
 
-        expect(service.sendToTargetsWithResult(message).sentCount).toBe(0);
+        expect(service.sendToTargetsWithResult({ message }).sentCount).toBe(0);
         expect(sockets.get('alice')).toEqual([]);
 
         await cache.findOrLoadByRef({
@@ -75,7 +75,7 @@ describe('CRDT principal fanout from a cold cache', () => {
             principalId: 'alice'
         });
 
-        expect(service.sendToTargetsWithResult(message).recipients).toEqual([
+        expect(service.sendToTargetsWithResult({ message }).recipients).toEqual([
             { peerId: 'session-a', connectionId: 'session-a' },
             { peerId: 'session-b', connectionId: 'session-b' }
         ]);

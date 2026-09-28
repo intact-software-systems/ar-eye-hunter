@@ -4,7 +4,10 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsServerLiveSendInputDto,
+    WsServerLiveSendStatus
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
@@ -34,7 +37,7 @@ interface RtcTopologyReplaySnapshotReader {
 }
 
 interface RtcTopologyReplayLiveSender {
-    sendToTargetsWithResult(message: ALMessage): Readonly<{ status: WsServerLiveSendStatus; }>;
+    sendToTargetsWithResult(input: WsServerLiveSendInputDto): Readonly<{ status: WsServerLiveSendStatus; }>;
 }
 
 export namespace RtcTopologyReplayEntryHandlerService {
@@ -116,7 +119,7 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         let delivered = false;
         for (const message of messages) {
             throwIfAborted(signal);
-            const result = this.#sender.sendToTargetsWithResult(message);
+            const result = this.#sender.sendToTargetsWithResult({ message });
             if (result.status === 'no-recipients') {
                 continue;
             }

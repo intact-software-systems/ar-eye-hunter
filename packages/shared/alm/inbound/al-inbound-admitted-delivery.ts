@@ -310,7 +310,12 @@ export class ALInboundAdmittedDelivery {
             return 'completed';
         }
         const forwarded = forward.retryPeerIds === undefined
-            ? await this.dependencies.forwardMessage?.(msg, forward.fromPeerId, plan, forward.observed.source)
+            ? await this.dependencies.forwardMessage?.({
+                msg,
+                fromPeerId: forward.fromPeerId,
+                plan,
+                source: forward.observed.source
+            })
             : await this.dependencies.forwardRetriedCopy?.({
                 msg,
                 fromPeerId: forward.fromPeerId,

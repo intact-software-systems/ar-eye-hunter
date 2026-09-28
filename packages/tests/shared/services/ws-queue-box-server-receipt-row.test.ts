@@ -152,6 +152,10 @@ async function createClusterInstance(input: CreateClusterInstanceInput): Promise
     const service = createDefaultWsQueueBoxServerService({
         outbox: input.outbox,
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: input.name,
         queueEngine: engine,
         forwardsRoomScopedMessages: false,

@@ -854,7 +854,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                 sendControlMessages: async () => {
                     throw new Error('upstream offline');
                 },
-                forwardMessage: async (msg) => {
+                forwardMessage: async ({ msg }) => {
                     forwardedIds.push(msg.id.msgId);
                 }
             }
@@ -913,11 +913,7 @@ interface InboundHarnessOverrides {
         plan?: ALMessageHandlingPlan
     ) => Promise<void>;
     readonly sendControlMessages?: (msgs: readonly ALMessage[]) => Promise<void>;
-    readonly forwardMessage?: (
-        msg: ALMessage,
-        fromPeerId: string,
-        plan: ALMessageHandlingPlan
-    ) => Promise<void>;
+    readonly forwardMessage?: (input: ALInboundMessageRuntime.ForwardMessageInputDto) => Promise<void>;
     readonly canForwardMessage?: (msg: ALMessage) => boolean;
 }
 
@@ -965,7 +961,7 @@ function createInboundHarness(
         onControlMessage: async (_msg, acceptance) => {
             controlAcceptances.push(acceptance);
         },
-        forwardMessage: overrides.forwardMessage ?? (async (msg) => {
+        forwardMessage: overrides.forwardMessage ?? (async ({ msg }) => {
             forwardedIds.push(msg.id.msgId);
         }),
         canForwardMessage: overrides.canForwardMessage,

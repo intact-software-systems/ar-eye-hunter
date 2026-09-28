@@ -100,7 +100,7 @@ function installMiddlewareLiveWsNoticeSubscriber(
         resolveBroadRecipientSessionIds: (message) =>
             targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
         sendToTargetsWithResult: (message, recipientSessionIds) => {
-            wsQBoxServerService.sendToTargetsWithResult(message, recipientSessionIds);
+            wsQBoxServerService.sendToTargetsWithResult({ message, recipientSessionIds });
         }
     });
 }

@@ -41,6 +41,14 @@ export interface WsServerLiveSendResult {
     readonly failures: readonly WsServerLiveSendFailure[];
 }
 
+export interface WsServerLiveSendInputDto {
+    readonly message: ALMessage;
+    readonly recipientSessionIds?: readonly string[];
+    readonly admittedPeerIds?: readonly string[];
+    /** Null means old inbound work without proof; undefined means server-originated send. */
+    readonly inboundScope?: StateScope | null;
+}
+
 export interface WsServerTargetResolver {
     readonly resolvePeerRecipients?: (
         peerId: string,
