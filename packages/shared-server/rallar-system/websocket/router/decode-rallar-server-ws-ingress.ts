@@ -7,6 +7,8 @@ import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
+    RallarServerWsMessage,
+    RallarServerWsPayload,
     RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizer,
@@ -49,6 +51,38 @@ export function decodeRallarServerWsIngress(
     catch {
         return { kind: 'invalid-json' };
     }
+}
+
+/** Preserve the retained admission deadline through handlers and final publication. */
+export function computeAdmittedRallarServerWsMessage(message: ALMessage, expiresAtMs: number): ALMessage {
+    return {
+        ...message,
+        constraints: {
+            ...message.constraints,
+            expiresAtMs: Math.min(message.constraints?.expiresAtMs ?? expiresAtMs, expiresAtMs)
+        }
+    };
+}
+
+export function toRallarServerWsMessage<T extends RallarServerWsPayload>(
+    payload: T,
+    raw: ALMessage,
+    receivedAtEpochMs: number
+): RallarServerWsMessage<T> {
+    return { payload, raw, receivedAtEpochMs };
+}
+
+export function computeRallarServerWsRetainedAudience(
+    audience: RallarServerWsRoomAudience | undefined,
+    groupRecipientPeerIds: readonly string[] | undefined
+): RallarServerWsRoomAudience | undefined {
+    if (!audience || !groupRecipientPeerIds) {
+        return audience;
+    }
+    return {
+        ...audience,
+        sessions: audience.sessions.filter((session) => groupRecipientPeerIds.includes(session.sessionId))
+    };
 }
 
 export async function authorizeRallarServerWsIngress(

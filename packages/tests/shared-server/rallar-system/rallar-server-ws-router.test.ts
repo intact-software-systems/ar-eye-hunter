@@ -770,28 +770,26 @@ describe('RallarServerWsRouter', () => {
             disconnectedSessionIds: [],
             fanout: 'live-only'
         });
-        const message = createReceiverRoomBroadcast('left-after-admission');
+        const message = createBestEffortRoomBroadcast('left-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
 
         await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
     });
 
-    it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
+    it('sends best-effort only to the connected part of the admitted audience', async () => {
         const fixture = createAudienceRouter({
             admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             disconnectedSessionIds: ['peer-3'],
             fanout: 'live-only'
         });
-        const message = createReceiverRoomBroadcast('disconnected-after-admission');
+        const message = createBestEffortRoomBroadcast('disconnected-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
 
         await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
-        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
-            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
-        ]);
+        expect(readReceipts(fixture.sockets['peer-1']!)).toEqual([]);
     });
 
     it('does not deliver an inbound unicast to a same-ID recipient reconnected in another scope', async () => {
@@ -830,13 +828,13 @@ describe('RallarServerWsRouter', () => {
         });
         const message: ALMessage = {
             ...createReceiverRoomBroadcast('client-unicast-outbox'),
-            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+            targets: { mode: 'unicast', toPeerId: 'peer-2' },
+            delivery: undefined,
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
         };
-        const enqueue = vi.spyOn(fixture.service, 'enqueueOutboxIfAbsent');
-
         await fixture.router.route(message, { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUDIENCE_SCOPE });
 
-        expect(enqueue.mock.calls.find(([queued]) => queued.id.msgId === message.id.msgId)?.[2]).toEqual(AUDIENCE_SCOPE);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
     });
 
     // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
@@ -862,7 +860,7 @@ describe('RallarServerWsRouter', () => {
             fanout: 'live-only'
         });
         const message: ALMessage = {
-            ...createReceiverRoomBroadcast('fell-back'),
+            ...createBestEffortRoomBroadcast('fell-back'),
             targets: { mode: 'multicast', groupRef: AUDIENCE_ROOM, recipientPeerIds: frozen, snapshotVersion: 3 }
         };
 
@@ -1431,6 +1429,17 @@ function createReceiverRoomBroadcast(resourceId: string): ALMessage {
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };
+}
+
+function createBestEffortRoomBroadcast(resourceId: string): ALMessage {
+    return newALBroadcastMessage(
+        'peer-1',
+        newALRoute('room.chat', 'room-1', resourceId),
+        'room',
+        'chat.message.v1',
+        {},
+        { groupRef: AUDIENCE_ROOM }
+    );
 }
 
 function readChatRecipients(fixture: AudienceRouterFixture): readonly string[] {

@@ -36,6 +36,7 @@ import {
 import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
+import { createApiV1WsLivePublication } from './create-api-v1-ws-live-publication.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 
 export interface CreateDefaultRallarServerInput {
@@ -123,6 +124,13 @@ function constructDefaultRallarServer(
             readServerPublishAudience: createServerPublishRoomAudienceReader({
                 readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
                 nowEpochMs
+            }),
+            livePublication: createApiV1WsLivePublication({
+                mode: configuration.database.pubSub,
+                notification: input.databaseLifecycle.notification,
+                nowEpochMs,
+                readGroupSnapshot: (ref) => runtime.groupStateService.readCurrentSnapshot(ref),
+                readClientSnapshot: (ref) => runtime.clientStateService.readCurrentSnapshot(ref)
             }),
             ...input.ws
         },

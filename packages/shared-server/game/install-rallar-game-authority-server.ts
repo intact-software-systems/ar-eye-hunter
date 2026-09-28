@@ -149,6 +149,7 @@ const DEFAULT_RALLAR_GAME_AUTHORITY_SERVER_EPOCH = 1;
 const DEFAULT_RALLAR_GAME_AUTHORITY_TTL_MS = 15_000;
 const GAME_PUBLICATION_STATUS = {
     'sent-live': 'sent',
+    'cluster-published': 'accepted',
     'queued-outbox': 'accepted',
     none: 'skipped',
     'no-recipients': 'skipped',

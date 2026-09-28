@@ -1,6 +1,7 @@
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -10,6 +11,7 @@ import type {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
@@ -26,6 +28,7 @@ export interface RallarServerWsUnicastInputDto extends RallarServerWsPublishInpu
 }
 
 export type RallarServerWsPublishStatus =
+    | 'cluster-published'
     | 'sent-live'
     | 'queued-outbox'
     | 'none'
@@ -173,6 +176,18 @@ export interface RallarServerWsRouterOptions {
     readonly readServerPublishAudience?: RallarServerWsPublishAudienceReader;
     readonly wakeOutbox?: () => void;
     readonly nowEpochMs?: () => number;
+    readonly livePublication?: {
+        readonly transport: LiveWsNoticeTransport;
+        readonly channel: string;
+        readonly publisherId: string;
+        readonly readServerRoomAudience?: (
+            message: ALMessage,
+            groupRef: GroupRef
+        ) => Promise<RallarServerWsRoomAudience | undefined>;
+        readonly readPrincipalSessionIds?: (
+            principalRef: ClientPrincipalRef
+        ) => Promise<readonly string[] | undefined>;
+    };
 }
 
 export interface RallarServerWsMessageContext {

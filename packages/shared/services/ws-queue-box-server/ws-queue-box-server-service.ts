@@ -14,7 +14,8 @@ import {
     resolveALQosNormalizationInput,
     type ALMessageHandlingPlan,
     type ALMessagePlanningObservations,
-    type ALQosInputProvider
+    type ALQosInputProvider,
+    type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
@@ -170,6 +171,7 @@ export class WsQueueBoxServerService {
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
+    private readonly inboundNamespace: string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
         this.clock = dependencies.outboundRuntime.clock;
@@ -179,6 +181,7 @@ export class WsQueueBoxServerService {
         this.admissionStore = dependencies.outboundRuntime.admissionStore;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
+        this.inboundNamespace = dependencies.inboundRuntime.admissionStore.namespace;
         this.qosProvider = dependencies.qosProvider;
         this.targetResolution = new WsQueueBoxServerTargetResolution({
             socket: dependencies.socket,
@@ -367,6 +370,14 @@ export class WsQueueBoxServerService {
 
     removeAnyInboxMessageCallback(id: string): boolean {
         return this.onAnyInboxWebSocketMessageCallbacks.delete(id);
+    }
+
+    resolveOutboundPolicy(message: ALMessage): ALQosNormalizationResult {
+        return this.outboundPlanning.resolvePolicy(message);
+    }
+
+    getInboundNamespace(): string {
+        return this.inboundNamespace;
     }
 
     /**

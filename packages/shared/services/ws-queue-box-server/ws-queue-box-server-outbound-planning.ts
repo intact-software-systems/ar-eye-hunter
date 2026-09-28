@@ -13,7 +13,8 @@ import {
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
     shouldAwaitALRoute,
-    type ALQosInputProvider
+    type ALQosInputProvider,
+    type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
@@ -101,7 +102,7 @@ export class WsQueueBoxServerOutboundPlanning {
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
         const { phase, clusterPublisherRegistered, admittedAudience } = request;
         const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
-        const normalized = this.normalizePolicy(request.message);
+        const normalized = this.resolvePolicy(request.message);
         const message = toALOutboundMessage(request.message, normalized.effective);
         if (
             requiresWsQueueBoxServerRecipientScope(message) &&
@@ -201,7 +202,7 @@ export class WsQueueBoxServerOutboundPlanning {
             return undefined;
         }
 
-        const effective = this.normalizePolicy(message).effective;
+        const effective = this.resolvePolicy(message).effective;
         return {
             msg: message,
             dropReasonCode: undefined,
@@ -262,7 +263,7 @@ export class WsQueueBoxServerOutboundPlanning {
             : Either.ofLeft(toNoResolvedRecipientsReason(targets.mode, message.id.msgId));
     }
 
-    private normalizePolicy(message: ALMessage): ReturnType<typeof normalizeALQosPolicy> {
+    resolvePolicy(message: ALMessage): ALQosNormalizationResult {
         return normalizeALQosPolicy(
             message,
             resolveALQosNormalizationInput(

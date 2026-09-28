@@ -446,6 +446,7 @@ describe('Rallar Game Authority server installer', () => {
     it.each(
         [
             { routerStatus: 'sent-live', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'cluster-published', gameStatus: 'accepted', count: 1, routerReason: undefined, gameReason: undefined },
             { routerStatus: 'queued-outbox', gameStatus: 'accepted', count: 1, routerReason: undefined, gameReason: undefined },
             { routerStatus: 'none', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'none' },
             { routerStatus: 'no-recipients', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'no-recipients' },
