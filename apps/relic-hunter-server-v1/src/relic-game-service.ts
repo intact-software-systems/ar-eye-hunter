@@ -13,11 +13,13 @@ import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-c
 import type { RallarServerAppDataStore } from '@shared-server/app-data/rallar-server-app-data-store.ts';
 import type {
     RallarServerWsFanout,
+    RallarServerWsMessageContext,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     applyRelicWsCommand,
@@ -60,7 +62,7 @@ export interface RelicHunterServer {
             selector: RallarServerWsSelector,
             handler: (
                 message: Readonly<{ payload: RelicCommand; }>,
-                context: Readonly<{ senderId: string; }>
+                context: Pick<RallarServerWsMessageContext, 'senderId' | 'roomId' | 'roomRef'>
             ) => void | Promise<void>
         ): (() => boolean) | void;
         publish(
@@ -98,13 +100,6 @@ export async function installRelicHunterGame(
         return result;
     }
 
-    async function createInitialState(
-        gameId: string,
-        reason: RelicInitialStateReason
-    ): Promise<RelicGameState> {
-        return await options.createInitialState(gameId, reason);
-    }
-
     async function publishSnapshot(state: RelicGameState): Promise<void> {
         await rallar.ws.publish(toRelicSnapshotMessage(state, rallar.ws.serverPeerId), 'outbox');
     }
@@ -115,7 +110,7 @@ export async function installRelicHunterGame(
     ): Promise<RelicCommandApplication> {
         return enqueueForGame(command.gameId, async () => {
             const previous = await games.get(command.gameId) ??
-                await createInitialState(command.gameId, 'command');
+                await options.createInitialState(command.gameId, 'command');
             const result = applyRelicCommand(previous, command, { senderId });
             await games.set(command.gameId, result.state);
             const snapshot = toPublicRelicSnapshot(result.state);
@@ -149,8 +144,7 @@ export async function installRelicHunterGame(
         maxPayloadBytes: 16 * 1024,
         validate: (value, context) =>
             isRelicCommand(value) &&
-            context.roomId !== undefined &&
-            value.gameId === context.roomId
+            isDefaultRelicRoomContext(context, value.gameId)
     });
 
     rallar.ws.on(
@@ -159,6 +153,9 @@ export async function installRelicHunterGame(
             typeId: RELIC_TYPES.command
         },
         async (message, context) => {
+            if (!isDefaultRelicRoomContext(context, message.payload.gameId)) {
+                return;
+            }
             const outcome = await applyRelicWsCommand({
                 command: message.payload,
                 senderId: context.senderId,
@@ -183,7 +180,7 @@ export async function installRelicHunterGame(
                 if (existing) {
                     return toPublicRelicSnapshot(existing);
                 }
-                const state = await createInitialState(gameId, 'ensure');
+                const state = await options.createInitialState(gameId, 'ensure');
                 await games.set(gameId, state);
                 return toPublicRelicSnapshot(state);
             });
@@ -191,11 +188,22 @@ export async function installRelicHunterGame(
         applyCommand,
         reset: (gameId) => {
             return enqueueForGame(gameId, async () => {
-                const state = await createInitialState(gameId, 'reset');
+                const state = await options.createInitialState(gameId, 'reset');
                 await games.set(gameId, state);
                 await publishSnapshot(state);
                 return toPublicRelicSnapshot(state);
             });
         }
     };
+}
+
+function isDefaultRelicRoomContext(
+    context: Pick<RallarServerWsMessageContext, 'roomId' | 'roomRef'>,
+    gameId: string
+): boolean {
+    const roomRef = context.roomRef;
+    return context.roomId === gameId &&
+        roomRef?.groupId === gameId &&
+        roomRef.applicationId === DEFAULT_STATE_APPLICATION_ID &&
+        roomRef.workspaceId === DEFAULT_STATE_WORKSPACE_ID;
 }

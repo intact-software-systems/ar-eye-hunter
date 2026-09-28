@@ -22,7 +22,7 @@ export interface ToRallarGameAuthorityServerPublicationInput<TPayload> {
     readonly sequence: number;
     readonly sentAtEpochMs: number;
     readonly ttlMs: number;
-    readonly roomRef?: GroupRef;
+    readonly roomRef: GroupRef;
     readonly toPeerId?: string;
 }
 

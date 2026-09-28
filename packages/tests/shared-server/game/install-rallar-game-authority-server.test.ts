@@ -139,6 +139,65 @@ describe('Rallar Game Authority server installer', () => {
         expect(fake.published).toHaveLength(0);
     });
 
+    it.each([
+        ['missing', { roomId: 'room-1' }],
+        ['different room', { roomId: 'room-1', roomRef: { ...roomRef, groupId: 'room-2' } }]
+    ])('rejects command work when authorized room scope is %s', async (_, roomContext) => {
+        const fake = createFakeServerRallar(roomContext);
+        const handledCommands: Command[] = [];
+        installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async ({ command }) => {
+                handledCommands.push(command);
+                return { status: 'accepted', snapshot: { tick: 1 } };
+            }
+        });
+
+        await fake.emit(
+            'game.authority.command.v1',
+            'peer-a',
+            envelope('command', 'peer-a', { action: 'move' }, 1)
+        );
+
+        expect(handledCommands).toEqual([]);
+        expect(fake.published).toEqual([]);
+    });
+
+    it.each([
+        ['missing', { roomId: 'room-1' }],
+        ['different room', { roomId: 'room-1', roomRef: { ...roomRef, groupId: 'room-2' } }]
+    ])('rejects sync work when authorized room scope is %s', async (_, roomContext) => {
+        const fake = createFakeServerRallar(roomContext);
+        const snapshotReads: string[] = [];
+        installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' }),
+            readSnapshot: async ({ roomId }) => {
+                snapshotReads.push(roomId);
+                return { tick: 2 };
+            }
+        });
+
+        await fake.emit(
+            'game.authority.sync-request.v1',
+            'peer-a',
+            envelope('sync-request', 'peer-a', { reason: 'join' }, 1)
+        );
+
+        expect(snapshotReads).toEqual([]);
+        expect(fake.published).toEqual([]);
+    });
+
     it('passes the decoded command to the game handler', async () => {
         const fake = createFakeServerRallar();
         const handledCommands: Command[] = [];
@@ -350,6 +409,35 @@ describe('Rallar Game Authority server installer', () => {
         });
     });
 
+    it('refuses snapshot and event publication when the full room reference names a different room', async () => {
+        const fake = createFakeServerRallar();
+        const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' })
+        });
+
+        const snapshotResult = await server.publishSnapshot({
+            roomId: 'room-2',
+            roomRef,
+            snapshot: { tick: 73 },
+            toPeerId: 'peer-b'
+        });
+        const eventResult = await server.publishEvent({
+            roomId: 'room-2',
+            roomRef,
+            event: { kind: 'wrong-room' }
+        });
+
+        expect(snapshotResult).toMatchObject({ status: 'failed', reason: 'room-ref-mismatch' });
+        expect(eventResult).toMatchObject({ status: 'failed', reason: 'room-ref-mismatch' });
+        expect(fake.published).toEqual([]);
+    });
+
     it('publishes events from one named publication input', async () => {
         const fake = createFakeServerRallar();
         const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
@@ -460,7 +548,9 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function createFakeServerRallar() {
+function createFakeServerRallar(
+    roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }> = { roomId: 'room-1', roomRef }
+) {
     const definitions: StoredTopicDefinition[] = [];
     const handlers: HandlerSubscription[] = [];
     const published: FakePublishedMessage[] = [];
@@ -478,7 +568,7 @@ function createFakeServerRallar() {
         ws,
         rallar,
         definition: (typeId: string) => readStoredTopicDefinition(definitions, typeId),
-        context: (senderId: string) => createMessageContext(definitions, senderId),
+        context: (senderId: string) => createMessageContext(definitions, senderId, roomContext),
         emit<TPayload extends JsonWireValue>(
             typeId: string,
             senderId: string,
@@ -489,7 +579,8 @@ function createFakeServerRallar() {
                 handlers,
                 typeId,
                 senderId,
-                envelopePayload
+                envelopePayload,
+                roomContext
             });
         }
     };
@@ -568,13 +659,14 @@ function readStoredTopicDefinition(
 
 function createMessageContext(
     definitions: readonly StoredTopicDefinition[],
-    senderId: string
+    senderId: string,
+    roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>
 ): RallarServerWsMessageContext {
     return {
         service: {} as RallarServerWsMessageContext['service'],
         definition: definitions[0],
-        roomId: 'room-1',
-        roomRef,
+        roomId: roomContext.roomId,
+        roomRef: roomContext.roomRef,
         senderId,
         proxy: {} as RallarServerWsMessageContext['proxy']
     };
@@ -586,12 +678,13 @@ interface EmitFakeGameAuthorityMessageInput<TPayload extends JsonWireValue> {
     readonly typeId: string;
     readonly senderId: string;
     readonly envelopePayload: RallarGameAuthorityEnvelope<TPayload>;
+    readonly roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>;
 }
 
 async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
     input: EmitFakeGameAuthorityMessageInput<TPayload>
 ): Promise<void> {
-    const messageContext = createMessageContext(input.definitions, input.senderId);
+    const messageContext = createMessageContext(input.definitions, input.senderId, input.roomContext);
     const wireValue = toWireValue(input.envelopePayload);
     const topicDefinition = readStoredTopicDefinition(input.definitions, input.typeId);
     if (
