@@ -7,7 +7,7 @@ import {
     NON_EXPIRING_TTL_MS,
     toBudgetMs
 } from '../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toObserveCommand,
     toReceiptsCommand,
@@ -22,23 +22,21 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toSendHandleId } from '../alm-conformance-step-identities.ts';
 
-/** The only cell that connects both transports, so one envelope can reach the receiver over each. */
-const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
 const CROSS_CARRIER_ORDERS = ['rtc-then-ws', 'ws-then-rtc'] as const;
 
 export const crossCarrierDuplicate: readonly AlmConformanceScenarioDefinition[] = CROSS_CARRIER_ORDERS.map((order) => ({
     scenarioId: 'cross-carrier-duplicate' as const,
     scenarioKey: `cross-carrier-duplicate-${order}`,
     tags: FULL_TAGS,
-    carriers: FALLBACK_CARRIERS,
+    carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
     toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
     toRecipientCommands: (receiver: AlmConformanceStepInput) => toCrossCarrierDuplicateReceiverCommands(receiver, order)
 }));
 
 /**
- * One envelope over both carriers, which the product never does (it falls back only after an
- * `unroutable` verdict): the replay reuses the first handle's captured envelope on the other carrier.
+ * One envelope over both carriers, which the product carries only by hand-over (D56); this replay forces it without a
+ * trigger: it reuses the first handle's captured envelope on the other carrier.
  * The replay reads that envelope back from IndexedDB, so the first send opts into `local-outbox`.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its

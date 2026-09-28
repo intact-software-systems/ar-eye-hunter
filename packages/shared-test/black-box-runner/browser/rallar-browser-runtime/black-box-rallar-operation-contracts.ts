@@ -366,6 +366,8 @@ export interface BlackBoxRallarDeliveryObservation
     readonly attempts: number;
     /** The outcome of every settled attempt in attempt order, a refused or unroutable admission leg included. */
     readonly attemptOutcomes: readonly ALDeliveryAttemptOutcome[];
+    /** The carrier of every settled attempt, index-aligned with `attemptOutcomes`: a hand-over reads `rtc` then `ws` (D56). */
+    readonly attemptCarriers: readonly ALDeliveryCarrier[];
     readonly reason: string | undefined;
     /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
     readonly backpressured: boolean;

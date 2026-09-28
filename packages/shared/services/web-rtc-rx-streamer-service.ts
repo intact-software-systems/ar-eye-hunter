@@ -445,6 +445,10 @@ export class WebRtcRxStreamerService {
         return this.multicast.cancel(msgId);
     }
 
+    async handOverOutbox(msgId: string): Promise<void> {
+        await this.multicast.handOver(msgId);
+    }
+
     async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
         return await this.multicast.enqueueIfAbsent(msg);
     }

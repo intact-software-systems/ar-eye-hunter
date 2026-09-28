@@ -34,8 +34,11 @@ import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
+import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
+import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 
@@ -80,6 +83,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     orderingResync,
     ...crossCarrierDuplicate,
     ...notYetInSync,
+    fallbackWithinDeadline,
+    receiptExhaustedFallback,
+    noFallbackAfterDeadline,
     ...receiptedAudience
 ];
 

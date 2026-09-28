@@ -44,12 +44,16 @@ adjusted to make a run green.
   deadline, so connect budgets are harness budgets rather than product deadlines.
 - The receiver window is derived: `deadlineMs` (18 000 in the lane) plus
   `NON_EXPIRING_SEND_TIMEOUT_MS` for a positive observation, and the bare `deadlineMs` for an
-  absence proof.
+  absence proof. A durable positive wait (`durable-opt-in`'s `received-1`) carries one more
+  `NON_EXPIRING_SEND_TIMEOUT_MS` for the durable admission commit and drain it must additionally
+  cover (R-S3b-20).
 - `NON_EXPIRING_SEND_TIMEOUT_MS` 10 000 — hosted conformance may need more than five seconds to
   admit a non-expiring send.
 
-All three live in
-[`conformance/alm/create-alm-conformance-recipes.ts`](../conformance/alm/create-alm-conformance-recipes.ts).
+Both constants live in
+[`conformance/alm/alm-conformance-budgets.ts`](../conformance/alm/alm-conformance-budgets.ts); the receiver
+window is derived from them in
+[`conformance/alm/alm-conformance-receiver-commands.ts`](../conformance/alm/alm-conformance-receiver-commands.ts).
 
 ## The regime file
 

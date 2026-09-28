@@ -112,6 +112,7 @@ describe('ALM lifecycle recipe evidence', () => {
             unconfirmedRecipientPeerIds: [],
             attempts: 1,
             attemptOutcomes: [],
+            attemptCarriers: [],
             relayRejection: undefined,
             reason: undefined
         };

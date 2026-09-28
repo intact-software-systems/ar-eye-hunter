@@ -343,7 +343,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             return;
         }
         for (
-            const fact of toALOutboundCommitSettlements({ bundle, msg, plan: input.read.plan, intent: input.intent })
+            const fact of toALOutboundCommitSettlements({ bundle, msg, read: input.read, intent: input.intent })
         ) {
             this.dependencies.settlements(fact);
         }

@@ -46,7 +46,7 @@ import {
 import {
     computeALOutboundControlAdmission,
     controlTargetMsgId,
-    toALOutboundControlSettlement,
+    toALOutboundControlSettlements,
     type ALControlAdmissionCandidate,
     type ALControlAdmissionRead,
     type ALOutboundControlSource
@@ -134,8 +134,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             return { kind: 'rejected', reason: workIssues.map((issue) => issue.message).join('; ') };
         }
         if (await this.writeControlAdmission(computed, effects)) {
-            const settlement = toALOutboundControlSettlement(computed);
-            if (settlement) {
+            for (const settlement of toALOutboundControlSettlements(computed)) {
                 this.settlements(settlement);
             }
             return { kind: 'committed' };

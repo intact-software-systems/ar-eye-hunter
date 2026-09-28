@@ -268,17 +268,24 @@ ALM supports RTC and WS as first-class carriers.
 - Fallback never duplicates logical ownership: a message ID has one lifecycle,
   deduplication domain, acknowledgement obligation, and terminal outcome across
   transport attempts.
-- A transport switch preserves expiry, ordering, supersedence, correlation, and
-  trace identity.
+- A transport switch preserves expiry, correlation, and trace identity; ordering and
+  supersedence tracks are per carrier runtime, so a message handed to another carrier leaves its
+  track on the first.
 
 **CURRENT:** Both RTC and WS use the AL envelope and core admission runtimes.
 
-**PARTIAL — one fallback lifecycle:** Since the first release the browser
-sender reuses one envelope, identity, and deadline for the fallback carrier, and
-fallback fires on `no-route` and `circuit-open` within the deadline. Since S2b
-one inbound store per session is shared by both carriers (D20), and since S3a
-each backend's pair is (D54), so a duplicate through the other carrier meets its
-first admission; fallback on a receipt timeout is S3b's (D56).
+**CURRENT — one fallback lifecycle (S3b):** the browser sender reuses one envelope, identity, and
+deadline for the fallback carrier. At admission it falls back on every `unroutable` reason (`no-route`,
+`circuit-open`, `rate-limited`) and on `refused/unsupported`. After admission an `rtc-with-ws-fallback`
+message whose RTC leg settles `not-ready` three times in a row, spends its `not-yet-in-sync` budget or runs
+out of receipt retries is handed to WS once, inside its unchanged deadline: the RTC owner ends its work
+without a `cancelled`, the same envelope is admitted on WS, and the handle records a `carrier-fallback`
+evidence row; receipts of the left carrier no longer move the handle (D56, D63–D66). One inbound store
+per session is shared by both carriers (D20, D54), so the second copy meets its first admission, and
+every member of the frozen audience, relay or leaf, sends its own ACK again over WS: the receipt the WS
+leg needs (R-S3b-1, R-S3b-21). Limits:
+`ws-then-rtc` falls back at admission only, and a durable RTC message resumed after a reload has no handle
+and never hands over (D64).
 
 **PLANNED — F1, conformance contract:** There is no cross-transport suite or
 public outcome model proving that the same QoS request has the same meaning on
@@ -353,7 +360,9 @@ QueueBox processing retries and logical receipt retries have distinct budgets
 under one message deadline. Reliable volatile work does not promise crash survival;
 durability must be selected separately. Matching duplicate data can repeat its
 receipt without redelivery or unbounded history growth. Late receipts are no-ops
-once their obligation is terminal.
+once their obligation is terminal. A receipt whose retry budget runs out, or that a hop refuses for good,
+ends the message `failed` with a `receipt-exhausted` settlement that keeps the confirmed and unconfirmed
+recipients; on `rtc-with-ws-fallback` inside the deadline it hands the message to WS instead (D63).
 
 The default is receipted. An explicit at-least-once request with `ack: 'none'`
 retries without a receipt: S3a removed the default of that shape and adds no

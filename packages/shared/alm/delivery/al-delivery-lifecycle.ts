@@ -55,6 +55,12 @@ export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-
 
 export type ALDeliveryRefusalReason = 'unauthorized' | 'malformed' | 'oversized' | 'unsupported';
 
+/** Why a message an RTC leg had admitted was handed to WS (D56); `rate-limited` hands over at admission instead. */
+export type ALDeliveryFallbackReason =
+    | 'not-ready'
+    | 'not-yet-in-sync-exhausted'
+    | 'receipt-exhausted';
+
 export type ALDeliveryAdmissionVerdict =
     | Readonly<{ kind: 'admitted'; durable: boolean; queuedAttempts: number; }>
     | Readonly<{ kind: 'duplicate'; }>
@@ -93,6 +99,17 @@ export type ALDeliverySettlement =
         carrier: ALDeliveryCarrier;
         atMs: number;
         reason: ALDeliveryRefusalReason;
+        detail: string;
+    }>
+    /** The strategy handed a message its first carrier admitted to the fallback carrier (D56): evidence, never an end. */
+    | Readonly<{
+        kind: 'carrier-fallback';
+        msgId: string;
+        /** The carrier the message left. */
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        to: ALDeliveryCarrier;
+        reason: ALDeliveryFallbackReason;
         detail: string;
     }>
     /** The sender's strategy has no carrier left to try after an `unroutable` verdict. */
@@ -136,6 +153,29 @@ export type ALDeliverySettlement =
         confirmedRecipientPeerIds: readonly string[];
         unconfirmedRecipientPeerIds: readonly string[];
         complete: boolean;
+    }>
+    /**
+     * A receipt ended before every expected peer confirmed: its retry budget ran out, or a hop refused the
+     * message for good. Terminal. The peer lists are the receipt row's own -- next hops under `hop` and
+     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence.
+     */
+    | Readonly<{
+        kind: 'receipt-exhausted';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        mode: ALReceiptMode;
+        confirmedPeerIds: readonly string[];
+        unconfirmedPeerIds: readonly string[];
+        detail: string;
+    }>
+    /** The `not-yet-in-sync` retry budget ran out: a fallback trigger (D56); the receipt budget still ends the message. */
+    | Readonly<{
+        kind: 'not-yet-in-sync-exhausted';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        detail: string;
     }>
     /** A hop refused the message with an admitted NACK (D50): terminal evidence, and no resend follows it. */
     | Readonly<{
@@ -211,6 +251,15 @@ export interface ALDeliveryReceiptDowngrade {
     readonly tracked: ALAckAlgo;
 }
 
+/** The one hand-over of an admitted message to its fallback carrier; after it the left carrier's receipt facts move nothing. */
+export interface ALDeliveryCarrierFallback {
+    readonly from: ALDeliveryCarrier;
+    readonly to: ALDeliveryCarrier;
+    readonly reason: ALDeliveryFallbackReason;
+    readonly atMs: number;
+    readonly detail: string;
+}
+
 export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly submittedAtMs: number;
     /** Undefined until an `admitted` or `duplicate` verdict. */
@@ -226,6 +275,8 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly relayRejection: ALDeliveryRelayRejection | undefined;
     /** Undefined unless the admitting carrier tracks a weaker receipt than the send's policy asked for. */
     readonly receiptDowngrade: ALDeliveryReceiptDowngrade | undefined;
+    /** Undefined unless the strategy handed the admitted message to its fallback carrier (D56). */
+    readonly carrierFallback: ALDeliveryCarrierFallback | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;
 }
@@ -289,6 +340,7 @@ export function createInitialALDeliveryLifecycle(
             unconfirmedRecipientPeerIds: [],
             relayRejection: undefined,
             receiptDowngrade: undefined,
+            carrierFallback: undefined,
             reason: undefined
         },
         lateSettlementCount: 0

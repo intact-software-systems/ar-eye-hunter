@@ -23,7 +23,11 @@ import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/brow
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    AL_DELIVERY_STATES,
+    type ALDeliveryAdmissionVerdict,
+    type ALDeliveryCarrier
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -80,6 +84,7 @@ const unknownObservation = {
     submitted: false,
     attempts: 0,
     attemptOutcomes: [],
+    attemptCarriers: [],
     relayRejection: undefined,
     confirmedHopPeerIds: [],
     unconfirmedHopPeerIds: [],
@@ -144,6 +149,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         submitted: false,
         attempts: 0,
         attemptOutcomes: [],
+        attemptCarriers: [],
         relayRejection: undefined,
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
@@ -228,6 +234,47 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         relayRejection: { relay: 'trusted-server', reason: 'resync-required' }
     });
     expect(events).toEqual(before);
+});
+
+it('projects the carrier of every settled attempt beside its outcome, in attempt order (D56)', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+    const settleAttempt = (
+        carrier: ALDeliveryCarrier,
+        attemptId: string,
+        outcome: 'not-ready' | 'sent'
+    ) => {
+        delivery.registry.record({
+            kind: 'attempt-started',
+            msgId: delivery.msgId,
+            carrier,
+            atMs: Date.now(),
+            attemptId
+        });
+        delivery.registry.record({
+            kind: 'attempt-settled',
+            msgId: delivery.msgId,
+            carrier,
+            atMs: Date.now(),
+            attemptId,
+            outcome,
+            submissionAttempted: outcome === 'sent',
+            detail: undefined,
+            willRetry: outcome === 'not-ready'
+        });
+    };
+
+    settleAttempt('rtc', 'rtc-attempt', 'not-ready');
+    settleAttempt('ws', 'ws-attempt', 'sent');
+
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        attempts: 2,
+        attemptOutcomes: ['not-ready', 'sent'],
+        attemptCarriers: ['rtc', 'ws']
+    });
 });
 
 it('cancels owner attempts, preserves handles on reconnect and ends waits on an unrequested terminal state', async () => {

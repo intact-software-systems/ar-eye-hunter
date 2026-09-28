@@ -34,7 +34,9 @@ export type { ALDurabilityAlgo, ALQosPolicyRequest, ALReceiptMode } from '@share
 export type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 export type {
     ALDeliveryAttempt,
+    ALDeliveryCarrierFallback,
     ALDeliveryEvidence,
+    ALDeliveryFallbackReason,
     ALDeliveryLifecycle,
     ALDeliveryReceiptEvidence,
     ALDeliveryRelayRejection,

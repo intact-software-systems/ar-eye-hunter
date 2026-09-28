@@ -1177,7 +1177,10 @@ describe('Hetzner distributed manifest catalog', () => {
                 'durable-opt-in',
                 'ordering-resync',
                 'not-yet-in-sync',
-                'cross-carrier-duplicate'
+                'cross-carrier-duplicate',
+                'fallback-within-deadline',
+                'receipt-exhausted-fallback',
+                'no-fallback-after-deadline'
             ]
         });
 

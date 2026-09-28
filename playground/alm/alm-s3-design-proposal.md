@@ -202,6 +202,11 @@ retries and what the proofs (1.4) consume; budgets (1.5) bound the volatile stor
   failure → WS delivery inside the original deadline), `receipt-exhausted-fallback`, and the negative
   `no-fallback-after-deadline`.
 
+**As applied (S3b, PR #604):** no RTC fault kind was added (the `drop` fault's `not-ready` run is D65's
+trigger); the harness shows each attempt's carrier as `attemptCarriers`; `no-fallback-after-deadline`
+expires inside the RTC receipt budget (C7); `receipt-exhausted` reads `failed` when no fallback carrier
+remains (C1).
+
 ### 2.3 S3c — consumer proofs and the volatile bound
 
 - **AR Eye Hunter.** Match intents (pickup, match start, combat) move from the realtime targeted lane
@@ -369,3 +374,110 @@ visited-cap topology bound, the `acknowledgement-under-transport-hold` flake, th
 the heartbeat frames reaching admission (noted: it adds noise to any fallback diagnosis), the silent-page
 lane hardening (useful for the S3 family; not required), the `subtree` lost-terminal recovery (A2
 owns `group-leader`), the two round-2 nits, and the both-normal hosted full read (process).
+
+## 9. S3b execution questions and decisions (2026-09-27)
+
+Written after S3a merged (461b54cfe, #597), from a fresh code survey of the fallback, receipt and
+registry paths (session scratchpad `s3b-code-survey.md`; 15 corrections to §1.2/§2.2, the material
+ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-27: the maintainer took every recommended
+answer, Q1–Q12** (roadmap: D56 "As applied", D63–D66); the S3b plan is written under them.
+**Delivered by PR #604** (branch `claude/alm-s3b-fallback-within-deadline`); the rulings R-S3b-0
+through R-S3b-21 live in the plan's "Rulings during execution".
+
+**What the survey changed in §2.2's picture**
+
+- Two fallback strategies share the admission-time path (`ws-then-rtc` and `rtc-with-ws-fallback`);
+  D56 names only the second.
+- Nothing counts consecutive `not-ready` RTC attempts: QueueBox refunds them and each retry reuses the
+  row's attemptId, so the lifecycle keeps one overwritten attempt row per send-prepared row (one row per
+  next hop).
+- `unroutable/rate-limited` is an admission verdict, not an attempt settlement; today it ends the send
+  `attempts-exhausted` instead of falling back.
+- The registry (`BrowserRallarDeliveryRegistry.record`) holds no envelope, middleware context or epoch;
+  the dispatch does. `cancel(msgId)` states a terminal `cancelled`, so it cannot be the hand-over.
+- Six receipt ends settle nothing today, not two: budget exhaustion (`console.warn`, row kept to the
+  message expiry so a late ACK can still complete it), completion at a re-plan dispatch (RTC `replace`
+  retries under `receiver` as well as `hop`), orphaned-receipt cleanup, terminal NACKs other than
+  `resync-required`, the WS server's `timed-out` receipt, and a `qos.ack` timeout of 0 (a tracked
+  receipt no row tracks).
+- The RTC `drop` fault already ends each attempt `not-ready` (resubmitted after 50 ms); with
+  `remaining: 'until-cleared'` it produces D56's consecutive run, so no new fault kind is needed.
+- The lifecycle already carries each attempt's carrier; only the page projection drops it.
+- On WS re-admission the server narrows its **current** room to the frozen audience; a member who left
+  after the RTC freeze is absent from the WS receipt's expected set rather than read unconfirmed.
+- The WS server already ACKs `hop`/`subtree` room sends itself; the missing piece is client-side
+  tracking with a hop the origin can name — which no client learns until S3c's D57.
+- The medium-scale Postgres gate runs one HTTP group-state churn recipe and touches no ALM receipt path;
+  no S3b candidate change is an AppInbox mutation. The server's settlement sink is `undefined` until S3c.
+- Five existing two-agent cells on `rtc-with-ws-fallback` drive the new triggers through their RTC
+  holds (`deadline-expiry`, both `not-yet-in-sync` variants, `delivery-lifecycle` holds,
+  `delivery-reload`'s hold); `frozen-audience-membership` sits within ~0.5 s of the ≈8 s receipt budget.
+- Bundle ceilings after S3a: facade 222 KiB (221.8 recorded), headless 284 KiB (283.62 recorded).
+  `AL_ADMISSION_SCHEMA_ID` is still `rallar-alm-2026-09-s2c-ii`.
+
+**Questions**
+
+- **Q1 — Which strategy gets post-admission fallback?** Recommended: `rtc-with-ws-fallback` only
+  (RTC → WS), as D56 says; `ws-then-rtc` keeps admission-time fallback alone. Alternative: both
+  directions. Cost of the recommendation: a WS-first sender whose WS delivery stalls after admission
+  is not moved to RTC in S3b.
+- **Q2 — Where does the fallback controller live?** Recommended: the dispatch registers a fallback
+  candidate (msgId → the RTC admission's returned envelope with its frozen audience, the middleware
+  context, the epoch) for every `canFallback` RTC-first send, and one hook on the registry's `record`
+  consults it — the registry stays the one convergence point (§2.2) and the dispatch stays the one
+  place that admits; the candidate is released when the lifecycle ends or the fallback fires once.
+  Alternative: a controller subscribing to per-handle lifecycles from the dispatch (a second
+  observer per send).
+- **Q3 — What is the hand-over?** Recommended: a settlement-free `handOver(msgId)` on the outbound
+  runtime and send controls (abort the live attempt, complete every later effect of the msgId silently,
+  **end the RTC pending-ACK row** with a delete commit) — no `cancelled` is stated, and the reducer
+  ignores acknowledgements from a carrier the handle has left, so a late RTC ACK cannot overwrite the
+  WS receipt evidence. The WS re-admission carries `canFallback: false`, the same msgId and
+  `expiresAtMs`, and a `carrier-fallback` evidence row `{ from: 'rtc', to: 'ws', reason }`.
+  Alternative: reuse `cancel` and filter the `cancelled` settlement in the registry (keeps the reducer
+  dishonest about what happened).
+- **Q4 — "Consecutive not-ready" and its constant.** Recommended: counted per message in the registry
+  hook as `attempt-settled not-ready` facts across the message's send-prepared rows, reset by any
+  `sent`/`acknowledgement`; `AL_FALLBACK_NOT_READY_ATTEMPTS = 3` beside the retryable list in
+  `packages/shared/alm/delivery/`. Alternative: count per send-prepared row (a two-hop room send would
+  need six).
+- **Q5 — `rate-limited`.** Recommended: it joins the admission-time fallback verdicts (one case in
+  `isFallbackVerdict`); the post-admission controller never sees it. Cost: a rate-limited RTC burst
+  moves to WS at once instead of failing.
+- **Q6 — `receipt-exhausted` where no fallback remains (plain `rtc`, plain `ws`, or the WS leg after a
+  hand-over).** Recommended: a **terminal** settlement carrying `confirmedPeerIds`/`unconfirmedPeerIds`
+  — the roadmap's typed rejection letter — and the pending-ACK row is deleted in the same commit, so
+  exhaustion settles exactly once across replays and reloads with no persisted marker (no schema
+  bump). Cost: a late ACK inside the remaining deadline no longer completes the message (the budget
+  ends ≈8 s into a 30 s TTL). Alternative: non-terminal `receipt-exhausted` state, row kept to the
+  deadline, late ACKs still complete — exactly-once then needs a persisted marker (schema bump
+  `rallar-alm-2026-10-s3b`).
+- **Q7 — The WS `hop`/`subtree` receipt (R-S3a-4 carry).** Recommended: **deferred to S3c behind
+  D57** — the origin cannot name the server hop until a client learns a server id; S3b keeps the
+  downgrade evidence. Alternative: a trusted-server alias counted from `source === 'trusted-server'`
+  now (a new `ackTracking` field → schema bump).
+- **Q8 — The frozen audience on WS.** Recommended: accept the server's narrowing of its current room
+  to the frozen set (D43 holds per carrier; a leaver drops out of the WS receipt) and record it as
+  applied on D56. Alternative: the WS server adopts the frozen set verbatim and reads leavers
+  unconfirmed (a server change; the sink to report it is S3c's).
+- **Q9 — Durable RTC messages resumed after a reload.** Recommended: no fallback — a resumed
+  `local-outbox` message has no live handle; post-admission fallback is for the page's own handles.
+  Stated as a limitation in the README and the product description. Alternative: a resumed-message
+  candidate rebuilt from the sent snapshot (needs the context and epoch persisted → schema bump).
+- **Q10 — The five existing fallback cells.** Recommended: their scenario expectations stay
+  (delivered / expired as today) and only their evidence moves (arrival carrier `ws` after a
+  hand-over, the attempt carriers); every moved pin is named in the PR body with the figure. The plan
+  re-reads them in the scenario task, not before.
+- **Q11 — Gates.** Recommended: the medium-scale Postgres gate runs once only if a
+  `ws-queue-box-server/**` file changes (none is planned); the per-task set, the full lanes, hosted
+  smoke and ≤2 hosted full reads (D51) as in S3a.
+- **Q12 — Harness.** Recommended: no new RTC fault kind; `messages.observe` gains `attemptCarriers`
+  beside `attemptOutcomes`; the three scenarios `fallback-within-deadline` (RTC `drop` until cleared →
+  WS arrival inside the deadline), `receipt-exhausted-fallback` (receiver holds its RTC ACK → hand-over
+  after the budget → WS receipt) and `no-fallback-after-deadline` (a short TTL that ends before the
+  third not-ready → `expired`, no WS arrival) on the `rtc-with-ws-fallback` cell of the two-agent
+  family; manifest 18 regenerated.
+
+**Task cut under the recommendations** (six tasks): every receipt end settles; the retryable list, the
+constant and the hand-over; the fallback controller; harness evidence (attempt carriers); the three
+scenarios and the five re-reads; docs and the D56 record.

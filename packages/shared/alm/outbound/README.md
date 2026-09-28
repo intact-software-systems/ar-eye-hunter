@@ -476,7 +476,8 @@ settlement when it lands during or after the send. Cancellation is held only for
 owner's lifetime, in memory, never persisted: a row still pending when the owner is
 disposed may be drained by the next owner as an ordinary send. A durable cancel fact
 -- one that survives disposal or reload -- is a named sink seam left to S3 or I2
-(D13), not part of this settlement path.
+(D13), not part of this settlement path. `handOver(msgId)` aborts the same signal and
+states nothing at all; see [Receipt ends and the hand-over](#receipt-ends-and-the-hand-over).
 
 Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
 through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
@@ -487,6 +488,64 @@ behaviour. The browser's sink for these settlements is the in-memory delivery re
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
 (`packages/shared-web/browser/messages/`), which reduces each settlement into the
 sending handle's lifecycle.
+
+## Receipt ends and the hand-over
+
+Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
+
+- **Budget exhaustion.** When the last `ack-timeout` window closes with the budget spent
+  (`attempts >= maxAttempts`), [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) deletes
+  the pending-ACK and repair-attempt rows in one commit and, once it lands, states `receipt-exhausted`
+  with the row's confirmed and unconfirmed peers (next hops under `hop`/`subtree`, logical recipients
+  under `receiver`). The handle reads `failed` and keeps who confirmed. The row is gone, so the fact is
+  stated once across replays and reloads and a late ACK completes nothing. With the defaults (a 2 000 ms
+  ACK timeout, three receipt retries) the budget ends about 8 s after admission.
+- **A hop that refuses for good.** An admitted `expired`, `unauthorized` or `stale` NACK removes the row;
+  the commit states the incomplete acknowledgement, then `receipt-exhausted`. `resync-required` keeps its
+  `relay-rejected` (D50).
+- **Completion at a re-plan.** A retry whose plan replaces the expected set (the RTC missing-recipient
+  repair, under `hop` and `receiver`) and so completes the row deletes it and states the acknowledgement
+  that completed it.
+- **A receipt no row tracks.** An admission whose plan writes no row -- a `qos.ack` timeout of 0, or a
+  `hop`/`subtree` receipt that expects nobody -- reports `trackedReceiptAlgo: 'none'`, so the handle ends
+  at `transport-accepted` with the downgrade in evidence (R-S3a-4). A `receiver` receipt with an empty
+  expected set keeps `receiver`: the WS server's `admitted` receipt creates its row, and an empty frozen
+  audience completes it at admission.
+- **Ends the deadline settles.** A receipt whose message is gone (the orphaned cleanup) and the WS
+  server's `timed-out` receipt both arrive at the message deadline, which the handle already reads as
+  `expired`.
+- **The `not-yet-in-sync` budget.** When its retry schedule is spent the owner states
+  `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
+  and is one of the declared retryable outcomes below.
+
+**The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
+owner: it remembers the id for the owner's lifetime, aborts the live attempt (which still settles its own
+`attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in
+one commit, and states no settlement -- the message is not cancelled. A conflict on that delete leaves an
+inert row that nothing retries before it expires in this owner's lifetime. RTC reaches it through
+`WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. The hand-over is held
+in memory like a cancellation: a durable RTC message resumed after a reload is not handed over (D64).
+
+**The declared retryable outcomes (D65)** live in
+[`resolve-al-delivery-fallback-trigger.ts`](../delivery/resolve-al-delivery-fallback-trigger.ts). At
+admission every `unroutable` reason (`no-route`, `circuit-open`, `rate-limited`) and `refused/unsupported`
+hands the send to the fallback carrier at once. After admission `AL_FALLBACK_NOT_READY_ATTEMPTS` (3)
+consecutive `not-ready` RTC attempts across the message's send-prepared rows (reset by a `sent` attempt
+or an acknowledgement), `not-yet-in-sync-exhausted` and `receipt-exhausted` hand an admitted
+`rtc-with-ws-fallback` message to WS inside its unchanged deadline. The browser's
+[`BrowserMessageFallbackController`](../../../shared-web/browser/messages/browser-message-fallback-controller.ts)
+takes that decision from the delivery registry's `record`; this owner only hands over.
+`resolveALDeliveryFallbackTrigger` is stateless per settlement: the controller hands over once per msgId
+and only inside the deadline, so a repeated `not-yet-in-sync-exhausted` after the first hand-over, or one
+past the deadline, hands nothing over again (C7).
+
+**The left carrier (C3).** Once a message has handed over, the reducer's `isLeftCarrierReceipt` guard
+keeps a settlement that still arrives from the carrier it left -- an acknowledgement, `receipt-exhausted`
+or `relay-rejected` -- from moving the handle again; the handle already reads the fallback carrier's
+outcome, and the left carrier's own attempt rows still land as evidence. A receiver on the other carrier
+still answers its own ACK again over the arrival carrier, whether or not it holds a relay row (R-S3b-1,
+R-S3b-21); see [the inbound README](../inbound/README.md) for that duplicate-answer rule -- it is the
+receipt the WS leg needs from every member of the frozen audience to complete.
 
 ## Atomic IndexedDB work storage
 

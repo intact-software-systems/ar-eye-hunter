@@ -59,7 +59,8 @@ describe('RTC frozen room audience', () => {
         fixture.groups.accept('room', createOriginSnapshot(['a', 'b', 'd'], 6));
         fixture.overlays.accept('room', createOriginOverlay(['b', 'd']));
         fixture.ready.peerIds = ['b', 'd'];
-        await vi.advanceTimersByTimeAsync(10_000);
+        // Inside the receipt budget (2 000 ms x 4 windows): the live row still expects the frozen audience.
+        await vi.advanceTimersByTimeAsync(6_000);
 
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
             .toMatchObject({ mode: 'receiver', expectedPeerIds: ['b', 'c'] });
@@ -67,6 +68,11 @@ describe('RTC frozen room audience', () => {
         expect(fixture.channels.d!.sent.length).toBeGreaterThan(0);
         expect(new Set(readSentTargets(fixture.channels.d!).map((targets) => JSON.stringify(targets))))
             .toEqual(new Set([JSON.stringify(toOriginFrozenTargets(['b', 'c'], 4))]));
+
+        // Past the budget the exhaustion commit deletes the row (D63).
+        await vi.advanceTimersByTimeAsync(4_000);
+        expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'a', msgId: message.id.msgId }))
+            .toBeUndefined();
     });
 
     it('re-admits the unfrozen original as the duplicate of its frozen canonical', async () => {

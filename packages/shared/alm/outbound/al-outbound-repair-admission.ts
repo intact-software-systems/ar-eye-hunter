@@ -18,7 +18,8 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
-    ALOutboundRuntimeDiagnosticsSink
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type {
@@ -26,6 +27,7 @@ import type {
     ALOutboundControlAdmissionResult,
     ALOutboundPendingControl
 } from './control/al-outbound-control-admission.ts';
+import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
@@ -46,6 +48,8 @@ export namespace ALOutboundRepairAdmission {
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        /** The lane's guarded emitter: where a receipt and a not-yet-in-sync budget state that they ran out. */
+        readonly settlements: ALOutboundSettlementEmitter;
     }
 
     /** A receipt the `ack-timeout` schedule retries, with the message deadline that ends it. */
@@ -169,8 +173,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
             throw new RetryableConflictError('Outbound not-yet-in-sync retry commit conflict');
         }
         if (result.status === 'exhausted') {
-            console.warn(`Not-yet-in-sync retry budget exceeded for message ${msgId}`);
-            return;
+            this.dependencies.settlements({
+                kind: 'not-yet-in-sync-exhausted',
+                msgId,
+                detail: `The not-yet-in-sync retry budget of ${retry.maxAttempts} ran out.`
+            });
         }
     }
 
@@ -195,7 +202,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return;
         }
         if (pending.attempts >= pending.maxAttempts) {
-            console.warn(`Ack timeout exceeded retry budget for message ${msgId}`);
+            await this.commitReceiptExhausted(msg, pending, read.clientRecord?.version);
             return;
         }
 
@@ -214,6 +221,21 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
     }
 
+    /**
+     * Ends this owner's receipt of a message another carrier now owns (D56): both rows go in one commit and
+     * nothing is stated -- the message is not cancelled. A conflict leaves an inert row: the hand-over
+     * completes every later effect of the message silently, so nothing retries it before it expires.
+     */
+    async endReceipt(msgId: string): Promise<void> {
+        const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
+        if (read.pendingAck === undefined || read.clientRecord === undefined) {
+            return;
+        }
+        await this.admissionStore.commitBundle(
+            toEndReceiptBundle(read.clientRecord.senderId, msgId, read.clientRecord.version)
+        );
+    }
+
     /** A receipt whose message is gone has nothing left to retry. */
     private async commitOrphanedReceiptCleanup(
         msgId: string,
@@ -222,15 +244,9 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (!clientRecord) {
             return;
         }
-        const status = await this.admissionStore.commitBundle({
-            senderId: clientRecord.senderId,
-            expectedVersion: clientRecord.version,
-            mutations: [
-                { kind: 'delete-pending-ack', originPeerId: clientRecord.senderId, msgId },
-                { kind: 'delete-repair-attempt', msgId }
-            ],
-            durableEffects: []
-        });
+        const status = await this.admissionStore.commitBundle(
+            toEndReceiptBundle(clientRecord.senderId, msgId, clientRecord.version)
+        );
         if (status === 'conflict') {
             throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
         }
@@ -296,26 +312,36 @@ export class ALOutboundRepairAdmission<TPrepared> {
         pending: ALOutboundPendingAckSnapshot,
         expectedVersion?: number
     ): Promise<void> {
-        const status = await this.admissionStore.commitBundle({
-            senderId: msg.id.senderId,
-            expectedVersion,
-            mutations: [
-                {
-                    kind: 'delete-pending-ack',
-                    originPeerId: msg.id.senderId,
-                    msgId: pending.msgId
-                },
-                {
-                    kind: 'delete-repair-attempt',
-                    msgId: pending.msgId
-                }
-            ],
-            durableEffects: []
-        });
+        const status = await this.admissionStore.commitBundle(
+            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+        );
         if (status === 'conflict') {
             throw new RetryableConflictError(
                 'Outbound pending ack clear commit conflict'
             );
+        }
+    }
+
+    /**
+     * The budget ran out: the row goes in the commit whose success states the terminal fact, so the fact
+     * is stated once across replays and reloads, and a late ACK finds no row to complete (Q6).
+     */
+    private async commitReceiptExhausted(
+        msg: ALMessage,
+        pending: ALOutboundPendingAckSnapshot,
+        expectedVersion: number | undefined
+    ): Promise<void> {
+        const status = await this.admissionStore.commitBundle(
+            toEndReceiptBundle(msg.id.senderId, pending.msgId, expectedVersion)
+        );
+        if (status === 'conflict') {
+            throw new RetryableConflictError('Outbound receipt exhaustion commit conflict');
+        }
+        if (status === 'committed') {
+            this.dependencies.settlements(toALOutboundReceiptExhaustedFact(
+                pending,
+                `The receipt ran out of retries after ${pending.attempts} of ${pending.maxAttempts}.`
+            ));
         }
     }
 
@@ -342,4 +368,21 @@ export class ALOutboundRepairAdmission<TPrepared> {
             }
         };
     }
+}
+
+/** The commit that ends one receipt: its pending-ACK row and its repair-attempt row, under the sender's fence. */
+function toEndReceiptBundle<TPrepared>(
+    senderId: string,
+    msgId: string,
+    expectedVersion: number | undefined
+): ALOutboundCommitBundle<TPrepared> {
+    return {
+        senderId,
+        expectedVersion,
+        mutations: [
+            { kind: 'delete-pending-ack', originPeerId: senderId, msgId },
+            { kind: 'delete-repair-attempt', msgId }
+        ],
+        durableEffects: []
+    };
 }

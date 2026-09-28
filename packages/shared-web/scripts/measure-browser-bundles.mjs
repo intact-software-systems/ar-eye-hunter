@@ -37,12 +37,14 @@ const entries = [
         // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
         // 219.0595703125 KiB. S3a's purpose table and channel policy validation measure 220.3134765625 KiB
         // (ceiling 221), and its store lanes (a memory pair beside the IndexedDB pair on each outbound
-        // carrier, routed by durability) 221.19140625 KiB. The next whole-KiB ceiling is 222. The final
-        // whole-branch review head (e417fe749) measures 221.8 of 222.
+        // carrier, routed by durability) 221.19140625 KiB (ceiling 222; the final S3a review head e417fe749
+        // measured 221.8 of 222). S3b's receipt ends (receipt-exhausted, the not-yet-in-sync exhaustion,
+        // completion at dispatch and the untracked receipt) measure 222.1884765625 KiB. The next whole-KiB
+        // ceiling is 223. The S3b final review head measures ~222.99 of 223, and its fix wave 222.86328125.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 222
+        brotliBudgetKiB: 223
     },
     {
         label: 'browser/rallar-core.ts',

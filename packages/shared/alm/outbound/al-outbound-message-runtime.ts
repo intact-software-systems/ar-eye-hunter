@@ -29,7 +29,7 @@ export type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult
 } from './control/al-outbound-control-admission.ts';
-export type { ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
+export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
@@ -344,7 +344,7 @@ export namespace ALOutboundMessageRuntime {
  *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
  * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
  *   message (a memory read), else to the durable lane.
- * - `cancel(msgId)` is runtime-wide: one set of send controls serves both lanes.
+ * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
  * - Only the durable lane admits foreign dequeue rows. The volatile lane names none and takes no
  *   browser lock, since Web Locks guard cross-tab IndexedDB commits and memory is per tab.
  * - The volatile lane's worker id is `${effectWorkerId}/volatile`. It sweeps its expired rows from its
@@ -418,6 +418,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.emitSettlement({ kind: 'cancelled', msgId });
         }
         return outcome;
+    }
+
+    /**
+     * Hands one message to another carrier's owner (D56): aborts its live attempt, completes every later
+     * effect of it silently and ends its receipt row, and states no settlement -- the message is not
+     * cancelled. Idempotent; a message already cancelled or handed over is left as it is.
+     */
+    async handOver(msgId: string): Promise<void> {
+        if (this.sendControls.handOver(msgId) === 'already-ended') {
+            return;
+        }
+        await this.ready();
+        if (this.disposed) {
+            return;
+        }
+        await (await this.readLaneForMessage(msgId)).endReceipt(msgId);
     }
 
     async enqueueIfAbsent(

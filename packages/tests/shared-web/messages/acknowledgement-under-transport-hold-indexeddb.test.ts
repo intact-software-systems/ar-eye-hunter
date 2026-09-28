@@ -3,11 +3,13 @@ import '../../setup-browser-indexeddb.ts';
 import { afterEach, describe, it, vi } from 'vitest';
 
 import {
+    ACK_AFTER_RECEIPT_EXHAUSTED_CASES,
     ACK_AGAINST_RETRY_SCHEDULE_CASES,
     ACK_UNDER_CONCURRENT_EVICTION_CASES,
     ACK_UNDER_HOLD_CASES,
+    expectAckIgnoredAfterReceiptExhausted,
     expectAcknowledgedUnderHold,
-    expectExpiredPastTheDeadline,
+    expectFailedAtReceiptExhaustion,
     expectRefusedPastAShortDeadline,
     openRtcHoldSender,
     openWsHoldSender
@@ -43,9 +45,17 @@ describe('an acknowledgement that arrives while a transport hold drops another s
         }
     );
 
-    it.each(['rtc', 'ws'] as const)('ends a %s send expired when no ACK arrives inside the message deadline', async (carrier) => {
+    it.each(ACK_AFTER_RECEIPT_EXHAUSTED_CASES)(
+        'ignores a %s ACK that arrives after the receipt ran out of retries, inside the message deadline (hold armed: %s)',
+        async (carrier, armed) => {
+            const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+            await expectAckIgnoredAfterReceiptExhausted(sender, armed);
+        }
+    );
+
+    it.each(['rtc', 'ws'] as const)('ends a %s send failed when its receipt runs out of retries, and keeps it failed past the deadline', async (carrier) => {
         const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
-        await expectExpiredPastTheDeadline(sender);
+        await expectFailedAtReceiptExhaustion(sender);
     });
 
     it.each(['rtc', 'ws'] as const)('refuses a %s ACK past a deadline that ends inside the retry schedule', async (carrier) => {

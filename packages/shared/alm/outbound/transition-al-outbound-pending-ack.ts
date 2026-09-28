@@ -1,6 +1,6 @@
 import { isALHopCompletionAck, type ALAckPayload } from '../../al-contracts/al-control.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -38,9 +38,33 @@ export interface AcceptALOutboundPendingAckSnapshotInput {
     readonly ack: ALAckPayload;
 }
 
-export function trackALOutboundPendingAckSnapshot(
+/** Whether a dispatch writes a receipt row for this tracking: somebody to expect, and a window to wait in. */
+export function isALOutboundAckTrackingWritable(tracking: ALOutboundAckTrackingPlan): boolean {
+    return tracking.enabled && tracking.expectedPeerIds.length > 0 && tracking.timeoutMs > 0;
+}
+
+/**
+ * The receipt an admission tracks: the mode of the receipt row its commit writes, `none` when it writes
+ * none (R-S3a-4, and a `qos.ack` timeout of 0). A `receiver` receipt that expects nobody yet is the
+ * exception: the WS server's `admitted` receipt creates its row, and an empty frozen audience completes
+ * it at admission.
+ */
+export function toALOutboundTrackedReceiptAlgo(
+    ackTracking: ALOutboundAckTrackingPlan | null | undefined
+): ALAckAlgo {
+    if (ackTracking?.enabled !== true) {
+        return 'none';
+    }
+    if (ackTracking.mode === 'receiver' && ackTracking.expectedPeerIds.length === 0) {
+        return 'receiver';
+    }
+    return isALOutboundAckTrackingWritable(ackTracking) ? ackTracking.mode : 'none';
+}
+
+/** The receipt row a dispatch's tracking leaves, complete or not. */
+export function toALOutboundTrackedReceipt(
     input: TrackALOutboundPendingAckSnapshotInput
-): ALOutboundPendingAckSnapshot | undefined {
+): ALOutboundPendingAckSnapshot {
     const { mode } = input.tracking;
     const replace = input.tracking.expectedPeerIdsUpdate === 'replace';
     const expectedPeerIds = new Set(replace ? [] : input.current?.expectedPeerIds);
@@ -61,8 +85,7 @@ export function trackALOutboundPendingAckSnapshot(
             }
         }
     }
-
-    const pending: ALOutboundPendingAckSnapshot = {
+    return {
         msgId: input.msgId,
         mode,
         expectedPeerIds: [...expectedPeerIds],
@@ -72,6 +95,12 @@ export function trackALOutboundPendingAckSnapshot(
         attempts: input.current?.attempts ?? 0,
         deadlineAtMs: input.nowMs + input.tracking.timeoutMs
     };
+}
+
+export function trackALOutboundPendingAckSnapshot(
+    input: TrackALOutboundPendingAckSnapshotInput
+): ALOutboundPendingAckSnapshot | undefined {
+    const pending = toALOutboundTrackedReceipt(input);
     return isALOutboundReceiptComplete(pending) ? undefined : pending;
 }
 

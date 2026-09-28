@@ -166,6 +166,11 @@ export class ALOutboundStoreLane<TPrepared> {
         return await this.receiptAdmission.admit(control);
     }
 
+    /** A hand-over ends this lane's receipt of the message and states nothing (D56). */
+    async endReceipt(msgId: string): Promise<void> {
+        await this.repairAdmission.endReceipt(msgId);
+    }
+
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */
     private toStoreComputed(computed: ALOutboundComputedDto<TPrepared>): ALOutboundComputedDto<TPrepared> {
         return { ...computed, verdict: this.toStoreVerdict(computed.verdict) };
@@ -261,11 +266,11 @@ export class ALOutboundStoreLane<TPrepared> {
     private async runDurableEffect(
         effect: ALOutboundEffectSnapshot<TPrepared>
     ): Promise<ALWorkAttemptResult> {
-        // Before anything else: a cancelled message's remaining work completes silently, of any kind --
+        // Before anything else: a cancelled or handed-over message's remaining work completes silently, of any kind --
         // no `attempt-started`, no `expired`, no repair. A live attempt already past `attempt-started`
         // still terminates its own `attempt-settled cancelled` -- stated by the effects layer if the
         // abort lands before the carrier runs, or by the carrier's own settlement if it lands during it.
-        if (this.isCancelledEffect(effect)) {
+        if (this.isEndedEffect(effect)) {
             return { status: 'completed' };
         }
         if (effect.expireAtTimestamp <= this.readNowMs()) {
@@ -300,9 +305,9 @@ export class ALOutboundStoreLane<TPrepared> {
         }
     }
 
-    private isCancelledEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
+    private isEndedEffect(effect: ALOutboundEffectSnapshot<TPrepared>): boolean {
         const msgId = resolveALOutboundEffectMsgId(effect);
-        return msgId !== undefined && this.input.sendControls.isCancelled(msgId);
+        return msgId !== undefined && this.input.sendControls.isEnded(msgId);
     }
 
     /** One attempt on one prepared copy: the attempt is stated before its carrier can settle it. */
@@ -470,7 +475,8 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
         clock: runtime.clock,
         planOutgoingMessage: runtime.planOutgoingMessage,
         planRepairMessage: runtime.planRepairMessage,
-        diagnostics: runtime.diagnostics
+        diagnostics: runtime.diagnostics,
+        settlements
     });
 }
 

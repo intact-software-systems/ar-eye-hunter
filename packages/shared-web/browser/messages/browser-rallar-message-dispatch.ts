@@ -7,6 +7,10 @@ import type {
     ALDeliveryCarrier,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    isALDeliveryAdmissionFallbackVerdict,
+    isALDeliveryFallbackPastDeadline
+} from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -63,9 +67,17 @@ export class BrowserRallarMessageDispatch {
             this.input.deliveries.release(delivery.message.id.msgId);
             return;
         }
-        void this.writeCapturedMessage(delivery, epoch).catch((caught) => {
-            if (epoch.isOpen()) {
-                epoch.settlements[delivery.carrier]({
+        void this.writeLeg(delivery, epoch);
+    }
+
+    /** One carrier leg, whose failure is stated as its admission and never thrown. */
+    private async writeLeg(
+        delivery: BrowserRallarMessageDispatch.Delivery,
+        lifetime: BrowserDeliverySettlements.Epoch
+    ): Promise<void> {
+        await this.writeCapturedMessage(delivery, lifetime).catch((caught) => {
+            if (lifetime.isOpen()) {
+                lifetime.settlements[delivery.carrier]({
                     kind: 'admission',
                     msgId: delivery.message.id.msgId,
                     carrier: delivery.carrier,
@@ -103,6 +115,7 @@ export class BrowserRallarMessageDispatch {
                 )
                 : 'stop'
         };
+        this.watchFallbackLeg(delivery, result, lifetime);
         sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
@@ -118,6 +131,28 @@ export class BrowserRallarMessageDispatch {
         if (end) {
             sink(end);
         }
+    }
+
+    /** An admitted RTC leg of `rtc-with-ws-fallback` may still hand over after admission (D56); `ws-then-rtc` does not (Q1). */
+    private watchFallbackLeg(
+        delivery: BrowserRallarMessageDispatch.Delivery,
+        result: CapturedMessageAdmission,
+        lifetime: BrowserDeliverySettlements.Epoch
+    ): void {
+        if (!delivery.canFallback || delivery.carrier !== 'rtc' || !isCarrierOwnedVerdict(result.verdict)) {
+            return;
+        }
+        const wsLeg: BrowserRallarMessageDispatch.Delivery = {
+            ...delivery,
+            carrier: 'ws',
+            message: result.message,
+            canFallback: false
+        };
+        this.input.deliveries.watchFallback({
+            message: result.message,
+            context: delivery.context,
+            readmit: () => this.writeLeg(wsLeg, lifetime)
+        });
     }
 
     private async admitCapturedMessage(
@@ -155,6 +190,12 @@ function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionV
     return { message, verdict, trackedReceiptAlgo: 'none' };
 }
 
+/** The carrier owns the message now: admitted, already held, or retained for its own replay. */
+function isCarrierOwnedVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
+    return verdict.kind === 'admitted' || verdict.kind === 'duplicate' ||
+        verdict.kind === 'pending';
+}
+
 /** One carrier's own outbound admission of an envelope: the call a first send and its fallback both make. */
 export async function writeCarrierOutboxAdmission(
     context: ApiMiddleware,
@@ -166,16 +207,16 @@ export async function writeCarrierOutboxAdmission(
         : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 
-/** A carrier that cannot route, or cannot honour the ack algorithm (D42 keeps the algorithm, not the carrier), hands over. */
+/** A verdict the declared list hands to the fallback carrier at admission (D42, D56), inside the deadline. */
 export function computeFallbackDisposition(
     verdict: ALDeliveryAdmissionVerdict,
     expiresAtMs: number | undefined,
     nowMs: number
 ): BrowserFallbackDisposition {
-    if (!isFallbackVerdict(verdict)) {
+    if (!isALDeliveryAdmissionFallbackVerdict(verdict)) {
         return 'stop';
     }
-    return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
+    return isALDeliveryFallbackPastDeadline(expiresAtMs, nowMs) ? 'expired' : 'retry';
 }
 
 /** A refusal the fallback carrier takes over is evidence of the refused leg, not the verdict: `rejected` is terminal. */
@@ -198,17 +239,6 @@ function toCarrierAdmissionEndSettlement(
     return verdict.kind === 'unroutable'
         ? { kind: 'attempts-exhausted', msgId, carrier, atMs, detail: verdict.detail }
         : undefined;
-}
-
-function isFallbackVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
-    switch (verdict.kind) {
-        case 'unroutable':
-            return verdict.reason === 'no-route' || verdict.reason === 'circuit-open';
-        case 'refused':
-            return verdict.reason === 'unsupported';
-        default:
-            return false;
-    }
 }
 
 export function wakeQueueBoxEngineIfQueued(

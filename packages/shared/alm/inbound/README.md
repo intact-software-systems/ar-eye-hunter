@@ -96,6 +96,14 @@ volatile pair; a volatile message beside a durable pair spends 0 admission and 0
 non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
 rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
 
+A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
+receipted: the WS copy meets the first admission in the shared session store, is refused
+`not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
+its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers above)
+-- the receipt the WS leg needs from every member of the frozen audience.
+The WS server narrows its current room to the frozen audience, so a session that left after the RTC
+freeze is absent from the WS receipt rather than read unconfirmed.
+
 Every stored key stays session-logical: dedup, message-owner, ordering,
 supersedence, and control rows are shared across carriers, because a given
 message and its control history are one identity no matter which carrier
@@ -196,6 +204,15 @@ retried copy of the message is answered from it
   once, so the sibling's row completes whatever the visited exclusion missed
   (R-S2c-ii-8c). The real terminal still reaches the recorded parent;
 - a peer with no relay row sends its own ACK again.
+
+A copy on the other carrier than the message's first admission is answered as
+well, whatever next hops it names: a sender that hands a message from RTC to
+WS (D56) admits the same envelope there, and this peer's first ACK went out
+on the carrier the sender left. A peer whose message-owner row records the
+other carrier sends its own ACK again over the carrier the copy came in on
+(R-S3b-1). A peer that holds a relay row does the same, since its own
+delivery is what the other carrier's receipt counts; the ACKs it relayed stay
+on the first carrier (R-S3b-21).
 
 No retried copy is delivered locally twice. A hop outside the frozen audience
 never reads complete at the origin, so every retry resends to it, bounded by

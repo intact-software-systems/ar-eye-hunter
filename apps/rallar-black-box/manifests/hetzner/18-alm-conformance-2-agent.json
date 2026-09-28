@@ -139,8 +139,11 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
                 "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+                "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+                "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
@@ -340,8 +343,11 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
                 "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+                "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+                "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
@@ -575,8 +581,11 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
                 "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+                "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+                "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
@@ -822,8 +831,11 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
                 "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+                "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+                "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
@@ -4272,6 +4284,340 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-fallback-within-deadline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-fallback-within-deadline-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-hold-rtc",
+            "faultId": "drop-rtc-alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "fallback-within-deadline",
+              "carrier": "rtc-with-ws-fallback"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-fallback-within-deadline-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver",
+            "ttlMs": 30000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-fallback-within-deadline-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-fallback-within-deadline-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-rtc-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1.value.attemptCarriers",
+            "operator": "contains",
+            "expected": "rtc",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-ws-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1.value.attemptCarriers",
+            "operator": "contains",
+            "expected": "ws",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-not-ready-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1.value.attemptOutcomes",
+            "operator": "contains",
+            "expected": "not-ready",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-release-rtc",
+            "faultId": "drop-rtc-alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "receipt-exhausted-fallback",
+              "carrier": "rtc-with-ws-fallback"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver",
+            "ttlMs": 30000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 15000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-assert-acknowledged-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-acknowledged-1.value.state",
+            "operator": "equals",
+            "expected": "acknowledged",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-assert-rtc-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-acknowledged-1.value.attemptCarriers",
+            "operator": "contains",
+            "expected": "rtc",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-assert-ws-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-observe-acknowledged-1.value.attemptCarriers",
+            "operator": "contains",
+            "expected": "ws",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "no-fallback-after-deadline",
+              "carrier": "rtc-with-ws-fallback"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-send-1",
+            "timeoutMs": 7500,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver",
+            "ttlMs": 7500
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-observe-expired-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-send-1",
+            "state": [
+              "expired"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-assert-expired-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-observe-expired-1.value.state",
+            "operator": "equals",
+            "expected": "expired",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-sender-stats",
+            "timeoutMs": 3000
           }
         ]
       },
@@ -4409,8 +4755,11 @@
                 "alm.conformance.rtc-with-ws-fallback.delivery-lifecycle",
                 "alm.conformance.rtc-with-ws-fallback.delivery-reload",
                 "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
+                "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+                "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
+                "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc.bounded-rejection",
                 "alm.conformance.rtc.deadline-expiry",
@@ -4858,8 +5207,8 @@
             "typeId": "alm.conformance.ws.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",
@@ -5179,8 +5528,8 @@
             "typeId": "alm.conformance.rtc.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",
@@ -5549,8 +5898,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",
@@ -5778,6 +6127,189 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-not-yet-in-sync-expires-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-fallback-within-deadline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-fallback-within-deadline-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-ws-arrival",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.fallback-within-deadline\",\"carrier\":\"ws\",\"outcome\":\"committed\",\"reason\":\"admitted\""
+            },
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-hold-ack-rtc",
+            "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+            "carrier": "rtc",
+            "match": {
+              "controlType": "ack"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-ws-duplicate",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+            },
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-release-ack-rtc",
+            "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+            "carrier": "rtc",
+            "match": {
+              "controlType": "ack"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-receipt-exhausted-fallback-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-hold-ack-rtc",
+            "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
+            "carrier": "rtc",
+            "match": {
+              "controlType": "ack"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-no-ws-copy",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.inbound_diagnostics",
+              "payloadPath": "data",
+              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline\",\"carrier\":\"ws\""
+            },
+            "timeoutMs": 17000,
+            "absent": true
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-release-ack-rtc",
+            "faultId": "hold-ack-rtc-alm.conformance.rtc-with-ws-fallback.no-fallback-after-deadline",
+            "carrier": "rtc",
+            "match": {
+              "controlType": "ack"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-no-fallback-after-deadline-receiver-stats",
+            "timeoutMs": 3000
           }
         ]
       },
@@ -5843,8 +6375,11 @@
       "durable-opt-in",
       "ordering-resync",
       "not-yet-in-sync",
-      "cross-carrier-duplicate"
+      "cross-carrier-duplicate",
+      "fallback-within-deadline",
+      "receipt-exhausted-fallback",
+      "no-fallback-after-deadline"
     ]
   },
-  "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, and not-yet-in-sync) across ws, rtc, and rtc-with-ws-fallback carriers."
+  "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, not-yet-in-sync, and fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no fallback after the deadline) across ws, rtc, and rtc-with-ws-fallback carriers."
 }
