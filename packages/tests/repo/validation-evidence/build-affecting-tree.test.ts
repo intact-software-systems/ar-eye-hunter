@@ -21,7 +21,6 @@ describe('build-affecting tree', () => {
         ['application documentation', 'apps/example/README.md'],
         ['package documentation', 'packages/example/docs/architecture.md'],
         ['historical plan documentation', 'plans/example-plan.md'],
-        ['pull request text', '.github/PULL_REQUEST_TEMPLATE.md'],
         [
             'RTC performance observation archive',
             'performance-observations/rtc-b05/2026/08/27/20260827T010203Z-123456789abc-e2-browser-gh42-a1.zip'
@@ -54,7 +53,9 @@ describe('build-affecting tree', () => {
         ['Deno configuration', 'deno.json'],
         ['Docker Compose configuration', 'docker-compose.yml'],
         ['root build scripts', 'no-js-files-outside-dist.sh'],
-        ['test-consumed API reference', 'docs/rallar-api-reference.md']
+        ['test-consumed API reference', 'docs/rallar-api-reference.md'],
+        ['test-consumed package documentation', 'packages/shared-test/rallar-bb-test/docs/schema-compatibility-guide.md'],
+        ['test-consumed pull request template', '.github/PULL_REQUEST_TEMPLATE.md']
     ])('changes for changed %s', (_name, changedPath) => {
         const fixture = createGitFixture();
         const before = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
