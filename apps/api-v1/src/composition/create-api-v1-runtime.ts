@@ -270,7 +270,7 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
         configureServerWsQBoxALRuntimeStores(name, { repository });
     },
     startResourceInboxExpiry,
-    startRuntimeStateExpiry: startRuntimeStateExpiry,
+    startRuntimeStateExpiry,
     createMiddleware: createSharedMiddleware,
     startPresenceReconciliation: initPresenceExpiryReconciliation,
     createSnapshotSelectors: (mutation, timing) =>
@@ -348,11 +348,10 @@ function createApiV1QueuePubSubBridge(
         publisherId: input.queuePubSubPublisherId,
         timing: input.timing,
         wakeReplay: () => input.rtcTopology.topologyReplay.wake('notification'),
-        filterEligibleCapturedSessionIds: (message, sessionIds) =>
+        filterEligibleCapturedSessionIds: (captured) =>
             filterEligibleDurableWsSessionIds({
+                ...captured,
                 socketServer: input.mutation.webSocketServer,
-                candidateSessionIds: sessionIds,
-                message,
                 nowMs: input.nowEpochMs()
             })
     });

@@ -1,5 +1,7 @@
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
-import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { CapturedWsRecipientEligibilityInputDto } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { readAuthorisedWsConnectionEligibility } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
@@ -11,16 +13,16 @@ export interface FilterEligibleLiveWsSessionIdsInput {
     readonly nowMs: number;
 }
 
-export interface FilterEligibleDurableWsSessionIdsInput {
+export interface FilterEligibleDurableWsSessionIdsInput extends CapturedWsRecipientEligibilityInputDto {
     readonly socketServer: JsonWebSocketServer;
-    readonly candidateSessionIds: readonly string[];
-    readonly message: ALMessage;
     readonly nowMs: number;
 }
 
 export function filterEligibleDurableWsSessionIds(input: FilterEligibleDurableWsSessionIdsInput): readonly string[] {
-    const groupRef = readALTargetGroupRef(input.message);
-    if (!groupRef) {
+    const scope = input.message.targets?.mode === 'unicast'
+        ? input.recipientScope
+        : readALTargetGroupRef(input.message);
+    if (!scope || (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(scope).length > 0)) {
         return [];
     }
     const eligible: string[] = [];
@@ -32,8 +34,8 @@ export function filterEligibleDurableWsSessionIds(input: FilterEligibleDurableWs
         const facts = readAuthorisedWsConnectionEligibility(connection);
         if (
             facts && facts.expiresAtEpochMs > input.nowMs &&
-            facts.scope.applicationId === groupRef.applicationId &&
-            facts.scope.workspaceId === groupRef.workspaceId
+            facts.scope.applicationId === scope.applicationId &&
+            facts.scope.workspaceId === scope.workspaceId
         ) {
             eligible.push(sessionId);
         }

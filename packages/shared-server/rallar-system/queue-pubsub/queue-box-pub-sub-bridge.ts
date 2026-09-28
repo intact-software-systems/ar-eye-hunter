@@ -10,6 +10,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -50,6 +51,12 @@ export interface QueueBoxPubSubWsService {
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
 }
 
+export interface CapturedWsRecipientEligibilityInputDto {
+    readonly message: ALMessage;
+    readonly candidateSessionIds: readonly string[];
+    readonly recipientScope: StateScope | undefined;
+}
+
 export interface InstallQueueBoxPubSubBridgeOptions {
     readonly clock?: ALOutboundMessageRuntime.Clock;
     readonly wsQBoxServerService: QueueBoxPubSubWsService;
@@ -61,8 +68,7 @@ export interface InstallQueueBoxPubSubBridgeOptions {
     readonly jitterUnit?: () => number;
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     readonly filterEligibleCapturedSessionIds?: (
-        message: ALMessage,
-        sessionIds: readonly string[]
+        input: CapturedWsRecipientEligibilityInputDto
     ) => readonly string[];
     /**
      * Announces a requeued row to the engine that owns the outbox. A requeue writes outside every ALM
@@ -354,7 +360,11 @@ function sendToCapturedLocalTargets(
 ): WsServerLiveSendResult {
     const eligible = captured === undefined || options.filterEligibleCapturedSessionIds === undefined
         ? undefined
-        : options.filterEligibleCapturedSessionIds(message, captured);
+        : options.filterEligibleCapturedSessionIds({
+            message,
+            candidateSessionIds: captured,
+            recipientScope
+        });
     return options.wsQBoxServerService.sendToTargetsWithResult({
         message,
         recipientSessionIds: eligible,

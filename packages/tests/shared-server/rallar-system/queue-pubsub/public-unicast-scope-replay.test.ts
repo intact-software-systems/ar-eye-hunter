@@ -1,12 +1,18 @@
-import { describe, expect, it, onTestFinished } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished
+} from 'vitest';
 
 import { installQueueBoxPubSubBridge, toPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
@@ -54,7 +60,16 @@ describe('persisted public unicast scope replay', () => {
     });
 });
 
-async function createReplayFixture() {
+interface ReplayFixture {
+    readonly service: WsQueueBoxServerService;
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly proof: { scope: StateScope; expiresAtEpochMs: number; };
+    readonly engine: InboxOutboxEngine;
+    readonly bridge: RecordingBridge;
+}
+
+async function createReplayFixture(): Promise<ReplayFixture> {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://original');
     native.open();
@@ -80,7 +95,7 @@ async function createReplayFixture() {
         bridge,
         channel: 'events',
         publisherId: 'local',
-        filterEligibleCapturedSessionIds: (_message, sessionIds) => sessionIds
+        filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
     });
     return { service, socket, native, proof, engine, bridge };
 }

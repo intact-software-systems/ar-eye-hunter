@@ -187,7 +187,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (_message, ids) => ids
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
         });
 
         await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, ['admitted-session']);
@@ -213,7 +213,7 @@ describe('QueueBoxPubSubBridge', () => {
             bridge: createBridge(),
             channel: 'queuebox-events',
             publisherId: 'local',
-            filterEligibleCapturedSessionIds: (_message, ids) => ids
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
         });
 
         await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, [])).resolves.toBeUndefined();
@@ -519,7 +519,7 @@ describe('QueueBoxPubSubBridge', () => {
             channel: 'queuebox-events',
             publisherId: 'local',
             wakeQueueEngine,
-            filterEligibleCapturedSessionIds: (_message, ids) => ids
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
         });
 
         await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))

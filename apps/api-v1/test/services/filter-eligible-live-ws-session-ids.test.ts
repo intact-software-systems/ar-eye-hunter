@@ -5,6 +5,7 @@ import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/liv
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import { rememberAuthorisedWsConnection } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
     filterEligibleDurableWsSessionIds,
@@ -54,9 +55,11 @@ function addConnection(
 ): void {
     const socketGenerationId = input.socketGenerationId ?? 'generation';
     const registeredGenerationId = input.registeredGenerationId ?? socketGenerationId;
+    const socket = new TestWebSocket('ws://eligibility');
+    socket.open();
     const context = new ConnectionContext({
         id: sessionId,
-        socket: { readyState: WebSocket.OPEN } as WebSocket,
+        socket,
         generationId: socketGenerationId,
         generationStartedAtEpochMs: 100
     });
@@ -89,11 +92,13 @@ Deno.test('frozen room delivery keeps only currently open authenticated sockets 
     addConnection(server, 'wrong-app', { scope: { applicationId: 'other', workspaceId: 'workspace' } });
     addConnection(server, 'wrong-workspace', { scope: { applicationId: 'app', workspaceId: 'other' } });
     addConnection(server, 'stale-generation', { scope, registeredGenerationId: 'older-generation' });
+    const unregistered = new TestWebSocket('ws://unregistered');
+    unregistered.open();
     server.connections.set(
         'unregistered',
         new ConnectionContext({
             id: 'unregistered',
-            socket: { readyState: WebSocket.OPEN } as WebSocket,
+            socket: unregistered,
             generationId: 'generation',
             generationStartedAtEpochMs: 100
         })
@@ -129,6 +134,51 @@ Deno.test('frozen room delivery keeps only currently open authenticated sockets 
     );
 });
 
+Deno.test('durable unicast requires valid captured scope and current authenticated generation', () => {
+    const server = new JsonWebSocketServer();
+    addConnection(server, 'unicast-eligible', { scope });
+    addConnection(server, 'unicast-other-app', { scope: { ...scope, applicationId: 'other' } });
+    addConnection(server, 'unicast-other-workspace', { scope: { ...scope, workspaceId: 'other' } });
+    addConnection(server, 'unicast-stale', { scope, registeredGenerationId: 'older-generation' });
+    const message: ALMessage = {
+        ...notice({ mode: 'room', groupRef, recipientSessionIds: [] }).message,
+        targets: { mode: 'unicast', toPeerId: 'unicast-eligible' }
+    };
+    const input = {
+        socketServer: server,
+        message,
+        candidateSessionIds: ['unicast-eligible', 'unicast-other-app', 'unicast-other-workspace', 'unicast-stale', 'absent', 'unicast-eligible'],
+        recipientScope: scope,
+        nowMs: 1
+    };
+    assert.deepEqual(filterEligibleDurableWsSessionIds(input), ['unicast-eligible']);
+    assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, recipientScope: undefined }), []);
+    assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, recipientScope: { ...scope, applicationId: '' } }), []);
+    assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, nowMs: 1_800_000_000_000 }), []);
+
+    addConnection(server, 'unicast-eligible', { scope: { ...scope, workspaceId: 'reconnected-elsewhere' }, socketGenerationId: 'replacement' });
+    assert.deepEqual(filterEligibleDurableWsSessionIds(input), []);
+});
+
+Deno.test('captured scope does not authorize raw principal or broad durable broadcasts', () => {
+    const server = new JsonWebSocketServer();
+    addConnection(server, 'raw-broadcast-recipient', { scope });
+    const principal = notice({ mode: 'principal', principalRef: { ...scope, principalId: 'principal' }, recipientSessionIds: ['raw-broadcast-recipient'] });
+    const broad = notice({ mode: 'broad', targetMode: 'all' });
+    for (const message of [principal.message, broad.message]) {
+        assert.deepEqual(
+            filterEligibleDurableWsSessionIds({
+                socketServer: server,
+                candidateSessionIds: ['raw-broadcast-recipient'],
+                message,
+                recipientScope: scope,
+                nowMs: 1
+            }),
+            []
+        );
+    }
+});
+
 Deno.test('durable captured audience excludes a reconnected same-ID socket in another scope', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'eligible', { scope });
@@ -140,6 +190,7 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
             socketServer: server,
             candidateSessionIds: ['eligible', 'stale-generation'],
             message: room.message,
+            recipientScope: undefined,
             nowMs: 1
         }),
         ['eligible']
@@ -154,6 +205,7 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
             socketServer: server,
             candidateSessionIds: ['eligible'],
             message: room.message,
+            recipientScope: undefined,
             nowMs: 1
         }),
         []

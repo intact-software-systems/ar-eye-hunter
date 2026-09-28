@@ -239,7 +239,7 @@ export class WsQueueBoxServerService {
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
         const dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
-            admissionStore: this.outboundAdmissionStore,
+            admissionStore: this.admissionStore,
             outbox: this.outbox,
             readProducerProvenance: dependencies.readProducerProvenance
         });
