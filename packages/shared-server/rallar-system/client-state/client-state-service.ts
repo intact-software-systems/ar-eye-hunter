@@ -19,6 +19,7 @@ export function createClientStateService(
     const runtimeRepository = dependencies.runtimeRepository;
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const groupRepository = new GroupStateRepositoryReads(runtimeRepository);
+    const nowMs = dependencies.nowMs ?? Date.now;
     const repositoryFor = (runtime: typeof runtimeRepository) =>
         new ClientStateRepository(runtime, dependencies.clientStateEventStore);
     const service: ClientStateService = {
@@ -34,7 +35,8 @@ export function createClientStateService(
                 repository: repositoryFor(runtimeRepository),
                 groupRepository,
                 authSessionRepository,
-                command
+                command,
+                audienceObservedAtEpochMs: nowMs()
             }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {

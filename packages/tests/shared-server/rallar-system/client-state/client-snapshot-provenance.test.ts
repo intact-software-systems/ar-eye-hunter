@@ -11,7 +11,12 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { CLIENT_STATE_SESSIONS_NAMESPACE } from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { computeClientSnapshotProvenance } from '@shared-server/rallar-system/client-state/persistence/client-snapshot-provenance.ts';
+import {
+    CLIENT_STATE_IDEMPOTENT_NAMESPACE,
+    CLIENT_STATE_SESSIONS_NAMESPACE
+} from '@shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts';
 import { clientStateSessionStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-session-storage-key.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GROUPS_NAMESPACE, MEMBERS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
@@ -234,6 +239,65 @@ describe('client snapshot producer provenance', () => {
         expect([...producer.database.outboxEntries.keys()]).toEqual(rows);
     });
 
+    it('rolls back principal state, receipt, event and outbox on an exact proof-key collision', async () => {
+        const producer = createProducer({ collideOnRequestId: 'colliding-profile' });
+        await seedClient(producer);
+        requireRightSnapshot(await connectClient(producer));
+        const beforeSnapshot = await producer.clientState.readSnapshot({ ...SCOPE, principalId: 'alice' });
+        const beforeReceipts = await producer.repository.findAllEntries(CLIENT_STATE_IDEMPOTENT_NAMESPACE);
+        const beforeEvents = await producer.clientState.listEvents({ ...SCOPE, principalId: 'alice' });
+        const beforeRows = [...producer.database.outboxEntries];
+        const beforeProofs = await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE);
+        const result = await upsertAliceProfile(producer, 'colliding-profile', 'Collision candidate');
+        expect(result.left).toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+        expect(await producer.clientState.readSnapshot({ ...SCOPE, principalId: 'alice' })).toEqual(beforeSnapshot);
+        expect(await producer.repository.findAllEntries(CLIENT_STATE_IDEMPOTENT_NAMESPACE)).toEqual(beforeReceipts);
+        expect(await producer.clientState.listEvents({ ...SCOPE, principalId: 'alice' })).toEqual(beforeEvents);
+        expect([...producer.database.outboxEntries]).toEqual(beforeRows);
+        const proofs = await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE);
+        expect(proofs).toHaveLength(beforeProofs.length + 1);
+        expect(proofs.filter((proof) => !beforeProofs.some((before) => before.key === proof.key))).toMatchObject([
+            { value: 'occupied-proof' }
+        ]);
+    });
+
+    it('adds no principal proof or outbox row for a semantic no-op with a new request', async () => {
+        const producer = createProducer();
+        await seedClient(producer);
+        requireRightSnapshot(await connectClient(producer));
+        requireRightSnapshot(await upsertAliceProfile(producer, 'profile-change', 'Alice'));
+        const beforeSnapshot = await producer.clientState.readSnapshot({ ...SCOPE, principalId: 'alice' });
+        const beforeRows = [...producer.database.outboxEntries];
+        const beforeProofs = await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE);
+        const result = await upsertAliceProfile(producer, 'profile-no-op', 'Alice');
+        expect(requireRightSnapshot(result)).toEqual(beforeSnapshot);
+        expect([...producer.database.outboxEntries]).toEqual(beforeRows);
+        expect(await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE)).toEqual(beforeProofs);
+    });
+
+    it('samples the injected read clock once for a principal audience', async () => {
+        const clock = { now: Date.now(), calls: 0 };
+        const producer = createProducer({
+            nowMs: () => {
+                clock.calls += 1;
+                return clock.now;
+            }
+        });
+        await seedClient(producer);
+        requireRightSnapshot(await connectClient(producer));
+        clock.calls = 0;
+        clock.now = producer.now + 60_001;
+        const before = await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE);
+        requireRightSnapshot(await upsertAliceProfile(producer, 'clock-profile', 'Clock controlled'));
+        const added = (await producer.repository.findAllEntries(WS_OUTBOX_PROVENANCE_NAMESPACE))
+            .filter((proof) => !before.some((prior) => prior.key === proof.key));
+        const principalProofs = added.map((proof) => JSON.parse(proof.value))
+            .filter((proof) => proof.target.kind === 'scoped-principal-broadcast');
+        expect(clock.calls).toBe(1);
+        expect(principalProofs).toHaveLength(2);
+        expect(principalProofs.map((proof) => proof.target.admittedAudience)).toEqual([[], []]);
+    });
+
     it.each(['wrong-scope', 'replaced-session', 'expired-proof'] as const)('prevents foreign delivery for %s', async (kind) => {
         const producer = createProducer();
         await seedClient(producer);
@@ -355,7 +419,7 @@ function toStoredEntry(entry: ResourceEntry): ResourceEntry {
     });
 }
 
-function createProducer(): SnapshotProducerFixture {
+function createProducer(options: { readonly collideOnRequestId?: string; readonly nowMs?: () => number; } = {}): SnapshotProducerFixture {
     const queue = new TestResourceInbox();
     const results = new TestResourceInboxResults();
     const reader = new InboxQueueReader(queue);
@@ -403,7 +467,24 @@ function createProducer(): SnapshotProducerFixture {
             }
         }
     });
-    const clientState = createAutoAuthorizingClientStateService(repository, database);
+    const durable = createAutoAuthorizingClientStateService(repository, database, { nowMs: options.nowMs });
+    const clientState: ClientStateService = options.collideOnRequestId
+        ? {
+            ...durable,
+            read: async (command) => {
+                const read = await durable.read(command);
+                if (command.requestId === options.collideOnRequestId) {
+                    const mutation = computeClientMutation({ command, read });
+                    const [proof] = await computeClientSnapshotProvenance(mutation, command.facts.serviceId);
+                    if (!proof) {
+                        throw new Error('Expected an exact principal proof collision candidate');
+                    }
+                    await repository.upsert(proof.namespace, proof.key, 'occupied-proof', Number.MAX_SAFE_INTEGER);
+                }
+                return read;
+            }
+        }
+        : durable;
     const service = new AppClientInboxService({
         inboxQueueReader: reader,
         resourceInboxRepository: queue,
@@ -412,6 +493,22 @@ function createProducer(): SnapshotProducerFixture {
         clientStateService: clientState
     }, { serviceId: 'producer-server' });
     return { repository, database, service, reader, state, clientState, now: Date.now() };
+}
+
+function upsertAliceProfile(
+    producer: SnapshotProducerFixture,
+    requestId: string,
+    displayName: string
+): Promise<Either<AppInboxFailure, ClientStateWritten>> {
+    return processAppInbox(producer.service, producer.reader, {
+        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        senderId: 'alice',
+        data: {
+            scope: SCOPE,
+            principalId: 'alice',
+            request: { username: 'alice', displayName, actorPrincipalId: 'alice', requestId }
+        }
+    });
 }
 
 async function seedClient(producer: SnapshotProducerFixture, principalId = 'alice'): Promise<void> {

@@ -27,13 +27,14 @@ export interface ReadClientMutationInput {
     readonly groupRepository: GroupStateRepositoryReads;
     readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     readonly command: ClientMutationCommand;
+    readonly audienceObservedAtEpochMs: number;
 }
 
 export async function readClientMutation(
     input: ReadClientMutationInput
 ): Promise<ClientMutationRead> {
     const { repository, groupRepository, authSessionRepository, command } = input;
-    const audienceObservedAtEpochMs = Date.now();
+    const audienceObservedAtEpochMs = input.audienceObservedAtEpochMs;
     const targets = toClientMutationTargetRefs(command);
     const [authoritySession, idempotency, principalSnapshot, instance, sessionRead] = await Promise.all([
         readAuthoritySession(authSessionRepository, command),
