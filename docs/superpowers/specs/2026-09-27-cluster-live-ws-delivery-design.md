@@ -138,10 +138,12 @@ cluster publication.
   best-effort miss; at-least-once follows existing outbox retry behavior.
 - The relevant API-v1 WS topic, social app-data, CRDT exemption, room isolation,
   and game/realtime tests pass without weakening their workload or deadlines.
-- No new library, receiving inbox/queue, retry/fence/lock/timer, migration, or
-  legacy path. The existing notification and QueueBox infrastructure remains
-  the only cluster carrier. Performance is measured rather than inferred from
-  the absence of a receiving write.
+- No new library, receiving inbox/queue, retry/fence/lock/timer, data migration,
+  or legacy path. For the principal audience, use the existing durable
+  scope-wide group read first; an additive index is permitted only if
+  representative measurement shows it is needed. The existing notification
+  and QueueBox infrastructure remains the only cluster carrier. Performance
+  is measured rather than inferred from the absence of a receiving write.
 
 The placement of the live cluster publisher, its notice codec, and the
 application wiring follows the ownership map in the accompanying approved

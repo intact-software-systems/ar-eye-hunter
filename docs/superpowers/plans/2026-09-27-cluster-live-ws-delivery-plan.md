@@ -48,6 +48,14 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   The approved browser bundle ceilings are `<225` KiB for the shared-web facade
   and `<287` KiB for the headless agent, measured as Brotli bundles. This does
   not approve a CRDT command-format change or a generic payload-type bypass.
+- For principal state-sync audiences, first use the existing durable scope-wide
+  group read and preserve own plus authorized co-group sessions. Measure the
+  representative read cost before changing storage. The existing
+  `runtime_state_store_namespace_key_c_ix` already supports the scope prefix;
+  do not add a duplicate index. The maintainer permits a distinct additive
+  index only if measurement shows the remaining scan is inadequate; this is
+  not permission to narrow the audience, change persisted contracts, or add a
+  legacy path.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
@@ -58,8 +66,9 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   eligible open sockets at notice receipt; each subscriber may only perform
   a direct local socket send.
 - Do not add a library, receiving inbox/queue, retry, fence, lock, timer,
-  migration, or legacy path. Reuse current Postgres notifications and outbound
-  QueueBox/receipt machinery.
+  data migration, or legacy path. The sole schema exception is the measured,
+  additive principal-audience index above, if needed. Reuse current Postgres
+  notifications and outbound QueueBox/receipt machinery.
 - Review and remediate every changed human-authored file in full. Recursively
   include every support file changed by remediation. Leave independent
   untouched code outside closure; delete affected obsolete code.

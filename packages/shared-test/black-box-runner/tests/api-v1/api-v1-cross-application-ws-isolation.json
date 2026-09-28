@@ -355,7 +355,8 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
-          }
+          },
+          "&applicationId={scopeAApplicationId}&workspaceId={scopeAWorkspaceId}"
         ]
       }
     },
@@ -415,7 +416,8 @@
             "urlEncode": {
               "path": "outputs.bobWsTicket"
             }
-          }
+          },
+          "&applicationId={scopeBApplicationId}&workspaceId={scopeBWorkspaceId}"
         ]
       }
     },
