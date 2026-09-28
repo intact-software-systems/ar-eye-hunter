@@ -1,6 +1,12 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { captureALOutboundPolicy, decodeALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
@@ -15,6 +21,12 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+
+interface LiveDeliveryFixture {
+    readonly socket: JsonWebSocketServer;
+    readonly native: TestWebSocket;
+    readonly live: WsQueueBoxServerLiveDelivery;
+}
 
 describe('public WS unicast scope', () => {
     it.each([
@@ -246,17 +258,18 @@ describe('public WS unicast scope', () => {
     });
 });
 
-function createMessage() {
+function createMessage(): ALMessage {
     return newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, { ttlMs: 30_000 });
 }
 
-function createLiveDelivery(expiresAtEpochMs = 0) {
+function createLiveDelivery(expiresAtEpochMs = 0): LiveDeliveryFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://live');
     native.open();
     socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
     const live = new WsQueueBoxServerLiveDelivery({
         socket,
+        clock: { nowMs: Date.now },
         targetResolution: new WsQueueBoxServerTargetResolution({
             socket,
             targetResolver: { resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }

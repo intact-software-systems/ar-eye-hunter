@@ -178,6 +178,7 @@ export class WsQueueBoxServerService {
         this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         this.liveDelivery = new WsQueueBoxServerLiveDelivery({
             socket: dependencies.socket,
+            clock: this.clock,
             targetResolution: this.targetResolution,
             deliveryReporting: this.deliveryReporting,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope

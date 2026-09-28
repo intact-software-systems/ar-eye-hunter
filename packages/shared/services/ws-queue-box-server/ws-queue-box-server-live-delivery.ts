@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { validateALSessionInvalidationMessage } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
+import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
@@ -20,6 +21,7 @@ import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-tar
 export namespace WsQueueBoxServerLiveDelivery {
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
+        readonly clock: ALOutboundMessageRuntime.Clock;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
         readonly readAuthenticatedConnectionScope:
@@ -58,12 +60,14 @@ export namespace WsQueueBoxServerLiveDelivery {
 
 export class WsQueueBoxServerLiveDelivery {
     readonly #socket: JsonWebSocketServer;
+    readonly #clock: ALOutboundMessageRuntime.Clock;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #deliveryReporting: WsQueueBoxServerDeliveryReporting;
     readonly #recipientSelection: WsQueueBoxServerRecipientSelection;
 
     constructor(dependencies: WsQueueBoxServerLiveDelivery.Dependencies) {
         this.#socket = dependencies.socket;
+        this.#clock = dependencies.clock;
         this.#targetResolution = dependencies.targetResolution;
         this.#deliveryReporting = dependencies.deliveryReporting;
         this.#recipientSelection = new WsQueueBoxServerRecipientSelection(dependencies);
@@ -81,7 +85,7 @@ export class WsQueueBoxServerLiveDelivery {
         }
         const expiresAtMs = input.expiresAtMs ??
             resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
-        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+        if (expiresAtMs !== undefined && expiresAtMs <= this.#clock.nowMs()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
         }
         const recipients = input.sessionInvalidation === undefined
@@ -144,7 +148,7 @@ export class WsQueueBoxServerLiveDelivery {
             return 0;
         }
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
-        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+        if (expiresAtMs !== undefined && expiresAtMs <= this.#clock.nowMs()) {
             return 0;
         }
         const resolved = this.#targetResolution.resolveRepairRecipients(message, [peerId]);
@@ -205,7 +209,7 @@ export class WsQueueBoxServerLiveDelivery {
             ) {
                 continue;
             }
-            if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+            if (expiresAtMs !== undefined && expiresAtMs <= this.#clock.nowMs()) {
                 return { sentCount, failures, expired: true };
             }
             if (

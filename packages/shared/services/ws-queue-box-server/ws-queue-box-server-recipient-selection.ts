@@ -1,3 +1,4 @@
+import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import type {
@@ -10,6 +11,7 @@ import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-tar
 export namespace WsQueueBoxServerRecipientSelection {
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
+        readonly clock: ALOutboundMessageRuntime.Clock;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -19,12 +21,14 @@ export namespace WsQueueBoxServerRecipientSelection {
 /** Selects live sockets and verifies their current authenticated audience at the send boundary. */
 export class WsQueueBoxServerRecipientSelection {
     readonly #socket: JsonWebSocketServer;
+    readonly #clock: ALOutboundMessageRuntime.Clock;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #readAuthenticatedConnectionScope:
         WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
 
     constructor(dependencies: WsQueueBoxServerRecipientSelection.Dependencies) {
         this.#socket = dependencies.socket;
+        this.#clock = dependencies.clock;
         this.#targetResolution = dependencies.targetResolution;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
     }
@@ -60,7 +64,7 @@ export class WsQueueBoxServerRecipientSelection {
             return false;
         }
         const proof = this.#readAuthenticatedConnectionScope(connection);
-        return proof !== undefined && proof.expiresAtEpochMs > Date.now() &&
+        return proof !== undefined && proof.expiresAtEpochMs > this.#clock.nowMs() &&
             (scope === undefined ||
                 (proof.scope.applicationId === scope.applicationId && proof.scope.workspaceId === scope.workspaceId)) &&
             (principalId === undefined || proof.principalId === principalId);
