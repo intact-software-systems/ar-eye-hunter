@@ -7,6 +7,7 @@ import {
     newALRoute,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const NOTIFICATION = newALBroadcastMessage(
@@ -24,9 +25,7 @@ const NOTIFICATION = newALBroadcastMessage(
 );
 const AUDIENCE: RallarServerWsRoomAudience = {
     targets: NOTIFICATION.targets!,
-    sessions: [{ sessionId: 'b' }, {
-        sessionId: 'c'
-    }] as unknown as RallarServerWsRoomAudience['sessions'],
+    sessions: [liveSession('b'), liveSession('c')],
     snapshotVersion: 4
 };
 
@@ -91,3 +90,19 @@ describe('the audience a server publish is frozen to (D58, Q7, C8)', () => {
             .toBeUndefined();
     });
 });
+
+function liveSession(sessionId: string): GroupPresenceSession {
+    return {
+        ...ROOM,
+        sessionId,
+        principalId: `principal-${sessionId}`,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 4_000_000_000_000,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    };
+}
