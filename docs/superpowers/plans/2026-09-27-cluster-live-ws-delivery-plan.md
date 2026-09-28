@@ -629,6 +629,13 @@ runtime cross-process behavior.
 
 ### Task 4: Establish the direct-row first-dequeue proof boundary
 
+**Status:** Complete locally in `b3e88c028` and integrity follow-up
+`708e24dc6`; independent spec and code-quality review approved both after the
+follow-up. The focused 119-test run, package/test/API typechecks, and changed
+style checks pass. This is only a fail-closed read boundary: no producer writes
+the sidecar yet, so the two unchanged state-sync product acceptance tests still
+fail and no cross-process formation or CRDT delivery is claimed.
+
 **Scope:** Add a narrow asynchronous `readDequeueAuthority` port to the
 existing ALM outbound dequeue path immediately before `commitDispatchPlan`.
 The WS owner classifies the exact observed row, not its payload type: an
@@ -669,8 +676,34 @@ receive. Add focused sidecar codec/reader tests including complete-key
 collision and immutable-versus-mutable row fields. Run affected shared,
 shared-server, and API tests/typechecks and review all changed files in full
 with recursive support-file closure. The next slice writes this sidecar
-atomically with state-sync snapshot pages; later producer slices extend the
+atomically with state-sync snapshot pages after the independently exposed RTC
+test synchronization gap is repaired; later producer slices extend the
 contract to scoped broadcast and approved exact-session auth logout.
+
+### Task 5: Prove the generated RTC recovery test's delivery boundary
+
+**Scope:** The exact-head Release Gate at `be8d3c090` had one non-budget unit
+failure: `packages/tests/shared-web/state-read/rtc-authority-recovery.test.ts`
+asserted the generated supersedence replacement was delivered immediately
+after `transferTo`, but the receiver array was still empty. Its focused case
+and full file pass locally. `transferTo` awaits native receive/admission;
+`ALWorkHandler.committed()` starts owned delivery work without awaiting it.
+Nearby recovery cases explicitly assert committed admission and use the
+existing condition-based `waitForOwnedQueueWork` before asserting delivery.
+The CI log lacks admission/queue facts, so the race is a hypothesis to prove,
+not permission to weaken the test.
+
+**TDD/verification:** First make a focused controlled scheduling case expose
+the distinction between committed admission and completed owned delivery;
+record RED before modifying the assertion. In the generated specimen case,
+assert the replacement's committed admission, await the existing owned-work
+condition, then retain the exact message-ID and payload delivery assertions.
+No fixed sleep, new retry, production timing change, or weakened expectation.
+Run the focused case/file, affected shared-web tests/typecheck, and changed-file
+style/format checks. Review the entire touched test file and recursively any
+support file changed by its remediation. If the controlled evidence instead
+shows a refused admission or wrong message, stop this test-only hypothesis and
+diagnose the production path before editing it.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
