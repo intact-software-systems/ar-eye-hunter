@@ -22,13 +22,6 @@ export interface RallarRtcTopologyMetrics {
     readonly incrementalPlanFallbackFullCount: number;
     readonly incrementalPlanInvariantFallbackCount: number;
     readonly hysteresisHeldKindCount: number;
-    readonly rttQueueRequestCount: number;
-    readonly rttQueueNewCount: number;
-    readonly rttQueueCoalescedCount: number;
-    readonly rttQueueImmediateCount: number;
-    readonly rttFlushAttemptCount: number;
-    readonly rttFlushSkippedCount: number;
-    readonly rttFlushExecutedCount: number;
     readonly topologyPublishAttemptCount: number;
     readonly topologyPublishedCount: number;
     readonly topologyPublishSkippedUnchangedCount: number;
@@ -38,7 +31,6 @@ export interface RallarRtcTopologyMetrics {
     readonly topologyRemovedCount: number;
     readonly topologyRemoveMissCount: number;
     readonly topologySnapshotCount: number;
-    readonly pendingRttUpdateCount: number;
 }
 
 export interface RtcTopologyPlanningObservation {
@@ -77,13 +69,6 @@ interface RtcTopologyMetricsState {
     incrementalPlanFallbackFullCount: number;
     incrementalPlanInvariantFallbackCount: number;
     hysteresisHeldKindCount: number;
-    rttQueueRequestCount: number;
-    rttQueueNewCount: number;
-    rttQueueCoalescedCount: number;
-    rttQueueImmediateCount: number;
-    rttFlushAttemptCount: number;
-    rttFlushSkippedCount: number;
-    rttFlushExecutedCount: number;
     topologyPublishAttemptCount: number;
     topologyPublishedCount: number;
     topologyPublishSkippedUnchangedCount: number;
@@ -200,44 +185,6 @@ export class RtcTopologyMetrics {
         this.state.hysteresisHeldKindCount += 1;
     }
 
-    recordRttQueue(result: 'new' | 'coalesced', immediate: boolean): void {
-        this.recordRttQueueRequest();
-        this.recordRttQueueResult(result, immediate);
-    }
-
-    recordRttQueueRequest(): void {
-        this.state.rttQueueRequestCount += 1;
-    }
-
-    recordRttQueueResult(result: 'new' | 'coalesced', immediate: boolean): void {
-        if (result === 'new') {
-            this.state.rttQueueNewCount += 1;
-        }
-        else {
-            this.state.rttQueueCoalescedCount += 1;
-        }
-        if (immediate) {
-            this.state.rttQueueImmediateCount += 1;
-        }
-    }
-
-    recordRttFlush(executed: boolean): void {
-        this.recordRttFlushAttempt();
-        this.recordRttFlushResult(executed);
-    }
-
-    recordRttFlushAttempt(): void {
-        this.state.rttFlushAttemptCount += 1;
-    }
-
-    recordRttFlushResult(executed: boolean): void {
-        if (executed) {
-            this.state.rttFlushExecutedCount += 1;
-            return;
-        }
-        this.state.rttFlushSkippedCount += 1;
-    }
-
     recordPublish(changed: boolean): void {
         this.state.topologyPublishAttemptCount += 1;
         if (changed) {
@@ -264,11 +211,10 @@ export class RtcTopologyMetrics {
         this.state.topologyRemoveMissCount += 1;
     }
 
-    read(snapshotCount: number, pendingRttUpdateCount: number): RallarRtcTopologyMetrics {
+    read(snapshotCount: number): RallarRtcTopologyMetrics {
         return {
             ...this.state,
-            topologySnapshotCount: snapshotCount,
-            pendingRttUpdateCount
+            topologySnapshotCount: snapshotCount
         };
     }
 
@@ -300,13 +246,6 @@ function createRtcTopologyMetricsState(): RtcTopologyMetricsState {
         incrementalPlanFallbackFullCount: 0,
         incrementalPlanInvariantFallbackCount: 0,
         hysteresisHeldKindCount: 0,
-        rttQueueRequestCount: 0,
-        rttQueueNewCount: 0,
-        rttQueueCoalescedCount: 0,
-        rttQueueImmediateCount: 0,
-        rttFlushAttemptCount: 0,
-        rttFlushSkippedCount: 0,
-        rttFlushExecutedCount: 0,
         topologyPublishAttemptCount: 0,
         topologyPublishedCount: 0,
         topologyPublishSkippedUnchangedCount: 0,

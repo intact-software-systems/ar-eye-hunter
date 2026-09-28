@@ -277,8 +277,8 @@ identity and does not accept the group-revision coalescing metadata.
 `RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, and weighted-path selection;
 `createRtcRoomGraph` owns weighted sparse/complete graph decisions; and
 `planRallarRtcTopologySnapshot(...)` owns the caller-visible changed/version/timestamp planning
-result. `RtcTopologySnapshotRegistry`, `RtcTopologyRttRebuildScheduler`, and `RtcTopologyMetrics`
-own accepted process observations, pending RTT work, and mutable counters respectively.
+result. `RtcTopologySnapshotRegistry` and `RtcTopologyMetrics` own accepted process observations
+and mutable counters respectively.
 Config query, config mutation, reconfiguration, planning, execution, and runtime owners are
 constructed directly; there is no broad topology-management facade.
 

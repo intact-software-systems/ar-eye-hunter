@@ -165,8 +165,7 @@ describe('Hetzner SPA public env wiring', () => {
             RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '7',
             RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '6',
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '24',
-            RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '3',
-            RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: '400'
+            RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '3'
         };
         await writeFile(apiEnvironmentFile, 'PORT=8080\n');
 

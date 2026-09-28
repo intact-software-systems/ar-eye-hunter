@@ -25,10 +25,6 @@ export class RtcTopologySnapshotRegistry {
         return this.snapshotsByOverlayId.get(overlayId);
     }
 
-    has(overlayId: string): boolean {
-        return this.snapshotsByOverlayId.has(overlayId);
-    }
-
     remove(overlayId: string): boolean {
         return this.snapshotsByOverlayId.delete(overlayId);
     }

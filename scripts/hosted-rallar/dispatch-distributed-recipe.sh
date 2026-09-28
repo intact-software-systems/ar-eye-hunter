@@ -33,7 +33,6 @@ RTC_TOPOLOGY_ENV_KEYS=(
 	RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
 	RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
 	RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-	RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
 )
 
 usage() {
@@ -104,24 +103,6 @@ validate_positive_integer() {
 	local value="$2"
 	if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
 		fail "${key} must be a positive integer. Received: ${value}"
-	fi
-}
-
-validate_non_negative_integer() {
-	local key="$1"
-	local value="$2"
-	if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
-		fail "${key} must be a non-negative integer. Received: ${value}"
-	fi
-}
-
-validate_rtc_topology_env_value() {
-	local key="$1"
-	local value="$2"
-	if [[ "${key}" == "RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS" ]]; then
-		validate_non_negative_integer "metadata.rtcTopologyEnv.${key}" "${value}"
-	else
-		validate_positive_integer "metadata.rtcTopologyEnv.${key}" "${value}"
 	fi
 }
 
@@ -356,7 +337,7 @@ for rtc_topology_env_key in "${RTC_TOPOLOGY_ENV_KEYS[@]}"; do
 		jq -r --arg key "${rtc_topology_env_key}" '.metadata.rtcTopologyEnv[$key] // empty' "${manifest_absolute}"
 	)"
 	if [[ -n "${rtc_topology_env_value}" ]]; then
-		validate_rtc_topology_env_value "${rtc_topology_env_key}" "${rtc_topology_env_value}"
+		validate_positive_integer "metadata.rtcTopologyEnv.${rtc_topology_env_key}" "${rtc_topology_env_value}"
 		rtc_topology_env_lines+=("${rtc_topology_env_key}=${rtc_topology_env_value}")
 	fi
 done

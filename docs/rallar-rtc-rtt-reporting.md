@@ -224,17 +224,15 @@ edges among Vivaldi-known nodes when callers explicitly request it. A node
 becomes Vivaldi-known after at least one valid RTT involving that node is
 observed.
 
-RTT-triggered global recompute now uses a degree-capped predicted graph path
-and is coalesced by the existing RTT rebuild debounce. The initial capped
-implementation still scans all Vivaldi-known pairs before selecting bounded
-output edges, so true large-N CPU reduction will need spatial indexing or
-candidate sampling.
+The degree-capped predicted graph path still scans all Vivaldi-known pairs
+before selecting bounded output edges, so true large-N CPU reduction will need
+spatial indexing or candidate sampling.
 
 ## Operational Notes
 
-The bounded reporting model preserves debounce and coalescing. Accepted updates
-can still arrive in bursts when many clients open lanes, so existing
-`rttRebuildDebounceMs`, runtime-state locks, and coalesced app-inbox work
+The bounded reporting model preserves damping and coalescing. Accepted updates
+can still arrive in bursts when many clients open lanes, so the RTT refinement
+gate (`RtcRttRefinementGate`), runtime-state locks, and coalesced app-inbox work
 remain useful.
 
 AppInbox topology recompute reads the current filtered RTC-RTT measurements
