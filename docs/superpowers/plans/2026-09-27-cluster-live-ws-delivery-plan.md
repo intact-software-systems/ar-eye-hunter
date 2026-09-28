@@ -984,7 +984,7 @@ separate approval above. The two exact-head cluster matrices currently fail at
 committed CRDT reply waits, which is consistent with missing direct-producer
 proof but does not correlate an individual rejected row in the logs.
 
-**2026-09-28 exact-head gate checkpoint:** The latest Branch Release Gate
+**2026-09-28 earlier exact-head gate checkpoint:** The Branch Release Gate
 (`393ed0045534e53bc3f310b700556efbae2f8b84`) also failed the ALM
 conformance observation lane at `fallback-within-deadline`: the sender's
 10-second acknowledged-state observer timed out shortly before the receiver
@@ -994,3 +994,20 @@ not yet a proved product regression or permission to lengthen the test. Review
 the fallback timing contract and repeat the focused lane before marking the
 failure resolved. Changed-style warnings and both CRDT reply failures also
 remain open; the branch is not ready for main.
+
+**2026-09-28 subsequent exact-head checkpoint:** At `da8763c17d0e42596405f191984fc8a632ac7eec`,
+the medium-scale and formation-large PostgreSQL jobs passed their respective
+primary profiles, then both failed the same two cluster recipes while waiting
+for committed CRDT append replies. The durable topology replay job passed,
+but that does not prove first-dequeue delivery of every topology page. The
+Release Gate stopped at four changed-style findings before its later checks.
+The separate ALM observation failed five browser cases, including three-agent
+missing receipts and RTC readiness timeouts; its cause is not yet isolated and
+no E3 acceptance is claimed. An independent branch review also found that
+failed best-effort `NOTIFY` results were discarded by admitted/proxy routing
+and normal local socket-send failures lacked a result diagnostic. A focused
+red/green correction now reports these failures without changing the
+one-attempt contract; its 75 router tests, shared-server type check, and full
+unit suite (13,066 tests) pass locally. The correction has not yet run in
+remote CI. Keep this PR draft until the producer-proof gaps, style findings,
+ALM failures, and acceptance evidence are resolved.

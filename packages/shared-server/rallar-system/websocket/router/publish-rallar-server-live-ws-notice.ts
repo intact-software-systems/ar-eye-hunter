@@ -89,7 +89,7 @@ function sendLocalPublishedLiveWsNotice(
     notice: LiveWsPublicationInput
 ): string | undefined {
     try {
-        input.service.sendToTargetsWithResult({
+        const result = input.service.sendToTargetsWithResult({
             message: input.message,
             expiresAtMs: notice.expiresAtMs,
             recipientSessionIds: notice.audience.mode === 'broad' ? undefined : notice.audience.recipientSessionIds,
@@ -100,7 +100,10 @@ function sendLocalPublishedLiveWsNotice(
                 : undefined,
             requireAuthenticatedRecipient: true
         });
-        return undefined;
+        return result.failedCount > 0
+            ? `Local WS send failed after publication: ${result.failedCount}/${result.recipientCount} ` +
+                `local recipients; first error: ${result.failures[0]?.reason ?? 'unknown failure'}`
+            : undefined;
     }
     catch (error) {
         return `Local WS send failed after publication: ${error instanceof Error ? error.message : String(error)}`;
@@ -170,5 +173,11 @@ function readLiveWsPublicationScope(message: ALMessage, inboundScope: StateScope
 }
 
 function failedLivePublication(input: ResolvedRallarServerWsPublication, reason: string): RallarServerWsPublishResult {
+    if (input.origin) {
+        console.error(
+            `Rallar server WS ${input.origin} publication failed for ` +
+            `${input.message.route.topicId} (${input.message.id.msgId}): ${reason}`
+        );
+    }
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
 }

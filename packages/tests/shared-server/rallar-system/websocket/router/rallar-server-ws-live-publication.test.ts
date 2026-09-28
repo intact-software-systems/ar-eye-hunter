@@ -176,6 +176,90 @@ describe('Rallar server WS live cluster publication', () => {
         expect(result.reason).toContain('notify failed');
     });
 
+    it('reports failed admitted live publication without retrying the best-effort notice', async () => {
+        let attempts = 0;
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'server-a'
+        });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            defaultFanout: 'live-only',
+            livePublication: {
+                transport: {
+                    publish: async () => {
+                        attempts += 1;
+                        throw new Error('notify unavailable');
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        onTestFinished(() => error.mockRestore());
+        const message = newALBroadcastMessage(
+            'sender', newALRoute('app.live', 'message', 'all'), 'all', 'app.live.v1', {}
+        );
+
+        await expect(router.route(message)).resolves.toBeUndefined();
+
+        expect(attempts).toBe(1);
+        expect(error).toHaveBeenCalledWith(
+            `Rallar server WS admitted publication failed for ${message.route.topicId} (${message.id.msgId}): notify unavailable`
+        );
+    });
+
+    it('reports failed proxy live publication without retrying the best-effort notice', async () => {
+        let attempts = 0;
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket: new JsonWebSocketServer(),
+            name: 'server-a'
+        });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            defaultFanout: 'none',
+            livePublication: {
+                transport: {
+                    publish: async () => {
+                        attempts += 1;
+                        throw new Error('proxy notify unavailable');
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        router.proxy({
+            from: { topicId: 'app.source' },
+            transform: (message) => ({
+                ...message.raw,
+                route: newALRoute('app.final', 'message', 'all'),
+                payload: { typeId: 'app.final.v1', resource: '{}' }
+            }),
+            fanout: 'live-only',
+            suppressDefaultFanout: true
+        });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        onTestFinished(() => error.mockRestore());
+        const source = newALBroadcastMessage(
+            'sender', newALRoute('app.source', 'message', 'all'), 'all', 'app.source.v1', {}
+        );
+
+        await expect(router.route(source)).resolves.toBeUndefined();
+
+        expect(attempts).toBe(1);
+        expect(error).toHaveBeenCalledWith(
+            `Rallar server WS proxy publication failed for app.final (${source.id.msgId}): proxy notify unavailable`
+        );
+    });
+
     it('reports successful publication with a local failure diagnostic after the notice was published', async () => {
         let notices = 0;
         const transport: LiveWsNoticeTransport = {
@@ -210,6 +294,58 @@ describe('Rallar server WS live cluster publication', () => {
         expect(notices).toBe(1);
         expect(result.status).toBe('cluster-published');
         expect(result.reason).toContain('local socket diagnostics failed');
+    });
+
+    it('retains normal local socket failure details after successful cluster publication', async () => {
+        class FailingWebSocket extends TestWebSocket {
+            override send(): void {
+                throw new Error('socket send failed');
+            }
+        }
+        const socket = new JsonWebSocketServer();
+        const native = new FailingWebSocket('ws://local');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            readAuthenticatedConnectionScope: () => ({
+                scope: { applicationId: 'app', workspaceId: 'space' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }),
+            targetResolver: {
+                resolveBroadcastRecipients: () => [{ peerId: 'local-session', connectionId: 'local-session' }]
+            }
+        });
+        onTestFinished(() => service.dispose());
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        onTestFinished(() => error.mockRestore());
+        let notices = 0;
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => 100,
+            livePublication: {
+                transport: {
+                    publish: async () => {
+                        notices += 1;
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        const message = newALBroadcastMessage(
+            'server-a', newALRoute('app.live', 'message', 'all'), 'all', 'app.live.v1', {}
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(notices).toBe(1);
+        expect(result.status).toBe('cluster-published');
+        expect(result.sentCount).toBeUndefined();
+        expect(result.reason).toContain('1/1 local recipients');
+        expect(result.reason).toContain('socket send failed');
     });
 
     it('does not publish an already expired final message', async () => {
