@@ -714,6 +714,20 @@ diagnose the production path before editing it.
 
 ### Task 6: Publish client snapshot unicast provenance atomically
 
+**Status:** Correctness implemented locally in `954832106d` and cluster-bridge
+follow-up `46a2d2701`; independent review approved the corrected scope. Real
+producer/reader/bridge tests cover publisher-local and remote recipient
+placement, and PostgreSQL transaction tests prove row/proof visibility and
+rollback. The unchanged three-process formation matrix passed 4/4 before the
+bridge correction, so it is not exact-head cross-process proof of that
+correction. The two group-broadcast product tests remain red. The governed
+state-write comparator remains **failed** on hot median transaction duration
+(+10.74%); its standard workload writes no unicast sidecars, and a separate
+small active-session diagnostic measured one extra insert and one extra read
+per proven page. No waiver or no-regression claim is made. Keep the PR draft
+until broadcast/direct producers, controlled performance evidence, and the
+unchanged distributed/release gates are reconciled.
+
 **Scope:** Restore the first missing real producer family, without treating a
 synthetic sidecar as production proof. The client-state mutation's accepted
 snapshot and `ComputedClientStateSync` already freeze the active sessions and
@@ -757,3 +771,72 @@ include every support file changed by remediation recursively until closure;
 leave independent untouched code outside that closure. No passing focused test,
 mergeable Git state, or plan-only commit substitutes for the full readiness
 sequence.
+
+### Task 7: Carry verified room-broadcast provenance through durable delivery
+
+**Scope:** Extend the version-1 per-row proof with a `scoped-room-broadcast`
+target: exact `GroupRef`, publication-time frozen session IDs, and the existing
+immutable row audit. The first-dequeue reader accepts only an exact, valid
+sidecar for a scoped direct row; raw broadcasts without proof and broad or
+principal broadcasts remain refused. No payload-type shortcut is authority.
+
+The validated durable `ALStoredOutboundMessage.reference.key` distinguishes a
+canonical AL publication from a proven direct raw publication on first send,
+replay, and repair. Pass that existing key transiently through the AL outbound
+planner and repair path alongside its captured policy. A winning stored
+admission replaces the observed audience, scope, and key together. Only a
+proved direct room row interprets captured IDs as **session** IDs and resolves
+them against local authenticated open sockets. Canonical AL room rows retain
+their existing peer-ID resolver, receipt/ACK, exclusion, and repair semantics;
+never globally reinterpret `admittedAudience`. The cluster bridge preserves
+the direct row's captured audience and room scope through the API's final
+session eligibility check. Prepared replay must reject an unscoped effect for
+a proved direct row. Reuse the existing row reference rather than adding a
+persisted discriminator, queue, retry, lock, fence, timer, or legacy planner
+overload.
+
+**TDD/verification:** Start RED with the same target/scope/audience but
+different canonical versus direct physical keys and deliberately different
+peer and connection IDs. Prove canonical receipts and repair stay peer-based,
+while a valid direct room proof reaches only its frozen sessions locally and
+across the bridge. Cover first dequeue, retry/restart after sidecar removal,
+repair, stale scope/generation, late joiner, empty audience, winning stored
+admission, forged key without proof, and unscoped replay refusal. Run focused
+ALM/WS/bridge/API tests, shared and API typechecks, and full touched-file style
+and structure closure. This slice is not a claim that a real room producer is
+yet proven.
+
+### Task 8: Publish real group-presence delta proof atomically
+
+**Scope:** The group presence-summary worker owns the actual group-state delta
+outbox rows. Use its validated computed summary and accepted active sessions
+to prepare one exact room proof per direct `WS_OUTBOX` delta row before the
+existing transaction. Insert proof and row in that transaction with the
+existing reservation finish; either all commit or none do. A no-op summary may
+still emit a delta, so decide from actual computed rows, not summary-write
+presence. Keep one worker owner and existing QueueBox/AppInbox retry behavior.
+Do not use the synthetic group snapshot tests as proof of this producer, and
+do not yet admit client principal broadcast/events, CRDT, auth logout, or
+topology rows. Principal state sync currently reaches own and authorized
+co-group sessions; preserve that product audience in its later producer slice
+unless the maintainer explicitly changes it.
+
+**TDD/verification:** Start RED with a real presence-summary work item whose
+committed group delta reaches a different API process's frozen authorized
+session; an uncommitted/rolled-back item exposes neither row nor proof. Cover
+no-op summary with delta, late join/replaced session, wrong room scope,
+duplicate/replay, expiry, row-audit tampering, and no audience. Repair the two
+existing group-broadcast tests by retaining their delivery/outcome assertions
+but arranging real proved rows and authenticated sockets; do not make the
+reader permissive for synthetic raw rows. Run focused group/AppInbox/WS and
+API tests, the unchanged medium-scale correctness gate, relevant three-process
+formation recipe, package/API typechecks, and touched-file closure. Collect
+comparable performance evidence for affected mutation paths; the prior
+state-write hot-duration failure remains open, not waived.
+
+After these two slices, choose only the next one or two real producer families
+from fresh evidence. Before calling this PR ready, reconcile the remaining
+direct producers and old product tests, obtain controlled performance evidence,
+run exact-head cross-process acceptance and release gates, review the full
+branch, and publish one concise PR behavior/evidence map. Do not split a
+test-only proof PR from this draft implementation PR.
