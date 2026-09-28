@@ -204,8 +204,8 @@ P1 weakens no guarantee. Each of its levers lands only with before-and-after pin
 
 ### 7.4 Measurement spike
 
-The spike runs now, beside S3c, on a throwaway branch that is never merged. A docs change records
-its findings here, and the settings they fix are decided before P1's plan.
+The spike ran on 2026-09-28 on a throwaway branch that is never merged. Section 7.5 records its
+findings, and the settings they fix are decided before P1's plan.
 
 | Hypothesis                                                                         | Measurement                                                                          | Refuted when                                               |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -218,12 +218,72 @@ its findings here, and the settings they fix are decided before P1's plan.
 H4 and H5 set the interval target and the recovery-lag bound. If H4 is refuted, I2b writes only the
 rows that changed.
 
-### 7.5 Later outcomes
+### 7.5 Spike findings
+
+**Setup.**
+
+- **Environment.** Measured on `bdb3ecd8b` in headless Chromium 149, driven by Playwright 1.61, on
+  an Apple M2 Max running macOS.
+- **Harness.** The harness is on the throwaway branch `claude/alm-perf-spike` (`68f09e378`,
+  `tmp/perf/alm-spike/`).
+- **What runs.** It uses ALM's real durable outbound path, the lane's readiness probe, and raw
+  IndexedDB transactions.
+- **Samples.** Each configuration ran three times, with 90 durable sends after warm-up.
+- **Latency measure.** "Send-to-dispatch" runs from `enqueueIfAbsent` to the carrier's send call.
+  The owner's batch runs directly, so engine scheduling is excluded.
+- **Not measured.** The hosted runner, a phone, and other browser engines.
+
+| Hypothesis | Result                                                                                                                                                                                                                                                                                                                                                                                                                              | Verdict                                                                                                                           |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| H1         | A plain page's readiness probe takes 0.4 ms (p50) idle, 1.3 ms at 4× CPU, 2.1 ms at 8× CPU and 10 ms at most under a render-loop load. The lane's hosted slow band is 66–358 ms. IndexedDB contention and a per-operation Playwright relay add less than 1.5 ms. The lane's agents run in incognito contexts, whose IndexedDB behaved as memory: every hint measured alike, and a 4 MiB write took 1.1–3.3 s against 0.3 s on disk. | Confirmed on this machine. The lane's figures measure the load on its harness page, not ALM storage.                              |
+| H2         | A steady-state durable send spends 22 logical operations (10 `al-admission`, 12 `al-work`; the pinned 15 include the cold runtime's first batch). Those are 14 IndexedDB transactions (11 readonly, 3 readwrite) and 46 requests. By call site: 3 are empty probes; 4 re-read the canonical envelope and identity already read; 6 read control history, receipt state and effects that are empty on a first dispatch.               | Confirmed. 7 of 22 are empty probes or repeats; 13 of 22 are avoidable on a first dispatch.                                       |
+| H3         | On disk, Chromium's default commit behaves as `relaxed`: 0.1 and 0.2 ms (p50) per one-put commit. `strict` adds about 0.5 ms per commit, and 0.6 ms per durable send.                                                                                                                                                                                                                                                               | Refuted as a performance lever: `relaxed` gains nothing over the default. `strict` is cheap here but unmeasured on phone storage. |
+| H4         | A full checkpoint at D74's bound (1,000 admissions, 4.1 MiB, 6,000 rows) spends 27 ms of main-thread time and commits in 0.28–0.30 s on disk. At 4× CPU the main-thread part is 114 ms, with long tasks of 117–153 ms. At 100 admissions (0.4 MiB) it spends 2.8 ms and commits in 26 ms.                                                                                                                                           | Refuted for slower devices: a full snapshot at the bound breaks the 100 ms budget at 4× CPU.                                      |
+| H5         | Not measured; it needs phones.                                                                                                                                                                                                                                                                                                                                                                                                      | Open, and needed only if D85 lets I2b go ahead.                                                                                   |
+
+Two measurements the hypotheses did not name:
+
+- **In an idle page, CPU dominates, not storage.**
+  - Send-to-dispatch is 4.1 ms (p50) both on disk and in memory. It is 17.4 ms at 4× CPU, and
+    33.6 ms at 8× CPU (in memory).
+  - A CPU profile over 300 sends puts 32 % of busy time in the Temporal polyfill (21 %) and its
+    BigInt shim JSBI (11 %). IndexedDB's own `get`, `put`, `transaction` and `getAll` take about
+    10 %.
+  - 72 % of the polyfill time is the date conversions in QueueBox's IndexedDB entry codec
+    (`packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts`).
+  - Chromium 149 ships native Temporal. Aliasing the polyfill to it cuts busy CPU per send by 29 %.
+    Send-to-dispatch falls to 3.0 ms (−27 %), and to 13.9 ms at 4× CPU (−20 %).
+- **Under a render loop, round trips dominate.**
+  - With 10 ms of main-thread work in every 16 ms frame, send-to-dispatch rises to 16.8 ms (p50) and
+    30.3 ms (p95).
+  - At 4× CPU it rises to 78.8 and 93.7 ms, or 62.1 and 78.7 ms with native Temporal.
+  - Each of the 14 sequential transactions waits for a gap between frames.
+
+What the findings suggest, for the maintainer to decide before P1's plan:
+
+1. **Re-rank P1's levers.**
+   - **Take the Temporal polyfill off the storage hot path.** Use native Temporal where it exists,
+     or epoch-millisecond values in the QueueBox entry codec.
+   - **Run fewer sequential transactions.** In a game page, this is the lever that matters:
+     - merge an admission's two read sessions;
+     - skip the empty probes;
+     - hand the committed canonical message to dispatch in memory;
+     - skip the first-dispatch control reads.
+   - **Drop the transaction durability hint as a lever.** D82's condition, a measured gain, is not
+     met.
+2. **Move D85's gate out of the lane.** Measure it in a plain page with a persistent profile, at
+   4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow regime measures
+   its harness page.
+3. **Take storage-cost evidence from a persistent profile.** The lane's IndexedDB is in memory, so
+   the lane stays the correctness authority but cannot measure storage cost.
+4. **Checkpoint only changed rows if I2b goes ahead.** H4 is refuted, so section 7.4 already
+   provides this.
+
+### 7.6 Later outcomes
 
 These stay outcome-shaped until evidence earns them:
 
 - a durable owner hosted in a worker;
-- incremental checkpoints, when H4 holds;
 - a per-message persistence barrier.
 
 ## 8. Storage lifetime (I2a)
