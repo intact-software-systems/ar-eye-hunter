@@ -425,9 +425,9 @@ locally implemented in `024b57698`, `72de53202`, and `1de6a1c6a`. Two
 independent fix re-reviews found no remaining Critical or Important issue in
 their scoped diffs. The last fix carries validated peer-notice scope through
 middleware to native send; its integrated red/green test covers matching,
-wrong-scope, and broad notices. These commits have not yet been pushed, and
-none proves the sole effective-QoS publisher, cross-process WS delivery, or
-RTC-B06 E3.
+wrong-scope, and broad notices. These commits were pushed to draft PR #566
+through `d420fb0a4`; none by itself proves the sole effective-QoS publisher,
+cross-process WS delivery, or RTC-B06 E3.
 
 The latest `main` ALM S3b change was merged locally in `119af2c59` to repair
 PR #566's real source conflict. Post-merge focused live-notice/unicast tests
@@ -438,25 +438,102 @@ next whole-KiB ceilings (`<225` and `<287`) await maintainer approval; do
 not call the merge or branch gates green while those checks fail. The older
 request to raise the facade limit to `<224` is superseded by this measurement.
 
-Task 2e placement also found a distinct authoritative producer: the CRDT
-AppInbox mutation writes direct `WS_OUTBOX` resources for replies and
-principal fanout. Its actor command does not carry authenticated
-application/workspace scope; the optional document workspace cannot supply
-that proof. Task 2e covers the router/proxy catch-up boundary, captured AL
-sent policy, prepared effects, and replay. Direct AppInbox producer adoption
-needs a later focused design and reviewed slice on this same draft PR before
-readiness, with explicit maintainer approval for its persisted-format or
-compatibility choice. Until then, unproven direct CRDT unicast fails closed
-in three broad shared tests; do not re-enable it through a generic exemption
-or call the public unicast outcome complete. The direct auth-logout
-`WS_OUTBOX` path also lacks an exact persisted owner proof in this branch, so
-both new admission and old prepared effects currently refuse; restore session
-invalidation through its verified owner-specific path before readiness. AL
-control/receipt remains a separate decoded-control path. The direct-producer
-design must settle CRDT scope capture and its persisted carrier, and the
-exact session-global logout contract, before an implementation slice is
-dispatched; no migration, old overload, or generic payload-type exemption is
-approved.
+Task 2f is implemented locally in `b787e8169`, `6f8e186f7`, and
+`1fefc6c6e`, with an independent clean re-review of the final recipient and
+deadline corrections. The common publisher routes effective best-effort
+`live-only` through one typed Postgres notice and keeps durable-required
+messages on the existing outbox. It freezes scoped audiences, uses current
+authenticated socket/scope/principal and generation checks at both local and
+remote final sends, and reports `cluster-published` only for a successful
+notice publication. Provider-aware expiry is carried through both send
+paths; malformed or unauthorized room work is refused. Focused validation on
+the local head passed 112 shared-server, 67 shared QueueBox, and 32 API Deno
+tests, typechecks, changed-style, structure, and formatting. This does **not**
+replace the pending real three-process Postgres proof. The two bundle tests
+were rerun on the Task 2f head and still measure 224.28125 and 286.58203125
+KiB against their unchanged `<223` and `<286` ceilings; they remain red.
+
+Task 2e placement found a separate class of raw `WS_OUTBOX` producers outside
+the router's outbound sent-admission path. The read-only inventory now covers
+CRDT AppInbox replies/fanout, auth logout, state-sync client snapshots/events
+and group-presence deltas, and RTC topology pages. ALM-owned canonical and
+receipt rows are not foreign producers. Task 2e covers the router/proxy
+catch-up boundary, captured AL sent policy, prepared effects, and replay; it
+does not prove these direct producers. CRDT's actor command lacks authenticated
+application/workspace scope; optional document workspace is not recipient
+proof. State-sync snapshot unicast has no captured recipient scope and can be
+refused at first foreign dequeue, plausibly contributing to the initial WS
+snapshot CI failure, though exact attribution remains unproved. State-sync
+broadcast and RTC topology pages can pass the unicast guard without a verified
+frozen audience; a passing guard is not admission proof. Auth logout lacks an
+exact session-global persisted authority variant and currently refuses on
+both new admission and old prepared effects. The three broad shared CRDT
+unicast failures remain real; do not restore any producer through a generic
+payload-type exemption.
+
+Direct-producer adoption requires a separate focused design and reviewed
+slice on this same draft PR before readiness. A candidate is an owner-specific
+provenance record written atomically with each raw outbox row, verified against
+the complete row and expiry on first foreign dequeue, then captured in ALM's
+sent policy for prepared/replay delivery. This is **proposed, not approved**:
+the existing synchronous dequeue planner cannot read that record, and the
+authoritative audience-freeze point and auth session-global policy still need
+review. Any CRDT command/persisted-format or compatibility decision, new
+sidecar schema, or auth authority variant requires explicit maintainer
+approval before implementation. No migration, old overload, generic
+payload-type exemption, new queue, retry, or lock is approved. AL
+control/receipt remains a separate decoded-control path.
+
+### Proposed direct-producer adoption sequence (approval pending)
+
+Task 2f is locally reviewed and awaits publication to the existing draft PR.
+The following direct-producer slice is a design candidate, not authorization
+to change a persisted contract. Its boundary is the four inventoried server
+producers, not all ALM traffic:
+
+| Producer | Proof required before foreign dequeue |
+| --- | --- |
+| CRDT AppInbox | Authenticated full application/workspace scope, final reply or fanout target, and the authorized room/principal audience frozen from the mutation's authoritative read. Optional document workspace is not proof. |
+| Auth logout | Auth-owner proof of the exact invalidated session, explicitly session-global if approved; never treat it as a generic unscoped unicast. |
+| State-sync | Full aggregate scope and the audience frozen from the authoritative client/group snapshot. Bind each per-session snapshot page, principal broadcast, client event, and group-presence delta to its own row; a target ID or current delivery-time cache is not publication proof. |
+| RTC topology | Full GroupRef, validated publication/delivery-log identity, and each page's already-frozen recipient IDs. The existing replay check does not substitute for first-dequeue admission. |
+
+1. In each existing owner transaction, write one versioned provenance record
+   beside each raw `WS_OUTBOX` row. A common storage mechanism may use the
+   existing transaction-bound runtime-state repository, but proof creation
+   and validation stay with the producer that owns the authority. Identify
+   the record by a collision-safe encoding of the complete queue key; bind
+   the raw row hash, message/target identity, producer kind, and expiry.
+   Do not repurpose `resource_inbox` or alter the AL wire target.
+2. Add a narrow asynchronous provenance read before the existing ALM
+   `commitDispatchPlan` on a *foreign* first dequeue. The current synchronous
+   planner cannot perform this read. Reject missing, expired, mismatched, or
+   unknown-version proof; do not fall back to current room/client cache or a
+   payload-type exemption. Feed only verified scope and frozen audience to the
+   existing planning/captured-policy path. Prepared effects, retries, remote
+   pub/sub, and replay must consume that same captured policy, not repeat an
+   authoritative audience read. Auth requires a separate narrow
+   session-invalidation authority variant across those paths.
+3. Use red-to-green tests for each producer's local and foreign dequeue,
+   prepared/replay send, late joiner, wrong scope, stale/replaced session,
+   tampered/missing/expired sidecar, and duplicate row. Prove initial
+   state-sync snapshot, CRDT reply/fanout, logout, and topology delivery in
+   the three-process Postgres recipes. Preserve normal QueueBox retry and
+   receipt behavior; no new receiving inbox, queue, lock, or retry layer.
+4. Verify focused package/API tests and typechecks, full touched-file
+   standards closure, bundle budgets, unchanged E3 acceptance evidence, and
+   exact-head release gate before branch review. Existing rows without the
+   new proof fail closed; no migration or legacy decoder is planned.
+
+Before dispatching this slice, obtain explicit maintainer decisions on the
+versioned persisted CRDT command and provenance format/expiry, freezing the
+audience from the authoritative read that precedes its write transaction
+(rather than from later foreign dequeue), and the session-global auth owner
+variant. The authoritative read is recorded atomically with the outbox row,
+but is **not** itself one serializable database snapshot with that write;
+review whether stronger linearization is required. The Task 2f bundle
+remeasurement above leaves the proposed `<225` and `<287` ceilings pending
+explicit approval, not an automatic threshold change.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
