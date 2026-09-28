@@ -161,7 +161,13 @@ The admitted inbound `route()` call can pass its captured room audience and
 `groupRecipientPeerIds` to `publishToFanout`. In contrast, `publish()` and
 proxy `toTargets`/`toPeer`/`toRoom`/`toAll` currently call it without an
 audience. A room or principal publication needs a publisher-side authoritative snapshot
-of its final targets; a unicast names its peer directly. A proxy may transform
+of its final targets; a unicast names its peer directly but that ID does not
+establish the recipient's application/workspace. The maintainer approved
+requiring an explicit full scope at public generic unicast and proxy `toPeer`
+publication boundaries, updating verified callers, and deleting the old
+unscoped form without an overload. An inbound generic unicast also needs
+authoritative recipient-scope proof; an unscoped persisted source is not such
+proof and must fail closed. A proxy may transform
 targets after inbound authorization, so it cannot inherit that old audience
 without rechecking the final scope. For broad `all`/`world` sends, the
 maintainer selected subscriber-local eligibility at notice receipt instead
@@ -173,9 +179,12 @@ those explicit IDs and open sockets directly; it bypasses the normal local
 target resolver. A cluster receiver using this path must receive a validated,
 publisher-authorized list whose scope is bound to the final message, not just
 an untrusted list of session IDs. The game publisher also maps the router's
-`sent-live`/`queued-outbox` statuses to its own `sent` result. A new
-cluster-accepted status must update that consumer and describe publication,
-not an unobservable global socket-send count.
+result to its own send result. The reviewed game/Relic sub-slice now maps an
+observed `sent-live` to `sent`, `queued-outbox` to `accepted`, and
+skipped/duplicate/superseded outcomes to `skipped` without incrementing
+publication counts. A new cluster-accepted status must update that exhaustive
+consumer and describe publication, not an unobservable global socket-send
+count.
 
 The current client room authorizer calls `canSendGroupMessage` with the
 message's sender ID as an actor session. It cannot be reused unchanged for a

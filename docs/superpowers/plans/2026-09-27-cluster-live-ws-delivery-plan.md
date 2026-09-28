@@ -30,6 +30,11 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   refusal, the `cluster-published` result, subscriber-local broad-broadcast
   audience policy, and a mandatory full `roomRef` on public Rallar Game
   server snapshot/event inputs without a compatibility path.
+- The maintainer subsequently approved explicit application/workspace scope
+  for public generic unicast and proxy `toPeer` publication. Update verified
+  callers and delete the unscoped overload; a peer ID or bare route context
+  cannot establish recipient scope. Inbound generic unicast also fails closed
+  unless its source proves recipient scope.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
@@ -56,6 +61,8 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   delivers to the frozen audience without creating receiver work.
 - A generated/proxy payload over budget with no canonical row: typed refusal,
   never false success or implicit durable persistence.
+- A generic public unicast or proxy `toPeer` without explicit full scope:
+  refuse before publication; do not send to a same-ID socket in another scope.
 - An oversized canonical principal or unicast message whose persisted source
   lacks the frozen scoped recipient proof: typed refusal, never a key notice
   that a safe subscriber must discard.
@@ -119,9 +126,9 @@ misleading second meaning just to avoid a file:
 
 During implementation, finish tracing result consumers (including RTC
 signaling, RTT, game, Relic, AI, and custom topic examples), and check these
-proposed signatures against the smallest existing ports. The first two
-implementation slices are codec/transport and publisher routing; later slices
-remain outcome-shaped until those interfaces are validated.
+proposed signatures against the smallest existing ports. Codec/transport,
+receiving, notice-contract correction, and scoped game/Relic publication are
+reviewed sub-slices; the sole publisher and effective-QoS routing remain open.
 
 ### Placement findings from the current code
 
@@ -207,10 +214,10 @@ or typed oversize refusal. The existing `WS_OUTBOX` notice remains key-only.
 
 ### Task 2: Publish once and send locally on each listener
 
-Execute this integration as reviewed sub-slices on the same draft PR: first
-the receiving/local-eligibility boundary, then the sole publisher and
-effective-QoS/result selection, then the scoped game/Relic callers and
-composition. Review each sub-slice before building on it; the acceptance
+Execute this integration as reviewed sub-slices on the same draft PR: the
+receiving/local-eligibility boundary, notice-contract correction, and scoped
+game/Relic callers are complete; the sole publisher, effective-QoS/result
+selection, and remaining composition follow. Review each sub-slice before building on it; the acceptance
 checks below apply to the completed Task 2, not to an intermediate commit.
 
 The receiving/local-eligibility sub-slice is complete in `1a1c0803d` and
@@ -219,6 +226,16 @@ and independent review cleared the touched construction functions. The
 notice-contract correction is complete in `05394f2de`; independent task
 review found no blocking issue. Neither sub-slice alone proves publisher or
 cross-process delivery behavior.
+
+The scoped game/Relic publication sub-slice is complete in `4eeebcf77` and
+review correction `f92793225`. Public game snapshot/event inputs require
+`roomRef`; missing or mismatched inbound room context stops application work,
+and Relic accepts WebSocket commands only in its default application/workspace
+before emitting a fully scoped snapshot. Game results now distinguish an
+observed local send (`sent`) from durable admission (`accepted`), while
+skipped/duplicate/superseded outcomes do not inflate publication counts.
+Focused game and Relic tests, both game builds, the full unit suite, style,
+and independent re-review passed. This does not prove cluster publication.
 
 Placement review after Task 1 found one notice-contract correction needed
 before publisher wiring: `all`/`world` AL targets have no application/workspace
@@ -250,7 +267,7 @@ The result distinguishes cluster publication from locally observed sends.
       upstream dispatch retry, and local/disabled bridge modes. Pin the proposed
       result semantics at the public boundary rather than asserting an unknowable
       global `sentCount`.
-- [ ] Make the Rallar Game server snapshot/event input require `roomRef`, guard
+- [x] Make the Rallar Game server snapshot/event input require `roomRef`, guard
       inbound command/sync handling before application work when that
       reference is absent, and update Relic and every affected caller/test.
       Delete the optional path; run the
