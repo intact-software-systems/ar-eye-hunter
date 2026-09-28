@@ -25,7 +25,11 @@ export function adoptGroupSnapshotsFromHeartbeat(
             ) === 'equal'
         ) {
             decideGroupSnapshotCausalRevision(observed, returned);
-            if (isGroupHeartbeatSnapshotRenewal(observed, returned)) {
+            const renewed = isGroupHeartbeatSnapshotRenewal(observed, returned);
+            const restoredSession = !renewed &&
+                groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group) === observed &&
+                isGroupHeartbeatSessionReappearance(observed, returned);
+            if (renewed || restoredSession) {
                 const replacement = Object.is(observed, returned)
                     ? { ...returned }
                     : returned;
@@ -66,4 +70,19 @@ export function isGroupHeartbeatSnapshotRenewal(
     }
 
     return returned.activeSessions.length === observed.activeSessions.length || leaseAdvanced;
+}
+
+function isGroupHeartbeatSessionReappearance(observed: GroupSnapshot, returned: GroupSnapshot): boolean {
+    if (
+        returned.activeSessions.length <= observed.activeSessions.length ||
+        !isTuplePreservingGroupLivenessReduction(observed, returned)
+    ) {
+        return false;
+    }
+    return observed.activeSessions.every((previous) => {
+        const current = returned.activeSessions.find((session) => session.sessionId === previous.sessionId);
+        return current !== undefined &&
+            current.lastHeartbeatAtEpochMs >= previous.lastHeartbeatAtEpochMs &&
+            current.expiresAtEpochMs >= previous.expiresAtEpochMs;
+    });
 }

@@ -197,6 +197,27 @@ describe('browser group authority retention', () => {
         expect(findGroupStateSnapshotsBySessionIds(['receiver'])).toEqual([returned]);
     });
 
+    it('restores a renewed room session from a current same-tuple heartbeat', () => {
+        const full = withLeasePairs(createRoomAuthority(120_000, 20_000), [
+            [20_000, 25_000],
+            [20_000, 120_000]
+        ]);
+        const observed = withActiveSessions(full, [full.activeSessions[1]!]);
+        const returned = withLeasePairs(full, [
+            [31_000, 140_000],
+            [31_000, 140_000]
+        ]);
+        vi.setSystemTime(30_000);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+        expect(readRtcRoomAuthority()).toBe(observed);
+
+        vi.setSystemTime(31_000);
+        adoptGroupSnapshotsFromHeartbeat([observed], [returned]);
+
+        expect(readRtcRoomAuthority()).toBe(returned);
+        expect(findGroupStateSnapshotsBySessionIds(['origin'])).toEqual([returned]);
+    });
+
     it.each([
         {
             caseName: 'an older lease pair',

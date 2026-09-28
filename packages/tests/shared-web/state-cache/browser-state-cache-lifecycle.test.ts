@@ -1,4 +1,5 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
 import { createPagedSnapshotReceiver } from './browser-state-cache-lifecycle-fixtures.ts';
 // dprint-ignore
 import {
@@ -427,6 +428,55 @@ describe('browser state cache lifecycle scope filtering', () => {
         expect(rawKinds).toEqual(['updated']);
 
         unsubscribeRaw();
+        unsubscribe();
+    });
+
+    it('reconciles RTC peers when a current heartbeat restores a same-tuple room session', async () => {
+        const full = createGroupSnapshot({
+            groupId: 'renewed-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 1
+        });
+        const heartbeatAtEpochMs = Date.now();
+        const observed = {
+            ...full,
+            activeSessions: [{
+                ...full.activeSessions[0]!,
+                lastHeartbeatAtEpochMs: heartbeatAtEpochMs - 1_000,
+                expiresAtEpochMs: heartbeatAtEpochMs + 60_000
+            }],
+            onlineMemberCount: 1
+        };
+        const renewed = {
+            ...full,
+            activeSessions: full.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
+                expiresAtEpochMs: heartbeatAtEpochMs + 120_000
+            }))
+        };
+        const manager = createWebRtcGroupManager();
+        const listener = vi.fn();
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
+            clientSnapshots: [],
+            groupSnapshots: [observed],
+            options: { scope: { applicationId: 'app-1', workspaceId: 'workspace-b' } }
+        });
+        manager.acceptGroupUpdate.mockClear();
+        listener.mockClear();
+
+        adoptGroupSnapshotsFromHeartbeat([observed], [renewed]);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(renewed);
+        expect(listener).toHaveBeenCalledWith({ clients: [], groups: [renewed] });
+
         unsubscribe();
     });
 
