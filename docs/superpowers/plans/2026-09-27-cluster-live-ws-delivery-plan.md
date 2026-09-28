@@ -309,6 +309,10 @@ evidence gate; the [committed-work plan](2026-09-12-alm-committed-work-progress-
 and [RTC baseline plan](2026-08-06-rallar-rtc-performance-baseline-plan.md)
 continue to own those other outcomes.
 
+The heartbeat cache-TTL edge is addressed in `a50ea8044`, with a red-before/
+green-after regression, 41 focused tests and independent review. It does not
+replace the pending cross-process proof, E3 evidence, or exact-head gate.
+
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
 leave independent untouched code outside that closure. No passing focused test,
