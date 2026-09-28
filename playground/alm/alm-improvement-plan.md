@@ -8,10 +8,12 @@ Reviewed source: `a28e61b61` (`main` after [PR #521](https://github.com/intact-s
 
 This roadmap accompanies the [static audit](alm-static-audit.md), the
 [complete product description](alm-complete-product-description.md), the
-[PR #521 code assessment](pr-521-code-assessment.md), and the
-[roadmap assessment](alm-roadmap-assessment.md). The roadmap is the durable design document for
-ALM; the open pull request is the live delivery status. Only the next two implementation slices
-are concrete here. Later releases stay outcome-shaped until they enter that horizon.
+[PR #521 code assessment](pr-521-code-assessment.md), the
+[roadmap assessment](alm-roadmap-assessment.md), and the
+[persistence and performance QoS plan](alm-qos-product-plan.md). The roadmap is the durable design
+document for ALM; the open pull request is the live delivery status. Only the next two
+implementation slices are concrete here. Later releases stay outcome-shaped until they enter that
+horizon.
 
 The goal is ALM usable for production as the complete general product: one semantic message
 protocol with two first-class carriers, RTC between browsers and WS through the server, delivered
@@ -107,6 +109,13 @@ question.
 | D77 | S3c-i: Relic snapshots gain `groupRef`, the server peer id as sender and `receiver` at-least-once receipts over an audience frozen from a server-side live-sessions read; the 15 s TTL stays; cluster delivery carries the admitted audience at both of its sends (2026-09-28).                                                                                                                                                                                                                                            |
 | D78 | S3c-ii: a new refusal reason `capacity` and drop code `refused/capacity` end a send over the bound as `carrier-refused`, never a fallback trigger; the first `overloaded` producer is `qosProvider.liveForMessage` reading the same counter (2026-09-28).                                                                                                                                                                                                                                                                  |
 | D82 | S3c-i: the router refuses a room unicast whose `route.contextId` names another room than its `targets.groupRef` (`unauthorized`, R-S3c-i-33). Known debt, predating S3c-i: a multicast or room broadcast carrying a `groupRef` is still authorized with a `route.contextId` naming another room, so an app keying on it can misattribute the message; recorded in the outbound README limits (2026-09-28).                                                                                                                 |
+| D79 | The persistence and performance QoS plan ([alm-qos-product-plan.md](alm-qos-product-plan.md)) is part of ALM: one durability vocabulary, the S1 handle, the existing typed refusals and sinks, and ALM's evidence layers. It replaces the QueueBox persistence QoS plan first proposed in PR #606; that document is deleted, and its profiles and acceptance scenarios map into the plan's tiers and evidence table (2026-09-28).                                                                                          |
+| D80 | One durability axis, ordered by strength: `volatile` < `local-checkpoint` < `local-outbox` < `local-inbox`, chosen per channel or send as today. `local-checkpoint` is new: the sender admits and dispatches from memory and checkpoints its session's lane to IndexedDB, and receivers route it like `local-outbox`. It joins `AL_DURABILITY_ALGOS` in a coordinated cutover with a schema-id bump under D3, with no migration code (2026-09-28).                                                                         |
+| D81 | Recovery never re-issues an identity or position the outside world has seen and never retracts a delivery: `local-checkpoint` refuses ordered (`seq`, `orderingKey`) and latest-wins sends typed `unsupported`, and a receiver's dedup retention covers the message deadline plus the receipt grace for every tier, replacing the fixed 60 s default, in I2a (2026-09-28).                                                                                                                                                 |
+| D82 | Settings: per channel `durability` and `onStorageUnavailable` (`refuse`, the default, ends typed `storage-unavailable`; `volatile` admits with a downgrade note on the handle); per session store the checkpoint interval target and the recovery-lag bound, set from the spike's H4 and H5; a commit batch window and the transaction durability hint only when P1 measures a gain (2026-09-28).                                                                                                                          |
+| D83 | Budgets per tier: `volatile` and `local-checkpoint` spend no storage operation on the send path (the D55 pin), a checkpoint at most one readwrite and none while clean; the durable pins (10 plus 15 per send, 8 per inbound admission) may only fall, with P1's target recorded before its plan; latency is reported per tier and regime, and every ALM PR reports its storage figures beside the bundle figures (2026-09-28).                                                                                            |
+| D84 | Release 4, performance and lifetime, follows release 3: P1 (durable-path cost, no guarantee weakened), then I2a (tab claim, typed `storage-unavailable`, recovery outcomes, health sink, storage fault port), then I2b; arbitration, audiences, scale and integration renumber 5 to 8. The plan and a throwaway measurement spike run now beside S3c; no ALM code runs beside S3c-ii (2026-09-28).                                                                                                                         |
+| D85 | I2b proceeds only if, after P1, the p95 from a `local-outbox` send to its first dispatch in the lane's slow regime still exceeds 100 ms. Relic Hunters' server-addressed commands are its consumer proof: a reload mid-command resumes the command, and server dedup plus AppInbox idempotency absorb the repeat. Otherwise Relic moves to `local-outbox` and a recorded decision withdraws I2b (2026-09-28).                                                                                                              |
 
 ### Standing direction
 
@@ -272,8 +281,9 @@ stall segment is uninstrumented on the server side.
 
 ## Release map
 
-Sixteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
-not on each other. Release 2, F2b, S1, F2c and S2 are delivered. S2 split into three PRs, S2a, S2b
+Eighteen PRs in seven releases. Releases 2 and 3 are serial. Releases 4 to 8 depend on release 3 and
+not on each other; release 4, performance and lifetime, goes first, and its I2b is conditional (D84,
+D85). Release 2, F2b, S1, F2c and S2 are delivered. S2 split into three PRs, S2a, S2b
 and S2c (D18), and S2c into S2c-i and S2c-ii (D47); each section below names its plan. S3 is planned as three PRs (S3a,
 S3b, S3c; D52–D61); later releases are named by outcome with exit evidence.
 
@@ -288,13 +298,15 @@ S3b, S3c; D52–D61); later releases are named by outcome with exit evidence.
 | 3 Slice 2     | S2b One identity                                      | medium | 5, 9                       |
 | 3 Slice 2     | S2c Receipted audiences                               | large  | 1, 3, 6, 9                 |
 | 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
-| 4 Arbitration | R1 Shared-key proof and range repair                  | medium | 8                          |
-| 4 Arbitration | R2 Membership fencing                                 | medium | 6                          |
-| 5 Audiences   | A1 Principal, world, all, and fixed audiences         | medium | 7                          |
-| 5 Audiences   | A2 Leader ACK and exclusive ownership                 | medium | 7                          |
-| 6 Scale       | V1 Aggregate budgets and long-run fairness            | medium | 8                          |
-| 7 Integration | I1 Reply correlation and trace propagation            | medium | 9                          |
-| 7 Integration | I2 Deterministic lifetime                             | medium | 10                         |
+| 4 Performance | P1 Durable-path cost                                  | medium | 5, 8                       |
+| 4 Performance | I2a Storage lifetime and recovery                     | medium | 10                         |
+| 4 Performance | I2b Checkpointed durability (conditional, D85)        | medium | 4, 5, 10                   |
+| 5 Arbitration | R1 Shared-key proof and range repair                  | medium | 8                          |
+| 5 Arbitration | R2 Membership fencing                                 | medium | 6                          |
+| 6 Audiences   | A1 Principal, world, all, and fixed audiences         | medium | 7                          |
+| 6 Audiences   | A2 Leader ACK and exclusive ownership                 | medium | 7                          |
+| 7 Scale       | V1 Aggregate budgets and long-run fairness            | medium | 8                          |
+| 8 Integration | I1 Reply correlation and trace propagation            | medium | 9                          |
 
 ### Release 2, F1: conformance lane and messaging entry point
 
@@ -850,17 +862,19 @@ dead-RTC-peer reconnect race (a maintainer chip).
   room with the cluster audience and the settlement recorder, and the Relic cutover; its rulings
   R-S3c-i-0 onward are in its plan.
 
-### Releases 4 to 7: outcomes and exit evidence
+### Releases 4 to 8: outcomes and exit evidence
 
 | Release | Outcome                                                                                                                                                                                                                                                                                                                                              | Exit evidence                                                                                                                                                                                                    |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4 R1    | Cross-backend shared-key arbitration proved; range and page repair replace individual sequence lists; resynchronization invokes the topic's declared recovery owner with bounded cursor information.                                                                                                                                                 | A/B stale-read then sequential-commit schedule has one winner on memory, IndexedDB, and PostgreSQL; a gap beyond the window yields `resync-required` and the owner is invoked once; exhausted repair terminates. |
-| 4 R2    | Membership fencing consumes group-state authority: the sender's snapshot supplies `rosterVersion` beside `minSnapshotVersion`; a receiver delivers only at or beyond that roster with the sender still a member; a receiver merely behind gets bounded catch-up; the envelope field is renamed to what it fences on and the version bumps.           | Fenced delivery, fenced rejection with typed reason, catch-up then delivery, both carriers; old envelope versions rejected explicitly.                                                                           |
-| 5 A1    | Unicast, room multicast, broadcast over room, world, all, and principal, and fixed recipient lists, with RTC and WS parity; WS uses the existing server resolver; RTC resolves room and principal from the snapshot session set; world and all take the WS route automatically when fallback is allowed and are typed carrier-unsupported otherwise. | The same audience scenario over both carriers with equivalent logical outcomes; carrier-unsupported results named in the handle.                                                                                 |
-| 5 A2    | `group-leader` ACK from the appointed director session, `no-leader` typed rejection without one; `ownership: 'exclusive'` as a ResourceInbox-backed claim with `claimed`, `held-by-other`, `expired`.                                                                                                                                                | Leader ACK over both carriers; two claimants, one winner, lease expiry, redelivery.                                                                                                                              |
-| 6 V1    | Per-session aggregate count, byte, age, and active-track budgets; fairness under many tracks, churn, and backpressure; long-run retention.                                                                                                                                                                                                           | Hetzner manifests at 15, 30, and 50 agents with ALM metrics within declared budgets; a 60-minute diagnostic run without growth.                                                                                  |
-| 7 I1    | `corrId` and `replyToMsgId` on the handle with `awaitReply({ timeoutMs })`; AppInbox trace id bridged into the envelope and preserved across retries and fallback; payload-free diagnostics.                                                                                                                                                         | Duplicate and late replies, wrong responders, timeout as `unconfirmed`, trace continuity across a fallback.                                                                                                      |
-| 7 I2    | Per-session durable-work claim across tabs on Web Locks; quota, eviction, blocked upgrade, and restart as typed outcomes; a channel whose policy allows it degrades to volatile with a handle note.                                                                                                                                                  | Two tabs, one drains, takeover on release; quota exhaustion outcome; blocked upgrade outcome; reload during pending work.                                                                                        |
+| 4 P1    | The durable tiers spend fewer IndexedDB operations per decision and commit per work batch; the transaction durability hint is chosen by measurement; no guarantee changes. The measurement spike (H1 to H5) and the target recorded under D83 precede the plan.                                                                                      | Budget pins lowered to the recorded target; `durable-opt-in` and `delivery-baseline` figures per regime against the pre-P1 baseline; the other cells unchanged.                                                  |
+| 4 I2a   | Per-session durable-work claim across tabs on Web Locks; quota, eviction, blocked upgrade, missing storage and restart as typed outcomes, a channel whose policy allows it degrading to volatile with a handle note; recovery outcomes and storage health on the public sink; scoped keys, one purge; dedup retention covering the deadline.         | Two tabs, one drains, takeover on release; `storage-unavailable` and reload recovery through the storage fault port; a replay after 60 s inside its deadline is not delivered twice.                             |
+| 4 I2b   | Conditional on D85. `local-checkpoint`: admission and dispatch from memory, one coherent checkpoint per readwrite at the interval target and on hide, restore before the first work batch, ordered and latest-wins sends refused typed; Relic Hunters commands as the consumer.                                                                      | Checkpoint recovery, lag and flush-on-hide scenarios on every carrier; the zero send-path storage pin; a Relic command survives a reload mid-command in the Playwright spec.                                     |
+| 5 R1    | Cross-backend shared-key arbitration proved; range and page repair replace individual sequence lists; resynchronization invokes the topic's declared recovery owner with bounded cursor information.                                                                                                                                                 | A/B stale-read then sequential-commit schedule has one winner on memory, IndexedDB, and PostgreSQL; a gap beyond the window yields `resync-required` and the owner is invoked once; exhausted repair terminates. |
+| 5 R2    | Membership fencing consumes group-state authority: the sender's snapshot supplies `rosterVersion` beside `minSnapshotVersion`; a receiver delivers only at or beyond that roster with the sender still a member; a receiver merely behind gets bounded catch-up; the envelope field is renamed to what it fences on and the version bumps.           | Fenced delivery, fenced rejection with typed reason, catch-up then delivery, both carriers; old envelope versions rejected explicitly.                                                                           |
+| 6 A1    | Unicast, room multicast, broadcast over room, world, all, and principal, and fixed recipient lists, with RTC and WS parity; WS uses the existing server resolver; RTC resolves room and principal from the snapshot session set; world and all take the WS route automatically when fallback is allowed and are typed carrier-unsupported otherwise. | The same audience scenario over both carriers with equivalent logical outcomes; carrier-unsupported results named in the handle.                                                                                 |
+| 6 A2    | `group-leader` ACK from the appointed director session, `no-leader` typed rejection without one; `ownership: 'exclusive'` as a ResourceInbox-backed claim with `claimed`, `held-by-other`, `expired`.                                                                                                                                                | Leader ACK over both carriers; two claimants, one winner, lease expiry, redelivery.                                                                                                                              |
+| 7 V1    | Per-session aggregate count, byte, age, and active-track budgets; fairness under many tracks, churn, and backpressure; long-run retention.                                                                                                                                                                                                           | Hetzner manifests at 15, 30, and 50 agents with ALM metrics within declared budgets; a 60-minute diagnostic run without growth.                                                                                  |
+| 8 I1    | `corrId` and `replyToMsgId` on the handle with `awaitReply({ timeoutMs })`; AppInbox trace id bridged into the envelope and preserved across retries and fallback; payload-free diagnostics.                                                                                                                                                         | Duplicate and late replies, wrong responders, timeout as `unconfirmed`, trace continuity across a fallback.                                                                                                      |
 
 ## Conformance lane
 
@@ -877,8 +891,12 @@ named in the PR body as evidence.
 Each PR adds its family: F1 baseline; S1 lifecycle matrix over every settlement and state; S2
 identity and receipts with three peers, relay changes, join and leave, lost ACK, duplicate arrival
 across carriers, both fallback orders; S3 volatile counters, fallback within the deadline, budgets;
-R1 and R2 arbitration and fencing; A1 and A2 audiences, leader, claims; V1 scale; I1 and I2
-correlation and lifetime.
+P1 the storage figures per tier; I2a takeover, `storage-unavailable` and recovery outcomes; I2b
+checkpoint recovery, lag and flush on hide; R1 and R2 arbitration and fencing; A1 and A2 audiences,
+leader, claims; V1 scale; I1 correlation. The
+[QoS plan's evidence table](alm-qos-product-plan.md#9-test-and-evidence-plan) maps each release 4
+requirement to its layer. Its storage fault port is a black-box capability, never product
+behaviour.
 
 **Observation status (2026-09-11, maintainer decision).** The lane runs as the Release Gate's non-blocking observation job with its budgets unchanged (`CONNECT_READINESS_TIMEOUT_MS` 30 s, the receiver window from the 18 s scenario deadline, a 10 s non-expiring send). The hosted runner's IndexedDB speed varies by about two between runs, and the rtc cell passes below roughly 30 ms per operation and fails above 35, so every artifact carries a runner-regime summary (F2 Task 14) and a red counts as a regression only against a green baseline of the same regime. **Follow-up slice, F2b — the inbound owner on slow storage:** in the slow regime the receiver's inbound drain runs 5–14 s per batch (0.3–1.1 s otherwise), the pending share of inbound admissions rises to 63–65 % on the RTC cells, and a ws message admitted as pending is committed but not dispatched before its window closes; the section "Release 3, F2b" carries the treatment, and the lane returns to `test:ci` only on its evidence. On merged `main` (`f8db93762`) every cell ran in the slow regime and all three failed with that signature. F2b measured on the runner (`80d017d24`, 2026-09-11): a 48–55 ms per operation regime, the slowest yet and
 one without a same-regime green baseline; inbound batch medians of 5–14 s against outbound 1.3–2.4 s, so
@@ -892,11 +910,18 @@ and the page regime decides a cell in which no durable send ran.
 
 ## Storage, cutover, reset, and rollback
 
-- **Browser.** One ALM-owned database per origin with a schema identity. A schema mismatch at open
-  deletes and recreates the ALM database and emits `alm.storage.reset`. Two stores, admission and
-  work, with bounded indexes. Durability is a channel property; each channel is routed to exactly one
-  backend. Cross-tab commit locking stays on Web Locks; I2 adds the per-session work claim. Quota,
-  eviction, and blocked upgrades are typed `storage-unavailable` outcomes.
+- **Browser.** One ALM-owned database per origin with a schema identity.
+  - **Schema mismatch.** A mismatch at open deletes and recreates the ALM database and reports it to
+    the storage-reset sink. That sink does nothing in production; the black-box harness emits
+    `rallar.browser.alm.storage_reset`.
+  - **Stores.** Two stores, admission and work, with bounded indexes.
+  - **Durability.** Durability is a channel property, and each channel is routed to exactly one
+    backend.
+  - **Tabs.** Cross-tab commit locking stays on Web Locks, and I2a adds the per-session work claim.
+  - **Storage failures.** Quota, eviction, blocked upgrades and missing storage are typed
+    `storage-unavailable` outcomes (I2a). None of them falls back to memory silently.
+  - **Checkpoints and scope.** `local-checkpoint` (I2b) checkpoints into the same database. In I2a
+    the database's keys and name take the application scope, a reset under D3.
 - **Server.** PostgreSQL ResourceInbox is the only durable work owner. Schema changes are additive
   Prisma migrations; an applied migration is never edited. Per-recipient delivery facts for durable
   notifications live in the existing results tables under AppInbox until the message deadline.
@@ -909,7 +934,8 @@ and the page regime decides a cell in which no durable send ran.
   additive; a mismatched envelope version is a typed rejection visible in diagnostics.
 - **Measurement.** Every cutover PR records the storage snapshot per message state for the standard
   workload (eight updates, three recipients, 128 B, 4 KiB, and 64 KiB payloads) from the lane's
-  counters and compares it with the previous PR. A regression needs a stated reason.
+  counters and compares it with the previous PR. A regression needs a stated reason. Every ALM PR
+  also reports the per-tier storage budgets beside its bundle figures (D83).
 
 ## Governance and delivery rules
 
@@ -945,14 +971,17 @@ new capability runs in a real UI with its own conformance recipe.
 | 3 S1     | The match capability's WS send shows pending, confirmed, and failed states from the handle.                                                | No change in S1 (D12); the REST-to-`command` move is S3's.                                                                                                                                       |
 | 3 S2     | Match lifecycle notifications (start, end, score) become a `notification` channel over RTC with WS fallback with frozen-audience receipts. | Server events become a room notification with per-session confirmation visible in server diagnostics.                                                                                            |
 | 3 S3     | Match commands become a `command` channel with a real director receipt, volatile, zero IndexedDB proven.                                   | Commands move from the REST `POST` to a `command` channel over WS addressed to the server with the UI showing the outcome; snapshots move from live-only to the durable WS outbox with receipts. |
-| 4 R1, R2 | Round-start notifications fenced on the current roster.                                                                                    | Round transitions use an ordering key per round with range repair.                                                                                                                               |
-| 5 A1, A2 | The director is the group leader: leader ACK on match-critical notifications; pickup-style actions use exclusive ownership.                | AI suggestions addressed to a principal audience; per-player private events.                                                                                                                     |
-| 6 V1     | Manifests at 15, 30, and 50 agents using the match payload shapes.                                                                         | Long-run manifest with snapshot fan-out.                                                                                                                                                         |
-| 7 I1, I2 | Multi-tab claim of the match session.                                                                                                      | AI planning request and reply on `awaitReply` with correlation and trace.                                                                                                                        |
+| 4 P1–I2b | Multi-tab claim of the match session (I2a).                                                                                                | Commands on `local-checkpoint` (I2b), or on `local-outbox` if D85 withdraws I2b: a reload mid-command resumes the command and the UI shows its outcome.                                          |
+| 5 R1, R2 | Round-start notifications fenced on the current roster.                                                                                    | Round transitions use an ordering key per round with range repair.                                                                                                                               |
+| 6 A1, A2 | The director is the group leader: leader ACK on match-critical notifications; pickup-style actions use exclusive ownership.                | AI suggestions addressed to a principal audience; per-player private events.                                                                                                                     |
+| 7 V1     | Manifests at 15, 30, and 50 agents using the match payload shapes.                                                                         | Long-run manifest with snapshot fan-out.                                                                                                                                                         |
+| 8 I1     | No change.                                                                                                                                 | AI planning request and reply on `awaitReply` with correlation and trace.                                                                                                                        |
 
 ## Requirement-to-evidence matrix
 
-Finding identifiers are the audit's; PC numbers are the product description's completion criteria.
+Finding identifiers are the audit's; PC numbers are the product description's completion criteria;
+Q numbers are the [QoS plan's](alm-qos-product-plan.md) release 4 requirements, stated on
+`bdb3ecd8b`.
 "Release" names where the remaining behavior lands; "State" is on `a28e61b61`.
 
 | Requirement                            | State                                                                                                                                                                                                                                                                                                    | Release           |
@@ -965,7 +994,7 @@ Finding identifiers are the audit's; PC numbers are the product description's co
 | F6 admission work                      | Partial: exact observation CAS exists; two dequeue owners and whole-store reads remain.                                                                                                                                                                                                                  | F2, R1            |
 | F7 durable ownership                   | Partial: outbound canonical; inbound copies; two server consumers.                                                                                                                                                                                                                                       | F2                |
 | F8 indexed bounded cleanup             | Partial: indexed page reader exists; seven `getAll()` sites and a full-range cleanup scan.                                                                                                                                                                                                               | F2                |
-| F9 database lifetime                   | Partial: fixed schema; no reset mechanism; multi-tab and quota untested.                                                                                                                                                                                                                                 | F2, I2            |
+| F9 database lifetime                   | Partial: fixed schema; no reset mechanism; multi-tab and quota untested.                                                                                                                                                                                                                                 | F2, I2a           |
 | F10 scheduling                         | Resolved for wakes and readiness; polling bounds measured in V1.                                                                                                                                                                                                                                         | V1                |
 | F11 stored envelope copies             | Partial: outbound one copy; inbound copies.                                                                                                                                                                                                                                                              | F2                |
 | F12 ordering gaps                      | Resolved for bounds; range repair remains.                                                                                                                                                                                                                                                               | R1                |
@@ -973,7 +1002,7 @@ Finding identifiers are the audit's; PC numbers are the product description's co
 | F14 shared-key races                   | Mechanism present; cross-backend proof remains.                                                                                                                                                                                                                                                          | R1                |
 | F15 affected legacy                    | Resolved for #521's scope; D8 governs the series.                                                                                                                                                                                                                                                        | every PR          |
 | F16 incomplete semantics               | Open: audiences, leader, fencing, correlation, ownership.                                                                                                                                                                                                                                                | R2, A1, A2, I1    |
-| F17 lifecycle truth                    | Partial: settlement truthful; handle and disposal outcomes remain.                                                                                                                                                                                                                                       | S1, I2            |
+| F17 lifecycle truth                    | Partial: settlement truthful; handle and disposal outcomes remain.                                                                                                                                                                                                                                       | S1, I2a           |
 | PC1 carrier conformance                | Lane missing.                                                                                                                                                                                                                                                                                            | F1, then every PR |
 | PC2 all boundaries validated           | Resolved.                                                                                                                                                                                                                                                                                                | done              |
 | PC3 honest reliability                 | Open.                                                                                                                                                                                                                                                                                                    | S1, S2, S3        |
@@ -983,7 +1012,10 @@ Finding identifiers are the audit's; PC numbers are the product description's co
 | PC7 supported target and ACK semantics | Open.                                                                                                                                                                                                                                                                                                    | A1, A2            |
 | PC8 bounded protocol work              | Partial.                                                                                                                                                                                                                                                                                                 | F2, R1, V1        |
 | PC9 one observable identity            | Open.                                                                                                                                                                                                                                                                                                    | S1, S2, I1        |
-| PC10 deterministic lifetime            | Open.                                                                                                                                                                                                                                                                                                    | F2, I2            |
+| PC10 deterministic lifetime            | Open.                                                                                                                                                                                                                                                                                                    | F2, I2a           |
+| Q1 storage budgets per tier            | Measured pins: a durable send spends 10 `al-admission` and 15 `al-work` operations, a durable inbound admission 8, volatile none (S3a); no budget is recorded and nothing forbids a rise.                                                                                                                | P1                |
+| Q2 storage lifetime and recovery       | A missing IndexedDB silently gives the durable pairs memory stores; the reset sink does nothing in production; dedup keeps 60 s whatever the deadline.                                                                                                                                                   | I2a               |
+| Q3 checkpointed durability             | Absent.                                                                                                                                                                                                                                                                                                  | I2b (D85)         |
 
 ## Validation and performance
 
@@ -1012,6 +1044,14 @@ age, retries, repairs, terminal counts, and receipt latency, recorded as p50, p9
 environment, configuration, sample count, and failures. Serialized readback bytes are layout
 evidence, not physical allocation or latency. Artifacts live under `tmp/perf/` locally and as CI
 artifacts in the lanes.
+
+**Storage budgets (D83).** The operation-count pins are the per-tier storage budgets:
+`al-indexeddb-operation-counts.test.ts`, `al-storage-snapshot.test.ts` and
+`indexeddb-queuebox-operation-counts.test.ts`. They are named interaction assertions whose count is
+the requirement. A pin may only fall. A rise needs a stated reason in the PR body, which reports the
+figures beside the bundle figures. Latency per tier is judged under the runner-regime rule. Storage
+failures are exercised through the black-box storage fault port, never through a product switch.
+The [QoS plan](alm-qos-product-plan.md#91-layers) names the layer each requirement lands in.
 
 ## Continuing from a fresh session
 
@@ -1071,3 +1111,8 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-28 (later): S3b merged as `bdb3ecd8b` (#604); S3c opened as draft PR #605 with the post-S3b code survey's thirteen execution questions (proposal §10), all settled as recommended — D57 "As applied", D70–D78.
 - 2026-09-28: S3c-i delivered by PR #605: D53, D57, D58, D61 as applied (D70–D73, D76, D77); matrix row
   F1 moved.
+- 2026-09-28 (QoS plan): the persistence and performance QoS plan (`alm-qos-product-plan.md`)
+  replaces the QueueBox persistence plan proposed in PR #606. It adds decisions D79–D85, release 4
+  (P1, I2a, and I2b, the last conditional) with the later releases renumbered 5 to 8, the release 4
+  conformance families, matrix rows Q1–Q3, and the storage-budget rule under "Validation and
+  performance".

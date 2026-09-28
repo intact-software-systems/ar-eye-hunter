@@ -6,7 +6,8 @@ Reviewed source: `a28e61b61` (`main` after PR #521; markers refreshed 2026-09-08
 written against `02d65ac4a`)
 
 Related documents: [current implementation audit](./alm-static-audit.md),
-[delivery roadmap](./alm-improvement-plan.md), and
+[delivery roadmap](./alm-improvement-plan.md),
+[persistence and performance QoS plan](./alm-qos-product-plan.md), and
 [PR #521 code assessment](./pr-521-code-assessment.md).
 
 Status markers in this document describe the current implementation:
@@ -468,6 +469,11 @@ reporting the replaced message as delivered.
 
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
+**PLANNED — I2a, dedup retention:** The default dedup window is a fixed 60 s
+that ignores the message deadline. A replay of a longer-lived message that
+arrives after 60 s is therefore admitted again. I2a makes the retention at least
+the deadline plus the receipt grace for every durability tier (D81).
+
 **PLANNED — R1, shared arbitration proof:** Since the first release both
 admission stores re-read the dedup and supersedence observations inside the
 write transaction and return `conflict` when they changed, so two stale
@@ -505,6 +511,10 @@ exposes the lifecycle; S3 feeds channel backpressure into policy.
 Durability has observable meaning:
 
 - `volatile`: bounded memory only; lost on process/tab termination;
+- `local-checkpoint`: the sender admits and dispatches from memory and
+  checkpoints its recoverable state; after a restart it resumes from the last
+  checkpoint, may lose admissions made after it and repeats work finished after
+  it;
 - `local-outbox`: the sender persists work until its required receipt or terminal
   outcome;
 - `local-inbox`: the receiver persists accepted work until local consumption or
@@ -553,15 +563,27 @@ operations, and the storage snapshot's durable figures are unchanged while the
 volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
 awaited volatile sends yields no task turn until it ends and should yield or
-batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2's; the
+batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2a's; the
 volatile store's per-session count and byte bound is S3c's (D59).
 
-**PLANNED — F2 and I2, bounded IndexedDB and one durable owner:** Seven
-`getAll()` call sites remain in the IndexedDB queue box, browser cleanup scans
-the whole AL work range before filtering by session, inbound effects still copy
-envelopes, and the server still runs two consumers on one work queue (F2). No
-reset mechanism, multi-tab claim, quota, or blocked-upgrade outcome exists (F2,
-I2).
+The tiers are ordered by strength: `volatile` < `local-checkpoint` <
+`local-outbox` < `local-inbox`. When a store cannot honour a channel's tier, the
+send is refused typed `storage-unavailable` or, where the channel allows it,
+degraded to `volatile` with a note on the handle. It is never weakened silently.
+
+**PLANNED — P1, I2a, and I2b, the storage tiers:**
+
+- P1 lowers the durable tiers' pinned storage cost without weakening them. Today
+  a durable send spends 10 `al-admission` and 15 `al-work` operations, and a
+  durable inbound admission spends 8.
+- I2a gives every durable tier one owner per session store across tabs. It
+  replaces today's silent memory fallback when IndexedDB is missing with the
+  typed outcome, and adds typed recovery outcomes and one storage-health
+  vocabulary.
+- I2b adds `local-checkpoint` behind the D85 gate.
+
+The [persistence and performance QoS plan](./alm-qos-product-plan.md) holds the
+contract and its evidence.
 
 ## Correlation and actions
 
@@ -642,6 +664,15 @@ payload-safe logging contract. F1 adds the AL-owned IndexedDB counter and ALM
 metrics in the lanes, S1 the lifecycle events, I1 trace propagation and the
 payload-free diagnostics contract.
 
+**PLANNED — I2a, storage health:** In production the storage-reset sink does
+nothing, and no storage-health or recovery event exists. I2a puts the following
+on the public diagnostics sink:
+
+- storage health: `healthy`, `delayed` or `failing`;
+- the age of the oldest unsaved change;
+- the last saved recovery point;
+- the typed recovery outcomes.
+
 ## Resource and abuse limits
 
 The protocol publishes limits for:
@@ -680,6 +711,14 @@ contract and apply to live and persisted envelopes and to control payloads.
 Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
 V1.
 
+**PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
+storage budget (D83):
+
+- no storage operation on the send path for `volatile` and `local-checkpoint`;
+- at most one readwrite transaction per checkpoint, and none while the lane is
+  clean;
+- durable pins that may only fall.
+
 ## Lifecycle and multi-context behavior
 
 AL runtimes have explicit `start`, `ready`, `drain`, and `dispose` semantics.
@@ -692,10 +731,16 @@ definition.
 owner have disposal fences. Tests cover disposal during commit/read and retry
 cancellation. Web Locks, versioned commits, and effect leases also exist.
 
-**PLANNED — S1 and I2, complete lifecycle outcomes:** Disposal fences do not
-provide the staged caller-visible result model described above (S1), and
-multi-tab claims, quota, eviction, blocked upgrades, and restart have no typed
-outcomes (I2).
+**PLANNED — I2a, complete lifecycle outcomes:** Multi-tab claims, quota,
+eviction, blocked upgrades, and restart have no typed outcomes:
+
+- a browser without IndexedDB silently gets memory stores for its durable pairs;
+- login over an existing session leaves the old session's rows until they
+  expire.
+
+I2a adds one durable owner per session store, the typed `storage-unavailable`
+outcome, the recovery outcomes, and one purge across memory, storage, and
+checkpoint.
 
 ## Public product surface
 
@@ -708,7 +753,9 @@ The public ALM surface provides:
 - send with staged lifecycle observation/cancellation;
 - receive subscription with ownership scope;
 - transport/effective-policy diagnostics;
-- explicit volatile/durable storage policy;
+- an explicit durability tier per channel and send (`volatile`,
+  `local-checkpoint`, `local-outbox`, `local-inbox`), the channel's
+  storage-unavailable policy, and per-store persistence settings;
 - explicit protocol/capability descriptions and typed unsupported results; no migration framework.
 
 **PARTIAL:** Basic builders, policy/runtime types, services, and canonical
@@ -718,10 +765,15 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — S1, A1, and I1, complete safe surface:** The delivery handle and
-channel purpose (S1, S3), principal and fixed-recipient builders (A1), and
-correlation and trace builders (I1) are absent. F1 adds
-`browser/rallar-messages.ts` as the narrow entry point that carries them.
+**PLANNED — A1, I1, I2a, and I2b, complete safe surface:** The delivery handle
+(S1) and the channel purpose (S3a) exist. They are exported by
+`browser/rallar-messages.ts`, the narrow entry point F1 added. Four parts are
+absent:
+
+- principal and fixed-recipient builders (A1);
+- correlation and trace builders (I1);
+- the channel's storage-unavailable policy (I2a);
+- `local-checkpoint` with its per-store settings (I2b).
 
 ## Delivery and compatibility posture
 
@@ -763,10 +815,11 @@ in scope by roadmap decision D5.
    data-channel drops cannot be reported as successful sends. Partial progress
    and non-delivery uncertainty remain visible, including after cancellation.
 4. Volatile ALM send/receive/retry performs zero AL-owned IndexedDB work on the
-   common path, including reliable volatile policy when selected.
+   common path, including reliable volatile policy when selected, and a
+   `local-checkpoint` send performs none on its send path.
 5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
-   sessions.
+   sessions, and each durability tier meets its recorded storage budget.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing when requested and supported, respects required
@@ -782,7 +835,9 @@ in scope by roadmap decision D5.
    tracing, staged outcomes, and payload-safe observability work across retry,
    repair, restart, and every carrier attempt.
 10. Runtime disposal, multi-tab claims, quota/eviction, blocked upgrades, and
-    restart are deterministic and externally observable.
+    restart are deterministic and externally observable. Recovery reports its
+    outcome and freshness, and no tier degrades without a typed outcome or a
+    note on the handle.
 
 ## Complete-product summary
 
@@ -790,7 +845,9 @@ The complete ALM product is one semantic protocol with two first-class carrier
 adapters. RTC remains fast because volatile traffic is not forced through
 IndexedDB and because data-channel backpressure is a protocol outcome. WS remains
 authoritative and durable where required. Durable RTC and WS share bounded,
-indexed QueueBox/ResourceInbox execution and ALM policy/validation. Every supported
+indexed QueueBox/ResourceInbox execution and ALM policy/validation. Each
+durability tier has a recorded, falling storage budget. A channel chooses its
+tier by the loss and replay it can accept. Every supported
 contract field has a runtime owner, every promised receipt has observable evidence,
 and preferred capabilities can negotiate without silently downgrading required
 guarantees. Normal uncertainty leads to bounded recovery and useful progress.
