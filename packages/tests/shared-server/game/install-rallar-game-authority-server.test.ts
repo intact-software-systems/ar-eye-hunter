@@ -51,6 +51,13 @@ interface Event {
     readonly kind: string;
 }
 
+interface CreateTestAuthorityEnvelopeInputDto<TPayload extends JsonWireValue> {
+    readonly kind: RallarGameAuthorityEnvelope<TPayload>['kind'];
+    readonly senderId: string;
+    readonly payload: TPayload;
+    readonly seq: number;
+}
+
 const roomRef: GroupRef = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1',
@@ -99,14 +106,14 @@ describe('Rallar Game Authority server installer', () => {
         const commandDefinition = fake.definition('game.authority.command.v1');
         expect(
             await commandDefinition.validate?.(
-                toWireValue(envelope('command', 'peer-a', { action: 'move' }, 1)),
+                toWireValue(envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })),
                 fake.context('peer-a')
             )
         ).toBe(true);
         expect(
             await commandDefinition.validate?.(
                 toWireValue({
-                    ...envelope('command', 'peer-a', { action: 'move' }, 1),
+                    ...envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 }),
                     senderId: 'peer-b'
                 }),
                 fake.context('peer-a')
@@ -134,7 +141,7 @@ describe('Rallar Game Authority server installer', () => {
             'game.authority.command.v1',
             'peer-a',
             {
-                ...envelope('command', 'peer-a', { action: 'move' }, 1),
+                ...envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 }),
                 protocol: 'wrong.protocol'
             }
         );
@@ -165,7 +172,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
         );
 
         expect(handledCommands).toEqual([]);
@@ -195,7 +202,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.sync-request.v1',
             'peer-a',
-            envelope('sync-request', 'peer-a', { reason: 'join' }, 1)
+            envelope({ kind: 'sync-request', senderId: 'peer-a', payload: { reason: 'join' }, seq: 1 })
         );
 
         expect(snapshotReads).toEqual([]);
@@ -221,7 +228,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: ' MOVE ' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: ' MOVE ' }, seq: 1 })
         );
 
         expect(handledCommands).toEqual([{ action: 'move' }]);
@@ -246,12 +253,12 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 42 }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 42 }, seq: 1 })
         );
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
         );
 
         expect(handledCommands).toEqual([{ action: 'move' }]);
@@ -277,7 +284,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
         );
 
         expect(handleCommand).toHaveBeenCalledWith(
@@ -332,7 +339,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'cheat' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'cheat' }, seq: 1 })
         );
 
         expect(fake.published).toHaveLength(1);
@@ -363,7 +370,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.sync-request.v1',
             'peer-a',
-            envelope('sync-request', 'peer-a', { reason: 'late-join' }, 1)
+            envelope({ kind: 'sync-request', senderId: 'peer-a', payload: { reason: 'late-join' }, seq: 1 })
         );
 
         expect(readSnapshot).toHaveBeenCalledWith(
@@ -577,7 +584,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'late' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'late' }, seq: 1 })
         );
 
         expect(commandHandled).toBe(false);
@@ -587,20 +594,17 @@ describe('Rallar Game Authority server installer', () => {
 });
 
 function envelope<TPayload extends JsonWireValue>(
-    kind: RallarGameAuthorityEnvelope<TPayload>['kind'],
-    senderId: string,
-    payload: TPayload,
-    seq: number
+    input: CreateTestAuthorityEnvelopeInputDto<TPayload>
 ): RallarGameAuthorityEnvelope<TPayload> {
     return createRallarGameAuthorityEnvelope({
         protocol: 'test.authority.v1',
-        kind,
+        kind: input.kind,
         roomId: 'room-1',
-        senderId,
-        seq,
-        sentAtEpochMs: 1_000 + seq,
+        senderId: input.senderId,
+        seq: input.seq,
+        sentAtEpochMs: 1_000 + input.seq,
         authority,
-        payload
+        payload: input.payload
     });
 }
 

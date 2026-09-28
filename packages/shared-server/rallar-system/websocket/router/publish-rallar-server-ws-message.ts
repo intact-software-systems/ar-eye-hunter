@@ -72,7 +72,7 @@ async function publishAuthorizedRallarServerWsMessage(
         return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
     }
     if (input.fanout === 'none') {
-        return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
+        return await publishRallarServerWsFanout(input);
     }
     const targets = input.message.targets;
     const roomTarget = targets?.mode === 'multicast' ||
@@ -102,7 +102,15 @@ async function publishAuthorizedRallarServerWsMessage(
     if (!requiresDurableWork && input.livePublication) {
         return await publishRallarServerLiveWsNotice(input, normalized.effective);
     }
+    return await publishRallarServerWsFanout(input);
+}
+
+async function publishRallarServerWsFanout(
+    input: PublishRallarServerWsMessageInput
+): Promise<RallarServerWsPublishResult> {
     switch (input.fanout) {
+        case 'none':
+            return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(
                 input.message,

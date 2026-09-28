@@ -163,8 +163,8 @@ Deno.test('a separate local receiver sends only to its currently authenticated a
                 notice: incoming,
                 nowMs: 1
             }),
-        sendToTargetsWithResult: (_message, ids) => {
-            sent.push(...ids);
+        sendToTargetsWithResult: ({ recipientSessionIds }) => {
+            sent.push(...recipientSessionIds);
         }
     });
     const inline: LiveWsNotice = {

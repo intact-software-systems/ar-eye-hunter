@@ -117,26 +117,34 @@ function constructDefaultRallarServer(
         repositories: defaultRepositoryManager,
         appDataRepository: new PSqlAppDataRepository(database),
         nowEpochMs,
-        ws: {
-            authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
-                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)
-            }),
-            readServerPublishAudience: createServerPublishRoomAudienceReader({
-                readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
-                nowEpochMs
-            }),
-            livePublication: createApiV1WsLivePublication({
-                mode: configuration.database.pubSub,
-                notification: input.databaseLifecycle.notification,
-                nowEpochMs,
-                readGroupSnapshot: (ref) => runtime.groupStateService.readCurrentSnapshot(ref),
-                readClientSnapshot: (ref) => runtime.clientStateService.readCurrentSnapshot(ref)
-            }),
-            ...input.ws
-        },
+        ws: createDefaultRallarServerWsOptions(input, runtime, nowEpochMs),
         systemInstallers,
         routeInstallers
     });
+}
+
+function createDefaultRallarServerWsOptions(
+    input: CreateDefaultRallarServerInput,
+    runtime: ApiV1Runtime,
+    nowEpochMs: () => number
+): RallarServerWsRouterOptions {
+    return {
+        authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
+            readLifecyclePolicy: (ref) => runtime.topologyServices.groupStateRepository.readLifecyclePolicy(ref)
+        }),
+        readServerPublishAudience: createServerPublishRoomAudienceReader({
+            readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
+            nowEpochMs
+        }),
+        livePublication: createApiV1WsLivePublication({
+            mode: input.configuration.database.pubSub,
+            notification: input.databaseLifecycle.notification,
+            nowEpochMs,
+            readGroupSnapshot: (ref) => runtime.groupStateService.readCurrentSnapshot(ref),
+            readClientSnapshot: (ref) => runtime.clientStateService.readCurrentSnapshot(ref)
+        }),
+        ...input.ws
+    };
 }
 
 interface ConfiguredApiV1RuntimeInput {

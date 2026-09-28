@@ -54,8 +54,8 @@ function createReceiver() {
         inboundStores: [{ namespace: 'ws', readDeliverySurface }],
         resolveBroadRecipientSessionIds: resolveBroad,
         filterEligibleRecipientSessionIds: eligible,
-        sendToTargetsWithResult: (message, ids) => {
-            sent.push({ message, ids });
+        sendToTargetsWithResult: ({ message, recipientSessionIds }) => {
+            sent.push({ message, ids: recipientSessionIds });
         }
     });
     return {
@@ -99,16 +99,16 @@ describe('live WS notice subscriber', () => {
             ...common,
             publisherId: 'publisher-a',
             filterEligibleRecipientSessionIds: () => [],
-            sendToTargetsWithResult: (_message, ids) => {
-                sentOnPublisher.push(...ids);
+            sendToTargetsWithResult: ({ recipientSessionIds }) => {
+                sentOnPublisher.push(...recipientSessionIds);
             }
         });
         await installLiveWsNoticeSubscriber({
             ...common,
             publisherId: 'publisher-b',
             filterEligibleRecipientSessionIds: (ids) => ids.filter((id) => id === 'remote-session'),
-            sendToTargetsWithResult: (_message, ids) => {
-                sentOnReceiver.push(...ids);
+            sendToTargetsWithResult: ({ recipientSessionIds }) => {
+                sentOnReceiver.push(...recipientSessionIds);
             }
         });
 

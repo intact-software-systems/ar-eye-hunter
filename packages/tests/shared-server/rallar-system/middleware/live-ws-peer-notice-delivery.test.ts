@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
 import { encodeLiveWsNotice, type LiveWsNotice, type LiveWsNoticeTransport } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
@@ -113,5 +113,77 @@ describe('middleware remote live WS notices', () => {
         if (sentCount > 0) {
             expect(JSON.parse(String(native.sent[0])).payload.resource).toBe(JSON.stringify({ value: mode }));
         }
+    });
+
+    it('rechecks a notice-only deadline after recipient filtering and before the remote socket send', async () => {
+        let nowMs = Date.now();
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => dateNow.mockRestore());
+        let receive: ((notice: LiveWsNotice) => Promise<void> | void) | undefined;
+        const transport: LiveWsNoticeTransport = {
+            publish: async (notice) => {
+                await receive?.(notice);
+            },
+            subscribe: async (_channel, callback) => {
+                receive = callback;
+            }
+        };
+        const socket = new JsonWebSocketServer();
+        const native = new TestWebSocket('ws://remote');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'remote-session', socket: native }));
+        const duration = Temporal.Duration.from({ seconds: 10 });
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+            initialRate: 1,
+            maxRate: 10,
+            concurrencyIncreaseStep: 1,
+            concurrencyReduceStep: 1
+        });
+        const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
+        const engine = new InboxOutboxEngine();
+        const expiresAtMs = nowMs + 100;
+        const runtime = createRallarMiddlewareInfrastructure({
+            ...fixture.options,
+            webSocketServer: socket,
+            targetResolver: {},
+            readAuthenticatedConnectionScope: () => ({ scope, expiresAtEpochMs: nowMs + 60_000 }),
+            liveWsNoticeSubscriber: {
+                transport,
+                channel: 'live',
+                publisherId: 'receiver',
+                nowMs: () => nowMs,
+                filterEligibleRecipientSessionIds: (ids) => {
+                    nowMs = expiresAtMs + 1;
+                    return ids;
+                }
+            }
+        }, engine);
+        onTestFinished(() => {
+            runtime.wsQBoxServerService.dispose();
+            engine.stop();
+        });
+        await runtime.liveWsNoticeSubscriberReadiness;
+        const message = newALBroadcastMessage(
+            'sender',
+            { topicId: 'app.notice', contextId: 'direct', resourceId: 'notice' },
+            'all',
+            'notice.v1',
+            { value: 'late' }
+        );
+        const encoded = encodeLiveWsNotice({
+            channel: 'live',
+            publisherId: 'remote-publisher',
+            expiresAtMs,
+            audience: { mode: 'broad', targetMode: 'all' },
+            message
+        });
+        if (encoded.kind !== 'inline') {
+            throw new Error('Expected inline notice');
+        }
+
+        await transport.publish(encoded.notice);
+
+        expect(native.sent).toEqual([]);
     });
 });

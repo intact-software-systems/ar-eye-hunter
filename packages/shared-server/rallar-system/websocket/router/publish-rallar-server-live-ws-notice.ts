@@ -4,11 +4,22 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import {
     encodeLiveWsNotice,
     type LiveWsAudience,
+    type LiveWsInboundReference,
     type LiveWsPublicationInput
 } from '../../queue-pubsub/live-ws-notice.ts';
 import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
 import { resolveAuthorizedRoomSessionIds } from './rallar-server-ws-publication-audience.ts';
 import type { RallarServerWsPublishResult } from './rallar-server-ws-router-contracts.ts';
+
+interface ToLiveWsPublicationInput {
+    readonly message: ALMessage;
+    readonly audience: LiveWsAudience;
+    readonly channel: string;
+    readonly publisherId: string;
+    readonly expiresAtMs: number;
+    readonly inbound: LiveWsInboundReference | undefined;
+    readonly inboundScope: StateScope | null | undefined;
+}
 
 export async function publishRallarServerLiveWsNotice(
     input: PublishRallarServerWsMessageInput,
@@ -27,53 +38,73 @@ export async function publishRallarServerLiveWsNotice(
         if (expiresAtMs <= input.nowEpochMs) {
             return { fanout: input.fanout, status: 'expired', message: input.message, entries: [] };
         }
-        const common = {
+        const noticeInput = toLiveWsPublicationInput({
+            message: input.message,
+            audience,
             channel: publication.channel,
             publisherId: publication.publisherId,
             expiresAtMs,
-            message: input.message,
-            ...(input.inbound === undefined ? {} : { inbound: input.inbound })
-        };
-        let scope: StateScope | undefined;
-        let noticeInput: LiveWsPublicationInput;
-        if (audience.mode === 'broad') {
-            noticeInput = { ...common, audience };
-        }
-        else {
-            scope = readLiveWsPublicationScope(input.message, input.inboundScope);
-            noticeInput = { ...common, audience, scope };
-        }
+            inbound: input.inbound,
+            inboundScope: input.inboundScope
+        });
         const encoded = encodeLiveWsNotice(noticeInput);
         if (encoded.kind === 'oversize') {
             return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
         }
         await publication.transport.publish(encoded.notice);
-        try {
-            input.service.sendToTargetsWithResult({
-                message: input.message,
-                recipientSessionIds: audience.mode === 'broad' ? undefined : audience.recipientSessionIds,
-                inboundScope: scope,
-                recipientScope: scope,
-                recipientPrincipalId: audience.mode === 'principal' ? audience.principalRef.principalId : undefined,
-                requireAuthenticatedRecipient: true
-            });
-        }
-        catch (error) {
-            return {
-                fanout: input.fanout,
-                status: 'cluster-published',
-                message: input.message,
-                entries: [],
-                reason: `Local WS send failed after publication: ${
-                    error instanceof Error ? error.message : String(error)
-                }`
-            };
-        }
+        const localFailureReason = sendLocalPublishedLiveWsNotice(input, noticeInput);
+        return {
+            fanout: input.fanout,
+            status: 'cluster-published',
+            message: input.message,
+            entries: [],
+            ...(localFailureReason === undefined ? {} : { reason: localFailureReason })
+        };
     }
     catch (error) {
         return failedLivePublication(input, error instanceof Error ? error.message : String(error));
     }
-    return { fanout: input.fanout, status: 'cluster-published', message: input.message, entries: [] };
+}
+
+function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): LiveWsPublicationInput {
+    const common = {
+        channel: input.channel,
+        publisherId: input.publisherId,
+        expiresAtMs: input.expiresAtMs,
+        message: input.message,
+        ...(input.inbound === undefined ? {} : { inbound: input.inbound })
+    };
+    if (input.audience.mode === 'broad') {
+        return { ...common, audience: input.audience };
+    }
+    return {
+        ...common,
+        audience: input.audience,
+        scope: readLiveWsPublicationScope(input.message, input.inboundScope)
+    };
+}
+
+function sendLocalPublishedLiveWsNotice(
+    input: PublishRallarServerWsMessageInput,
+    notice: LiveWsPublicationInput
+): string | undefined {
+    try {
+        input.service.sendToTargetsWithResult({
+            message: input.message,
+            expiresAtMs: notice.expiresAtMs,
+            recipientSessionIds: notice.audience.mode === 'broad' ? undefined : notice.audience.recipientSessionIds,
+            inboundScope: notice.scope,
+            recipientScope: notice.scope,
+            recipientPrincipalId: notice.audience.mode === 'principal'
+                ? notice.audience.principalRef.principalId
+                : undefined,
+            requireAuthenticatedRecipient: true
+        });
+        return undefined;
+    }
+    catch (error) {
+        return `Local WS send failed after publication: ${error instanceof Error ? error.message : String(error)}`;
+    }
 }
 
 async function readLiveWsPublicationAudience(

@@ -33,8 +33,8 @@ describe('Rallar server WS live cluster publication', () => {
             inboundStores: [],
             resolveBroadRecipientSessionIds: () => ['remote-session'],
             filterEligibleRecipientSessionIds: (ids) => ids,
-            sendToTargetsWithResult: (message, ids) => {
-                sent.push(`${message.id.msgId}:${ids.join(',')}`);
+            sendToTargetsWithResult: ({ message, recipientSessionIds }) => {
+                sent.push(`${message.id.msgId}:${recipientSessionIds.join(',')}`);
             }
         });
         const service = createDefaultWsQueueBoxServerService({
@@ -247,6 +247,61 @@ describe('Rallar server WS live cluster publication', () => {
         expect(notices).toBe(0);
     });
 
+    it('does not locally send after transport returns past a provider-only notice deadline', async () => {
+        let nowMs = 100;
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => dateNow.mockRestore());
+        const socket = new JsonWebSocketServer();
+        const native = new TestWebSocket('ws://local');
+        native.open();
+        socket.addConnection(new ConnectionContext({ id: 'local-session', socket: native }));
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            qosProvider: {
+                defaultsForMessage: () => ({ expiry: { algo: 'expires-at', opts: { expiresAtMs: 200 } } })
+            },
+            readAuthenticatedConnectionScope: () => ({
+                scope: { applicationId: 'app', workspaceId: 'space' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }),
+            targetResolver: {
+                resolveBroadcastRecipients: () => [{ peerId: 'local-session', connectionId: 'local-session' }]
+            }
+        });
+        onTestFinished(() => service.dispose());
+        const notices: LiveWsNotice[] = [];
+        const router = new RallarServerWsRouter(service, {
+            nowEpochMs: () => nowMs,
+            livePublication: {
+                transport: {
+                    publish: async (notice) => {
+                        notices.push(notice);
+                        nowMs = 201;
+                    },
+                    subscribe: async () => {}
+                },
+                channel: 'ws-channel',
+                publisherId: 'server-a'
+            }
+        });
+        const message = newALBroadcastMessage(
+            'server-a',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(result.status).toBe('cluster-published');
+        expect(notices).toHaveLength(1);
+        expect(notices[0]?.expiresAtMs).toBe(200);
+        expect(native.sent).toEqual([]);
+    });
+
     it('publishes the final transformed proxy message without invoking its receiver handler', async () => {
         let receiver: ((notice: LiveWsNotice) => Promise<void> | void) | undefined;
         const sent: string[] = [];
@@ -266,7 +321,7 @@ describe('Rallar server WS live cluster publication', () => {
             inboundStores: [],
             resolveBroadRecipientSessionIds: () => ['remote-session'],
             filterEligibleRecipientSessionIds: (ids) => ids,
-            sendToTargetsWithResult: (message) => {
+            sendToTargetsWithResult: ({ message }) => {
                 sent.push(message.route.topicId);
             }
         });

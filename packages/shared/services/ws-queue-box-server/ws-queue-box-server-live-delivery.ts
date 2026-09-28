@@ -82,7 +82,8 @@ export class WsQueueBoxServerLiveDelivery {
         if (input.recipientPrincipalId !== undefined && input.recipientScope === undefined) {
             return noRecipientResult(message);
         }
-        const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
+        const expiresAtMs = input.expiresAtMs ??
+            resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
         }

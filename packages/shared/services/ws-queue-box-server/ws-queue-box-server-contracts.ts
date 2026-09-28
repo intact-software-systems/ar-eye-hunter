@@ -45,6 +45,8 @@ export interface WsServerLiveSendResult {
 
 export interface WsServerLiveSendInputDto {
     readonly message: ALMessage;
+    /** A cluster notice's already resolved deadline; ordinary live sends derive one from the message. */
+    readonly expiresAtMs?: number;
     readonly recipientSessionIds?: readonly string[];
     readonly admittedPeerIds?: readonly string[];
     /** Explicit recipient scope; null or absent proof refuses generic unicast, including server-originated sends. */

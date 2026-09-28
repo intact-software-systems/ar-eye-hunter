@@ -21,12 +21,14 @@ export interface InstallLiveWsNoticeSubscriberInput {
         recipientSessionIds: readonly string[],
         notice: LiveWsNotice
     ) => readonly string[];
-    readonly sendToTargetsWithResult: (
-        message: ALMessage,
-        recipientSessionIds: readonly string[],
-        notice: LiveWsNotice,
-        audience: LiveWsAudience
-    ) => void;
+    readonly sendToTargetsWithResult: (delivery: LiveWsNoticeSendInputDto) => void;
+}
+
+export interface LiveWsNoticeSendInputDto {
+    readonly message: ALMessage;
+    readonly recipientSessionIds: readonly string[];
+    readonly notice: LiveWsNotice;
+    readonly audience: LiveWsAudience;
 }
 
 interface LiveWsDelivery {
@@ -68,7 +70,12 @@ async function receiveLiveWsNotice(
     if (eligible.length === 0) {
         return;
     }
-    input.sendToTargetsWithResult(delivery.message, eligible, notice, delivery.audience);
+    input.sendToTargetsWithResult({
+        message: delivery.message,
+        recipientSessionIds: eligible,
+        notice,
+        audience: delivery.audience
+    });
 }
 
 async function readCanonicalLiveWsDelivery(
