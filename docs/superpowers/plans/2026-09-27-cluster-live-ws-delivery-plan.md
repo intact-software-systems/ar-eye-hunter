@@ -1036,6 +1036,50 @@ implementation PR.
 CRDT's persisted command format remains unchanged; any future public
 compatibility change requires separate approval.
 
+### Task 14a: Make cluster proof entry points navigable
+
+The prior-head style gate reports one test construction forward capture and
+24 direct source files in `packages/shared-test/black-box-runner`. The auth
+logout proof is currently an unreferenced top-level runnable, while the group
+delta proof has a package command. Preserve both proofs as repeatable
+acceptance tools, make their command-to-result path visible, and give the
+cluster-proof executables a cohesive owner. A direct `cluster-proofs/` owner
+with package commands is the preferred shape if full-file review confirms
+their imports and lifecycle fit; do not add forwarding wrappers or a folder
+solely to game the density threshold. Move the router test's audience
+constants before the fixture construction function so the current scope
+provider never forward-captures them. No product routing behavior changes.
+
+- [x] Write a failing discovery/structure check for the missing auth proof
+      entry point or current root-density fact, then preserve the existing
+      group-delta and auth proof behavior after the ownership correction.
+- [x] Run the two direct cluster proofs where the required PostgreSQL/API
+      services are available; otherwise report that runtime proof as skipped
+      and run their Deno check plus focused contract tests. Run the focused WS
+      router test and changed-style/structure checks.
+- [x] Review every touched file in full, recursively include changed support
+      files, and obtain independent task spec/quality review.
+
+Task 14a landed in `f65e0dcf6`: the auth and group-delta commands run the
+direct `cluster-proofs/` executables, both are Deno-checked, and the router
+fixture no longer forward-captures its audience constants. The implementer
+reported passing direct PostgreSQL proofs, 47 router tests, 27 managed-runner
+tests, TypeScript/Deno checks, and changed-style review; independent review
+found no actionable issue. The runner root has 22 direct source files after
+the cohesive move. That directory-density warning is a reviewed KEEP for this
+slice, not grounds to move unrelated owners mechanically.
+
+### Task 14b: Close remaining production style owners
+
+The four remaining prior-head cognitive findings are in the WS publisher,
+ALM captured-policy validation, WS live delivery, and WS outbound planning.
+Recover each owner-to-result path from its entry and tests before choosing a
+coherent keep/split/consolidate disposition. Preserve behavior and the frozen
+audience/one-attempt semantics. Do not mechanically extract helpers or change
+the checker threshold. Run focused tests and full affected package checks,
+then independent task review. Exact-head release and performance evidence
+follow after the style closure.
+
 ### Earlier investigation and gate checkpoints
 
 **Next candidate after Task 12:** The current CRDT authorization read already
