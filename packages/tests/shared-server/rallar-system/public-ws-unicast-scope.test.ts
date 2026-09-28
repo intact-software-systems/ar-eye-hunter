@@ -18,6 +18,18 @@ describe('public WS publication scope', () => {
         await expect(Reflect.apply(router.publish, router, [message, 'outbox'])).rejects.toBeInstanceOf(TypeError);
         expect(await outbox.getAllKeys()).toEqual([]);
     });
+    it.each([undefined, null, {}, { message: null }, { message: {} }])(
+        'rejects malformed public publication input %j before enqueue',
+        async (publication) => {
+            const outbox = new InMemoryQueueBox();
+            const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+            onTestFinished(() => service.dispose());
+            const router = new RallarServerWsRouter(service);
+
+            await expect(Reflect.apply(router.publish, router, [publication])).rejects.toBeInstanceOf(TypeError);
+            expect(await outbox.getAllKeys()).toEqual([]);
+        }
+    );
     it.each([undefined, null, {}, { applicationId: 'app' }, { applicationId: 'app', workspaceId: '' }])(
         'rejects missing or malformed explicit scope %j before admission',
         async (scope) => {

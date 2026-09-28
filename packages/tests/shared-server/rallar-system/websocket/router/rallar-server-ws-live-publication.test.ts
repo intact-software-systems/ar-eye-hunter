@@ -646,7 +646,7 @@ describe('Rallar server WS live cluster publication', () => {
                 channel: 'ws-channel',
                 publisherId: 'server-a',
                 readServerRoomAudience: async () => {
-                    throw new Error('snapshot unavailable');
+                    throw new TypeError('snapshot unavailable');
                 }
             }
         });

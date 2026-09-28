@@ -31,7 +31,10 @@ import {
     toRallarServerWsMessage,
     toRallarServerWsTopicMetadata
 } from './decode-rallar-server-ws-ingress.ts';
-import { publishRallarServerWsMessage } from './publish-rallar-server-ws-message.ts';
+import {
+    assertRallarServerWsPublishInput,
+    publishRallarServerWsMessage
+} from './publish-rallar-server-ws-message.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -164,6 +167,7 @@ export class RallarServerWsRouter {
     }
 
     async publish(input: RallarServerWsPublishInputDto): Promise<RallarServerWsPublishResult> {
+        assertRallarServerWsPublishInput(input);
         const selected = input.fanout ?? this.defaultFanout;
         const frozen = await readRallarServerWsPublishAudience({
             message: input.message,

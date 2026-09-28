@@ -18,6 +18,7 @@ import {
 } from './rallar-server-ws-publication-audience.ts';
 import type {
     RallarServerWsFanout,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsPublishStatus,
     RallarServerWsRoomAudience,
@@ -38,6 +39,20 @@ export interface PublishRallarServerWsMessageInput {
     readonly inbound?: LiveWsInboundReference;
     readonly origin?: 'server' | 'proxy' | 'admitted';
     readonly authorizeRoomMessage?: RallarServerWsRouterOptions['authorizeRoomMessage'];
+}
+
+/** A malformed call is a programmer error, before operational audience reads can fail. */
+export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInputDto): void {
+    const message = input?.message;
+    if (
+        !input || typeof input !== 'object' || Array.isArray(input) ||
+        !message || typeof message !== 'object' || Array.isArray(message) ||
+        !message.id || typeof message.id !== 'object' ||
+        !message.route || typeof message.route !== 'object' ||
+        !message.payload || typeof message.payload !== 'object'
+    ) {
+        throw new TypeError('Public WS publication requires a message DTO.');
+    }
 }
 
 export async function publishRallarServerWsMessage(
