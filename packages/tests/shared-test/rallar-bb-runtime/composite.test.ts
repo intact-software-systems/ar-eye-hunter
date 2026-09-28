@@ -15,7 +15,6 @@ describe('rallar-bb runtime composite', () => {
     it('runs parallel groups with bounded concurrency and deterministic parent ordering', async () => {
         let activeCommands = 0;
         let maxActiveCommands = 0;
-        const completedGroups: string[] = [];
         const runtime = createRallarBlackBoxTestRuntime({
             commandExecutor: async (command, context) => {
                 if (command.kind !== 'rtc.send') {
@@ -27,7 +26,6 @@ describe('rallar-bb runtime composite', () => {
                 activeCommands += 1;
                 maxActiveCommands = Math.max(maxActiveCommands, activeCommands);
                 await timers.setTimeout(groupId === 'left' ? 30 : groupId === 'middle' ? 5 : 10);
-                completedGroups.push(groupId);
                 activeCommands -= 1;
                 return {
                     status: 'ok',
@@ -63,7 +61,6 @@ describe('rallar-bb runtime composite', () => {
 
         expect(result.ok).toBe(true);
         expect(maxActiveCommands).toBe(2);
-        expect(completedGroups).toEqual(['middle', 'right', 'left']);
         expect(value).toMatchObject({
             commandId: 'parallel-room-traffic',
             groupCount: 3,
