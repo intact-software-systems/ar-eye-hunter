@@ -359,6 +359,60 @@ The heartbeat cache-TTL edge is addressed in `a50ea8044`, with a red-before/
 green-after regression, 41 focused tests and independent review. It does not
 replace the pending cross-process proof, E3 evidence, or exact-head gate.
 
+## Next two concrete implementation slices
+
+### Task 2d: Capture authenticated WS scope in inbound provenance
+
+The API-v1 ingress already holds a generation-fenced authenticated socket
+scope. Inject a narrow synchronous scope-read port into the existing WS
+admission owner, capture it after the current post-authorization socket check
+and before the next asynchronous boundary, and reject ingress when that proof
+is absent, expired, or from a replaced connection. Compare it with an explicit
+room or principal target scope before admission. Do not derive scope from a
+peer ID, bare route context, or optional document workspace.
+
+Persist the proven scope on new `ws-client` Source records in pending work and
+the message-owner row. Strictly decode any present full scope; absent scope
+means unproven, not a default or migration. Keep old room/broad work available
+under its existing independent authority checks, but fail closed for generic
+client unicast at admission and every stored delivery/forwarding/buffered
+release surface so already queued unscoped work cannot bypass the router.
+Classify internal AL control unicast separately from public client unicast.
+
+Write red tests first for generation-current capture/readback, missing or
+replaced proof, malformed stored scope, target-scope mismatch, and old
+unscoped client-unicast pending/admitted replay. Retain positive room/broad
+tests. Run focused AL inbound, shared WS service/router, and API-v1 ingress
+tests and affected shared/shared-server/API typechecks. Review every touched
+file in full and obtain an independent task review before Task 2e.
+
+### Task 2e: Make public unicast scope survive planning and replay
+
+As one coherent change, require explicit full scope at public generic
+`publish` and proxy `toPeer`/unicast boundaries; remove the old unscoped
+overload and update verified callers and examples. Carry the authenticated
+Source scope into inbound proxy context, including CRDT catch-up; never infer
+workspace from an optional CRDT document field. Refuse server-generated
+unicast lacking a verified explicit scope before send or enqueue.
+
+Capture that scope in the outbound sent policy and scoped recipient prepared
+effect, without changing AL wire targets. On durable claimant and remote
+replay, read the validated persisted scope together with captured audience;
+on prepared local sends, require proof at decode and compare the current
+authenticated socket's scope, expiry, and generation immediately before
+native send. Old public-unicast rows/effects lacking required proof fail
+closed. Preserve the separate internal control/receipt path and current
+QueueBox retry/receipt owner; add no queue, lock, retry, migration, or legacy
+overload.
+
+Write red tests first for missing/malformed scope, public API rejection,
+persisted policy and prepared-effect readback, claimant and remote same-ID
+cross-scope reconnection, CRDT catch-up with optional document workspace,
+and send-time eligibility. Run affected shared/shared-server/API tests,
+typechecks, examples, and focused Deno checks. Review every touched file and
+obtain independent task review before connecting the sole effective-QoS
+publisher or claiming cross-process proof.
+
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
 leave independent untouched code outside that closure. No passing focused test,
