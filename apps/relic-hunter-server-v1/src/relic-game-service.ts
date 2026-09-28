@@ -11,7 +11,6 @@ import {
 import type { RallarServerAppDataStoreOptions } from '@shared-server/app-data/app-data-store-definition.ts';
 import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
 import type { RallarServerAppDataStore } from '@shared-server/app-data/rallar-server-app-data-store.ts';
-import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishResult,
@@ -21,6 +20,7 @@ import type {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { applyRelicWsCommand } from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
+import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 import { toRelicSnapshotMessage } from './to-relic-snapshot-message.ts';
 
@@ -67,7 +67,7 @@ export interface RelicHunterServer {
 
 const RELIC_GAME_STATE_CODEC: AppDataValueCodec<RelicGameState> = {
     schemaVersion: 1,
-    encode: (value) => decodeJsonWireValue(value, 'Relic game state'),
+    encode: encodeRelicGameStateAppData,
     decode: decodeRelicGameStateAppData
 };
 
