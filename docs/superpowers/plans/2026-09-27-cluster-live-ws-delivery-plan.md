@@ -426,6 +426,19 @@ this proves cross-process WS delivery or RTC-B06 E3 acceptance. Task 2e is
 the next concrete implementation slice; only after its review should the
 sole effective-QoS publisher be connected and proved across API processes.
 
+Task 2e placement also found a distinct authoritative producer: the CRDT
+AppInbox mutation writes direct `WS_OUTBOX` resources for replies and
+principal fanout. Its actor command does not carry authenticated
+application/workspace scope; the optional document workspace cannot supply
+that proof. Task 2e covers the router/proxy catch-up boundary, captured AL
+sent policy, prepared effects, and replay. Direct AppInbox producer adoption
+needs a later focused design and reviewed slice on this same draft PR before
+readiness, with explicit maintainer approval for its persisted-format or
+compatibility choice. Until then, unproven direct CRDT unicast may fail
+closed; do not re-enable it through a generic exemption or call the public
+unicast outcome complete. Internal auth logout and AL control/receipt paths
+retain their separate owners and require exact-path tests.
+
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
 leave independent untouched code outside that closure. No passing focused test,

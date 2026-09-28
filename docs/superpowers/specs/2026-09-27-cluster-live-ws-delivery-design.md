@@ -178,6 +178,19 @@ maintainer selected subscriber-local eligibility at notice receipt instead
 of a cluster-wide frozen list. The notice must distinguish these modes;
 absence of a room audience is never permission to re-resolve a room.
 
+The authoritative CRDT AppInbox mutation also writes direct `WS_OUTBOX`
+resources, including unicast replies and principal fanout, outside the
+generic router's outbound sent-admission path. Its current actor command
+does not carry application/workspace scope, and optional document workspace
+is not authenticated recipient proof. Therefore the generic router's scoped
+policy change cannot by itself authorize these direct durable rows. Treat
+their command/provenance and persisted scope carrier as a separate reviewed
+producer-adoption decision on this same draft PR before readiness; do not
+infer scope from the AL wire target, preserve an unscoped bypass, or claim
+CRDT unicast delivery proved by the router slice. A format or compatibility
+choice for this authoritative persisted producer requires explicit maintainer
+approval before implementation.
+
 The local `sendToTargetsWithResult(message, recipientSessionIds)` path uses
 those explicit IDs and open sockets directly; it bypasses the normal local
 target resolver. A cluster receiver using this path must receive a validated,
