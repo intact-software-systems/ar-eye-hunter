@@ -77,9 +77,14 @@ every server message keeps its one backend.
   and a storage reset never reach it, and it dies with its runtime. The volatile lane (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most once per
   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s, the IndexedDB eviction's cadence) of its clock; no
-  timer runs for it. The rows it sweeps carry the repository's 1 h retention, not the message's
-  deadline (`toDefaultInMemoryInput`), so heap growth is send rate × 1 h until S3c's deadline-scale
-  bound.
+  timer runs for it. Its message-owner and sent-message rows live for the message deadline plus the 30 s
+  receipt grace ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74), the
+  window in which a receipt or a late control about the message is still answered; the durable pair keeps
+  them for `max(deadline, now + 1 h)`. A control that arrives after them finds no lane owning its message,
+  goes to the durable lane and is refused there as a control about an unknown message. The control-history
+  rows and a completed receipt row stop at the same deadline plus the grace on the volatile pair and keep 30 min
+  (`controlHistoryTtlMs`, `durableEffectTtlMs`) on the durable pair; the per-origin version row keeps
+  `versionTtlMs` (1 h) on both, since it fences every commit of its origin rather than one message.
 - **Duplicate detection is per lane.** A msgId the memory lane admitted is invisible to the IndexedDB
   lane, and the reverse. That is sound because a message's durability is fixed by its policy, so one
   msgId always resolves to one lane. A caller that re-sent one msgId under another durability would get
@@ -102,7 +107,10 @@ idle durable owner's probes (`work-page`, `work-probe`) are reported beside that
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
 empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,
 times out or finalizes nothing counts as `work-probe`; one that writes counts as the work it did
-(R-S3a-11, R-S3a-13).
+(R-S3a-11, R-S3a-13). An RTC origin alone in its room spends 0 `al-admission` and 0 non-probe `al-work`
+operations on a volatile `receiver` send and states its complete acknowledgement at the commit
+([`al-indexeddb-empty-audience-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts),
+D75).
 
 ## The admission directory
 

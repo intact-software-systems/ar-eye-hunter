@@ -10,11 +10,13 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
     ALLatestSupersedenceValue,
     ALReplacementSupersedenceValue
 } from '../../compute-al-supersedence-observation.ts';
+import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
@@ -107,6 +109,8 @@ export interface CreateALOutboundAdmissionMutationsInput {
     readonly canonicalScope: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly supersedenceTrackTtlMs: number;
+    /** The pair the rows are written to: the volatile pair keeps a message's rows only through its receipt grace. */
+    readonly durability: ALStoreDurability;
 }
 
 /** What a re-read inside the write found: a losable conflict, or a persisted identity that is corrupt. */
@@ -120,12 +124,14 @@ export class ALOutboundAdmissionMutations {
     private readonly canonicalScope: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly supersedenceTrackTtlMs: number;
+    private readonly durability: ALStoreDurability;
 
     constructor(input: CreateALOutboundAdmissionMutationsInput) {
         this.namespace = input.namespace;
         this.canonicalScope = input.canonicalScope;
         this.retention = input.retention;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
+        this.durability = input.durability;
     }
 
     computeStateWrites(
@@ -238,10 +244,10 @@ export class ALOutboundAdmissionMutations {
         return {
             key: toALOutboundMessageOwnerKey(this.namespace, mutation.msgId),
             value: mutation.senderId,
-            expireAtTimestamp: Math.max(
-                mutation.expireAtTimestamp ?? 0,
-                nowMs + this.retention.msgOwnerTtlMs,
-                nowMs + this.retention.controlHistoryTtlMs
+            expireAtTimestamp: this.computeMessageRowExpiryMs(
+                mutation.expireAtTimestamp,
+                nowMs,
+                this.retention.msgOwnerTtlMs
             ),
             supersedenceGuard: undefined
         };
@@ -308,13 +314,25 @@ export class ALOutboundAdmissionMutations {
                 policy: mutation.policy,
                 creationExpiry: mutation.creationExpiry
             },
-            expireAtTimestamp: Math.max(
-                mutation.expireAtTimestamp ?? 0,
-                nowMs + this.retention.sentMessageTtlMs,
-                nowMs + this.retention.controlHistoryTtlMs
+            expireAtTimestamp: this.computeMessageRowExpiryMs(
+                mutation.expireAtTimestamp,
+                nowMs,
+                this.retention.sentMessageTtlMs
             ),
             supersedenceGuard: undefined
         };
+    }
+
+    /**
+     * A durable pair answers a late control for the row's TTL past the send; the volatile pair only until the message
+     * deadline plus the receipt grace (D74). An admission always names the deadline, so only a bare store write
+     * reaches the volatile branch without one, and keeps just the grace.
+     */
+    private computeMessageRowExpiryMs(deadlineAtMs: number | undefined, nowMs: number, rowTtlMs: number): number {
+        if (this.durability === 'volatile') {
+            return resolveALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+        }
+        return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
     }
 
     private computeSupersedenceWrite(

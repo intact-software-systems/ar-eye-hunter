@@ -42,11 +42,12 @@ const entries = [
         // completion at dispatch and the untracked receipt) measure 222.1884765625 KiB. The next whole-KiB
         // ceiling is 223. The S3b final review head measures ~222.99 of 223, and its fix wave 222.86328125.
         // S3c-i's room-naming unicast and the unicast receipt measure 223.056640625 KiB. The next whole-KiB
-        // ceiling is 224.
+        // ceiling is 224. The S3c-ii volatile retention rule measures 224.1435546875 KiB. The next whole-KiB
+        // ceiling is 225.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 224
+        brotliBudgetKiB: 225
     },
     {
         label: 'browser/rallar-core.ts',

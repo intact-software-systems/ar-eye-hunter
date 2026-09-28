@@ -41,6 +41,7 @@ import {
     type ALPendingAckTransition
 } from '../transition-al-pending-ack.ts';
 import {
+    computeALInboundMessageOwnerExpiryMs,
     toALInboundAdmittedMessageMutations,
     toALInboundDeliveryMutations,
     toALInboundSupersedenceMutations
@@ -102,6 +103,7 @@ function computeALInboundMessageRead(
         controlOwners: read.controlOwners,
         plan,
         retention: read.retention,
+        durability: read.durability,
         supersedence: read.supersedence,
         orderingSnapshot: read.orderingSnapshot !== undefined &&
                 read.orderingSnapshot.updatedAtMs + read.orderingTrackTtlMs > read.nowMs
@@ -215,7 +217,10 @@ export function computeALInboundBufferedRelease(
                     source: read.source,
                     supersedenceKey: read.snapshot.plan.supersedence.key ?? null
                 },
-                expireAtTimestamp: Math.max(read.nowMs + read.retention.msgOwnerTtlMs, expireAtTimestamp)
+                expireAtTimestamp: Math.max(
+                    computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),
+                    expireAtTimestamp
+                )
             },
             ...(deliverable
                 ? toALInboundSupersedenceMutations(

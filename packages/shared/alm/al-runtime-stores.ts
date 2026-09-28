@@ -12,7 +12,11 @@ import {
 import type { ALAdmissionWorkBackend } from './al-admission-work-backend.ts';
 import type { ALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import { normalizeALRuntimeStoreRetention } from './ALStoreRetention.ts';
-import { createALInboundAdmissionStore } from './inbound/al-inbound-admission-store.ts';
+import {
+    createALInboundAdmissionStore,
+    createVolatileALInboundAdmissionStore,
+    type CreateALInboundAdmissionStoreInput
+} from './inbound/al-inbound-admission-store.ts';
 import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
@@ -26,7 +30,9 @@ import {
 
 import {
     createALOutboundAdmissionStore,
-    type ALOutboundPreparedMessageDecoder
+    createVolatileALOutboundAdmissionStore,
+    type ALOutboundPreparedMessageDecoder,
+    type CreateALOutboundAdmissionStoreInput
 } from './outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundRuntimeStores,
@@ -101,14 +107,7 @@ export function createInMemoryALInboundRuntimeStores(
             input.nowMs
         );
     return {
-        admissionStore: createALInboundAdmissionStore({
-            nowMs: input.nowMs,
-            namespace: `${input.namespace}:inbound:admission`,
-            backend,
-            orderingTrackTtlMs: input.orderingTrackTtlMs,
-            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention)
-        }),
+        admissionStore: createALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
     };
 }
@@ -124,15 +123,7 @@ export function createInMemoryALOutboundRuntimeStores<TPrepared>(
             input.nowMs
         );
     return {
-        admissionStore: createALOutboundAdmissionStore({
-            nowMs: input.nowMs,
-            namespace: `${input.namespace}:outbound:admission`,
-            canonicalScope: input.canonicalScope ?? input.namespace,
-            backend,
-            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-            retention: normalizeALRuntimeStoreRetention(input.retention),
-            decodePrepared: input.decodePrepared
-        }),
+        admissionStore: createALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue
     };
 }
@@ -209,14 +200,13 @@ export function createDefaultInMemoryALOutboundRuntimeStores<TPrepared>(
 export function createVolatileALOutboundRuntimeStores<TPrepared>(
     options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
-    const input = toDefaultInMemoryInput(options);
+    const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
     const backend = createVolatileALAdmissionBackend(input.nowMs);
-    const stores = createInMemoryALOutboundRuntimeStores({
-        ...input,
-        outboundBackend: backend,
-        decodePrepared: options.decodePrepared
-    });
-    return { ...stores, evictExpired: () => backend.evictExpired() };
+    return {
+        admissionStore: createVolatileALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
+        workQueue: backend.workQueue,
+        evictExpired: () => backend.evictExpired()
+    };
 }
 
 /** The session's inbound memory pair, shared by both carriers' volatile lanes; it persists nothing. */
@@ -225,8 +215,11 @@ export function createVolatileALInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
-    const stores = createInMemoryALInboundRuntimeStores({ ...input, inboundBackend: backend });
-    return { ...stores, evictExpired: () => backend.evictExpired() };
+    return {
+        admissionStore: createVolatileALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
+        workQueue: backend.workQueue,
+        evictExpired: () => backend.evictExpired()
+    };
 }
 
 function createVolatileALAdmissionBackend(nowMs: () => number): InMemoryAdmissionBackend {
@@ -236,6 +229,35 @@ function createVolatileALAdmissionBackend(nowMs: () => number): InMemoryAdmissio
         ),
         nowMs
     );
+}
+
+function toInMemoryALOutboundAdmissionStoreInput<TPrepared>(
+    input: CreateInMemoryALOutboundRuntimeStoresInput<TPrepared>,
+    backend: ALAdmissionWorkBackend
+): CreateALOutboundAdmissionStoreInput<TPrepared> {
+    return {
+        nowMs: input.nowMs,
+        namespace: `${input.namespace}:outbound:admission`,
+        canonicalScope: input.canonicalScope ?? input.namespace,
+        backend,
+        supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+        retention: normalizeALRuntimeStoreRetention(input.retention),
+        decodePrepared: input.decodePrepared
+    };
+}
+
+function toInMemoryALInboundAdmissionStoreInput(
+    input: CreateInMemoryALRuntimeStoresInput,
+    backend: ALAdmissionWorkBackend
+): CreateALInboundAdmissionStoreInput {
+    return {
+        nowMs: input.nowMs,
+        namespace: `${input.namespace}:inbound:admission`,
+        backend,
+        orderingTrackTtlMs: input.orderingTrackTtlMs,
+        supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+        retention: normalizeALRuntimeStoreRetention(input.retention)
+    };
 }
 
 export function createDefaultIndexedDbALInboundRuntimeStores(

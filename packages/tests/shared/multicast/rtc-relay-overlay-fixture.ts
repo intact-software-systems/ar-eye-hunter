@@ -3,6 +3,7 @@ import { onTestFinished } from 'vitest';
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -25,6 +26,8 @@ export interface RtcRelayOverlayFixtureInput {
     readonly snapshot: GroupSnapshot;
     /** The overlay neighbours of the relay: its parent and its children, each with an open channel. */
     readonly neighbourPeerIds: readonly string[];
+    /** The session's memory pair a volatile message is admitted to; absent, every admission uses one in-memory pair. */
+    readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
@@ -66,6 +69,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         multicast,
         sessionId: input.selfPeerId,
         inboundStores: shared.createDefaultInMemoryALInboundRuntimeStores(),
+        inboundVolatileStores: input.inboundVolatileStores,
         roomAuthorityRefresh: undefined
     });
     service.setRttReportingPeerIds([]);

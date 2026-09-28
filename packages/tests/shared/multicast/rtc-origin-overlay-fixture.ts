@@ -8,6 +8,7 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -54,6 +55,8 @@ export interface RtcOriginOverlayFixtureInput {
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
+    readonly stores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
 }
@@ -79,6 +82,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     overlays.accept('room', createOriginOverlay(input.nextHopPeerIds));
     const resources = createDefaultALOutboundRuntimeResources({
         decodePrepared: decodeALOutboundTransportMessage,
+        stores: input.stores,
         volatileStores: input.volatileStores
     });
     const settlements: ALDeliverySettlement[] = [];

@@ -82,10 +82,13 @@ its own pair on the shared engine.
 - **Eviction on the owner's round.** Session cleanup and a storage reset never reach the
   memory pair; it dies with the middleware. Each lane over it (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
-  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. The rows it sweeps
-  carry the repository's 1 h retention, not the message's deadline (`toDefaultInMemoryInput`),
-  so heap growth is send rate × 1 h until S3c's deadline-scale bound. Both inbound lanes sweep
-  the shared pair on their own 60 s schedule; this is idempotent.
+  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. Its message-owner
+  row lives for the message deadline plus the 30 s receipt grace
+  ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74),
+  or longer when the work the message owns does; a message with no expiry of its own has
+  the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
+  the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
+  own 60 s schedule; this is idempotent.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -95,6 +98,14 @@ admission operations, as before S3a, and so does a `local-inbox` message beside 
 volatile pair; a volatile message beside a durable pair spends 0 admission and 0
 non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
 rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
+
+An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile message
+([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
+standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
+envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
+the dedup row for the 60 s dedup window. Once its child's ACK arrives it adds an acknowledgement-history row, kept
+until the deadline plus the grace as well. Before S3c-ii the owner row stayed for an hour and the history row
+30 min.
 
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused

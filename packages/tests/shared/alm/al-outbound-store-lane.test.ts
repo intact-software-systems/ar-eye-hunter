@@ -4,8 +4,11 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { createInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '@shared/alm/ALStoreRetention.ts';
+import {
+    AL_VOLATILE_STORE_EVICTION_INTERVAL_MS,
+    normalizeALRuntimeStoreRetention
+} from '@shared/alm/ALStoreRetention.ts';
+import { createVolatileALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundDispatchPlan,
     ALVolatileOutboundRuntimeStores
@@ -119,8 +122,8 @@ describe('outbound store lanes (S3a, D54)', () => {
         await runOutboundWorkTask(runtime);
         expect(lane.evictExpired, 'one sweep once the interval elapsed').toHaveBeenCalledTimes(2);
 
-        // The sent and owner rows keep the repository retention (one hour), well past the message deadline.
-        vi.setSystemTime(startedAtMs + 2 * 60 * 60_000);
+        // The sent and owner rows keep the 1 s deadline plus the receipt grace (D74), gone well before this round.
+        vi.setSystemTime(startedAtMs + 2 * AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
         await runOutboundWorkTask(runtime);
         expect(lane.evictExpired).toHaveBeenCalledTimes(3);
         expect(lane.state.data.size).toBeLessThan(rowsAfterSend);
@@ -135,15 +138,16 @@ function createObservedVolatileStores() {
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const evictExpired = vi.fn(() => backend.evictExpired());
     const stores: ALVolatileOutboundRuntimeStores<OutboundTestPayload> = {
-        ...createInMemoryALOutboundRuntimeStores({
+        admissionStore: createVolatileALOutboundAdmissionStore({
             nowMs: Date.now,
             namespace: 'lane-eviction',
-            outboundBackend: backend,
-            orderingTrackTtlMs: 60_000,
+            canonicalScope: 'lane-eviction',
+            backend,
             supersedenceTrackTtlMs: 60_000,
-            retention: undefined,
+            retention: normalizeALRuntimeStoreRetention(),
             decodePrepared: decodeOutboundTestPayload
         }),
+        workQueue: backend.workQueue,
         evictExpired
     };
     return { state, evictExpired, stores };

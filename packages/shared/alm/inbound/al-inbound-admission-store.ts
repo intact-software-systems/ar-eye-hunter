@@ -15,6 +15,7 @@ import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-adm
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionNumber, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type { ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
@@ -142,6 +143,7 @@ export interface ALInboundMessageReadDto {
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly plan: ALMessageHandlingPlan;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
 }
 
 export interface ReadALInboundMessageInput {
@@ -161,6 +163,7 @@ export interface ALInboundAdmissionRead extends ALInboundPlannerSnapshot {
     readonly acks: readonly ALAckPayload[];
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
 }
 
 export interface ReadALInboundBufferedReleaseInput {
@@ -191,6 +194,7 @@ export interface ALInboundBufferedReleaseReadDto {
     readonly pendingAck?: ALPendingAckSnapshot;
     readonly controlOwners: ALInboundControlOwnerIndex | undefined;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
 }
 
 export interface ALInboundOrderedDeliveryRead {
@@ -319,6 +323,8 @@ export interface CreateALInboundAdmissionStoreInput {
 export interface ALInboundAdmissionStore extends ALReadyable {
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    /** The pair this store is: the volatile pair keeps a message's rows only through its receipt grace (D74). */
+    readonly durability: ALStoreDurability;
     readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead>;
 
     readBufferedRelease(input: ReadALInboundBufferedReleaseInput): Promise<ALInboundBufferedReleaseReadDto | undefined>;
@@ -346,17 +352,18 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     ): Promise<'committed' | 'conflict' | 'expired'>;
 }
 
+/** Every store but the session's memory pair: its message rows keep their TTL retention. */
 export function createALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
-    return new ProviderBackedALInboundAdmissionStore({
-        namespace: input.namespace,
-        orderingTrackTtlMs: input.orderingTrackTtlMs,
-        supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
-        retention: input.retention,
-        backend: input.backend,
-        nowMs: input.nowMs
-    });
+    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'durable' });
+}
+
+/** The session's memory pair's store: a message's owner row lives for its deadline plus the receipt grace (D74). */
+export function createVolatileALInboundAdmissionStore(
+    input: CreateALInboundAdmissionStoreInput
+): ALInboundAdmissionStore {
+    return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'volatile' });
 }
 
 namespace ProviderBackedALInboundAdmissionStore {
@@ -373,12 +380,14 @@ namespace ProviderBackedALInboundAdmissionStore {
         readonly retention: NormalizedALRuntimeStoreRetentionConfig;
         readonly backend: ALAdmissionWorkBackend;
         readonly nowMs: () => number;
+        readonly durability: ALStoreDurability;
     }
 }
 
 class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
     private readonly orderingTrackTtlMs: number;
     private readonly supersedenceTrackTtlMs: number;
     private readonly backend: ALAdmissionWorkBackend;
@@ -392,6 +401,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         this.retention = input.retention;
         this.backend = input.backend;
         this.nowMs = input.nowMs;
+        this.durability = input.durability;
         this.effects = new ALInboundDurableEffectStore({
             backend: input.backend,
             namespace: input.namespace
@@ -435,7 +445,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 controlOwners,
                 orderingTrackTtlMs: this.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
-                retention: this.retention
+                retention: this.retention,
+                durability: this.durability
             });
         });
     }
@@ -502,7 +513,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 controlOwners,
                 orderingTrackTtlMs: this.orderingTrackTtlMs,
                 supersedenceTrackTtlMs: this.supersedenceTrackTtlMs,
-                retention: this.retention
+                retention: this.retention,
+                durability: this.durability
             });
         });
     }
@@ -825,6 +837,7 @@ interface ToALInboundAdmissionReadInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
 }
 
 function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALInboundAdmissionRead {
@@ -862,6 +875,7 @@ function toALInboundAdmissionRead(observed: ToALInboundAdmissionReadInput): ALIn
         orderingTrackTtlMs: observed.orderingTrackTtlMs,
         supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
         retention: observed.retention,
+        durability: observed.durability,
         admitted: false,
         bufferedSnapshots: ordering.buffered
     };
@@ -880,6 +894,7 @@ interface ToALInboundBufferedReleaseReadDtoInput {
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
 }
 
 function toALInboundBufferedReleaseReadDto(
@@ -910,6 +925,7 @@ function toALInboundBufferedReleaseReadDto(
         supersedenceTrackTtlMs: observed.supersedenceTrackTtlMs,
         pendingAck,
         controlOwners,
-        retention: observed.retention
+        retention: observed.retention,
+        durability: observed.durability
     };
 }

@@ -142,7 +142,8 @@ describe('inbound admission preparation boundary', () => {
             pendingAck: prepared.read.pendingAck,
             acks: prepared.read.acks,
             controlOwners: prepared.read.controlOwners,
-            retention: prepared.read.retention
+            retention: prepared.read.retention,
+            durability: prepared.read.durability
         };
         vi.spyOn(Date, 'now').mockReturnValue(100);
         vi.spyOn(Temporal.Now, 'plainDateTimeISO').mockImplementation(() => {

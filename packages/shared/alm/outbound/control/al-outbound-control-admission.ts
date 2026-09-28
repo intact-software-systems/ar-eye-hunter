@@ -10,9 +10,11 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../../al-admission-work-backend.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
+import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -81,6 +83,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly reads: ALOutboundAdmissionReads<TPrepared>;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    /** The pair the control rows are written to: the volatile pair keeps them only through the receipt grace. */
+    readonly durability: ALStoreDurability;
     readonly port: ALWorkQueuePort;
     readonly settlements: ALOutboundSettlementEmitter;
     /** The carrier controls reach this owner on; every acknowledgement it records is stamped with it. */
@@ -95,6 +99,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly durability: ALStoreDurability;
     private readonly port: ALWorkQueuePort;
     private readonly settlements: ALOutboundSettlementEmitter;
     private readonly carrier: ALDeliveryCarrier;
@@ -106,6 +111,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.reads = input.reads;
         this.namespace = input.namespace;
         this.retention = input.retention;
+        this.durability = input.durability;
         this.port = input.port;
         this.settlements = input.settlements;
         this.carrier = input.carrier;
@@ -368,7 +374,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         await tx.set(
             toALOutboundControlHistoryKey(this.namespace, candidate.history.kind, read.targetMsgId),
             candidate.history,
-            candidate.controlExpireAtTimestamp
+            this.computeControlRowExpiryMs(candidate.controlExpireAtTimestamp, read)
         );
         const pendingAckKey = toALOutboundPendingAckKey({
             namespace: this.namespace,
@@ -379,7 +385,11 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.remove(pendingAckKey);
         }
         else if (candidate.pending.kind === 'set') {
-            await tx.set(pendingAckKey, candidate.pending.value, candidate.receiptExpireAtTimestamp);
+            await tx.set(
+                pendingAckKey,
+                candidate.pending.value,
+                this.computeControlRowExpiryMs(candidate.receiptExpireAtTimestamp, read)
+            );
         }
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
@@ -389,6 +399,17 @@ export class ALOutboundControlAdmission<TPrepared> {
             candidate.nextVersion!,
             candidate.versionExpireAtTimestamp
         );
+    }
+
+    /**
+     * The volatile pair keeps a message's control rows no longer than its deadline plus the receipt grace (D74):
+     * past it the owner row is gone and no control reads them. A pending receipt still ends at the deadline.
+     */
+    private computeControlRowExpiryMs(expireAtTimestamp: number, read: ALControlAdmissionRead): number {
+        if (this.durability !== 'volatile' || read.sent === undefined) {
+            return expireAtTimestamp;
+        }
+        return Math.min(expireAtTimestamp, resolveALReceiptRetentionExpiryMs(read.sent.reference.expiresAtMs));
     }
 
     private async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {

@@ -20,6 +20,7 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
@@ -303,10 +304,22 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
+/** Every store but the session's memory pair: its message rows keep their TTL retention. */
 export function createALOutboundAdmissionStore<TPrepared>(
     input: CreateALOutboundAdmissionStoreInput<TPrepared>
 ): ALOutboundAdmissionStore<TPrepared> {
-    return new ProviderBackedALOutboundAdmissionStore(input);
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'durable' });
+}
+
+/** The memory pair's store: a message's owner and sent rows live for its deadline plus the receipt grace (D74). */
+export function createVolatileALOutboundAdmissionStore<TPrepared>(
+    input: CreateALOutboundAdmissionStoreInput<TPrepared>
+): ALOutboundAdmissionStore<TPrepared> {
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'volatile' });
+}
+
+interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
+    readonly durability: ALStoreDurability;
 }
 
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
@@ -314,6 +327,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     readonly canonicalScope: string;
     private readonly supersedenceTrackTtlMs: number;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly durability: ALStoreDurability;
     private readonly backend: ALAdmissionWorkBackend;
     private readonly nowMs: () => number;
     private readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
@@ -321,11 +335,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     private readonly mutations: ALOutboundAdmissionMutations;
     private readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 
-    constructor(input: CreateALOutboundAdmissionStoreInput<TPrepared>) {
+    constructor(input: ALOutboundPairAdmissionStoreInput<TPrepared>) {
         this.namespace = input.namespace;
         this.canonicalScope = input.canonicalScope;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
+        this.durability = input.durability;
         this.backend = input.backend;
         this.nowMs = input.nowMs;
         this.decodePrepared = input.decodePrepared;
@@ -348,7 +363,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             namespace: input.namespace,
             canonicalScope: input.canonicalScope,
             retention: input.retention,
-            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
+            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+            durability: input.durability
         });
     }
 
@@ -365,7 +381,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             effectStore: this.effectStore,
             reads: this.reads,
             namespace: this.namespace,
-            retention: this.retention
+            retention: this.retention,
+            durability: this.durability
         });
     }
 
