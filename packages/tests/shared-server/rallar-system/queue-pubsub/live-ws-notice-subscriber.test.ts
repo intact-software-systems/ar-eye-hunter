@@ -44,7 +44,7 @@ function createReceiver() {
     };
     const sent: Array<{ message: ALMessage; ids: readonly string[]; }> = [];
     const readDeliverySurface = vi.fn(async (): Promise<ALInboundStoredPlanningRead | undefined> => undefined);
-    const eligible = vi.fn((ids: readonly string[]) => ids.filter((id) => id === 'remote-session'));
+    const eligible = (ids: readonly string[]) => ids.filter((id) => id === 'remote-session' || id === 'late-joiner');
     const resolveBroad = vi.fn((): readonly string[] => ['remote-session']);
     const installed = installLiveWsNoticeSubscriber({
         transport,
@@ -62,7 +62,6 @@ function createReceiver() {
         installed,
         sent,
         readDeliverySurface,
-        eligible,
         resolveBroad,
         receive: async (notice: LiveWsNotice) => {
             await installed;
@@ -121,15 +120,16 @@ describe('live WS notice subscriber', () => {
 
     it('sends a remote publisher notice once to the frozen locally eligible room session', async () => {
         const receiver = createReceiver();
-        await receiver.receive(roomNotice(['remote-session', 'late-joiner']));
+        receiver.resolveBroad.mockReturnValue(['late-joiner']);
+        receiver.readDeliverySurface.mockRejectedValue(new Error('canonical store unavailable'));
+        await receiver.receive(roomNotice(['remote-session']));
 
         expect(receiver.sent).toEqual([{ message: roomMessage(), ids: ['remote-session'] }]);
-        expect(receiver.readDeliverySurface).not.toHaveBeenCalled();
-        expect(receiver.resolveBroad).not.toHaveBeenCalled();
     });
 
     it('never broadens an empty room audience or processes self, expired, or malformed notices', async () => {
         const receiver = createReceiver();
+        receiver.resolveBroad.mockReturnValue(['late-joiner']);
         await receiver.receive(roomNotice([]));
         await receiver.receive({ ...roomNotice(), publisherId: 'publisher-b' });
         await receiver.receive({ ...roomNotice(), expiresAtMs: 1 });
@@ -138,8 +138,6 @@ describe('live WS notice subscriber', () => {
         await receiver.receive(malformed);
 
         expect(receiver.sent).toEqual([]);
-        expect(receiver.resolveBroad).not.toHaveBeenCalled();
-        expect(receiver.readDeliverySurface).not.toHaveBeenCalled();
     });
 
     it('resolves a broad notice against the local audience at receipt', async () => {
@@ -227,7 +225,7 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([{ message: largeMessage, ids: ['remote-session'] }]);
     });
 
-    it('treats absent or mismatched canonical authority as a best-effort miss', async () => {
+    it('treats absent or mismatched canonical authority and unknown namespaces as misses', async () => {
         const receiver = createReceiver();
         const key: Extract<LiveWsNotice, { delivery: 'inbound-key'; }> = {
             kind: 'live-ws',
@@ -250,10 +248,17 @@ describe('live WS notice subscriber', () => {
             supersedenceTrackTtlMs: 1000
         });
         await receiver.receive(key);
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: roomMessage(),
+            source: { kind: 'ws-client', peerId: 'sender', groupRecipientPeerIds: ['remote-session'] },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
         await receiver.receive({ ...key, inbound: { namespace: 'other', reference: key.inbound.reference } });
 
         expect(receiver.sent).toEqual([]);
-        expect(receiver.readDeliverySurface).toHaveBeenCalledTimes(2);
     });
 
     it('rejects a canonical row whose source or scoped room target differs from the notice', async () => {
@@ -292,6 +297,15 @@ describe('live WS notice subscriber', () => {
 
     it('drops key-only principal notices because the canonical source has no frozen principal list', async () => {
         const receiver = createReceiver();
+        const principalRef = { ...scope, principalId: 'principal-1' };
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: { ...roomMessage(), targets: { mode: 'broadcast', scope: 'principal', principalRef } },
+            source: { kind: 'ws-client', peerId: 'sender' },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
         await receiver.receive({
             kind: 'live-ws',
             version: 1,
@@ -303,7 +317,6 @@ describe('live WS notice subscriber', () => {
             audienceMode: 'principal',
             inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
         });
-        expect(receiver.readDeliverySurface).not.toHaveBeenCalled();
         expect(receiver.sent).toEqual([]);
     });
 
