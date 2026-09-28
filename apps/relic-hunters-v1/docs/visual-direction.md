@@ -161,8 +161,6 @@ readability:
 The fastest visual upgrade is not more post-processing; it is stronger shape
 language and cleaner materials.
 
-The detailed sequence for this work lives in
-[`../implementation-plan-for-scene-upgrades.md`](../implementation-plan-for-scene-upgrades.md).
 Scene data and interaction contracts live in
 [`scene-contracts.md`](scene-contracts.md).
 

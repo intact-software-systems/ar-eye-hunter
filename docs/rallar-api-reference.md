@@ -22,7 +22,7 @@ persistence data, not a plan. The service `write(transaction, computed)` applies
 it: service write receives the transaction and never opens or retries one.
 State, event, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` rows commit
 together; the final queue rows are written directly through
-`ResourceInboxRepository` in the same transaction. There is no intermediate
+`PSqlResourceInboxRepository` in the same transaction. There is no intermediate
 mutation outbox. Logical WebSocket audience resolution happens only after
 commit; queue workers are then woken or poll.
 
@@ -35,7 +35,7 @@ default.
 
 ## Browser Rallar
 
-Import one shared facade instance, or create an isolated facade:
+Import one shared facade instance, or create a separate facade with its own connection state, defaults, and current room. Facades in one page still share the API base URL set by `configure(...)` and the stored auth session:
 
 ```ts
 import { createRallarFacade, rallar } from '@shared-web/browser/rallar.ts';
@@ -51,7 +51,7 @@ const isolated = createRallarFacade();
 rallar.configure({ apiBaseUrl: 'http://localhost:8080' });
 ```
 
-`setDefaults(defaults)` stores facade defaults for scope, room, RTC, realtime, and operation policies.
+`setDefaults(defaults)` stores facade defaults for scope, room, realtime, RTC, message payload size, operation policies, and diagnostics ports.
 
 ```ts
 rallar.setDefaults({
@@ -88,7 +88,7 @@ const started = await rallar.setup({
 
 Route IDs used for rooms, topics, types, lanes, overlays, and peers must be routable Rallar IDs: already-trimmed strings of 1-128 characters using letters, numbers, `.`, `_`, `:`, or `-`. Room IDs are stable route IDs; display names remain human-readable text.
 
-Browser sends validate caller input before enqueueing. Invalid caller input throws `RallarValidationError` with structured `.issues`; delivery/readiness outcomes still use send result statuses such as `no-route`, `not-ready`, and `no-targets`.
+Browser sends validate caller input before enqueueing. Invalid caller input throws `RallarValidationError` with structured `.issues`; delivery and readiness outcomes arrive as values instead. `messages.*.send(...)` resolves to a `RallarMessageHandle` whose `lifecycle()` reports the delivery `state` and per-attempt outcomes such as `not-ready`, `no-targets`, or `unroutable` (with reason `no-route`), while room realtime sends resolve to results with statuses such as `not-ready` and `no-targets`.
 
 ```ts
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
@@ -154,17 +154,19 @@ scope.unsubscribe();
 
 ### Auth
 
-`auth.login(request, options?)` logs in, writes the session locally, and disconnects any existing middleware if the API base/session changes.
+`auth.login(request, options?)` logs in, disconnects any existing or initializing middleware, ends the previously stored session and closes its data scopes, writes the new session locally, and emits a `login` auth change.
 
 `auth.register(request, options?)` registers a user. Pass `adminSession` if the API requires an admin session.
 
 `auth.registerAndLogin(request, options?)` registers and then logs in.
 
-`auth.logout(options?)` disconnects, calls the logout API when a session exists, closes authenticated data scopes, clears the local session, and emits state.
+`auth.logout(options?)` clears the local session, disconnects, calls the logout API when a session exists, closes authenticated data scopes, emits state and a `logout` auth change, and then rethrows the first cleanup failure, if any.
 
 `auth.restore()` reads the locally stored session.
 
 `auth.isLoggedIn()` returns whether a stored session exists.
+
+`auth.onChange(listener, options?)` subscribes to `RallarAuthState` changes; the reason is `current`, `login`, `logout`, `expired`, or `unauthorized`.
 
 ```ts
 await rallar.auth.registerAndLogin({
@@ -183,7 +185,9 @@ await rallar.auth.registerAndLogin({
 `rooms.refresh(input?)` fetches complete current room and client snapshot
 collections from the API and updates local caches. A room session's
 `refresh()` performs one group point read for that exact `roomRef`, without a
-revision-floor query, and updates only that room.
+revision-floor query, followed by that room's topology read-through, and
+updates only that room; a `404` drops the unchanged cached room before the
+error is rethrown.
 
 `rooms.create(input)` creates a group/room, joins it, and makes it current.
 `input` can be a display name string or an object. It does not leave the
@@ -228,8 +232,10 @@ as present (the read-through fills the slot only for present sessions, so pass `
 `formation.status()` is the free, in-memory view: stage, epoch, attempt count, transport state,
 which layout roles the browser dials, the accepted and planned layouts it holds, and the pushed
 activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`
-classifies it as `{ kind: 'policy', code }` for a stage or initiator denial or
-`{ kind: 'layout', code }` for `group-connect-stale-epoch`, `group-connect-no-planned-layout` and
+returns `undefined` for any other error, maps the local `no-planned-layout` refusal to the
+`group-connect-no-planned-layout` layout denial, and classifies a rejection as
+`{ kind: 'policy', code, message }` for any policy reason code or
+`{ kind: 'layout', code, message }` for `group-connect-stale-epoch`, `group-connect-no-planned-layout` and
 `group-connect-planned-layout-superseded`, the three typed `409` conflicts of `connect`. Before it
 rethrows one, `connect()` reads the room through on a stale epoch and forgets a refused layout, so
 waiting for the layout the slot holds and connecting exactly that recovers from all three.
@@ -366,10 +372,14 @@ bounded this series, so `start` is denied until an explicit `reset`),
 `group-data-blocked-until-active` (the pre-activation data gate, which denies
 over WS only and reaches no HTTP response).
 
-REST errors keep the existing `{ error }` shape and may also include `code`,
-`message`, and `details`. Browser workflows preserve the parsed response on
-`ApiHttpError`, so apps can branch on stable policy reason codes without string
-matching `error`.
+REST errors keep two shapes. Read routes answer `{ error }` and may also include
+`code`, `message`, and `details`. Mutation routes, including every policy
+workflow route below, answer the canonical `ApiMutationFailure` body
+(`type`, `version`, `code`, `status`, `message`, `issues`, `denial`, `retry`),
+which has no `error` field and carries policy details under `denial.details`.
+Browser workflows preserve both on `ApiHttpError` (`mutationFailure`, and
+`policyError` for the read shape), so apps can branch on stable policy reason
+codes without string matching.
 
 Client and group point reads support optional convergence floors:
 
@@ -396,35 +406,47 @@ authoritative body, requested identity, required headers, and header/body
 revision agreement before returning.
 
 `setBrowserStateReadDiagnosticsSink(...)` installs an optional browser sink for
-bounded point, heartbeat, and collection outcomes. Events expose only feature,
-operation, result, source when known, and duration. Do not add application,
+bounded point, heartbeat, collection, topology read-through, reopen-resync, and
+delta-apply outcomes. Events expose only the event name, feature, operation,
+result, source when known, and duration. Do not add application,
 workspace, principal, group, session, or request identifiers as metric labels.
 
-The group state routes for the policy workflows are:
+The group state routes for the policy workflows are listed below. Each takes the
+mutation request id only as the trailing `/requests/{requestId}` path segment
+(20–128 characters of `[A-Za-z0-9_-]`); an `Idempotency-Key` header or a body
+`requestId` is rejected with `400`.
 
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban`
-- `PUT /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role`
-- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{principalId}/revoke/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/grant/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{principalId}/decline/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/remove/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/ban/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/unban/requests/{requestId}`
+- `PUT /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{principalId}/role/requests/{requestId}`
+- `POST /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/{requestId}`
 
 Join-code rotation is currently exposed through lower-level API integration and
 workflow helpers. The plaintext code is returned only by the rotation response;
 the group snapshot stores verifier metadata. Codes are reusable until expiry,
 and rotation invalidates the previous code.
 
-Set `RALLAR_STATE_STRICT_READ_AUTH` to `1`, `true`, `yes`, or `on` on API-v1 to
+Set `RALLAR_STATE_STRICT_READ_AUTH` to `1` or `true` (`0` or `false` turns it off; any other value is a configuration error) on API-v1 to
 align authenticated list/snapshot/event reads with full-state group read
-policy. `/api/state/*` routes already require authentication; strict mode adds
-the narrower server-side read authorization before exposing full group state.
-In strict mode, REST reads, state-sync routing, and room messaging authorization
-all use server-side group policy before exposing full group state or allowing
-room traffic.
+policy. Without strict mode, client and group list, snapshot, and event reads
+under `/api/state/*` accept unauthenticated requests; mutation routes and the
+SPA statistics routes always require a bearer session. Strict mode requires an
+authenticated session on those reads and adds the narrower server-side read
+authorization before exposing full group state. The shipped `prod`,
+`prod-hardened`, and `prod-in-memory` configuration profiles enable it
+(`stateApi.strictReadAuthorization`), and production hardening rejects a
+configuration without it.
+Strict mode changes only API-v1 REST reads (client and group lists, point
+snapshots, events, and graph topology reads). State-sync routing and WS
+room-message authorization apply server-side group policy in every mode.
 
 ### SPA Statistics REST
 
@@ -460,8 +482,9 @@ event counts rather than exact global counters.
 
 ### Director
 
-`director.appoint(room, options?)` appoints the current browser session as the
-room director through the narrow state API endpoint. It does not call
+`director.appoint(room?, options?)` appoints the current browser session as the
+room director through the narrow state API endpoint
+`POST .../groups/{groupId}/director/appoint/requests/{requestId}`. It does not call
 `rooms.updateMetadata(...)`, and it does not grant the caller owner/admin
 permissions.
 
@@ -471,9 +494,15 @@ owner/admin session is online and no existing director appointment has an active
 session. `rooms.updateMetadata(...)` remains owner/admin-only for generic group
 metadata changes.
 
-`director.status(room?)` reads the current appointment and returns whether the
-local session is the fresh director. `director.createRelay(...)` builds the
+`director.status(room?, options?)` reads the current appointment from local
+state: `isDirector` says the appointment names the local session, and `isFresh`
+says the appointed session is active with a fresh heartbeat; check both before
+running authoritative work. `director.createRelay(...)` builds the
 intent/output/snapshot relay around that appointment.
+
+`director.resign(room?, options?)` clears this session's appointment through
+`rooms.updateMetadata(...)`, so it is subject to the same owner/admin policy;
+`director.onStatus(listener)` subscribes to director status changes.
 
 ```ts
 const room = rallar.rooms.session(created.group);
@@ -483,7 +512,7 @@ await rallar.director.appoint(room.roomRef, {
 });
 
 const status = rallar.director.status(room.roomRef);
-if (status.isDirector) {
+if (status.isDirector && status.isFresh) {
     startAuthoritativeLoop();
 }
 ```
@@ -516,7 +545,7 @@ activity loop lives behind Rallar Game Authority. Its authority must be
 Rallar Game Authority, while `standings()` uses the same app-provided
 `readStandingRows` and optional `compareStandings` contract. Browser clients do
 not mint `server-validated` results. Server-owned domain code creates those
-envelopes with `createRallarServerValidatedMatchResult(...)` after validating
+envelopes with `createRallarServerValidatedMatchResult(...)` from `@shared-server/mod.ts` after validating
 the match and server authority.
 
 These helpers only derive values and construct or return envelopes. They do not
@@ -556,7 +585,7 @@ The lower-level browser API helpers are
 
 `people.list()` returns known people.
 
-`people.refresh(input?)` fetches client snapshots from the API and updates local caches.
+`people.refresh(input?)` fetches the complete client and group snapshot collections from the API and updates local caches.
 
 `people.get(principalId)` returns one known person.
 
@@ -586,13 +615,22 @@ Both lanes expose:
 - `send(input)`
 - `onMessage(selector, handler)`
 
-`messages.rtc.send` and `messages.ws.send` (lane sends) are volatile since S3a: receipted, kept in the
-memory pair only, no IndexedDB. Opt in to browser storage with `qos.durability: 'local-outbox'`.
+`messages.rtc.send` and `messages.ws.send` (lane sends) are at-least-once and
+volatile with a 30 s deadline: kept in the memory pair only, no IndexedDB. They
+track no receipt unless the send states `ack` (or `qos.ack`); without one,
+`transport-accepted` is terminal. Opt in to browser storage with
+`qos: { durability: { algo: 'local-outbox' } }`.
+
+`messages.room<T>(definition)` creates a room channel directly;
+`roomSession.message(...)` delegates to it. A typed channel exposes `send`,
+`sendRtc`, `sendWs`, `onRtc` and `onWs`. A `RallarMessageHandle` exposes
+`msgId`, `typeId`, `lifecycle()`, `onEvent(listener)`, `wait(options?)` and
+`cancel()`.
 
 Selectors can be a `typeId` string or `{ topicId, typeId }`.
 
 ```ts
-rallar.messages.ws.onMessage('chat.message', (message) => {
+rallar.messages.ws.onMessage('chat.message.v1', (message) => {
     console.log(message.payload);
 });
 
@@ -601,7 +639,7 @@ await rallar.messages.ws.send({
     typeId: 'chat.message.v1',
     payload: { text: 'hello' },
     scope: 'room',
-    roomRef: room.group
+    roomRef: room.roomRef
 });
 ```
 
@@ -619,23 +657,27 @@ const chat = rallar.messages.channel<ChatMessage>({
 });
 
 chat.onWs((payload) => console.log(payload.text));
-await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.group });
+await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.roomRef });
 ```
 
 `purpose` is required: `command` asks the addressed receiver, `notification`
 the room's frozen audience; both are at-least-once, receipted, volatile and
 30 s by default, and every send option overrides its default.
 `durability: 'local-outbox'` or `'local-inbox'` opts the channel into browser
-storage.
+storage. A WS send with scope `world` or `all`, and a `best-effort` send, ask
+for no receipt unless the send states `ack`.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
 `onRtc(...)` still subscribe by topic/type. Their callbacks receive the full
 `RallarMessage<T>`, and room sends that use a `roomRef` carry the target
-`GroupRef` in `message.raw.targets`. Validate that reference with
-`isSameGroupRef` before accepting an inbound payload:
+`GroupRef` in `message.raw.targets`. A message is dispatched only to the
+handlers of the carrier it arrived on, so register the handler on both
+carriers. Validate the target reference with `isSameGroupRef` before accepting
+an inbound payload:
 
 ```ts
+import type { RallarMessage } from '@shared-web/browser/rallar.ts';
 import {
     AL_DELIVERY_ADMITTED_STATES,
     isALDeliveryAdmitted
@@ -649,7 +691,10 @@ interface RoomChatMessage {
 const roomSession = await rallar.rooms.enter('lobby');
 const roomChat = roomSession.message<RoomChatMessage>('chat');
 
-roomChat.onWs((payload, message) => {
+const acceptRoomChat = (
+    payload: RoomChatMessage,
+    message: RallarMessage<RoomChatMessage>
+): void => {
     const targets = message.raw.targets;
     const targetRoomRef = targets?.mode === 'multicast'
         ? targets.groupRef
@@ -659,7 +704,10 @@ roomChat.onWs((payload, message) => {
     if (targetRoomRef && isSameGroupRef(targetRoomRef, roomSession.roomRef)) {
         console.info(payload.text);
     }
-});
+};
+
+roomChat.onRtc(acceptRoomChat);
+roomChat.onWs(acceptRoomChat);
 
 const handle = await roomChat.send({ text: 'hello' });
 const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 5_000 });
@@ -676,8 +724,11 @@ if (!isALDeliveryAdmitted(outcome.lifecycle)) {
 `msgId`, before admission resolves. `handle.wait(options?)` resolves once the
 lifecycle reaches one of `options.until` or any terminal state (or times out
 or aborts per `options.timeoutMs`/`options.signal`). `AL_DELIVERY_ADMITTED_STATES`
-is every state past `submitted`, so a `wait(...)` using it resolves at the first
-admission verdict whatever that verdict is; `isALDeliveryAdmitted(outcome.lifecycle)`
+is every state past `submitted`, so a `wait(...)` using it resolves as soon as
+the lifecycle leaves `submitted`. A `pending` verdict, and an unroutable or
+refused first leg that the strategy hands to its fallback carrier, leave the
+handle `submitted`; the wait resolves on the next settlement.
+`isALDeliveryAdmitted(outcome.lifecycle)`
 then reports whether the resolved state is `accepted`, `queued`,
 `transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
@@ -700,6 +751,15 @@ expectation shape used by `rooms.waitForPresence(...)` can be passed as
 `options.expect`; the result also includes `readyPeerIds`, `notReadyPeerIds`,
 `missingPeerIds`, `extraPeerIds`, `observedCount`, and `expectedCount`.
 
+`rtc.roomStatus(room, options?)` returns a `RallarRoomTransportStatus`: WS
+status plus the room's RTC state and its desired, known, active, ready and
+failed peer IDs. `rtc.openRoom(room, options?)` and
+`rtc.waitForRoom(room, options?)` resolve to the same status.
+
+`rtc.diagnostics(options?)` resolves `RallarRtcDiagnostics`.
+`rtc.restartIce(peerId)` and `rtc.reconnectPeer(peerId, options?)` resolve a
+`RallarRtcRecoveryResult`.
+
 `rtc.peer(peerId, options?)`, `knownPeerIds()`, `activePeerIds()`, `peerIdsWithNoReconnectableLanes()`, and `readyPeerIds(laneId?)` expose peer subsets.
 
 ```ts
@@ -719,7 +779,7 @@ if (readiness.status === 'open' || readiness.status === 'partial') {
 
 Browser RTC enables a bounded initial-establishment budget by default: six
 attempts, 180 seconds total, and a 30 second cooldown after exhaustion. The
-shared service exposes `WebRtcPeerLaneOpenStatus: 'exhausted'` and
+shared service exposes `WebRtcConnectionService.PeerLaneOpenStatus: 'exhausted'` and
 `WebRtcConnectionService.PeerConnectionLeft.kind: 'connect-exhausted'`; the browser facade keeps
 `RallarWaitForOpenStatus` compatible by returning `status: 'failed'` with reason
 `rtc-connect-attempt-budget-exhausted`.
@@ -768,6 +828,33 @@ selection and readiness handling.
 
 `realtime.health(options?)` returns RTC data channel health records.
 
+RTC data-channel lanes are fixed when the facade connects. Without
+configuration every peer has the `reliable` lane and the `realtime` lane
+(`DEFAULT_REALTIME_DATA_CHANNEL_LANE`). Declare any other `laneId` in
+`rtc.dataChannelLanes` (defaults or `setup`) or in `dataChannelLanes`
+(`start`/`connect` options) before connecting. On an undeclared lane a room
+send reports `not-ready` and `on(...)`/`onJson(...)` never fires. Declaring
+lanes replaces the default list, so include `DEFAULT_REALTIME_DATA_CHANNEL_LANE`
+to keep `realtime`:
+
+```ts
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE, rallar } from '@shared-web/browser/rallar.ts';
+
+await rallar.setup({
+    apiBaseUrl: 'http://localhost:8080',
+    applicationId: 'game',
+    workspaceId: 'default',
+    rtc: {
+        dataChannelLanes: [
+            DEFAULT_REALTIME_DATA_CHANNEL_LANE,
+            { id: 'motion', label: 'rtc-motion', init: { ordered: false, maxRetransmits: 0 } }
+        ]
+    }
+});
+```
+
+The samples below use that `motion` lane.
+
 ```ts
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -801,9 +888,11 @@ if (sendResult.status !== 'sent') {
 }
 ```
 
-Room realtime send statuses are `sent`, `partial`, `not-ready`, `no-targets`,
-and `failed`. Only `sent` is fully delivered; surface every other status as
-degraded.
+Room realtime send statuses are `sent`, `partial`, `halted`, `not-ready`,
+`no-targets`, and `failed`. `halted` means the room's RTC transport is halted.
+`sent` means every desired peer's lane accepted the payload (data-channel
+result `sent`, `queued` or `replaced`); it is not a delivery receipt. Surface
+every other status as degraded.
 
 ### Rallar Motion
 
@@ -818,7 +907,7 @@ bracketing samples, briefly dead reckons from optional velocity, then holds the
 latest observed pose after `maxExtrapolationMs`. `readInterpolationDelayMs` can
 provide a dynamic jitter-buffer delay without recreating the buffer. Set
 `interpolationMode: 'hermite'` to use velocity-aware Hermite interpolation, or
-leave it unset for the V1 linear behavior.
+leave it unset for linear interpolation.
 
 Samples use `observedAtEpochMs` as the local receiver clock. Sender
 `sentAtEpochMs` values can be stored in metadata for diagnostics, but they
@@ -826,8 +915,8 @@ should not drive interpolation unless the app has explicit clock sync.
 
 Metadata is copied from the newest contributing sample. Rallar Motion does not
 merge, validate, or synthesize metadata. Rotation support is tuple-based Euler
-interpolation/integration in caller-defined units; quaternion interpolation is
-not part of V2. Angle wrapping is opt-in through
+interpolation/integration in caller-defined units; there is no quaternion
+interpolation. Angle wrapping is opt-in through
 `rotationWrap: { period }`, for example `Math.PI * 2` for radians or `360` for
 degrees.
 
@@ -841,8 +930,10 @@ through space.
 The toolkit also exports pure helpers for adaptive interpolation delay,
 correction blending, kinematics estimation, sender-side cadence/threshold
 gating, sequence diagnostics, vector rounding, and quantization. Quantization
-ranges and precision are always caller-owned; Rallar Motion does not assume a
-world scale.
+ranges are always caller-owned (`min` and `max` are required). Precision
+defaults to 65,535 steps when neither `bits` nor `steps` is stated, and
+`roundRallarMotionVec3` defaults to three decimals. Rallar Motion does not
+assume a world scale.
 
 ```ts
 import { createRallarMotionAdaptiveDelay, RallarMotion } from '@shared/rallar-motion/mod.ts';
@@ -891,6 +982,11 @@ const estimate = motion.sample('peer-1', Date.now());
 
 `media.onRemoteStream(handler)` subscribes to remote streams.
 
+`media.microphone`, `media.camera` and `media.screen` are source controllers
+with `start(options?)`, `status()` and `stop()`. `start` resolves a
+`RallarMediaSourceHandle` with `stream`, `status()`, `attach()`,
+`setEnabled(enabled)` and `stop()`.
+
 ```ts
 const stream = await navigator.mediaDevices.getUserMedia({
     audio: true,
@@ -907,13 +1003,15 @@ rallar.media.onRemoteStream(({ peerId, stream }) => attachVideo(peerId, stream))
 `rallar.data` latest-value semantics.
 
 ```ts
+import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
+
+const roomSession = await rallar.rooms.enter('lobby');
+const roomRef = toCanonicalGroupRef(roomSession.roomRef);
+
 const doc = await rallar.crdt.open('room-checklist', {
     documentType: 'checklist',
-    documentId: room.group.groupId,
-    scope: {
-        kind: 'room',
-        roomRef: room.group
-    },
+    documentId: roomRef.groupId,
+    scope: { kind: 'room', roomRef },
     transport: 'ws'
 });
 
@@ -930,13 +1028,19 @@ await doc.applyLocal({
 });
 ```
 
+`scope.roomRef` is copied into every update envelope unchanged, and the server
+accepts only the three `GroupRef` fields. Pass a canonical ref, never a
+snapshot's `group`.
+
 ### Document API
 
 - `read()` returns the merged value.
 - `subscribe(listener)` receives merged snapshots.
 - `applyLocal(batch)` applies and persists a local operation batch.
 - `pendingUpdates()` returns locally produced updates not yet durably accepted.
-- `failedPendingUpdates()` returns permanent or exhausted pending failures.
+- `failedPendingUpdates()` returns recorded failures, each with
+  `failedAtEpochMs`, `retryable` and `reason`: a local persist or send failure
+  in `applyLocal` (recorded `retryable: true`) or a rejected durable append.
 - `dependencyBlockedUpdates()` returns updates waiting for missing parents or
   observed IDs.
 - `sequenceInsert(input, options?)`, `sequenceMove(input, options?)`, and
@@ -946,26 +1050,37 @@ await doc.applyLocal({
   `counterDecrement(path, options?)` mutate CRDT counter paths.
 - `numberMin(input, options?)` and `numberMax(input, options?)` merge finite
   numeric values with deterministic min/max semantics.
-- `operationGroupUpdateIds(operationGroupId)` returns locally known updates for
-  an actor-owned operation group.
-- `undoOperationGroup(input)` and `redoOperationGroup(input)` add compensating
-  CRDT operations for the caller's operation group. V1 supports "undo my
-  change", not document-wide collaborative undo.
+- `operationGroupUpdateIds(operationGroupId)` returns the IDs of the updates
+  this replica has applied, local or remote, that carry that
+  `operationGroupId`.
+- `undoOperationGroup(input)` and `redoOperationGroup(input)` apply the
+  caller-supplied compensating `operations` as a new batch carrying undo/redo
+  metadata; they throw when the target group is unknown to this replica. The
+  browser does not check that the caller authored the target group.
 - `snapshot()` exports a compact snapshot envelope.
 - `flush()` persists the current snapshot.
 - `sync(options?)` retries pending live sends and requests catch-up.
 - `health()` reports pending counts, live transport counters, last server append
   sequence, last durable ACK time, and corrupt local artifact count.
+- `ref` is the document's `RallarCrdtDocumentRef`.
+- `close()` flushes, stops tab and live sync, and releases the document.
+- `destroy()` removes the document's local persistence and releases it.
 
 ### Hardening Options
 
 `open(..., { policies, metrics, encryption, validation })` can attach CRDT production
 controls:
 
-- `policies`: shared rollout/feature policies for local apply, WS, RTC,
-  durable append, peer catch-up, read-only mode, and kill switches.
-- `metrics`: a `RallarCrdtMetricsSink` for local apply, replay, sync,
-  pending, dependency, append, and rejection metrics.
+- `policies`: `RallarCrdtDocumentTypePolicy[]` rollout and feature policies.
+  The browser consults them before a WS send, an RTC send and a durable
+  catch-up request; a `disabled` rollout or a `readOnly`, `networkSend`, `ws`,
+  `rtc`, `durableAppend` or scope flag denies the send, with
+  `killSwitchReason` as the reason. `applyLocal` is not gated by policy in the
+  browser. Durable append and peer catch-up decisions are made by the server.
+- `metrics`: a `RallarCrdtMetricsSink`. The browser document records
+  `crdt.local.apply.ms`, `crdt.merge.replay.ms`, `crdt.pending.age.ms`,
+  `crdt.pending.failed.count`, `crdt.dependency.blocked.count` and
+  `crdt.sync.bytes`; it emits no append or rejection metric.
 - `encryption`: a `RallarCrdtEncryptionKeyring`. When present, browser
   persistence, live transport, and durable append carry AES-GCM encrypted update
   payloads and snapshot bodies; authorized clients decrypt before merge.
@@ -977,26 +1092,34 @@ controls:
 
 Room documents support `local-only`, `ws`, `rtc`, `ws-then-rtc`, and
 `rtc-with-ws-fallback`. App and principal documents use the `app.crdt` WS topic;
-RTC remains room-scoped.
+RTC remains room-scoped. Custom-scoped documents have no live transport: live
+sends, peer sync and WS catch-up are deferred.
 
-WS is the safest default. RTC can accelerate active peers but does not replace
-the durable server append log. Pending updates clear only after a durable append
-response accepts or dedupes the update. `sync()` requests durable WS catch-up
+`open()` defaults to `transport: 'local-only'`, which sends nothing and
+requests no catch-up; state a strategy to sync. WS is the safest choice. RTC can
+accelerate active peers but does not replace the durable server append log. An
+update leaves `pendingUpdates()` only when a durable append response names it:
+`accepted` or `duplicate` clears it; `rejected` moves it to
+`failedPendingUpdates()` with the server's `reason` and `retryable` flag. `sync()` requests durable WS catch-up
 when the selected strategy includes WS, then keeps peer catch-up as a
-development/live-repair fallback. Deployments can also wire
-`readDurableCatchUp` or per-document `durableCatchUp` to use the HTTP helper
-`catchUpRallarCrdtDocument(...)`.
+development/live-repair fallback. The shared `rallar` facade configures no HTTP
+catch-up. Pass `durableCatchUp` per document, or build a facade with
+`createRallarCrdtFacade({ ..., readDurableCatchUp })`, using
+`crdtCatchUpHttpApi.catchUpDocument(request, options?)` from
+`@shared-web/browser/crdt/crdt-catch-up-http-api.ts`.
 
 ### Server
 
-API-v1 installs `room.crdt` topics through the Rallar server user-topic
-router. The server validates envelopes, authorizes room messages, appends
+API-v1 installs the `room.crdt` and `app.crdt` topics through the Rallar server
+user-topic router, with app and principal documents enabled. The server validates envelopes, authorizes room messages, appends
 accepted updates to `crdt_updates`, sends append responses, and fans out
 accepted updates.
 
-Principal documents can fan out live only when the server CRDT bridge is
-configured with a durable log and principal session resolver. The durable append
-log remains the source of truth.
+Principal documents fan out live to the principal's live sessions. The AppInbox
+append writes the fan-out as a `WS_OUTBOX` unicast to the principal ID, and the
+WS target resolver expands it through the middleware option
+`findClientSnapshotByRef`; without that option the fan-out reaches no session.
+The durable append log remains the source of truth.
 
 Authenticated durable catch-up is available over HTTP:
 
@@ -1004,10 +1127,12 @@ Authenticated durable catch-up is available over HTTP:
 
 The request returns an optional compact snapshot plus an append-log page.
 
-CRDT log repositories expose admin/hardening methods for listing documents,
-debug bundle export, backup bundle export/restore, integrity verification,
-projection rebuild, non-destructive compaction, archive, destroy, and
-quarantine lifecycle.
+The PostgreSQL log repository (`PSqlCrdtLogRepository`) is read-only: update
+pages, snapshots, document metadata, document listing, debug and backup bundle
+export, and integrity verification. Projection rebuild, compaction, lifecycle
+changes (archive, destroy, quarantine) and erase are AppInbox CRDT mutation
+commands, reached through the admin routes below. Backup restore exists only on
+the in-memory `RallarCrdtAdminLogRepository`.
 
 Shared hardening helpers include
 `evaluateRallarCrdtDestructiveCompactionSafety(...)` for explicit
@@ -1021,10 +1146,10 @@ API-v1 admin routes:
 - `POST /api/crdt/admin/documents/integrity`
 - `POST /api/crdt/admin/documents/debug-export`
 - `POST /api/crdt/admin/documents/backup-export`
-- `POST /api/crdt/admin/documents/rebuild-projection`
-- `POST /api/crdt/admin/documents/compact`
-- `POST /api/crdt/admin/documents/lifecycle`
-- `POST /api/crdt/admin/documents/erase`
+- `POST /api/crdt/admin/documents/rebuild-projection/requests/{requestId}`
+- `POST /api/crdt/admin/documents/compact/requests/{requestId}`
+- `POST /api/crdt/admin/documents/lifecycle/requests/{requestId}`
+- `POST /api/crdt/admin/documents/erase/requests/{requestId}`
 
 See [Rallar CRDT Guide](./rallar-crdt-guide.md) for the full product boundary.
 
@@ -1037,6 +1162,8 @@ Import through `rallar.data`, or directly:
 ```ts
 import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/browser/rallar-data.ts';
 ```
+
+`createRallarDataFacade(input)` takes `{ manager, resolveScopeKey }`.
 
 ### Facade API
 
@@ -1074,20 +1201,23 @@ await settings.set('audio', { volume: 0.8 });
 
 ### Store Options
 
-- `scope`: logical grouping, defaults to `'app'`.
+- `scope`: logical grouping, defaults to `'app'`. `'principal'` and `'session'`
+  resolve against the current auth session and throw without one.
 - `dbName`: IndexedDB database name, defaults to `rallar-custom-data`.
 - `storeName`: IndexedDB object store name, defaults to `entries`.
 - `keyPrefix`: key namespace; normally leave unset.
 - `ttlMs`: time-to-live for entries.
-- `durability`: `'write-through'` persists on mutation; `'write-behind'` persists asynchronously.
-- `hydrate`: `'eager'` or `'lazy'`.
-- `schemaVersion`: persisted envelope schema version, defaults to `1`.
-- `migrate`: converts old values to the current schema.
-- `sync`: enables `BroadcastChannel` cross-tab sync when available.
+- `durability`: `'write-through'` (default) persists on mutation; `'write-behind'` persists asynchronously.
+- `hydrate`: `'eager'` (default) or `'lazy'`.
+- `sync`: enables `BroadcastChannel` cross-tab sync when available, defaults to `true`.
 - `isValid`: rejects invalid values during repository operations.
 - `equals`: custom equality function.
 - `expireAtFor`: per-value expiry timestamp.
 - `onPersistenceError`: write-behind persistence error handler.
+
+Persisted entries use one envelope (`kind: 'rallar.custom-data'`). There is no
+schema version or migration hook; a persisted row that does not match the
+envelope fails to decode.
 
 ### Store API
 
@@ -1155,7 +1285,7 @@ the Rallar server application. Import it from
 
 The returned `RallarMiddlewareRuntime` contains:
 
-- `qboxEngine`: `InboxOutboxEngine` with WS and app-inbox tasks installed.
+- `qboxEngine`: `InboxOutboxEngine` with WS, app-inbox, and app-outbox tasks installed.
 - `wsQBoxServerService`: websocket queuebox service.
 - `inboxQueueReader`: app-inbox queue reader.
 - `outboxQueueReader`: app-outbox queue reader.
@@ -1168,6 +1298,14 @@ The returned `RallarMiddlewareRuntime` contains:
 - Optional configured auth, admin, and CRDT inbox services.
 - `clientsRepository`: client snapshot repository.
 - `groupsRepository`: group snapshot repository.
+- `clientStateService`, `groupStateService`: state services owned by the
+  client and group inbox services.
+- Optional `rtcTopologyPublicationRepository`,
+  `rtcTopologyExecutionRepository`, `rtcTopologyDelivery`, and
+  `rtcTopologyReplay`, passed through from options.
+- `readiness`: resolves when `options.readiness` and the queue pub/sub bridge
+  subscription are ready. Await it before starting queue workers.
+- Optional `healthFailure`: passed through from options.
 
 ### Options
 
@@ -1189,42 +1327,49 @@ Optional:
 - `webSocketServer`: defaults to a new `JsonWebSocketServer`.
 - `wsRuntimeName`: defaults to `default-qbox-server`.
 - `targetResolver`: custom WS target resolver.
-- `findGroupSnapshotByRef`, `findGroupSnapshotById`, `resolveGroupRef`: used by the default target resolver.
+- `findGroupSnapshotByRef`, `findClientSnapshotByRef`, `now`: used by the default target resolver.
 - `inboundStores`, `outboundStores`: AL runtime stores.
 - `resilience.outbox`: defaults to `resilience.inbox`.
 - `resilience.appInbox`: defaults to `resilience.inbox`.
 - `createAppAuthInboxService`, `createAppAdminInboxService`, and
   `createAppCrdtInboxService`: configured feature inbox factories.
+- `appInboxDequeueOptions`.
+- `wsDeliveryDiagnostics`, `wsOutboundDiagnostics`, `wsInboundDiagnostics`.
+- `rtcTopologyPublicationRepository`, `rtcTopologyExecutionRepository`,
+  `rtcTopologyDelivery`, `rtcTopologyReplay`.
+- `queuePubSubBridge`, `readiness`, `healthFailure`.
 
 ### Construction And Queue Ownership
 
 Construction is synchronous and ordered:
 
-1. `create-rallar-middleware-infrastructure.ts` creates the QueueBox/WebSocket
-   infrastructure and exposes only a queue wake capability.
+1. `create-rallar-middleware-infrastructure.ts` receives the queue engine and
+   creates the QueueBox/WebSocket infrastructure. The WebSocket QueueBox
+   service registers its own WS inbox, WS outbox, and receipt tasks on the
+   engine. The phase returns only a queue wake capability.
 2. `create-rallar-middleware-inbox-services.ts` constructs and validates every
    required and configured inbox service.
-3. `rallar-middleware-queue-registration.ts` internally creates the exact WS
-   inbox/outbox and application inbox/outbox task definitions. Callers cannot
-   supply task identities or definitions.
+3. `rallar-middleware-queue-registration.ts` registers the exact application
+   inbox and application outbox task definitions. Callers cannot supply task
+   identities or definitions.
 4. `assemble-rallar-middleware-runtime.ts` consumes the owner-bound,
-   single-use registration handle and is the only phase that receives the full
-   queue engine.
+   single-use registration handle and is the only phase that returns the queue
+   engine to the caller.
 
-Applications start only the final `runtime.qboxEngine`. There are no public
-include-inbox/include-outbox helpers and partial construction products expose
-neither `start` nor `stop`.
+Applications start only the final `runtime.qboxEngine`. The package entry point
+exports no include-inbox/include-outbox helpers, and partial construction
+products expose neither `start` nor `stop`.
 
 ### Feature Topic Installation
 
 There is no aggregate system-topic initializer. The application composition
-installs the durable topology AppOutbox owner, then chat, signalling, RTC-RTT,
-CRDT, and the router explicitly before worker start. API-v1 owns that sequence
+installs the durable topology AppOutbox owner, then signalling, RTC-RTT, CRDT,
+and the router explicitly before worker start. API-v1 owns that sequence
 in `apps/api-v1/src/composition/create-api-v1-system-installers.ts`; there is no
 state-sync or topology WebSocket topic installer.
 
 Client and group cache observation occurs only in the typed post-commit result
-paths owned by `ClientStateInboxHandler` and `GroupStateInboxHandler`. Their
+paths owned by `ClientStateInboxHandler` and `GroupStateInboxService`. Their
 mutations commit final `WS_OUTBOX` rows with the authoritative state. QueueBox
 workers and queue pub/sub deliver those rows through the current WebSocket
 target resolver. Durable topology publication materializes fixed
@@ -1249,58 +1394,57 @@ state scope used by clients and groups:
 - `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology`
   reads the effective topology view, including the current overlay snapshot
   when one exists.
-- `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config`
-  manages durable group topology config. Mutations commit with optimistic CAS,
-  persist a first-writer idempotency record when `requestId` is supplied, and
-  always persist the queued `rtc-topology-recompute` intent for an effectful
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config`
+  reads durable group topology config.
+  `PUT|DELETE .../topology/config/requests/:requestId` writes or deletes it.
+  Mutations commit with optimistic CAS, persist a first-writer idempotency
+  record keyed by the path `requestId`, and always persist the queued `rtc-topology-recompute` intent for an effectful
   write in the same transaction. A retained per-target generation record keeps
   accepted versions monotonic across DELETE, recreation, and override TTL
   expiry. A separate retained group invariant generation serializes config and
   override decisions, forcing cross-target conflicts through a full reread and
-  revalidation. Generation floors are optimistically backfilled before first
-  access and before periodic expiry cleanup, including already-expired override
-  rows. Topology config, override, mutation, generation, and invariant records
-  use the canonical optional-workspace group-state key codec, so an absent
-  workspace remains distinct from a literal `_` workspace and encoded
-  delimiter/lookalike values. Deployments with the older ambiguous topology
-  source keys must stop old writers and run
-  `migrateLegacyGroupTopologyConfigKeys` as an explicit offline/operator step.
-  Normal startup and first-access readiness never move those keys: they fail
-  closed, and startup does not enable expiry eviction until the migration has
-  completed. The repository treats physical expiry as part of the stored
+  revalidation. Topology config, override, mutation, generation, and invariant
+  records use the canonical group-state key codec, whose URI-encoded parts keep
+  encoded delimiter and lookalike values distinct; `workspaceId` is mandatory.
+  The repository treats physical expiry as part of the stored
   contract: durable config and retained mutation/generation rows must be
   non-expiring, while an override row must expire exactly at its stored
   `expiresAtEpochMs`. It validates JSON, scope, child identity, and this expiry
-  metadata before lazy expiry can delete a row. Effective reads bracket durable
-  config and override with the invariant generation so they cannot combine
-  states that never coexisted.
-  Every response includes a compact receipt whose mandatory nullable replay
-  timestamps let the service reconstruct a PUT replay without storing the full
-  accepted config in the idempotency ledger. Its mandatory nullable
-  `acceptedCausalRevision` is non-null exactly for an applied write and carries
-  the five scalar group snapshot revision fields used to derive the fixed
-  `rtc-topology-recompute` outbox identity. Replays recompute that identity and
-  reject a receipt whose `outboxId` was altered. Before any topology or
+  metadata before lazy expiry can delete a row. Effective reads take durable
+  config, override, and the invariant generation in one batch read. If that
+  batch observes a concurrent change, the read falls back to separate config
+  and override reads.
+  Every response includes a compact receipt. Its accepted config, version, and
+  mandatory nullable replay timestamps let the service reconstruct a PUT replay
+  from the idempotency ledger alone. Its mandatory nullable
+  `acceptedCausalRevision` is non-null exactly for an applied write. It carries
+  the group causal revision and the four scalar snapshot versions; the causal
+  revision derives the fixed `rtc-topology-recompute` outbox identity. Replays
+  recompute that identity and reject a receipt whose `outboxIds` entry was
+  altered. Before any topology or
   idempotency row is written, the transaction also advances an expected-revision
   authority fence on the exact raw group row observed with the authorization
-  snapshot. The fence intentionally changes only the group storage/causal
-  revision: it preserves the raw domain JSON and physical expiry byte-for-byte.
+  snapshot. The fence changes only the group row's storage revision: it
+  preserves the raw domain JSON, and with it the causal revision, and the
+  physical expiry byte-for-byte.
   A conflict rolls the whole transaction back and restarts snapshot reading,
   lifecycle/actor authorization, policy, and invariant checks. Effectful
-  outboxes therefore carry the post-fence causal group revision; no-op receipts
+  outboxes carry the causal group revision read with the fence; no-op receipts
   carry `acceptedCausalRevision: null` and do not enqueue an effect. A
   request-id-bearing no-op still fences before claiming its ledger row. Since
-  that touch changes no group domain field, an existing cache remains
-  semantically valid; a caller requiring the newer causal revision uses the
-  normal minimum-revision read-through path to refresh it. PUT receipts are always
+  that touch changes no group domain field, an existing cache remains valid.
+  PUT receipts are always
   `applied`; only DELETE may record either an applied deletion or a legitimate
-  no-op. The route returns without waiting for recompute or publish. Browser
-  DELETE callers can supply `requestId`; REST callers send the same stable value
-  as `Idempotency-Key`.
-- `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
-  manages temporary topology overrides with the same convergent receipt/outbox
+  no-op. The route returns without waiting for recompute or publish. The
+  mutation identity is the `:requestId` path segment only: 20 to 128 letters,
+  digits, underscores, or hyphens. A request that also sends an
+  `Idempotency-Key` header or a `requestId` body field is rejected with HTTP 400
+  `api-mutation-request-invalid`. Browser callers pass `options.requestId`.
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
+  reads the temporary override.
+  `PUT|DELETE .../topology/override/requests/:requestId` manages temporary topology overrides with the same convergent receipt/outbox
   transaction and asynchronous return contract.
-- `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
+- `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure/requests/:requestId`
   commits a topology recompute request through AppInbox and returns the
   mandatory queued receipt (`status`, `groupRef`, `requestId`, and `outboxId`).
   Resource-inbox outbox work performs recompute and optional publication
@@ -1309,8 +1453,9 @@ state scope used by clients and groups:
 
 Topology config resolves as server defaults, durable config, temporary override,
 then request-time reconfigure options. Writes require an active, unexpired group
-and an authenticated group owner/admin or a platform admin client ID from
-`AUTH_ADMIN_CLIENT_IDS`; platform administration bypasses membership/role, not
+and an authenticated group owner/admin or a platform admin client ID from the
+profile's `authentication.adminClientIds`, which `AUTH_ADMIN_CLIENT_IDS`
+overrides; platform administration bypasses membership/role, not
 group lifecycle. On a CAS retry, lifecycle policy receives a fresh attempt time,
 while stored write timestamps and relative override TTL stay anchored to the
 first non-replay attempt. If that stable override expiry has elapsed before a
@@ -1322,8 +1467,8 @@ extending or committing the expired override. Strict read auth
 
 API-v1 exposes platform-admin operational statistics and bounded maintenance
 operations under `/api/admin/operations/*`. Every route requires a normal bearer
-auth session, a matching `x-client-id` header, and a client id listed in
-`AUTH_ADMIN_CLIENT_IDS`.
+auth session, a matching `x-client-id` header, and a client id in the profile's
+`authentication.adminClientIds`, which `AUTH_ADMIN_CLIENT_IDS` overrides.
 
 Read routes:
 
@@ -1332,8 +1477,8 @@ Read routes:
   storage pressure.
 - `GET /api/admin/operations/queues` returns QueueBox and app-inbox result row
   counts by type/status plus expiry pressure.
-- `GET /api/admin/operations/realtime` returns process-local WebSocket status
-  and RTC topology metrics. Responses include a warning because these metrics
+- `GET /api/admin/operations/realtime` returns process-local WebSocket status,
+  RTC topology metrics, and group-formation metrics. Responses include a warning because these metrics
   are process-local in multi-server deployments.
 - `GET /api/admin/operations/state` and
   `GET /api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId`
@@ -1346,33 +1491,40 @@ Read routes:
 
 Write routes are intentionally narrow:
 
-- `POST /api/admin/operations/metrics/reset` resets resettable in-memory metric
-  categories, currently RTC topology metrics.
-- `POST /api/admin/operations/topology/recompute` delegates to the same scoped
+- `POST /api/admin/operations/metrics/reset` resets the resettable in-memory
+  metric categories `rtc-topology` and `group-formation`, both when
+  `categories` is omitted.
+- `POST /api/admin/operations/topology/recompute/requests/:requestId` delegates to the same scoped
   topology recompute path used by group topology management.
 - `POST /api/admin/operations/maintenance/prune-expired/requests/:requestId`
   requires a caller request ID and defaults to dry-run.
   Real execution deletes only expired rows for supported categories. App-data
   pruning requires an explicit namespace and optional store name.
-- `POST /api/admin/operations/crdt/integrity`,
-  `/api/admin/operations/crdt/debug-export`,
-  `/api/admin/operations/crdt/compact`,
-  `/api/admin/operations/crdt/lifecycle`, and
-  `/api/admin/operations/crdt/erase` delegate to existing CRDT admin repository
-  workflows. Debug exports keep payloads redacted by default unless an admin
+- `POST /api/admin/operations/crdt/integrity` and
+  `/api/admin/operations/crdt/debug-export` read through the CRDT admin
+  repository. `POST /api/admin/operations/crdt/compact/requests/:requestId`,
+  `/api/admin/operations/crdt/lifecycle/requests/:requestId`, and
+  `/api/admin/operations/crdt/erase/requests/:requestId` commit through
+  AppInbox. Debug exports keep payloads redacted by default unless an admin
   explicitly disables redaction.
 
-Admin operation responses include `generatedAtEpochMs`, `serverId` when known,
-and `warnings` for partial or process-local sources. They do not expose bearer
+Read routes, `metrics/reset`, and `maintenance/prune-expired` responses include
+`generatedAtEpochMs`, `serverId` when known, and `warnings` for partial or
+process-local sources. `topology/recompute` returns the queued topology receipt
+(`status`, `groupRef`, `requestId`, `outboxId`). The CRDT routes return the
+integrity report, debug bundle, compaction result, document metadata, or erase
+result directly. Admin operation responses do not expose bearer
 tokens, websocket tickets, passwords, raw queue payloads, or CRDT
 update/snapshot payloads outside the explicit debug-export workflow.
-Write operations also emit `rallar.timing` events through the existing timing
-sink. These events include operation name, status, duration, admin client id,
-session id, request id, reason, and bounded target metadata; they do not include
-bearer tokens or raw operation payloads. `RALLAR_TIMING_LOGS` controls the
+`metrics/reset`, `crdt/integrity`, and `crdt/debug-export` emit `rallar.timing`
+events with component `admin-operations`: operation name, status, duration,
+admin client id, session id, and bounded target metadata. `metrics/reset` and
+`crdt/debug-export` also record `reason`. The AppInbox-backed mutation routes
+emit the generic `app-inbox*` events, and prune adds `admin-prune-inbox` phase
+events. No timing event includes bearer tokens or raw operation payloads. `RALLAR_TIMING_LOGS` controls the
 default console sink.
 
-### Admin prune outbox deployment
+### Admin prune queue work
 
 Prune pages are persisted application queue work. Their canonical AL target is
 `{ mode: "broadcast", scope: "all" }`, with topic
@@ -1382,33 +1534,16 @@ one page worker; these targets do not publish the page to browser sockets or RTC
 peers. The worker still checks the current admin session, expiry, page bounds,
 aggregate identity, and reservation before committing deletion.
 
-This release uses a maintainer-managed clean-database cutover. It does not migrate
-retained messages with the previous `{ mode: "all", scope: "global" }` targets,
-and it has no runtime compatibility reader. Existing database contents are not
-preserved by this deployment choice.
-
-Coordinate the reset with deployment:
-
-1. Stop old API writers and application queue readers on every node sharing the
-   database. Prevent new admin requests while they are stopped.
-2. Clear the affected databases as the maintainer has chosen, then initialize
-   their schema with the existing Prisma migrations (`npm run db:migrate`).
-3. Start only the canonical producer/reader build, then verify a real prune
-   completes and inspect queue errors. Resume admin traffic afterwards.
-
-Do not clear a database while old workers can still write to it: they can recreate
-obsolete messages after the reset. The existing [deployment workflow](../.github/workflows/deploy.yml)
-does not stop old workers or perform this reset. The maintainer must coordinate
-those operations; this change does not disable repository-wide deployment or
-automatically delete data. A rollback likewise needs a stopped-worker reset or
-compatible restore, because the old reader rejects newly written canonical pages.
+The prune page codec has no compatibility reader for the earlier
+`{ mode: "all", scope: "global" }` target. A database that still holds prune
+pages written in that shape has to be cleared before this build reads it.
 
 ### Admin Support REST
 
 API-v1 exposes targeted platform-admin diagnostics under
 `/api/admin/support/explain/*`. Every route requires a normal bearer auth
-session, a matching `x-client-id` header, and a client id listed in
-`AUTH_ADMIN_CLIENT_IDS`.
+session, a matching `x-client-id` header, and a client id in the profile's
+`authentication.adminClientIds`, which `AUTH_ADMIN_CLIENT_IDS` overrides.
 
 Explain routes:
 
@@ -1420,10 +1555,10 @@ Explain routes:
 - `POST /api/admin/support/explain/group` accepts `groupRef`, optional
   `principalId`, optional `sessionId`, and optional `limitRecentEvents`. It
   returns group snapshot facts, bounded recent group events, focused session or
-  member facts, and a summarized `GroupTopologyManagementService.readTopologyView`
-  result.
-- `POST /api/admin/support/explain/request` accepts `requestId`,
-  `idempotencyKey`, `queueKey`, and optional `target`. Phase 1 supports explicit
+  member facts, and a summarized
+  `GroupTopologyConfigQueryService.readTopologyView` result.
+- `POST /api/admin/support/explain/request` accepts optional `requestId`,
+  `idempotencyKey`, `queueKey`, and `target`. Phase 1 supports explicit
   QueueBox-key delegation. Request-id-only global search is intentionally not
   indexed and returns a warning instead of scanning tables.
 - `POST /api/admin/support/explain/crdt-document` accepts `document` plus
@@ -1439,8 +1574,8 @@ Support responses use a diagnostic narrative DTO:
 `target`, `generatedAtEpochMs`, `serverId`, `facts`, `timeline`, `warnings`,
 `likelyCauses`, `suggestedActions`, and `rawRefs`. Queue and CRDT payload bodies
 are not returned. Recent state events are bounded by `limitRecentEvents` with a
-server-side cap. Live WebSocket facts are labeled process-local because
-`rallarApplication.ws.status()` only reflects the current API worker.
+server-side cap. Live WebSocket facts are labeled process-local because the
+WebSocket status reader only reflects the current API worker.
 
 Support explanation generation emits `rallar.timing` events with component
 `admin-support`; timing details include bounded target metadata and exclude
@@ -1455,8 +1590,12 @@ It supports:
 - Direct peer routing by open websocket connection ID.
 - Group routing through scoped group snapshots and active group presence sessions.
 - Broadcast routing to room, state-sync recipients, or all open sockets depending on AL message scope.
+- CRDT principal routing through the principal's live client sessions.
+- Overlay topology broadcasts to the open sockets of their recorded `recipientPeerIds`.
 
-Prefer `groupRef`-aware messages where possible. If only `groupId` is available, the resolver can fall back to `findGroupSnapshotById`, but scoped `GroupRef` avoids cross-workspace ambiguity.
+Group and room-scoped messages must carry `groupRef` in their targets. The
+default resolver returns no recipients for a group target without a
+`groupRef`; there is no `groupId`-only fallback.
 
 ## Server Application
 
@@ -1480,6 +1619,7 @@ rallarServer.installSystemTopics();
 rallarServer.installWebSocketLifecycle();
 rallarServer.mountWebSocket(app);
 rallarServer.mountRest(app);
+await runtime.readiness;
 rallarServer.start();
 ```
 
@@ -1496,5 +1636,6 @@ The server application exposes:
 - `ws.proxy(rule)`
 - `ws.publish(message, fanout?)`
 - `ws.status()`
-- `data.define/open/lookupStore/closeStore(...)`
-- repository manager operations under `data`
+- `appData.define/open/lookup/close(...)`
+- the repository manager as `repositories`
+- `runtime`, `mountWebSocket(app)`, `mountRest(app)`, and `start()`

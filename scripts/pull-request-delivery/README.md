@@ -52,5 +52,4 @@ be armed, the command reports the original GitHub error and returns
 Scheduled RTC publication uses `RTC_OBSERVATION_PR_TOKEN` as `GH_TOKEN`. That automation
 credential needs only repository Contents and Pull Requests write access, and its events must run
 ordinary pull-request checks. A missing or insufficient credential fails closed after the capture
-has already been retained as a workflow artifact. The restricted governance App is not used for
-ordinary observation pull requests.
+has already been retained as a workflow artifact.

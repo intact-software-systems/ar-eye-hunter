@@ -34,11 +34,5 @@ A later deletion is allowed only when the outcomes are already in the tree or in
 request, no open pull request still modifies the path, and neither this file nor `docs/README.md`
 names the plan as current work. If one of those checks fails, leave the file.
 
-The keep-set is the ALM design and the RTC baseline plan named above. `plans/backlog.md` and the
-tooling files below are not plans to delete.
-
-## Tooling kept beside the prose
-
-These files are governance inputs. They are not product plans:
-
-- `plans/*.closure.json`
+The keep-set is the ALM design and the RTC baseline plan named above. `plans/backlog.md` is not a
+plan to delete.

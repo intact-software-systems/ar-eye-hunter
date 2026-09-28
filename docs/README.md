@@ -40,9 +40,10 @@ exist only on its branch.
 - [Game Guide](./rallar-game-guide.md)
 - [RallarAI Recipes](./rallar-ai-recipes.md)
 - [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
-- [RallarAI Skill Guide](./rallar-ai-skill.md) — operating notes for an agent
-  implementing Rallar usage.
-- [RallarAI Prompting Guide](./rallar-ai-prompting-guide.md)
+- [Rallar AI Skill Guide](./rallar-ai-skill.md) — operating notes for a coding
+  agent that implements Rallar usage. It is not about RallarAI.
+- [Rallar AI Prompting Guide](./rallar-ai-prompting-guide.md) — prompts for
+  asking a coding agent to build with Rallar.
 
 ## Operate
 

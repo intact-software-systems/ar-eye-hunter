@@ -6,17 +6,12 @@ import {
     readReportCandidates,
     resolveCommit
 } from './test-structure-coupling-range-evidence.mjs';
-import {
-    printReport,
-    readGovernedTestCouplingRegistry,
-    readRegistry,
-    validateRegistry
-} from './test-structure-coupling-registry-report.mjs';
+import { printReport, readRegistry, validateRegistry } from './test-structure-coupling-registry-report.mjs';
 
 const reviewInput = readReviewInput(process.argv.slice(2));
 const report = readReportCandidates(reviewInput);
 const completeCurrent = readCompleteCurrentCandidates(reviewInput);
-const registry = readGovernedTestCouplingRegistry(reviewInput, readRegistry(reviewInput));
+const registry = readRegistry(reviewInput);
 const registeredCandidateIds = new Set(
     registry.entries
         .filter((entry) => entry && typeof entry === 'object' && typeof entry.id === 'string')

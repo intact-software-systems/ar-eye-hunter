@@ -8,8 +8,9 @@ final state changes.
 
 ## Game Event Schema
 
-Use an app-owned schema and register it through the shared helper when peers or
-server code need stable schema hashes:
+Use an app-owned schema and register it with `createRallarAiSchemaRegistry()`
+from `@shared/rallar-ai/mod.ts` when peers or server code need stable schema
+hashes (`hashRallarAiSchema` computes the same hash directly):
 
 ```ts
 const gameEventSchema = {
@@ -87,13 +88,15 @@ const provider = createWebLlmRallarAiProvider({
 
 For browser-only game helpers, keep AI output as a proposal and let existing
 controls remain authoritative. Relic Hunters uses this shape for planning
-companion notes:
+companion notes (`apps/relic-hunters-v1/src/game/ai/useRelicPlanningAi.ts`),
+validating the suggestion against the current context and revision before it
+marks the result `proposed`:
 
 ```ts
 const result = await ai.generateJson<RelicPlanningAiSuggestion>({
     schemaId: 'relic-hunters.planning-companion',
     schemaVersion: '1',
-    schema: relicPlanningAiSuggestionSchema,
+    schema: RELIC_PLANNING_AI_SUGGESTION_SCHEMA,
     prompt: 'Suggest one legal planning action.',
     context: redactedPlanningContext,
     baseStateRevision,
@@ -167,7 +170,11 @@ reflection is intentionally outside the RallarAI owner.
 
 Keep Ollama or another model sidecar private to the server network. The public
 surface should be the Rallar Server route or WebSocket topic, not the raw model
-engine endpoint.
+engine endpoint. `createRallarAiOllamaProvider` accepts only
+`http://127.0.0.1:11434`, `http://localhost:11434`, and `http://[::1]:11434` by
+default and throws `invalid-configuration` for any other `baseUrl`, so pass a
+sidecar address in `allowedBaseUrls` too, for example
+`{ model, baseUrl: 'http://ollama:11434', allowedBaseUrls: ['http://ollama:11434'] }`.
 
 ## Fallback Policy
 
@@ -178,8 +185,12 @@ the app can tolerate client-side variability.
 
 The generated envelope is the stable handoff between modes:
 
-- Deduplicate with `generationId`, `requestId`, or an app-level `dedupeKey`.
-- Reject stale browser results when `baseStateRevision` no longer matches.
+- Deduplicate by the dedupe id: the app-level `dedupeKey` when set, otherwise
+  `generationId` (`getRallarAiResultDedupeId`). `requestId` is not used.
+- Reject stale browser results when `baseStateRevision` no longer matches. The
+  browser facade does this itself only when it was created with
+  `readCurrentStateRevision` and `staleResultMode` is `'reject'` (the default);
+  it then throws a `stale-result` `RallarAiError`.
 - Validate domain rules before applying the value to game state.
 
 ## Capability Detection
@@ -227,8 +238,11 @@ await tracker.acceptOnce(accepted, (proposal) => {
 });
 ```
 
-Calling `acceptOnce` again with the same `dedupeKey` or `generationId` is a
-no-op, which protects reconnect, retry, and replay paths.
+Calling `acceptOnce` again with a result that has the same dedupe id
+(`dedupeKey`, or `generationId` when no `dedupeKey` is set) returns
+`{ applied: false, reason: 'duplicate' }` without calling the callback, which
+protects reconnect, retry, and replay paths. A result whose lifecycle is not
+`accepted` returns `reason: 'not-accepted'`.
 
 ## Lifecycle Transitions
 
@@ -282,7 +296,13 @@ port. Live checks are local or scheduled:
   supports structured JSON well enough for the test schema, and keep the test
   behind `RALLAR_AI_LIVE_OLLAMA=1`.
 - WebLLM: import a provider dynamically from a browser-only module and keep the
-  test behind `RALLAR_AI_LIVE_WEBLLM=1`.
+  test behind `RALLAR_AI_LIVE_WEBLLM=1`. AR Eye Hunter's
+  `runArenaWebLlmLiveEvaluationIfEnabled`
+  (`apps/ar-eye-hunter-v1/src/game/browser-ai/arena-webllm-evaluation.ts`) is
+  the repository's gated WebLLM harness.
+
+Run the gated Ollama check with
+`RALLAR_AI_LIVE_OLLAMA=1 npx vitest run packages/tests/shared-server/rallar-ai/rallar-ai-ollama-live-evaluation.test.ts`.
 
 See [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
 for provider metadata, production review, and live-gated evaluation guidance.

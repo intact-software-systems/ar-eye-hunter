@@ -2,8 +2,9 @@
 
 API-v1 and Relic hardening belong to the immutable API-v1 configuration
 snapshot. Select it with the exact value
-`RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`; there is no environment-name alias or
-second hardening validator. The black-box control server is a separate process
+`RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`; there is no environment-name alias.
+The Relic server adds one check on top of the API-v1 invariants: hardening
+requires `group-policy` REST authorization. The black-box control server is a separate process
 and owns its explicit `RALLAR_PRODUCTION_HARDENING=1` check.
 
 Configuration is restart-only. A changed profile, override, or secret affects a
@@ -13,13 +14,19 @@ names and configuration paths without reporting secret values.
 ## API-v1 Production
 
 - Set `RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`.
+  The Deno Deploy preflight also accepts `prod`, which keeps public registration
+  and bundled demo clients and enforces none of the hardening invariants, so this
+  step is a manual responsibility, not a deploy gate.
 - Keep the profile-owned PostgreSQL, PostgreSQL pub/sub, strict read auth,
   admin-only registration, disabled static clients, Metered ICE, HTTPS/WSS
   public URLs, and exact HTTPS CORS settings unless the deployment has a real
   target-specific override.
 - Set visible deployment values for `AUTH_ADMIN_CLIENT_IDS`,
-  `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`, and `METERED_APP_NAME`. Administrator
-  identities must be non-demo identities.
+  `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`, and `METERED_APP_NAME`; all three are
+  startup requirements under `prod-hardened` (the inherited admin default
+  `admin` is rejected). Administrator identities must be non-demo identities:
+  `prod-hardened` rejects only `admin`, while `prod` and its preflight reject every
+  bundled client ID in `apps/api-v1/resources/authorised-clients.json`.
 - Keep the `DATABASE_URL` supplied by the application's assigned Deno Deploy
   PostgreSQL database available at runtime. Store
   `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and

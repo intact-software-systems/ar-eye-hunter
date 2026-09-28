@@ -676,62 +676,14 @@ export const reviewedDispositions = Object.freeze([
     ...reviewedBrowserDispositions
 ]);
 
-export function readReviewedDispositionContext(repoRoot, candidateHead, dependencies = {}) {
-    const index = dependencies.readGovernanceDecisionIndex?.(repoRoot) ?? {
-        decisions: [],
-        duplicateDecisionIds: new Set(),
-        issues: []
-    };
-    const resolved = dependencies.resolveGovernanceExceptions?.(index, candidateHead) ?? [];
-    const decisions = resolved.filter(isCodeStyleDecision);
-    return {
-        candidateHead,
-        decisions,
-        issues: [
-            ...index.issues,
-            ...(resolved.length === decisions.length
-                ? []
-                : ['governance exception resolver returned malformed repository code style evidence'])
-        ]
-    };
-}
-
-export function isReviewedDisposition(repoRoot, finding, context = {}) {
+export function isReviewedDisposition(repoRoot, finding) {
     const findingPath = path.relative(repoRoot, finding.file).split(path.sep).join('/');
-    const staticallyReviewed = reviewedDispositions.some(
+    return reviewedDispositions.some(
         (disposition) =>
             disposition.path === findingPath &&
             disposition.rule === finding.ruleId &&
             disposition.symbol === finding.symbol &&
             matchesReviewedMagnitude(disposition, finding)
-    );
-    if (staticallyReviewed) {
-        return true;
-    }
-    if (!Array.isArray(context.decisions) || typeof context.candidateHead !== 'string') {
-        return false;
-    }
-    return context.decisions.some(
-        (decision) =>
-            decision?.projection?.path === findingPath &&
-            decision.projection.rule === finding.ruleId &&
-            (decision.projection.symbol ?? undefined) === finding.symbol &&
-            decision.projection.magnitude === findingMagnitude(finding) &&
-            decision.projection.candidateHead === context.candidateHead
-    );
-}
-
-function isCodeStyleDecision(decision) {
-    const projection = decision?.projection;
-    return (
-        projection !== null &&
-        typeof projection === 'object' &&
-        !Array.isArray(projection) &&
-        typeof projection.rule === 'string' &&
-        typeof projection.path === 'string' &&
-        (projection.symbol === null || typeof projection.symbol === 'string') &&
-        Number.isSafeInteger(projection.magnitude) &&
-        typeof projection.candidateHead === 'string'
     );
 }
 

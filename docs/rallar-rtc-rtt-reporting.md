@@ -30,10 +30,11 @@ RTC-RTT has one API-v1 acceptance path on every database backend.
 durable AppInbox mutation. `rtc-rtt-app-inbox-handler.ts` verifies its authority
 and asks `create-api-v1-topology-services.ts` for the candidate groups, overlay
 snapshots, and reporting degree. The read-side planning filter uses the same
-`readRttReportingDegreeLimit` policy. An explicitly configured
-`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore wins. Shared-server
-compositions that omit the option fall back to each group's effective
-`degreeLimit`. A report whose endpoints both hold live sessions in several
+`readRttReportingDegreeLimit` policy: the configured
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`, raised to the group's effective
+topology `degreeLimit` when it is lower, so evidence for every planned edge
+stays acceptable. Shared-server compositions that omit the option fall back to
+each group's effective `degreeLimit`. A report whose endpoints both hold live sessions in several
 groups is accepted under the largest resolved limit. Acceptance and planning
 agreeing on this policy is what lets formation readiness cover a plan whose
 degree exceeds the server default; see
@@ -83,10 +84,13 @@ local session with the shared deterministic reporting policy:
   lexically smaller session id. The other endpoint can keep the RTC lane open,
   but does not run the pair's RTT heartbeat or publish a competing version
   stream.
-- Server-published overlay `nextHopSessionIds` are preferred and sorted
-  deterministically. Browser-local provisional star overlays are used for RTC
-  connection bootstrap, but not as authoritative RTT reporting eligibility.
-- If fewer than K server-published overlay peers are available for a joined
+- The planned overlay's `nextHopSessionIds` are preferred and sorted
+  deterministically. Until a server overlay record exists, that planned overlay
+  is the browser-local bootstrap overlay (`provenance: 'bootstrap'`), whose
+  next hops follow the same rendezvous ranking the server's bootstrap reporting
+  selection uses. Bootstrap overlays are RTT reporting evidence only; they
+  never grant RTC dial permission.
+- If fewer than K planned-overlay peers are available for a joined
   group, bootstrap candidates are chosen from that group's online active peers
   with a rendezvous hash of the local session, peer session, and scoped group
   key.
@@ -110,7 +114,7 @@ For each accepted local heartbeat result, the browser converts it into
 - `version`: the heartbeat service version for that local peer relationship.
 
 The middleware enqueues a WebSocket AL message on `AppTopics.rtt` with
-`toBrowserRttHeartbeatMessage(...)`. The message is short-lived:
+`createBrowserRttHeartbeatMessage(...)`. The message is short-lived:
 `BROWSER_RTT_HEARTBEAT_TTL_MS` is `15000`. Its route uses the unordered
 `pairKey(sessionIdFrom, sessionIdTo)` as the route context and the measurement
 version as the route resource id, so repeated measurements for the same pair
@@ -123,17 +127,19 @@ durable AppInbox mutation validates policy before it writes the current
 runtime-state measurement, receipt, endpoint admission, and topology outbox
 work in one transaction.
 
-The RTT topic rejects a report with one of these policy reasons:
+The RTT AppInbox mutation rejects a report with one of these policy reasons:
 
 - `invalid-rtt`: `rttMs` is missing, non-finite, zero, or negative.
 - `self-pair`: `sessionIdFrom` and `sessionIdTo` are the same session.
 - `sender-mismatch`: the AL sender does not match `sessionIdFrom`.
 - `non-canonical-reporter`: `sessionIdFrom` is not the lexically smaller
   endpoint that owns reporting for the unordered pair.
-- `no-shared-active-group`: the endpoints are not both active members of any
-  candidate scoped group.
-- `not-reporting-edge`: the pair is not in the group's eligible reporting
-  graph under overlay next-hop or deterministic bootstrap selection.
+- `no-shared-active-group`: no active, unexpired candidate scoped group holds a
+  live presence session (connected at or before the report, lease unexpired)
+  for both endpoints.
+- `not-reporting-edge`: in at least one shared active group, neither endpoint
+  selects the other under overlay next-hop or deterministic bootstrap
+  selection.
 - `over-degree`: accepting the pair would put either endpoint over the
   reporting degree limit across accepted latest RTT pairs.
 
@@ -154,13 +160,17 @@ to build overlay topology snapshots for active groups. `RtcTopologyPlanner` owns
 selection and the no-RTT-versus-weighted planning decision; `createRtcRoomGraph` owns weighted
 sparse/complete graph construction. The default active topology degree limit is `5`, configurable
 through `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT` in API-v1. The API-v1 RTT reporting limit also defaults
-to `5` and is configured independently through `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`.
+to `5` and is configured through `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`; the server never applies a reporting limit below a group's effective topology `degreeLimit`.
 Lower-level shared-server compositions fall back to the effective topology degree only when the
 reporting option is omitted.
 
 For small rooms, the service selects `star` topology. For rooms at or above
 `treeMinSize`, default `5`, it selects `tree`. For rooms at or above
-`meshMinSize`, default `16`, it selects `mesh`.
+`meshMinSize`, default `16`, it selects `mesh`. Downgrades use hysteresis: a
+`mesh` group stays `mesh` until it falls below
+`max(treeMinSize, meshMinSize - meshExitWidth)` (`meshExitWidth` default `4`),
+and a `tree` group stays `tree` until it falls below
+`max(2, treeMinSize - treeExitWidth)` (`treeExitWidth` default `0`).
 
 The topology service has two broad planning modes:
 
@@ -184,7 +194,8 @@ The resulting overlay snapshot includes:
 - `nextHopsBySessionId`: the RTC peers each session should actively use for
   overlay traffic.
 - `degreeLimit`: the server degree limit used for the plan.
-- `version`: incremented when the next-hop map changes.
+- `version`: incremented when the next-hop map, topology kind, name, or degree
+  limit changes, or when an active plan replaces a removed one.
 
 Browsers receive `AppTopics.overlayTopology` snapshots over WebSocket. The
 browser converts each snapshot into local `OverlayInfo`, including
@@ -204,9 +215,10 @@ read/compute/validate/write flow. No-op receipts queue no topology effect.
 Successful routes return after commit; outbox work performs recompute and
 publication asynchronously and can retry independently.
 
-API-v1 explicit REST reconfigure uses the shared recompute path that WS group snapshots,
-RTT timers, and app-inbox topology work use. `POST
-/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
+API-v1 explicit REST reconfigure uses the shared recompute path: the
+`RTC_TOPOLOGY_RECOMPUTE` `APP_OUTBOX` work (a `commanded` `group-revision` item)
+that group-revision and RTT-refresh topology work use. `POST
+/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure/requests/:requestId`
 commits a recompute request through AppInbox and returns a mandatory queued
 receipt. Resource-inbox outbox work then applies request-time topology options
 for one recompute, resolving durable config and temporary overrides before the
@@ -224,19 +236,27 @@ edges among Vivaldi-known nodes when callers explicitly request it. A node
 becomes Vivaldi-known after at least one valid RTT involving that node is
 observed.
 
-The degree-capped predicted graph path still scans all Vivaldi-known pairs
-before selecting bounded output edges, so true large-N CPU reduction will need
-spatial indexing or candidate sampling.
+API-v1 runs no RTT-triggered global graph recompute. The graph diagnostics read
+computes the scoped global graph on demand from the complete predicted graph.
+`createDegreeCappedPredictedGraph` is used only when a caller passes
+`predictedDegreeLimit`, which no production caller does. It still scans all
+Vivaldi-known pairs before selecting bounded output edges, so true large-N CPU
+reduction will need spatial indexing or candidate sampling.
 
 ## Operational Notes
 
-The bounded reporting model preserves damping and coalescing. Accepted updates
-can still arrive in bursts when many clients open lanes, so the RTT refinement
-gate (`RtcRttRefinementGate`), runtime-state locks, and coalesced app-inbox work
-remain useful.
+Accepted updates can still arrive in bursts when many clients open lanes. Each
+accepted measurement becomes one immutable `rtt-refresh` `APP_OUTBOX` item, and
+the process-local RTT refinement gate damps replanning. A group replans only
+once its accumulated Vivaldi predicted-RTT movement reaches
+`RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS` (default `5`) and
+`RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS` (default `30000`) has
+elapsed since its last refinement. Skipped work completes without replanning.
+Writes use conditional runtime-state guards, not locks.
 
-AppInbox topology recompute reads the current filtered RTC-RTT measurements
-from the runtime-state repository.
+`APP_OUTBOX` topology work reads the current RTC-RTT measurements for the
+group's active sessions from the runtime-state repository and filters them
+through the reporting-edge policy.
 
 Star topology remains constrained by the topology selection thresholds in the
 default configuration: star is used for fewer than five sessions, so each
@@ -250,9 +270,9 @@ diagnostics before treating it as a production shape.
   degree normalization, and deterministic RTT reporting peer selection.
 - `packages/shared/services/web-rtc-heartbeat-service.ts`: ping/pong heartbeat and
   RTT calculation.
-- `packages/shared/services/WebRtcRxStreamerService.ts`: per-peer heartbeat
+- `packages/shared/services/web-rtc-rx-streamer-service.ts`: per-peer heartbeat
   ownership and `RttMeasurementInfo` creation.
-- `packages/shared/services/WebRtcGroupManager.ts`: browser desired RTC peer
+- `packages/shared/services/web-rtc-group-manager.ts`: browser desired RTC peer
   selection and capped RTT reporting peer selection.
 - `packages/shared-web/browser/connection/initialise-browser-middleware.ts`:
   browser RTT AL message creation,
