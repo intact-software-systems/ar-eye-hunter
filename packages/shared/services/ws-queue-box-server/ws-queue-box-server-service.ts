@@ -43,10 +43,10 @@ import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
-import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import {
     validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
+import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
@@ -265,6 +265,7 @@ export class WsQueueBoxServerService {
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
                     admittedAudience: authority?.admittedAudience,
                     recipientScope: authority?.recipientScope,
+                    principalTargetId: authority?.principalTargetId,
                     sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
@@ -275,6 +276,7 @@ export class WsQueueBoxServerService {
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
                     admittedAudience: authority?.admittedAudience,
                     recipientScope: authority?.recipientScope,
+                    principalTargetId: authority?.principalTargetId,
                     sessionInvalidation: authority?.sessionInvalidation,
                     referenceKey: authority?.referenceKey
                 }),
@@ -559,7 +561,8 @@ export class WsQueueBoxServerService {
         const proof = this.readAuthenticatedConnectionScope(connection);
         return proof !== undefined && proof.expiresAtEpochMs > this.clock.nowMs() &&
             proof.scope.applicationId === prepared.recipientScope.applicationId &&
-            proof.scope.workspaceId === prepared.recipientScope.workspaceId;
+            proof.scope.workspaceId === prepared.recipientScope.workspaceId &&
+            (prepared.principalTargetId === undefined || proof.principalId === prepared.principalTargetId);
     }
 }
 

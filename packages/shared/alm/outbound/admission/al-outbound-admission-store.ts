@@ -95,6 +95,7 @@ export interface ALOutboundPlanningAuthority {
     readonly sessionInvalidation?: ALOutboundDequeueAuthority['sessionInvalidation'];
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
+    readonly principalTargetId?: string;
     readonly referenceKey: Key | undefined;
 }
 

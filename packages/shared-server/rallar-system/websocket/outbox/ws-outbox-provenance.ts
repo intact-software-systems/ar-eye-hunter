@@ -36,7 +36,7 @@ export const WS_OUTBOX_PROVENANCE_NAMESPACE = 'ws-outbox-provenance';
 
 export interface WsOutboxProvenance {
     readonly version: 1;
-    readonly producerKind: 'state-sync' | 'auth-session-invalidation';
+    readonly producerKind: 'state-sync' | 'auth-session-invalidation' | 'crdt';
     readonly queueKey: Key;
     readonly typeId: string;
     readonly messageId: string;
@@ -46,7 +46,9 @@ export interface WsOutboxProvenance {
         | WsOutboxScopedUnicastTarget
         | WsOutboxInvalidatedSessionTarget
         | WsOutboxScopedRoomBroadcastTarget
-        | WsOutboxScopedPrincipalBroadcastTarget;
+        | WsOutboxScopedPrincipalBroadcastTarget
+        | WsOutboxScopedPrincipalUnicastTarget
+        | WsOutboxScopedWorldBroadcastTarget;
     readonly digest: string;
 }
 
@@ -73,6 +75,18 @@ export interface WsOutboxScopedPrincipalBroadcastTarget {
     readonly kind: 'scoped-principal-broadcast';
     readonly principalRef: ClientPrincipalRef;
     readonly admittedAudience: readonly string[];
+}
+
+export interface WsOutboxScopedPrincipalUnicastTarget {
+    readonly kind: 'scoped-principal-unicast';
+    readonly peerId: string;
+    readonly principalRef: ClientPrincipalRef;
+    readonly admittedAudience: readonly string[];
+}
+
+export interface WsOutboxScopedWorldBroadcastTarget {
+    readonly kind: 'scoped-world-broadcast';
+    readonly scope: StateScope;
 }
 
 export namespace WsOutboxProvenanceReader {
@@ -116,6 +130,23 @@ export class WsOutboxProvenanceReader {
                     admittedAudience: proof.target.admittedAudience,
                     recipientScope: undefined,
                     sessionInvalidation: proof.target.sessionInvalidation
+                };
+            }
+            if (proof.target.kind === 'scoped-world-broadcast') {
+                return {
+                    admittedAudience: undefined,
+                    recipientScope: proof.target.scope,
+                    broadWorld: true
+                };
+            }
+            if (proof.target.kind === 'scoped-principal-unicast') {
+                return {
+                    admittedAudience: proof.target.admittedAudience,
+                    recipientScope: {
+                        applicationId: proof.target.principalRef.applicationId,
+                        workspaceId: proof.target.principalRef.workspaceId
+                    },
+                    principalTargetId: proof.target.peerId
                 };
             }
             const scope = proof.target.kind === 'scoped-unicast'
@@ -180,7 +211,8 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
     ]);
     if (
         proof.version !== 1 ||
-        (proof.producerKind !== 'state-sync' && proof.producerKind !== 'auth-session-invalidation')
+        (proof.producerKind !== 'state-sync' && proof.producerKind !== 'auth-session-invalidation' &&
+            proof.producerKind !== 'crdt')
     ) {
         throw new TypeError('Unsupported WS producer provenance version or kind');
     }
@@ -202,13 +234,18 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
 }
 
 function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['target'] {
-    const target = decodeALAdmissionRecord(value, ['kind', 'admittedAudience'], [
+    const target = decodeALAdmissionRecord(value, ['kind'], [
         'peerId',
         'scope',
         'groupRef',
         'principalRef',
-        'sessionInvalidation'
+        'sessionInvalidation',
+        'admittedAudience'
     ]);
+    if (target.kind === 'scoped-world-broadcast') {
+        decodeALAdmissionRecord(value, ['kind', 'scope']);
+        return { kind: 'scoped-world-broadcast', scope: decodeALOutboundRecipientScope(target.scope) };
+    }
     if (!Array.isArray(target.admittedAudience)) {
         throw new TypeError('WS producer provenance requires a frozen audience');
     }
@@ -254,6 +291,15 @@ function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['tar
             admittedAudience
         };
     }
+    if (target.kind === 'scoped-principal-unicast') {
+        decodeALAdmissionRecord(value, ['kind', 'peerId', 'principalRef', 'admittedAudience']);
+        const peerId = decodeALAdmissionString(target.peerId);
+        const principalRef = decodePrincipalRef(target.principalRef);
+        if (peerId !== principalRef.principalId) {
+            throw new TypeError('CRDT principal target differs from its scoped principal');
+        }
+        return { kind: 'scoped-principal-unicast', peerId, principalRef, admittedAudience };
+    }
     throw new TypeError('WS producer provenance target kind is unsupported');
 }
 
@@ -281,6 +327,12 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
         issues.push('WS producer kind differs from authority variant');
     }
     if (
+        (proof.target.kind === 'scoped-world-broadcast' || proof.target.kind === 'scoped-principal-unicast') &&
+        proof.producerKind !== 'crdt'
+    ) {
+        issues.push('CRDT publication variant has another producer');
+    }
+    if (
         !isKeysEqual(proof.queueKey, entry.key) || proof.typeId !== entry.typeId ||
         entry.typeId !== EnqueuedType.WS_OUTBOX || entry.key.topicId === 'AL_OUTBOUND_MESSAGE'
     ) {
@@ -304,6 +356,18 @@ function validateWsOutboxProvenanceTarget(message: ALMessage, target: WsOutboxPr
         return validateALSessionInvalidationMessage(message, target.sessionInvalidation);
     }
     const targets = message.targets;
+    if (target.kind === 'scoped-world-broadcast') {
+        return targets?.mode === 'broadcast' && targets.scope === 'world' &&
+                message.route.contextId === target.scope.applicationId
+            ? []
+            : ['WS provenance target differs from scoped world identity'];
+    }
+    if (target.kind === 'scoped-principal-unicast') {
+        return targets?.mode === 'unicast' && targets.toPeerId === target.peerId &&
+                message.route.contextId === target.principalRef.principalId
+            ? []
+            : ['WS provenance target differs from scoped principal identity'];
+    }
     if (target.kind === 'scoped-room-broadcast') {
         return targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef &&
                 isSameGroupRef(targets.groupRef, target.groupRef)

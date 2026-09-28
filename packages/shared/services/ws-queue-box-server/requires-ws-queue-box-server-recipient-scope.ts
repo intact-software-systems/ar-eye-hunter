@@ -20,6 +20,11 @@ export function isWsQueueBoxServerDirectScopedBroadcastRow(message: ALMessage, r
         (message.targets.scope === 'room' || message.targets.scope === 'principal');
 }
 
+export function isWsQueueBoxServerDirectWorldBroadcastRow(message: ALMessage, referenceKey: Key | undefined): boolean {
+    return referenceKey !== undefined && referenceKey.topicId !== 'AL_OUTBOUND_MESSAGE' &&
+        message.targets?.mode === 'broadcast' && message.targets.scope === 'world';
+}
+
 export function readWsQueueBoxServerScopedTargetScope(message: ALMessage): StateScope | undefined {
     const targets = message.targets;
     if (targets?.mode === 'multicast') {
@@ -40,17 +45,36 @@ export function readWsQueueBoxServerScopedTargetScope(message: ALMessage): State
 /** Initial dispatch and repair apply the same captured recipient authority rules. */
 export function validateWsQueueBoxServerRecipientAuthority(
     message: ALMessage,
-    authority: Pick<ALOutboundCapturedPolicy, 'admittedAudience' | 'recipientScope' | 'sessionInvalidation'>,
+    authority: Pick<
+        ALOutboundCapturedPolicy,
+        'admittedAudience' | 'recipientScope' | 'principalTargetId' | 'sessionInvalidation'
+    >,
     referenceKey: Key | undefined
 ): readonly string[] {
     if (authority.sessionInvalidation !== undefined) {
-        return authority.recipientScope === undefined && authority.admittedAudience?.length === 1 &&
+        return authority.principalTargetId === undefined && authority.recipientScope === undefined &&
+                authority.admittedAudience?.length === 1 &&
                 authority.admittedAudience[0] === authority.sessionInvalidation.sessionId
             ? validateALSessionInvalidationMessage(message, authority.sessionInvalidation)
             : ['Session invalidation must name only its exact session'];
     }
     if (isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey)) {
         return validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, authority);
+    }
+    if (isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey)) {
+        return validateALOutboundRecipientScope(authority.recipientScope).length === 0 &&
+                authority.admittedAudience === undefined && authority.principalTargetId === undefined
+            ? []
+            : ['Direct world broadcast has no scoped subscriber-local authority'];
+    }
+    if (authority.principalTargetId !== undefined) {
+        return message.targets?.mode === 'unicast' &&
+                message.targets.toPeerId === authority.principalTargetId &&
+                message.route.contextId === authority.principalTargetId &&
+                authority.admittedAudience !== undefined &&
+                validateALOutboundRecipientScope(authority.recipientScope).length === 0
+            ? []
+            : ['Principal target differs from captured scoped audience'];
     }
     return requiresWsQueueBoxServerRecipientScope(message)
         ? validateALOutboundRecipientScope(authority.recipientScope)
@@ -59,10 +83,13 @@ export function validateWsQueueBoxServerRecipientAuthority(
 
 export function validateWsQueueBoxServerDirectScopedBroadcastAuthority(
     message: ALMessage,
-    authority: Pick<ALOutboundCapturedPolicy, 'admittedAudience' | 'recipientScope'>
+    authority: Pick<ALOutboundCapturedPolicy, 'admittedAudience' | 'recipientScope' | 'principalTargetId'>
 ): readonly string[] {
     const scope = authority.recipientScope;
-    if (validateALOutboundRecipientScope(scope).length > 0 || authority.admittedAudience === undefined) {
+    if (
+        validateALOutboundRecipientScope(scope).length > 0 || authority.admittedAudience === undefined ||
+        authority.principalTargetId !== undefined
+    ) {
         return ['Direct broadcast row has no frozen scoped audience'];
     }
     if (message.targets?.mode !== 'broadcast') {

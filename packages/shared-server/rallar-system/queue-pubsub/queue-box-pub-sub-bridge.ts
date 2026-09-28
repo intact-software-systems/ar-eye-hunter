@@ -19,7 +19,9 @@ import {
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
-    requiresWsQueueBoxServerRecipientScope
+    isWsQueueBoxServerDirectWorldBroadcastRow,
+    requiresWsQueueBoxServerRecipientScope,
+    validateWsQueueBoxServerRecipientAuthority
 } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerLiveSendInputDto,
@@ -206,7 +208,8 @@ function registerQueueBoxOutboxPublisher(
             message: envelope
         });
         const policy = requiresWsQueueBoxServerRecipientScope(message) ||
-                isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
+                isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key) ||
+                isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key)
             ? await options.wsQBoxServerService.readCapturedPolicy(message, entry)
             : undefined;
         const result = sendToCapturedLocalTargets({ message, entry, admittedAudience, policy }, options);
@@ -373,6 +376,15 @@ function sendToCapturedLocalTargets(
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
 ): WsServerLiveSendResult {
     const { message, entry, policy } = input;
+    if (
+        policy?.principalTargetId !== undefined &&
+        validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0
+    ) {
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(entry.key),
+            new TypeError('Captured WS recipient authority differs from the publication target')
+        );
+    }
     const captured = policy?.admittedAudience ?? input.admittedAudience;
     const recipientScope = policy?.recipientScope;
     const sessionInvalidation = policy?.sessionInvalidation;
@@ -396,7 +408,11 @@ function sendToCapturedLocalTargets(
         recipientSessionIds: eligible,
         admittedPeerIds: captured,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
-        recipientScope: directBroadcast ? recipientScope : undefined
+        recipientPrincipalId: policy?.principalTargetId,
+        recipientScope: directBroadcast || isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key) ||
+                policy?.principalTargetId !== undefined
+            ? recipientScope
+            : undefined
     });
 }
 

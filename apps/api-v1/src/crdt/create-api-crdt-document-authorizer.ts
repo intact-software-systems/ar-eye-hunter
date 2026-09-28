@@ -7,6 +7,8 @@ import type {
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 import type {
+    CrdtMutationAuthorityDecision,
+    CrdtMutationPublicationAuthority,
     CrdtMutationResponseAudience
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import type { GroupMemberStatus, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
@@ -15,8 +17,7 @@ import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { type ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 
 import type {
-    CurrentMutationAuthority,
-    CurrentMutationDocumentAuthorization
+    CurrentMutationAuthority
 } from './create-api-crdt-inbox-service.ts';
 
 export interface ApiCrdtGroupAuthorizationMember {
@@ -32,11 +33,15 @@ export interface ApiCrdtGroupAuthorizationSession {
 }
 
 export interface ApiCrdtGroupAuthorizationSnapshot {
+    readonly group: GroupRef;
     readonly members: readonly ApiCrdtGroupAuthorizationMember[];
     readonly activeSessions: readonly ApiCrdtGroupAuthorizationSession[];
 }
 
 export interface ApiCrdtClientAuthorizationPrincipal {
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly principalId: string;
     readonly status: ClientPrincipalStatus;
 }
 
@@ -100,7 +105,7 @@ export function createApiCrdtDocumentAccessAuthorizer(
     dependencies: ApiCrdtDocumentAuthorizerDependencies
 ): (
     input: AuthorizeCrdtDocumentAccessInput
-) => Promise<CurrentMutationDocumentAuthorization> {
+) => Promise<CrdtMutationAuthorityDecision> {
     return async (input) => {
         const { document, actorPrincipalId, sessionId } = input;
         if (document.scope === 'room') {
@@ -138,12 +143,20 @@ export function createApiCrdtDocumentAccessAuthorizer(
 async function authorizeRoomDocument(
     dependencies: ApiCrdtDocumentAuthorizerDependencies,
     input: AuthorizeCrdtDocumentAccessInput
-): Promise<CurrentMutationDocumentAuthorization> {
+): Promise<CrdtMutationAuthorityDecision> {
     const roomRef = input.document.roomRef;
     if (!roomRef) {
         return denied();
     }
     const snapshot = await dependencies.readGroupSnapshot(roomRef);
+    if (
+        snapshot?.group.applicationId !== roomRef.applicationId ||
+        snapshot.group.workspaceId !== roomRef.workspaceId ||
+        snapshot.group.groupId !== roomRef.groupId
+    ) {
+        return denied();
+    }
+    const nowEpochMs = dependencies.nowEpochMs();
     const member = snapshot?.members.find((candidate) =>
         candidate.principalId === input.actorPrincipalId &&
         candidate.status === 'active'
@@ -154,29 +167,69 @@ async function authorizeRoomDocument(
         candidate.status === 'active'
     );
     const sessionIsCurrent = activeSession !== undefined &&
-        activeSession.expiresAtEpochMs > dependencies.nowEpochMs();
-    return member !== undefined && sessionIsCurrent ? allowed() : denied();
+        activeSession.expiresAtEpochMs > nowEpochMs;
+    if (member === undefined || !sessionIsCurrent) {
+        return denied();
+    }
+    const activeMembers = new Set(
+        snapshot.members.filter((candidate) => candidate.status === 'active')
+            .map((candidate) => candidate.principalId)
+    );
+    return allowed({
+        recipientScope: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId },
+        admittedAudience: [
+            ...new Set(
+                snapshot.activeSessions
+                    .filter((candidate) =>
+                        candidate.status === 'active' &&
+                        candidate.expiresAtEpochMs > nowEpochMs && activeMembers.has(candidate.principalId)
+                    )
+                    .map((candidate) => candidate.sessionId)
+            )
+        ].sort()
+    });
 }
 
 async function authorizeCurrentClientDocument(
     dependencies: ApiCrdtDocumentAuthorizerDependencies,
     input: AuthorizeCurrentClientDocumentInput
-): Promise<CurrentMutationDocumentAuthorization> {
+): Promise<CrdtMutationAuthorityDecision> {
     const { applicationId, workspaceId, principalId, sessionId } = input;
+    const fullWorkspaceId = workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
     const snapshot = await dependencies.readClientSnapshot({
         applicationId,
-        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId: fullWorkspaceId,
         principalId
     });
-    if (snapshot?.principal.status !== 'active') {
+    if (
+        snapshot?.principal.applicationId !== applicationId ||
+        snapshot.principal.workspaceId !== fullWorkspaceId ||
+        snapshot.principal.principalId !== principalId ||
+        snapshot.principal.status !== 'active'
+    ) {
         return denied();
     }
+    const nowEpochMs = dependencies.nowEpochMs();
     const activeSession = snapshot.activeSessions.find((candidate) =>
         candidate.sessionId === sessionId && candidate.status === 'active'
     );
     const active = activeSession !== undefined &&
-        activeSession.expiresAtEpochMs > dependencies.nowEpochMs();
-    return active ? allowed() : denied();
+        activeSession.expiresAtEpochMs > nowEpochMs;
+    return active
+        ? allowed({
+            recipientScope: {
+                applicationId: snapshot.principal.applicationId,
+                workspaceId: snapshot.principal.workspaceId
+            },
+            admittedAudience: [
+                ...new Set(
+                    snapshot.activeSessions
+                        .filter((candidate) => candidate.status === 'active' && candidate.expiresAtEpochMs > nowEpochMs)
+                        .map((candidate) => candidate.sessionId)
+                )
+            ].sort()
+        })
+        : denied();
 }
 
 function responseAudienceMatchesDocument(
@@ -213,10 +266,10 @@ export function findCurrentClientSnapshot(
     });
 }
 
-function allowed(): CurrentMutationDocumentAuthorization {
-    return { allowed: true, code: 'allowed' };
+function allowed(publicationAuthority: CrdtMutationPublicationAuthority): CrdtMutationAuthorityDecision {
+    return { allowed: true, code: 'allowed', publicationAuthority };
 }
 
-function denied(): CurrentMutationDocumentAuthorization {
-    return { allowed: false, code: 'authorization-scope-denied' };
+function denied(): CrdtMutationAuthorityDecision {
+    return { allowed: false, code: 'authorization-scope-denied', publicationAuthority: null };
 }

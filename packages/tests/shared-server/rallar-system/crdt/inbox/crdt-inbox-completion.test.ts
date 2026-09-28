@@ -5,6 +5,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeCrdtInboxMutation, validateCrdtInboxMutation } from '@shared-server/rallar-system/crdt/inbox/compute-crdt-inbox-mutation.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import type { CrdtMutationRead } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { writeCrdtOutboxProvenance } from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
 import { writePSqlCrdtMutation } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -12,7 +13,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 describe('CRDT inbox completion candidate', () => {
     it('computes append state, outbox and completion from explicit facts', async () => {
         const read = await createRead();
-        const computed = computeCrdtInboxMutation(read);
+        const computed = await computeCrdtInboxMutation(read);
 
         expect(computed.mutation).toMatchObject({ outcome: 'write', document: { documentRevision: 1, updateCount: 1 } });
         expect(computed.mutation).toHaveProperty('documentWrite');
@@ -35,12 +36,12 @@ describe('CRDT inbox completion candidate', () => {
         });
         expect(computed.completion.durableResult).toBe(computed.mutation.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
-        expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
+        expect(await validateCrdtInboxMutation(read, computed)).toEqual([]);
     });
 
     it('preserves rejected and replay results while validating their completion', async () => {
         const read = await createRead();
-        const accepted = computeCrdtInboxMutation(read);
+        const accepted = await computeCrdtInboxMutation(read);
         const replayRead = {
             ...read,
             read: {
@@ -50,20 +51,20 @@ describe('CRDT inbox completion candidate', () => {
                 existingAppend: accepted.mutation.append
             }
         };
-        const replay = computeCrdtInboxMutation(replayRead);
+        const replay = await computeCrdtInboxMutation(replayRead);
         expect(replay.mutation.outcome).toBe('replay');
         expect(replay.completion.durableResult.status).toBe('replay');
-        expect(validateCrdtInboxMutation(replayRead, replay)).toEqual([]);
-        const deniedRead = { ...read, read: { ...read.read, authorized: false, authorizationCode: 'authorization-denied' } };
-        const denied = computeCrdtInboxMutation(deniedRead);
+        expect(await validateCrdtInboxMutation(replayRead, replay)).toEqual([]);
+        const deniedRead = { ...read, read: { ...read.read, authorized: false, authorizationCode: 'authorization-denied', publicationAuthority: null } };
+        const denied = await computeCrdtInboxMutation(deniedRead);
         expect(denied.mutation.outcome).toBe('rejected');
         expect(denied.completion.durableResult.status).toBe('rejected');
-        expect(validateCrdtInboxMutation(deniedRead, denied)).toEqual([]);
+        expect(await validateCrdtInboxMutation(deniedRead, denied)).toEqual([]);
         const changed = { ...accepted, mutation: { ...accepted.mutation, outboxWrites: [] } };
-        expect(validateCrdtInboxMutation(read, changed).length).toBeGreaterThan(0);
+        expect((await validateCrdtInboxMutation(read, changed)).length).toBeGreaterThan(0);
         expect(changed.mutation.outboxWrites).toEqual([]);
         expect(
-            validateCrdtInboxMutation(read, {
+            (await validateCrdtInboxMutation(read, {
                 ...accepted,
                 completion: {
                     ...accepted.completion,
@@ -72,13 +73,13 @@ describe('CRDT inbox completion candidate', () => {
                         expectedAttempts: 2
                     }
                 }
-            }).length
+            })).length
         ).toBeGreaterThan(0);
     });
 
     it('rejects hidden missing outbox writes without invoking a serialization callback', async () => {
         const read = await createRead();
-        const computed = computeCrdtInboxMutation(read);
+        const computed = await computeCrdtInboxMutation(read);
         let callbackCalls = 0;
         const candidate = {
             ...computed,
@@ -92,7 +93,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = validateCrdtInboxMutation(read, candidate);
+        const issues = await validateCrdtInboxMutation(read, candidate);
 
         expect.soft(callbackCalls).toBe(0);
         expect.soft(issues.length).toBeGreaterThan(0);
@@ -101,7 +102,7 @@ describe('CRDT inbox completion candidate', () => {
 
     it('rejects substituted Temporal outbox facts without invoking their callback', async () => {
         const read = await createRead();
-        const computed = computeCrdtInboxMutation(read);
+        const computed = await computeCrdtInboxMutation(read);
         const firstWrite = computed.mutation.outboxWrites[0];
         if (firstWrite === undefined) {
             throw new Error('Expected a CRDT outbox write');
@@ -129,7 +130,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = validateCrdtInboxMutation(read, candidate);
+        const issues = await validateCrdtInboxMutation(read, candidate);
 
         expect.soft(callbackCalls).toBe(0);
         expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
@@ -137,7 +138,7 @@ describe('CRDT inbox completion candidate', () => {
 
     it('rejects computed accessors without invoking them during validation', async () => {
         const read = await createRead();
-        const computed = computeCrdtInboxMutation(read);
+        const computed = await computeCrdtInboxMutation(read);
         const firstWrite = computed.mutation.outboxWrites[0];
         if (firstWrite === undefined) {
             throw new Error('Expected a CRDT outbox write');
@@ -164,7 +165,7 @@ describe('CRDT inbox completion candidate', () => {
             }
         };
 
-        const issues = validateCrdtInboxMutation(read, candidate);
+        const issues = await validateCrdtInboxMutation(read, candidate);
 
         expect.soft(accessorCalls).toBe(0);
         expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
@@ -172,8 +173,8 @@ describe('CRDT inbox completion candidate', () => {
 
     it('binds computed persistence values without serializing after transaction entry', async () => {
         const read = await createRead();
-        const computed = computeCrdtInboxMutation(read);
-        expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
+        const computed = await computeCrdtInboxMutation(read);
+        expect(await validateCrdtInboxMutation(read, computed)).toEqual([]);
         const statements: string[] = [];
         const transaction = createCrdtWriteTransaction(statements);
         const serialize = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
@@ -184,6 +185,7 @@ describe('CRDT inbox completion candidate', () => {
             await expect(writePSqlCrdtMutation(transaction, computed.mutation)).resolves.toBe(
                 computed.mutation.result
             );
+            await writeCrdtOutboxProvenance(transaction, computed.provenanceWrites);
         }
         finally {
             serialize.mockRestore();
@@ -192,6 +194,7 @@ describe('CRDT inbox completion candidate', () => {
         expect(statements.filter((statement) => statement.includes('insert into crdt_documents'))).toHaveLength(1);
         expect(statements.filter((statement) => statement.includes('insert into crdt_updates'))).toHaveLength(1);
         expect(statements.filter((statement) => statement.includes('insert into resource_inbox'))).toHaveLength(2);
+        expect(statements.filter((statement) => statement.includes('insert into runtime_state_store'))).toHaveLength(2);
     });
 });
 
@@ -235,6 +238,10 @@ async function createRead() {
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
+        publicationAuthority: {
+            recipientScope: { applicationId: 'app', workspaceId: 'workspace' },
+            admittedAudience: ['session']
+        },
         actorUpdatesInWindow: 0,
         storedSnapshotBytes: 0,
         featureDecision: { allowed: true, code: 'allowed', reason: 'test', rollout: 'production', retryable: false }
@@ -267,6 +274,9 @@ function createCrdtWriteTransaction(statements: string[]): PSqlSql {
         }
         if (statement.includes('insert into resource_inbox')) {
             return [{ ri_row_id: 1n }] as Result;
+        }
+        if (statement.includes('insert into runtime_state_store')) {
+            return [{ revision: 0 }] as Result;
         }
         return [] as Result;
     }) as PSqlSql;

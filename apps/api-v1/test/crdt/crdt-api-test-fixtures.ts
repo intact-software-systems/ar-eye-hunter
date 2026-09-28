@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 
+import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
@@ -17,7 +18,11 @@ import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mut
 
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
-import type { CrdtMutationActor } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import type {
+    CrdtMutationActor,
+    CrdtMutationAuthorityDecision,
+    CrdtMutationCommand
+} from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from '../db/pglite-auth-test-harness.ts';
@@ -35,6 +40,20 @@ const DOCUMENT: RallarCrdtDocumentRef = {
     }
 };
 
+export function authorizeTestCrdtCommand(command: CrdtMutationCommand): Promise<CrdtMutationAuthorityDecision> {
+    return Promise.resolve({
+        allowed: true,
+        code: 'allowed',
+        publicationAuthority: {
+            recipientScope: {
+                applicationId: command.document.applicationId,
+                workspaceId: command.document.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
+            },
+            admittedAudience: [command.actor.sessionId]
+        }
+    });
+}
+
 export function withCompetingWrite(
     database: PSqlSql,
     now: number,
@@ -45,7 +64,7 @@ export function withCompetingWrite(
         if (compete) {
             compete = false;
             const repository = new PSqlCrdtMutationRepository(
-                { sql: database, authorize: () => Promise.resolve(true) },
+                { sql: database, authorize: authorizeTestCrdtCommand },
                 { policies: [{ documentType: 'checklist', rollout: 'production' }] }
             );
             const service = createCrdtMutationService({

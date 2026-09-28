@@ -394,6 +394,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
         admittedAudience: pending.policy.admittedAudience,
         recipientScope: pending.policy.recipientScope,
+        principalTargetId: pending.policy.principalTargetId,
         sessionInvalidation: pending.policy.sessionInvalidation
     };
 }

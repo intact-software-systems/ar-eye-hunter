@@ -9,6 +9,7 @@ import { writeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app
 import { CrdtMutationConflictError } from '../mutation/crdt-mutation-contracts.ts';
 import {
     type CrdtDocumentWrite,
+    type CrdtMutationAuthorityDecision,
     type CrdtMutationCommand,
     type CrdtMutationComputed,
     type CrdtMutationComputedWrite,
@@ -23,14 +24,9 @@ import { decodeCrdtDocumentRow, type CrdtDocumentRow } from './row-decoding/deco
 import { decodeCrdtSnapshotRow, type CrdtSnapshotRow } from './row-decoding/decode-crdt-snapshot-row.ts';
 import { decodeCrdtUpdateRow, type CrdtUpdateRow } from './row-decoding/decode-crdt-update-row.ts';
 
-export interface CrdtMutationAuthorityDecision {
-    readonly allowed: boolean;
-    readonly code: string;
-}
-
 export type ReadCrdtMutationAuthority = (
     command: CrdtMutationCommand
-) => Promise<boolean | CrdtMutationAuthorityDecision>;
+) => Promise<CrdtMutationAuthorityDecision>;
 
 export namespace PSqlCrdtMutationRepository {
     export interface Dependencies {
@@ -99,17 +95,15 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
                 lastAppendSequence: document?.lastAppendSequence ?? 0
             })
             : null;
-        const authorityDecision = typeof authority === 'boolean'
-            ? { allowed: authority, code: authority ? 'allowed' : 'authorization-denied' }
-            : authority;
         return {
             document,
             existingUpdate: existingRecord?.update ?? null,
             existingAppend: existingRecord?.append ?? null,
             records: decodedRecords,
             snapshot,
-            authorized: authorityDecision.allowed,
-            authorizationCode: authorityDecision.code,
+            authorized: authority.allowed,
+            authorizationCode: authority.code,
+            publicationAuthority: authority.publicationAuthority,
             featureDecision: evaluateCrdtMutationFeatureDecision({
                 command,
                 policies: this.policies

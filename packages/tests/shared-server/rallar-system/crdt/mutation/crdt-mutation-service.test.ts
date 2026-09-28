@@ -38,7 +38,10 @@ describe('CRDT mutation service', () => {
     it('does not expose a write path outside AppInbox transaction ownership', () => {
         const transaction = createUnusedTransaction();
         const repository = new PSqlCrdtMutationRepository(
-            { sql: transaction, authorize: () => Promise.resolve(true) },
+            {
+                sql: transaction,
+                authorize: () => Promise.resolve({ allowed: true, code: 'allowed', publicationAuthority: null })
+            },
             { policies: [] }
         );
         const service = createCrdtMutationService({
@@ -276,6 +279,7 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
             snapshot: null,
             authorized: true,
             authorizationCode: 'allowed',
+            publicationAuthority: null,
             featureDecision: {
                 allowed: true,
                 code: 'allowed',

@@ -10,6 +10,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
+    isWsQueueBoxServerDirectWorldBroadcastRow,
     requiresWsQueueBoxServerRecipientScope,
     validateWsQueueBoxServerDirectScopedBroadcastAuthority,
     validateWsQueueBoxServerRecipientAuthority
@@ -22,11 +23,29 @@ export type WsOutboxProducerAuthority =
         readonly admittedAudience: readonly string[];
         readonly recipientScope: StateScope;
         readonly sessionInvalidation?: never;
+        readonly principalTargetId?: never;
+        readonly broadWorld?: never;
+    }
+    | {
+        readonly admittedAudience: readonly string[];
+        readonly recipientScope: StateScope;
+        readonly sessionInvalidation?: never;
+        readonly principalTargetId: string;
+        readonly broadWorld?: never;
+    }
+    | {
+        readonly admittedAudience: undefined;
+        readonly recipientScope: StateScope;
+        readonly sessionInvalidation?: never;
+        readonly principalTargetId?: never;
+        readonly broadWorld: true;
     }
     | {
         readonly admittedAudience: readonly string[];
         readonly recipientScope: undefined;
         readonly sessionInvalidation: NonNullable<ALOutboundDequeueAuthority['sessionInvalidation']>;
+        readonly principalTargetId?: never;
+        readonly broadWorld?: never;
     };
 
 export type WsOutboxProducerProvenanceReader = (
@@ -63,6 +82,7 @@ export class WsQueueBoxServerDequeueAuthority {
             return {
                 admittedAudience: policy.admittedAudience,
                 recipientScope: policy.recipientScope,
+                principalTargetId: policy.principalTargetId,
                 sessionInvalidation: policy.sessionInvalidation
             };
         }
@@ -70,7 +90,11 @@ export class WsQueueBoxServerDequeueAuthority {
             throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
         }
         const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
-        if (!readProducerProvenance || (!requiresWsQueueBoxServerRecipientScope(message) && !directBroadcast)) {
+        const directWorld = isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key);
+        if (
+            !readProducerProvenance ||
+            (!requiresWsQueueBoxServerRecipientScope(message) && !directBroadcast && !directWorld)
+        ) {
             throw toDequeueCorruption(entry, 'Raw WS outbox row has no supported producer authority');
         }
         const authority = await readProducerProvenance(message, entry);
@@ -83,12 +107,19 @@ export class WsQueueBoxServerDequeueAuthority {
         const targets = message.targets;
         if (
             validateALOutboundRecipientScope(authority.recipientScope).length > 0 ||
-            (directBroadcast
+            (directWorld
+                ? authority.broadWorld !== true ||
+                    validateWsQueueBoxServerRecipientAuthority(message, authority, entry.key).length > 0
+                : directBroadcast
                 ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, authority).length > 0
                 : targets?.mode !== 'unicast' ||
-                    authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId))
+                    (authority.principalTargetId === undefined
+                        ? authority.admittedAudience === undefined ||
+                            authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId)
+                        : authority.principalTargetId !== targets.toPeerId ||
+                            authority.admittedAudience === undefined))
         ) {
-            throw toDequeueCorruption(entry, 'Producer authority differs from scoped unicast target');
+            throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
         return authority;
     }

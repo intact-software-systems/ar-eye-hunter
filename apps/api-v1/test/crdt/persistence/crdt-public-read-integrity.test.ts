@@ -20,6 +20,7 @@ import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mut
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -204,7 +205,7 @@ Deno.test(
 
 async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
     const repository = new PSqlCrdtMutationRepository(
-        { sql, authorize: () => Promise.resolve(true) },
+        { sql, authorize: authorizeTestCrdtCommand },
         { policies: [{ documentType: 'checklist', rollout: 'production' }] }
     );
     const service = createCrdtMutationService({

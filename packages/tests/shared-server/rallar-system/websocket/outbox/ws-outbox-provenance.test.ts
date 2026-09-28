@@ -13,7 +13,7 @@ import {
     WsOutboxProvenanceReader,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -32,6 +32,96 @@ describe('row-bound WS producer provenance', () => {
         ].map(toWsOutboxProvenanceKey);
         expect(new Set(keys).size).toBe(5);
         expect(keys[0]).toBe('v1:["a/b","c","d"]');
+    });
+
+    it('verifies a CRDT world fanout as scoped subscriber-local delivery', async () => {
+        const message = newALBroadcastMessage(
+            'server',
+            {
+                topicId: 'app.crdt',
+                resourceId: 'crdt-update',
+                contextId: 'app'
+            },
+            'world',
+            'rallar.crdt.update.v1',
+            {},
+            { ttlMs: 30_000 }
+        );
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const facts = {
+            version: 1 as const,
+            producerKind: 'crdt' as const,
+            queueKey: entry.key,
+            typeId: entry.typeId,
+            messageId: message.id.msgId,
+            senderId: message.id.senderId,
+            expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+            target: {
+                kind: 'scoped-world-broadcast' as const,
+                scope: { applicationId: 'app', workspaceId: 'workspace' }
+            }
+        };
+        const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+        const repository = new FakeRuntimeStateRepository();
+        await repository.upsert(
+            WS_OUTBOX_PROVENANCE_NAMESPACE,
+            toWsOutboxProvenanceKey(entry.key),
+            JSON.stringify(proof),
+            proof.expiresAtMs
+        );
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+
+        expect(await reader.readProducerProvenance(message, entry)).toEqual({
+            admittedAudience: undefined,
+            recipientScope: { applicationId: 'app', workspaceId: 'workspace' },
+            broadWorld: true
+        });
+    });
+
+    it('binds a CRDT principal fanout to its logical principal and frozen sessions', async () => {
+        const message = newALUnicastMessage(
+            'server',
+            {
+                topicId: 'principal.crdt',
+                resourceId: 'crdt-update',
+                contextId: 'alice'
+            },
+            'alice',
+            'rallar.crdt.update.v1',
+            {},
+            { ttlMs: 30_000 }
+        );
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        const facts = {
+            version: 1 as const,
+            producerKind: 'crdt' as const,
+            queueKey: entry.key,
+            typeId: entry.typeId,
+            messageId: message.id.msgId,
+            senderId: message.id.senderId,
+            expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+            target: {
+                kind: 'scoped-principal-unicast' as const,
+                peerId: 'alice',
+                principalRef: { applicationId: 'app', workspaceId: 'workspace', principalId: 'alice' },
+                admittedAudience: ['alice-session']
+            }
+        };
+        const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+        const repository = new FakeRuntimeStateRepository();
+        await repository.upsert(
+            WS_OUTBOX_PROVENANCE_NAMESPACE,
+            toWsOutboxProvenanceKey(entry.key),
+            JSON.stringify(proof),
+            proof.expiresAtMs
+        );
+        const reader = new WsOutboxProvenanceReader({ repository, nowMs: Date.now });
+
+        expect(await reader.readProducerProvenance(message, entry)).toEqual({
+            admittedAudience: ['alice-session'],
+            recipientScope: { applicationId: 'app', workspaceId: 'workspace' },
+            principalTargetId: 'alice'
+        });
     });
 
     it.each([{ audience: ['peer'] }, { audience: [] }])('preserves frozen audience $audience and ignores mutable queue metadata', async ({ audience }) => {

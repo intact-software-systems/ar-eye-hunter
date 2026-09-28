@@ -45,6 +45,7 @@ export interface ALOutboundDequeueAuthority {
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
+    readonly principalTargetId?: string;
 }
 
 /** Runs once per dequeue attempt before dispatch admission; failures return to the existing work owner. */
@@ -110,6 +111,7 @@ export interface ALOutboundRepairRequest {
     readonly referenceKey?: Key;
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
@@ -155,6 +157,7 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 

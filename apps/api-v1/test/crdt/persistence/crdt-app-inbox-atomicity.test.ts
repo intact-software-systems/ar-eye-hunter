@@ -10,9 +10,16 @@ import {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
+    computeCrdtOutboxProvenance,
+    writeCrdtOutboxProvenance
+} from '@shared-server/rallar-system/crdt/persistence/crdt-outbox-provenance.ts';
+import {
     PSqlCrdtMutationRepository,
     writePSqlCrdtMutation
 } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import {
     createPSqlResourceInboxRepository,
@@ -30,6 +37,7 @@ import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mut
 
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -64,6 +72,34 @@ interface CollisionEntries {
 
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
     await verifyAtomicMutationCommit();
+});
+
+Deno.test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
+    await withPGliteSql(async (sql) => {
+        const service = createMutationService(sql);
+        const input = await command('scoped-reply-command', 'scoped-reply-update', 1_000);
+        const computed = await computeValidatedWrite(service, input);
+        const reply = computed.outboxWrites[0]?.entry;
+        assert.ok(reply);
+        const proofs = await computeCrdtOutboxProvenance(computed);
+
+        await sql.begin(async (transaction) => {
+            await writePSqlCrdtMutation(transaction, computed);
+            await writeCrdtOutboxProvenance(transaction, proofs);
+        });
+
+        const reader = new WsOutboxProvenanceReader({
+            repository: new PSqlRuntimeStateRepository(sql),
+            nowMs: () => 1_001
+        });
+        assert.deepEqual(
+            await reader.readProducerProvenance(decodePersistedALMessage(reply.resource), reply),
+            {
+                admittedAudience: ['session-1'],
+                recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+            }
+        );
+    });
 });
 
 Deno.test(
@@ -116,7 +152,7 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
 
 function createMutationRepository(sql: PGliteSql): PSqlCrdtMutationRepository {
     return new PSqlCrdtMutationRepository(
-        { sql, authorize: () => Promise.resolve(true) },
+        { sql, authorize: authorizeTestCrdtCommand },
         { policies: [] }
     );
 }

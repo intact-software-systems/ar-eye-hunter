@@ -67,7 +67,7 @@ Deno.test(
             }
         );
 
-        assert.deepEqual(result, { allowed: false, code: 'authorization-scope-denied' });
+        assert.deepEqual(result, { allowed: false, code: 'authorization-scope-denied', publicationAuthority: null });
         assert.deepEqual(events, []);
     }
 );
@@ -78,6 +78,7 @@ Deno.test('room authority reads membership before one current-session expiry clo
         readGroupSnapshot: () => {
             events.push('group');
             return Promise.resolve({
+                group: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
                 members: [{ principalId: 'alice', status: 'active' }],
                 activeSessions: [
                     {
@@ -107,7 +108,14 @@ Deno.test('room authority reads membership before one current-session expiry clo
         sessionId: 'session-1'
     });
 
-    assert.deepEqual(result, { allowed: true, code: 'allowed' });
+    assert.deepEqual(result, {
+        allowed: true,
+        code: 'allowed',
+        publicationAuthority: {
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            admittedAudience: ['old-session', 'session-1']
+        }
+    });
     assert.deepEqual(events, ['group', 'clock']);
 });
 
@@ -118,7 +126,12 @@ Deno.test('principal authority reads current client before one session expiry cl
         readClientSnapshot: () => {
             events.push('client');
             return Promise.resolve({
-                principal: { status: 'active' },
+                principal: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    principalId: 'alice',
+                    status: 'active'
+                },
                 activeSessions: [
                     {
                         sessionId: 'old-session',
@@ -151,6 +164,40 @@ Deno.test('principal authority reads current client before one session expiry cl
         sessionId: 'session-1'
     });
 
-    assert.deepEqual(result, { allowed: true, code: 'allowed' });
+    assert.deepEqual(result, {
+        allowed: true,
+        code: 'allowed',
+        publicationAuthority: {
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+            admittedAudience: ['old-session', 'session-1']
+        }
+    });
     assert.deepEqual(events, ['client', 'clock']);
+});
+
+Deno.test('CRDT room authority refuses a snapshot returned from another workspace', async () => {
+    const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
+        readGroupSnapshot: () =>
+            Promise.resolve({
+                group: { applicationId: 'app-1', workspaceId: 'other-workspace', groupId: 'group-1' },
+                members: [{ principalId: 'alice', status: 'active' }],
+                activeSessions: [{
+                    principalId: 'alice',
+                    sessionId: 'session-1',
+                    status: 'active',
+                    expiresAtEpochMs: NOW + 1_000
+                }]
+            }),
+        readClientSnapshot: () => Promise.resolve(undefined),
+        nowEpochMs: () => NOW
+    });
+
+    assert.deepEqual(
+        await authorizeDocumentAccess({
+            document: ROOM_DOCUMENT,
+            actorPrincipalId: 'alice',
+            sessionId: 'session-1'
+        }),
+        { allowed: false, code: 'authorization-scope-denied', publicationAuthority: null }
+    );
 });

@@ -185,6 +185,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 planner(msg, {
                     admittedAudience: stored.policy.admittedAudience,
                     recipientScope: stored.policy.recipientScope,
+                    principalTargetId: stored.policy.principalTargetId,
                     sessionInvalidation: stored.policy.sessionInvalidation,
                     referenceKey: stored.reference.key
                 }),
@@ -400,6 +401,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             authority === undefined ? undefined : {
                 admittedAudience: authority.admittedAudience,
                 recipientScope: authority.recipientScope,
+                principalTargetId: authority.principalTargetId,
                 sessionInvalidation: authority.sessionInvalidation,
                 referenceKey: stored ? stored.reference.key : input.observedCanonicalEntry?.key
             }

@@ -1,3 +1,4 @@
+import type { StateScope } from '@shared/api/state-types.ts';
 import type {
     RallarCrdtAppendResult,
     RallarCrdtAuditEvent,
@@ -127,9 +128,21 @@ export interface CrdtMutationRead {
     readonly snapshot: RallarCrdtSnapshotEnvelope | null;
     readonly authorized: boolean;
     readonly authorizationCode: string;
+    readonly publicationAuthority: CrdtMutationPublicationAuthority | null;
     readonly featureDecision: RallarCrdtFeatureDecision;
     readonly actorUpdatesInWindow: number;
     readonly storedSnapshotBytes: number;
+}
+
+export interface CrdtMutationPublicationAuthority {
+    readonly recipientScope: StateScope;
+    readonly admittedAudience: readonly string[];
+}
+
+export interface CrdtMutationAuthorityDecision {
+    readonly allowed: boolean;
+    readonly code: string;
+    readonly publicationAuthority: CrdtMutationPublicationAuthority | null;
 }
 
 export interface CrdtMutationAttemptFacts {

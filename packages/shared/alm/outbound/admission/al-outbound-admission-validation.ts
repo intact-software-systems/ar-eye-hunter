@@ -41,6 +41,7 @@ export interface ALOutboundCapturedPolicy {
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
     readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 
@@ -57,7 +58,8 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
             : { sessionInvalidation: decodeALSessionInvalidationAuthority(plan.sessionInvalidation) }),
         ...(plan.recipientScope === undefined
             ? {}
-            : { recipientScope: decodeALOutboundRecipientScope(plan.recipientScope) })
+            : { recipientScope: decodeALOutboundRecipientScope(plan.recipientScope) }),
+        ...(plan.principalTargetId === undefined ? {} : { principalTargetId: plan.principalTargetId })
     };
 }
 
@@ -102,6 +104,7 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         supersedenceTracking: policy.supersedenceTracking ?? undefined,
         admittedAudience: policy.admittedAudience,
         recipientScope: policy.recipientScope,
+        principalTargetId: policy.principalTargetId,
         sessionInvalidation: policy.sessionInvalidation
     };
 }
@@ -138,7 +141,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience', 'recipientScope', 'sessionInvalidation']);
+    ], ['admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
     if (policy.sessionInvalidation !== undefined) {
         decodeALSessionInvalidationAuthority(policy.sessionInvalidation);
         if (policy.recipientScope !== undefined) {
@@ -148,6 +151,12 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
     if (policy.recipientScope !== undefined) {
         decodeALOutboundRecipientScope(policy.recipientScope);
+    }
+    if (policy.principalTargetId !== undefined) {
+        requirePersistedALNonEmptyString(policy.principalTargetId, 'captured principal target');
+        if (policy.recipientScope === undefined || policy.admittedAudience === undefined) {
+            throw new TypeError('Captured principal target requires scope and frozen audience');
+        }
     }
     if (typeof policy.persist !== 'boolean') {
         throw new TypeError('Captured outbound persistence policy is invalid');

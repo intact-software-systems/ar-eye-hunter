@@ -84,6 +84,7 @@ describe('CRDT mutation safety and audience invariants', () => {
                 snapshot: null,
                 authorized: true,
                 authorizationCode: 'allowed',
+                publicationAuthority: null,
                 actorUpdatesInWindow: 0,
                 storedSnapshotBytes: 0,
                 featureDecision: {
@@ -231,6 +232,7 @@ describe('CRDT mutation safety and audience invariants', () => {
             snapshot: null,
             authorized: true,
             authorizationCode: 'allowed',
+            publicationAuthority: null,
             actorUpdatesInWindow: 0,
             storedSnapshotBytes: 0,
             featureDecision: {

@@ -191,6 +191,7 @@ function read(overrides: Partial<CrdtMutationRead> = {}): CrdtMutationRead {
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
+        publicationAuthority: null,
         featureDecision: {
             allowed: true,
             code: 'allowed',

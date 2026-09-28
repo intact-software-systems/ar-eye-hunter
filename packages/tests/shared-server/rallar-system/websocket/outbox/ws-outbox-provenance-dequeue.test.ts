@@ -30,6 +30,116 @@ import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 describe('producer provenance through WS dequeue', () => {
+    it.each(['same-principal', 'wrong-principal'] as const)(
+        'delivers a proven CRDT principal update only to %s captured sessions',
+        async (recipient) => {
+            const fixture = await createFixture();
+            fixture.authentication.principalId = recipient === 'same-principal' ? 'principal' : 'other';
+            const message = newALUnicastMessage(
+                'server',
+                {
+                    topicId: 'principal.crdt',
+                    resourceId: 'crdt-update',
+                    contextId: 'principal'
+                },
+                'principal',
+                'rallar.crdt.update.v1',
+                {},
+                {
+                    ttlMs: 30_000,
+                    qos: { durability: { algo: 'local-outbox' } }
+                }
+            );
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const facts: Omit<WsOutboxProvenance, 'digest'> = {
+                version: 1,
+                producerKind: 'crdt',
+                queueKey: entry.key,
+                typeId: entry.typeId,
+                messageId: message.id.msgId,
+                senderId: message.id.senderId,
+                expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+                target: {
+                    kind: 'scoped-principal-unicast',
+                    peerId: 'principal',
+                    principalRef: { ...SCOPE, principalId: 'principal' },
+                    admittedAudience: ['peer']
+                }
+            };
+            const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+            await fixture.repository.upsert(
+                WS_OUTBOX_PROVENANCE_NAMESPACE,
+                toWsOutboxProvenanceKey(entry.key),
+                JSON.stringify(proof),
+                proof.expiresAtMs
+            );
+
+            await fixture.stores.workQueue.enqueue(entry);
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status)
+                .not.toBe(EntityStatus.RESERVED);
+            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry)).toMatchObject({
+                admittedAudience: ['peer'],
+                recipientScope: SCOPE,
+                principalTargetId: 'principal'
+            });
+            expect(fixture.native.sent).toHaveLength(recipient === 'same-principal' ? 1 : 0);
+        }
+    );
+
+    it.each(['same-scope', 'wrong-scope'] as const)(
+        'delivers a proven CRDT world broadcast only to %s subscribers',
+        async (recipient) => {
+            const fixture = await createFixture();
+            const message = newALBroadcastMessage(
+                'server',
+                {
+                    topicId: 'app.crdt',
+                    resourceId: 'crdt-update',
+                    contextId: 'app'
+                },
+                'world',
+                'rallar.crdt.update.v1',
+                {},
+                {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    qos: { durability: { algo: 'local-outbox' } }
+                }
+            );
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+            const facts: Omit<WsOutboxProvenance, 'digest'> = {
+                version: 1,
+                producerKind: 'crdt',
+                queueKey: entry.key,
+                typeId: entry.typeId,
+                messageId: message.id.msgId,
+                senderId: message.id.senderId,
+                expiresAtMs: entry.audit.expiryTs.epochMilliseconds,
+                target: { kind: 'scoped-world-broadcast', scope: SCOPE }
+            };
+            const proof = { ...facts, digest: await computeWsOutboxProvenanceDigest(entry, facts) };
+            await fixture.repository.upsert(
+                WS_OUTBOX_PROVENANCE_NAMESPACE,
+                toWsOutboxProvenanceKey(entry.key),
+                JSON.stringify(proof),
+                proof.expiresAtMs
+            );
+            if (recipient === 'wrong-scope') {
+                fixture.authentication.scope = { ...SCOPE, workspaceId: 'other' };
+            }
+
+            await fixture.stores.workQueue.enqueue(entry);
+            await fixture.engine.executeOnce();
+            await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status)
+                .not.toBe(EntityStatus.RESERVED);
+            await expect.poll(async () => fixture.service.readCapturedPolicy(message, entry)).toMatchObject({
+                recipientScope: SCOPE
+            });
+            expect(fixture.native.sent).toHaveLength(recipient === 'same-scope' ? 1 : 0);
+        }
+    );
+
     it.each(['missing', 'tampered', 'expired', 'version', 'broadcast', 'session-global'] as const)(
         'fails closed for %s proof before any native send',
         async (kind) => {
@@ -122,7 +232,7 @@ async function createFixture() {
     const native = new TestWebSocket('ws://peer');
     native.open();
     socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
-    const authentication = { scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 };
+    const authentication = { scope: SCOPE, principalId: 'principal', expiresAtEpochMs: Date.now() + 30_000 };
     const engine = new InboxOutboxEngine();
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const settled: string[] = [];
