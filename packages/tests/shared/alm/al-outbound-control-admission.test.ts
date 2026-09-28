@@ -625,6 +625,48 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
             .toBe('rejected');
     });
 
+    it('admits the trusted server unauthorized NACK for a sent message with no receipt row, stating the refusal (S3c-i C3)', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedReceiptlessRoomObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('ws-server-1', 'unauthorized'), 'trusted-server')).toEqual({
+            kind: 'committed'
+        });
+
+        expect(settlements).toEqual([{
+            kind: 'relay-rejected',
+            msgId: 'message',
+            relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
+            detail: 'The server refused the message: unauthorized.'
+        }]);
+    });
+
+    it.each(
+        [
+            { name: 'the same NACK from a peer', seed: 'receiptless', reason: 'unauthorized', source: 'peer' },
+            { name: 'a trusted server NACK with another reason', seed: 'receiptless', reason: 'expired', source: 'trusted-server' },
+            {
+                name: 'a trusted server unauthorized NACK while a receipt row expects other peers',
+                seed: 'receipted',
+                reason: 'unauthorized',
+                source: 'trusted-server'
+            }
+        ] as const
+    )('refuses $name: only the trusted server refusing an unreceipted send needs no expected peer', async ({ seed, reason, source }) => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control, state } = createFixture(settlements);
+        await (seed === 'receiptless' ? seedReceiptlessRoomObligation(admissionStore) : seedMulticastObligation(admissionStore));
+        const seeded = [...state.data];
+
+        expect(await control.admit(refusalNack('ws-server-1', reason), source)).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect([...state.data]).toEqual(seeded);
+        expect(settlements).toEqual([]);
+    });
+
     it('ends the receipt of a relay-rejected send, so nothing retries it', async () => {
         const { admissionStore, control } = createFixture();
         await seedDirectObligation(admissionStore);
@@ -886,6 +928,14 @@ function resyncNack(fromPeerId: string, input: ResyncNackInput = {}): ALMessage 
                     missingSeqs: []
                 })
         }
+    );
+}
+
+/** A NACK by which a relay refuses the message for good, with no ordering hints. */
+function refusalNack(fromPeerId: string, reason: 'unauthorized' | 'expired'): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: `control-${reason}-${fromPeerId}`, senderId: fromPeerId, ts: 1 },
+        { fromPeerId, toPeerId: 'sender', msgId: 'message', reason, observedAtEpochMs: 1 }
     );
 }
 

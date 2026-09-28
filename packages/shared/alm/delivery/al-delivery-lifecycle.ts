@@ -239,7 +239,7 @@ export interface ALDeliveryReceiptEvidence {
 
 /**
  * The hop whose admitted NACK refused the message, and the reason it gave (D50); a trusted server may also refuse
- * a message before admitting it (`unauthorized`, S3c-i C3). A trusted server relay is not named.
+ * a message the origin holds no receipt row for (`unauthorized`, S3c-i C3). A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
     | Readonly<{ relay: 'trusted-server'; reason: 'resync-required' | 'unauthorized'; }>

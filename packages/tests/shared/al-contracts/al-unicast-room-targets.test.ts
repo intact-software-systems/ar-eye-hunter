@@ -7,8 +7,8 @@ import {
     readALTargetGroupRef
 } from '@shared/al-contracts/al-contract.ts';
 import {
-    decodeALMessageValue,
-    decodePersistedALMessageValue
+    decodeALMessage,
+    decodePersistedALMessage
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';
 
@@ -51,23 +51,18 @@ describe('a unicast that names its room (D53, S3c-i C1)', () => {
             groupRef: ROOM,
             ttlMs: 30_000
         });
-        const wire = JSON.parse(JSON.stringify(message));
-
-        expect(decodeALMessageValue(wire).right?.targets).toEqual({
-            mode: 'unicast',
-            toPeerId: 'b',
-            groupRef: ROOM
-        });
-        expect(decodePersistedALMessageValue(wire).targets).toEqual({
-            mode: 'unicast',
-            toPeerId: 'b',
-            groupRef: ROOM
-        });
-        const loose = {
+        const serialized = JSON.stringify(message);
+        const loose = JSON.stringify({
             ...message,
             targets: { mode: 'unicast', toPeerId: 'b', groupRef: { groupId: 'room-1' } }
-        };
-        expect(decodeALMessageValue(loose).left).toBeDefined();
+        });
+
+        expect(decodeALMessage(serialized).right).toEqual(message);
+        expect(decodePersistedALMessage(serialized)).toEqual(message);
+        expect(decodeALMessage(loose).left).toEqual({
+            code: 'malformed',
+            message: 'Persisted AL group workspace id is missing'
+        });
     });
 
     it('names a unicast addressed to exactly one peer', () => {

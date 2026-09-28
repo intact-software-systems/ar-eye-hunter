@@ -121,7 +121,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
                 carrier: 'ws',
                 atMs: expect.any(Number),
                 relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
-                detail: 'The server refused the message before admitting it: unauthorized.'
+                detail: 'The server refused the message: unauthorized.'
             }]
         );
         const lifecycle = origin.settlements

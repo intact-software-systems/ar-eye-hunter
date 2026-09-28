@@ -2,9 +2,10 @@ import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-cont
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
-import type {
-    ALControlAdmissionCandidate,
-    ALControlAdmissionRead
+import {
+    isALServerRefusalBeforeReceipt,
+    type ALControlAdmissionCandidate,
+    type ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
 
@@ -113,9 +114,9 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
  * neither does its `unauthorized` refusal of a message before any receipt row exists (S3c-i C3).
  */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
-    return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
-        (read.parsed.payload.reason === 'resync-required' ||
-            (read.parsed.payload.reason === 'unauthorized' && read.pending === undefined));
+    const isResyncRequired = read.source === 'trusted-server' && read.parsed.type === 'nack' &&
+        read.parsed.payload.reason === 'resync-required';
+    return isResyncRequired || isALServerRefusalBeforeReceipt(read);
 }
 
 function isExpectedRepairPeer(
