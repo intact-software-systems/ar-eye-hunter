@@ -161,7 +161,7 @@ landing), with S3c-ii's values:
 | C8     | A peer send whose `contextId` differs from its room is refused at the sender, for every strategy (N1).                                                                                                                                                |
 | C9     | A peer send to the server id is refused `unsupported` on `rtc` and `rtc-with-ws-fallback`; the server-unknown refusal also covers `rtc-with-ws-fallback`.                                                                                             |
 | C10    | The director accepts client intents out of order: an equal sequence is a duplicate, a lower one is accepted. Director outputs keep the stale rule.                                                                                                    |
-| C11    | The lane names a peer by role (`toPeer: 'server'                                                                                                                                                                                                      |
+| C11    | The lane names a peer by role (`toPeer`: `server` or `receiver`, as amended by R-S3c-ii-2); a lane-only connect field lowers the volatile bound, never a public connect option.                                                                       |
 | C12    | Intents and sync requests use two typed `command` channels on the existing derived type ids.                                                                                                                                                          |
 | C13    | `overloaded` is true while the budget is at or over either limit; its stated limits are correction 6.                                                                                                                                                 |
 | C14    | The relay-row retention figure is measured by a test and recorded in the inbound README and the roadmap.                                                                                                                                              |
@@ -173,8 +173,9 @@ landing), with S3c-ii's values:
 
 - **One vocabulary.** `capacity` is a refusal reason read through `evidence.failure`. I2a's `storage-unavailable`
   becomes one more reason on the same union; no second failure surface is added.
-- **One retention rule.** `resolveALReceiptRetentionExpiryMs` is the rule "deadline plus the receipt grace". I2a's
-  dedup retention (QoS plan §5) reuses it.
+- **One retention rule.** `resolveALReceiptRetentionExpiryMs`
+  (`packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`) is the rule "deadline plus the receipt
+  grace". I2a's dedup retention (QoS plan §5) reuses it.
 - **The bound is the checkpoint basis.** `AL_VOLATILE_SESSION_MAX_ADMISSIONS` and `AL_VOLATILE_SESSION_MAX_BYTES` are
   the figures the QoS plan's H4 measured a checkpoint at. They stay named constants behind `ALVolatileSessionLimits`,
   so I2b can extend the budget to `local-checkpoint` admissions without a second counter.
@@ -209,13 +210,15 @@ sequencing is the maintainer's decision; the analysis is in the PR #606 body.
 
 Each task's **Files** block is the authority for its paths. New files, by owner:
 
-| File                                                                     | Task | Responsibility                                                                                   |
-| ------------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------------------------------ |
-| `packages/shared/alm/delivery/al-delivery-failure.ts`                    | 1    | the typed failure union and the receipt-exhausted cause                                          |
-| `packages/shared/alm/resolve-al-receipt-retention-expiry.ts`             | 2    | the rule "deadline plus the receipt grace"                                                       |
-| `packages/shared/alm/volatile-budget/al-volatile-session-budget.ts`      | 3    | the per-session ledger, its constants and limits                                                 |
-| `packages/shared-web/browser/messages/create-browser-unicast-message.ts` | 4    | renamed from `create-browser-ws-unicast-message.ts`: the unicast builder and the peer validators |
-| `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/*`        | 6    | the four addressed-send scenarios                                                                |
+| File                                                                                                                      | Task | Responsibility                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------ |
+| `packages/shared/alm/delivery/al-delivery-failure.ts`                                                                     | 1    | the typed failure union and the receipt-exhausted cause                                          |
+| `packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`                                                  | 2    | the rule "deadline plus the receipt grace"                                                       |
+| `packages/shared/alm/volatile-budget/al-volatile-session-budget.ts`                                                       | 3    | the per-session ledger, its constants and limits                                                 |
+| `packages/shared-web/browser/messages/create-browser-unicast-message.ts`                                                  | 4    | renamed from `create-browser-ws-unicast-message.ts`: the unicast builder and the peer validators |
+| `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/*`                                                         | 6    | the four addressed-send scenarios                                                                |
+| `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/resolve-black-box-rallar-message-peer.ts` | 6    | the lane role (`server`, `receiver`) resolved to one peer id                                     |
+| `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts`     | 6    | the lane-only volatile limits the session reads at initialisation                                |
 
 ---
 
@@ -251,14 +254,14 @@ Each task's **Files** block is the authority for its paths. New files, by owner:
     `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts:70-83`.
 - Test: create `packages/tests/shared/alm/delivery/al-delivery-failure.test.ts`,
   `packages/tests/shared-test/alm-delivery-failure-decoding.test.ts`; modify
-  `packages/tests/shared/alm/outbound/al-outbound-receipt-exhaustion.test.ts:103-110`,
+  `packages/tests/shared/alm/outbound/al-outbound-receipt-exhaustion.test.ts:102-108`,
   `packages/tests/shared/alm/al-outbound-control-admission.test.ts:561-568`, `:679-682`,
   `packages/tests/shared/services/ws-queue-box-client-relay-rejection.test.ts:185-194`,
   `packages/tests/shared/alm/outbound-admission-verdict.test.ts` (one case after `:134-164`),
   `packages/tests/shared/alm/delivery/resolve-al-delivery-fallback-trigger.test.ts:1-14`, `:72-87`, `:162-170`,
   `packages/tests/shared-web/messages/browser-message-fallback-identity.test.ts:177-196`,
   `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts:36-40`, `:288-292`, `:549-553`,
-  `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts:88`, `:543-558`; the fixture sweep of Step 9
+  `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts:88`, `:551-559`; the fixture sweep of Step 9
   and Step 13 (listed there, each a one-field edit), including the Deno test
   `apps/rallar-black-box-control-server/test/control-alm-evidence.test.ts:391-411`.
 
@@ -446,7 +449,7 @@ interface FailureCase {
     readonly reason: string;
 }
 
-// One row per failure meaning of the survey's table (rows 1-8); the prose each end already stated stays beside it.
+// One row per failure meaning; the prose each end already stated stays beside it.
 const FAILURE_CASES: readonly FailureCase[] = [
     {
         meaning: 'a carrier refusal no fallback took over',
@@ -707,8 +710,8 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
 ```
 
 Run: `npx vitest run packages/tests/shared/alm/delivery/al-delivery-failure.test.ts`
-Expected: FAIL -- the 13 `FAILURE_CASES` rows and the deadline read fail with `expected undefined to deeply equal`
-(no `failure` field exists); the no-failure cases pass (the field is absent, so `undefined`); the type pin is erased
+Expected: FAIL -- the 13 `FAILURE_CASES` rows, the deadline read and "keeps the first failure when a relay refusal
+lands after the end" fail with `expected undefined to deeply equal` (no `failure` field exists); the no-failure cases pass (the field is absent, so `undefined`); the type pin is erased
 at run time and is checked by `npm run typecheck` in Step 16.
 
 - [ ] **Step 2: GREEN, the vocabulary.** Create `packages/shared/alm/delivery/al-delivery-failure.ts`:
@@ -992,7 +995,7 @@ in Step 9).
 
 - [ ] **Step 4: RED -- the two producers state the cause.**
 
-In `packages/tests/shared/alm/outbound/al-outbound-receipt-exhaustion.test.ts:103-110` (the budget producer), make
+In `packages/tests/shared/alm/outbound/al-outbound-receipt-exhaustion.test.ts:102-108` (the budget producer), make
 the expected fact:
 
 ```ts
@@ -1350,7 +1353,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
 });
 ```
 
-In `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts` make the unroutable case (`:543-558`) state
+In `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts` make the unroutable case (`:551-559`) state
 the settlement's reason and read the failure through the ledger:
 
 ```ts
@@ -1627,7 +1630,8 @@ Carrier settlements update the handle directly. Observations include
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
 ```
 
-and before `` `backpressured` is true when a carrier `` (`:367`) insert:
+and break `:367` after ``only, in `relayRejection`.`` so that `` `backpressured` is true when a carrier `` starts
+its own line, then insert between the two, with one blank line on each side:
 
 ```md
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
@@ -1704,7 +1708,7 @@ Expected: PASS.
      reaches 224 KiB, raise it to the next whole KiB in
      `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts:44-59` and
      `packages/shared-web/scripts/measure-browser-bundles.mjs:34-49`, appending to each comment
-     "S3c-ii's typed failure evidence and the capacity vocabulary measure <the measured figure> KiB. The next
+     "The S3c-ii typed failure evidence and the capacity vocabulary measure <the measured figure> KiB. The next
      whole-KiB ceiling is <N>."; if headless reaches 286 KiB, do the same in
      `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts:70-83` ("... measure <figure> KiB
      here. The next whole-KiB ceiling is <N>."). Re-run the three tests after a raise.
@@ -1763,7 +1767,7 @@ drop code), and that `capacity` has no producer until Task 3.
 
 **Files:**
 
-- Create: `packages/shared/alm/resolve-al-receipt-retention-expiry.ts`.
+- Create: `packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`.
 - Modify: `packages/shared/alm/outbound/control/compute-al-outbound-receipt-admission.ts:1` and `:62` (the receipt row
   already uses the rule; it now calls the one helper).
 - Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts:1-33` (imports), `:105-129`
@@ -1775,7 +1779,7 @@ drop code), and that `capacity` has no producer until Task 3.
   (`createControlAdmission`).
 - Modify (size tier, 915 lines — call lines only: one import, the sibling factory's single construction call and the
   `durability` field lines): `packages/shared/alm/inbound/al-inbound-admission-store.ts:14-18` (imports), `:144`,
-  `:163`, `:193` (three read DTOs), `:316` (the store interface), `:349-399` (factory, `Dependencies`, constructor),
+  `:163`, `:193` (three read DTOs), `:321` (the store interface), `:349-399` (factory, `Dependencies`, constructor),
   `:438`, `:505`, `:827`, `:864`, `:882`, `:913`.
 - Modify (size tier, 405 lines — one input member, one field, two call sites, one private method):
   `packages/shared/alm/outbound/control/al-outbound-control-admission.ts:13-16`, `:77-88`, `:97`, `:108`, `:363-392`.
@@ -1792,7 +1796,7 @@ drop code), and that `capacity` has no producer until Task 3.
   `packages/tests/shared/alm/al-inbound-admission-preparation.test.ts:145`;
   `packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts:8-12`, `:52-59`, `:80-83`;
   `packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts:6`, `:23-28`, `:65-70`.
-- Test (create): `packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts`,
+- Test (create): `packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts`,
   `packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts`,
   `packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts`,
   `packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts` (beside
@@ -1805,7 +1809,7 @@ drop code), and that `capacity` has no producer until Task 3.
   `export type ALStoreDurability = 'volatile' | 'durable'` (`packages/shared/alm/al-runtime-stores.ts:41`, a type:
   `al-runtime-stores.ts` gains no runtime value export), `resolveALMessageExpireAtMs(msg: ALMessage, effective?:
   ALQosEffectivePolicy): number | undefined` (`packages/shared/al-contracts/al-policy.ts:418-444`).
-- Produces (ledger) `packages/shared/alm/resolve-al-receipt-retention-expiry.ts`:
+- Produces (ledger) `packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`:
   `export function resolveALReceiptRetentionExpiryMs(deadlineAtMs: number): number` (= deadline + 30 000).
 - Produces (added to the ledger; the mechanism by which a row writer knows its pair):
   - `export function createVolatileALOutboundAdmissionStore<TPrepared>(input: CreateALOutboundAdmissionStoreInput<TPrepared>): ALOutboundAdmissionStore<TPrepared>`
@@ -1902,13 +1906,13 @@ On the volatile pair, carried openly; durable rows are unchanged throughout.
   TTL), so the row is the exception the rule does not reach.
 
 - [ ] **Step 1: RED — the one rule.** Create
-      `packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts`:
+      `packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
 
 import { AL_RECEIPT_DEADLINE_GRACE_MS } from '@shared/al-contracts/al-control.ts';
-import { resolveALReceiptRetentionExpiryMs } from '@shared/alm/resolve-al-receipt-retention-expiry.ts';
+import { resolveALReceiptRetentionExpiryMs } from '@shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts';
 
 describe('resolveALReceiptRetentionExpiryMs (D74)', () => {
     it('keeps a row for the message deadline plus the 30 s receipt grace', () => {
@@ -1925,14 +1929,14 @@ describe('resolveALReceiptRetentionExpiryMs (D74)', () => {
 });
 ```
 
-Run: `npx vitest run packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts`
-Expected: FAIL — the module `@shared/alm/resolve-al-receipt-retention-expiry.ts` does not exist.
+Run: `npx vitest run packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts`
+Expected: FAIL — the module `@shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts` does not exist.
 
 - [ ] **Step 2: GREEN — the helper, and the receipt row calls it.** Create
-      `packages/shared/alm/resolve-al-receipt-retention-expiry.ts`:
+      `packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`:
 
 ```ts
-import { AL_RECEIPT_DEADLINE_GRACE_MS } from '../al-contracts/al-control.ts';
+import { AL_RECEIPT_DEADLINE_GRACE_MS } from '../../al-contracts/al-control.ts';
 
 /**
  * How long a row that answers a message's receipts outlives the message: its deadline plus the receipt grace, the
@@ -1954,16 +1958,17 @@ import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 add after the `import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';` line
 
 ```ts
-import { resolveALReceiptRetentionExpiryMs } from '../../resolve-al-receipt-retention-expiry.ts';
+import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
 ```
 
-and replace line 62 `expireAtTimestamp: current.deadlineAtMs + AL_RECEIPT_DEADLINE_GRACE_MS` with
+and replace line 62 `expireAtTimestamp: current.deadlineAtMs + AL_RECEIPT_DEADLINE_GRACE_MS` (the last property of
+the `write` object literal, so no trailing comma) with
 
-```ts
-expireAtTimestamp: resolveALReceiptRetentionExpiryMs(current.deadlineAtMs);
+```text
+expireAtTimestamp: resolveALReceiptRetentionExpiryMs(current.deadlineAtMs)
 ```
 
-Run: `npx vitest run packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts`
+Run: `npx vitest run packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts`
 Expected: PASS (the receipt row's expiry is the same number it was).
 
 - [ ] **Step 3: RED — the outbound volatile rows and the late control.** Create
@@ -2197,7 +2202,7 @@ Expected: FAIL — `al-outbound-admission-store.ts` has no export `createVolatil
   1. After the `import type { ... } from '../../al-runtime-state-stores.ts';` block (`:8-12`) add
      `import type { ALStoreDurability } from '../../al-runtime-stores.ts';`, and after the
      `import type { ... } from '../../compute-al-supersedence-observation.ts';` block (`:14-17`) add
-     `import { resolveALReceiptRetentionExpiryMs } from '../../resolve-al-receipt-retention-expiry.ts';`.
+     `import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';`.
   2. Replace `CreateALOutboundAdmissionMutationsInput` and the class head through the constructor (`:105-129`) with:
 
 ```ts
@@ -2665,7 +2670,8 @@ readonly durability: ALStoreDurability;
    `readonly durability: ALStoreDurability;` as the last member of
    `ProviderBackedALInboundAdmissionStore.Dependencies` (after `readonly nowMs: () => number;`, `:375`); add the
    public field, read by the control admission in Step 10, to the `ALInboundAdmissionStore` interface after its
-   `readonly retention: NormalizedALRuntimeStoreRetentionConfig;` (`:316`):
+   `readonly retention: NormalizedALRuntimeStoreRetentionConfig;` (`:321`; not `:316`, which is the same line in
+   `CreateALInboundAdmissionStoreInput`):
 
 ```ts
 /** The pair this store is: the volatile pair keeps a message's rows only through its receipt grace (D74). */
@@ -2708,7 +2714,7 @@ Replace lines 1-36 of `packages/shared/alm/inbound/admission/al-inbound-delivery
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../resolve-al-receipt-retention-expiry.ts';
+import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -2779,13 +2785,14 @@ import {
 
 2. In `computeALInboundMessageRead`, after `retention: read.retention,` (`:104`) add `durability: read.durability,`.
 3. In `computeALInboundBufferedRelease`, replace
-   `expireAtTimestamp: Math.max(read.nowMs + read.retention.msgOwnerTtlMs, expireAtTimestamp)` (`:218`) with:
+   `expireAtTimestamp: Math.max(read.nowMs + read.retention.msgOwnerTtlMs, expireAtTimestamp)` (`:218`, the last
+   property of the `set-msg-owner` mutation literal, so no trailing comma) with:
 
-```ts
+```text
 expireAtTimestamp: Math.max(
     computeALInboundMessageOwnerExpiryMs(read, expireAtTimestamp),
     expireAtTimestamp
-);
+)
 ```
 
     (the durable value is `max(now + msgOwnerTtlMs, expiry)` exactly as before; the volatile one is
@@ -3158,7 +3165,7 @@ Both durable tests and every earlier test pass.
   1. After `import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';` (`:13`) add
      `import type { ALStoreDurability } from '../../al-runtime-stores.ts';`, and after the
      `'../../work/al-work-queue-port.ts'` import (`:16`) add
-     `import { resolveALReceiptRetentionExpiryMs } from '../../resolve-al-receipt-retention-expiry.ts';`.
+     `import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';`.
   2. In `CreateALOutboundControlAdmissionInput` (`:77-88`) add after `readonly retention: ...;`:
 
 ```ts
@@ -3206,7 +3213,7 @@ after `this.retention = input.retention;` (`:328`), and in `createControlAdmissi
 In `packages/shared/alm/inbound/control/al-inbound-control-admission.ts`:
 
 1. After `import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';` (`:8`) add
-   `import { resolveALReceiptRetentionExpiryMs } from '../../resolve-al-receipt-retention-expiry.ts';`.
+   `import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';`.
 2. In `commitControlAdmission` replace `const bundle = toALInboundControlCommitBundle(candidate);` with
    `const bundle = toALInboundControlCommitBundle(this.toStoreCandidate(candidate));`, and add after
    `commitControlAdmission`:
@@ -3624,14 +3631,14 @@ it.
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
   once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. Its message-owner
   row lives for the message deadline plus the 30 s receipt grace
-  ([`resolveALReceiptRetentionExpiryMs`](../resolve-al-receipt-retention-expiry.ts), D74),
+  ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74),
   or longer when the work the message owns does; a message with no expiry of its own has
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
   own 60 s schedule; this is idempotent.
 ```
 
-and insert after the paragraph that ends `(`work-page`,`work-probe`, R-S3a-11).` (`:96`), with one blank line on
+and insert after the paragraph that ends ``(`work-page`, `work-probe`, R-S3a-11).`` (`:97`), with one blank line on
 each side:
 
 ```markdown
@@ -3648,11 +3655,12 @@ until the deadline plus the grace as well. Before S3c-ii the owner row stayed fo
 list in the passing Step 14 run (five as derived; the measured count if Step 14 recorded another).
 
 In `packages/shared/alm/outbound/README.md` replace the two sentences of the "Eviction on the owner's round" bullet
-that begin `The rows it sweeps carry the repository's 1 h retention` (`:80-82`) with:
+that begin `The rows it sweeps carry the repository's 1 h retention` (`:80-82`) with the lines below, each indented
+two spaces in the README as a continuation of that bullet (the block shows them at column 0):
 
 ```markdown
 timer runs for it. Its message-owner and sent-message rows live for the message deadline plus the 30 s
-receipt grace ([`resolveALReceiptRetentionExpiryMs`](../resolve-al-receipt-retention-expiry.ts), D74), the
+receipt grace ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74), the
 window in which a receipt or a late control about the message is still answered; the durable pair keeps
 them for `max(deadline, now + 1 h)`. A control that arrives after them finds no lane owning its message,
 goes to the durable lane and is refused there as a control about an unknown message. The control-history
@@ -3676,7 +3684,7 @@ Expected: no diff (`npx dprint fmt` on those two files if it reports one).
 
 - [ ] **Step 16: Validate.** Read each summary line, not the exit code.
 
-  1. `npx vitest run packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts packages/tests/shared/multicast/rtc-relay-row-retention.test.ts packages/tests/shared/alm/al-outbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared/alm/al-outbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
+  1. `npx vitest run packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts packages/tests/shared/multicast/rtc-relay-row-retention.test.ts packages/tests/shared/alm/al-outbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared/alm/al-outbound-control-admission.test.ts packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts`
      — Expected: all pass; the operation-count pins read 10/15, 0/0, 8, 0/0, 8 as before (D87: they may only fall).
   2. `npm run test:unit` — Expected: the summary line shows 0 failed. A failure in a test that delivers a control or
      receipt to a volatile message later than its deadline plus 30 s is this task's stated behaviour change (the
@@ -3694,13 +3702,13 @@ Expected: no diff (`npx dprint fmt` on those two files if it reports one).
      crosses its ceiling (224 unless an earlier task raised it), raise `brotliBudgetKiB` to the next whole KiB in
      `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` and
      `packages/shared-web/scripts/measure-browser-bundles.mjs` and append to both comments
-     `S3c-ii's volatile retention rule measures <measured facade KiB> KiB. The next whole-KiB ceiling is
+     `The S3c-ii volatile retention rule measures <measured facade KiB> KiB. The next whole-KiB ceiling is
      <new ceiling>.`;
      if the headless figure crosses its ceiling (286 unless raised), raise `toBeLessThan(...)` in
      `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` the same way, with
-     `S3c-ii's volatile retention rule measures <measured headless KiB> KiB here.` (measurement slots).
+     `The S3c-ii volatile retention rule measures <measured headless KiB> KiB here.` (measurement slots).
   6. `npx dprint check` with every touched file listed (never a glob):
-     `npx dprint check packages/shared/alm/resolve-al-receipt-retention-expiry.ts packages/shared/alm/outbound/control/compute-al-outbound-receipt-admission.ts packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts packages/shared/alm/outbound/admission/al-outbound-admission-store.ts packages/shared/alm/outbound/control/al-outbound-control-admission.ts packages/shared/alm/inbound/al-inbound-admission-store.ts packages/shared/alm/inbound/control/al-inbound-control-admission.ts packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts packages/shared/alm/inbound/admission/compute-al-inbound-admission.ts packages/shared/alm/al-runtime-stores.ts packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md docs/test-structure-coupling-exceptions.md packages/tests/shared/alm/resolve-al-receipt-retention-expiry.test.ts packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts packages/tests/shared/multicast/rtc-relay-row-retention.test.ts packages/tests/shared/alm/al-outbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-admission-preparation.test.ts packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`
+     `npx dprint check packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts packages/shared/alm/outbound/control/compute-al-outbound-receipt-admission.ts packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts packages/shared/alm/outbound/admission/al-outbound-admission-store.ts packages/shared/alm/outbound/control/al-outbound-control-admission.ts packages/shared/alm/inbound/al-inbound-admission-store.ts packages/shared/alm/inbound/control/al-inbound-control-admission.ts packages/shared/alm/inbound/admission/al-inbound-delivery-mutations.ts packages/shared/alm/inbound/admission/compute-al-inbound-admission.ts packages/shared/alm/al-runtime-stores.ts packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md docs/test-structure-coupling-exceptions.md packages/tests/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.test.ts packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts packages/tests/shared/multicast/rtc-relay-row-retention.test.ts packages/tests/shared/alm/al-outbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-admission-preparation.test.ts packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`
      (plus the bundle files if 5 raised a ceiling) — Expected: no diff; run `npx dprint fmt` with the same list if
      it reports one.
   7. `node scripts/check-test-structure-coupling.mjs --files packages/tests/shared/alm/al-outbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-admission-preparation.test.ts packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts packages/tests/shared/multicast/rtc-relay-row-retention.test.ts packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts`
@@ -3711,7 +3719,7 @@ Expected: no diff (`npx dprint fmt` on those two files if it reports one).
 - [ ] **Step 17: Commit, gate the range, push.**
 
 ```bash
-git add packages/shared/alm/resolve-al-receipt-retention-expiry.ts \
+git add packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts \
   packages/shared/alm/outbound/control/compute-al-outbound-receipt-admission.ts \
   packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts \
   packages/shared/alm/outbound/admission/al-outbound-admission-store.ts \
@@ -3794,9 +3802,10 @@ refusal of an over-bound send is the `capacity` admission refusal, not `overload
   `packages/shared/alm/inbound/lane/admit-al-inbound-volatile-budget.ts`,
   `packages/shared-web/browser/connection/create-browser-session-volatile-bound.ts`.
 - Modify: `packages/shared/al-contracts/al-message-resource-limits.ts:76-128` (C17 rename);
-  `packages/shared/alm/outbound/al-outbound-message-runtime.ts:1-26`, `:136-139`, `:343-347`, `:535-544` (call lines,
-  one interface field, one doc bullet); `packages/shared/alm/inbound/al-inbound-message-runtime.ts:1-28`, `:35-38`,
-  `:124-126`, `:236`; `packages/shared/alm/al-runtime-stores.ts:1-34`, `:208-230` (no value export added);
+  `packages/shared/alm/outbound/al-outbound-message-runtime.ts:1-26`, `:137-140`, `:344-348`, `:536-545` (after
+  Task 1's one added line; call lines, one interface field, one doc bullet); `packages/shared/alm/inbound/al-inbound-message-runtime.ts:1-28`, `:35-38`,
+  `:124-126`, `:236`; `packages/shared/alm/al-runtime-stores.ts` (one import and the two volatile constructors as Task 2 left them; no
+  value export added);
   `packages/shared/multicast/is-rtc-enqueue-breaker-success.ts:3-20`;
   `packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts:1-31`, `:126-143`;
   `packages/shared-web/browser/websocket/create-browser-web-socket-queue-box.ts:1-51`, `:94-96`;
@@ -3819,12 +3828,16 @@ refusal of an over-bound send is the `capacity` admission refusal, not `overload
   `packages/tests/shared-web/connection/create-browser-session-volatile-bound.test.ts`.
 - Test (modify): `packages/tests/shared/al-message-resource-limits.test.ts:14-17`, `:277`;
   `packages/tests/shared/multicast/is-rtc-enqueue-breaker-success.test.ts:54-61`;
-  `packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts:1-3`, `:52-59`, `:90`;
+  `packages/tests/shared/multicast/rtc-origin-overlay-fixture.ts:5`, `:52-59`, `:90` (numbers before Task 2 Step 12);
   `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts:1-10`, `:232-270`, `:282`, `:319`, `:407-416`,
   `:625-670`; `packages/tests/shared/alm/outbound-runtime-test-fixture.ts:280-282`;
   `packages/tests/shared/alm/al-storage-snapshot.test.ts:128-132`; `packages/tests/shared/ws-qos-policy.test.ts:721`;
   `packages/tests/shared/multicast/web-rtc-overlay-missing-recipient-repair.test.ts:265`;
   `packages/tests/shared/alm/al-outbound-store-lane.test.ts:147`; `packages/tests/shared/alm/al-inbound-store-lane.test.ts:229`;
+  Task 2's `packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts`,
+  `packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts`,
+  `packages/tests/shared/multicast/rtc-relay-row-retention.test.ts` and
+  `packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts` (one field or argument each);
   `packages/tests/shared-web/al-runtime/browser-al-runtime-stores.test.ts:527-540`;
   `packages/tests/shared-web/websocket/ws-retained-work-fault.test.ts:73`, `:151`;
   `packages/tests/shared-web/websocket/ws-durable-owner-recovery.test.ts:93`, `:137`, `:459`;
@@ -3843,6 +3856,10 @@ refusal of an over-bound send is the `capacity` admission refusal, not `overload
   `toALOutboundAdmissionVerdict` (`compute-al-outbound-dispatch.ts:249-271`) mapping the drop code `'capacity'` to
   `{ kind: 'refused', reason: 'capacity', detail }`; `ALDeliveryEvidence.failure`, which a refused admission sets to
   `{ kind: 'refused', reason: 'capacity' }`.
+- Consumes (Task 2): the two volatile constructors in `al-runtime-stores.ts` as Task 2 Steps 4 and 7 leave them
+  (built on `createVolatileALOutboundAdmissionStore` / `createVolatileALInboundAdmissionStore` through
+  `toInMemoryALOutboundAdmissionStoreInput` / `toInMemoryALInboundAdmissionStoreInput`); Task 2's four new test files
+  that build a volatile pair (Step 7 lists them).
 - Consumes (existing): `resolveALMessageExpireAtMs(msg: ALMessage, effective?: ALQosEffectivePolicy): number | undefined`
   (`al-policy.ts:418-444`); `isALControlTypeId(typeId: string): boolean` (`al-control-type-ids.ts:7-12`);
   `ALQosInputProvider` (`al-policy.ts:181-198`); `toALCarrierQosInputProvider` (`al-carrier-capabilities.ts:31-44`),
@@ -4414,8 +4431,9 @@ Expected: PASS (three files).
 
 - [ ] **Step 7: The memory pairs carry the budget.** No behaviour yet: the field exists and every constructor names it.
       In `packages/shared/alm/outbound/al-outbound-message-runtime.ts` add to the imports (`:1-26`)
-      `import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';` and replace
-      `:136-139` with:
+      `import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';` and replace the
+      doc comment and declaration of `ALVolatileOutboundRuntimeStores` (`:137-140` once Task 1's drop-code line is in)
+      with:
 
 ```ts
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
@@ -4442,8 +4460,9 @@ export interface ALVolatileInboundRuntimeStores extends ALInboundRuntimeStores {
 
 In `packages/shared/alm/al-runtime-stores.ts` add
 `import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';` after the
-`./outbound/al-outbound-message-runtime.ts` import (`:31-34`), and replace `:208-230` with (keep any body change
-Task 2 made to these two factories; this step adds only the parameter and the returned field):
+`./outbound/al-outbound-message-runtime.ts` import, and replace the two functions
+`createVolatileALOutboundRuntimeStores` and `createVolatileALInboundRuntimeStores`, as Task 2 Steps 4 and 7 left
+them, with (this step adds only the parameter and the returned field; Task 2's bodies stay):
 
 ```ts
 /** The memory pair a browser carrier routes volatile admissions to; it persists nothing. */
@@ -4451,14 +4470,16 @@ export function createVolatileALOutboundRuntimeStores<TPrepared>(
     options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>,
     budget: ALVolatileSessionBudget | undefined
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
-    const input = toDefaultInMemoryInput(options);
+    const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
     const backend = createVolatileALAdmissionBackend(input.nowMs);
-    const stores = createInMemoryALOutboundRuntimeStores({
-        ...input,
-        outboundBackend: backend,
-        decodePrepared: options.decodePrepared
-    });
-    return { ...stores, evictExpired: () => backend.evictExpired(), budget };
+    return {
+        admissionStore: createVolatileALOutboundAdmissionStore(
+            toInMemoryALOutboundAdmissionStoreInput(input, backend)
+        ),
+        workQueue: backend.workQueue,
+        evictExpired: () => backend.evictExpired(),
+        budget
+    };
 }
 
 /** The session's inbound memory pair, shared by both carriers' volatile lanes; it persists nothing. */
@@ -4468,8 +4489,14 @@ export function createVolatileALInboundRuntimeStores(
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
-    const stores = createInMemoryALInboundRuntimeStores({ ...input, inboundBackend: backend });
-    return { ...stores, evictExpired: () => backend.evictExpired(), budget };
+    return {
+        admissionStore: createVolatileALInboundAdmissionStore(
+            toInMemoryALInboundAdmissionStoreInput(input, backend)
+        ),
+        workQueue: backend.workQueue,
+        evictExpired: () => backend.evictExpired(),
+        budget
+    };
 }
 ```
 
@@ -4530,13 +4557,14 @@ In `packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts` add the s
 readonly volatileBudget: ALVolatileSessionBudget | undefined;
 ```
 
-and replace `:74-76` with:
+and replace `:74-76` (the `volatileStores` property of the object passed to
+`createDefaultALOutboundRuntimeResources({ ... })`) with:
 
-```ts
+```text
 volatileStores: createBrowserALVolatileOutboundRuntimeStores(
     toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
     input.volatileBudget
-);
+)
 ```
 
 In `packages/shared-web/browser/connection/initialise-browser-middleware.ts` replace `:200-202` with
@@ -4556,6 +4584,12 @@ Update the callers that are tests, each by adding the budget argument or field, 
   `packages/tests/shared/alm/al-storage-snapshot.test.ts:132` and `al-indexeddb-operation-counts.test.ts:639`;
 - the two hand-built pairs gain `budget: undefined` after `evictExpired` in
   `packages/tests/shared/alm/al-outbound-store-lane.test.ts:147` and `packages/tests/shared/alm/al-inbound-store-lane.test.ts:229`;
+- the three hand-built pairs Task 2 created gain `budget: undefined` after their `evictExpired` property: the
+  `stores` literal of `createObservedOutboundPair` in `packages/tests/shared/alm/outbound/al-outbound-volatile-retention.test.ts`,
+  the `volatileStores` literal of `createReadyObservedPairs` in `packages/tests/shared/alm/inbound/al-inbound-volatile-retention.test.ts`
+  and the `stores` literal of `createObservedVolatileInboundPair` in `packages/tests/shared/multicast/rtc-relay-row-retention.test.ts`;
+  and the `createVolatileALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage })` call of
+  `packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts` gains the second argument `undefined`;
 - `createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1')` gains `, undefined` at
   `packages/tests/shared-web/al-runtime/browser-al-runtime-stores.test.ts:528-529`, and
   `createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(...))` gains `, undefined` inside
@@ -4570,7 +4604,7 @@ Update the callers that are tests, each by adding the budget argument or field, 
 
 Run: `npm run typecheck` and `npm run typecheck:tests`
 Expected: both clean (the budget is carried and read by nothing yet).
-Run: `npx vitest run packages/tests/shared/alm packages/tests/shared-web/al-runtime packages/tests/shared-web/websocket packages/tests/shared-web/rtc/initialise-browser-rtc-runtime.test.ts packages/tests/shared-web/messages`
+Run: `npx vitest run packages/tests/shared/alm packages/tests/shared/multicast packages/tests/shared-web/al-runtime packages/tests/shared-web/websocket packages/tests/shared-web/rtc/initialise-browser-rtc-runtime.test.ts packages/tests/shared-web/messages`
 Expected: PASS, unchanged counts.
 
 - [ ] **Step 8: RED -- the outbound admission refuses over the bound (C4, D78).** Create
@@ -5100,7 +5134,9 @@ Expected: PASS.
 readonly qosProvider?: ALQosInputProvider;
 ```
 
-and replace `:90` with `qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),`.
+and replace the line `qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),` (`:90` on
+main, `:97` after Task 2 Step 12 and the two insertions above) with
+`qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),`.
 Create `packages/tests/shared/multicast/web-rtc-overlay-volatile-overload.test.ts`:
 
 ```ts
@@ -5209,7 +5245,7 @@ if the second case reads `admitted`, the provider is not reaching `planALMessage
       `packages/tests/shared-web/connection/create-browser-session-volatile-bound.test.ts`:
 
 ```ts
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createBrowserSessionVolatileBound } from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -5252,10 +5288,11 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
         expect(bound.budget.tryAdmit(toAdmission('one-too-many')).left?.limit).toBe('admissions');
     });
 
-    it('reads a fake reader once and bounds the session by its limits', () => {
-        const readVolatileSessionLimits = vi.fn(() => ({ maxAdmissions: 2, maxBytes: 4_096 }));
+    it('bounds the session by the limits its reader answered first', () => {
+        const answers = [{ maxAdmissions: 2, maxBytes: 4_096 }];
         const bound = createBrowserSessionVolatileBound({
-            readVolatileSessionLimits,
+            readVolatileSessionLimits: () =>
+                answers.shift() ?? { maxAdmissions: 1_000, maxBytes: 4_096 },
             qosProvider: undefined,
             nowMs: () => NOW_MS
         });
@@ -5263,8 +5300,8 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
         bound.budget.tryAdmit(toAdmission('first'));
         bound.budget.tryAdmit(toAdmission('second'));
 
+        // A second read would answer 1 000 admissions and admit the third.
         expect(bound.budget.tryAdmit(toAdmission('third')).left?.limit).toBe('admissions');
-        expect(readVolatileSessionLimits).toHaveBeenCalledTimes(1);
     });
 
     it('hands the carriers a provider over the same budget that keeps the application\'s answers', () => {
@@ -5597,21 +5634,22 @@ describe('a send the session volatile bound refuses (D78)', () => {
         const fixture = createBrowserMessageSenderFixture();
         fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) =>
             toCapacityRefusal(message);
-        const ws = vi.spyOn(
-            fixture.middleware.middleware.webSocketQueueBox,
-            'enqueueOutboxIfAbsent'
-        );
 
         const handle = await fixture.sender.sendTyped(
             { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback' },
             undefined
         );
+        const { lifecycle } = await handle.wait();
 
-        expect((await handle.wait()).lifecycle).toMatchObject({
+        expect(lifecycle).toMatchObject({
             state: 'rejected',
-            evidence: { failure: { kind: 'refused', reason: 'capacity' } }
+            evidence: {
+                failure: { kind: 'refused', reason: 'capacity' },
+                carrierFallback: undefined
+            }
         });
-        expect(ws).not.toHaveBeenCalled();
+        // A hand-over would have left the refused RTC leg as an attempt row before a WS leg.
+        expect(lifecycle.evidence.attempts).toEqual([]);
     });
 });
 ```
@@ -5686,7 +5724,7 @@ fall; none moves here.
     name lives in a module no entry point re-exports). Record both bundle figures; the budget, the two admissions
     and the provider reach both bundles, and the headroom is under 0.2 KiB, so a crossed ceiling is raised to the next
     whole KiB in `shared-web-browser-bundle-boundaries.test.ts:39-60`, `measure-browser-bundles.mjs:30-50` and
-    `headless-bundle-boundary.test.ts:64-83`, appending to each comment "S3c-ii's volatile bound (the session budget,
+    `headless-bundle-boundary.test.ts:64-83`, appending to each comment "The S3c-ii volatile bound (the session budget,
     its outbound refusal and inbound count, and the overloaded provider) measures <the measured figure> KiB. The next
     whole-KiB ceiling is <N>.";
   - the smoke lane, unsandboxed and alone on ports 18080/5180, no edits while it runs:
@@ -5771,7 +5809,7 @@ git push origin HEAD:codex/queuebox-persistence-qos-product-plan
   - `packages/shared-web/browser/messages/browser-rallar-message-sender.ts:30-34` (imports), `:176-184` (`sendWs`),
     `:207-214` (`sendTyped`), a new private `sendRtcPeer` inserted before `:233` (`sendRoomWithFallback`), `:317-325`
     (`createWsSendMessage`). Call lines only: the file measures cognitive load 37 today and 40 after the change
-    (tier 50), 458 lines today and 503 after;
+    (tier 50), 458 lines today and 506 after;
   - `packages/shared-web/browser/messages/rallar-message-contracts.ts:73-78` (the doc comment on
     `RallarWsSendInput.peerId`; the type is unchanged, `RallarRtcSendInput` is unchanged, C7);
   - `packages/tests/shared-web/messages/browser-ws-peer-send.test.ts:10` (describe title) and `:61-74` (the WS-only
@@ -5786,7 +5824,7 @@ git push origin HEAD:codex/queuebox-persistence-qos-product-plan
   below), `BrowserRallarMessageSender.sendWsUnicast` and the director relay (Task 5 owns them),
   `docs/test-structure-coupling-exceptions.md` (no registered test file is touched and the new tests carry no
   candidate).
-- Test: the three created test files and `browser-ws-peer-send.test.ts`; regression runs of
+- Test: the two created test files and `browser-ws-peer-send.test.ts`; regression runs of
   `browser-message-fallback-controller.test.ts`, `browser-message-fallback-identity.test.ts`,
   `browser-typed-message-channels.test.ts`, `browser-rallar-message-sender.test.ts`,
   `browser-message-handle-admission.test.ts` (the S3a `sendWsUnicast` pin stays green: Task 5 replaces it).
@@ -5873,7 +5911,7 @@ The manager needs no change; Step 1 pins all three from the real class.
    (`web-rtc-overlay-multicast-manager.ts:459-487`) falls back to `groupRef.groupId` for a multicast only, and the
    product keys the accepted overlay cache by `toScopedOverlayId(groupRef)`
    (`packages/shared/services/webrtc-group-overlay-reading.ts:39-50`). The shared test fixture
-   `rtc-origin-overlay-fixture.ts:79` keys it `'room'`, so a unicast there reads no overlay and every attempt settles
+   `rtc-origin-overlay-fixture.ts:79` on main (`:85` after Tasks 2 and 3) keys it `'room'`, so a unicast there reads no overlay and every attempt settles
    `not-ready` ("Awaiting server room relay authority"). Step 1 stores the overlay under the scoped key too.
 4. The sender is at a tier by length only: its cognitive load is 37 (measured with
    `scripts/repo-style-check/cognitive-load-rules.mjs`); after this task 40, with `sendRtcPeer` 35 lines.
@@ -6072,7 +6110,7 @@ const ADMITTED: ALDeliveryAdmissionVerdict = {
 const NO_ROUTE: ALDeliveryAdmissionVerdict = {
     kind: 'unroutable',
     reason: 'no-route',
-    detail: 'Skipping planned RTC dispatch: no immediate next hop for the addressee'
+    detail: 'Skipping RTC outbound dispatch without planned transport messages'
 };
 const SERVER_OVER_WS =
     'The server is addressed over WS: a peer-addressed send to it takes the ws strategy.';
@@ -6932,7 +6970,6 @@ if (input.peerId !== undefined && (strategy === 'rtc' || strategy === 'rtc-with-
 - insert before `private async sendRoomWithFallback<T>(` (`:233`):
 
 ```ts
-/** One unicast in the room the send resolves, admitted on RTC; `rtc-with-ws-fallback` may hand it to WS. */
 private async sendRtcPeer<T>(
     peer: BrowserRtcPeerSend<T>,
     channel: BrowserTypedChannelPolicy | undefined
@@ -6996,7 +7033,8 @@ return createBrowserUnicastMessage({
     serializedPayload: input.payloadValidation.serialized,
 ```
 
-(`parseCapturedPayload` keeps its two other callers, `createWsMessage` and `createRtcMessage`, and its reviewed
+(`parseCapturedPayload` keeps its other callers, `createWsMessage`, `createRtcMessage` and, until Task 5,
+`sendWsUnicast`, and its reviewed
 `boundary.unknown` disposition in `scripts/repo-style-check/reviewed-browser-dispositions.mjs:52-60`; the file keeps
 exactly its two `unknown` findings).
 
@@ -7051,8 +7089,8 @@ prints nothing.
   1. `npm run test:unit` — read the summary line (not the exit code).
   2. `npm run typecheck` (it ends with `typecheck:tests`, which checks the new test files against Task 1's
      `evidence.failure` and the `cause` on `receipt-exhausted`).
-  3. `npm run check:repo-style:changed -- origin/main HEAD` — expected: no new finding. The renamed builder is matched
-     by `git diff --find-renames` and carries no `boundary.unknown`; `validate-browser-rtc-peer-send.ts` measures
+  3. `npm run check:repo-style:changed -- origin/main HEAD` — expected: no new finding. The rewritten builder is below the rename
+     threshold, so git reports a delete and an add; the new file carries no `boundary.unknown`; `validate-browser-rtc-peer-send.ts` measures
      cognitive load 5 and one value export; the sender 40 (tier 50); `packages/shared-web/browser/messages/` goes from
      17 to 18 files (threshold > 20).
   4. `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD` — expected: no changed candidate (the
@@ -7076,7 +7114,7 @@ prints nothing.
      whole-KiB ceiling is <N>."; if headless reaches its ceiling (286 KiB unless raised), do the same in
      `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` ("... measure <figure> KiB here. The
      next whole-KiB ceiling is <N>.", and the `toBeLessThan(<N>)`). Write the sentence without an apostrophe (the
-     bundle test holds an `unknown` token at `:21`). Re-run the three tests after a raise.
+     browser bundle-boundaries test holds an `unknown` token at `:21`). Re-run the three tests after a raise.
   8. The storage pins are untouched: `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts` passes in
      `npm run test:unit` with unchanged counts (a peer send over RTC is volatile under `command`).
 
@@ -7095,7 +7133,6 @@ and the WS peer send (C8 now at the sender) are unchanged.
 ```bash
 git add \
   packages/shared-web/browser/messages/create-browser-unicast-message.ts \
-  packages/shared-web/browser/messages/create-browser-ws-unicast-message.ts \
   packages/shared-web/browser/messages/validate-browser-rtc-peer-send.ts \
   packages/shared-web/browser/messages/browser-rallar-message-sender.ts \
   packages/shared-web/browser/messages/rallar-message-contracts.ts \
@@ -7106,8 +7143,9 @@ git commit -m "feat(alm): S3c-ii -- a typed send may address one peer over RTC w
 git push origin HEAD:codex/queuebox-persistence-qos-product-plan
 ```
 
-Add the bundle files Step 9 raised to the `git add` (and a coupling registry fix, committed first, if Step 9 needed
-one). The commit body records the facade and headless figures, that the public API snapshot did not move, that
+The `git mv` of Step 4 already staged the removal of `create-browser-ws-unicast-message.ts`, so the list does not name
+it (`git add` of a removed path fails and stages nothing). Add the bundle files Step 9 raised to the `git add` (and a
+coupling registry fix, committed first, if Step 9 needed one). The commit body records the facade and headless figures, that the public API snapshot did not move, that
 `web-rtc-overlay-multicast-manager.ts` is unchanged (Step 1 pins the three carrier outcomes), that no persisted shape
 changed (`AL_ADMISSION_SCHEMA_ID` stays `'rallar-alm-2026-09-s3c-i'`, C16), and that `ws-then-rtc` with a `peerId`
 stays refused (V1).
@@ -7125,8 +7163,8 @@ stays refused (V1).
   `packages/shared-web/browser/director/rallar-director-facade.ts:6,71-78,88`,
   `packages/shared-web/browser/composition/browser-product-composition.ts:66-72,144-145,176-189`,
   `packages/shared-web/browser/composition/create-rallar-facade.ts:110-116`,
-  `packages/shared-web/browser/messages/browser-rallar-message-sender.ts:93-104,115-140` (review tier: deletions
-  only), `packages/shared-web/browser/calls/browser-call-signal-runtime.ts:1,32-58,132-152`,
+  `packages/shared-web/browser/messages/browser-rallar-message-sender.ts:97-108,119-144` (after Task 4's import
+  lines; review tier: deletions only), `packages/shared-web/browser/calls/browser-call-signal-runtime.ts:1,32-58,132-152`,
   `packages/shared-web/game/envelopes.ts:1,141-191`,
   `packages/shared-web/game/director/rallar-game-director-relay-runtime.ts:13,40,158,166`,
   `packages/shared-web/game/match.ts:131`.
@@ -7141,7 +7179,7 @@ stays refused (V1).
   `examples/director-relay/README.md:30`.
 - Modify (AR Eye Hunter): `apps/ar-eye-hunter-v1/src/game/types.ts:11-15`,
   `apps/ar-eye-hunter-v1/src/game/arena-runtime/match/use-arena-match-runtime.ts:117`.
-- Modify (ceiling comments, only if a figure is recorded):
+- Modify (ceiling comments; Step 11 appends both measured figures):
   `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts:54-55`,
   `packages/shared-web/scripts/measure-browser-bundles.mjs:44-45`,
   `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts:79-83`.
@@ -7168,10 +7206,8 @@ stays refused (V1).
   compares against the room the send resolved and does not fire for a `scope: 'all'` peer send, which resolves no room
   (the call signals below rely on this).
 - Consumes (Task 1): `ALDeliveryEvidence.failure`, `{ kind: 'refused', reason }` for a refused admission.
-- Consumes (Task 3): `createVolatileALOutboundRuntimeStores` exactly as Task 3 leaves its call in
-  `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts:237-239`; the storage pin below writes today's call
-  `createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload })` and takes Task 3's extra
-  budget argument, if Task 3 adds one, in the same form that file uses.
+- Consumes (Task 3): `createVolatileALOutboundRuntimeStores(options, budget: ALVolatileSessionBudget | undefined)`;
+  the storage pin below passes `undefined` (an unbounded pair: it measures IndexedDB operations, not the bound).
 - Produces (ledger additions, private to shared-web):
   - `BrowserDirectorRelayTransport.Input { readonly messages: RallarMessagesOperations; readSession(): AuthSession | undefined; }`
     (the fields `createTargetedChannel` and `sendWsUnicast` are deleted).
@@ -7205,8 +7241,16 @@ stays refused (V1).
   the server or the director refuses after admission would still read `sent` (correction 11 in another form). The cost
   falls on awaiting callers only: pickup, shot, hit and the peer-ready sync run through `runBestEffortNetworkTask`
   (fire and forget), the diagnostics drawer's sync is a user action whose refresh now means "the director confirmed",
-  the black-box `director.intent` command awaits it as its proof, and the one sequencing caller, the arena-join sync
-  (`use-arena-match-runtime.ts:117`), becomes a best-effort task so the peer-ready sync never waits on it.
+  the black-box `director.intent` command awaits it as its proof (the orchestration spec's 30 000 ms command
+  timeout, `full-stack-director-orchestration.spec.ts:458,467`, equals the wait), the awaited match-start intent
+  (`use-arena-world-actions.ts:94`) is sent only by the director and takes the local path, `match-support.ts:76`
+  (`submitCommand`) hands the promise to its caller unchanged, the RTC-lifecycle peer-ready sync
+  (`use-arena-rtc-lifecycle.ts:153`) already runs in a best-effort task, and the one sequencing caller, the
+  arena-join sync (`use-arena-match-runtime.ts:117`), becomes a best-effort task so the peer-ready sync never waits
+  on it. Each command now holds a live delivery-registry entry until its receipt
+  (`BROWSER_DELIVERY_RETENTION.maxEntries` 512): past 512 unconfirmed sends the registry ends the oldest live handles
+  `unobservable`, which a fresh-but-silent director reaches after about 24 s at the 632-per-30-s peak; the staleness
+  guard normally refuses sends first.
 - _`isSuccessfulDirectorDelivery`_ is unchanged and reads only room envelopes (`isALDeliveryAdmitted || superseded`);
   commands never use it.
 - _The receive side._ `subscribeToRtcRoomMessages` subscribes the intent and sync-request type ids too (correction
@@ -7220,7 +7264,10 @@ stays refused (V1).
   `intent`). A command lives 30 s, so a retried or fallback copy reaches the director at most 30 s after its send.
   AR Eye Hunter's fastest intent source is one accepted-shot intent plus at most one hit intent per shot at the 95 ms
   weapon cooldown (`simulation.ts:153`): 2 x 30 000 / 95 = 632 sequences, under 1 024. A sequence older than the
-  window cannot be proven new and is refused `stale-sequence`, so memory stays at most 1 024 numbers per key.
+  window cannot be proven new and is refused `stale-sequence`, so memory stays at most 1 024 numbers per key. Keys
+  are dropped only by `reset()` at `match.start()` (`rallar-game-match-lifecycle-runtime.ts:41`), so a leaver's and
+  every earlier director epoch's intent keys stay for the match's life: at most senders x epochs x 1 024 sequences
+  per match (one number per key before).
 - _Replay safety of the handlers_ (`accept-arena-match-intent.ts`): a hit replayed more than 1.5 s late is refused
   `stale-hit` (`simulation.ts:817-819`); a pickup replay is refused `pickup-unavailable` once picked
   (`simulation.ts:739-741`); an accepted-shot replay only republishes its visual event (`:65-67`). A hit replayed
@@ -7232,7 +7279,8 @@ stays refused (V1).
 - _Call signals._ `sendWsUnicast`'s other caller, call signalling, moves to `messages.ws.send({ scope: 'all', peerId,
   topicId, typeId, contextId: callId, payload, reliability: 'best-effort' })`: the same room-free best-effort unicast
   under its call id; its only wire change is an explicit `delivery: { ownership: 'shared', reliability: 'best-effort',
-  ack: 'none' }`.
+  ack: 'none' }`. One behaviour change: `sendWs` refuses a peer send while the server names no peer id (R-S3c-i-32),
+  which `sendWsUnicast` never checked; api-v1 names one, and the PR body says so.
 
 **Corrections found while writing:**
 
@@ -7381,10 +7429,7 @@ the "wire topics" test still passes (`toMatchObject`).
       `packages/shared-web/game/rallar-game-intent-sequences.ts`:
 
 ```ts
-/**
- * A command lives 30 s, so a retried or fallback copy reaches the director at most 30 s after its send. AR Eye
- * Hunter's fastest intent source, an accepted shot plus a hit per 95 ms weapon cooldown, uses 632 sequences in 30 s.
- */
+/** Covers every intent one sender can issue within a command's 30 s life, so a retried or fallback copy stays inside it. */
 export const RALLAR_GAME_INTENT_SEQUENCE_WINDOW = 1_024;
 
 /** Intents cross two carriers out of order (C10): a lower sequence is new unless seen; past the window it is stale. */
@@ -7560,11 +7605,13 @@ it('republishes a replayed accepted shot as its visual event only, leaving the a
 ```
 
 The fake `Date` is installed before `render`, because the arena captures `Date.now` as its clock at render
-(`use-rallar-arena.ts:67`). An exact replay inside 1.5 s is not a handler case: it carries the same envelope `seq`
-and Step 1's tracker drops it before `onIntent` (the match pin in Step 1 covers that path).
+(`use-rallar-arena.ts:219`, the `nowMs: Date.now` handed to `useArenaMatchRuntime`). An exact replay inside 1.5 s is
+not a handler case: it carries the same envelope `seq` and Step 1's tracker drops it before `onIntent` (the match pin
+in Step 1 covers that path).
 
 Run: `npx vitest run packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts`
-Expected: PASS -- these pin today's handler behaviour, which C10 now relies on (`stale-hit` past 1.5 s,
+Expected: PASS -- these pin that today's handlers apply a late replay once (the handler returns no reason, so the pin
+does not name which refusal fires), which C10 now relies on (`stale-hit` past 1.5 s,
 `pickup-unavailable` once picked, a visual-only accepted shot).
 
 - [ ] **Step 4: RED -- the transport sends a command to the director and reports its receipt (D60, C12).** In
@@ -8230,8 +8277,9 @@ export interface RallarDirectorRelaySendResult {
 }
 ```
 
-In `packages/shared-web/browser/composition/browser-product-composition.ts` delete `readonly realtime:
-  BrowserRealtimeCoreComposition;` from `CreateBrowserDirectorCompositionInput` (`:69`), and replace the transport and
+In `packages/shared-web/browser/composition/browser-product-composition.ts` delete the line
+`readonly realtime: BrowserRealtimeCoreComposition;` inside `CreateBrowserDirectorCompositionInput` (`:69`; the same
+text at `:48` and `:61` stays), and replace the transport and
 relay-runtime construction (`:176-189`) with:
 
 ```ts
@@ -8408,7 +8456,8 @@ send: async (send) => {
 ```
 
 Run: `npx vitest run packages/tests/shared-web/messages/browser-message-handle-admission.test.ts packages/tests/shared-web/calls/browser-call-signal-runtime.test.ts`
-Expected: FAIL -- the call runtime still sends through `sendWsUnicast`, so `sent` is empty. The two new sender pins
+Expected: FAIL -- the call runtime still calls `this.input.sendWsUnicast`, which the test double no longer provides,
+so `invite` rejects with `TypeError: this.input.sendWsUnicast is not a function`. The two new sender pins
 and the `unicast` capture case already pass on Task 4's typed peer send; they replace the S3a pin.
 
 - [ ] **Step 8: GREEN -- delete `sendWsUnicast` and move call signals to the WS lane (C15).** In
@@ -8450,8 +8499,8 @@ In `packages/shared-web/browser/composition/browser-product-composition.ts` dele
 `BrowserCallSignalRuntime` input (`:144-145`); its `messages: input.messaging.messages` already carries `ws.send`.
 
 In `packages/shared-web/browser/messages/browser-rallar-message-sender.ts` delete `WsUnicastInput` and
-`WsUnicastRoute` (`:93-104`) and the method `sendWsUnicast` (`:115-140`). `newALRoute` stays imported (the broadcast
-and multicast builders use it).
+`WsUnicastRoute` (`:97-108` after Task 4) and the method `sendWsUnicast` (`:119-144`), each by name. `newALRoute`
+stays imported (the broadcast and multicast builders use it).
 
 Then confirm: `git grep -n "sendWsUnicast\|WsUnicastInput\|WsUnicastRoute\|SignalSendInput" -- packages apps tests`
 Expected: no output.
@@ -8529,9 +8578,10 @@ describe('director command browser storage volume (D60, D87)', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundCountStores(observer, 'director-command-volume'),
-            volatileStores: createVolatileALOutboundRuntimeStores({
-                decodePrepared: decodeOutboundTestPayload
-            }),
+            volatileStores: createVolatileALOutboundRuntimeStores(
+                { decodePrepared: decodeOutboundTestPayload },
+                undefined
+            ),
             carrier: 'rtc',
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -8663,9 +8713,10 @@ function computeNonProbeWorkOperations(counts: IndexedDbOperationCounts): number
 }
 ```
 
-The count file keeps its own private copy of the two helpers: S3c-ii does not touch
-`al-indexeddb-operation-counts.test.ts` (its pins may only fall, D87, and touching it gates its coupling
-candidates).
+The count file keeps its own private copy of the two helpers: this task does not touch
+`al-indexeddb-operation-counts.test.ts` (Task 3 edits it at `:1-10` and `:238-240`; its pins may only fall, D87).
+This is the third private copy of `computeNonProbeWorkOperations` (Task 2 adds the second); a shared count fixture is
+a follow-up, not this task.
 
 Run: `npx vitest run packages/tests/shared-web/director/director-command-storage-volume.test.ts`
 Expected: PASS -- zero `al-admission` and zero non-probe `al-work` operations; the command settles `sent` on the
@@ -8737,13 +8788,13 @@ never called while the join sync is pending).
 
 Run: `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles` and
 `npx vitest run packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`
-Expected: PASS with the facade under 224 KiB and the headless bundle under 286 KiB; the public API snapshots do not
-move (no export name changes). Record both brotli figures: append to the facade comment
-(`shared-web-browser-bundle-boundaries.test.ts:54-55` and, duplicated, `measure-browser-bundles.mjs:44-45`) the
-sentence `S3c-ii's director command (the typed command channels, the intent sequence window, sendWsUnicast deleted)
-measures <facade figure> KiB.` and to the headless comment (`headless-bundle-boundary.test.ts:79-82`) `S3c-ii's
-director command measures <headless figure> KiB here.` with the measured figures written in full. If a figure crosses
-its ceiling, raise that ceiling to the next whole KiB in the same places (maintainer ruling) and say so in the commit
+Expected: PASS with each figure under its current ceiling (read it first: 224 KiB facade and 286 KiB headless
+unless Tasks 1-4 raised them); the public API snapshots do not move (no export name changes). Record both brotli
+figures: append to the end of the `browser/rallar.ts` entry's comment in `shared-web-browser-bundle-boundaries.test.ts`
+and, duplicated, in `measure-browser-bundles.mjs` the sentence `The S3c-ii director command (the typed command
+channels, the intent sequence window, sendWsUnicast deleted) measures <facade figure> KiB.` and to the end of the
+headless comment (above `toBeLessThan` in `headless-bundle-boundary.test.ts`) `The S3c-ii director command measures
+<headless figure> KiB here.` with the measured figures written in full. If a figure crosses its ceiling, raise that ceiling to the next whole KiB in the same places (maintainer ruling) and say so in the commit
 body. A figure that falls leaves its ceiling where it is.
 
 - [ ] **Step 12: Validate.** Run, reading each summary line (not the exit code):
@@ -8756,7 +8807,9 @@ body. A figure that falls leaves its ceiling where it is.
   - `npm run check:repo-style:changed -- origin/main HEAD` and
     `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD` (the touched test files
     `browser-message-handle-admission.test.ts` and `browser-director-relay-runtime.test.ts` gate their registered
-    candidates; a registry fix is committed first);
+    candidates, and this task adds `mock-invocation-count-or-order` candidates in
+    `browser-director-relay-transport.test.ts` (`toHaveBeenCalledTimes(1)`) and `arena-game-realtime.test.ts`
+    (`.not.toHaveBeenCalled()`, `.mock.calls` `toEqual`); classify each and commit the registry fix first);
   - `npx dprint check` over every file this task touched, listed explicitly (never a glob);
   - `packages/shared-test` changed: `cd apps/api-v1 && deno task check`, `cd apps/rallar-black-box-control-server &&
     deno task check`, `cd apps/relic-hunter-server-v1 && deno task check`, then `npm run test:deno`;
@@ -8849,13 +8902,15 @@ storage pin (a director command: 0 `al-admission`, 0 non-probe `al-work` operati
   - `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts:37-87`
   - `apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json` (regenerated; 22 is unchanged: every
     new scenario runs on two agents)
-  - `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts:21,254-257`
+  - `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts:21,56,112-180,183-186,254-257,305-320` (the
+    addressed family, R-S3c-ii-5)
 - Test:
   - create `packages/tests/shared-test/alm-conformance-addressed-scenarios.test.ts`,
     `packages/tests/shared-test/rallar-browser-runtime/resolve-black-box-rallar-message-peer.test.ts`
-  - modify `packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts:224-255,915-1016`,
-    `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts:82-98,512-532`,
-    `packages/tests/shared-test/rallar-browser-runtime/browser-runtime-facade-test-double.ts:185-200,345-406`,
+  - modify `packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts:224-255,508-531,915-1016`,
+    `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts:1-55,82-98,493-510` (three cases appended
+    after `:510`),
+    `packages/tests/shared-test/rallar-browser-runtime/browser-runtime-facade-test-double.ts:1-36,185-200,345-406,457-480`,
     `packages/tests/shared-test/rallar-browser-runtime/browser-rallar-runtime-test-harness.ts:118-130`,
     `packages/tests/shared-test/rallar-browser-runtime/connection.test.ts` (one case appended),
     `packages/tests/shared-test/rallar-browser-runtime/composition.test.ts:60,93`,
@@ -8872,7 +8927,8 @@ storage pin (a director command: 0 `al-admission`, 0 non-probe `al-work` operati
     `packages/tests/rallar-black-box/alm-reload-manifest.test.ts:20-37`,
     `apps/rallar-black-box-control-server/test/control-generated-alm-reload.test.ts:28-51,121-196,251-330,470-520`,
     `apps/rallar-black-box-control-server/test/control-alm-evidence.test.ts:87-88,120-127,388-411`,
-    and, only if the measure crosses it, `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
+    and, only if the measure crosses it, `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`;
+    only if Step 28's coupling check names a candidate, `docs/test-structure-coupling-exceptions.md`
 
 **Interfaces:**
 
@@ -8924,7 +8980,10 @@ storage pin (a director command: 0 `al-admission`, 0 non-probe `al-work` operati
   names no role, the lane starts both recipients of a three-agent run in parallel
   (`tests/playwright/rallar-black-box/full-stack-three-agent-run.ts:70-73`) and hosted agents may share a principal,
   so nothing the page holds tells `receiver` from `recipient-b`. `toPeer` is `'server' | 'receiver'` and the four
-  scenarios run on two agents (see "Corrections found while writing", item 1).
+  scenarios run on two agents (see "Corrections found while writing", item 1). On two agents a room send asking
+  `receiver` yields the same lane evidence as a peer send (its frozen audience is the one receiver), so
+  `ws-unicast-receipt` and `unicast-fallback` prove the addressed path end to end but would not fail if the page
+  dropped `toPeer`; the Step 7 delivery case and `server-command`'s absence window are what pin the addressing.
 - **An unresolvable role is a typed command failure.** The resolver returns an `Either`; the ledger turns its Left
   into the page's own failure `Message peer unresolved: …`, which the browser adapter classifies as
   `RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED` (the page's failures cross `page.evaluate` only as prefixed errors,
@@ -8952,9 +9011,12 @@ storage pin (a director command: 0 `al-admission`, 0 non-probe `al-work` operati
   reaches the member is its claim). The others' receivers prove a presence: a second copy after a hand-over is S3b's
   `fallback-within-deadline` pin on the same fallback controller, and a refused send is never submitted, which
   `attempts equals 0` proves. The lane's widest cell (`rtc-with-ws-fallback`, two agents, measured 7.0–7.1 min of the
-  fixed 8 min `CARRIER_TEST_TIMEOUT_MS`) gains three scenarios without a window, ≈30 s, to ≈455 s: inside the budget
-  but with ≈25 s to spare, so Step 30 measures it and stops above 465 s. Manifest 18's 31 blocks already hold 513 s of
-  absence windows, so its 300 s never held; with 39 blocks the floor is 530 s and the run ≈1 060 s, so
+  fixed 8 min `CARRIER_TEST_TIMEOUT_MS`) would gain three scenarios without a window, ≈33-39 s at its own measured
+  11-13 s of other work per scenario, to ≈460-465 s before `capacity`'s two extra close-and-reconnect cycles: at the
+  edge of the budget, with ≈15 s to spare at best. So the four addressed scenarios run as their own two-agent family,
+  `addressed`, one test per carrier under the same fixed budget (R-S3c-ii-5, Step 26), and the baseline two-agent
+  test's wall time does not grow; Step 30 measures both. Manifest 18's 31 blocks already hold 513 s of
+  absence windows, so its 300 s never held; with 39 blocks the floor is 530 s and the run ≈1 100 s, so
   `recommendedTerminalTimeoutSeconds` rises to 1 200 (Step 21).
 
 - [ ] **Step 1: RED — `toPeer` in the recipe contract.** In
@@ -9104,8 +9166,10 @@ toPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesTo
 
       A replay already refuses every listed field (`validateMessagesReplayCommand`, `:64-78`), `toPeer` included.
 
-      In `alm/rallar-black-box-alm-command-capabilities.ts` append to the `messages.send` description (`:11-18`),
-      after `'durability; absent, the send is volatile. '`:
+      In `alm/rallar-black-box-alm-command-capabilities.ts`, in the `messages.send` description (`:11-18`), split
+      `:16` (`'durability; absent, the send is volatile. A replay names only replayOnCarrier (and connection): a ' +`)
+      into `'durability; absent, the send is volatile. ' +`, the three lines below, and
+      `'A replay names only replayOnCarrier (and connection): a ' +`:
 
 ```ts
 'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
@@ -9122,7 +9186,8 @@ toPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesTo
       do the same for `BlackBoxRallarDeliveryObservation`.
 
       In `alm/decode-alm-runtime-result.ts` add `ALDeliveryCarrierFallback` and `ALDeliveryFallbackReason` to the
-      `@shared/alm/delivery/al-delivery-lifecycle.ts` type import (`:2-9`), add
+      `@shared/alm/delivery/al-delivery-lifecycle.ts` import (`:2-9`, a value import of `AL_DELIVERY_STATES` with
+      inline `type` specifiers) as `type ALDeliveryCarrierFallback` and `type ALDeliveryFallbackReason`, add
       `carrierFallback: readAlmCarrierFallbackField(record, path),` after the `relayRejection` line of
       `decodeAlmDeliveryResultValue` (`:137`), add after `ALM_ATTEMPT_OUTCOMES` (`:58-68`):
 
@@ -9135,7 +9200,8 @@ const ALM_FALLBACK_REASONS: Readonly<Record<ALDeliveryFallbackReason, true>> = {
 };
 ```
 
-    and after `readAlmRelayRejectionField` (`:276`):
+    and after `readAlmFailureField` (Task 1 Step 11 places it after the `readAlmRelayRejectionField` it rewrites;
+    `:276` today):
 
 ```ts
 /** Absent unless the strategy handed the admitted message to its second carrier (D56). */
@@ -9166,14 +9232,23 @@ function isAlmFallbackReason(value: unknown): value is ALDeliveryFallbackReason 
 }
 ```
 
-    In `black-box-rallar-delivery-error-message-prefixes.ts` add after `rawControlUnavailable`:
+    In `black-box-rallar-delivery-error-message-prefixes.ts` add an entry after `rawControlUnavailable`, which gains a
+    comma, so that the object reads:
 
 ```ts
-/** A `messages.send.toPeer` role the page could not resolve to exactly one peer. */
-peerUnresolved: 'Message peer unresolved';
+export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
+    deliveryStateTimeout: 'Delivery handle',
+    scriptedPortsUnavailable: 'Scripted transport and storage ports are not installed',
+    /** The page cannot replay now: no connected session, or the capturing carrier no longer retains the envelope. */
+    replayUnavailable: 'Message replay unavailable',
+    /** The page has no connected session to submit a raw control from. */
+    rawControlUnavailable: 'Raw control submission unavailable',
+    /** A `messages.send.toPeer` role the page could not resolve to exactly one peer. */
+    peerUnresolved: 'Message peer unresolved'
+} as const;
 ```
 
-    (with a comma after the `rawControlUnavailable` entry). In `alm/browser-adapter-alm-commands.ts` add
+    In `alm/browser-adapter-alm-commands.ts` add
     `peerUnresolved: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED',` after `rawControlUnavailable` in `ALM_ERROR_CODES`
     (`:115-125`) and `'peerUnresolved'` to `ALM_PAGE_RUNTIME_ERROR_CODE_KEYS` (`:128-133`).
 
@@ -9201,7 +9276,7 @@ peerUnresolved: 'Message peer unresolved';
 },
 ```
 
-    and append to `invalidRecipes`:
+    and append to `invalidRecipes` (add a comma after its current last entry, which closes at `:1021`):
 
 ```json
 {
@@ -9271,7 +9346,8 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
       `packages/tests/shared-test/rallar-browser-runtime/browser-runtime-facade-test-double.ts` add
       `GroupPresenceSession` (from `@shared/api/group-types.ts`) and `BlackBoxBrowserPeersDependency` (from
       `browser-rallar-runtime-composition.ts`, beside the other dependency types) to the type imports, add to
-      `facadeBehavior` after `resolveRoomMinSnapshotVersion` (`:198`):
+      `facadeBehavior` after `resolveRoomMinSnapshotVersion` (`:198`, the object's last entry today: give it a
+      trailing comma):
 
 ```ts
 serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
@@ -9392,8 +9468,8 @@ describe('the lane role a messages.send addresses (C11)', () => {
 
     In `packages/tests/shared-test/rallar-browser-runtime/delivery.test.ts` add
     `import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';`,
-    import `toRoomRosterSession` beside `openFacadeDelivery` (`:56`), add `carrierFallback: undefined,` after
-    `relayRejection: undefined,` in `unknownObservation` (`:89`), and add after the case
+    import `toRoomRosterSession` beside `openFacadeDelivery` (`:55`), add `carrierFallback: undefined,` after
+    `relayRejection: undefined,` in `unknownObservation` (`:88`), and add after the case
     `'passes a stated QoS request to the typed send as given, and none without one'` (`:493-510`):
 
 ```ts
@@ -9615,7 +9691,6 @@ function decodeOrdinarySend(
     );
 }
 
-/** Absent, the send addresses its scope. */
 function decodeMessagePeerRole(
     value: unknown
 ): NonNullable<BlackBoxRallarMessageSendInput['toPeer']> | BlackBoxRallarInputIssue | undefined {
@@ -9730,7 +9805,8 @@ export interface BlackBoxBrowserPeersDependency
     add `readonly peers: BlackBoxBrowserPeersDependency;` after `deliveries` in
     `BlackBoxBrowserRallarRuntimeDependency` (`:100`) and in `BlackBoxBrowserRuntimeComponents` (`:286`), return
     `peers` beside `deliveries` in `toBlackBoxBrowserRuntimeDependency` (`:291`, `:329`), and move the `deliveries`
-    literal out of `createBlackBoxBrowserRallarRuntimeDependency` (`:206-222`, which is 58 lines today) into:
+    literal out of `createBlackBoxBrowserRallarRuntimeDependency` (`:206-222` today, `:205-221` once Task 5 deletes
+    `:181`; the function is 59 lines today and 58 after Task 5) into:
 
 ```ts
 function toBlackBoxBrowserMessagingPorts(
@@ -9767,7 +9843,7 @@ function toBlackBoxBrowserMessagingPorts(
 ```
 
       so the `toBlackBoxBrowserRuntimeDependency({ … })` call passes `...toBlackBoxBrowserMessagingPorts({ session,
-      state })` in place of `deliveries: { … }` (the composition function falls from 58 to 43 lines).
+      state })` in place of `deliveries: { … }` (the composition function falls from 58 lines, after Task 5, to 42).
 
       In `connection/black-box-rallar-connection-runtime.ts` `createMessagingControllers` (`:410-416`) add
       `peers: rallar.peers,` after `deliveries: rallar.deliveries,` and `now: clock.now,` after `diagnostics,`.
@@ -9844,7 +9920,9 @@ export async function loadRuntime(
       `packages/tests/shared-test/rallar-browser-runtime/composition.test.ts:60,93`), with the same import.
 
       Append to `packages/tests/shared-test/rallar-browser-runtime/connection.test.ts` (importing
-      `BlackBoxRallarVolatileLimits`, `AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES` and the
+      `BlackBoxRallarVolatileLimits` from
+      `@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts`,
+      and `AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES` and the
       type `ALVolatileSessionLimits` from `@shared/alm/volatile-budget/al-volatile-session-budget.ts`):
 
 ```ts
@@ -9929,7 +10007,10 @@ it('hands the black-box session a volatile-limits read port that the connect set
 Run: `npx vitest run packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts
 packages/tests/shared-test/rallar-browser-runtime/connection.test.ts
 packages/tests/shared-web/composition/browser-runtime-construction.test.ts`
-Expected: FAIL — `black-box-rallar-volatile-limits.ts` does not exist (every file importing it fails to load).
+Expected: FAIL — `connection.test.ts` fails to load (it imports the missing `black-box-rallar-volatile-limits.ts`); in
+`browser-runtime-construction.test.ts` the two black-box cases fail at their dynamic import of that file; in the bridge
+test the new case fails because the decoder drops `almVolatileLimits` (the forwarded config lacks it, and the four
+malformed pairs resolve instead of rejecting).
 
 - [ ] **Step 15: The read port and the connect field.** Create
       `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts`:
@@ -10087,7 +10168,7 @@ export function installBlackBoxRallarRuntime(
             timeOrigin: globalThis.performance.timeOrigin,
             origin: globalThis.location.origin
         }),
-        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+        delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
     }).installation();
     targetWindow.__blackBoxRallar = installation.runtime;
     installation.emitRuntimeLoaded();
@@ -10827,7 +10908,8 @@ export type AlmConformanceScenarioId =
 
     In `create-alm-conformance-recipes.ts` import the four definitions among the scenario imports (`:30-43`,
     alphabetical by path: `capacity` after `bounded-rejection`, `server-command` after `receipted-audience`,
-    `unicast-fallback` and `ws-unicast-receipt` after it) and make `ALM_CONFORMANCE_SCENARIOS` (`:75-90`, keeping
+    `unicast-fallback` after it, `ws-unicast-receipt` after `volatile-default`; `npx dprint fmt` sorts them by path in
+    any case) and make `ALM_CONFORMANCE_SCENARIOS` (`:75-90`, keeping
     its doc comment):
 
 ```ts
@@ -10860,11 +10942,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
       `ALM_CONFORMANCE_DEADLINE_MS` (`:37`):
 
 ```ts
-/**
- * Also the execution budget of each combined root (distributed-run-commands.ts). The 39 scenario blocks hold 530 s of
- * absence windows; with the lane's measured ≈12 s of other work per scenario and three page reloads, the run needs
- * ≈1 060 s.
- */
+/** Also each combined root's execution budget (distributed-run-commands.ts), so it bounds the whole hosted run. */
 const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_200;
 ```
 
@@ -10884,14 +10962,16 @@ description: 'ALM conformance family (the volatile default, bounded rejection, d
       lowered `almVolatileLimits` survives, and each block's leading commands are not fault injections for `capacity`
       (it starts with `close`), so its `armed` barrier follows `start` directly (`:247-255`).
 
-      The 300 s figure: the current 31 blocks already hold 513 s of absence windows (a sum over the checked-in
+      The 300 s figure: the current 31 blocks already hold 513 s of absence windows (a sum over the checked-in absent
       manifest's `messages.received` windows and absent waits, the longest role per block), and the value is also the
       combined roots' `timeoutMs`
       (`apps/rallar-black-box-control-server/src/distributed/distributed-run-commands.ts:82-95`), so a hosted run of
       manifest 18 times out at 300 s today. This task adds 8 blocks (ws 3, rtc 2, fallback 3) and 17 s of windows
       (`server-command`'s): a 530 s floor. The lane's widest cell measured 7.1 min (426 s) for 15 two-agent scenarios
-      over 248 s of windows, ≈12 s of other work per scenario; 530 + 39 × 12 + 3 × 20 (the reload checkpoints' page
-      reloads) ≈ 1 058 s, rounded up to 20 minutes, 1 200 s, which leaves ≈12 % for slower hosted runners.
+      over 231 s of absence windows (the 14 blocks manifest 18 also runs; `not-yet-in-sync-delivered-after-refresh`
+      holds none), 11-13 s of other work per scenario; 530 + 39 × 13 + 3 × 20 (the reload checkpoints' page reloads)
+      ≈ 1 097 s, before the 78 barrier round trips per role and `capacity`'s six reconnects that the lane figure does
+      not contain, rounded up to 20 minutes, 1 200 s, which leaves ≈8 % for slower hosted runners.
 
 - [ ] **Step 22: The pinned lists.** In `packages/tests/shared-test/alm-conformance-recipes.test.ts`:
   - `SCENARIO_KEYS_BY_CARRIER` (`:116-157`): append `'ws-unicast-receipt', 'server-command', 'capacity'` to `ws`,
@@ -10920,9 +11000,9 @@ const capacityReceived1 = command.commandId?.endsWith('capacity-receiver-receive
 
   In `packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`, case
   `'adds the ALM conformance 2-agent manifest…'` (`:1146-1220`):
-- make `metadata.scenarios` (`:1167-1183`):
+- make `metadata.scenarios` (`:1170-1184`, the array inside `toMatchObject({ … })`; the `});` after it stays):
 
-```ts
+```text
 scenarios: [
     'delivery-reload',
     'volatile-default',
@@ -10941,12 +11021,12 @@ scenarios: [
     'receipt-exhausted-fallback',
     'no-fallback-after-deadline',
     'unicast-fallback'
-];
+]
 ```
 
-- make `expect(rtcConnects).toHaveLength(5);` (`:1198`) `toHaveLength(11)` with the comment
+- make `expect(rtcConnects).toHaveLength(5);` (`:1200`) `toHaveLength(11)` with the comment
   `// Two prologues, three reload reconnects, and the capacity sender's lowered and restored connect per carrier.`;
-- add after the `not-yet-in-sync-expires` loop (`:1192-1194`):
+- add after the `not-yet-in-sync-expires` loop (`:1194-1196`):
 
 ```ts
 // The server is no RTC peer (C9), so only the ws block addresses it.
@@ -11156,14 +11236,15 @@ npx vitest run packages/tests/shared-test packages/shared-rtc-bench/tests \
   packages/tests/rallar-black-box/live-rtc-control-client.test.ts \
   packages/tests/rallar-black-box/browser-rallar-runtime.test.ts \
   packages/tests/shared-web/composition packages/tests/shared-web/state-read/rtc-authority-recovery.test.ts
-cd apps/rallar-black-box-control-server && deno task check && deno task test test/control-generated-alm-reload.test.ts test/control-alm-evidence.test.ts
+(cd apps/rallar-black-box-control-server && deno task check && deno task test test/control-generated-alm-reload.test.ts test/control-alm-evidence.test.ts)
 ```
 
     Expected: every Vitest file passes (read the summary line) and both Deno files pass. Drop the
     `packages/shared-rtc-bench/tests` path if Vitest reports no test in it for this filter; it is there so the sweep
     is not the `packages/tests/`-only subset.
 
-- [ ] **Step 26: The lane spec reads identity evidence from the scenario, not from a list of ids.** In
+- [ ] **Step 26: The lane spec reads identity evidence from the scenario, not from a list of ids, and runs the
+      addressed family on its own.** In
       `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts` add after the
       `assessAlmConformanceIdentity` import (`:21`):
 
@@ -11183,8 +11264,18 @@ function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
 ```
 
     Every `receipted-audience` key declares `toReceiptRoles`, so the three-agent family is assessed as before, and
-    `ws-unicast-receipt` joins the two-agent family's assessment. Scenario selection (`selectScenarios`, `:305-320`)
-    is generic and needs nothing; no scenario is added to the smoke scope.
+    `ws-unicast-receipt` joins the addressed family's assessment.
+
+    The four addressed scenarios run as their own two-agent family (R-S3c-ii-5), so the baseline two-agent test's
+    wall time does not grow: `ScenarioFamily` (`:56`) becomes `'two-agent' | 'addressed' | 'three-agent'`;
+    `selectScenarios` (`:305-320`) puts a two-role scenario whose `scenarioId` is `ws-unicast-receipt`,
+    `unicast-fallback`, `server-command` or `capacity` in `'addressed'` and every other two-role scenario in
+    `'two-agent'`; `runAlmConformanceScenarios` (`:183-186`) takes the family it runs, and the baseline test passes
+    `'two-agent'`; and a third ``test(`addressed family over ${carrier} (${scope})`, …)`` beside the baseline one runs
+    `'addressed'` on its own `createTwoAgentRun` (run id `` `alm-${carrier}-addressed-${uniqueSuffix()}` ``) with
+    `test.setTimeout(CARRIER_TEST_TIMEOUT_MS)`, skipped like the three-agent test when it selects nothing (every smoke
+    scope), and records its observation with `family: 'addressed'` (`toObservationFileName`, `:457-460`, suffixes
+    every family but `two-agent`). No scenario is added to the smoke scope.
 
 - [ ] **Step 27: Docs.** In `packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md`, "## ALM Commands":
   - make the optional list of `messages.send` (`:152-154`) end `` `minSnapshotVersion`, `qos` and `toPeer`. ``;
@@ -11207,7 +11298,8 @@ recipients has no resolvable `receiver`, and the three-agent family addresses no
 - add `toPeer` to the fields a replay refuses (`:186-190`: "…`minSnapshotVersion`, `qos` and `toPeer` are each
   refused beside it…");
 - in the observation paragraph (`:343-346`) add `carrierFallback` after `relayRejection` in the field list, and
-  after the sentence on `relayRejection` (`:361-368`):
+  after the `failure` paragraph Task 1 inserted after the sentence on `relayRejection` (before
+  `` `backpressured` is true when a carrier ``):
 
 ```markdown
 `carrierFallback` is present once the strategy handed an admitted message to its second carrier (D56):
@@ -11235,7 +11327,7 @@ without the field, restoring the constants. Its receiver waits for the two arriv
 since the sender reconnects before it sends.
 ```
 
-- after "### The `messages.ws` Connect Transport" (`:436-442`) add:
+- after "### The `messages.ws` Connect Transport" (`:436-442` on main, about `:442-448` after Task 1) add:
 
 ```markdown
 ### The lane-only `rallar.almVolatileLimits` connect field
@@ -11256,9 +11348,9 @@ npm run typecheck
 npm run check:repo-style:changed -- origin/main HEAD
 node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD
 npx dprint check <every file this task touched, listed explicitly>
-cd apps/api-v1 && deno task check
-cd apps/rallar-black-box-control-server && deno task check
-cd apps/relic-hunter-server-v1 && deno task check
+(cd apps/api-v1 && deno task check)
+(cd apps/rallar-black-box-control-server && deno task check)
+(cd apps/relic-hunter-server-v1 && deno task check)
 npm run test:deno
 npm run test:repo-governance
 ```
@@ -11282,7 +11374,7 @@ npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
     Expected: the snapshots and the facade budget do not move (no `@shared-web` export changes). If the headless
     measure crosses the ceiling it asserts (`expect(result.brotliKiB).toBeLessThan(N)`,
     `headless-bundle-boundary.test.ts:83`), raise `N` to the next whole KiB and append to the comment above it
-    "S3c-ii's lane peer role and volatile-limits read port measure <figure> KiB here. The next whole-KiB ceiling is
+    "The S3c-ii lane peer role and volatile-limits read port measure <figure> KiB here. The next whole-KiB ceiling is
     <N>."; state the figure in the commit body.
 
 - [ ] **Step 30: The lanes.** Unsandboxed, one lane runner at a time on ports 18080/5180, no edits while it runs; read
@@ -11294,10 +11386,11 @@ npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
     `unicast-fallback` (fallback) and `capacity` green, the identity assessment of `ws-unicast-receipt` clean, and
     every earlier cell as before.
 
-    Record in the commit body, per carrier, the two-agent test's duration beside its duration before this task (the
-    spec's comment records 7.0–7.1 min for the fallback cell). **Stop rules**, each brought to the controller with
-    the evidence, no expectation edited and no harness budget widened: the fallback cell's two-agent test above 465
-    s (within 15 s of the fixed `CARRIER_TEST_TIMEOUT_MS`; the estimate is ≈455 s); `capacity` refusing its first or second send (the
+    Record in the commit body, per carrier, the baseline two-agent test's duration beside its duration before this
+    task (the spec's comment records 7.0–7.1 min for the fallback cell; the split of Step 26 leaves it unchanged) and
+    the new addressed test's duration. **Stop rules**, each brought to the controller with the evidence, no
+    expectation edited and no harness budget widened: either two-agent test of the fallback cell above 465 s (within
+    15 s of the fixed `CARRIER_TEST_TIMEOUT_MS`); `capacity` refusing its first or second send (the
     session received more than ≈39 KB of other volatile data while the bound was low — read the sender's `failure`
     and the page diagnostics' inbound admissions); `ws-unicast-receipt` failing with
     `RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED` (the sender's cached roster did not hold exactly one other live session;
@@ -11332,7 +11425,7 @@ git push origin HEAD:codex/queuebox-persistence-qos-product-plan
    role; the lane starts a three-agent run's two recipients in parallel (`full-stack-three-agent-run.ts:70-73`), so
    join order is no signal; and hosted agents may all log in as one user (`09-start-headless-workers.sh:121-124`), so
    the principal is none either. `toPeer` is `'server' | 'receiver'`, `receiver` resolves only while exactly one other
-   live session is in the room, and all four scenarios run on two agents. The controller should amend C11 and the
+   live session is in the room, and all four scenarios run on two agents. R-S3c-ii-2 amends C11 and the
    ledger's "`toPeer: 'server' | 'receiver' | 'recipient-b'`"; a three-agent addressed scenario would need an observed
    peer id (a `{resultCache…senderId}` token, as `messages.control.toPeerId` takes), which is a later decision.
 2. **The connect config's `rallar.peerIds` cannot serve as the page's source** (task brief's first option): a recipe
@@ -11355,7 +11448,8 @@ git push origin HEAD:codex/queuebox-persistence-qos-product-plan
 7. **C4 counts received data admissions, so a count bound is not a lane control**: every WS inbox message the session
    receives is admitted through the inbound lane (`ws-queue-box-client-service.ts:660-663`,
    `websocket/browser-websocket-inbox.ts:30-45`), so the lowered bound is a byte bound with ≈39 KB of headroom and the
-   count bound keeps its constant. If Task 3 exempts server-originated events, the headroom is simply unused.
+   count bound keeps its constant. Task 3 exempts only messages that name no deadline, so a server event with a
+   deadline counts against that headroom.
 8. **"The strict recipe preflight" for these recipes is the schema and control-protocol validation**
    (`alm-conformance-recipe-validation.test.ts:88-140`) plus the manifest `--check` and the manifest schema test;
    `scenario-black-box.ts --validate --strict` covers black-box-runner JSON recipes, which this task does not touch.
@@ -11377,7 +11471,7 @@ git push origin HEAD:codex/queuebox-persistence-qos-product-plan
   relay-row figure; this task adds the rest), `playground/alm/alm-complete-product-description.md` ("### Unicast"
   `:197-206`, "## QoS negotiation" `:335-338`, "### At-least-once" `:372-376`, "## Congestion and RTC flow control"
   `:485-508`, "## Resource and abuse limits" `:679-700`, "## Observability and privacy"),
-  `playground/alm/alm-improvement-plan.md` (rows D59, D60, D74, D75, D78; new rows D91–D94; the S3 bullet `:855-864`;
+  `playground/alm/alm-improvement-plan.md` (rows D59, D60, D74, D78; new rows D91–D94, D93 recording D75; the S3 bullet `:855-864`;
   matrix rows F1 `:990`, F4 `:993`, F5 `:994`; "Consumer proofs in the games" `:965-975`; the revision history),
   `playground/alm/alm-s3-design-proposal.md` (§2.3; a new §11), `playground/alm/alm-qos-product-plan.md` (the header's
   "Reviewed source", §6, §10.3).
@@ -11393,7 +11487,8 @@ line may stand inside the table.
   the storage counts).
 - Produces: nothing a later task relies on.
 
-- [ ] **Step 1: The outbound README.** After the paragraph that ends "... so a leaver reads unconfirmed (D73)." add:
+- [ ] **Step 1: The outbound README.** Directly before the heading `### Grouped control sends` (the end of "### Server
+      receipts on WS"), with one blank line on each side, add:
 
 ```md
 ### Addressed sends on RTC
@@ -11412,15 +11507,19 @@ refused at the sender.
 ### The volatile bound
 
 The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
-([`resolveALReceiptRetentionExpiryMs`](../resolve-al-receipt-retention-expiry.ts)), not for an hour. One budget per
+([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts)), not for an hour. One budget per
 session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data admissions the
 session originates and receives on its volatile pairs, by message and by envelope bytes, and releases each at its own
 deadline. Controls, receipts, acknowledgements, repairs, retransmissions and relay forwards are not counted. Over
 `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000) or `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) an outbound data admission is
 refused `capacity`: the handle ends `rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`, and
-no fallback is tried, because the other carrier shares the budget. An inbound admission is counted and never refused.
+no fallback is tried, because the other carrier shares the budget. An inbound admission is counted and never refused,
+and it counts toward the same limits as the session's own sends: a session whose volatile traffic in and out stays
+above about 33 messages a second (at the 30 s default deadline) has its own volatile sends refused. A message that
+names no deadline (RTC signalling) is not counted.
 While the budget is at or over a limit the session's QoS provider reports `overloaded`; under the default policy that
-drops best-effort RTC traffic only, and the WS outbound path does not consult it (V1).
+drops best-effort RTC sends at the origin and best-effort arrivals on both carriers (each answered with a NACK
+`overloaded`), never an at-least-once message, and the WS outbound path does not consult it (V1).
 ```
 
 - [ ] **Step 2: The inbound README.** After the relay-row figure Task 2 recorded, add: "An inbound data admission on
@@ -11435,25 +11534,32 @@ drops best-effort RTC traffic only, and the WS outbound path does not consult it
   - "## QoS negotiation": replace the paragraph "**PLANNED — S3c and V1, live providers:** ... V1's." with
     "**PARTIAL — S3c-ii, the first live provider:** the browser installs a per-session QoS provider that reports
     `overloaded` while the session's volatile budget is at or over a limit (D78). Under the default policy that drops
-    best-effort RTC traffic only. Transport-aware authorization, the other budgets and fairness are V1's."
-  - "### At-least-once": in the paragraph beginning "The default is receipted.", replace "because the director relay's
+    best-effort RTC sends and best-effort arrivals on both carriers, never an at-least-once message. Transport-aware
+    authorization, the other budgets and fairness are V1's."
+  - "### At-least-once": in the paragraph beginning "The default is receipted." (`:373-380`; the phrase spans
+    `:375-376`, wrapping after "and the", so re-flow with dprint after the edit), replace "because the director relay's
     WS unicast fallback and the receipt-less RTC carry rely on explicit shapes (S3a ruling 6)" with "because the
     receipt-less RTC carry relies on an explicit shape (S3a ruling 6; the director relay's WS unicast is gone since
-    S3c-ii)".
+    S3c-ii)", and append to that paragraph "A director command can reach the director twice after a fallback, because
+    AL dedup is per carrier lane: relay commands are at-least-once, and the game's sequence tracker refuses the copy
+    (S3c-ii, R-S3c-ii-4)."
   - "## Congestion and RTC flow control": replace the paragraph "**PLANNED — S3, integration:** ..." with
     "**PARTIAL — S3c-ii:** the caller sees the lifecycle (S1) and the session's volatile budget is the first
     `overloaded` producer (D78). Channel backpressure as a policy input is V1's."
   - "## Resource and abuse limits": after the paragraph ending "... not current guarantees." add
-    "**CURRENT — S3c-ii, the volatile bound:** one session admits at most 1 000 volatile messages and 4 MiB of
-    envelopes at a time, counted until each message's deadline; the next send is refused `capacity` (D74, D78)."
-  - "## Observability and privacy": append "A failed delivery states a typed `evidence.failure` beside its prose
+    "**CURRENT — S3c-ii, the volatile bound:** one session holds at most 1 000 volatile messages and 4 MiB of
+    envelopes at a time, sent and received together, each counted until its deadline; over the bound the next send
+    is refused `capacity`, and a received message is counted, never refused (D74, D78)."
+  - "## Observability and privacy": append to the "**PARTIAL:**" paragraph, after "(S3c-i, D61, D73).", "A failed
+    delivery states a typed `evidence.failure` beside its prose
     reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
     (S3c-ii, D75)."
 
 - [ ] **Step 4: The roadmap.** In `alm-improvement-plan.md`:
   - D59: append " **Delivered by S3c-ii (PR #606):** D74, D78, D91, D92.";
   - D60: append " **As applied (S3c-ii, PR #606):** D75, D93 — match start never travelled; two typed channels.";
-  - D74, D75, D78: append " **Delivered by S3c-ii (PR #606).**" (D78 also: " As applied: D91.");
+  - D74, D78: append " **Delivered by S3c-ii (PR #606).**" (D78 also: " As applied: D91."); D75 has no padding left, so
+    D93 records its delivery;
   - add, after the last decision row (D90), four rows, each padded to 516 characters:
     - `D91`: "S3c-ii: a send over the volatile bound ends `rejected` through the admission `refused` verdict with
       `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`; `carrier-refused` stays evidence of a hand-over and
@@ -11462,9 +11568,10 @@ drops best-effort RTC traffic only, and the WS outbound path does not consult it
     - `D92`: "S3c-ii: the volatile budget is one ledger per session, created beside the three volatile pairs. It counts
       the data admissions the session originates or receives, releases each at its own deadline, and refuses only an
       outbound admission; controls, receipts, ACKs, repairs, retransmissions and relay forwards are exempt.
-      `overloaded` is true at or over a limit and, under default QoS, drops best-effort RTC traffic only (2026-09-28)."
-    - `D93`: "S3c-ii: a typed send takes `{ peerId }` on `ws`, `rtc` and `rtc-with-ws-fallback`; a peer send to the
-      server id is refused on an RTC strategy; a peer send whose `contextId` names another room is refused at the
+      `overloaded` is true at or over a limit and, under default QoS, drops best-effort RTC sends and best-effort
+      arrivals on both carriers (2026-09-28)."
+    - `D93`: "S3c-ii, delivering D75: a typed send takes `{ peerId }` on `ws`, `rtc` and `rtc-with-ws-fallback`; a
+      peer send to the server id is refused on an RTC strategy; a peer send whose `contextId` names another room is refused at the
       sender. The director accepts client intents out of order (an equal sequence is a duplicate), since a retry or a
       fallback leg reorders them; intents and sync requests use two typed `command` channels (2026-09-28)."
     - `D94`: "S3c-ii: the conformance lane names a peer by role (`toPeer`: `server` or `receiver`) and lowers the
@@ -11480,8 +11587,10 @@ drops best-effort RTC traffic only, and the WS outbound path does not consult it
     `codex/queuebox-persistence-qos-product-plan`): the RTC unicast and the unicast fallback, the director command for
     AR Eye Hunter's intents, the volatile retention and the per-session bound with `refused/capacity`, the typed
     `evidence.failure`, and the lane's addressed-send scenarios; its rulings are in proposal §11.";
-  - "Consumer proofs in the games", the release 3 row, AR Eye Hunter cell: state that pickup, the two combat intents
-    and sync requests travel `command` channels to the director with the director's receipt;
+  - "Consumer proofs in the games", row `3 S3`, AR Eye Hunter cell: replace "Match commands become a `command` channel
+    with a real director receipt, volatile, zero IndexedDB proven." with "Pickup, the two combat intents and sync
+    requests travel two `command` channels to the director with the director's receipt, volatile, zero IndexedDB
+    proven (S3c-ii, PR #606).";
   - revision history: "- 2026-09-DD: S3c-ii delivered by PR #606: D59, D60 as applied (D74, D75, D78, D91–D94); matrix
     rows F1, F4, F5 moved." with the commit's date.
 
@@ -11494,7 +11603,8 @@ drops best-effort RTC traffic only, and the WS outbound path does not consult it
     execution". This section is where the rulings live after Step 9 deletes this plan file.
 
 - [ ] **Step 6: The QoS plan.** In `alm-qos-product-plan.md`:
-  - the header line "Reviewed source": append "; S3c-ii (this PR) delivers the volatile bound its section 6 and
+  - the header line "Reviewed source" (`:4`, before its trailing `\`): append "; S3c-ii (this PR) delivers the
+    volatile bound its section 6 and
     hypothesis H4 name";
   - §6, after "the volatile bound (D74)": add "(delivered by S3c-ii as `ALVolatileSessionLimits`, D92)";
   - §10.3, replace the first reason "S3c-ii rewrites the layer these slices change: ..." with "S3c-ii rewrote the
@@ -11504,6 +11614,9 @@ drops best-effort RTC traffic only, and the WS outbound path does not consult it
 - [ ] **Step 7: Validate the docs and commit.**
 
 ```bash
+npx dprint fmt packages/shared/alm/outbound/README.md packages/shared/alm/inbound/README.md \
+  playground/alm/alm-complete-product-description.md playground/alm/alm-improvement-plan.md \
+  playground/alm/alm-s3-design-proposal.md playground/alm/alm-qos-product-plan.md
 npx dprint check packages/shared/alm/outbound/README.md packages/shared/alm/inbound/README.md \
   playground/alm/alm-complete-product-description.md playground/alm/alm-improvement-plan.md \
   playground/alm/alm-s3-design-proposal.md playground/alm/alm-qos-product-plan.md
@@ -11538,8 +11651,9 @@ changed-style gate pass.
   - `npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check`;
   - unsandboxed: `npm run test:api-v1:black-box:memory`;
   - unsandboxed: `npm run test:e2e`, `npm run test:full-stack:memory`, `npm run test:playwright:relic`,
-    `npm run test:playwright:relic:full-stack`, the ALM smoke lane, and the full lane two- and three-agent on every
-    carrier on normal pages (one lane runner at a time; the known `not-yet-in-sync-delivered-after-refresh received-1`
+    `npm run test:playwright:relic:full-stack`, the ALM smoke lane, and the full lane
+    (`RALLAR_BLACK_BOX_ALM_SCOPE=full npm run -s test:rallar:full-stack:memory:alm`: the baseline, addressed and
+    three-agent families) on every carrier on normal pages (one lane runner at a time; the known `not-yet-in-sync-delivered-after-refresh received-1`
     red is reported, not repaired);
   - the medium-scale gate only if `packages/shared/services/ws-queue-box-server/**` changed (Q13): unsandboxed, the
     Postgres container `ar-eye-hunter-postgres` up (`docker start` it if it stopped; never `db:down`, never
@@ -11558,8 +11672,9 @@ changed-style gate pass.
       client's RTC command to an old director is acknowledged and parked until it expires — name it); the PR #566
       analysis (duplications, contradictions, the split, the recommendation); the gate list from Step 8; the carried
       lists; and, last, the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-      Hosted: manifests 18 and 22 changed, so dispatch them from the PR branch
-      (`gh workflow run hetzner-distributed-recipe.yml --ref codex/queuebox-persistence-qos-product-plan -f ref=codex/queuebox-persistence-qos-product-plan`,
+      Hosted: manifest 18 changed (22 did not: every addressed scenario runs on two agents, R-S3c-ii-2), so dispatch
+      the recipe workflow from the PR branch
+      (`gh workflow run hetzner-distributed-recipe.yml --ref codex/queuebox-persistence-qos-product-plan -f ref=codex/queuebox-persistence-qos-product-plan -f manifest_path=apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json`,
       never from `main`); the hosted smoke on both-normal runners; the hosted full read with
       `RALLAR_BLACK_BOX_ALM_SCOPE=full` set before the read and deleted after the observation job completes, at most
       twice (D51), reported under the two-regime rule and never a blocker; poll with foreground `gh run list`.
@@ -11632,8 +11747,25 @@ director: messages.rtc.onMessage(intent | sync-request type id) + messages.ws.on
   `messages.ws.send({ scope: 'all', peerId, contextId: callId, reliability: 'best-effort' })`. AL dedup is per carrier
   lane, so a relay command can arrive twice after a fallback: relay commands are at-least-once and the game's sequence
   tracker refuses the duplicate. Cost if wrong: intents report later than today; the wait bound is one constant.
+- **R-S3c-ii-5 (pre-flight scan, 2026-09-29).** The four addressed scenarios run as their own two-agent family in the
+  Playwright lane, one test per carrier under the fixed `CARRIER_TEST_TIMEOUT_MS`. Added to the baseline family they
+  bring the `rtc-with-ws-fallback` cell to about 465 s of 480 s, which leaves no margin on a slow page. Cost if wrong:
+  the full scope runs three more tests, and the hosted observation job, whose 30-minute timeout already does not fit
+  the full scope on slow runners, takes longer still.
 
 ## Self-review
 
-Run by the controller after the task sections are assembled; its findings are applied to the plan in place and listed
-here.
+Pre-flight scan applied 2026-09-29 from `pre-flight-scan-cross-task.md` (F1-F12, N1-N11),
+`pre-flight-scan-tasks-1-3.md` (T1-T3) and `pre-flight-scan-tasks-4-7.md` (T4-T7), with the controller's rulings
+R-a to R-h; each finding's outcome is in `pre-flight-applied.md` beside the scans.
+
+- BLOCKING: 10 of 10 applied (F1 with T3-3 and F2 with T3-2 each applied once, R-b).
+- ADJUST: 40 of 41 applied, 10 of them with adaptation (the helper path of R-a, the unconditional `addressed` family
+  of R-c as ruling R-S3c-ii-5, and duplicates covered by an earlier finding).
+- NOTE: 40 of 53 applied, 7 of them with adaptation; the other 13 carry no edit.
+- Code fragments that dprint had turned into labelled statements (T2-1, T2-2, T3-1, T6-F53) are fenced as `text`;
+  T6-F1 shows its whole object literal.
+- Not applied: T7-F1, superseded by F12, which moved the same Task 7 Step 1 anchor first (directly before
+  `### Grouped control sends`). Partly applied: T6-F58 Edit 1 (R-e: T7-F4's C11 text is used); T7-F10's second
+  dispatch for manifest 22 (F8: manifest 22 is unchanged); N2's line counts (the source gives 59 and 58, as T6-F15
+  says).
