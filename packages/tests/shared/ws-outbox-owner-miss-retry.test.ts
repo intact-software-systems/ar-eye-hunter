@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     afterEach,
@@ -52,7 +51,7 @@ interface WsOutboxTestSocket {
 
 interface CreateWsOutboxServiceInput {
     readonly outbox: InMemoryQueueBox;
-    readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly socket: WsOutboxTestSocket;
     readonly name: string;
     readonly resolveRecipients: () => readonly WsServerResolvedRecipient[];
@@ -349,6 +348,7 @@ describe('durable WS outbox owner misses', () => {
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX));
         const { service, engine } = createService({
             outbox,
+            outboundStores: createSharedOutboundStores(outbox),
             socket: createSocket(),
             name: 'claimant',
             resolveRecipients: () => []
@@ -382,6 +382,7 @@ describe('durable WS outbox owner misses', () => {
         ));
         const { service, engine } = createService({
             outbox,
+            outboundStores: createSharedOutboundStores(outbox),
             socket: createSocket(),
             name: 'claimant',
             resolveRecipients: () => []
