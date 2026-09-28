@@ -302,7 +302,7 @@ class RoomFixture {
         const broadcast = newALBroadcastMessage(
             'server',
             { topicId: 'snapshot', resourceId: 'room', contextId: 'event' },
-            corruption === 'broad' ? 'all' : corruption === 'principal' ? 'principal' : 'room',
+            corruption === 'broad' ? 'all' : 'room',
             'snapshot.v1',
             {},
             {

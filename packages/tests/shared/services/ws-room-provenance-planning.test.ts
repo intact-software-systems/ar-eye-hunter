@@ -74,7 +74,7 @@ function createFixture() {
     });
     const planner = new WsQueueBoxServerOutboundPlanning({
         serverPeerId: 'server',
-        qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES),
+        qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
         targetResolution,
         deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
     });

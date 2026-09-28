@@ -19,7 +19,9 @@ const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 describe('retained room authority through repair scheduling', () => {
     it.each(['ack-timeout', 'nack'] as const)('carries a direct physical key and captured policy into %s repair', async (trigger) => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        onTestFinished(() => vi.useRealTimers());
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
         const stores = createDefaultOutboundTestStores();
         const message = newALBroadcastMessage('self', { topicId: 'raw-snapshot', resourceId: 'room', contextId: trigger }, 'room', 'snapshot.v1', {}, {
             ttlMs: 30_000,
