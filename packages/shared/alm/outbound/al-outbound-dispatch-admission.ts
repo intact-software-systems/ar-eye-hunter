@@ -18,6 +18,7 @@ import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
     ALOutboundCommitOrigin,
+    ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
@@ -47,6 +48,7 @@ export namespace ALOutboundDispatchAdmission {
 
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
+        readonly dequeueAuthority?: ALOutboundDequeueAuthority;
         readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
@@ -477,6 +479,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             msg: dispatch.msg,
             planner: dispatch.planner,
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
+            dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent
         });
         const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);

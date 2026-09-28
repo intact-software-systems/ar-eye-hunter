@@ -13,6 +13,7 @@ import type {
     WsServerInboundConnectionScopeReader,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsOutboxProducerProvenanceReader } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -81,6 +82,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly webSocketServer?: JsonWebSocketServer;
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;
+    readonly readWsOutboxProducerProvenance?: WsOutboxProducerProvenanceReader;
     readonly readAuthenticatedConnectionScope?:
         WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];

@@ -1,13 +1,17 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { createRallarMiddlewareInfrastructure } from '@shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts';
-import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALEventRoute,
+    newALUnicastMessage,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import {
     describe,
@@ -19,12 +23,21 @@ import {
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 describe('Rallar middleware queue wake', () => {
-    it('drives the outbound owner registered on the engine the infrastructure wakes', async () => {
+    it.each([true, false])('drives the registered outbound owner (producer proof available: %s)', async (proofAvailable) => {
         const resilience = createResilience();
         const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
         const queueEngine = new InboxOutboxEngine();
         const infrastructure = createRallarMiddlewareInfrastructure(
-            { ...fixture.options, webSocketServer: new JsonWebSocketServer() },
+            {
+                ...fixture.options,
+                webSocketServer: new JsonWebSocketServer(),
+                readWsOutboxProducerProvenance: proofAvailable
+                    ? async () => ({
+                        admittedAudience: [],
+                        recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+                    })
+                    : undefined
+            },
             queueEngine
         );
         onTestFinished(() => infrastructure.wsQBoxServerService.dispose());
@@ -33,7 +46,7 @@ describe('Rallar middleware queue wake', () => {
 
         // A server mutation writes its WS_OUTBOX row inside its own transaction, so the owner learns
         // of it only from the wake that follows the commit.
-        const entry = createWsOutboxEntry(createOutboundMessage());
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(createOutboundMessage(), EnqueuedType.WS_OUTBOX);
         await fixture.outbox.enqueueIfAbsent(entry);
         await queueEngine.executeOnce();
 
@@ -46,9 +59,10 @@ describe('Rallar middleware queue wake', () => {
         infrastructure.wakeQueueEngine();
         await queueEngine.executeOnce();
 
-        // The wake reached the owner the infrastructure built, so one pass claimed the row.
-        expect(await readOutboxEntry(fixture.outbox, entry)).toMatchObject({
-            status: EntityStatus.RESERVED,
+        // The wake reaches the same owner with or without producer proof. Observe its settled
+        // outcome, not the asynchronous claim's transient RESERVED state. Empty audience is final.
+        await expect.poll(async () => await readOutboxEntry(fixture.outbox, entry)).toMatchObject({
+            status: proofAvailable ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1 }
         });
     });
@@ -72,29 +86,8 @@ function createOutboundMessage(): ALMessage {
         'remote-peer',
         'chat.message.v1',
         { text: 'written straight into the queue' },
-        { ttlMs: 60_000 }
+        { ttlMs: 60_000, qos: { durability: { algo: 'local-outbox' } } }
     );
-}
-
-function createWsOutboxEntry(message: ALMessage): ResourceEntry {
-    const createdTs = Temporal.Now.plainDateTimeISO('UTC');
-    return {
-        key: toAppQueueKey({
-            topicId: message.route.topicId,
-            resourceId: message.id.msgId,
-            contextId: message.route.contextId
-        }),
-        resource: JSON.stringify(message),
-        typeId: EnqueuedType.WS_OUTBOX,
-        status: EntityStatus.NEW,
-        audit: {
-            date: createdTs.toPlainTime(),
-            createdBy: toAppQueueCreatedBy('rallar-server'),
-            createdTs,
-            expiryTs: Temporal.Now.instant().add({ seconds: 60 })
-        },
-        dequeueAudit: { attempts: 0 }
-    };
 }
 
 function createResilience(): ResourceInboxResilience {

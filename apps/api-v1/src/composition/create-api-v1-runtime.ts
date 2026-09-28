@@ -25,6 +25,7 @@ import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
@@ -294,12 +295,17 @@ function createSharedMiddleware(
 ): RallarMiddlewareRuntime {
     const { mutation, rtcTopology } = input;
     const inboundStores = resolveServerWsQBoxALInboundRuntimeStores(input.wsRuntimeName);
+    const wsOutboxProvenance = new WsOutboxProvenanceReader({
+        repository: mutation.runtimeStateRepository,
+        nowMs: input.nowEpochMs
+    });
     return createRallarMiddleware({
         inbox: mutation.queueBox,
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
         webSocketServer: mutation.webSocketServer,
         readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
+        readWsOutboxProducerProvenance: (message, entry) => wsOutboxProvenance.readProducerProvenance(message, entry),
         wsRuntimeName: input.wsRuntimeName,
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
@@ -324,25 +330,31 @@ function createSharedMiddleware(
         rtcTopologyExecutionRepository: rtcTopology.executionRepository,
         rtcTopologyDelivery: rtcTopology.topologyDelivery,
         rtcTopologyReplay: rtcTopology.topologyReplay,
-        queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
-            mode: input.databasePubSubMode,
-            notification: input.databaseNotification,
-            localBus: input.queuePubSubLocalBus,
-            channel: input.queuePubSubChannel,
-            publisherId: input.queuePubSubPublisherId,
-            timing: input.timing,
-            wakeReplay: () => rtcTopology.topologyReplay.wake('notification'),
-            filterEligibleCapturedSessionIds: (message, sessionIds) =>
-                filterEligibleDurableWsSessionIds({
-                    socketServer: mutation.webSocketServer,
-                    candidateSessionIds: sessionIds,
-                    message,
-                    nowMs: input.nowEpochMs()
-                })
-        }),
+        queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
+    });
+}
+
+function createApiV1QueuePubSubBridge(
+    input: CreateSharedMiddlewareInput
+): CreateRallarMiddlewareOptions['queuePubSubBridge'] {
+    return createApiRtcTopologyQueuePubSubBridge({
+        mode: input.databasePubSubMode,
+        notification: input.databaseNotification,
+        localBus: input.queuePubSubLocalBus,
+        channel: input.queuePubSubChannel,
+        publisherId: input.queuePubSubPublisherId,
+        timing: input.timing,
+        wakeReplay: () => input.rtcTopology.topologyReplay.wake('notification'),
+        filterEligibleCapturedSessionIds: (message, sessionIds) =>
+            filterEligibleDurableWsSessionIds({
+                socketServer: input.mutation.webSocketServer,
+                candidateSessionIds: sessionIds,
+                message,
+                nowMs: input.nowEpochMs()
+            })
     });
 }
 

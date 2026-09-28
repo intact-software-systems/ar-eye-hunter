@@ -126,8 +126,10 @@ export class ALOutboundMessageEffects<TPrepared> {
         if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
             return { status: 'completed' };
         }
+        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
         const computed = await this.dependencies.commitDispatchPlan({
             msg,
+            dequeueAuthority,
             planner: runtime.planDequeuedMessage,
             intent: 'dequeue',
             phase: 'dequeue',

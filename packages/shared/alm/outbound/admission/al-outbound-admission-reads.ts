@@ -1,11 +1,19 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../../al-contracts/al-control.ts';
+import type {
+    ALAckPayload,
+    ALNackPayload,
+    ALRepairPayload
+} from '../../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
 import { EnqueuedType } from '../../../api/api-config.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { isKeysEqual, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import {
+    isKeysEqual,
+    type Key,
+    type ResourceEntry
+} from '../../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '../../al-admission-decoder.ts';
 import {
@@ -70,11 +78,6 @@ export interface CreateALOutboundAdmissionReadsInput {
     readonly supersedenceTrackTtlMs: number;
 }
 
-/**
- * Assembles the decision surface every outbound admission computes on; it never writes. Each chain
- * runs against one caller-owned read session, so a session that is a store snapshot serves the whole
- * surface, and the same chain runs inside an open write when a fence has to re-read it.
- */
 /** One supersedence read: the key's pointer, the message's own row, and a named predecessor's row. */
 export interface ALOutboundSupersedenceReadInput {
     readonly key: string | undefined;
@@ -83,6 +86,7 @@ export interface ALOutboundSupersedenceReadInput {
     readonly replacesMsgId: string | undefined;
 }
 
+/** Assembles outbound decisions in a caller-owned read session; the write owner re-reads its fences. */
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
     private readonly nowMs: () => number;
@@ -385,7 +389,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
         stored: ALStoredOutboundMessage | undefined
     ): ALOutboundDispatchPlan<TPrepared> {
         const { msg, planner, intent } = input;
-        const selected = planner(canonical ?? msg, stored?.policy.admittedAudience, stored?.policy.recipientScope);
+        const authority = stored?.policy ?? input.dequeueAuthority;
+        const selected = planner(canonical ?? msg, authority?.admittedAudience, authority?.recipientScope);
         requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
         const planned = canonical ? { ...selected, msg: canonical } : selected;
         const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;

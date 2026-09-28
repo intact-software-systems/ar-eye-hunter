@@ -1,6 +1,11 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
-import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type {
+    ALAckAlgo,
+    ALReceiptMode,
+    ALRepairAlgo,
+    ALSupersedenceAlgo
+} from '../../al-contracts/al-policy.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -33,6 +38,18 @@ export type {
 export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
+
+/** Carrier-owned first-dequeue authority; a later stored admission always wins over this read. */
+export interface ALOutboundDequeueAuthority {
+    readonly admittedAudience: readonly string[] | undefined;
+    readonly recipientScope: StateScope | undefined;
+}
+
+/** Runs once per dequeue attempt before dispatch admission; failures return to the existing work owner. */
+export type ALOutboundDequeueAuthorityReader = (
+    message: ALMessage,
+    entry: ResourceEntry
+) => Promise<ALOutboundDequeueAuthority | undefined>;
 
 export interface ALOutboundSettledSendResult {
     readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
@@ -321,6 +338,7 @@ export namespace ALOutboundMessageRuntime {
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
         readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
+        readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;

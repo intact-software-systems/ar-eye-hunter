@@ -339,7 +339,7 @@ describe('durable WS outbox owner misses', () => {
         );
     });
 
-    it('keeps a published durable message with invalid targets retryable after one attempt', async () => {
+    it('rejects an unproven direct row before retryable recipient routing', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const outbox = new InMemoryQueueBox();
@@ -359,14 +359,12 @@ describe('durable WS outbox owner misses', () => {
             publisherId: 'claimant'
         });
 
-        // One pass only: a poll that redrives on every attempt would keep re-claiming this row (its
-        // no-route retry becomes due again as fast as fake Date time lets it), inflating the attempt
-        // count the assertion below pins. Trigger once, then passively wait for that pass to settle.
+        // A malformed direct producer row is not an admitted message with a temporary owner miss.
         await drainEngine(engine);
         await expect.poll(async () => (await readEntry(outbox, RAW_ENTRY_KEY)).status).not.toBe(EntityStatus.RESERVED);
 
         expect(await readEntry(outbox, RAW_ENTRY_KEY)).toMatchObject({
-            status: EntityStatus.RETRY,
+            status: EntityStatus.NON_RETRYABLE,
             dequeueAudit: { attempts: 1 }
         });
     });

@@ -56,6 +56,10 @@ import {
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
+import {
+    WsQueueBoxServerDequeueAuthority,
+    type WsOutboxProducerProvenanceReader
+} from './ws-queue-box-server-dequeue-authority.ts';
 import { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
 import { WsQueueBoxServerInboundDelivery } from './ws-queue-box-server-inbound-delivery.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
@@ -74,6 +78,7 @@ export namespace WsQueueBoxServerService {
         readonly name: string;
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
+        readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -101,6 +106,7 @@ export namespace WsQueueBoxServerService {
         readonly name: string;
         readonly qosProvider: ALQosInputProvider;
         readonly targetResolver: WsServerTargetResolver;
+        readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
@@ -232,6 +238,11 @@ export class WsQueueBoxServerService {
     private createOutboundRuntime(
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
+        const dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
+            admissionStore: this.outboundAdmissionStore,
+            outbox: this.outbox,
+            readProducerProvenance: dependencies.readProducerProvenance
+        });
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
@@ -244,6 +255,7 @@ export class WsQueueBoxServerService {
             settlements: dependencies.outboundSettlements,
             toOutboxEntry: createWsQueueBoxServerOutboxEntry,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
+            readDequeueAuthority: (message, entry) => dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, admittedAudience, recipientScope) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
@@ -538,6 +550,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         name: input.name,
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
         targetResolver: input.targetResolver ?? {},
+        readProducerProvenance: input.readProducerProvenance,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             queueEngine: input.queueEngine,

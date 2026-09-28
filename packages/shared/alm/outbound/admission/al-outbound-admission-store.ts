@@ -38,6 +38,7 @@ import {
     type ALOutboundCanonicalFactWrite
 } from '../al-outbound-canonical-storage.ts';
 import type {
+    ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundRepairTrigger
@@ -94,6 +95,7 @@ export type ALOutboundPlanner<TPrepared> = (
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly msg: ALMessage;
+    readonly dequeueAuthority?: ALOutboundDequeueAuthority;
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
@@ -535,6 +537,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
         const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
+        const effects = candidates.flatMap((candidate) => candidate.effects);
+        const mutations = candidates.flatMap((candidate) => candidate.mutations);
         try {
             return await this.backend.write(async (tx) => {
                 // A deadline the reads above already crossed answers before any fence: the message is
@@ -549,8 +553,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 ) {
                     return 'expired';
                 }
-                this.effectStore.writeEffects(tx, candidates.flatMap((candidate) => candidate.effects));
-                await this.mutations.writeStateWrites(tx, candidates.flatMap((candidate) => candidate.mutations));
+                this.effectStore.writeEffects(tx, effects);
+                await this.mutations.writeStateWrites(tx, mutations);
                 await tx.set(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));

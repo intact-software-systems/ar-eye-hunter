@@ -236,7 +236,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 `Cannot route WS server outbound message ${message.id.msgId} without explicit targets`
             );
         }
-        if (!resolution.resolveRecipients) {
+        if (!resolution.resolveRecipients || resolution.audience?.length === 0) {
             return Either.ofRight([]);
         }
 

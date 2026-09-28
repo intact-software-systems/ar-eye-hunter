@@ -1,0 +1,77 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
+import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
+import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
+import { toALOutboundIdentityKey } from '../../alm/outbound/al-outbound-canonical-message.ts';
+import type { ALOutboundDequeueAuthority } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import { EnqueuedType } from '../../api/api-config.ts';
+import type { StateScope } from '../../api/state-types.ts';
+import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
+
+/** A producer reader may authorize only a frozen, scoped public unicast at this boundary. */
+export interface WsOutboxProducerAuthority {
+    readonly admittedAudience: readonly string[];
+    readonly recipientScope: StateScope;
+}
+
+export type WsOutboxProducerProvenanceReader = (
+    message: ALMessage,
+    entry: ResourceEntry
+) => Promise<WsOutboxProducerAuthority>;
+
+export namespace WsQueueBoxServerDequeueAuthority {
+    export interface Dependencies {
+        readonly admissionStore: ALOutboundAdmissionStore<WsQueueBoxServerPreparedMessage>;
+        readonly outbox: QueueBoxResourceEntryRepository;
+        readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
+    }
+}
+
+/** Classifies the observed queue row before the generic admission owner may create any facts. */
+export class WsQueueBoxServerDequeueAuthority {
+    private readonly dependencies: WsQueueBoxServerDequeueAuthority.Dependencies;
+
+    constructor(dependencies: WsQueueBoxServerDequeueAuthority.Dependencies) {
+        this.dependencies = dependencies;
+    }
+
+    async readDequeueAuthority(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundDequeueAuthority> {
+        const { admissionStore, outbox, readProducerProvenance } = this.dependencies;
+        if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
+            throw toDequeueCorruption(entry, 'Unexpected WS outbox row type');
+        }
+        if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
+            const policy = await admissionStore.readCapturedPolicy(message, entry);
+            if (
+                requiresWsQueueBoxServerRecipientScope(message) &&
+                validateALOutboundRecipientScope(policy.recipientScope).length > 0
+            ) {
+                throw toDequeueCorruption(entry, 'Captured public unicast has no recipient scope');
+            }
+            return { admittedAudience: policy.admittedAudience, recipientScope: policy.recipientScope };
+        }
+        if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || await outbox.getItem(toALOutboundIdentityKey(entry.key))) {
+            throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
+        }
+        if (!readProducerProvenance || !requiresWsQueueBoxServerRecipientScope(message)) {
+            throw toDequeueCorruption(entry, 'Raw WS outbox row has no supported producer authority');
+        }
+        const authority = await readProducerProvenance(message, entry);
+        const targets = message.targets;
+        if (
+            validateALOutboundRecipientScope(authority.recipientScope).length > 0 ||
+            targets?.mode !== 'unicast' ||
+            authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId)
+        ) {
+            throw toDequeueCorruption(entry, 'Producer authority differs from scoped unicast target');
+        }
+        return authority;
+    }
+}
+
+function toDequeueCorruption(entry: ResourceEntry, reason: string): ALAdmissionCorruptionError {
+    return new ALAdmissionCorruptionError(JSON.stringify(entry.key), new TypeError(reason));
+}
