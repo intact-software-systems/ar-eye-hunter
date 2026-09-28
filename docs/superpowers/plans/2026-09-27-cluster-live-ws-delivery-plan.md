@@ -35,6 +35,11 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   callers and delete the unscoped overload; a peer ID or bare route context
   cannot establish recipient scope. Inbound generic unicast also fails closed
   unless its source proves recipient scope.
+- On 2026-09-28, the maintainer approved the narrow persisted-scope contract:
+  new WS inbound Source records capture authenticated group scope and public
+  unicast's outbound sent policy retains full scope for durable replay. Old
+  rows without required proof fail closed; no historical migration, AL
+  wire-target change, or legacy overload is authorized.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
@@ -237,19 +242,19 @@ skipped/duplicate/superseded outcomes do not inflate publication counts.
 Focused game and Relic tests, both game builds, the full unit suite, style,
 and independent re-review passed. This does not prove cluster publication.
 
-The approved public generic-unicast scope migration was attempted but not
+The approved public generic-unicast scope change was attempted but not
 committed. The existing AL unicast target stores only a peer ID. Public
 `outbox` publication would therefore lose an explicit application/workspace
 scope during durable replay, and a guard on the common router path would also
 reject previously admitted inbound unicast before its persisted Source can
 prove scope. The interim edits were removed. This is a persisted-contract
 decision, not permission to silently downgrade durable delivery or retain an
-unscoped overload. Proposed narrow design, pending maintainer approval: capture
-authenticated scope in new WS inbound Source records and public unicast scope
-in the outbound sent policy; old rows without scoped proof fail closed only
-where that proof is required. No historical migration or AL wire-target change
-is proposed. After approval, implement the public API and common publisher
-atomically with tests for durable replay and admitted inbound unicast.
+unscoped overload. The maintainer approved capturing authenticated scope in
+new WS inbound Source records and public unicast scope in the outbound sent
+policy; old rows without scoped proof fail closed only where that proof is
+required. No historical migration or AL wire-target change is authorized.
+Implement the public API and common publisher atomically with tests for durable
+replay and admitted inbound unicast.
 
 Placement review after Task 1 found one notice-contract correction needed
 before publisher wiring: `all`/`world` AL targets have no application/workspace

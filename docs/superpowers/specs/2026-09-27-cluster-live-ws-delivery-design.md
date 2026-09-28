@@ -167,7 +167,11 @@ requiring an explicit full scope at public generic unicast and proxy `toPeer`
 publication boundaries, updating verified callers, and deleting the old
 unscoped form without an overload. An inbound generic unicast also needs
 authoritative recipient-scope proof; an unscoped persisted source is not such
-proof and must fail closed. A proxy may transform
+proof and must fail closed. The approved persisted representation captures
+authenticated group scope in new WS inbound Source records and explicit public
+unicast scope in outbound sent policy for durable replay. Old rows lacking
+required proof fail closed without a historical migration, AL wire-target
+change, or legacy overload. A proxy may transform
 targets after inbound authorization, so it cannot inherit that old audience
 without rechecking the final scope. For broad `all`/`world` sends, the
 maintainer selected subscriber-local eligibility at notice receipt instead
