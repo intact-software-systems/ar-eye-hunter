@@ -13,6 +13,7 @@ import type {
     GroupRestSnapshotReadSelector
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type {
     RtcTopologyExecutionRepository
@@ -44,6 +45,7 @@ export interface ApiV1Runtime extends
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+    readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -54,6 +56,7 @@ export interface RequireApiV1RuntimeInput {
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+    readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -95,6 +98,7 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
         clientRestSnapshotReadSelector: input.clientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: input.groupRestSnapshotReadSelector,
         groupFormationMetrics: input.groupFormationMetrics,
+        almReceiptDiagnostics: input.almReceiptDiagnostics,
         backgroundTasks: input.backgroundTasks,
         topologyServices: input.topologyServices
     };

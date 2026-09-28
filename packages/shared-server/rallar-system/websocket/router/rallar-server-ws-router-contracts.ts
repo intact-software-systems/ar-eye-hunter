@@ -120,6 +120,11 @@ export type RallarServerWsRoomAuthorizer = (
     input: RallarServerWsRoomAuthorizationInput
 ) => RallarServerWsRoomAuthorizationDecision | Promise<RallarServerWsRoomAuthorizationDecision>;
 
+/** The room's live sessions a server-originated publish freezes as its audience; undefined when there is no room to read. */
+export type RallarServerWsPublishAudienceReader = (
+    message: ALMessage
+) => Promise<RallarServerWsRoomAudience | undefined>;
+
 export type RallarServerWsHandler<T extends RallarServerWsPayload> = (
     message: RallarServerWsMessage<T>,
     context: RallarServerWsMessageContext
@@ -152,6 +157,7 @@ export interface RallarServerWsRouterOptions {
     readonly allowImplicitUserTopics?: boolean;
     readonly defaultFanout?: RallarServerWsFanout;
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
+    readonly readServerPublishAudience?: RallarServerWsPublishAudienceReader;
     readonly wakeOutbox?: () => void;
     readonly nowEpochMs?: () => number;
 }

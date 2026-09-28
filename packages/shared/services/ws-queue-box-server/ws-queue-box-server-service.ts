@@ -164,7 +164,8 @@ export class WsQueueBoxServerService {
         this.clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution: this.targetResolution,
             canonicalScope: dependencies.outboundRuntime.admissionStore.canonicalScope,
-            clock: this.clock
+            clock: this.clock,
+            readAdmittedAudience: (msgId) => dependencies.outboundRuntime.admissionStore.readAdmittedAudience(msgId)
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
@@ -619,6 +620,10 @@ export class WsQueueBoxServerService {
         admittedPeerIds?: readonly string[]
     ): WsServerLiveSendResult {
         return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds);
+    }
+
+    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
+        return this.clusterPublication.readAdmittedAudience(msgId);
     }
 
     private async sendPreparedMessage(

@@ -10,6 +10,11 @@ import { GroupStateInboxService } from '@shared-server/rallar-system/group-state
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import {
+    createRallarAlmReceiptDiagnosticsRecorder,
+    RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY,
+    type RallarAlmReceiptDiagnosticsRecorder
+} from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import { type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {
@@ -109,6 +114,7 @@ interface CreateSharedMiddlewareInput {
     readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
     readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
+    readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
 }
 
 export interface ApiV1RuntimeConstructionOperations {
@@ -143,6 +149,10 @@ export function constructApiV1Runtime(
     operations: ApiV1RuntimeConstructionOperations
 ): ApiV1Runtime {
     const startupGeneration = input.backgroundTasks.beginStartupGeneration();
+    const almReceiptDiagnostics = createRallarAlmReceiptDiagnosticsRecorder({
+        nowEpochMs: input.nowEpochMs,
+        capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
+    });
     const mutation = operations.createMutationRuntime(toMutationRuntimeInput(input));
     const rtcTopology = operations.createRtcTopologyRuntime({
         database: input.database,
@@ -193,7 +203,8 @@ export function constructApiV1Runtime(
         queuePubSubLocalBus: input.queuePubSubLocalBus,
         databasePubSubMode: input.databasePubSubMode,
         databaseNotification: input.databaseNotification,
-        timing: input.timing
+        timing: input.timing,
+        almReceiptDiagnostics
     });
     rtcTopology.topologyReplay.attach({
         wsQueueBoxServerService: runtime.wsQBoxServerService
@@ -206,6 +217,7 @@ export function constructApiV1Runtime(
         authSessionRepository: mutation.authSessionRepository,
         ...selectors,
         groupFormationMetrics: mutation.groupFormationMetrics,
+        almReceiptDiagnostics,
         topologyServices: topology,
         backgroundTasks: input.backgroundTasks
     });
@@ -273,6 +285,7 @@ function createSharedMiddleware(
         outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(input.wsRuntimeName),
         wsDeliveryDiagnostics: mutation.groupFormationMetrics.wsDelivery,
         wsOutboundDiagnostics: mutation.groupFormationMetrics.outboundWork,
+        wsOutboundSettlements: input.almReceiptDiagnostics.settlements,
         createGroupStateInboxService: mutation.createGroupStateInboxService,
         createTopologyInboxService: ({ inboxQueueReader, wakeQueueEngine }) =>
             new TopologyInboxService(

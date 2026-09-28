@@ -8,6 +8,7 @@ import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.t
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -141,15 +142,16 @@ export class WsQueueBoxServerOutboundPlanning {
             return undefined;
         }
 
+        const effective = this.normalizePolicy(message).effective;
         return {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
             preparedMessages: toRecipientPreparedMessages(message, recipients),
             ackTracking: toAckTrackingPlan(
-                this.normalizePolicy(message).effective,
+                effective,
                 recipients.map((recipient) => recipient.peerId),
-                'replace'
+                toRepairExpectedPeerIdsUpdate(effective.ack.algo)
             ),
             repairTracking: request.repair
         };
@@ -291,6 +293,15 @@ function toAckTrackingPlan(
         nextHopPeerIds,
         mode: effective.ack.algo
     };
+}
+
+/**
+ * A retry resends to the failed recipients connected here. A `receiver` receipt keeps every logical recipient it
+ * expects and every one that confirmed, so a session that left or sits on another instance still reads unconfirmed
+ * (D43); a hop receipt expects the hops the retry sends to.
+ */
+function toRepairExpectedPeerIdsUpdate(algo: ALAckAlgo): 'merge' | 'replace' {
+    return algo === 'receiver' ? 'merge' : 'replace';
 }
 
 function toRepairTrackingPlan(

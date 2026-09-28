@@ -5,6 +5,7 @@ import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-ap
 import type { RallarServerApplication } from '@shared-server/rallar-server/rallar-server-application.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { createServerPublishRoomAudienceReader } from '@shared-server/rallar-system/websocket/read-server-publish-room-audience.ts';
 import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
@@ -119,6 +120,10 @@ function constructDefaultRallarServer(
             authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
                 readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)
             }),
+            readServerPublishAudience: createServerPublishRoomAudienceReader({
+                readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
+                nowEpochMs
+            }),
             ...input.ws
         },
         systemInstallers,
@@ -229,6 +234,7 @@ function createDefaultApiV1AdminServices(
         resetRtcTopologyMetrics: topology.resetRtcTopologyMetrics,
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
+        readAlmReceipts: runtime.almReceiptDiagnostics.readDiagnostics,
         crdtAdminRepository: crdtLogRepository,
         topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,

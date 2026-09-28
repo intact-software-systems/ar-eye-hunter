@@ -15,14 +15,23 @@ import {
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerClusterPublication {
-    /** Hands one durable outbox row to every other instance, and delivers it to this instance's own targets. */
-    export type Publisher = (message: ALMessage, entry: ResourceEntry) => Promise<void>;
+    /**
+     * Hands one durable outbox row to every other instance and delivers it to this instance's own targets, narrowed to
+     * the audience it was admitted to when it has one (D58).
+     */
+    export type Publisher = (
+        message: ALMessage,
+        entry: ResourceEntry,
+        admittedAudience: readonly string[] | undefined
+    ) => Promise<void>;
 
     export interface Dependencies {
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         /** The outbound owner's canonical scope, which locates the outbox row a publication names. */
         readonly canonicalScope: string;
         readonly clock: ALOutboundMessageRuntime.Clock;
+        /** The captured admitted audience of a message, read from the admission store every instance shares. */
+        readonly readAdmittedAudience: (msgId: string) => Promise<readonly string[] | undefined>;
     }
 
     export type ClusterPreparedMessage = Exclude<WsQueueBoxServerPreparedMessage, { kind: 'recipient'; }>;
@@ -50,9 +59,15 @@ export class WsQueueBoxServerClusterPublication {
     }
 
     async writeDequeuedRow(message: ALMessage, entry: ResourceEntry): Promise<void> {
-        if (!isWsQueueBoxServerReceiptRow(message)) {
-            await this.#publisher?.(message, entry);
+        const publisher = this.#publisher;
+        if (publisher === undefined || isWsQueueBoxServerReceiptRow(message)) {
+            return;
         }
+        await publisher(message, entry, await this.#dependencies.readAdmittedAudience(message.id.msgId));
+    }
+
+    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
+        return this.#dependencies.readAdmittedAudience(msgId);
     }
 
     async writePreparedMessage(
@@ -70,7 +85,7 @@ export class WsQueueBoxServerClusterPublication {
         await this.#publisher?.(message, {
             ...QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX),
             key: toALOutboundCanonicalKey(this.#dependencies.canonicalScope, message)
-        });
+        }, undefined);
         return originIsHere ? { status: 'sent', submissionAttempted: true } : {
             status: 'not-ready',
             submissionAttempted: false,

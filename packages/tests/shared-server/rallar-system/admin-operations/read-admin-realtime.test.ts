@@ -26,7 +26,8 @@ describe('ReadAdminRealtime', () => {
                 ]
             }),
             readRtcTopologyMetrics: () => ({ recomputeCount: 2 }),
-            readGroupFormationMetrics: () => formationMetrics
+            readGroupFormationMetrics: () => formationMetrics,
+            readAlmReceipts: () => ({ capacity: 256, messages: [] })
         });
 
         await expect(readRealtime.execute({
@@ -47,7 +48,8 @@ describe('ReadAdminRealtime', () => {
             groupFormation: {
                 metrics: formationMetrics,
                 processLocal: true
-            }
+            },
+            almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true }
         });
     });
 });

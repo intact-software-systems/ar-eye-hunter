@@ -742,10 +742,22 @@ describe('RallarServerWsRouter', () => {
         ]);
     });
 
+    // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
+    // unconfirmed (Q12, C11, R-S3c-i-11); delivery stays the authorized sessions.
     it.each([
-        { frozen: ['peer-2'], expected: ['peer-2'], label: 'honours a frozen audience narrower than the room' },
-        { frozen: ['peer-2', 'stranger'], expected: ['peer-2'], label: 'trims a frozen audience naming a non-member' }
-    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, expected }) => {
+        {
+            frozen: ['peer-2'],
+            delivered: ['peer-2'],
+            expected: ['peer-2'],
+            label: 'honours a frozen audience narrower than the room'
+        },
+        {
+            frozen: ['peer-2', 'stranger'],
+            delivered: ['peer-2'],
+            expected: ['peer-2', 'stranger'],
+            label: 'delivers a frozen audience naming a non-member to members only and expects all of it'
+        }
+    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, delivered, expected }) => {
         const fixture = createAudienceRouter({
             admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
@@ -762,7 +774,7 @@ describe('RallarServerWsRouter', () => {
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
         ]);
-        expect(readChatRecipients(fixture)).toEqual(expected);
+        expect(readChatRecipients(fixture)).toEqual(delivered);
     });
 
     it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {

@@ -147,7 +147,7 @@ describe('QueueBoxPubSubBridge', () => {
         const entry = createWsOutboxEntry();
 
         const message = decodePersistedALMessage(entry.resource);
-        await outboxPublishers[0](message, entry);
+        await outboxPublishers[0](message, entry, undefined);
 
         expect(bridge.published).toEqual([
             {
@@ -614,6 +614,7 @@ interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly sendToTargetsWithResult?: (
         message: ALMessage
     ) => WsServerLiveSendResult;
+    readonly readAdmittedAudience?: (msgId: string) => Promise<readonly string[] | undefined>;
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -627,6 +628,9 @@ function createTestQueueBoxPubSubWsService(
         },
         sendToTargetsWithResult(message) {
             return input.sendToTargetsWithResult?.(message) ?? noRecipientLiveSendResult(message);
+        },
+        readAdmittedAudience(msgId) {
+            return input.readAdmittedAudience?.(msgId) ?? Promise.resolve(undefined);
         }
     };
 

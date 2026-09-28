@@ -1,3 +1,5 @@
+import type { ALReceiptMode } from '../al-contracts/al-policy.ts';
+import type { ALDeliverySettlement } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { RallarGroupFormationMetrics } from '../rtc/group-formation-metrics.ts';
 import type { GroupTopologyConfigPatch } from './graph-topology-management-types.ts';
 import type { GroupRef } from './group-types.ts';
@@ -103,6 +105,24 @@ export type AdminOperationsQueuesResponse =
         }>;
     }>;
 
+/** One message's receipt as the WS server's own outbound owner settled it (D61). */
+export interface AdminOperationsAlmReceiptEntry {
+    readonly msgId: string;
+    /** Under `receiver` the peers are sessions of the frozen audience; under `hop` and `subtree`, next hops. */
+    readonly mode: ALReceiptMode;
+    readonly confirmedPeerIds: readonly string[];
+    readonly unconfirmedPeerIds: readonly string[];
+    readonly lastSettlementKind: ALDeliverySettlement['kind'];
+    readonly receiptExhausted: boolean;
+    readonly updatedAtEpochMs: number;
+}
+
+export interface AdminOperationsAlmReceiptDiagnostics {
+    readonly capacity: number;
+    /** The least recently updated first. */
+    readonly messages: readonly AdminOperationsAlmReceiptEntry[];
+}
+
 export type AdminOperationsRealtimeResponse =
     & AdminOperationBaseResponse
     & Readonly<{
@@ -118,6 +138,10 @@ export type AdminOperationsRealtimeResponse =
         }>;
         groupFormation: Readonly<{
             metrics?: RallarGroupFormationMetrics;
+            processLocal: boolean;
+        }>;
+        almReceipts: Readonly<{
+            diagnostics: AdminOperationsAlmReceiptDiagnostics;
             processLocal: boolean;
         }>;
     }>;

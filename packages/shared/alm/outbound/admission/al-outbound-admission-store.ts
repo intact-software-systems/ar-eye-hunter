@@ -266,6 +266,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** The audience a server admitted the message to, captured with its policy; undefined for every other message (D58). */
+    readonly readAdmittedAudience: (msgId: string) => Promise<readonly string[] | undefined>;
+
     readonly readSentMessageByOrdering: (
         trackKey: string,
         seq: number
@@ -393,6 +396,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
+    }
+
+    async readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
+        return await this.backend.readWithin(async (session) =>
+            (await this.reads.readStoredMessage(session, msgId))?.policy.admittedAudience
+        );
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {

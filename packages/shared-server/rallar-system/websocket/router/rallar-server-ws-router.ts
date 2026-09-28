@@ -42,6 +42,7 @@ import type {
 } from './rallar-server-ws-router-contracts.ts';
 import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-server-ws-status.ts';
 import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.ts';
+import { readRallarServerWsPublishAudience } from './read-rallar-server-ws-publish-audience.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
@@ -79,6 +80,7 @@ export class RallarServerWsRouter {
     private readonly allowImplicitUserTopics: boolean;
     private readonly defaultFanout: RallarServerWsFanout;
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
+    private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly service: WsQueueBoxServerService;
     private readonly nowEpochMs: () => number;
@@ -98,6 +100,7 @@ export class RallarServerWsRouter {
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
         this.defaultFanout = options.defaultFanout ?? 'live-only';
         this.authorizeRoomMessage = options.authorizeRoomMessage;
+        this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
         this.nowEpochMs = options.nowEpochMs ?? Date.now;
     }
@@ -143,11 +146,18 @@ export class RallarServerWsRouter {
         return this.registry.addProxy(rule);
     }
 
-    publish(
+    async publish(
         message: ALMessage,
         fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
-        return this.publishToFanout(message, fanout ?? this.defaultFanout);
+        const selected = fanout ?? this.defaultFanout;
+        const frozen = await readRallarServerWsPublishAudience({
+            message,
+            fanout: selected,
+            serverPeerId: this.serverPeerId,
+            readRoomAudience: this.readServerPublishAudience
+        });
+        return await this.publishToFanout(message, selected, frozen);
     }
 
     status(): RallarServerWsStatus {

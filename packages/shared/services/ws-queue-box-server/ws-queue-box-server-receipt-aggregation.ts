@@ -6,6 +6,7 @@ import {
     type ALAckPayload,
     type ALReceiptPayload
 } from '../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import {
     decodePersistedALMessageValue,
     type ALMessageRejection
@@ -320,7 +321,12 @@ function validateWsQueueBoxServerReceiptAck(
     return issues;
 }
 
-/** The unicast addressee alone when the room admitted it (D53); a room send's authorized sessions but its origin. */
+/**
+ * The unicast addressee alone when the room admitted it (D53); a room send's authorized sessions but its origin.
+ * A multicast the origin froze (an RTC leg handed to WS) keeps that audience verbatim, so a session that left since
+ * reads unconfirmed (Q12); delivery stays the authorized sessions, so the expected set may exceed the delivered set by
+ * design.
+ */
 function toFrozenAudience(
     message: ALMessage,
     originPeerId: string,
@@ -331,6 +337,10 @@ function toFrozenAudience(
         return targets.toPeerId !== originPeerId && authorizedPeerIds.includes(targets.toPeerId)
             ? [targets.toPeerId]
             : [];
+    }
+    const frozen = resolveALFrozenMulticastAudience(targets);
+    if (frozen !== undefined) {
+        return frozen.recipientPeerIds.filter((peerId) => peerId !== originPeerId);
     }
     return [...new Set(authorizedPeerIds)].filter((peerId) =>
         peerId !== originPeerId &&

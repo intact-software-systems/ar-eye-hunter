@@ -177,6 +177,26 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
             return readAcks(fixture.sockets.a).map((ack) => [ack.ackedMsgId, ack.fromPeerId]);
         }).toEqual([['subtree-room', SERVER_ID]]);
     });
+
+    it('aggregates a handed-over message over the audience its RTC leg froze, so a leaver reads unconfirmed (Q12)', async () => {
+        const fixture = await createAddressedFixture();
+        const handedOver: ALMessage = {
+            ...roomUnicast('frozen-1', 'b', 'receiver'),
+            targets: {
+                mode: 'multicast',
+                groupRef: ROOM,
+                recipientPeerIds: ['b', 'd'],
+                snapshotVersion: 2
+            }
+        };
+
+        await fixture.service.acceptIncomingMessage(handedOver, 'a');
+
+        await expect.poll(async () => {
+            await fixture.engine.executeOnce();
+            return readReceipts(fixture.sockets.a).map((receipt) => receipt.expectedRecipientPeerIds);
+        }).toEqual([['b', 'd']]);
+    });
 });
 
 async function createAddressedFixture(): Promise<AddressedFixture> {
