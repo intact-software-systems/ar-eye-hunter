@@ -1080,6 +1080,28 @@ the checker threshold. Run focused tests and full affected package checks,
 then independent task review. Exact-head release and performance evidence
 follow after the style closure.
 
+### Task 14c: Prove exact-head behavior and review the branch
+
+After coherent style closure, reconcile any remaining direct raw outbox
+producers and old product tests without exempting unproven rows. Run the
+focused package and API checks, the three-process cluster proofs, unchanged E3
+browser acceptance, and an environment-matched state-write comparison. Review
+the whole branch against the current merge base, publish a concise behavior and
+evidence map in the draft PR, and require a green exact-head Release Gate before
+readiness. Do not disrupt an existing PostgreSQL container or erase benchmark
+data to obtain the comparison without separate authorization.
+
+Task 14b's two local commits close the four prior-head style findings through
+direct control flow and three exact reviewed warning-tier caps, then propagate
+the existing service clock through live delivery and recipient selection. The
+focused 262-test set, 51 tooling tests, and follow-up 169-test set pass, as do
+shared/shared-server TypeScript and API Deno checks. The full suite is not green:
+15 failures reproduce on the exact pre-14b head (two bundle budgets and
+relay/receipt expectations), while one full-run timing assertion passes alone.
+`typecheck:tests` still reports nine errors in five untouched test files.
+These are Task 14c release-readiness inputs, not evidence that Task 14b's
+scoped behavioral checks or whole-branch acceptance have passed.
+
 ### Earlier investigation and gate checkpoints
 
 **Next candidate after Task 12:** The current CRDT authorization read already
