@@ -29,6 +29,7 @@ import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-p
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
 import { assertGroupPresenceSummaryRead } from './assert-group-presence-summary-read.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
+import { computeGroupDeltaProvenance, writeGroupDeltaProvenance } from './group-delta-provenance.ts';
 import {
     computeGroupPresenceSummaryWork,
     toTopologyReplanEnqueueFacts,
@@ -195,8 +196,10 @@ export class GroupPresenceSummaryWork {
         }, this.now());
         const computed = this.compute(work, read);
         this.validateComputed(work, read, computed);
+        const proofs = await computeGroupDeltaProvenance(computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
+            await writeGroupDeltaProvenance(transaction, proofs);
             const finished = await writeResourceInboxReservationFinish(
                 transaction,
                 computed.reservationFinish
