@@ -289,10 +289,10 @@ describe('Relic Hunter server game service', () => {
     });
 });
 
-async function captureWarnings(run: () => Promise<void>): Promise<readonly unknown[][]> {
-    const warnings: unknown[][] = [];
+async function captureWarnings(run: () => Promise<void>): Promise<readonly (string | Error)[][]> {
+    const warnings: (string | Error)[][] = [];
     const warn = console.warn;
-    console.warn = (...values: unknown[]) => {
+    console.warn = (...values: (string | Error)[]) => {
         warnings.push(values);
     };
     try {
