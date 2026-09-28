@@ -1,7 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
+import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
@@ -67,30 +69,19 @@ export class WsQueueBoxServerLiveDelivery {
         return this.sendToTargetsWithResult({ message }).sentCount;
     }
 
-    /** Client unicast scope is recipient policy, not proof that a local recipient exists. */
+    /** Unicast scope is recipient policy, not proof that a local recipient exists. */
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
-        const { message, recipientSessionIds, admittedPeerIds, inboundScope } = input;
+        const { message, inboundScope } = input;
+        if (
+            requiresWsQueueBoxServerRecipientScope(message) && validateALOutboundRecipientScope(inboundScope).length > 0
+        ) {
+            return noRecipientResult(message);
+        }
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return toLiveSendResult(message, [], { sentCount: 0, failures: [], expired: true });
         }
-        // Explicit authority, including an empty audience, replaces cache-based
-        // target resolution; local socket liveness remains a send-time decision.
-        const currentRecipients = recipientSessionIds === undefined
-            ? this.#targetResolution.resolveOutboundRecipients(message)
-            : [...new Set(recipientSessionIds)]
-                .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
-                .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
-        const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
-        const admittedRecipients = admitted === undefined
-            ? currentRecipients
-            : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
-        const recipients = inboundScope === undefined || message.targets?.mode !== 'unicast'
-            ? admittedRecipients
-            : admittedRecipients.filter((recipient) =>
-                inboundScope !== null &&
-                this.isCurrentRecipientInScope(recipient, inboundScope)
-            );
+        const recipients = this.resolveLiveRecipients(input);
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -128,6 +119,11 @@ export class WsQueueBoxServerLiveDelivery {
 
     sendToResolvedPeer(input: WsQueueBoxServerLiveDelivery.SendToResolvedPeerInputDto): number {
         const { peerId, message, encoded, inboundScope } = input;
+        if (
+            requiresWsQueueBoxServerRecipientScope(message) && validateALOutboundRecipientScope(inboundScope).length > 0
+        ) {
+            return 0;
+        }
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return 0;
@@ -170,6 +166,26 @@ export class WsQueueBoxServerLiveDelivery {
         const proof = this.#readAuthenticatedConnectionScope(connection);
         return proof !== undefined && proof.expiresAtEpochMs > Date.now() &&
             proof.scope.applicationId === scope.applicationId && proof.scope.workspaceId === scope.workspaceId;
+    }
+
+    private resolveLiveRecipients(input: WsServerLiveSendInputDto): readonly WsServerResolvedRecipient[] {
+        const { message, recipientSessionIds, admittedPeerIds, inboundScope } = input;
+        // Explicit authority, including an empty audience, replaces cache-based
+        // target resolution; local socket liveness remains a send-time decision.
+        const currentRecipients = recipientSessionIds === undefined
+            ? this.#targetResolution.resolveOutboundRecipients(message)
+            : [...new Set(recipientSessionIds)]
+                .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
+                .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+        const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
+        const admittedRecipients = admitted === undefined
+            ? currentRecipients
+            : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
+        return inboundScope === undefined || message.targets?.mode !== 'unicast'
+            ? admittedRecipients
+            : admittedRecipients.filter((recipient) =>
+                inboundScope !== null && this.isCurrentRecipientInScope(recipient, inboundScope)
+            );
     }
 
     private toEncodedAttempt(message: ALMessage): WsQueueBoxServerLiveDelivery.EncodedAttempt {
@@ -260,10 +276,13 @@ function toLiveSendResult(
     recipients: readonly WsServerResolvedRecipient[],
     attempt: WsQueueBoxServerLiveDelivery.SendAttempt
 ): WsServerLiveSendResult {
+    if (!attempt.expired && attempt.sentCount === 0 && attempt.failures.length === 0) {
+        return noRecipientResult(message);
+    }
     return {
         status: attempt.expired
             ? 'expired'
-            : toLiveSendStatus(recipients.length, attempt.sentCount, attempt.failures.length),
+            : toLiveSendStatus(attempt.sentCount, attempt.failures.length),
         message,
         recipients,
         recipientCount: recipients.length,
@@ -274,13 +293,9 @@ function toLiveSendResult(
 }
 
 function toLiveSendStatus(
-    recipientCount: number,
     sentCount: number,
     failedCount: number
 ): WsServerLiveSendStatus {
-    if (recipientCount === 0) {
-        return 'no-recipients';
-    }
     if (failedCount === 0) {
         return 'sent-live';
     }

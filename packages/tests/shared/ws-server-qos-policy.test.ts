@@ -44,6 +44,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             name: 'server-1',
             socket,
             outbox: new shared.InMemoryQueueBox(),
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -72,7 +73,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             nowMs = expiresAtMs + offsetMs;
         }
 
-        const result = service.sendToTargetsWithResult({ message: msg });
+        const result = service.sendToTargetsWithResult({ message: msg, inboundScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
 
         expect(result.status).toBe(offsetMs < 0 ? 'sent-live' : 'expired');
         expect(result.sentCount).toBe(offsetMs < 0 ? 1 : 0);

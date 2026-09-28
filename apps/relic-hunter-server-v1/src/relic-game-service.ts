@@ -84,6 +84,7 @@ export async function installRelicHunterGame(
     return service;
 }
 
+// deno-lint-ignore no-namespace -- Type-only vocabulary owned by the service.
 namespace RelicGameService {
     export interface Dependencies {
         readonly games: Pick<RallarServerAppDataStore<RelicGameState>, 'get' | 'set' | 'setIfAbsent'>;

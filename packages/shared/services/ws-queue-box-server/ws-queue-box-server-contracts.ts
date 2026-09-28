@@ -45,7 +45,7 @@ export interface WsServerLiveSendInputDto {
     readonly message: ALMessage;
     readonly recipientSessionIds?: readonly string[];
     readonly admittedPeerIds?: readonly string[];
-    /** Null means old inbound work without proof; undefined means server-originated send. */
+    /** Explicit recipient scope; null or absent proof refuses generic unicast, including server-originated sends. */
     readonly inboundScope?: StateScope | null;
 }
 

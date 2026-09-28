@@ -6,7 +6,10 @@ import { captureALOutboundPolicy, decodeALOutboundCapturedPolicy } from '@shared
 import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
+import { WsQueueBoxServerLiveDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -14,6 +17,56 @@ import { TestWebSocket } from '../websocket/test-web-socket.ts';
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 describe('public WS unicast scope', () => {
+    it.each([
+        { entry: 'targets', expiresAtEpochMs: 0 },
+        { entry: 'result', expiresAtEpochMs: 0 },
+        { entry: 'resolved', expiresAtEpochMs: 0 },
+        { entry: 'targets', expiresAtEpochMs: Number.MAX_SAFE_INTEGER },
+        { entry: 'result', expiresAtEpochMs: Number.MAX_SAFE_INTEGER },
+        { entry: 'resolved', expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+    ])('refuses unscoped generic unicast through $entry with lease $expiresAtEpochMs', ({ entry, expiresAtEpochMs }) => {
+        const { socket, native, live } = createLiveDelivery(expiresAtEpochMs);
+        const service = createDefaultWsQueueBoxServerService({
+            name: 'server',
+            socket,
+            outbox: new InMemoryQueueBox(),
+            readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs })
+        });
+        onTestFinished(() => service.dispose());
+        const message = createMessage();
+        const result = entry === 'targets'
+            ? service.sendToTargets(message)
+            : entry === 'resolved'
+            ? live.sendToResolvedPeer({ peerId: 'peer', message })
+            : service.sendToTargetsWithResult({ message });
+        expect(result).toEqual(entry === 'result' ? expect.objectContaining({ status: 'no-recipients', sentCount: 0 }) : 0);
+        expect(native.sent).toEqual([]);
+    });
+
+    it.each(['targets', 'resolved'] as const)('preserves decoded AL control delivery through %s without generic scope', (entry) => {
+        const { native, live } = createLiveDelivery();
+        const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
+            fromPeerId: 'server',
+            toPeerId: 'peer',
+            ackedMsgId: 'message',
+            originPeerId: 'peer',
+            logicalRecipientPeerId: 'server',
+            carrier: 'ws',
+            status: 'accepted',
+            observedAtEpochMs: Date.now()
+        });
+        expect(entry === 'targets' ? live.sendToTargets(message) : live.sendToResolvedPeer({ peerId: 'peer', message })).toBe(1);
+        expect(native.sent).toHaveLength(1);
+    });
+
+    it('does not treat a control type ID alone as scope exemption at either live boundary', () => {
+        const { native, live } = createLiveDelivery();
+        const message = createMessage();
+        const forged = { ...message, payload: { ...message.payload, typeId: 'al.control.ack.v2' } };
+        expect(live.sendToTargetsWithResult({ message: forged })).toMatchObject({ status: 'no-recipients', sentCount: 0 });
+        expect(live.sendToResolvedPeer({ peerId: 'peer', message: forged })).toBe(0);
+        expect(native.sent).toEqual([]);
+    });
     it('preserves fully decoded internal control effects without a public scope', () => {
         const message = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'server', ts: Date.now() }, {
             fromPeerId: 'server',
@@ -185,8 +238,9 @@ describe('public WS unicast scope', () => {
             return encode(message);
         });
 
-        service.sendToTargetsWithResult({ message: createMessage(), inboundScope: SCOPE });
+        const result = service.sendToTargetsWithResult({ message: createMessage(), inboundScope: SCOPE });
 
+        expect(result).toMatchObject({ status: 'no-recipients', sentCount: 0, recipientCount: 0 });
         expect(original.sent).toEqual([]);
         expect(replacement.sent).toEqual([]);
     });
@@ -194,4 +248,21 @@ describe('public WS unicast scope', () => {
 
 function createMessage() {
     return newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, { ttlMs: 30_000 });
+}
+
+function createLiveDelivery(expiresAtEpochMs = 0) {
+    const socket = new JsonWebSocketServer();
+    const native = new TestWebSocket('ws://live');
+    native.open();
+    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    const live = new WsQueueBoxServerLiveDelivery({
+        socket,
+        targetResolution: new WsQueueBoxServerTargetResolution({
+            socket,
+            targetResolver: { resolvePeerRecipients: () => [{ peerId: 'peer', connectionId: 'peer' }] }
+        }),
+        deliveryReporting: new WsQueueBoxServerDeliveryReporting({}),
+        readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs })
+    });
+    return { socket, native, live };
 }
