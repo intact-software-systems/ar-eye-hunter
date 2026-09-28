@@ -885,6 +885,20 @@ and was interrupted, so it is not a governed before/after result. Keep the
 existing read path for correctness while obtaining comparable gate evidence;
 do not add an index from these non-equivalent diagnostics alone.
 
+**2026-09-28 implementation/review checkpoint:** Principal state-sync now
+captures the durable own-plus-co-group session audience and binds each actual
+broadcast row to an atomic proof. The independent review's client proof-key
+collision, semantic no-op, and injected read-time clock follow-ups are committed
+on this draft branch and passed focused client-state tests. The earlier exact-head
+100-client medium-scale mutation workload passed 2,757/2,757 interactions and
+the group-lifecycle cluster recipe passed; both formation and medium-scale
+cluster matrices still failed two CRDT reply waits. These results support
+retaining the existing indexed read for now, but they are not a controlled
+latency comparison or a complete branch acceptance. No additive index was
+introduced. A separate Release Gate PGlite RTT fixture lacked the newly
+required current-connection authenticated scope; its focused test is repaired
+and reviewed on this branch, awaiting the next exact-head gate.
+
 ### Task 12: Publish auth logout's exact-session proof
 
 **Scope:** Use the already approved session-global authority variant for the
@@ -901,6 +915,23 @@ one committed exact-session notice, rollback, replay, no unrelated recipient,
 and no acceptance of an arbitrary raw logout-shaped payload. Run focused auth,
 WS, AppInbox, cross-process, package/API checks and touched-file closure.
 
+**2026-09-28 implementation/review checkpoint:** The exact-session logout
+producer proof and local/foreign generation checks are committed on this draft
+branch (`bb3183f010d6a504f120aa221d43eff8b51cb0b7`). Independent task
+review found no correctness, security, or spec defect. Focused suites passed
+1,441 tests, affected package/API checks passed, and a real three-process
+Postgres proof observed the one committed notice on B while unrelated C stayed
+open without a frame or close. These are Task 12 results, not an exact-head
+Release Gate or a proof that CRDT and RTC-topology producers are covered.
+The full-branch changed-style comparison remains non-green for warning-tier
+metrics in the outbound admission decoder and two WS owners, plus black-box
+runner directory density. The reviewers found the Task 12 owners cohesive,
+but the exact changed gate still requires reviewed dispositions or coherent
+shape corrections before PR readiness.
+Whole-tests-project typing also remains non-green on dependency/PGlite type
+identity diagnostics outside the touched files. No additive principal index
+was introduced or justified by these logout results.
+
 After these slices, select the remaining CRDT and RTC-topology producer work
 from current evidence. CRDT's persisted command-format decision remains a
 separate explicit maintainer approval; do not use the pending decision as
@@ -910,3 +941,17 @@ obtain controlled performance evidence, run exact-head cross-process acceptance
 and release gates, review the full branch, and publish one concise PR
 behavior/evidence map. Do not split a test-only proof PR from this draft
 implementation PR.
+
+**Next candidate after Task 12:** The current CRDT authorization read already
+checks a durable client or group snapshot for the actor's active session, but
+returns only allow/deny to mutation computation. Investigate carrying that
+read's attested full document scope and frozen authorized audience as transient
+mutation facts into exact per-row reply/fanout proofs; this may avoid changing
+the persisted command. The original socket's authenticated scope is not
+recoverable from that command or the unscoped auth session, so verify that
+document-scope attestation satisfies the intended publication authority before
+implementation. Do not equate an optional document workspace with proof,
+claim the CRDT failures fixed, or change the persisted command without the
+separate approval above. The two exact-head cluster matrices currently fail at
+committed CRDT reply waits, which is consistent with missing direct-producer
+proof but does not correlate an individual rejected row in the logs.
