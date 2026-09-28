@@ -18,7 +18,12 @@ import type {
     RallarServerWsTopicDefinition
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { applyRelicWsCommand } from './apply-relic-ws-command.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import {
+    applyRelicWsCommand,
+    toRelicWsCommandWarning,
+    type RelicCommandApplication
+} from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
@@ -104,18 +109,35 @@ export async function installRelicHunterGame(
         await rallar.ws.publish(toRelicSnapshotMessage(state, rallar.ws.serverPeerId), 'outbox');
     }
 
-    function applyCommand(
+    function applyAndPublishCommand(
         command: RelicCommand,
         senderId: string
-    ): Promise<RelicPublicSnapshot> {
+    ): Promise<RelicCommandApplication> {
         return enqueueForGame(command.gameId, async () => {
             const previous = await games.get(command.gameId) ??
                 await createInitialState(command.gameId, 'command');
             const result = applyRelicCommand(previous, command, { senderId });
             await games.set(command.gameId, result.state);
-            await publishSnapshot(result.state);
-            return toPublicRelicSnapshot(result.state);
+            const snapshot = toPublicRelicSnapshot(result.state);
+            try {
+                await publishSnapshot(result.state);
+                return { snapshot, publishFailure: undefined };
+            }
+            catch (error) {
+                return { snapshot, publishFailure: toError(error) };
+            }
         });
+    }
+
+    async function applyCommand(
+        command: RelicCommand,
+        senderId: string
+    ): Promise<RelicPublicSnapshot> {
+        const application = await applyAndPublishCommand(command, senderId);
+        if (application.publishFailure !== undefined) {
+            throw application.publishFailure;
+        }
+        return application.snapshot;
     }
 
     // Browsers send commands to the server itself on this topic (D57); REST carries them only before a browser learns the server id.
@@ -141,12 +163,11 @@ export async function installRelicHunterGame(
                 command: message.payload,
                 senderId: context.senderId,
                 readSessionUsername: options.readSessionUsername,
-                applyCommand
+                applyCommand: applyAndPublishCommand
             });
-            if (outcome.kind !== 'applied') {
-                console.warn(
-                    `[relic] WS command from ${context.senderId} was not applied: ${outcome.detail}`
-                );
+            const warning = toRelicWsCommandWarning(context.senderId, outcome);
+            if (warning !== undefined) {
+                console.warn(warning.message, ...(warning.error === undefined ? [] : [warning.error]));
             }
         }
     );

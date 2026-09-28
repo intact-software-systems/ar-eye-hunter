@@ -66,10 +66,6 @@ export class WsQueueBoxServerClusterPublication {
         await publisher(message, entry, await this.#dependencies.readAdmittedAudience(message.id.msgId));
     }
 
-    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
-        return this.#dependencies.readAdmittedAudience(msgId);
-    }
-
     async writePreparedMessage(
         prepared: WsQueueBoxServerClusterPublication.ClusterPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle

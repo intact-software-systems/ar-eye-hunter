@@ -8,7 +8,6 @@ import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.t
 
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import {
     normalizeALQosPolicy,
     resolveALQosNormalizationInput,
@@ -131,13 +130,21 @@ export class WsQueueBoxServerOutboundPlanning {
         );
     }
 
+    /**
+     * A repair or retry resends to the failed recipients connected here that the message was admitted to, and its
+     * receipt keeps every peer it expects and every one that confirmed: a session that left or sits on another instance
+     * still reads unconfirmed, and one that joined after admission is never added (D24, D43). WS never re-routes, so no
+     * receipt mode replaces its expected set.
+     */
     planRepairMessage(
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined {
-        const recipients = request.requestedByPeerId
-            ? this.#targetResolution.resolveRepairRecipients(message, [request.requestedByPeerId])
-            : this.#targetResolution.resolveRepairRecipients(message, request.failedPeerIds);
+        const requestedPeerIds = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
+        const recipients = this.#targetResolution.resolveRepairRecipients(
+            message,
+            toAdmittedPeerIds(requestedPeerIds, request.admittedAudience)
+        );
         if (recipients.length === 0) {
             return undefined;
         }
@@ -151,7 +158,7 @@ export class WsQueueBoxServerOutboundPlanning {
             ackTracking: toAckTrackingPlan(
                 effective,
                 recipients.map((recipient) => recipient.peerId),
-                toRepairExpectedPeerIdsUpdate(effective.ack.algo)
+                'merge'
             ),
             repairTracking: request.repair
         };
@@ -295,13 +302,11 @@ function toAckTrackingPlan(
     };
 }
 
-/**
- * A retry resends to the failed recipients connected here. A `receiver` receipt keeps every logical recipient it
- * expects and every one that confirmed, so a session that left or sits on another instance still reads unconfirmed
- * (D43); a hop receipt expects the hops the retry sends to.
- */
-function toRepairExpectedPeerIdsUpdate(algo: ALAckAlgo): 'merge' | 'replace' {
-    return algo === 'receiver' ? 'merge' : 'replace';
+function toAdmittedPeerIds(
+    peerIds: readonly string[],
+    admittedAudience: readonly string[] | undefined
+): readonly string[] {
+    return admittedAudience === undefined ? peerIds : peerIds.filter((peerId) => admittedAudience.includes(peerId));
 }
 
 function toRepairTrackingPlan(

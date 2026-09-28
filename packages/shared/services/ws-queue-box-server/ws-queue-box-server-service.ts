@@ -132,6 +132,7 @@ export class WsQueueBoxServerService {
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
+    private readonly admissionStore: WsQueueBoxServerService.Dependencies['outboundRuntime']['admissionStore'];
     private readonly qosProvider: ALQosInputProvider;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
@@ -154,6 +155,7 @@ export class WsQueueBoxServerService {
         this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
         this.outbox = dependencies.outboundRuntime.workQueue;
+        this.admissionStore = dependencies.outboundRuntime.admissionStore;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.qosProvider = dependencies.qosProvider;
@@ -163,9 +165,9 @@ export class WsQueueBoxServerService {
         });
         this.clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution: this.targetResolution,
-            canonicalScope: dependencies.outboundRuntime.admissionStore.canonicalScope,
+            canonicalScope: this.admissionStore.canonicalScope,
             clock: this.clock,
-            readAdmittedAudience: (msgId) => dependencies.outboundRuntime.admissionStore.readAdmittedAudience(msgId)
+            readAdmittedAudience: (msgId) => this.admissionStore.readAdmittedAudience(msgId)
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
@@ -623,7 +625,7 @@ export class WsQueueBoxServerService {
     }
 
     readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
-        return this.clusterPublication.readAdmittedAudience(msgId);
+        return this.admissionStore.readAdmittedAudience(msgId);
     }
 
     private async sendPreparedMessage(

@@ -135,7 +135,12 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
         const repairedPlan = this.dependencies.planRepairMessage
-            ? await this.dependencies.planRepairMessage(msg, { ...request, completedHopPeerIds: [], repair })
+            ? await this.dependencies.planRepairMessage(msg, {
+                ...request,
+                completedHopPeerIds: [],
+                repair,
+                admittedAudience: plan.admittedAudience
+            })
             : plan;
         if (repairedPlan?.dropReason) {
             console.warn(`Skipping outbound repair dispatch: ${repairedPlan.dropReason}`);
@@ -173,7 +178,8 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 ...request,
                 failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
-                repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
+                repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts },
+                admittedAudience: plan.admittedAudience
             })
             : plan;
         if (!retryPlan || retryPlan.dropReason) {

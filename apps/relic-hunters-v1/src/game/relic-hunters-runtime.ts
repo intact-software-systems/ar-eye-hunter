@@ -60,7 +60,7 @@ export type RelicCommandDraft =
 export type RelicRuntimeDiagnostics = Readonly<{
     phase: RelicHuntersRuntimePhase;
     commandTransport: RelicCommandTransport;
-    lastCommandDelivery?: ALDeliveryState;
+    lastCommandDelivery: ALDeliveryState | undefined;
     snapshotTransport: typeof RELIC_SNAPSHOT_TRANSPORT;
     authenticated: boolean;
     middlewareConnected: boolean;

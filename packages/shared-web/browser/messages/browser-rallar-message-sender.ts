@@ -27,7 +27,11 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
-import { createBrowserWsUnicastMessage, validateBrowserWsPeerInput } from './create-browser-ws-unicast-message.ts';
+import {
+    createBrowserWsUnicastMessage,
+    validateBrowserWsPeerInput,
+    validateBrowserWsPeerServer
+} from './create-browser-ws-unicast-message.ts';
 
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
@@ -177,6 +181,7 @@ export class BrowserRallarMessageSender {
 
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
+        throwIfMessageIssues(validateBrowserWsPeerServer(input, context.middleware.webSocketQueueBox.serverPeerId));
         const session = this.input.requireSession();
         const message = this.createWsSendMessage({
             resolved: { input, scope, roomId, roomRef },

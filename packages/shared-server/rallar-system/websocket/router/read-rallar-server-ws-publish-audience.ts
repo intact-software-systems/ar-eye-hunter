@@ -1,14 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type {
-    RallarServerWsFanout,
-    RallarServerWsPublishAudienceReader,
-    RallarServerWsRoomAudience
-} from './rallar-server-ws-router-contracts.ts';
-
-export interface RallarServerWsFrozenPublishAudience {
-    readonly current: RallarServerWsRoomAudience;
-    readonly admittedPeerIds: readonly string[];
-}
+import type { RallarServerWsFanout, RallarServerWsPublishAudienceReader } from './rallar-server-ws-router-contracts.ts';
+import type { RallarServerWsRouter } from './rallar-server-ws-router.ts';
 
 export interface ReadRallarServerWsPublishAudienceInput {
     readonly message: ALMessage;
@@ -24,7 +16,7 @@ export interface ReadRallarServerWsPublishAudienceInput {
  */
 export async function readRallarServerWsPublishAudience(
     input: ReadRallarServerWsPublishAudienceInput
-): Promise<RallarServerWsFrozenPublishAudience | undefined> {
+): Promise<RallarServerWsRouter.PublishAudience | undefined> {
     const { message } = input;
     const serverRoomNotification = input.fanout === 'outbox' &&
         message.id.senderId === input.serverPeerId &&

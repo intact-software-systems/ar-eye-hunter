@@ -99,3 +99,14 @@ export function validateBrowserWsPeerInput<T>(
     }
     return issues;
 }
+
+export function validateBrowserWsPeerServer<T>(
+    input: RallarWsSendInput<T>,
+    serverPeerId: string | undefined
+): readonly RallarValidationIssue[] {
+    return input.peerId === undefined || serverPeerId !== undefined ? [] : [{
+        path: '$.peerId',
+        code: 'unsupported',
+        message: 'A peer-addressed send needs a server that names its peer id; this server names none.'
+    }];
+}
