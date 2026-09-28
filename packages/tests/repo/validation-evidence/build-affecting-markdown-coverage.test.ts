@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,14 +23,6 @@ const stringLiteralPattern = /(['"`])((?:(?!\1)[^\\\n]|\\.)*?)\1/gu;
 // These tests name README.md only for a file they write into a temporary repository.
 const fixtureOnlyMarkdownReferences: readonly MarkdownReference[] = [
     { testPath: 'packages/tests/hetzner/distributed-recipe-workflow.test.ts', markdownPath: 'README.md' },
-    {
-        testPath: 'packages/tests/repo/governance-decisions/governance-decision-exception-verification.test.ts',
-        markdownPath: 'README.md'
-    },
-    {
-        testPath: 'packages/tests/repo/governance-decisions/governance-decision-receipt-index.test.ts',
-        markdownPath: 'README.md'
-    },
     { testPath: 'packages/tests/repo/repo-style-reviewed-dispositions.test.ts', markdownPath: 'README.md' }
 ];
 
@@ -175,6 +167,9 @@ function readTestMarkdownReferences(trackedPaths: readonly string[]): readonly M
         );
 }
 
+// A tracked file deleted in the working tree is gone from the tree this test validates.
 function readTrackedPaths(): readonly string[] {
-    return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' }).split('\0').filter(Boolean);
+    return execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
+        .split('\0')
+        .filter((trackedPath) => trackedPath !== '' && existsSync(path.join(repoRoot, trackedPath)));
 }

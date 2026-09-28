@@ -16,7 +16,7 @@ import {
     isTestSourceFile,
     scanProductionSources
 } from './repo-style-check/repository-scan.mjs';
-import { isReviewedDisposition, readReviewedDispositionContext } from './repo-style-check/reviewed-dispositions.mjs';
+import { isReviewedDisposition } from './repo-style-check/reviewed-dispositions.mjs';
 import { readStructuralLineageMap, StructuralLineageValidationError } from './repo-style-check/structural-lineage.mjs';
 
 const worktreeTarget = 'WORKTREE';
@@ -100,16 +100,12 @@ async function main() {
         structuralLineageSourcePaths: new Set(structuralLineageByTargetPath.values()),
         logicalSourceByTargetPath: new Map([...renameByTargetPath, ...structuralLineageByTargetPath])
     });
-    const reviewedDispositionContext = readReviewedDispositionContext(repoRoot, targetCommit);
 
     printChangedFindings({
         repoRoot,
         mergeBase,
         targetReference,
-        newFindings: newFindings.filter(
-            (finding) => !isReviewedDisposition(repoRoot, finding, reviewedDispositionContext)
-        ),
-        governanceIssues: reviewedDispositionContext.issues
+        newFindings: newFindings.filter((finding) => !isReviewedDisposition(repoRoot, finding))
     });
 }
 
@@ -133,10 +129,7 @@ function isNavigationProductSource(repoRoot, file) {
 }
 
 function printChangedFindings(result) {
-    for (const issue of result.governanceIssues) {
-        console.log(`FAIL: governance decision receipt: ${issue}`);
-    }
-    if (result.newFindings.length === 0 && result.governanceIssues.length === 0) {
+    if (result.newFindings.length === 0) {
         console.log(
             `PASS: no new repository style findings ` +
                 `(${result.mergeBase} -> ${result.targetReference}).`
@@ -144,13 +137,11 @@ function printChangedFindings(result) {
         return;
     }
 
-    if (result.newFindings.length > 0) {
-        console.log(
-            `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
-                `${result.newFindings.length === 1 ? '' : 's'} ` +
-                `(${result.mergeBase} -> ${result.targetReference}):`
-        );
-    }
+    console.log(
+        `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
+            `${result.newFindings.length === 1 ? '' : 's'} ` +
+            `(${result.mergeBase} -> ${result.targetReference}):`
+    );
     for (const finding of result.newFindings) {
         console.log(`${toRelativePath(result.repoRoot, finding.file)} [${finding.ruleId}]`);
         console.log(`  ${finding.message}`);

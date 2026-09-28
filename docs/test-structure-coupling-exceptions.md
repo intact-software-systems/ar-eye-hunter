@@ -65,7 +65,7 @@ individually. The `--changed <base> <head>` mode fails closed for every current
 changed occurrence without an individual disposition; deleted occurrences stay
 neutral evidence.
 
-Candidate IDs are intentionally location-specific so every occurrence receives
+Candidate IDs are intentionally occurrence-specific so every occurrence receives
 its own review and an edited assertion cannot silently inherit another
 assertion's exception. In a changed range, the checker compares a rename or
 modification's old and new occurrences by kind and normalized syntax detail:

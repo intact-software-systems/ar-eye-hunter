@@ -18,7 +18,7 @@ one.
 
 State/event/receipt/result and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in the
 same transaction; write final queue rows directly through
-`ResourceInboxRepository`. There is no intermediate mutation outbox. Resource
+`PSqlResourceInboxRepository`. There is no intermediate mutation outbox. Resource
 inbox uses 20 total processing attempts, staged from 1, 2, 4, 8, and 16 ms to
 seconds capped at 30 seconds with jitter, plus a separate best-effort fairness
 lane for retries more than 30 seconds overdue. Queue locks are coordination-only
@@ -106,8 +106,9 @@ recipes are in `docs/rallar-quickstart-and-recipes.md`.
 A group created without a `lifecyclePolicy` uses the `optimistic` preset: it is
 active at creation, admission stays open, and application data flows. That is
 the behavior groups had before the formation layer. Every stricter preset is an
-explicit departure, and every enforcement point reads a missing policy as
-`optimistic`.
+explicit departure. The create transaction stores the `optimistic` document
+when the request names no policy, so enforcement always reads a stored policy;
+a missing row fails closed.
 
 The layer shipped as a hard cutover. Durable rows written before it cannot be
 decoded after it. A compatibility reader for the old row shape was refused
@@ -116,14 +117,17 @@ because a second decode path would hide which lifecycle is authoritative.
 `docs/rallar-group-lifecycle-cutover-runbook.md` is the deploy and rollback
 order.
 
-Readiness fractions and activation status are observation. They are computed
-at read time and are not a second source of membership truth.
+Readiness fractions and activation status are observation. Neither is a second
+source of membership truth. Readiness and remediation are computed at read
+time. The activation band is stored on the group and written through AppInbox,
+because a band such as `degraded` exists only after a clock has watched the
+coverage hold.
 
 ## Postgres adapters stay beside the feature
 
-`packages/shared-server/postgres/` keeps the shared SQL port and the
-transaction helper. Each feature owns the PostgreSQL adapter for its row shape
-and its corruption boundary.
+`packages/shared-server/postgres/` keeps the shared SQL port, the transaction
+helper, and the `timestamp without time zone` text type. Each feature owns the
+PostgreSQL adapter for its row shape and its corruption boundary.
 
 The refused alternative is a general repository bucket that gathers every SQL
 file because it uses Postgres. That layout hides which feature a row belongs
@@ -133,8 +137,8 @@ to and invites one adapter to write another feature's tables.
 
 `packages/shared-web/browser/rallar.ts` is the canonical browser object for an
 app that uses several Rallar surfaces. Apps that need a smaller bundle use a
-narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-data.ts`,
-`rallar-crdt.ts`, or `rallar-media-calls.ts`.
+narrow entry: `rallar-core.ts`, `rallar-realtime.ts`, `rallar-messages.ts`,
+`rallar-data.ts`, `rallar-crdt.ts`, or `rallar-media-calls.ts`.
 
 The refused alternatives are a second aggregate facade, or making feature
 controllers import the aggregate entry. Controllers depend inward. Room-scoped

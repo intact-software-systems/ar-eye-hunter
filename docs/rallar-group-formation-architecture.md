@@ -11,8 +11,9 @@ the layer ships as a hard cutover, and durable rows written before it cannot be 
 The property that makes the whole layer safe to ship is this: **a group created without a
 `lifecyclePolicy` is the `optimistic` preset, which is exactly the behaviour groups had before the
 layer existed.** Formation collapses to zero length, the group is active at creation, admission
-stays open, and application data flows. Every other preset is a departure from that default, and
-every enforcement point below reads an absent policy as `optimistic`.
+stays open, and application data flows. Every other preset is a departure from that default. A
+create that omits the policy stores the `optimistic` document, so every enforcement point below reads
+a stored policy.
 
 ## Intent And Observation
 
@@ -86,7 +87,9 @@ response and in every WS delta envelope:
   formationEpoch }`. Operator activation records nothing; only criterion-commanded transitions do.
 
 Every transition writes the aggregate under compare-and-set, bumps `snapshotVersion`, and emits a
-`group-updated` event with an empty payload. There is no lifecycle-specific event type.
+`group-updated` event. Its payload is empty except for `reconfigure` and `reset`, which carry
+`{ topologyReplanOrigin: 'commanded' }` so their topology follow-up is not held as automatic work.
+There is no lifecycle-specific event type.
 
 ### Who may command a transition
 
@@ -94,7 +97,8 @@ Every transition writes the aggregate under compare-and-set, bumps `snapshotVers
 `packages/shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts`
 decides in order: the actor must be an active member (`member-not-active`, or the blocked-member
 denials), then the policy's `initiator` decides authority, then the transition must be
-legal from the current state. The first two questions are `canCommandGroupAuthority` in the same
+legal from the current state, and a `start` on a spent series is denied
+`formation-attempts-exhausted`. The first two questions are `canCommandGroupAuthority` in the same
 file — one initiator policy governs every application-facing group-authority command, so the
 transport valve asks the same two and adds no third.
 
@@ -109,7 +113,9 @@ transport valve asks the same two and adds no third.
 `manual`, and `server-auto-requires-automatic-activation` when its `activation.mode` is. Both are
 the same deadlock — `server-auto` denies every principal, so a boundary only a principal could
 cross is one the group would wait at forever. A `phased` `server-auto` policy whose triggers and
-activation are all automatic is accepted, because the automation can advance it.
+activation are all automatic is accepted, because the automation can advance it — unless its
+`topology.replanning` is `commanded`, which `server-auto-cannot-command-replanning` rejects for the
+same reason.
 
 `fail-formation` has no HTTP route. The `formation-criterion` authority permits only activate/fail
 with observed evidence. Retry plan/connect use `formation-automation`; topology publication cannot
@@ -157,9 +163,8 @@ planned slot holds an active layout when the mode is `commanded` or the policy i
 presence-summary enqueue (`resolveTopologyReplanEnqueue`) asks the planner the same question before
 the work is queued and holds what it would freeze, so `pending` never reports a replan the policy
 forbids and no frozen cycle is paid for. It never holds an inactive group's removal publication, a
-delta that can still merge into a queued row, the lifecycle `reconfigure` family's commanded-origin
-follow-ups, or a group whose `apply` landing has a promotion outstanding, because the frozen cycle
-is what re-derives that promotion. (The topology-inbox `reconfigure` route still enqueues its work
+delta that can still merge into a queued row, or the commanded-origin follow-ups of the lifecycle
+`reconfigure` and `reset` commands. (The topology-inbox `reconfigure` route still enqueues its work
 as automatic origin, so under `commanded` the planner freezes it; only the lifecycle `reconfigure`
 replans on command.) Staleness follows product decision 11 by derivation (implementation decision
 I27): the accepted layout is always a promoted planned layout, so the formation view reads it as
@@ -225,6 +230,12 @@ is carried the same way but read by nothing yet, and no server path reads either
 | `admission.mode`                  | `open`       | `manager-approval`      | `closed`                       | `open`           |
 | `admission.untilMemberCount`      | `null`       | `null`                  | `null`                         | 50               |
 | `data.preActivationAppData`       | `allowed`    | `allowed`               | `blocked-until-active`         | `allowed`        |
+| `establishment.planTrigger`       | `immediate`  | `manual`                | `manual`                       | `immediate`      |
+| `establishment.connectTrigger`    | `immediate`  | `immediate`             | `manual`                       | `immediate`      |
+| `topology.replanning`             | `auto`       | `debounced`             | `commanded`                    | `debounced`      |
+| `topology.reconfigureLanding`     | `apply`      | `apply`                 | `hold`                         | `apply`          |
+| `topology.debounceWindowMs`       | 500          | 500                     | 500                            | 500              |
+| `topology.maxReplanWaitMs`        | 5 000        | 5 000                   | 5 000                          | 5 000            |
 
 `strictConfirmation` is `false` in every preset. Two preset facts are easy to misread:
 
@@ -240,10 +251,12 @@ is carried the same way but read by nothing yet, and no server path reads either
 ### Absent policy
 
 `CreateGroupRequest.lifecyclePolicy` is optional. When it is omitted the create command carries no
-policy, the group is created `active`, and nothing is written to the policy store. Every reader
-then gets `status: 'absent'` and substitutes the `optimistic` preset —
-`createDefaultGroupLifecyclePolicy()` in the mutation path, the criterion evaluator, and the
-formation view, and that preset's `data.preActivationAppData` value `'allowed'` in the WS data gate.
+policy, the group is created `active`, and the create transaction writes
+`createDefaultGroupLifecyclePolicy()` — the `optimistic` preset — to the policy store, so every later
+reader gets `status: 'present'`. A group with no stored row at all (`status: 'absent'`) is not a
+state the API produces; the mutation path, the admission path, the criterion evaluator and the
+formation view fail it closed exactly like `corrupt`, and only the WS data gate (`'allowed'`) and
+topology replanning (the preset's `auto`) read it as `optimistic`.
 The equivalence is pinned once, not per tier: `api-v1-group-lifecycle-policy`
 creates one group with `preset: 'optimistic'` and one with no policy and asserts the same formation
 view and the same instant join for both.
@@ -264,6 +277,10 @@ Clamping is silent and total, so no input produces an out-of-range document:
 | `maxFormationAttempts`             | 1 … 16                        |
 | `admission.untilEpochMs`           | 0 … `Number.MAX_SAFE_INTEGER` |
 | `admission.untilMemberCount`       | 1 … 100 000                   |
+| `topology.debounceWindowMs`        | 0 … 30 000                    |
+| `topology.maxReplanWaitMs`         | 0 … 600 000                   |
+| trigger `settleMs`, `fallbackMs`   | 0 … 600 000                   |
+| `presence` trigger `memberCount`   | 1 … 100 000                   |
 
 Integers are truncated; a non-finite integer becomes the minimum.
 
@@ -272,23 +289,27 @@ Integers are truncated; a non-finite integer becomes the minimum.
 Contradictions between fields are a separate concern from clamping. `validateGroupLifecyclePolicy`
 returns every issue at once as an `Either` and never throws:
 
-| Issue code                                  | Rejects                                                    |
-| ------------------------------------------- | ---------------------------------------------------------- |
-| `manager-initiator-without-manager`         | `initiator: manager` with `selection: none`                |
-| `manager-approval-without-manager`          | `admission.mode: manager-approval` with `selection: none`  |
-| `assigned-selection-requires-principals`    | `selection: assigned` with an empty assigned list          |
-| `manager-count-exceeds-assigned-principals` | `selection: assigned` with `count` over its non-empty list |
-| `viable-rate-above-success-rate`            | `minimumViableRate > successRate`                          |
-| `threshold-mode-requires-positive-rate`     | a threshold mode with `successRate <= 0`                   |
-| `deadline-mode-requires-positive-deadline`  | a deadline mode with `deadlineMs <= 0`                     |
-| `strict-confirmation-unsupported`           | `strictConfirmation: true` (the ledger is not implemented) |
+| Issue code                                  | Rejects                                                          |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| `manager-initiator-without-manager`         | `initiator: manager` with `selection: none`                      |
+| `manager-approval-without-manager`          | `admission.mode: manager-approval` with `selection: none`        |
+| `assigned-selection-requires-principals`    | `selection: assigned` with an empty assigned list                |
+| `manager-count-exceeds-assigned-principals` | `selection: assigned` with `count` over its non-empty list       |
+| `viable-rate-above-success-rate`            | `minimumViableRate > successRate`                                |
+| `threshold-mode-requires-positive-rate`     | a threshold mode with `successRate <= 0`                         |
+| `deadline-mode-requires-positive-deadline`  | a deadline mode with `deadlineMs <= 0`                           |
+| `strict-confirmation-unsupported`           | `strictConfirmation: true` (the ledger is not implemented)       |
+| `server-auto-requires-automatic-trigger`    | `phased` + `server-auto` with a `manual` plan or connect trigger |
+| `server-auto-requires-automatic-activation` | `phased` + `server-auto` with `activation.mode: manual`          |
+| `server-auto-cannot-command-replanning`     | `topology.replanning: commanded` with `server-auto`              |
+| `replan-window-exceeds-maximum-wait`        | `topology.debounceWindowMs > topology.maxReplanWaitMs`           |
 
 Transient zero-manager states are legal — an assigned manager who has not joined, or managers who
 all left — because invite-and-accept recovers them; only permanently granterless or initiator-less
 combinations are invalid.
 
 On the wire the rejection is untyped by recorded decision: the create returns
-`400 { type: 'api-mutation-failure', code: 'app-inbox-malformed-command' }` and nothing is
+`400 { type: 'api-mutation-failure', code: 'group-mutation-rejected' }` and nothing is
 persisted (`strictConfirmationIsRejected`, `managerInitiatorWithoutManagerIsRejected`, and their
 `404` read-backs in `api-v1-group-lifecycle-policy`). The issue codes exist only inside the mutation
 compute and the policy repository. Typing this surface is an explicit deferred item.
@@ -306,7 +327,8 @@ There is no policy-update surface in v1. The document is written once at creatio
 effectively immutable.
 
 A read has three outcomes: `absent`, `present`, or `corrupt` (identity mismatch, not an object, or no
-longer coherent under `validateGroupLifecyclePolicy`). `absent` is the optimistic default.
+longer coherent under `validateGroupLifecyclePolicy`). Every current group has a stored row; an
+`absent` row fails closed like `corrupt` everywhere except the WS data gate and topology replanning.
 `corrupt` fails closed at every consumer: a transition is rejected, a join or grant is rejected, the
 data gate blocks, the criterion evaluator returns no command, and the formation view resolves no
 managers. An unreadable stored policy never reads as permissive.
@@ -477,7 +499,8 @@ manager.
 
 ### Readiness
 
-`computeGroupFormationReadiness` returns `{ plannedEdgeCount, observedEdgeCount, observedRate }`.
+`computeGroupFormationReading` returns `readiness: { plannedEdgeCount, observedEdgeCount, observedRate }`
+beside the `evidenceWatermark` it counted.
 Planned edges are the undirected edges of the stored overlay's `nextHopsBySessionId`, skipping
 self-hops. An edge is observed when an RTT measurement between its endpoints — in either direction —
 has `createdAtEpochMs` within the evidence freshness window, `DEFAULT_FORMATION_EVIDENCE_FRESHNESS_MS`
@@ -550,17 +573,17 @@ latches; an old publication wake cannot revive one. No public request carries tr
 `computeFormationCriterionCommand`
 (`packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`)
 is the single evaluation function: it returns `null` unless the group is `connecting` or
-`reconnecting`, reads the policy (corrupt → `null`; absent → optimistic, whose `manual` mode waits),
+`reconnecting`, reads the policy (absent or corrupt → `null`),
 derives readiness from the supplied plan and evidence, evaluates the criterion, and returns the
 command it asks for — `activateGroup` with `observedRate` and a `degraded` flag, or
 `failGroupFormation` with `observedRate` — or `null`. Two producers call it.
 
 **The evidence leg** is the RTC topology work handler (`create-rtc-topology-work-handler.ts`).
-After every planning pass that computes a plan — group-revision work and RTT-refresh work alike — it
-petitions the criterion with the just-planned overlay and the authority's evidence, before the
-unchanged-graph gate. It costs nothing while no work arrives and petitions with zero lag on every
-pass that computes a plan; RTT-refresh items the refinement gate defers reach the criterion only
-through the damped edge-trigger below.
+After every topology work item commits — a published layout, an unchanged or frozen plan, or a
+fingerprint skip, for group-revision and RTT-refresh work alike — it petitions the criterion with the
+planned row the commit made durable and the authority's evidence, then the stage trigger and the
+activation-status observer. It costs nothing while no work arrives; RTT-refresh items the refinement
+gate defers reach the criterion only through the damped edge-trigger below.
 
 **The threshold edge-trigger.** RTT-refresh work whose replan the refinement gate defers
 (`RtcRttRefinementGate`: a replan only when accumulated Vivaldi movement crosses the delta threshold
@@ -568,9 +591,9 @@ and the per-group interval floor has elapsed — 5 ms and 30 s by default, overr
 `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS` and `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`)
 does not compute a plan, so it would not petition — and under a
 burst of reports the measurement that carries the group across its threshold is exactly the one
-deferred. `createDeferredCriterionPetitioner` closes that gap: a deferred item for a `connecting`
-group with an active stored plan petitions at most once per
-`DEFAULT_DEFERRED_CRITERION_PETITION_MIN_INTERVAL_MS` = 1 000 ms per group, process-locally; damped
+deferred. `createDeferredCriterionPetitioner` closes that gap: a deferred item for a `connecting` or
+`reconnecting` group with an active stored plan petitions at most once per
+`formationCriterion.deferred.minIntervalMs` (1 000 ms, set in api-v1's system installers) per group, process-locally; damped
 requests arm one trailing timer per group, because the crossing measurement lives at the burst's
 tail by construction. The trailing petition re-reads the stored plan and petitions only if it is
 still active; it is best-effort and only warns on failure. Both dialing stages can petition; held reconfiguring cannot. A removed stored plan never petitions,
@@ -606,8 +629,10 @@ evaluation" to "within about a second of crossing the threshold"; it does not re
 `api-v1-group-formation-criterion` pins both legs: a single-member `threshold` group auto-activates
 from the trivially ready zero-edge plan its own establishment planning pass produces, with no RTT
 evidence involved (epoch 3 after plan/connect/activate, `outcome: 'activated'`, rate 1); a `deadline` group with
-`minimumViableRate: 1` and two presence-connected members fails below the floor at its 3 s deadline
-(`forming`, attempt count 1, `outcome: 'below-floor'`, rate 0); a `deadline` group with floor 0 and
+`minimumViableRate: 1`, one attempt and two presence-connected members fails below the floor at its
+3 s deadline and parks the spent series (`dormant`, attempt count 1, `outcome: 'below-floor'`, rate 0,
+condition `failed`); a two-attempt twin replans, redials and parks only after its second failed dial
+(`automaticRetryExhaustsOnlyAfterSecondFailedDial`); a `deadline` group with floor 0 and
 two presence-connected members activates degraded at the deadline; and a `threshold-or-deadline`
 group with two presence-connected members holds at `observedEdgeCount: 0` until a single RTT report
 over WS on its planned edge activates it (`thresholdActivatesOnObservation`). The managed
@@ -642,7 +667,9 @@ default five reporting peers. `docs/rallar-rtc-rtt-reporting.md` owns the wider 
 `data.preActivationAppData: 'blocked-until-active'` gates WS-relayed, room-scoped application data
 until activation has accepted a layout. Accepted traffic can continue through reconfiguration
 while transport is flowing. A halted transport blocks application data under every data policy;
-CRDT remains exempt. Browser send/delivery gates enforce the same authority for RTC traffic.
+CRDT remains exempt. The browser has no data-policy gate of its own for RTC: room sends go only to
+the peers of the room's authoritative transport target and stop while transport is halted, and no
+lane is dialed before `connect`.
 
 The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
@@ -664,7 +691,7 @@ commit — while the peer sync envelopes (`sync-request`, `sync-response`, `catc
 relayed live, so the exemption lets CRDT sync traffic flow before activation; collaborative documents
 are lobby-phase workspace, not the competitive pre-match traffic the gate exists to hold back. Unchanged: presence (an HTTP mutation, never a WS topic), durable state-sync and
 `overlay.topology` output, and the signaling and `rtt` ingress topics. API-v1 installs the durable
-topology AppOutbox owner, chat, signaling, RTC-RTT, CRDT, and then the user-topic router; state-sync
+topology AppOutbox owner, signaling, RTC-RTT, CRDT, and then the user-topic router; state-sync
 and topology have no WebSocket ingress installers. Recognized state-sync input is rejected before
 user routing. Committed `WS_OUTBOX` state and fixed-recipient topology messages reach current
 sessions through QueueBox/pub-sub delivery or durable topology replay, outside the pre-activation
@@ -682,8 +709,9 @@ only in the authorizer's rejection log line. No HTTP route supplies `preActivati
 `room.match` send flows once the manager activates the blocked group (`activatedSendReachesAlice`).
 The allowed group remains forming throughout pause, presence/membership round trips, and resume:
 relay succeeds before halt, is absent while halted, and succeeds again after resume.
-The authorizer's absent-policy branch has no recipe pin: an absent policy creates the group
-`active`, and accepted-layout reconfiguration also bypasses that policy read. `api-v1-match-preset` pins the
+The authorizer's absent-policy branch has no recipe pin and no API path reaches it, because a create
+that omits the policy stores the `optimistic` document; `ws-topic-room-authorizer.test.ts` pins it
+directly. `api-v1-match-preset` pins the
 lobby NACK and the post-activation flow composed with the rest of the preset;
 `api-v1-drop-in-social-preset` pins data flowing from birth.
 
@@ -805,13 +833,15 @@ together when that policy is unreadable.
 | `coverageBasisLayoutIdentity`                                                                                        | the layout the condition is measured against: the accepted one whenever one exists, and before first activation the frozen candidate being dialed in `connecting`; `null` otherwise and whenever the policy is corrupt                                   |
 
 Like the other group reads, the route applies full-visibility authorization — active members only,
-so a pending member cannot read it — when `RALLAR_STATE_STRICT_READ_AUTH` is enabled, which the
-black-box runner sets and the production hardening checklist requires; without the flag
+so a pending member cannot read it — when strict read authorization is enabled
+(`stateApi.strictReadAuthorization`, env `RALLAR_STATE_STRICT_READ_AUTH`), which the `prod-*`
+configuration profiles and the black-box runner's `prod-in-memory` profile turn on; without it
 `/api/state/*` is authenticated but not membership-filtered.
 
 ### Events
 
-Lifecycle transitions emit `group-updated` with an empty payload; an accepted activation-status
+Lifecycle transitions emit `group-updated` (empty payload, except `{ topologyReplanOrigin: 'commanded' }`
+on `reconfigure` and `reset`); an accepted activation-status
 write emits `group-activation-status-changed`. The admission-specific event is
 `member-admission-requested`. Every `member-*` event names the member it is about in
 `payload.principalId` — a manager's grant emits `member-joined` with the manager as `actor` and the
@@ -836,9 +866,11 @@ Reconfigure accepts omitted or null `landing` as the stored-policy default. It r
 On the mutation routes, policy denials are typed `403 { type: 'api-mutation-failure', code, status }`
 with the `GroupPolicyReasonCode` (`forbidden-role`, `lifecycle-manager-unavailable`,
 `lifecycle-transition-invalid`, `group-admission-closed`, `group-admission-deadline-passed`,
-`group-admission-capacity-reached`, `member-not-active`, …). The read routes use their route
+`group-admission-capacity-reached`, `member-not-active`, `formation-attempts-exhausted`, …). A
+`connect` whose fence misses is instead a `409` with `group-connect-stale-epoch`,
+`group-connect-no-planned-layout` or `group-connect-planned-layout-superseded`. The read routes use their route
 family's plain `{ error, code, message, … }` error shape instead, with the same codes.
-Policy-validity rejections at creation are the generic `400 app-inbox-malformed-command`. Over WS,
+Policy-validity rejections at creation are the generic `400 group-mutation-rejected`. Over WS,
 every policy denial is the generic NACK reason `unauthorized`.
 
 ## Verification Model
@@ -850,8 +882,10 @@ The pure core is pinned in `packages/tests/shared/`: `group-lifecycle-policy.tes
 `group-lifecycle-transitions.test.ts`, `group-activation-criterion.test.ts`,
 `group-formation-reading.test.ts`, `group-admission-decision.test.ts`, and
 `group-lifecycle-managers.test.ts`. The server side is pinned in `packages/tests/shared-server/`:
-`group-policy.test.ts`, `group-create-lifecycle-policy.test.ts`,
-`group-lifecycle-policy-repository.test.ts`, `rallar-system/group-state/group-lifecycle-command-policy.test.ts`,
+`rallar-system/group-state/policy/group-policy.test.ts`,
+`rallar-system/group-state/policy/group-create-lifecycle-policy.test.ts`,
+`rallar-system/group-state/persistence/group-lifecycle-policy-repository.test.ts`,
+`rallar-system/group-state/group-lifecycle-command-policy.test.ts`,
 `rallar-system/group-state/group-lifecycle-safety-baseline.test.ts`,
 `rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`,
 `rallar-system/group-state/mutation/group-admission-mutation.test.ts`,
@@ -862,90 +896,93 @@ data gate is pinned in `apps/api-v1/test/services/ws-topic-room-authorizer.test.
 
 ### Recipes and profiles
 
-Every recipe exercising lifecycle behaviour names the policy it tests. The sixteen single-server
+Every recipe exercising lifecycle behaviour names the policy it tests. The sixteen core single-server
 recipes live in `packages/shared-test/black-box-runner/tests/api-v1/` and sit in the
 `api-v1-black-box` and `api-v1-black-box-recipes` profiles of `recipe-matrix.json`, so the memory
 backend runs them in the fast loop and the Postgres CI job runs them in its base phase:
 
-| Recipe                                | Pins                                                                                                                                                                                                                           |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `api-v1-group-lifecycle-policy`       | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                   |
-| `api-v1-group-lifecycle-transitions`  | the explicit lifecycle HTTP commands and their epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
-| `api-v1-group-formation-criterion`    | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
-| `api-v1-group-manager-succession`     | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
-| `api-v1-group-admission-approval`     | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
-| `api-v1-group-admission-windows`      | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
-| `api-v1-group-connect-fence`          | a second member's arrival replans the published layout; `connect` naming a stale epoch or the replaced layout is refused with its own `409` and moves nothing, and naming the current plan dials it                            |
-| `api-v1-group-data-policy`            | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
-| `api-v1-match-preset`                 | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
-| `api-v1-drop-in-social-preset`        | the composed `drop-in-social` preset                                                                                                                                                                                           |
-| `api-v1-automatic-formation-triggers` | the `after` plan and connect triggers advancing a `phased` group with no application command, and a commanded replan dialing the layout it produced rather than the one it replaced                                            |
-| `api-v1-presence-formation-trigger`   | the `presence` trigger: a group holds in `forming` on one live member and plans and dials itself as the second arrives                                                                                                         |
-| `api-v1-commanded-replanning`         | `commanded` replanning holds the automatic replan, `layoutStale` latches, and promotion after `connect`/`activate` clears the obligation                                                                                       |
-| `api-v1-debounced-replanning`         | the replanning window: due time extends with a change inside it, stops extending at the maximum wait, and one replan carries the burst's last presence revision                                                                |
-| `api-v1-reconfiguration-fails`        | a reconnection below the floor returns the group to `active` with the accepted layout identity byte-identical across the failure                                                                                               |
-| `api-v1-group-status-lifecycle`       | the stored condition walking `inactive → initialising → active → failed`, read off the group row rather than the view's fallback                                                                                               |
+| Recipe                                     | Pins                                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api-v1-group-lifecycle-policy`            | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                   |
+| `api-v1-group-lifecycle-transitions`       | the explicit lifecycle HTTP commands and their epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
+| `api-v1-group-formation-criterion`         | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
+| `api-v1-group-manager-succession`          | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
+| `api-v1-group-admission-approval`          | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
+| `api-v1-group-admission-windows`           | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
+| `api-v1-group-connect-fence`               | a second member's arrival replans the published layout; `connect` naming a stale epoch or the replaced layout is refused with its own `409` and moves nothing, and naming the current plan dials it                            |
+| `api-v1-group-data-policy`                 | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
+| `api-v1-match-preset`                      | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
+| `api-v1-drop-in-social-preset`             | the composed `drop-in-social` preset                                                                                                                                                                                           |
+| `api-v1-automatic-formation-triggers`      | the `after` plan and connect triggers advancing a `phased` group with no application command, and a commanded replan dialing the layout it produced rather than the one it replaced                                            |
+| `api-v1-presence-formation-trigger`        | the `presence` trigger: a group holds in `forming` on one live member and plans and dials itself as the second arrives                                                                                                         |
+| `api-v1-commanded-replanning`              | `commanded` replanning holds the automatic replan, `layoutStale` latches, and promotion after `connect`/`activate` clears the obligation                                                                                       |
+| `api-v1-debounced-replanning`              | the replanning window: due time extends with a change inside it, stops extending at the maximum wait, and one replan carries the burst's last presence revision                                                                |
+| `api-v1-reconfiguration-fails`             | a reconnection below the floor returns the group to `active` with the accepted layout identity byte-identical across the failure                                                                                               |
+| `api-v1-group-status-lifecycle`            | the stored condition walking `inactive → initialising → active → failed`, read off the group row rather than the view's fallback                                                                                               |
+| `api-v1-activation-clock-decay`            | the evidence-expiry clock decays a published status once its only observation ages out                                                                                                                                         |
+| `api-v1-group-activation-partial-coverage` | the dwell-held `degraded` band from partial coverage, on the row and in the view                                                                                                                                               |
+| `api-v1-reconfigure-landing-concurrency`   | two concurrent `apply`-landing reconfigures settle on exactly one                                                                                                                                                              |
+| `api-v1-group-lifecycle-command-race`      | concurrent `plan` from two members advances the epoch once                                                                                                                                                                     |
+| `api-v1-activation-command-race`           | activation racing a latecomer join leaves the lobby closed                                                                                                                                                                     |
+| `api-v1-group-admission-decision-race`     | concurrent grant and decline settle on one outcome                                                                                                                                                                             |
 
 A recipe sits in exactly one of the profiles a single Postgres CI job runs: the job runs the base
 profile and then the cluster profile against the same servers under one run id, and a recipe in
 both replays its request ids with fresh login sessions and self-conflicts on idempotency.
 
+Three lifecycle recipes run only in `api-v1-black-box-cluster` against three nodes:
+`api-v1-group-lifecycle-cluster-ws`, `api-v1-group-lifecycle-stage-metrics` and
+`api-v1-group-reconnect-across-stages`.
+
 ### Acceptance scenarios
 
-The product plan names **twenty-six** acceptance scenarios, and that list is the denominator this
-workstream is finished against. Recording only what is covered would make the denominator invisible,
-so every scenario has a row here whether or not anything pins it yet, and
-`packages/tests/repo/rallar-group-documentation.test.ts` compares this table against the plan's list as
-a set — a scenario that disappears from either side fails.
+The formation workstream named **twenty-six** acceptance scenarios, and that list is the denominator
+this table keeps. Recording only what is covered would make the denominator invisible, so every
+scenario has a row here whether or not anything pins it yet, and
+`packages/tests/repo/rallar-group-documentation.test.ts` checks that the unpinned count below matches
+the rows marked unpinned.
 
-| Scenario                   | Pinned by                                                                                                                                                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `held-layout`              | `api-v1-group-lifecycle-transitions` (`topologyHeldWhileForming`, `managerPlans*`, `acceptedLayoutPromotedAfterActivate`)                                                                                                                   |
-| `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` for the stage and provenance gates, and `full-stack-live-rtc-lifecycle-acceptance.spec.ts` end to end in three browsers                                                            |
-| `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; `api-v1-group-connect-fence` drives two of the three `409`s off a real replan |
-| `connect-trigger-handoff`  | `api-v1-automatic-formation-triggers` (the commanded replan is dialed, never the candidate it replaced)                                                                                                                                     |
-| `dialing-layout-frozen`    | `api-v1-automatic-formation-triggers` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`                                                                                          |
-| `apply-landing`            | `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`; the restart-convergence half is unpinned                                                                                          |
-| `held-reconfiguration`     | `api-v1-commanded-replanning` (the hold landing keeps the accepted layout while the replan is dialed)                                                                                                                                       |
-| `reconfiguration-fails`    | `api-v1-reconfiguration-fails` (a reconnection misses the floor, the group returns to `active`, and the accepted layout identity is byte-identical across the failure)                                                                      |
-| `pause-resume`             | `api-v1-group-data-policy` (the transport valve) and `api-v1-group-lifecycle-transitions`                                                                                                                                                   |
-| `reconfigure-while-halted` | `api-v1-group-lifecycle-transitions` (`pauseBeforeHoldReconfiguration` through `reactivateGroup`)                                                                                                                                           |
-| `commanded-replanning`     | `api-v1-commanded-replanning`                                                                                                                                                                                                               |
-| `debounced-replanning`     | `api-v1-debounced-replanning`                                                                                                                                                                                                               |
-| `pacing-sweep`             | unpinned — the headless parallelism sweep over `maxConcurrentEdgeSetups` is not built                                                                                                                                                       |
-| `status-lifecycle`         | `api-v1-group-status-lifecycle` (the condition walks `inactive → initialising → active → failed`, read off the group row)                                                                                                                   |
-| `status-convergence`       | `packages/tests/shared-server/rallar-system/group-state/mutation/group-activation-status-convergence.test.ts` — not expressible as a recipe, because two interleaved writers cannot be sequenced from outside the server                    |
-| `status-on-connect`        | unpinned — `api-v1-group-state-reconnect-resync` pins the server half (a floored read after reconnect cannot return before the snapshot and the layout it names have both arrived); the member's own readiness is browser-side and untested |
-| `stale-petition-fenced`    | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-formation-fence-service-read.test.ts`                                                                      |
-| `automatic-progression`    | `api-v1-automatic-formation-triggers` (`after`) and `api-v1-presence-formation-trigger` (`presence`); no recipe covers `immediate`                                                                                                          |
-| `reset-to-dormant`         | `api-v1-group-lifecycle-transitions` (`resetPausedLifecycleSeries`, `startResetLifecycleSeries`)                                                                                                                                            |
-| `exhaustion-is-terminal`   | `api-v1-match-preset` (both attempts spent, parked in `dormant`, lobby still closed) and `api-v1-group-formation-criterion`                                                                                                                 |
-| `attempt-series-resets`    | `api-v1-group-formation-criterion` (`automaticRetryExhaustsOnlyAfterSecondFailedDial`) and `api-v1-reconfiguration-fails`, which activates to zero and then spends one of two attempts                                                      |
-| `member-progress`          | `packages/tests/shared-web/rtc-room-transport-state.test.ts` — the precedence ladder, including `idle` while no layout exists; the monotonic fraction itself is still uncovered                                                             |
-| `reset-tears-down`         | unpinned — live-RTC, and no lifecycle manifest exists in the distributed lane                                                                                                                                                               |
-| `reset-no-stale-hydration` | unpinned — live-RTC, same lane                                                                                                                                                                                                              |
-| `start-rebuilds-unchanged` | `api-v1-group-lifecycle-transitions` (`startResetLifecycleSeries` re-plans an unchanged member set)                                                                                                                                         |
-| `absent-policy-parity`     | `api-v1-group-lifecycle-policy` (absent policy is byte-identical to an explicit `optimistic`)                                                                                                                                               |
+| Scenario                   | Pinned by                                                                                                                                                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `held-layout`              | `api-v1-group-lifecycle-transitions` (`topologyHeldWhileForming`, `managerPlans*`, `acceptedLayoutPromotedAfterActivate`)                                                                                                                    |
+| `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` for the stage and provenance gates, and `full-stack-live-rtc-lifecycle-acceptance.spec.ts` end to end in three browsers                                                             |
+| `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; `api-v1-group-connect-fence` drives two of the three `409`s off a real replan  |
+| `connect-trigger-handoff`  | `api-v1-automatic-formation-triggers` (the commanded replan is dialed, never the candidate it replaced)                                                                                                                                      |
+| `dialing-layout-frozen`    | `api-v1-automatic-formation-triggers` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`                                                                                           |
+| `apply-landing`            | `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`; the restart-convergence half is unpinned                                                                                           |
+| `held-reconfiguration`     | `api-v1-commanded-replanning` (the hold landing keeps the accepted layout while the replan is dialed)                                                                                                                                        |
+| `reconfiguration-fails`    | `api-v1-reconfiguration-fails` (a reconnection misses the floor, the group returns to `active`, and the accepted layout identity is byte-identical across the failure)                                                                       |
+| `pause-resume`             | `api-v1-group-data-policy` (the transport valve) and `api-v1-group-lifecycle-transitions`                                                                                                                                                    |
+| `reconfigure-while-halted` | `api-v1-group-lifecycle-transitions` (`pauseBeforeHoldReconfiguration` through `reactivateGroup`)                                                                                                                                            |
+| `commanded-replanning`     | `api-v1-commanded-replanning`                                                                                                                                                                                                                |
+| `debounced-replanning`     | `api-v1-debounced-replanning`                                                                                                                                                                                                                |
+| `pacing-sweep`             | unpinned — the headless parallelism sweep over `maxConcurrentEdgeSetups` is not built                                                                                                                                                        |
+| `status-lifecycle`         | `api-v1-group-status-lifecycle` (the condition walks `inactive → initialising → active → failed`, read off the group row)                                                                                                                    |
+| `status-convergence`       | `packages/tests/shared-server/rallar-system/group-state/mutation/group-activation-status-convergence.test.ts` — not expressible as a recipe, because two interleaved writers cannot be sequenced from outside the server                     |
+| `status-on-connect`        | `full-stack-live-rtc-lifecycle-acceptance.spec.ts` ("reports ready only after the accepted layout arrived") for the browser barrier; `api-v1-group-state-reconnect-resync` pins the server half                                              |
+| `stale-petition-fenced`    | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-formation-fence-service-read.test.ts`                                                                       |
+| `automatic-progression`    | `api-v1-automatic-formation-triggers` (`after`) and `api-v1-presence-formation-trigger` (`presence`); no recipe covers `immediate`                                                                                                           |
+| `reset-to-dormant`         | `api-v1-group-lifecycle-transitions` (`resetPausedLifecycleSeries`, `startResetLifecycleSeries`)                                                                                                                                             |
+| `exhaustion-is-terminal`   | `api-v1-match-preset` (both attempts spent, parked in `dormant`, lobby still closed) and `api-v1-group-formation-criterion`                                                                                                                  |
+| `attempt-series-resets`    | `api-v1-group-formation-criterion` (`automaticRetryExhaustsOnlyAfterSecondFailedDial`) and `api-v1-reconfiguration-fails`, which activates to zero and then spends one of two attempts                                                       |
+| `member-progress`          | `packages/tests/shared-web/rtc-room-transport-state.test.ts` for the precedence ladder, including `idle` while no layout exists, and `full-stack-live-rtc-lifecycle-acceptance.spec.ts` for the monotonic fraction a reopened member reports |
+| `reset-tears-down`         | `full-stack-live-rtc-lifecycle-acceptance.spec.ts` ("drops every lane on reset and dials again on the next series")                                                                                                                          |
+| `reset-no-stale-hydration` | `full-stack-live-rtc-lifecycle-acceptance.spec.ts` ("hydrates a dormant group without resurrecting its layouts")                                                                                                                             |
+| `start-rebuilds-unchanged` | `api-v1-group-lifecycle-transitions` (`startResetLifecycleSeries` re-plans an unchanged member set)                                                                                                                                          |
+| `absent-policy-parity`     | `api-v1-group-lifecycle-policy` (absent policy is byte-identical to an explicit `optimistic`)                                                                                                                                                |
 
-**4 scenarios are unpinned** today, and every one of them needs infrastructure this workstream does
-not own: two live-RTC lifecycle manifests (`reset-tears-down`, `reset-no-stale-hydration`), one
-headless parallelism sweep (`pacing-sweep`), and the browser readiness barrier
-(`status-on-connect`). No server-side gap remains that a recipe could close.
+**1 scenarios are unpinned** today: `pacing-sweep`, which needs a headless parallelism sweep over
+`maxConcurrentEdgeSetups` that is not built. No server-side gap remains that a recipe could close.
 
-Two rows still name a half that is unpinned inside an otherwise covered scenario, and they are the
-honest residue rather than an oversight: `apply-landing`'s restart-convergence leg, and the
-end-to-end browser behaviour behind `member-progress`. Each of those is pinned where the decision is
-actually made — the pure function — and unpinned where a browser would exercise it.
-`discovery-holds-dials` no longer belongs in that list: the live three-browser lane now holds a
-managed lobby for five seconds, proves no agent dialed, and then proves the dials start on `connect`.
+One row still names a half that is unpinned inside an otherwise covered scenario:
+`apply-landing`'s restart-convergence leg, which is pinned where the decision is made — the pure
+function — and not where a restarted server would exercise it.
 
-The remaining live-RTC rows have a written pin that does not yet run.
-`full-stack-live-rtc-lifecycle-acceptance.spec.ts` carries all five
-scenarios, but four are declared blocked on two candidate defects the spec itself found: a page
-reopened with a restored session reports itself unconnected, and a group `reset` leaves the browser's
-facade-level peer lists naming both peers a minute later. They stay counted as unpinned here, because
-a scenario a defect prevents from running is not pinned. The evidence for both is
-the blocked cases in that spec.
+The five browser-only scenarios (`discovery-holds-dials`, `member-progress`, `status-on-connect`,
+`reset-tears-down`, `reset-no-stale-hydration`) are pinned by
+`full-stack-live-rtc-lifecycle-acceptance.spec.ts`, an opt-in three-browser lane
+(`npm run test:rallar:full-stack:memory:live-rtc-3:lifecycle` or its `postgres` twin) that no CI
+workflow runs.
 
 The count in this paragraph is checked against the table itself, so it cannot drift as rows change.
 
@@ -966,7 +1003,8 @@ burst covers every planned mesh edge, and activation fires only at threshold (`o
 (N=20) and 90 s (N=50) at a one-second cadence, which is what pins the edge-trigger structurally:
 activation has to come from evidence, not from the deadline evaluation.
 
-Both tiers are opt-in, in the `api-v1-black-box-formation-large` profile beside the optimistic
+Both tiers sit outside the base profile, in the `api-v1-black-box-formation-large` profile that the
+**API v1 Formation Gate** workflow (`api-v1-formation-gate.yml`) runs on server-touching pull requests, beside the optimistic
 large tier, because a synthetic worst-case burst cannot share a server with recipes asserting a
 clean evidence counter: on a shared Postgres runner the burst produced one contention-driven
 terminal mutation failure, which broke the unrelated `api-v1-admin-operations` recipe asserting
@@ -996,7 +1034,7 @@ Recorded at the scale tiers and not fixed, because real heartbeat-cadence report
   under 19-writer endpoint contention.
 - Before the edge-trigger landed, threshold activation under bursty evidence waited for the
   deadline evaluation because the evidence-leg petition rode the refinement gate's debounce. The
-  edge-trigger closes that for `connecting` groups; the deadline remains the backstop.
+  edge-trigger closes that for `connecting` and `reconnecting` groups; the deadline remains the backstop.
 
 ## Not In V1
 
@@ -1004,7 +1042,7 @@ Deliberately not built, each recorded in the control-plane plan's deferred list 
 writing this document:
 
 - **Typed policy-validity rejections over HTTP.** Every incoherent create is the generic
-  `400 app-inbox-malformed-command`; the issue codes never reach the response.
+  `400 group-mutation-rejected`; the issue codes never reach the response as typed fields.
 - **Typed WS NACK reasons.** Every policy denial over WS is `unauthorized`; the admission codes are
   typed on HTTP only, and the data-gate code reaches no wire at all.
 - **Per-edge confirm-or-fail establishment.** `strictConfirmation: true` is rejected at creation.
@@ -1069,11 +1107,12 @@ writing this document:
 - `packages/shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts`:
   policy storage and the absent/present/corrupt read.
 - `packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`,
-  `create-rtc-topology-work-handler.ts`, `create-formation-timer-work-handler.ts`: the evaluator, the
-  evidence-leg petition and the damped edge-trigger, the planning work handler that calls them, and
-  the time leg.
-- `packages/shared-server/rallar-system/topology/planning/select-group-topology-planning-snapshot.ts`:
-  the FORMING planning gate.
+  `formation-criterion-observer.ts`, `create-rtc-topology-work-handler.ts`,
+  `create-formation-timer-work-handler.ts`: the evaluator, the evidence-leg petition and the damped
+  edge-trigger, the planning work handler that calls them, and the time leg.
+- `packages/shared/api/group-lifecycle/resolve-group-topology-work-disposition.ts` and
+  `packages/shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts`: the
+  per-stage planning gate (FORMING suppression, dialing freeze, replanning hold) and its enqueue twin.
 - `packages/shared-server/rallar-system/rtc-rtt/policy/rtc-rtt-measurement-policy.ts`,
   `apps/api-v1/src/composition/create-api-v1-topology-services.ts`,
   `packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts`: RTT

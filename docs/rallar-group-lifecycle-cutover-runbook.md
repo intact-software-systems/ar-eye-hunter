@@ -6,8 +6,12 @@ This document exists because that decision has a deployment consequence which is
 expensive way: **durable rows written before the cutover cannot be decoded after it**, and the failure
 mode is a throw on a worker, not a rejected request.
 
-Read `docs/rallar-group-formation-architecture.md` for what the lifecycle is. This document only
-covers getting from a pre-lifecycle deployment to a lifecycle one.
+Read `docs/rallar-group-formation-architecture.md` for what the lifecycle is. This document covers
+getting from a pre-lifecycle deployment to a lifecycle one. Every deployment built from `main` since
+the lifecycle layer landed (August–September 2026) is already on the far side, so the procedure
+applies only to an environment still running a pre-lifecycle build or restoring a pre-lifecycle
+database. Later persisted-shape changes ship with backfill migrations instead (for example
+`20260902150000_coalesced_work_window_anchor`).
 
 ## Why a reset is required, not merely tidy
 
@@ -21,9 +25,10 @@ and throws `TypeError` on any difference, in **both** directions. A row queued b
 fields existed is missing keys the decoder now requires; a row queued before `activationStatus` was
 added carries one fewer key than the current list. Either is a throw.
 
-**The coalesced work metadata is guarded the same way.** The replanning window's maximum-wait anchor
-is a field on the coalesced work codec, itself behind an exact required/allowed list. Rows in flight
-across the cutover fail the same check.
+**The coalesced work metadata is not part of this.** The replanning window's anchor
+(`windowOpenedAtEpochMs`) is also exact-checked, but migration
+`20260902150000_coalesced_work_window_anchor` backfills it into queued rows, as the connect-trigger
+latch migrations do for their fields. Only the embedded group shape has no backfill.
 
 A throw on a queue worker is not a request failure a client retries. The entry redelivers, throws
 again, and burns down its attempt budget to `FAILED`. Nothing surfaces to a user, and the work the
@@ -44,8 +49,9 @@ Record the answers; do not assume them. This is the check the runbook exists to 
    Workers) from one `main` push, so the answer is normally "yes, all of them" — but a manually
    pinned application or a second environment sharing a database would make it "no", and that has to
    be found before the reset rather than after.
-2. **Which databases are in scope.** Two are: `DATABASE_URL` (api-v1, shared by `rallar-server` and
-   `rallar-bb-server`) and `DATABASE_URL_RELIC` (`relic-hunters`). Both hold group aggregates and
+2. **Which databases are in scope.** Two are: `DATABASE_URL` (api-v1, deployed as `rallar-server`)
+   and `DATABASE_URL_RELIC` (`relic-hunters`). `rallar-bb-server` is the black-box control server
+   and holds no database. Both databases hold group aggregates and
    both hold queue rows, so both are reset. A deployment that has added a third database has to add
    it here.
 3. **Whether any queued work is worth preserving.** It cannot be migrated — see above — so the only
@@ -57,10 +63,10 @@ The ordering is the whole point: every step exists because doing it later admits
 new server reads an old row or an old server writes one.
 
 1. **Stop accepting new work.** Take the servers out of rotation. If they must stay up to serve
-   reads, set `RALLAR_API_QUEUE_WORKERS=disabled` on every process first — a disabled worker process
-   is deliberately passive and stops producing new durable rows. This requires
-   `RALLAR_SQL_BACKEND=postgres`.
-2. **Drain the queues.** With intake stopped and workers still enabled on exactly one process, wait
+   reads, set `RALLAR_API_QUEUE_WORKERS=disabled` on every process but one — a disabled process runs
+   no queue workers, but it still accepts and enqueues mutations, so it must also be out of write
+   rotation. Disabled workers require `RALLAR_SQL_BACKEND=postgres`.
+2. **Drain the queues.** With intake stopped and workers enabled on exactly one process, wait
    for the queues to empty. Observe it on `GET /api/admin/operations/realtime`: wake counts stop
    advancing, drain failures stay flat, and maximum lag returns to its floor. A queue that will not
    drain has entries already failing — inspect them with
@@ -69,10 +75,13 @@ new server reads an old row or an old server writes one.
    `deno task prisma migrate deploy` against each. A reused database that merely had migrations
    applied is **not** sufficient: migrations change the schema and leave the pre-cutover rows in
    place, which is exactly the state that throws.
-4. **Deploy both servers before any browser.** `rallar-server` and `relic-hunters` first (and
-   `rallar-bb-server` with them), so no old server can write a row a new one will read. The
-   repository's `deploy.yml` already orders each API deployment behind its own migration step; what
-   this runbook adds is that the browsers must not go first.
+4. **Deploy both servers before any browser.** `rallar-server` and `relic-hunters` first, so no old
+   server can write a row a new one will read. When `DENO_DEPLOY_ACTIONS_ENABLED` is `true`,
+   `deploy.yml` orders each API deployment behind its own migration step; otherwise the Deno Git
+   integration deploys and the migration must be run by hand first. Nothing orders the browsers:
+   Cloudflare's Git integration publishes `main` independently of `deploy.yml`, so pause those
+   Cloudflare builds (or deploy the servers from a commit that does not yet change the browsers)
+   until the servers are live.
 5. **Deploy the browsers.** Then instruct clients to reload. A browser holding a pre-cutover
    IndexedDB cache is the last stale reader in the system, and its failure mode is silence rather
    than an error, so a forced reload is worth more here than it usually is.

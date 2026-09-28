@@ -4,7 +4,7 @@ Use this document as an AI skill when implementing, reviewing, or debugging code
 
 ## Purpose
 
-Rallar is the browser facade for auth, room state, client presence, websocket messages, RTC overlay messages, RTC data-channel realtime messages, media streams, and browser IndexedDB-backed custom data.
+Rallar is the browser facade for auth, room state, client presence, websocket messages, RTC overlay messages, RTC data-channel realtime messages, media streams and calls, director relays, stats, collaborative CRDT documents, and browser IndexedDB-backed custom data.
 
 Rallar Server is the server-side facade/middleware that wires websocket queuebox routing, durable app inboxes, state sync, and route installation.
 
@@ -12,7 +12,9 @@ Rallar Server is the server-side facade/middleware that wires websocket queuebox
 
 Read these files before changing behavior:
 
-- `packages/shared-web/browser/rallar.ts`
+- `packages/shared-web/browser/rallar.ts` (entry point) and
+  `packages/shared-web/browser/rallar-facade-contract.ts` (the `RallarFacade`
+  shape and the per-feature contracts it re-exports)
 - `packages/shared-web/browser/rallar-data.ts`
 - `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
 - `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts`
@@ -63,7 +65,7 @@ Use Rallar Server middleware/facade when the task involves:
    refreshPeople: true })`.
 
 5. Prefer room helpers for room-scoped low-latency sends.
-   Use `rallar.realtime.room<T>({ roomId, laneId: 'realtime', waitTimeoutMs }).send(payload)` for app/game room traffic. It waits for RTC readiness by default and returns transport diagnostics.
+   Use `rallar.realtime.room<T>({ roomId, laneId: 'realtime', waitTimeoutMs }).send(payload)` for app/game room traffic. It waits for RTC readiness by default and returns transport diagnostics. A room session from `rallar.rooms.enter(...)` offers the same room-bound handles as `room.realtime<T>(...)` and `room.message<T>(...)`. Receive listeners are not room-filtered: put the full `roomRef` in shared realtime payloads and validate it on receive.
 
 6. Use `createAndSwitch` for replacement room creation.
    Use `rallar.rooms.createAndSwitch(...)` when creating a new room should
@@ -75,8 +77,8 @@ Use Rallar Server middleware/facade when the task involves:
    for flows that require a minimum, maximum, exact count, or exact set of
    active sessions/peers.
 
-8. Use WS for reliable server-routed messages.
-   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path with RTC and WS options; `definition` requires a `purpose` (`'command'` or `'notification'`). Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
+8. Use typed room messages for important room traffic.
+   Use `rallar.messages.room<T>(definition)` when an important room message should use the typed message path; `definition` requires a `purpose` (`'command'` or `'notification'`). Its `send` defaults to `strategy: 'rtc-with-ws-fallback'`; pass `strategy: 'ws'` or call `sendWs` when the message must be server-routed. Use raw RTC/realtime APIs only when the caller needs custom peer selection or low-level readiness handling.
 
 9. Use `roomRef` where scope matters.
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
@@ -191,12 +193,17 @@ rallar.mountRest(app);
 rallar.start();
 ```
 
-If creating middleware directly:
+If creating middleware directly with `createRallarMiddleware(options)`:
 
-- Provide the queuebox repositories.
-- Provide state repositories.
-- Provide app inbox service factories.
-- Provide state-sync publisher wiring.
+- Provide the QueueBox repositories (`inbox`, optional `outbox`) and
+  `resilience`.
+- Provide `clientsRepository` and `groupsRepository`.
+- Provide the required inbox service factories (`createGroupStateInboxService`,
+  `createTopologyInboxService`, `createRtcRttInboxService`,
+  `createAppClientInboxService`) plus any configured auth, admin, or CRDT
+  factory. State-sync results leave through the AppInbox transaction's
+  WS_OUTBOX rows; there is no separate state-sync publisher to wire.
+- Provide `findGroupSnapshotByRef` for scoped room routing.
 - Start `runtime.qboxEngine`.
 - Install websocket lifecycle cleanup.
 
@@ -218,8 +225,10 @@ Check browser code for:
 
 Check server code for:
 
-- `useDefaultMiddlewareTopics()` and `useWebSocketLifecycle()` are installed.
-- `qboxEngine.start()` is called.
+- `rallar.installSystemTopics()` and `rallar.installWebSocketLifecycle()` are
+  called before `mountWebSocket`/`mountRest`.
+- `rallar.start()` (which starts `runtime.qboxEngine`) is called once the
+  server is listening.
 - `findGroupSnapshotByRef` is available for scoped room routing.
 - App inbox services are durable and publish state-sync results.
 - Runtime expiry and presence expiry reconciliation are initialized.
@@ -229,6 +238,6 @@ Check server code for:
 - Sending RTC realtime data before the data channel is open.
 - Using `roomId` in multi-workspace code when `roomRef` is available.
 - Forgetting to refresh state after login/start.
-- Opening the same Rallar Data store name with different durability or schema options.
+- Opening the same Rallar Data store name with different options (`durability`, `ttlMs`, `sync`, storage location, or a different set of `isValid`/`equals`/`expireAtFor`/`onPersistenceError` hooks).
 - Treating `compareAndSet` in Rallar Data as cross-tab transactional locking. It is a facade-level convenience over current store state, not a database transaction.
 - Mounting server routes but not starting the queuebox engine.
