@@ -17,7 +17,8 @@ describe('Relic Hunter server browser contract', () => {
     it('publishes snapshots in the shape consumed by browser WebSocket subscribers', async () => {
         const fake = createFakeRallar();
         const service = await installRelicHunterGame(fake.rallar, {
-            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1))
+            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1)),
+            readSessionUsername: (sessionId: string) => Promise.resolve(sessionId === 'alice-session' ? 'Alice' : undefined)
         });
 
         await service.applyCommand(joinCommand(), 'alice-session');
@@ -83,6 +84,7 @@ function createFakeRallar(): Readonly<{
                 })
         },
         ws: {
+            serverPeerId: 'relic-server',
             defineTopic: () => {},
             on: () => {},
             publish: (

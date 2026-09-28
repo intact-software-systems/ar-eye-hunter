@@ -6,8 +6,7 @@ import {
     toPublicRelicSnapshot,
     type RelicCommand,
     type RelicGameState,
-    type RelicPublicSnapshot,
-    type RelicServerEvent
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import type { RallarServerAppDataStoreOptions } from '@shared-server/app-data/app-data-store-definition.ts';
 import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
@@ -19,12 +18,19 @@ import type {
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
-import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { applyRelicWsCommand } from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
+import { toRelicSnapshotMessage } from './to-relic-snapshot-message.ts';
 
 export interface RelicHunterGameServiceOptions {
     readonly createInitialState: RelicInitialStateFactory;
+    /**
+     * The username of an issued session, read from the auth store: a WS command's own username is never trusted (Q6).
+     * The store also returns expired and logged-out sessions; the sender's open WS connection is what authenticated it.
+     */
+    readonly readSessionUsername: (sessionId: string) => Promise<string | undefined>;
 }
 
 export interface RelicHunterGameService {
@@ -42,6 +48,8 @@ export interface RelicHunterServer {
         ): Promise<Pick<RallarServerAppDataStore<RelicGameState>, 'get' | 'set' | 'setIfAbsent'>>;
     }>;
     readonly ws: Readonly<{
+        /** The WS server's peer id: every snapshot's sender, so receivers' ACKs reach its receipt (D58). */
+        serverPeerId: string;
         defineTopic(definition: RallarServerWsTopicDefinition<RelicCommand>): void;
         on(
             selector: RallarServerWsSelector,
@@ -93,31 +101,7 @@ export async function installRelicHunterGame(
     }
 
     async function publishSnapshot(state: RelicGameState): Promise<void> {
-        const snapshot = toPublicRelicSnapshot(state);
-        const event: RelicServerEvent = {
-            protocolVersion: snapshot.protocolVersion,
-            gameId: snapshot.gameId,
-            snapshot
-        };
-
-        await rallar.ws.publish(
-            newALBroadcastMessage(
-                'relic-hunter-server',
-                newALRoute(
-                    RELIC_TOPICS.snapshot,
-                    state.roomId,
-                    `${state.gameId}:${state.round}`
-                ),
-                'room',
-                RELIC_TYPES.snapshot,
-                event,
-                {
-                    reliability: 'at-least-once',
-                    ttlMs: 15_000
-                }
-            ),
-            'live-only'
-        );
+        await rallar.ws.publish(toRelicSnapshotMessage(state, rallar.ws.serverPeerId), 'outbox');
     }
 
     function applyCommand(
@@ -134,8 +118,7 @@ export async function installRelicHunterGame(
         });
     }
 
-    // The browser sends commands over REST and consumes snapshots over WebSocket.
-    // Other clients may send the same validated room command over WebSocket.
+    // Browsers send commands to the server itself on this topic (D57); REST carries them only before a browser learns the server id.
     rallar.ws.defineTopic({
         topicId: RELIC_TOPICS.command,
         typeId: RELIC_TYPES.command,
@@ -154,7 +137,17 @@ export async function installRelicHunterGame(
             typeId: RELIC_TYPES.command
         },
         async (message, context) => {
-            await applyCommand(message.payload, context.senderId);
+            const outcome = await applyRelicWsCommand({
+                command: message.payload,
+                senderId: context.senderId,
+                readSessionUsername: options.readSessionUsername,
+                applyCommand
+            });
+            if (outcome.kind !== 'applied') {
+                console.warn(
+                    `[relic] WS command from ${context.senderId} was not applied: ${outcome.detail}`
+                );
+            }
         }
     );
 

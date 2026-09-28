@@ -66,7 +66,9 @@ const relicGame = await installRelicHunterGame(rallar, {
                 `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`
             );
         }
-    })
+    }),
+    readSessionUsername: async (sessionId) =>
+        (await rallar.runtime.authSessionRepository.findBySessionId(sessionId))?.username
 });
 
 const apiCors = cors({

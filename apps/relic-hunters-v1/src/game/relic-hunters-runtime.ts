@@ -10,6 +10,7 @@ import {
 } from '@relic-hunters/mod.ts';
 import {
     rallar,
+    type ALDeliveryState,
     type RallarAuthChangeListener,
     type RallarCreateRoomInput,
     type RallarRoomState,
@@ -23,12 +24,19 @@ import type { RallarGameAuthorityClientStatus } from '@shared/rallar-game/mod.ts
 import { fetchRelicSnapshot, resetRelicGame, sendRelicCommand } from './api.ts';
 import { createRelicAuthorityClientBridge, type RelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicSnapshotRejectionReason, RelicSnapshotSource } from './relic-snapshot-ordering.ts';
+import { sendRelicWsCommand, type RelicWsCommandDelivery } from './send-relic-ws-command.ts';
 
 export const RELIC_ROOM_NAME = 'Relic Hunters Expedition';
-export const RELIC_COMMAND_TRANSPORT = 'rest' as const;
 export const RELIC_SNAPSHOT_TRANSPORT = 'rallar-ws+rtc' as const;
 const RELIC_CURRENT_ROOM_STORAGE_KEY = 'relic.currentRoomId';
 const RELIC_ROOM_JOIN_MODE: NonNullable<RallarCreateRoomInput['joinMode']> = 'open';
+
+export type RelicCommandTransport = 'ws' | 'rest';
+
+/** A command's end as the UI reads it: the WS receipt, or the REST reply's snapshot while REST is the fallback (Q6). */
+export type RelicCommandOutcome =
+    | Readonly<{ transport: 'ws'; delivery: RelicWsCommandDelivery; }>
+    | Readonly<{ transport: 'rest'; snapshot: RelicPublicSnapshot | undefined; }>;
 
 export type RelicHuntersRuntimePhase =
     | 'signed-out'
@@ -51,7 +59,8 @@ export type RelicCommandDraft =
 
 export type RelicRuntimeDiagnostics = Readonly<{
     phase: RelicHuntersRuntimePhase;
-    commandTransport: typeof RELIC_COMMAND_TRANSPORT;
+    commandTransport: RelicCommandTransport;
+    lastCommandDelivery?: ALDeliveryState;
     snapshotTransport: typeof RELIC_SNAPSHOT_TRANSPORT;
     authenticated: boolean;
     middlewareConnected: boolean;
@@ -137,7 +146,8 @@ export type RelicHuntersRuntimeDeps = Readonly<{
     ): Promise<{ group: { groupId: string; }; }>;
     joinRoom(roomId: string): Promise<RelicJoinedRoom>;
     fetchSnapshot(roomId: string): Promise<RelicPublicSnapshot | undefined>;
-    sendCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
+    sendWsCommand(roomId: string, command: RelicCommand): Promise<RelicWsCommandDelivery | undefined>;
+    sendRestCommand(roomId: string, command: RelicCommand): Promise<RelicPublicSnapshot | undefined>;
     resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
 }>;
 
@@ -281,17 +291,19 @@ export class RelicHuntersRuntime {
         session: AuthSession,
         roomId: string,
         input: RelicCommandDraft
-    ): Promise<RelicPublicSnapshot | undefined> {
-        // Browser gameplay keeps REST as the authoritative command transport.
-        // Rallar WS is used for live snapshot fanout and late-arriving updates.
+    ): Promise<RelicCommandOutcome> {
+        // The server applies a WS command under the sender's session username (Q6); REST carries it only before the
+        // browser learns the WS server id, never after a WS attempt, which could apply it twice (C13).
         const command = {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: roomId,
             username: session.username,
             ...input
         } as RelicCommand;
-
-        return this.deps.sendCommand(roomId, command);
+        const delivery = await this.deps.sendWsCommand(roomId, command);
+        return delivery === undefined
+            ? { transport: 'rest', snapshot: await this.deps.sendRestCommand(roomId, command) }
+            : { transport: 'ws', delivery };
     }
 
     async resetExpedition(roomId: string): Promise<RelicPublicSnapshot | undefined> {
@@ -323,7 +335,8 @@ export function initialRelicDiagnostics(
 ): RelicRuntimeDiagnostics {
     return {
         phase: session ? 'connecting' : 'signed-out',
-        commandTransport: RELIC_COMMAND_TRANSPORT,
+        commandTransport: 'ws',
+        lastCommandDelivery: undefined,
         snapshotTransport: RELIC_SNAPSHOT_TRANSPORT,
         authenticated: !!session,
         middlewareConnected: false,
@@ -394,7 +407,8 @@ function browserRelicRuntimeDeps(): RelicHuntersRuntimeDeps {
         createRoom: (displayName, options) => rallar.rooms.create({ displayName, ...options }),
         joinRoom: (roomId) => rallar.rooms.enter(roomId),
         fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId),
-        sendCommand: (roomId, command) => sendRelicCommand(roomId, command),
+        sendWsCommand: (roomId, command) => sendRelicWsCommand(rallar, roomId, command),
+        sendRestCommand: (roomId, command) => sendRelicCommand(roomId, command),
         resetGame: (roomId) => resetRelicGame(roomId)
     };
 }
