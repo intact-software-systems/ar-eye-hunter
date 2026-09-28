@@ -97,7 +97,7 @@ describe('changed repository style structural lineage', () => {
             baseFindings: [overParameterizedSource('alpha')],
             targetFindings: [[overParameterizedSource('bravo')]]
         });
-        writeLineageManifestAt(fixture.root, 'plans/repo-style-lineages/nested/example.json', [lineage(fixture)]);
+        writeLineageManifestAt(fixture.root, 'scripts/repo-style-check/lineages/nested/example.json', [lineage(fixture)]);
 
         const worktreeResult = runChangedChecker({
             root: fixture.root,
@@ -111,6 +111,23 @@ describe('changed repository style structural lineage', () => {
         const headResult = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
         expect(headResult.status).toBe(0);
         expect(headResult.stdout).toContain('PASS: no new repository style findings');
+    });
+
+    it('ignores a manifest outside the lineage directory', () => {
+        // The retired plans/ location is the nearest place a fallback read could come back. A manifest
+        // there must leave the split finding new, exactly as if no manifest existed.
+        const fixture = createSplitFixture({
+            baseFindings: [overParameterizedSource('alpha')],
+            targetFindings: [[overParameterizedSource('bravo')]]
+        });
+        writeLineageManifestAt(fixture.root, 'plans/repo-style-lineages/example.json', [lineage(fixture)]);
+        commitAll(fixture.root, 'add a manifest outside the lineage directory');
+
+        const result = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(result.stdout).toContain('apps/example/target-a.ts [function.input-contract]');
     });
 
     it('compares boundary unknown occurrence capacity across a split aggregate', () => {
@@ -359,8 +376,8 @@ describe('changed repository style structural lineage', () => {
             baseFindings: [overParameterizedSource('base')],
             targetFindings: [[overParameterizedSource('target')]]
         });
-        writeFixture(fixture.root, 'plans/repo-style-lineages/zeta.json', '{"version":1,"lineages":"not-an-array"}\n');
-        writeFixture(fixture.root, 'plans/repo-style-lineages/alpha.json', '{"version":2,"lineages":[]}\n');
+        writeFixture(fixture.root, 'scripts/repo-style-check/lineages/zeta.json', '{"version":1,"lineages":"not-an-array"}\n');
+        writeFixture(fixture.root, 'scripts/repo-style-check/lineages/alpha.json', '{"version":2,"lineages":[]}\n');
         commitAll(fixture.root, 'add malformed manifests');
 
         const first = runChangedChecker({ root: fixture.root, mergeBase: fixture.mergeBase });
@@ -371,8 +388,8 @@ describe('changed repository style structural lineage', () => {
         expect(first.stderr).toBe(
             [
                 'Invalid repository style structural lineage manifest:',
-                '- plans/repo-style-lineages/alpha.json: version must equal 1',
-                '- plans/repo-style-lineages/zeta.json: lineages must be an array',
+                '- scripts/repo-style-check/lineages/alpha.json: version must equal 1',
+                '- scripts/repo-style-check/lineages/zeta.json: lineages must be an array',
                 ''
             ].join('\n')
         );

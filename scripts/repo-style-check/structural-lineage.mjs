@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { isProductionCodeFile } from './repository-scan.mjs';
 
-const manifestDirectory = 'plans/repo-style-lineages';
+const manifestDirectory = 'scripts/repo-style-check/lineages';
 const worktreeTarget = 'WORKTREE';
 const commitPattern = /^[0-9a-f]{40}$/u;
 const manifestKeys = ['lineages', 'version'];
@@ -24,30 +24,17 @@ export class StructuralLineageValidationError extends Error {
 }
 
 export function readStructuralLineageMap(input) {
-    const manifestDocuments = readManifestDocuments(input);
-    const issues = [];
-    const matchingLineages = [];
+    const manifests = readManifestDocuments(input).map((document) => decodeManifest(document, input.repoRoot));
+    const matchingLineages = manifests
+        .flatMap((manifest) => manifest.lineages)
+        .filter((lineage) => lineage.mergeBase === input.mergeBase);
 
-    for (const document of manifestDocuments) {
-        const parsed = parseManifest(document, issues);
-        if (parsed === undefined) {
-            continue;
-        }
-        for (const [index, lineageValue] of parsed.lineages.entries()) {
-            const location = `${document.relativePath}: lineages[${index}]`;
-            const lineage = parseLineage({
-                value: lineageValue,
-                location,
-                repoRoot: input.repoRoot,
-                issues
-            });
-            if (lineage !== undefined && lineage.mergeBase === input.mergeBase) {
-                matchingLineages.push({ ...lineage, location });
-            }
-        }
-    }
-
-    validateMatchingLineages(input, matchingLineages, issues);
+    const issues = [
+        ...manifests.flatMap((manifest) => manifest.issues),
+        ...validateLineageOwnership(matchingLineages),
+        ...matchingLineages.flatMap((lineage) => validateLineageTargets(lineage, input.renameByTargetPath)),
+        ...matchingLineages.flatMap((lineage) => readLineageTreeIssues(input, lineage))
+    ];
     if (issues.length > 0) {
         throw new StructuralLineageValidationError(issues.toSorted());
     }
@@ -137,171 +124,179 @@ function toPosixRelativePath(repoRoot, filePath) {
     return path.relative(repoRoot, filePath).split(path.sep).join(path.posix.sep);
 }
 
-function parseManifest(document, issues) {
+function decodeManifest(document, repoRoot) {
+    const envelope = decodeManifestEnvelope(document);
+    if (envelope.value === undefined) {
+        return { lineages: [], issues: envelope.issues };
+    }
+    const decodedLineages = envelope.value.map((value, index) =>
+        decodeLineage({ value, location: `${document.relativePath}: lineages[${index}]`, repoRoot })
+    );
+    return {
+        lineages: decodedLineages.flatMap((lineage) => (lineage.value === undefined ? [] : [lineage.value])),
+        issues: [...envelope.issues, ...decodedLineages.flatMap((lineage) => lineage.issues)]
+    };
+}
+
+function decodeManifestEnvelope(document) {
     let value;
     try {
         value = JSON.parse(document.source);
     }
     catch (error) {
-        issues.push(`${document.relativePath}: invalid JSON (${toErrorMessage(error)})`);
-        return undefined;
+        return toRejection(`${document.relativePath}: invalid JSON (${toErrorMessage(error)})`);
     }
     if (!isRecord(value)) {
-        issues.push(`${document.relativePath}: manifest must be an object`);
-        return undefined;
+        return toRejection(`${document.relativePath}: manifest must be an object`);
     }
-    validateExactKeys({ value, expectedKeys: manifestKeys, location: document.relativePath, issues });
-    if (value.version !== 1) {
-        issues.push(`${document.relativePath}: version must equal 1`);
-    }
+    const issues = [
+        ...validateExactKeys(value, manifestKeys, document.relativePath),
+        ...(value.version === 1 ? [] : [`${document.relativePath}: version must equal 1`])
+    ];
     if (!Array.isArray(value.lineages)) {
-        issues.push(`${document.relativePath}: lineages must be an array`);
-        return undefined;
+        return { value: undefined, issues: [...issues, `${document.relativePath}: lineages must be an array`] };
     }
-    return { lineages: value.lineages };
+    return { value: value.lineages, issues };
 }
 
-function parseLineage({ value, location, repoRoot, issues }) {
+function decodeLineage({ value, location, repoRoot }) {
     if (!isRecord(value)) {
-        issues.push(`${location}: lineage must be an object`);
-        return undefined;
+        return toRejection(`${location}: lineage must be an object`);
     }
-    validateExactKeys({ value, expectedKeys: lineageKeys, location, issues });
+    const keyIssues = validateExactKeys(value, lineageKeys, location);
     if (typeof value.mergeBase !== 'string' || !commitPattern.test(value.mergeBase)) {
-        issues.push(`${location}: mergeBase must be a lowercase 40-character Git commit ID`);
-        return undefined;
+        return {
+            value: undefined,
+            issues: [...keyIssues, `${location}: mergeBase must be a lowercase 40-character Git commit ID`]
+        };
     }
-    const source = parseSource({ value: value.source, location, repoRoot, issues });
-    const targets = parseTargets({ value: value.targets, location, repoRoot, issues });
-    if (source === undefined || targets === undefined) {
-        return undefined;
+    const source = decodeSource({ value: value.source, location, repoRoot });
+    const targets = decodeTargets({ value: value.targets, location, repoRoot });
+    const issues = [...keyIssues, ...source.issues, ...targets.issues];
+    if (source.value === undefined || targets.value === undefined) {
+        return { value: undefined, issues };
     }
-    return { mergeBase: value.mergeBase, source, targets };
+    return {
+        value: { mergeBase: value.mergeBase, source: source.value, targets: targets.value, location },
+        issues
+    };
 }
 
-function parseSource({ value, location, repoRoot, issues }) {
+function decodeSource({ value, location, repoRoot }) {
     if (!isRecord(value)) {
-        issues.push(`${location}: source must be an object`);
-        return undefined;
+        return toRejection(`${location}: source must be an object`);
     }
-    validateExactKeys({
-        value,
-        expectedKeys: sourceKeys,
-        location: `${location}.source`,
-        issues
-    });
-    const sourcePath = readProductionPath({
-        value: value.path,
-        role: 'source',
-        location,
-        repoRoot,
-        issues
-    });
+    const sourcePath = decodeProductionPath({ value: value.path, role: 'source', location, repoRoot });
+    const issues = [...validateExactKeys(value, sourceKeys, `${location}.source`), ...sourcePath.issues];
     if (typeof value.blob !== 'string' || !commitPattern.test(value.blob)) {
-        issues.push(`${location}: source blob must be a lowercase 40-character Git object ID`);
-        return undefined;
+        return {
+            value: undefined,
+            issues: [...issues, `${location}: source blob must be a lowercase 40-character Git object ID`]
+        };
     }
-    return sourcePath === undefined ? undefined : { path: sourcePath, blob: value.blob };
+    return {
+        value: sourcePath.value === undefined ? undefined : { path: sourcePath.value, blob: value.blob },
+        issues
+    };
 }
 
-function parseTargets({ value, location, repoRoot, issues }) {
+function decodeTargets({ value, location, repoRoot }) {
     if (!Array.isArray(value) || value.length === 0) {
-        issues.push(`${location}: targets must be a non-empty array`);
-        return undefined;
+        return toRejection(`${location}: targets must be a non-empty array`);
     }
-    const targets = [];
-    for (const targetValue of value) {
-        const targetPath = readProductionPath({
-            value: targetValue,
-            role: 'target',
-            location,
-            repoRoot,
-            issues
-        });
-        if (targetPath !== undefined) {
-            targets.push(targetPath);
-        }
-    }
-    return targets.length === value.length ? targets : undefined;
+    const targets = value.map((targetValue) =>
+        decodeProductionPath({ value: targetValue, role: 'target', location, repoRoot })
+    );
+    const issues = targets.flatMap((target) => target.issues);
+    return { value: issues.length === 0 ? targets.map((target) => target.value) : undefined, issues };
 }
 
-function readProductionPath({ value, role, location, repoRoot, issues }) {
+function decodeProductionPath({ value, role, location, repoRoot }) {
     if (typeof value !== 'string' || !isNormalizedRelativePath(value)) {
-        issues.push(`${location}: ${role} path must be a normalized repository-relative path`);
-        return undefined;
+        return toRejection(`${location}: ${role} path must be a normalized repository-relative path`);
     }
     if (!isProductionCodeFile(path.join(repoRoot, value))) {
-        issues.push(`${location}: ${role} path must name production code`);
-        return undefined;
+        return toRejection(`${location}: ${role} path must name production code`);
     }
-    return value;
+    return { value, issues: [] };
 }
 
-function validateMatchingLineages(input, lineages, issues) {
-    const sourceLocations = new Map();
-    const targetLocations = new Map();
-    for (const lineage of lineages) {
-        addDuplicateIssue({
-            locations: sourceLocations,
-            key: lineage.source.path,
-            location: lineage.location,
-            message: 'source has multiple lineage entries',
-            issues
-        });
-        validateSource(input, lineage, issues);
-        validateTargets({ input, lineage, targetLocations, issues });
-    }
+function validateLineageOwnership(lineages) {
+    const sourceDeclarations = lineages.map((lineage) => ({
+        key: lineage.source.path,
+        location: lineage.location
+    }));
+    const targetDeclarations = lineages.flatMap((lineage) =>
+        lineage.targets.map((targetPath) => ({ key: targetPath, location: lineage.location }))
+    );
+    return [
+        ...validateSingleDeclaration(sourceDeclarations, 'source has multiple lineage entries'),
+        ...validateSingleDeclaration(targetDeclarations, 'target belongs to multiple lineages')
+    ];
 }
 
-function validateSource(input, lineage, issues) {
-    const sourceSpec = `${input.mergeBase}:${lineage.source.path}`;
-    const sourceResult = runGitResult(input.repoRoot, ['rev-parse', '--verify', sourceSpec]);
-    if (sourceResult.status !== 0) {
-        issues.push(`${lineage.location}: source does not exist at merge base: ${lineage.source.path}`);
+function validateSingleDeclaration(declarations, message) {
+    const firstLocationByKey = new Map();
+    const issues = [];
+    for (const declaration of declarations) {
+        const firstLocation = firstLocationByKey.get(declaration.key);
+        if (firstLocation === undefined) {
+            firstLocationByKey.set(declaration.key, declaration.location);
+        }
+        else {
+            issues.push(`${declaration.location}: ${message}: ${declaration.key} (first declared at ${firstLocation})`);
+        }
     }
-    else if (sourceResult.stdout.trim() !== lineage.source.blob) {
-        issues.push(`${lineage.location}: source blob does not match: ${lineage.source.path}`);
-    }
+    return issues;
 }
 
-function validateTargets({ input, lineage, targetLocations, issues }) {
-    const localTargets = new Set();
+function validateLineageTargets(lineage, renameByTargetPath) {
+    const issues = [];
+    const seenTargets = new Set();
     for (const targetPath of lineage.targets) {
         if (targetPath === lineage.source.path) {
             issues.push(`${lineage.location}: target must differ from source path: ${targetPath}`);
         }
-        if (localTargets.has(targetPath)) {
+        if (seenTargets.has(targetPath)) {
             issues.push(`${lineage.location}: duplicate target: ${targetPath}`);
         }
-        localTargets.add(targetPath);
-        addDuplicateIssue({
-            locations: targetLocations,
-            key: targetPath,
-            location: lineage.location,
-            message: 'target belongs to multiple lineages',
-            issues
-        });
-        if (input.renameByTargetPath.has(targetPath)) {
+        seenTargets.add(targetPath);
+        if (renameByTargetPath.has(targetPath)) {
             issues.push(`${lineage.location}: target conflicts with detected Git rename: ${targetPath}`);
         }
-        if (!targetPathExists(input, targetPath)) {
-            issues.push(`${lineage.location}: target does not exist: ${targetPath}`);
-        }
     }
+    return issues;
 }
 
-function addDuplicateIssue({ locations, key, location, message, issues }) {
-    const previousLocation = locations.get(key);
-    if (previousLocation !== undefined) {
-        issues.push(`${location}: ${message}: ${key} (first declared at ${previousLocation})`);
-    }
-    else {
-        locations.set(key, location);
-    }
+function validateExactKeys(value, expectedKeys, location) {
+    const actualKeys = Object.keys(value).toSorted();
+    return actualKeys.join('\0') === expectedKeys.join('\0')
+        ? []
+        : [`${location}: expected exactly keys ${expectedKeys.join(', ')}`];
 }
 
-function targetPathExists(input, relativePath) {
-    if (input.targetReference === 'WORKTREE') {
+function readLineageTreeIssues(input, lineage) {
+    return [
+        ...readSourceIssues(input, lineage),
+        ...lineage.targets
+            .filter((targetPath) => !readTargetExists(input, targetPath))
+            .map((targetPath) => `${lineage.location}: target does not exist: ${targetPath}`)
+    ];
+}
+
+function readSourceIssues(input, lineage) {
+    const sourceSpec = `${input.mergeBase}:${lineage.source.path}`;
+    const sourceResult = runGitResult(input.repoRoot, ['rev-parse', '--verify', sourceSpec]);
+    if (sourceResult.status !== 0) {
+        return [`${lineage.location}: source does not exist at merge base: ${lineage.source.path}`];
+    }
+    return sourceResult.stdout.trim() === lineage.source.blob
+        ? []
+        : [`${lineage.location}: source blob does not match: ${lineage.source.path}`];
+}
+
+function readTargetExists(input, relativePath) {
+    if (input.targetReference === worktreeTarget) {
         const absolutePath = path.join(input.repoRoot, relativePath);
         return existsSync(absolutePath) && statSync(absolutePath).isFile();
     }
@@ -311,11 +306,8 @@ function targetPathExists(input, relativePath) {
     );
 }
 
-function validateExactKeys({ value, expectedKeys, location, issues }) {
-    const actualKeys = Object.keys(value).toSorted();
-    if (actualKeys.join('\0') !== expectedKeys.join('\0')) {
-        issues.push(`${location}: expected exactly keys ${expectedKeys.join(', ')}`);
-    }
+function toRejection(issue) {
+    return { value: undefined, issues: [issue] };
 }
 
 function isNormalizedRelativePath(value) {
