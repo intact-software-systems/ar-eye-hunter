@@ -14,12 +14,16 @@ import {
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { computeWsQueueBoxServerReceiptRepublishDelayMs } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -58,9 +62,14 @@ describe('WS server receipt row across a cluster', () => {
         const clock = installClock();
         const sentAtMs = clock.nowMs;
         const outbox = new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(clock.nowMs));
+        const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
+            nowMs: () => clock.nowMs,
+            decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+            outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), () => clock.nowMs)
+        });
         const bus = createBridgeBus();
-        const local = await createClusterInstance({ name: 'server', outbox, bus, publisherId: 'local' });
-        const remote = await createClusterInstance({ name: 'remote-server', outbox, bus, publisherId: 'remote' });
+        const local = await createClusterInstance({ name: 'server', outbox, outboundStores, bus, publisherId: 'local' });
+        const remote = await createClusterInstance({ name: 'remote-server', outbox, outboundStores, bus, publisherId: 'remote' });
         const sockets = { a: await connect(local, 'a'), b: await connect(local, 'b'), c: await connect(local, 'c') };
         const origin = await createOriginClient();
         const message = roomMessage(clock.nowMs);
@@ -135,6 +144,7 @@ function installClock(): { nowMs: number; } {
 interface CreateClusterInstanceInput {
     readonly name: string;
     readonly outbox: InMemoryQueueBox;
+    readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
     readonly bus: QueueBoxPubSubBridge;
     readonly publisherId: string;
 }
@@ -151,6 +161,7 @@ async function createClusterInstance(input: CreateClusterInstanceInput): Promise
         }));
     const service = createDefaultWsQueueBoxServerService({
         outbox: input.outbox,
+        outboundStores: input.outboundStores,
         socket: server,
         readAuthenticatedConnectionScope: (connection) =>
             server.connections.get(connection.id) === connection

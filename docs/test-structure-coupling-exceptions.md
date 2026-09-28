@@ -1440,6 +1440,36 @@ moved or changed test.
       "coverageRelation": "The import-direction suite executes the layering rule over every package source file; this config read covers the one surface that grants resolution before any import exists."
     },
     {
+      "id": "queue-pubsub-admission-read-failure-no-send",
+      "domain": "QueueBox pub/sub captured outbound admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A transient captured-admission read failure requeues durable work without sending it. Executable assertion: “requeues a remote row when reading captured admission fails transiently”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#requeues a remote row when reading captured admission fails transiently",
+      "coverageRelation": "The subscribed callback reads the durable row, receives a transient failure from its admission-read port, and leaves the row RETRY; the live-send port separately proves the failed read emitted no socket effect.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "QueueBoxPubSubWsService.sendToTargetsWithResult",
+        "observableEffect": "No local socket send occurs for a durable row whose captured audience could not be read.",
+        "requiredConstraint": "The bridge must verify captured admission before any live send, even when it can read the canonical outbox payload.",
+        "failureRationale": "A send made before the admission failure is discovered cannot be retracted and may reach a session outside the captured audience."
+      }
+    },
+    {
+      "id": "queue-pubsub-admission-read-failure-wakes-requeue",
+      "domain": "QueueBox pub/sub captured outbound admission",
+      "owner": "Rallar server maintainers",
+      "summary": "A transient captured-admission read failure announces the requeued durable row once. Executable assertion: “requeues a remote row when reading captured admission fails transiently”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#requeues a remote row when reading captured admission fails transiently",
+      "coverageRelation": "The subscribed callback leaves the row RETRY after an admission-read failure; the supplied external-write wake port is the only witness that the QueueBox owner was told about that out-of-runtime write.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Engine external-write wake port supplied to the bridge",
+        "observableEffect": "One engine wake follows the one durable requeue caused by the failed admission read.",
+        "requiredConstraint": "The bridge announces the requeued row exactly once so an idle owner can claim it without duplicate wake work.",
+        "failureRationale": "The RETRY row alone does not show that the owner learned of the external write; omitting the wake delays recovery, while duplicate wakes cause redundant scheduling."
+      }
+    },
+    {
       "id": "queue-pubsub-corrupt-identity-no-effects",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
@@ -1452,6 +1482,21 @@ moved or changed test.
         "observableEffect": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery.",
         "requiredConstraint": "Both outward ports remain unused for each missing, malformed-JSON or malformed-provenance identity variant.",
         "failureRationale": "Sending or waking before authoritative identity validation allows advisory data to cause effects despite corruption."
+      }
+    },
+    {
+      "id": "queue-pubsub-empty-captured-audience-no-wake",
+      "domain": "QueueBox pub/sub captured outbound admission",
+      "owner": "Rallar server maintainers",
+      "summary": "An empty captured audience leaves the remote durable row RESERVED without announcing a requeue. Executable assertion: “does not requeue a remote row with no captured local recipient”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not requeue a remote row with no captured local recipient",
+      "coverageRelation": "The subscriber passes the captured empty array to its send port and the row remains RESERVED; observing the supplied external-write wake port proves that no phantom requeue was announced.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Engine external-write wake port supplied to the bridge",
+        "observableEffect": "No engine wake occurs when the captured audience contains no locally eligible recipient and the row was not requeued.",
+        "requiredConstraint": "An empty captured audience must not schedule another claimant for a RESERVED row.",
+        "failureRationale": "A wake without a write tells the owner to repeat work for a row it cannot claim and can amplify remote notifications despite a valid empty audience."
       }
     },
     {
@@ -5311,6 +5356,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime"
     },
     {
+      "id": "test-structure-coupling-42218967f864e49f",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-admission-read-failure-wakes-requeue",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The failed captured-admission read requeues the row outside the runtime; this exact wake assertion proves the owner receives one external-write announcement for that row.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#requeues a remote row when reading captured admission fails transiently"
+    },
+    {
       "id": "test-structure-coupling-5875f278962ab3b1",
       "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -5333,6 +5389,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects malformed and oversized notices before loading canonical storage"
     },
     {
+      "id": "test-structure-coupling-833fd90e86b2a989",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-empty-captured-audience-no-wake",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The captured audience is explicitly empty and the durable row remains RESERVED; this exact assertion proves the bridge does not announce an external write it never made.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not requeue a remote row with no captured local recipient"
+    },
+    {
       "id": "test-structure-coupling-a62cae58abfa7e98",
       "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -5342,6 +5409,17 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "This exact send assertion observes one independently outward-facing port after the held identity lookup advances the owned clock to the deadline. Both assertions share this same executable test, not a broad expiry registry contract.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not wake topology or send when loading the identity fact crosses the claimed deadline"
+    },
+    {
+      "id": "test-structure-coupling-ae9fcab58f3d8453",
+      "path": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "queue-pubsub-admission-read-failure-no-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar server maintainers",
+      "rationale": "The admission backend fails before the subscriber can validate the captured audience; this exact send-port assertion proves no live effect escaped before the RETRY row was written.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#requeues a remote row when reading captured admission fails transiently"
     },
     {
       "id": "test-structure-coupling-c0d53003a3b0c68a",
