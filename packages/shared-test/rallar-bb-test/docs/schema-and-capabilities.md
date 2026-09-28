@@ -340,8 +340,8 @@ its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `receiptMode`,
-`confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
+`submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `failure`,
+`receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
 `backpressured`, and `enqueued`. `attempts` counts every attempt row,
 including a carrier admission that never reached the transport: an `unroutable`
@@ -365,7 +365,16 @@ named. The rejection ends the send `rejected` and its receipt with it, so a
 multi-recipient receipt keeps the recipient evidence it had at that moment. A send
 that tracks no receipt is already `transport-accepted`, which is terminal for it,
 when the NACK arrives: it keeps that state, and the rejection lands as evidence
-only, in `relayRejection`. `backpressured` is true when a carrier
+only, in `relayRejection`.
+
+`failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
+`refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
+the send over), `relay-rejected` with its `rejection`, `admission-failed`, `skipped` with its
+`reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
+with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
+`reason` keeps the prose; a receipt-less send refused late keeps `transport-accepted` and no failure.
+
+`backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
 had no peer; `enqueued` is true once a durable admission put the message in a
 carrier queue.

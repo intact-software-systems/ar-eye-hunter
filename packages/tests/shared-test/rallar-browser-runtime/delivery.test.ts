@@ -86,6 +86,7 @@ const unknownObservation = {
     attemptOutcomes: [],
     attemptCarriers: [],
     relayRejection: undefined,
+    failure: undefined,
     confirmedHopPeerIds: [],
     unconfirmedHopPeerIds: [],
     receiptMode: undefined,
@@ -550,13 +551,25 @@ it.each([
     const detail = `${reason} at the ws carrier`;
     facade.behavior.typedSend.mockImplementation(async () => {
         const handle = openFacadeDelivery('ws', { kind: 'unroutable', reason, detail });
-        facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), detail });
+        facade.deliveries.record({
+            kind: 'attempts-exhausted',
+            msgId: handle.msgId,
+            carrier: 'ws',
+            atMs: Date.now(),
+            reason,
+            detail
+        });
         return handle;
     });
     await runtime.connect(connection);
     await runtime.sendMessage(send);
 
-    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'failed', backpressured, enqueued: false });
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        state: 'failed',
+        backpressured,
+        enqueued: false,
+        failure: { kind: 'unroutable', reason }
+    });
 });
 
 it('reads a handle the session registry dropped after terminal retention as unobservable', async () => {

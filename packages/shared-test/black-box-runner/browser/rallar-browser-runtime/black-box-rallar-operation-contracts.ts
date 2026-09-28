@@ -359,7 +359,7 @@ export interface BlackBoxRallarMessageSendDiagnostics {
 }
 
 export interface BlackBoxRallarDeliveryObservation
-    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection'> {
+    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection' | 'failure'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;

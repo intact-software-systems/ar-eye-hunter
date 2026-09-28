@@ -341,6 +341,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (status === 'committed') {
             this.dependencies.settlements(toALOutboundReceiptExhaustedFact(
                 pending,
+                { cause: 'budget' },
                 `The receipt ran out of retries after ${pending.attempts} of ${pending.maxAttempts}.`
             ));
         }

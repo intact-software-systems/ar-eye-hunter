@@ -150,6 +150,7 @@ function toExhausted(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettl
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['peer-1'],
+        cause: 'budget',
         detail: EXHAUSTED_DETAIL
     };
 }

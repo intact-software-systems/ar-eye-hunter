@@ -1,5 +1,6 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
 
 export type ALDeliveryState =
     | 'submitted'
@@ -53,7 +54,19 @@ export type ALDeliveryAttemptOutcome =
 /** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
 export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
 
-export type ALDeliveryRefusalReason = 'unauthorized' | 'malformed' | 'oversized' | 'unsupported';
+/** `capacity`: the sending session is over its volatile bound (D78); it ends the send and never hands it over. */
+export type ALDeliveryRefusalReason =
+    | 'unauthorized'
+    | 'malformed'
+    | 'oversized'
+    | 'unsupported'
+    | 'capacity';
+
+export type ALDeliverySkippedReason =
+    | 'disposed'
+    | 'repair-exhausted'
+    | 'pending-terminated'
+    | 'planner-drop';
 
 /** Why a message an RTC leg had admitted was handed to WS (D56); `rate-limited` hands over at admission instead. */
 export type ALDeliveryFallbackReason =
@@ -75,11 +88,7 @@ export type ALDeliveryAdmissionVerdict =
     }>
     | Readonly<{ kind: 'superseded'; detail: string; }>
     | Readonly<{ kind: 'expired'; detail: string; }>
-    | Readonly<{
-        kind: 'skipped';
-        reason: 'disposed' | 'repair-exhausted' | 'pending-terminated' | 'planner-drop';
-        detail: string;
-    }>
+    | Readonly<{ kind: 'skipped'; reason: ALDeliverySkippedReason; detail: string; }>
     | Readonly<{ kind: 'failed'; detail: string; }>;
 
 export type ALDeliverySettlement =
@@ -112,12 +121,13 @@ export type ALDeliverySettlement =
         reason: ALDeliveryFallbackReason;
         detail: string;
     }>
-    /** The sender's strategy has no carrier left to try after an `unroutable` verdict. */
+    /** The sender's strategy has no carrier left to try after an `unroutable` verdict: the last carrier's reason. */
     | Readonly<{
         kind: 'attempts-exhausted';
         msgId: string;
         carrier: ALDeliveryCarrier;
         atMs: number;
+        reason: ALDeliveryUnroutableReason;
         detail: string;
     }>
     | Readonly<{
@@ -157,18 +167,22 @@ export type ALDeliverySettlement =
     /**
      * A receipt ended before every expected peer confirmed: its retry budget ran out, or a hop refused the
      * message for good. Terminal. The peer lists are the receipt row's own -- next hops under `hop` and
-     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence.
+     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence. The
+     * producer states which of the two ended it.
      */
-    | Readonly<{
-        kind: 'receipt-exhausted';
-        msgId: string;
-        carrier: ALDeliveryCarrier;
-        atMs: number;
-        mode: ALReceiptMode;
-        confirmedPeerIds: readonly string[];
-        unconfirmedPeerIds: readonly string[];
-        detail: string;
-    }>
+    | (
+        & Readonly<{
+            kind: 'receipt-exhausted';
+            msgId: string;
+            carrier: ALDeliveryCarrier;
+            atMs: number;
+            mode: ALReceiptMode;
+            confirmedPeerIds: readonly string[];
+            unconfirmedPeerIds: readonly string[];
+            detail: string;
+        }>
+        & ALDeliveryReceiptExhaustion
+    )
     /** The `not-yet-in-sync` retry budget ran out: a fallback trigger (D56); the receipt budget still ends the message. */
     | Readonly<{
         kind: 'not-yet-in-sync-exhausted';
@@ -277,6 +291,8 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly receiptDowngrade: ALDeliveryReceiptDowngrade | undefined;
     /** Undefined unless the strategy handed the admitted message to its fallback carrier (D56). */
     readonly carrierFallback: ALDeliveryCarrierFallback | undefined;
+    /** Undefined until the send ends `rejected`, `failed` or `expired`: why it ended, typed beside `reason`. */
+    readonly failure: ALDeliveryFailure | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;
 }
@@ -341,6 +357,7 @@ export function createInitialALDeliveryLifecycle(
             relayRejection: undefined,
             receiptDowngrade: undefined,
             carrierFallback: undefined,
+            failure: undefined,
             reason: undefined
         },
         lateSettlementCount: 0

@@ -1326,7 +1326,14 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             const detail = 'No outbound transport route for the room message.';
             facade.behavior.rtcMessageSend.mockImplementation(async () => {
                 const handle = openFacadeDelivery('rtc', { kind: 'unroutable', reason: 'no-route', detail });
-                facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: Date.now(), detail });
+                facade.deliveries.record({
+                    kind: 'attempts-exhausted',
+                    msgId: handle.msgId,
+                    carrier: 'rtc',
+                    atMs: Date.now(),
+                    reason: 'no-route',
+                    detail
+                });
                 return handle;
             });
             await nativeRuntime.connect({

@@ -1,4 +1,5 @@
 import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     AL_DELIVERY_STATES,
     type ALDeliveryAdmissionVerdict,
@@ -13,6 +14,7 @@ import type {
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
+import { decodeAlmDeliveryFailure, decodeAlmRelayRejection } from './decode-alm-delivery-failure.ts';
 import type {
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -135,6 +137,7 @@ export function decodeAlmDeliveryResultValue(
         enqueued: requireAlmBooleanField(record, path, 'enqueued'),
         receiptMode: readAlmReceiptModeField(record, path),
         relayRejection: readAlmRelayRejectionField(record, path),
+        failure: readAlmFailureField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
         expectedRecipientPeerIds: requireAlmStringListField(
@@ -250,29 +253,34 @@ function readAlmReceiptModeField(record: RallarBlackBoxTestRecord, path: string)
     return record.receiptMode as ALReceiptMode | undefined;
 }
 
-/**
- * Absent unless a hop refused the message; a trusted server relay is never named, so an id on one is refused. A
- * trusted server refuses with `resync-required` after admission or `unauthorized` before it (S3c-i C3).
- */
+/** Absent unless a hop refused the message. */
 function readAlmRelayRejectionField(
     record: RallarBlackBoxTestRecord,
     path: string
 ): ALDeliveryRelayRejection | undefined {
-    const value = record.relayRejection;
-    if (value === undefined) {
+    if (record.relayRejection === undefined) {
         return undefined;
     }
-    const rejection = decodeAlmRuntimeRecord(value);
-    if (
-        (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized') &&
-        rejection.relay === 'trusted-server' && rejection.peerId === undefined
-    ) {
-        return { relay: 'trusted-server', reason: rejection.reason };
+    const decoded = decodeAlmRelayRejection(record.relayRejection, 'relayRejection');
+    if (decoded.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
     }
-    if (rejection.reason === 'resync-required' && rejection.relay === 'peer' && typeof rejection.peerId === 'string') {
-        return { relay: 'peer', peerId: rejection.peerId, reason: 'resync-required' };
+    return decoded.right;
+}
+
+/** Absent until the send ended `rejected`, `failed` or `expired`. */
+function readAlmFailureField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryFailure | undefined {
+    if (record.failure === undefined) {
+        return undefined;
     }
-    throw toAlmInvalidRuntimeResultError(`${path}.relayRejection`);
+    const decoded = decodeAlmDeliveryFailure(record.failure);
+    if (decoded.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
+    }
+    return decoded.right;
 }
 
 function requireAlmAttemptOutcomesField(

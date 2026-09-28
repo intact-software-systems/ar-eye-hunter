@@ -150,6 +150,7 @@ function toRefusedReceiptFact(
     const nack = read.parsed.payload;
     return toALOutboundReceiptExhaustedFact(
         receipt,
+        { cause: 'hop-refused', hopPeerId: nack.fromPeerId, nackReason: nack.reason },
         `Hop ${nack.fromPeerId} refused the message: ${nack.reason}.`
     );
 }

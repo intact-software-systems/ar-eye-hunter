@@ -253,6 +253,7 @@ function toALOutboundAdmissionVerdict<TPrepared>(
     switch (plan.dropReasonCode) {
         case 'unauthorized':
         case 'unsupported':
+        case 'capacity':
             return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'not-yet-in-sync':
             return { kind: 'deferred', reason: 'not-yet-in-sync', detail };

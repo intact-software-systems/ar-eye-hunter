@@ -79,8 +79,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // measure 285.017578125 KiB here. The next whole-KiB ceiling is 286. Rallar Data's write-behind hydration
         // fix (the persistence mirror attached at construction, a load that keeps newer writes, and one normalized
         // persistence error) measures 285.00390625 KiB on main alone; the S3c-i tree with it merged in (b7e8ed7a7)
-        // measures 285.8173828125 KiB here. All operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(286);
+        // measures 285.8173828125 KiB here. The S3c-ii typed failure evidence and the capacity vocabulary measure
+        // 286.3046875 KiB here. The next whole-KiB ceiling is 287. All operator dependency exclusions above remain
+        // enforced.
+        expect(result.brotliKiB).toBeLessThan(287);
     });
 });
 

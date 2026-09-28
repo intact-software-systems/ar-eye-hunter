@@ -102,6 +102,7 @@ export interface ALOutboundRepairRequest {
 export type ALOutboundDropReasonCode =
     | 'unauthorized'
     | 'unsupported'
+    | 'capacity'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'
