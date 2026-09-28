@@ -23,6 +23,11 @@ export type RelicWsCommandOutcome =
     | Readonly<{ kind: 'session-unreadable'; error: Error; }>
     | Readonly<{ kind: 'not-applied'; error: Error; }>;
 
+export interface RelicWsCommandWarning {
+    readonly message: string;
+    readonly error: Error | undefined;
+}
+
 type RelicWsCommandSender =
     | Readonly<{ kind: 'sender'; username: string; }>
     | Extract<RelicWsCommandOutcome, { kind: 'no-session' | 'session-unreadable'; }>;
@@ -54,7 +59,7 @@ export async function applyRelicWsCommand(
 export function toRelicWsCommandWarning(
     senderId: string,
     outcome: RelicWsCommandOutcome
-): Readonly<{ message: string; error: Error | undefined; }> | undefined {
+): RelicWsCommandWarning | undefined {
     const subject = `[relic] WS command from ${senderId}`;
     switch (outcome.kind) {
         case 'applied':
