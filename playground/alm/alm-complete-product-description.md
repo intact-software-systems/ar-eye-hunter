@@ -576,7 +576,9 @@ degraded to `volatile` with a note on the handle. It is never weakened silently.
 
 - P1 lowers the durable tiers' pinned storage cost without weakening them. Today
   a durable send spends 10 `al-admission` and 15 `al-work` operations, and a
-  durable inbound admission spends 8.
+  durable inbound admission spends 8. The first levers are taking the Temporal
+  polyfill off the storage hot path and cutting a durable send's 14 sequential
+  transactions (D86).
 - I2a gives every durable tier one owner per session store across tabs. It
   replaces today's silent memory fallback when IndexedDB is missing with the
   typed outcome, and adds typed recovery outcomes and one storage-health

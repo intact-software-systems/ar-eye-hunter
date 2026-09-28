@@ -145,13 +145,13 @@ different content, and never retracts a delivery (D81). For ALM that means four 
 
 ## 6. Settings
 
-| Setting                                          | Scope         | Values                                                                                                        | Default          |
-| ------------------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `durability`                                     | channel, send | `volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`                                                 | `volatile` (D2)  |
-| `onStorageUnavailable`                           | channel       | `refuse`, ending with a typed `storage-unavailable`; `volatile`, admitted with a downgrade note on the handle | `refuse`         |
-| Checkpoint interval target                       | session store | milliseconds                                                                                                  | set by H4 and H5 |
-| Recovery-lag bound                               | session store | milliseconds; beyond it the store reads `failing` and new admissions follow `onStorageUnavailable`            | set by H4 and H5 |
-| Commit batch window, transaction durability hint | session store | adopted only if P1 measures a gain                                                                            | none             |
+| Setting                    | Scope         | Values                                                                                                        | Default          |
+| -------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `durability`               | channel, send | `volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`                                                 | `volatile` (D2)  |
+| `onStorageUnavailable`     | channel       | `refuse`, ending with a typed `storage-unavailable`; `volatile`, admitted with a downgrade note on the handle | `refuse`         |
+| Checkpoint interval target | session store | milliseconds                                                                                                  | set by H4 and H5 |
+| Recovery-lag bound         | session store | milliseconds; beyond it the store reads `failing` and new admissions follow `onStorageUnavailable`            | set by H4 and H5 |
+| Commit batch window        | session store | adopted only if P1 measures a gain                                                                            | none             |
 
 The session-store settings belong to the browser composition root, next to the application's QoS
 provider. One checkpoint and one commit path serve every channel of the session. Existing settings
@@ -190,17 +190,31 @@ each operation. It also waits in the queue behind the per-sender commit Web Lock
 
 ### 7.3 P1: the durable path's cost
 
-P1 weakens no guarantee. Each of its levers lands only with before-and-after pins and lane figures.
+P1 weakens no guarantee. Its levers come in the order the spike ranks them (section 7.5, D86), and
+each lands only with before-and-after pins and figures:
 
-- **Fewer IndexedDB requests per decision.** One read session per decision surface and one readwrite
-  transaction per admission, wherever the per-row fence (D17) allows it.
-- **Commit batching across a work batch.** Today `commitAll` batches one sender's dispatches; P1
-  extends it to the whole batch.
-- **Fewer idle probes on the durable owners.**
-- **The transaction durability hint** (`strict`, `relaxed` or the browser default), chosen by H3.
-  The hint also fixes what "committed" means for `local-outbox`. With `relaxed`, a transaction
-  commits once its changes reach the operating system. With `strict`, it commits once they are on
-  persistent storage.
+1. **Take the Temporal polyfill off the storage hot path.**
+   - The polyfill and its BigInt shim take about 32 % of a durable send's CPU. Most of that is in the
+     date conversions of QueueBox's IndexedDB entry codec.
+   - The fix is native Temporal where the browser has it, or epoch-millisecond values in the codec.
+     P1's plan chooses between them.
+2. **Run fewer sequential transactions.** A durable send runs 14 IndexedDB transactions today.
+   Wherever the per-row fence (D17) allows it:
+   - merge one admission's two read sessions;
+   - skip the empty probes;
+   - hand the committed canonical message to dispatch in memory;
+   - skip the control reads that are empty on a first dispatch.
+
+   Under a render loop each transaction waits for a gap between frames, so in a game page this is
+   the lever that matters.
+3. **Batch commits across a work batch.** Today `commitAll` batches one sender's dispatches; P1
+   extends it to the whole batch.
+
+The transaction durability hint is not a lever (D86):
+
+- Chromium's default commit already behaves as `relaxed`, and `strict` only adds cost.
+- The durable owners keep the browser default, so on Chromium "committed" means the changes reached
+  the operating system.
 
 ### 7.4 Measurement spike
 
@@ -259,9 +273,9 @@ Two measurements the hypotheses did not name:
   - At 4× CPU it rises to 78.8 and 93.7 ms, or 62.1 and 78.7 ms with native Temporal.
   - Each of the 14 sequential transactions waits for a gap between frames.
 
-What the findings suggest, for the maintainer to decide before P1's plan:
+What the findings suggest, and where each stands:
 
-1. **Re-rank P1's levers.**
+1. **Re-rank P1's levers.** Decided as D86 and applied in section 7.3:
    - **Take the Temporal polyfill off the storage hot path.** Use native Temporal where it exists,
      or epoch-millisecond values in the QueueBox entry codec.
    - **Run fewer sequential transactions.** In a game page, this is the lever that matters:
@@ -271,11 +285,11 @@ What the findings suggest, for the maintainer to decide before P1's plan:
      - skip the first-dispatch control reads.
    - **Drop the transaction durability hint as a lever.** D82's condition, a measured gain, is not
      met.
-2. **Move D85's gate out of the lane.** Measure it in a plain page with a persistent profile, at
-   4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow regime measures
-   its harness page.
-3. **Take storage-cost evidence from a persistent profile.** The lane's IndexedDB is in memory, so
-   the lane stays the correctness authority but cannot measure storage cost.
+2. **Move D85's gate out of the lane.** Still open. Measure it in a plain page with a persistent
+   profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow
+   regime measures its harness page.
+3. **Take storage-cost evidence from a persistent profile.** Still open. The lane's IndexedDB is in
+   memory, so the lane stays the correctness authority but cannot measure storage cost.
 4. **Checkpoint only changed rows if I2b goes ahead.** H4 is refuted, so section 7.4 already
    provides this.
 
@@ -369,7 +383,8 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
 | Requirement                                                                                                  | Slice | Evidence                                                                                       |
 | ------------------------------------------------------------------------------------------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
 | Durable send and inbound admission costs fall to P1's recorded target                                        | P1    | budget pins; `durable-opt-in` and `delivery-baseline` figures per regime                       |
-| The chosen durability hint's commit cost                                                                     | P1    | H3 figures; a unit test on the hint the owners pass                                            |
+| The Temporal polyfill leaves the storage hot path                                                            | P1    | before-and-after CPU profile and send-to-dispatch figures for the durable-send workload        |
+| Sequential transactions per durable send fall from 14 to P1's recorded target                                | P1    | a pin on transactions per durable send, beside the budget pins                                 |
 | One durable owner per session store, with takeover on release                                                | I2a   | unit: two owners on a lock fake; lane: `durable-takeover`                                      |
 | Quota, a blocked upgrade or missing storage ends typed or degrades with a note, never silently               | I2a   | a unit test per cause; lane: `storage-unavailable` through the fault port                      |
 | Recovery outcomes `restored`, `expired-at-recovery`, `storage-created` and `storage-reset`                   | I2a   | a unit test per outcome; lane: `delivery-reload` reads the outcome                             |
