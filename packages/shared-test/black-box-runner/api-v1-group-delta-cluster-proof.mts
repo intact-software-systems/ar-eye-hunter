@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { assert, assertEquals } from '@std/assert';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
@@ -170,7 +170,24 @@ async function assertGroupDeltaCrossProcessDelivery(scenario: GroupDeltaClusterS
     try {
         await openGroupDeltaSocket(actors, actors.recipient, context);
         await openGroupDeltaSocket(actors, actors.outsider, context);
+        const outsiderSocket = context.wsConnections[actors.outsider.label];
+        assertEquals(outsiderSocket?.readyState, WebSocket.OPEN, 'C must be open before the mutation');
+        assertEquals(
+            context.wsCloseEvents[actors.outsider.label] ?? [],
+            [],
+            'C must not have closed before the mutation'
+        );
         const evidence = await writeGroupDeltaAndAssertDelivery(actors, context, scenario);
+        assert(
+            context.wsConnections[actors.outsider.label] === outsiderSocket,
+            'The same C socket must survive the mutation and absence window'
+        );
+        assertEquals(outsiderSocket?.readyState, WebSocket.OPEN, 'C must remain open through the absence window');
+        assertEquals(
+            context.wsCloseEvents[actors.outsider.label] ?? [],
+            [],
+            'C must have no close event through the absence window'
+        );
         await Deno.writeTextFile(
             `${scenario.artifactDir}/group-delta-cluster-proof.json`,
             JSON.stringify(evidence, null, 2)
