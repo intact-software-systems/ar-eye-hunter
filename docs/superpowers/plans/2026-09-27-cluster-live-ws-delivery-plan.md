@@ -875,15 +875,19 @@ same workload. Run focused shared-server and API tests, typechecks,
 the unchanged medium-scale and relevant three-process recipes, and touched-file
 standards closure.
 
-**2026-09-28 read-path checkpoint:** The existing composite C-collated index
-was selected by the focused Postgres prefix integration test. On a local
+**2026-09-28 read-path checkpoint:** The focused PGlite prefix-plan test proves
+the existing composite C-collated index is usable, but it disables sequential
+and bitmap scans, so it does not prove the planner naturally selects that index
+for a representative production scope. On a local
 5-group/100-client diagnostic scope, warm scope-wide group plus client
 snapshot reads took roughly 24–35 ms combined; a raw existing-selector batch
 was faster, but did not perform the same snapshot assembly or validation.
 The first state-write diagnostic became conflict-heavy in its shared workload
 and was interrupted, so it is not a governed before/after result. Keep the
 existing read path for correctness while obtaining comparable gate evidence;
-do not add an index from these non-equivalent diagnostics alone.
+do not add an index from these non-equivalent diagnostics alone. Before adding
+one, capture a natural planner choice and comparable full state-write results
+on the same representative Postgres workload.
 
 **2026-09-28 implementation/review checkpoint:** Principal state-sync now
 captures the durable own-plus-co-group session audience and binds each actual
@@ -955,3 +959,14 @@ claim the CRDT failures fixed, or change the persisted command without the
 separate approval above. The two exact-head cluster matrices currently fail at
 committed CRDT reply waits, which is consistent with missing direct-producer
 proof but does not correlate an individual rejected row in the logs.
+
+**2026-09-28 exact-head gate checkpoint:** The latest Branch Release Gate
+(`393ed0045534e53bc3f310b700556efbae2f8b84`) also failed the ALM
+conformance observation lane at `fallback-within-deadline`: the sender's
+10-second acknowledged-state observer timed out shortly before the receiver
+committed its ACK. The scenario's message TTL is 30 seconds, and the previous
+branch head passed the lane. This identifies a possible harness budget mismatch,
+not yet a proved product regression or permission to lengthen the test. Review
+the fallback timing contract and repeat the focused lane before marking the
+failure resolved. Changed-style warnings and both CRDT reply failures also
+remain open; the branch is not ready for main.
