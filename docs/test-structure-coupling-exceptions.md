@@ -3264,6 +3264,83 @@ moved or changed test.
         "requiredConstraint": "An invalid empty match must reject before invoking the SQL query port.",
         "failureRationale": "The final validation error alone permits an implementation to issue unintended database work before rejecting the raw input."
       }
+    },
+    {
+      "id": "relic-runtime-hydration-registers-each-listener-once",
+      "domain": "Relic Hunters browser runtime hydration",
+      "owner": "Relic Hunters maintainers",
+      "summary": "One connectAndHydrate call starts Rallar once, registers the WS snapshot, RTC snapshot, authority and room listeners exactly once inside one subscription scope, and reuses the room state the start returned instead of refreshing it again.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot",
+      "sharedCoverageGroup": "relic-runtime-hydration-listener-lifecycle",
+      "coverageRelation": "The test hydrates a runtime over recording dependencies and checks the start, each listener registration, the four scope additions and the absent second room refresh, then the hydration result itself.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RelicHuntersRuntimeDeps start, subscriptions, onSnapshotMessage, onRtcSnapshotMessage, onAuthoritySnapshotMessage, onRoomsChange and refreshRooms, and the subscription scope add",
+        "observableEffect": "Each hydration yields exactly one registration per listener, all four held by the scope, and no refresh beyond the start.",
+        "requiredConstraint": "A listener registered twice would apply every snapshot twice; a registration outside the scope would outlive the unsubscribe; a second refresh is a redundant rooms read on every hydration.",
+        "failureRationale": "The hydration result reads the same with a duplicated listener, an unscoped registration or an extra refresh, so the registration counts and the absent refresh are the only witnesses."
+      }
+    },
+    {
+      "id": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "domain": "Relic Hunters browser runtime hydration",
+      "owner": "Relic Hunters maintainers",
+      "summary": "The hydration unsubscribe releases the subscription scope once and each registered listener once.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot",
+      "sharedCoverageGroup": "relic-runtime-hydration-listener-lifecycle",
+      "coverageRelation": "The same test calls the returned unsubscribe and checks the scope and each listener release was called exactly once.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The unsubscribe callbacks returned by the snapshot, RTC snapshot, authority and room listener registrations, and the subscription scope unsubscribe",
+        "observableEffect": "One unsubscribe releases each listener and the scope exactly once.",
+        "requiredConstraint": "Every registration is released on unsubscribe, and none is released twice.",
+        "failureRationale": "Nothing else in the runtime observes a leaked listener or a double release; the release counts are the only witness that teardown is complete and idempotent."
+      }
+    },
+    {
+      "id": "relic-runtime-signed-out-registers-nothing",
+      "domain": "Relic Hunters browser runtime hydration",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Without a restorable session the runtime starts Rallar once and opens no subscription scope and no listener.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored",
+      "coverageRelation": "The test hydrates with a start that returns no session and checks the undefined hydration, the single start and that no scope or listener was opened.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RelicHuntersRuntimeDeps subscriptions, onSnapshotMessage, onRtcSnapshotMessage, onAuthoritySnapshotMessage and onRoomsChange",
+        "observableEffect": "A signed-out hydration registers no listener and opens no scope.",
+        "requiredConstraint": "Listeners are registered only for an authenticated session, after one start.",
+        "failureRationale": "The undefined hydration result does not show whether listeners were registered and left dangling; only their absence proves nothing was opened without a session."
+      }
+    },
+    {
+      "id": "relic-runtime-created-room-named-uniquely-refreshed-once",
+      "domain": "Relic Hunters room creation",
+      "owner": "Relic Hunters maintainers",
+      "summary": "Creating a room asks for an open room under a generated unique name, never the bare product name, then refreshes the room list once before returning the hydrated room.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#hydrates the created room with its current snapshot and refreshed room state",
+      "coverageRelation": "The test creates a room over recording dependencies and checks the generated name, the absent bare-name creation, the snapshot fetch and the single refresh, then the hydrated room.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RelicHuntersRuntimeDeps createRoom and refreshRooms",
+        "observableEffect": "One room creation never creates a room named only \"Relic Hunters Expedition\" and refreshes the room list exactly once.",
+        "requiredConstraint": "Every created room carries a unique generated name so hunters can tell rooms apart, and one creation costs one rooms refresh.",
+        "failureRationale": "The hydrated room reads the same whatever name was requested and however often the list was refreshed; the absent bare-name call and the refresh count are the only witnesses."
+      }
+    },
+    {
+      "id": "relic-ws-command-never-repeated-over-rest",
+      "domain": "Relic Hunters command transport",
+      "owner": "Relic Hunters maintainers",
+      "summary": "A command that went to the server over WS is never sent again over REST: REST carries a command only while no WS server id is known (C13).",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#sends gameplay commands to the server over WS and reports the receipt (D57 as applied)",
+      "coverageRelation": "The test sends a command with a WS path that reports the server receipt and checks the WS send, the absent REST send and the WS outcome.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RelicHuntersRuntimeDeps sendRestCommand",
+        "observableEffect": "A command whose WS send returned a delivery makes no REST request.",
+        "requiredConstraint": "The runtime falls back to REST only when the WS path returned no delivery (no server id known), never after a WS attempt.",
+        "failureRationale": "The WS outcome reads the same whether or not a REST copy was also sent, and a REST copy after a WS command could apply the command twice on the server; the absent REST call is the only witness."
+      }
     }
   ],
   "entries": [
@@ -7402,6 +7479,248 @@ moved or changed test.
       "owner": "Rallar shared-test maintainers",
       "rationale": "The exact, bounded count is the only witness that the retry loop itself terminates once the deadline passes between attempts, rather than retrying until the test's own await cuts it off.",
       "semanticCoverage": "packages/tests/shared-test/rtc-connect-readiness.test.ts#stops retrying once the deadline passes between attempts and returns the last not-ready result"
+    },
+    {
+      "id": "test-structure-coupling-33c4d12647c76e35",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.start).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-f79a40a1a8c663b7",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.subscriptions).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-03a6da09e33c2195",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onSnapshotMessage).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-72193ea6ab1cee8f",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onRtcSnapshotMessage).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-67827bfadc63f2b2",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onAuthoritySnapshotMessage).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-a662fae90ef475ca",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onRoomsChange).toHaveBeenCalledTimes(1);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-2b6800161739421d",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.refreshRooms).not.toHaveBeenCalled();` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-3c23dc8731f9b76d",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-hydration-registers-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(subscriptions.add).toHaveBeenCalledTimes(4);` pins one hydration to exactly one registration (or, for the room refresh, none beyond the start); a duplicate or extra call leaves the hydration result unchanged.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-82b43dbd55c148b6",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(subscriptions.unsubscribe).toHaveBeenCalledTimes(1);` pins that the unsubscribe releases this registration exactly once; a leak or a double release is invisible to every other assertion.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-4ca403b44e185bb2",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(unsubscribeSnapshot).toHaveBeenCalledTimes(1);` pins that the unsubscribe releases this registration exactly once; a leak or a double release is invisible to every other assertion.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-710e2d732f0fc2e2",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(unsubscribeRtcSnapshot).toHaveBeenCalledTimes(1);` pins that the unsubscribe releases this registration exactly once; a leak or a double release is invisible to every other assertion.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-470d805a842e1216",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(unsubscribeAuthoritySnapshot).toHaveBeenCalledTimes(1);` pins that the unsubscribe releases this registration exactly once; a leak or a double release is invisible to every other assertion.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-c9e96e50f76b3db5",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-unsubscribe-releases-each-listener-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(unsubscribeRooms).toHaveBeenCalledTimes(1);` pins that the unsubscribe releases this registration exactly once; a leak or a double release is invisible to every other assertion.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#starts, installs scoped listeners, and fetches the current snapshot"
+    },
+    {
+      "id": "test-structure-coupling-4894d4695766328b",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-ws-command-never-repeated-over-rest",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.sendRestCommand).not.toHaveBeenCalled();` pins that a WS-delivered command is not repeated over REST, which could apply it twice (C13).",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#sends gameplay commands to the server over WS and reports the receipt (D57 as applied)"
+    },
+    {
+      "id": "test-structure-coupling-0f97b8e668773ecb",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.start).toHaveBeenCalledTimes(1);` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-be248f08f23f6a81",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.subscriptions).not.toHaveBeenCalled();` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-f79f398d87578c4e",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onSnapshotMessage).not.toHaveBeenCalled();` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-5b810a54fdfcd992",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onRtcSnapshotMessage).not.toHaveBeenCalled();` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-bafa88dd89a11d0b",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onAuthoritySnapshotMessage).not.toHaveBeenCalled();` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-90c18eaa0911c7fb",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-signed-out-registers-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.onRoomsChange).not.toHaveBeenCalled();` pins the signed-out hydration to a single start and no listener or scope; the undefined result alone cannot show a dangling registration.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#does not connect or subscribe when no browser session can be restored"
+    },
+    {
+      "id": "test-structure-coupling-1f368a9f3df4e36c",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-created-room-named-uniquely-refreshed-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.createRoom).not.toHaveBeenCalledWith('Relic Hunters Expedition');` pins the room creation to a generated unique name and one rooms refresh; the hydrated room reads the same either way.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#hydrates the created room with its current snapshot and refreshed room state"
+    },
+    {
+      "id": "test-structure-coupling-539bfb09d815cf4f",
+      "path": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "relic-runtime-created-room-named-uniquely-refreshed-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Relic Hunters maintainers",
+      "rationale": "`expect(deps.refreshRooms).toHaveBeenCalledTimes(1);` pins the room creation to a generated unique name and one rooms refresh; the hydrated room reads the same either way.",
+      "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#hydrates the created room with its current snapshot and refreshed room state"
     }
   ]
 }
