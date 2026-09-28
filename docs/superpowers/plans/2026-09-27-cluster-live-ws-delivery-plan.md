@@ -843,9 +843,55 @@ formation recipe, package/API typechecks, and touched-file closure. Collect
 comparable performance evidence for affected mutation paths; the prior
 state-write hot-duration failure remains open, not waived.
 
-After these two slices, choose only the next one or two real producer families
-from fresh evidence. Before calling this PR ready, reconcile the remaining
-direct producers and old product tests, obtain controlled performance evidence,
-run exact-head cross-process acceptance and release gates, review the full
-branch, and publish one concise PR behavior/evidence map. Do not split a
-test-only proof PR from this draft implementation PR.
+### Task 11: Freeze the real principal state-sync audience
+
+**Scope:** For client-state snapshot broadcasts and client events, preserve the
+current product audience: the principal's own live sessions plus authorized
+live sessions of groups where that principal is an active member. Read group
+and client snapshots from durable scope-wide authority before computation;
+use the computed successor for the mutated principal's own sessions. Do not
+derive membership from process-local caches, a target ID, or delivery-time
+state. Extend the exact per-row proof and direct-broadcast send policy for a
+principal target, binding each actual `WS_OUTBOX` row to its full scope and
+frozen session IDs. Prepare the complete proof before the existing AppInbox
+transaction and insert it atomically with the row. No new queue, retry, lock,
+fence, migration, legacy reader, or second mutation phase.
+
+**TDD/verification:** Start RED with a real client mutation whose principal
+event and snapshot broadcast are absent on a foreign API process today.
+Prove own and co-group authorized sessions receive them, while wrong-scope,
+inactive-member, late-join, expired, and replaced-session recipients do not.
+Prove exact row/proof rollback, replay, no-op, and collision handling; retain
+the existing per-session snapshot-page behavior. First use the current
+durable `listSnapshots(scope)` reads and the existing composite prefix index.
+Measure representative workspace read cost and full state-write performance;
+add a distinct index only if the observed plan and latency demonstrate need,
+and rerun the same workload. Run focused shared-server and API tests, typechecks,
+the unchanged medium-scale and relevant three-process recipes, and touched-file
+standards closure.
+
+### Task 12: Publish auth logout's exact-session proof
+
+**Scope:** Use the already approved session-global authority variant for the
+auth owner's exact invalidated session. Bind the producer's actual raw
+`WS_OUTBOX` reply row to its invalidation fact before the existing write
+transaction, insert proof and row atomically, and enforce the invalidated
+session and current connection generation at final send. This is not a generic
+unscoped-unicast exemption. Old unproven rows remain refused; do not add a
+legacy path or a new retry/queue.
+
+**TDD/verification:** Start RED with an authentic logout on process A and the
+target socket on B, plus a same-session-ID wrong-generation negative. Prove
+one committed exact-session notice, rollback, replay, no unrelated recipient,
+and no acceptance of an arbitrary raw logout-shaped payload. Run focused auth,
+WS, AppInbox, cross-process, package/API checks and touched-file closure.
+
+After these slices, select the remaining CRDT and RTC-topology producer work
+from current evidence. CRDT's persisted command-format decision remains a
+separate explicit maintainer approval; do not use the pending decision as
+permission to infer scope from the optional document workspace. Before calling
+this PR ready, reconcile all remaining direct producers and old product tests,
+obtain controlled performance evidence, run exact-head cross-process acceptance
+and release gates, review the full branch, and publish one concise PR
+behavior/evidence map. Do not split a test-only proof PR from this draft
+implementation PR.
