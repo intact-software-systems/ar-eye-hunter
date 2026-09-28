@@ -3,8 +3,9 @@
 This document describes how a Rallar group forms: the authoritative formation lifecycle a group
 moves through, the policy document that drives it, how admission, the manager role, the activation
 criterion, and pre-activation data gating enforce that policy server-side, what the read surface
-exposes, and which black-box recipes verify each behaviour. The design history lives in
-`playground/rtc-design/`, and `docs/rallar-group-lifecycle-cutover-runbook.md` covers deploying it:
+exposes, and which black-box recipes verify each behaviour. The choice to ship this layer,
+and the alternatives it refuses, are summarized in `docs/architecture.md`.
+`docs/rallar-group-lifecycle-cutover-runbook.md` covers deploying it:
 the layer ships as a hard cutover, and durable rows written before it cannot be decoded after it.
 
 The property that makes the whole layer safe to ship is this: **a group created without a
@@ -943,8 +944,8 @@ The remaining live-RTC rows have a written pin that does not yet run.
 scenarios, but four are declared blocked on two candidate defects the spec itself found: a page
 reopened with a restored session reports itself unconnected, and a group `reset` leaves the browser's
 facade-level peer lists naming both peers a minute later. They stay counted as unpinned here, because
-a scenario a defect prevents from running is not pinned. The evidence for both is in
-`playground/rtc-design/2026-09-06-browser-acceptance-pins-implementation-plan.md`.
+a scenario a defect prevents from running is not pinned. The evidence for both is
+the blocked cases in that spec.
 
 The count in this paragraph is checked against the table itself, so it cannot drift as rows change.
 
@@ -1084,5 +1085,3 @@ writing this document:
   `apps/api-v1/resources/api-v1-openapi.yaml`: the HTTP surface.
 - `packages/shared-test/black-box-runner/tests/api-v1/`: the recipes named above, with profile
   placement in `packages/shared-test/black-box-runner/recipe-matrix.json`.
-- `playground/rtc-design/2026-08-17-group-lifecycle-control-plane-implementation-plan.md` and its
-  companion analyses: the decision record behind this design.

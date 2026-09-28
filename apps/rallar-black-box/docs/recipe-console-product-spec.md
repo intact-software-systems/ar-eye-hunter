@@ -8,7 +8,7 @@ gate and the wider aggregate live-RTC qualification remain open. The preserved
 legacy experience remains an operational rollback.
 Evidence date: 2026-07-15
 
-This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
+This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration, compatibility aliases, and rollback routes are tracked in the [Recipe Console migration register](./recipe-console-migration-register.md).
 
 ## Product cut
 

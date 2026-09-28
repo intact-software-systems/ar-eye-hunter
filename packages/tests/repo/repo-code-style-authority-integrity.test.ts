@@ -171,9 +171,6 @@ describe('repo code style authority integrity', () => {
         const releaseGate = readRepo('.github/workflows/release-gate.yml');
         const humanGuide = readRepo('docs/repo-human-style-guide.md');
         const canonicalStyle = readRepo(canonicalStylePath);
-        const refactoringProgram = readRepo(
-            'plans/repo-human-traceability-refactoring-program-plan.md'
-        );
 
         // The base is the PR base unless a reviewer labels the pull request, which passes the empty
         // base the main-push deploy path already uses. Only a repository-wide reformat earns it.
@@ -191,8 +188,6 @@ describe('repo code style authority integrity', () => {
         expect(humanGuide).toContain('No global strict mode yet');
         expect(canonicalStyle).toMatch(/full-repository checker remains warning-only/iu);
         expect(canonicalStyle).toMatch(/feature-branch CI blocks only new or worsened findings/iu);
-        expect(refactoringProgram).toMatch(/new or worsened branch\s+findings are blocking/iu);
-        expect(refactoringProgram).toMatch(/full-repository checker remains warning-only/iu);
     });
 
     it('keeps canonical examples inside the vocabulary they teach', () => {
@@ -281,20 +276,6 @@ describe('repo code style authority integrity', () => {
         expect(agents).not.toContain('`>800`');
         expect(agents).not.toContain('`50-60`');
         expect(agents).not.toContain('`>60`');
-    });
-
-    it('requires size-tier review at child-plan entry and exit', () => {
-        const refactoringPlan = readRepo('plans/repo-human-traceability-refactoring-program-plan.md');
-        const entryContract = refactoringPlan.match(
-            /Every feature child plan begins with:([\s\S]*?)Every child plan ends with:/u
-        )?.[1] ?? '';
-        const exitContract = refactoringPlan.match(
-            /Every child plan ends with:([\s\S]*?)Feature status values are:/u
-        )?.[1] ?? '';
-
-        expect(entryContract).toContain('file-size tier and 40/50/60 function review');
-        expect(exitContract).toContain('final file-size tier and 40/50/60 function review');
-        expect(exitContract).toContain('over-800-line file and over-60-line function');
     });
 
     it('connects runtime failures to the established Either flow', () => {
