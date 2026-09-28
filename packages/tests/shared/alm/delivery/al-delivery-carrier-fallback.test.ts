@@ -124,6 +124,13 @@ describe('a hand-over to the fallback carrier (D56, Q3)', () => {
         expect(late.lateSettlementCount).toBe(acknowledged.lateSettlementCount);
     });
 
+    it('ends the handle failed when the WS receipt runs out after the hand-over', () => {
+        const exhausted = reduce([toAdmission('rtc'), HAND_OVER, toAdmission('ws'), toExhausted('ws')]);
+
+        expect(exhausted.state).toBe('failed');
+        expect(exhausted.evidence.carrierFallback).toMatchObject({ from: 'rtc', to: 'ws' });
+    });
+
     it('keeps the RTC receipt facts of a handle that never handed over', () => {
         expect(reduce([toAdmission('rtc'), toExhausted('rtc')]).state).toBe('failed');
     });

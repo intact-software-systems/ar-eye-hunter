@@ -40,7 +40,7 @@ const entries = [
         // carrier, routed by durability) 221.19140625 KiB (ceiling 222; the final S3a review head e417fe749
         // measured 221.8 of 222). S3b's receipt ends (receipt-exhausted, the not-yet-in-sync exhaustion,
         // completion at dispatch and the untracked receipt) measure 222.1884765625 KiB. The next whole-KiB
-        // ceiling is 223.
+        // ceiling is 223. The S3b final review head measures ~222.99 of 223, and its fix wave 222.86328125.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',

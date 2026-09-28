@@ -321,7 +321,8 @@ absence for the rest of that lifetime and past it, and the sender observes
 The fallback family runs over `rtc-with-ws-fallback` only (D56, D63–D66), two agents each.
 `fallback-within-deadline` (smoke) arms an RTC `drop` fault on the sender's own frames of the send until
 the scenario ends; the third consecutive `not-ready` attempt hands the message to WS, the sender observes
-`acknowledged` with `attemptCarriers` containing `rtc` and `ws`, and the receiver delivers it once and
+`acknowledged` with `attemptCarriers` containing `rtc` and `ws` and `attemptOutcomes` containing `not-ready`
+(an admission-time fallback leaves no `not-ready` row), and the receiver delivers it once and
 waits for its `admission-outcome` `committed`/`admitted` on carrier `ws`. `receipt-exhausted-fallback`
 (full) holds the receiver's RTC ACKs; the RTC receipt runs out of retries after about 8 s and hands the
 message over, the receiver refuses the WS copy as `not-handled`/`duplicate` and, its first admission

@@ -85,7 +85,7 @@ describe('the fallback-within-the-deadline family (D56)', () => {
         expect(scenarioOf('no-fallback-after-deadline').tags).toEqual(['full']);
     });
 
-    it('drops the sender RTC leg until WS delivers it, and proves both carriers on the handle', () => {
+    it('drops the sender RTC leg until WS delivers it, and proves both carriers and the not-ready leg on the handle', () => {
         const scenario = scenarioOf('fallback-within-deadline');
 
         expect(bodyOf(scenario.sender).map(shapeOf)).toEqual([
@@ -97,13 +97,16 @@ describe('the fallback-within-the-deadline family (D56)', () => {
             'assert',
             'assert',
             'assert',
+            'assert',
             'fault.inject:rtc:0'
         ]);
+        // The not-ready row is what an admission-time fallback (an RTC leg refused unroutable) never leaves.
         expect(assertionsOf(scenario.sender)).toEqual([
             'state matches ^(accepted|queued|transport-accepted|acknowledged)$',
             'state equals acknowledged',
             'attemptCarriers contains rtc',
-            'attemptCarriers contains ws'
+            'attemptCarriers contains ws',
+            'attemptOutcomes contains not-ready'
         ]);
         expect(bodyOf(scenario.receiver).map(shapeOf)).toEqual([
             'received:1',

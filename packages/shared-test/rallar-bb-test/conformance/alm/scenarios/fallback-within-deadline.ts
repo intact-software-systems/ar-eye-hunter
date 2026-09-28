@@ -12,6 +12,7 @@ import {
     toAdmissionCommands,
     toHandedOverAssertions,
     toObserveCommand,
+    toResultAssertion,
     toSendCommand
 } from '../alm-conformance-message-commands.ts';
 import {
@@ -57,6 +58,14 @@ function toFallbackWithinDeadlineSenderCommands(
         ...toAdmissionCommands({ ...sender, index: 1 }),
         toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
         ...toHandedOverAssertions(sender, 'observe-acknowledged-1'),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-not-ready-attempt-1',
+            resultName: 'observe-acknowledged-1',
+            field: 'attemptOutcomes',
+            operator: 'contains',
+            expected: 'not-ready'
+        }),
         toRtcDropFaultCommand(sender, 'release-rtc', 0)
     ];
 }

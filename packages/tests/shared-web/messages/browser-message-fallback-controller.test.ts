@@ -40,10 +40,13 @@ interface FallbackFixture {
 }
 
 /**
- * The production dispatch, registry and session owner over carrier doubles: RTC admits everything, and WS
- * answers with `wsVerdict`.
+ * The production dispatch, registry and session owner over carrier doubles: RTC admits everything, WS
+ * answers with `wsVerdict`, and the RTC hand-over rejects with `handOverError` when one is given.
  */
-function createFallbackFixture(wsVerdict: ALDeliveryAdmissionVerdict = ADMITTED): FallbackFixture {
+function createFallbackFixture(
+    wsVerdict: ALDeliveryAdmissionVerdict = ADMITTED,
+    handOverError?: Error
+): FallbackFixture {
     const admissions: FallbackAdmission[] = [];
     const handedOver: string[] = [];
     const admit = async (
@@ -68,6 +71,9 @@ function createFallbackFixture(wsVerdict: ALDeliveryAdmissionVerdict = ADMITTED)
                 enqueueOutboxIfAbsent: (message) => admit('rtc', message),
                 handOverOutbox: async (msgId) => {
                     handedOver.push(msgId);
+                    if (handOverError !== undefined) {
+                        throw handOverError;
+                    }
                 }
             },
             webSocketQueueBox: { enqueueOutboxIfAbsent: (message) => admit('ws', message) }
@@ -327,6 +333,22 @@ describe('post-admission fallback within the deadline (D56)', () => {
 
         expect(handle.lifecycle().state).toBe('rejected');
         expect(fixture.handedOver).toEqual([handle.msgId]);
+    });
+
+    it('admits the message on WS even when the RTC hand-over rejects', async () => {
+        const failed = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const fixture = createFallbackFixture(ADMITTED, new Error('The RTC owner is disposed.'));
+        const handle = await fixture.send('rtc', 30_000);
+
+        fixture.settle(toExhausted(handle.msgId, 'rtc'));
+        await waitForCarriers(fixture, ['rtc', 'ws']);
+
+        expect(fixture.handedOver).toEqual([handle.msgId]);
+        expect(failed).toHaveBeenCalledOnce();
+        expect(handle.lifecycle().evidence.carrierFallback).toMatchObject({ reason: 'receipt-exhausted' });
+        fixture.settle(toReceipt(handle.msgId, 'ws', ['peer-1']));
+        expect(handle.lifecycle().state).toBe('acknowledged');
+        failed.mockRestore();
     });
 
     it('releases the candidate when the handle is cancelled: a later RTC trigger hands nothing over', async () => {

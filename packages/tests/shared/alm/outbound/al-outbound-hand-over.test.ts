@@ -2,9 +2,11 @@ import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-life
 import { ALOutboundSendControls } from '@shared/alm/outbound/lane/al-outbound-send-controls.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
+    afterEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import {
     createDefaultOutboundTestRuntime,
@@ -12,12 +14,13 @@ import {
     createOutboundMessage,
     createVolatileOutboundTestStores,
     holdOutboundClaims,
+    peekOutboundWorkReadyAt,
     runOutboundWorkTask,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
 
 /** `persist` routes the message to the durable pair or to the volatile memory pair, whose `endReceipt` is its own. */
-function createHandOverFixture(persist: boolean) {
+function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000) {
     const durableStores = createDefaultOutboundTestStores();
     const volatileStores = createVolatileOutboundTestStores();
     const settlements: ALDeliverySettlement[] = [];
@@ -34,7 +37,7 @@ function createHandOverFixture(persist: boolean) {
             dropReasonCode: undefined,
             persist,
             preparedMessages: [{ message: msg.id.msgId }],
-            ackTracking: trackOutboundTestAcks(['peer-1'])
+            ackTracking: { ...trackOutboundTestAcks(['peer-1']), timeoutMs: receiptTimeoutMs }
         }),
         sendPreparedMessage: async (prepared) => {
             sent.push(JSON.stringify(prepared));
@@ -45,6 +48,11 @@ function createHandOverFixture(persist: boolean) {
 }
 
 describe('the settlement-free hand-over (D56, Q3)', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
     it.each([true, false])('ends the receipt row and every later effect of the message, and states no cancellation (persist: %s)', async (persist) => {
         const fixture = createHandOverFixture(persist);
         const claims = holdOutboundClaims(fixture.stores);
@@ -62,6 +70,31 @@ describe('the settlement-free hand-over (D56, Q3)', () => {
         const kinds = fixture.settlements.map((settlement) => settlement.kind);
         expect(kinds).not.toContain('cancelled');
         expect(kinds).not.toContain('attempt-started');
+    });
+
+    it('leaves an inert receipt row when its delete conflicts, and its ack-timeout completes silently (C6)', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        const fixture = createHandOverFixture(true, 1_000);
+        const claims = holdOutboundClaims(fixture.stores);
+        const message = createOutboundMessage('hand-over-conflict');
+        const receipt = { originPeerId: message.id.senderId, msgId: message.id.msgId };
+        await fixture.runtime.enqueueIfAbsent(message);
+        const admitted = await fixture.stores.admissionStore.readPendingAck(receipt);
+        const commit = vi.spyOn(fixture.stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+
+        await fixture.runtime.handOver(message.id.msgId);
+        expect(commit).toHaveBeenCalledOnce();
+        await claims.release();
+        await runOutboundWorkTask(fixture.runtime);
+        // Past the receipt's first window and inside the message deadline: a live receipt would charge an attempt.
+        vi.setSystemTime(Date.now() + 2_000);
+        await runOutboundWorkTask(fixture.runtime);
+
+        expect(await fixture.stores.admissionStore.readPendingAck(receipt)).toEqual(admitted);
+        expect(await peekOutboundWorkReadyAt(fixture.stores.workQueue, fixture.stores.admissionStore.namespace))
+            .toBeUndefined();
+        expect(fixture.sent).toEqual([]);
+        expect(fixture.settlements).toEqual([]);
     });
 
     it('is idempotent, and a later cancel still states its own settlement', async () => {

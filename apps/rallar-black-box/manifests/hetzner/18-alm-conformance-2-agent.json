@@ -4399,6 +4399,14 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-assert-not-ready-attempt-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-fallback-within-deadline-sender-observe-acknowledged-1.value.attemptOutcomes",
+            "operator": "contains",
+            "expected": "not-ready",
+            "timeoutMs": 2000
+          },
+          {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-fallback-within-deadline-sender-release-rtc",
             "faultId": "drop-rtc-alm.conformance.rtc-with-ws-fallback.fallback-within-deadline",
