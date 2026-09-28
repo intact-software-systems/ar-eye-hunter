@@ -6,7 +6,8 @@
 ([alm-s3-design-proposal.md](../playground/alm/alm-s3-design-proposal.md) "S3c execution questions"), all of
 which the maintainer took on 2026-09-28 (commit `4550c66df`: D57 "As applied", D70–D78; draft PR #605). S3c-i
 carries D70, D71, D72, D73, D76 and D77; D74, D75 and D78 are S3c-ii's. The plan's own choices C1–C16 are ruled as
-R-S3c-i-0 in "Rulings during execution".
+R-S3c-i-0 in "Rulings during execution", and the pre-flight conflict scan's findings as R-S3c-i-1..27, applied to
+the plan in place.
 
 **Goal:** A WS send can address one session or the server itself with a real receipt, the server's own
 room notifications carry receipts over a frozen audience with per-session confirmation in the server
@@ -79,20 +80,26 @@ landing), with S3c-i's values:
   server's own QueueBox `WS_INBOX` admission and a live send (or its `WS_OUTBOX` row for an `outbox` topic); the
   server-originated snapshot is a `WS_OUTBOX` admission through the server's own outbound owner, its receipt the
   existing pending-ACK row; the settlement recorder is in-process memory. Relic's `applyCommand` keeps its direct
-  optimistic app-data upsert (`app-data-optimistic-writer.ts:46-55`), as the REST route does. The medium-scale
-  PostgreSQL gate runs **once**, in Task 6 (Q13).
+  optimistic app-data upsert (`app-data-optimistic-writer.ts:46-55`), as the REST route does. That write is an
+  incoming mutation outside AppInbox, which the doctrine does not exempt; it predates S3c-i on the REST path, and S3c-i
+  changes its transport, not the write, so it stays as named debt for the maintainer (R-S3c-i-8; the PR body names
+  it). The medium-scale PostgreSQL gate runs **once**, in Task 6 (Q13).
 - **REST changes carry a black-box recipe** (CLAUDE.md "REST changes"): `/api/config`'s `serverPeerId` and the WS
   addressed sends are pinned by the new recipe `api-v1-websocket-addressed-sends` (Tasks 1–2); the admin route's
   `almReceipts` by a step appended to `api-v1-admin-operations` (Task 4). No recipe may add a strict-expectation
   finding (`preflight/strict-expectation-debt.json`: new recipes add none).
 - **OpenAPI** (`apps/api-v1/resources/api-v1-openapi.yaml`): `ApiConfig` gains the required `serverPeerId` (Task 2);
   `AdminOperationsRealtimeResponse` gains `almReceipts` (Task 4). Neither field has a contractual default, so the
-  browser's boundary decoder (`decodeApiConfigResponse`, Task 2) reapplies none and refuses a response without it.
+  browser's boundary decoder (`decodeApiConfigResponse`, Task 2) reapplies none. It reads a body without
+  `serverPeerId` as a server that predates S3c-i — "server unknown", a distinct domain meaning: the WS client tracks
+  no server hop and Relic sends commands over REST (R-S3c-i-6) — and refuses an empty or non-string id.
 - Files at cognitive-load warn or review that S3c-i touches take call lines only; new behaviour goes into new files
   beside the owner: `useRelicHunters.ts` (156), `ws-queue-box-server-service.ts` (82), `al-policy.ts` (67, untouched),
-  `ws-queue-box-client-service.ts` (50). Four files sit one value export below `file.responsibility-count`'s 12
-  (`al-contract.ts`, `al-policy.ts`, `al-runtime-stores.ts`, `to-arena-labels.ts`): S3c-i adds no value export to
-  any of them (`al-contract.ts` gains only a non-exported option type). New server files go under
+  `ws-queue-box-client-service.ts` (50), and `apps/relic-hunters-v1/src/App.tsx` (776, above the refactor-or-register
+  tier and unregistered in `docs/repo-code-style-exceptions.md`: one import and one element line, no new branch — the
+  command-delivery row renders in its own `relic-command-delivery-row.tsx`, R-S3c-i-2). Four files sit one value
+  export below `file.responsibility-count`'s 12 (`al-contract.ts`, `al-policy.ts`, `al-runtime-stores.ts`,
+  `to-arena-labels.ts`): S3c-i adds no value export to any of them (`al-contract.ts` gains only a non-exported option type). New server files go under
   `packages/shared/services/ws-queue-box-server/`, `packages/shared-server/rallar-system/websocket/` and
   `.../observability/`.
 - **Per-task validation** (every task, before its commit; a task names the extra gates it needs):
@@ -183,7 +190,11 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `{ relay: 'trusted-server', reason: 'unauthorized' }` for a trusted-server `unauthorized` NACK of a message it sent
   and tracks no row for; the handle reads `rejected`. Cost: a room `receiver` send the router refuses before admission
   (a non-member) also reads `rejected` now instead of `expired` at its deadline — an evidence improvement that moves
-  any pin on it.
+  any pin on it. The refusal sends its NACK exactly when the wrapped authorizer does
+  (`WsServerInboundAuthorizer.sendNacks`, the router's `sendNacks` option; R-S3c-i-18). The check runs at admission
+  only, not at the dispatch re-authorization (`readCurrentDispatchAuthority`): an addressee who leaves between
+  admission and dispatch is not re-refused — the router narrows delivery away from it, and the one-member receipt
+  reads unconfirmed (`timed-out`) at its deadline.
 - **C4 — Router-owned delivery is a plan change, gated on the router owning room fanout.**
   `toWsQueueBoxServerInboundPlan` (moved out of the aggregation file into its own) enables local delivery and the
   server's own ACK plan for an authorized room-scoped unicast to another session, only when the service does not
@@ -193,11 +204,16 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `{ ...toApiV1PublicConfiguration(...), serverPeerId: runtime.wsQBoxServerService.name }`; Relic's own
   `/api/config` route (`main.ts:89`, registered before api-v1's) serves `rallar.ws.serverPeerId`. The served shape is
   `ApiConfigResponse extends ApiConfig`; `ApiConfig` stays the configured projection Relic's configuration builds
-  before the server exists. Cost: one more response type name in `@shared/api`.
+  before the server exists. `ApiConfigResponse.serverPeerId` is optional: absence is a server that predates S3c-i
+  ("server unknown", R-S3c-i-6), which the decoder accepts so a rolling deploy never strands a new browser. Cost: one
+  more response type name in `@shared/api`, and the deploy order matters — the server ships before the browser, or a
+  new browser meets an old server as "server unknown" and runs without the WS hop receipt and with Relic on REST until
+  the server is upgraded (the PR body states the order).
 - **C6 — The WS client tracks the server as the one hop it has.** `toWsQueueBoxClientAckTrackingPlan` expects
   `[serverPeerId]` for a unicast addressed to the server and for every `hop`/`subtree` WS send (R-S3a-4 closed),
-  `[]` for a `receiver` send to a session or a room. Cost: a `hop` unicast to a session now completes at the server's
-  hop ACK, not at the addressee's (whose hop ACK the server has always refused as unaggregated).
+  `[]` for a `receiver` send to a session or a room; with no server id known (R-S3c-i-6) it keeps the plan it had
+  before, tracking no server hop. Cost: a `hop` unicast to a session now completes at the server's hop ACK, not at the
+  addressee's (whose hop ACK the server has always refused as unaggregated).
 - **C7 — Q11 minimal, WS only** (the header). Cost: two public members (`peerId`, `serverPeerId()`), and a typed `send`
   with a `peerId` on an RTC strategy throws until S3c-ii.
 - **C8 — The publish audience is read only for the D58 shape.** The router option `readServerPublishAudience`
@@ -214,20 +230,28 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   the least recently updated entry is evicted; not part of the metrics reset. Cost: a receipt with no fact yet is not
   listed; the 257th message evicts the oldest.
 - **C11 — Leavers on the WS leg (Q12).** A message carrying a frozen multicast audience (an RTC leg handed over, D66)
-  is aggregated over that audience verbatim, minus the origin; delivery stays the authorized sessions. Cost: a leaver
-  makes that WS receipt `timed-out` instead of `complete`.
+  is aggregated over that audience verbatim, minus the origin; delivery stays the authorized sessions. The expected
+  set may therefore exceed the delivered set by design: a frozen recipient the room no longer admits — a leaver, or any
+  id the origin froze, up to the collection limit — is expected, never delivered to, and reads unconfirmed. The
+  "narrow, never widen" invariant of `resolveALAdmittedRoomAudience` (`al-frozen-multicast-audience.ts:50-56`) is
+  amended in the same step to name the delivery audience only (R-S3c-i-11). Cost: a leaver makes that WS receipt
+  `timed-out` instead of `complete`, and an origin can make its own receipt unconfirmable.
 - **C12 — Relic's WS handler catches everything the apply throws.** It reads the username from the auth session
   store (`readSessionUsername`), logs a rule error or a storage failure, and never rethrows. Cost: a storage failure
   on the WS path is not retried (REST keeps its HTTP error).
 - **C13 — REST is Relic's fallback only when no WS server id is known.** The runtime never re-sends over REST after a
-  WS attempt, which could apply a command twice. Cost: a WS command whose receipt fails reads failed, not retried.
+  WS attempt, which could apply a command twice. "No id known" is the pre-connect window and a server that serves no
+  `serverPeerId` (one that predates S3c-i, R-S3c-i-6); against a server that serves it, REST is reached only before
+  connect. Cost: a WS command whose receipt fails reads failed, not retried.
 - **C14 — The snapshot's room is `{ DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, roomId }`**, the scope
   Relic's REST policy reads (`main.ts:199-203`).
 - **C15 — Recipes.** One new recipe `api-v1-websocket-addressed-sends` (profiles `api-v1-black-box` and
   `api-v1-black-box-recipes`) for D53, `serverPeerId` and the server-addressed receipt; one step appended to
-  `api-v1-admin-operations` for `almReceipts`; no Relic recipe — no runner targets the Relic server, whose Deno tests
-  carry the Relic share. The addressee's own ACK is not sent from a recipe (a raw ACK envelope's strict route key is
-  not authorable there); the complete receipt is pinned by Vitest and Deno tests.
+  `api-v1-admin-operations` for `almReceipts`; no Relic recipe — no black-box recipe runner targets the Relic server.
+  Its Deno tests and the real-server Playwright spec `tests/playwright/relic-hunters/full-stack-propagation.spec.ts`
+  (`npm run test:playwright:relic:full-stack`, unsandboxed, in Tasks 5 and 6, R-S3c-i-10) carry the Relic share.
+  The addressee's own ACK is not sent from a recipe (a raw ACK envelope's strict route key is not authorable there);
+  the complete receipt is pinned by Vitest and Deno tests.
 - **C16 — Six tasks, not the survey's five.** The typed-channel peer target is its own task (public surface and
   bundle), between the server address and the server receipts.
 
@@ -260,7 +284,8 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   fallback, whose `sendWsUnicast` names no room and so stays refused by authorization until it passes its `roomRef`
   (the S3a pin `browser-message-handle-admission.test.ts:154` flips there).
 - **Later:** post-admission fallback for `ws-then-rtc` and for a resumed durable message (V1); Relic's rule-error text
-  on a reply channel (I1's `awaitReply`); cross-instance per-game serialization for Relic (process-local today).
+  on a reply channel (I1's `awaitReply`); cross-instance per-game serialization for Relic (process-local today);
+  Relic's app-data write through AppInbox on both the WS and the REST path (named debt, R-S3c-i-8).
 
 ---
 
@@ -283,7 +308,11 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `packages/shared/alm/outbound/compute-al-outbound-control-admission.ts:113-169`;
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts:214-236,281-293,335-347`;
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:64-67,437-441,517-550` (call lines);
-  `packages/shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts:10-42`.
+  `packages/shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts:110-112` (`sendNacks`);
+  `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:105-107` (the authorizer's
+  `sendNacks`); `packages/shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts:10-42`;
+  `packages/shared/alm/inbound/README.md:158,262`;
+  `packages/shared-test/rallar-bb-test/alm/decode-alm-runtime-result.ts:253-272`.
 - Create `packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-addressed-sends.json`; modify
   `packages/shared-test/black-box-runner/recipe-matrix.json` and `packages/tests/shared-test/recipe-matrix.test.ts:350-381,420-464`.
 - Create `apps/api-v1/test/services/ws-room-live-runtime.ts` (moved helpers) and
@@ -301,8 +330,10 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `packages/shared-web/browser/session/session-connection-operations.ts:25-38`,
   `apps/api-v1/src/routes/config-route.ts:45-57`, `apps/api-v1/src/composition/create-api-v1-route-installers.ts:96`,
   `apps/api-v1/src/composition/create-default-rallar-server.ts:281`, `apps/relic-hunter-server-v1/src/main.ts:89`,
-  `apps/api-v1/resources/api-v1-openapi.yaml:3993-4004`, the recipe from Task 1, and every WS client construction in
-  tests (Step 9's list).
+  `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:74-99,152-175` (`serverPeerId`,
+  and no default fanout for a unicast to the server, R-S3c-i-5),
+  `apps/api-v1/resources/api-v1-openapi.yaml:3993-4004`, the recipe from Task 1 and its matrix description, and every
+  WS client construction in tests (Step 8's list).
 
 **Task 3 — the WS peer target on typed sends (Q11, WS only):**
 
@@ -319,7 +350,9 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
   `.../router/rallar-server-ws-router-contracts.ts:149-157`, `.../router/rallar-server-ws-router.ts:74-146`,
   `packages/shared/alm/outbound/admission/al-outbound-admission-store.ts:246-300,390-397`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-cluster-publication.ts`,
-  `ws-queue-box-server-service.ts:165-169,605-615` (call lines), `ws-queue-box-server-receipt-aggregation.ts:335-347`,
+  `ws-queue-box-server-service.ts:165-169,605-615` (call lines), `ws-queue-box-server-receipt-aggregation.ts`
+  (`toFrozenAudience`, as Task 1 left it), `packages/shared/al-contracts/al-frozen-multicast-audience.ts:50-56` (the
+  invariant comment, C11),
   `packages/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts:34-40,147-182,245-252`,
   `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts:86-88`,
   `packages/shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts:44`,
@@ -334,8 +367,8 @@ Each is recorded with the pre-execution rulings; the cost says what a reviewer g
 
 - Create `apps/relic-hunter-server-v1/src/to-relic-snapshot-message.ts`,
   `apps/relic-hunter-server-v1/src/apply-relic-ws-command.ts`, `apps/relic-hunters-v1/src/game/send-relic-ws-command.ts`,
-  `apps/relic-hunters-v1/src/game/to-relic-command-phase.ts`.
-- Modify `apps/relic-hunter-server-v1/src/relic-game-service.ts:26-159`, `apps/relic-hunter-server-v1/src/main.ts:60-69,89`,
+  `apps/relic-hunters-v1/src/game/to-relic-command-phase.ts`, `apps/relic-hunters-v1/src/game/relic-command-delivery-row.tsx`.
+- Modify `apps/relic-hunter-server-v1/src/relic-game-service.ts:26-159`, `apps/relic-hunter-server-v1/src/main.ts:60-69`,
   `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts:23-75,116-142,280-295,321-400`,
   `apps/relic-hunters-v1/src/game/useRelicHunters.ts:636-646` (call lines), `apps/relic-hunters-v1/src/App.tsx:1583`.
 
@@ -361,7 +394,9 @@ Relic runtime docs, the shared-server runtime navigation.
   `packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts` (one describe),
   `packages/tests/shared/services/ws-queue-box-client-relay-rejection.test.ts` (one case),
   `apps/api-v1/test/services/ws-room-live-fanout.test.ts` (helpers moved out),
-  `packages/tests/shared-test/recipe-matrix.test.ts` (two pinned lists).
+  `packages/tests/shared-test/recipe-matrix.test.ts` (two pinned lists),
+  `packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts` (one case, one refused shape), and every
+  `authorizeInboundMessagesWith` authorizer in `packages/tests` (`sendNacks`, Step 7's list).
 
 **Interfaces:**
 
@@ -373,7 +408,8 @@ Relic runtime docs, the shared-server runtime navigation.
   `ToWsQueueBoxServerInboundPlanInput = { plan; message; source; serverPeerId: string; routerOwnsRoomFanout: boolean }`
   (moved from `ws-queue-box-server-receipt-aggregation.ts`; the old two-argument export is deleted).
 - Produces `toWsQueueBoxServerAddresseeAuthorization(input: ToWsQueueBoxServerAddresseeAuthorizationInput): WsServerInboundAuthorization`
-  with `{ message: ALMessage; serverPeerId: string; authorization: WsServerInboundAuthorization }`.
+  with `{ message: ALMessage; serverPeerId: string; sendNack: boolean; authorization: WsServerInboundAuthorization }`.
+- Produces `WsServerInboundAuthorizer.sendNacks: boolean` (required; the router passes its `sendNacks` option).
 - Produces `ALDeliveryRelayRejection`'s trusted-server variant `reason: 'resync-required' | 'unauthorized'`.
 - Produces `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s3c-i'`.
 - Produces the recipe id `api-v1-websocket-addressed-sends` (Task 2 appends steps to it).
@@ -678,6 +714,7 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { toWsQueueBoxServerAddresseeAuthorization } from '@shared/services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -769,6 +806,24 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         expect(readFrames(fixture.sockets.c)).toEqual([]);
     });
 
+    it('refuses an out-of-audience addressee with the NACK policy its authorizer was configured with (C3)', () => {
+        const refusal = toWsQueueBoxServerAddresseeAuthorization({
+            message: roomUnicast('to-c', 'c', 'receiver'),
+            serverPeerId: SERVER_ID,
+            sendNack: false,
+            authorization: {
+                authorized: true,
+                roomAudience: { recipientPeerIds: ROOM_SESSIONS, snapshotVersion: 3 }
+            }
+        });
+
+        expect(refusal).toMatchObject({
+            authorized: false,
+            reason: 'unauthorized',
+            sendNack: false
+        });
+    });
+
     it('keeps its own ACK for a receiver unicast addressed to itself and opens no aggregate (Q2)', async () => {
         const fixture = await createAddressedFixture();
 
@@ -833,6 +888,7 @@ async function createAddressedFixture(): Promise<AddressedFixture> {
         }
     });
     service.authorizeInboundMessagesWith({
+        sendNacks: true,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
                 ? {
@@ -992,6 +1048,8 @@ import type { WsServerInboundAuthorization } from './ws-queue-box-server-contrac
 export interface ToWsQueueBoxServerAddresseeAuthorizationInput {
     readonly message: ALMessage;
     readonly serverPeerId: string;
+    /** The wrapped authorizer's own NACK policy (`WsServerInboundAuthorizer.sendNacks`), so both refusals agree. */
+    readonly sendNack: boolean;
     readonly authorization: WsServerInboundAuthorization;
 }
 
@@ -1020,7 +1078,7 @@ export function toWsQueueBoxServerAddresseeAuthorization(
         rejectionCode: 'unauthorized',
         logMessage:
             `AL unicast ${message.id.msgId} addresses ${targets.toPeerId}, who is not in the audience its room admitted`,
-        sendNack: true
+        sendNack: input.sendNack
     };
 }
 ```
@@ -1076,12 +1134,14 @@ import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receip
 ```
 
 - replace `const authorization = await this.inboundAuthorizer?.authorize(message) ?? { authorized: true };` in
-  `acceptIncomingMessage` (`:440`) with
+  `acceptIncomingMessage` (`:440`) with (no authorizer resolves no room audience, so no addressee refusal can follow
+  and its `sendNack` is never read):
 
 ```ts
 const authorization = toWsQueueBoxServerAddresseeAuthorization({
     message,
     serverPeerId: this.name,
+    sendNack: this.inboundAuthorizer?.sendNacks ?? false,
     authorization: await this.inboundAuthorizer?.authorize(message) ?? { authorized: true }
 });
 ```
@@ -1114,14 +1174,44 @@ return toWsQueueBoxServerInboundPlan({
 });
 ```
 
+In `packages/shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts` replace `WsServerInboundAuthorizer`
+(`:110-112`) with (R-S3c-i-18):
+
+```ts
+export interface WsServerInboundAuthorizer {
+    /** Whether a refusal answers its origin with a NACK; the service's addressee refusal follows it too (C3). */
+    readonly sendNacks: boolean;
+    authorize(message: ALMessage): Promise<WsServerInboundAuthorization>;
+}
+```
+
+In `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts` (`install`, `:105-107`) add
+`sendNacks: this.sendNacks,` as the first member of the object passed to `this.service.authorizeInboundMessagesWith`.
+Add `sendNacks: true,` as the first member of every other authorizer object passed to `authorizeInboundMessagesWith`:
+`packages/tests/shared/services/ws-queue-box-client-relay-rejection.test.ts` (1 site),
+`packages/tests/shared/services/ws-queue-box-server-ingress.test.ts` (13 sites),
+`packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts` (1),
+`packages/tests/shared/services/ws-queue-box-server-receipt-row.test.ts` (1) and
+`packages/tests/shared/ws-server-qos-policy.test.ts` (1). Prove completeness — every line prints two equal counts:
+
+```bash
+grep -rl 'authorizeInboundMessagesWith(' packages/tests apps --include='*.ts' | grep -v node_modules \
+  | while read -r f; do
+      echo "$f $(grep -c 'authorizeInboundMessagesWith(' "$f") $(grep -c 'sendNacks: true' "$f")"
+    done
+```
+
 In `packages/shared/alm/inbound/README.md:158` point the link at the new file:
 `([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):`.
+In the same README replace `:262`'s identity with `'rallar-alm-2026-09-s3c-i'` and add after that paragraph: "S3c-i
+bumped it because a unicast may now name its room (`targets.groupRef`), which older decoders refuse (C1)." — the bump
+and its record land in one commit (R-S3c-i-24).
 
 - [ ] **Step 8: Run to verify the server passes.**
 
-  Run: `npx vitest run packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts packages/tests/shared/services/ws-queue-box-server-ingress.test.ts packages/tests/shared/services/ws-queue-box-server-outbound-planning.test.ts`
-  Expected: PASS — the four existing files unchanged (a room broadcast keeps every earlier plan; a forwarding
-  fixture, `routerOwnsRoomFanout: false`, keeps forwarding).
+  Run: `npx vitest run packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts packages/tests/shared/services/ws-queue-box-server-ingress.test.ts packages/tests/shared/services/ws-queue-box-server-outbound-planning.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-row.test.ts packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts`
+  Expected: PASS — the existing files unchanged but for `sendNacks: true` (a room broadcast keeps every earlier plan;
+  a forwarding fixture, `routerOwnsRoomFanout: false`, keeps forwarding).
 
 - [ ] **Step 9: RED — the origin's side.** In `packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts`
       add, after the first `describe`:
@@ -1295,7 +1385,66 @@ function toServerRefusalFact(read: ALControlAdmissionRead): ALOutboundSettlement
 }
 ```
 
-Run the Step 9 files again. Expected: PASS. Then
+The black-box harness decodes the same union strictly (R-S3c-i-4). In
+`packages/shared-test/rallar-bb-test/alm/decode-alm-runtime-result.ts` replace `readAlmRelayRejectionField`'s doc
+comment and its first branch (`:253-267`) with:
+
+```ts
+/**
+ * Absent unless a hop refused the message; a trusted server relay is never named, so an id on one is refused. A
+ * trusted server refuses with `resync-required` after admission or `unauthorized` before it (S3c-i C3).
+ */
+function readAlmRelayRejectionField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryRelayRejection | undefined {
+    const value = record.relayRejection;
+    if (value === undefined) {
+        return undefined;
+    }
+    const rejection = decodeAlmRuntimeRecord(value);
+    if (
+        (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized') &&
+        rejection.relay === 'trusted-server' && rejection.peerId === undefined
+    ) {
+        return { relay: 'trusted-server', reason: rejection.reason };
+    }
+```
+
+(the `peer` branch and the final `throw` stay). In `packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts`
+add `{ field: 'relayRejection', value: { relay: 'peer', peerId: 'relay-session', reason: 'unauthorized' } }` to the
+`it.each` of unusable fields (`:893-904`), and after "sends a typed message and observes its delivery through the page
+runtime" (`:451-506`):
+
+```ts
+it('reads a trusted server\'s refusal before admission from a delivery observation (S3c-i C3)', async () => {
+    const rejection = { relay: 'trusted-server', reason: 'unauthorized' } as const;
+    const runtime = createRallarBlackBoxBrowserTestRuntime({
+        rallarRuntime: {
+            ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+            observeDelivery: async () => ({
+                ...DELIVERY_OBSERVATION,
+                state: 'rejected',
+                relayRejection: rejection
+            })
+        }
+    });
+
+    const observed = await runtime.execute({
+        kind: 'messages.observe',
+        commandId: 'alm-observe-server-refusal',
+        handleId: 'handle-1',
+        state: ['rejected'],
+        timeoutMs: 2_500
+    });
+
+    expect(observed.ok, observed.error?.message).toBe(true);
+    expect(observed.value).toMatchObject({ state: 'rejected', relayRejection: rejection });
+});
+```
+
+Run the Step 9 files again and `npx vitest run packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts`.
+Expected: PASS. Then
 `npx vitest run packages/tests/shared/services packages/tests/shared/alm packages/tests/shared-web/messages` —
 expected PASS. A pin that encoded a room `receiver` send refused `unauthorized` by the router expiring at its
 deadline moves to `rejected` (C3's cost); name every such moved pin, with its old and new state, in the commit body.
@@ -1339,7 +1488,10 @@ In `ws-room-live-fanout.test.ts` import `createLiveRoomRuntime`, `readOriginRece
 (`createWsServerTargetResolver`, `AL_CONTROL_RECEIPT_TYPE_ID`, `decodeALReceiptPayload`, `newALAckControlMessage`,
 `ALReceiptPayload`, `createDefaultInMemoryALOutboundRuntimeStores`, `ALOutboundRuntimeStores`,
 `decodeWsQueueBoxServerPreparedMessage`, `WsQueueBoxServerPreparedMessage`, `createApiV1RoomWsAuthorizer`,
-`RoomStateTestRuntime`); `deno task check` names any left over.
+`RoomStateTestRuntime`). Find any left over with
+`cd apps/api-v1 && deno lint test/services/ws-room-live-fanout.test.ts test/services/ws-room-live-runtime.ts` (its
+`no-unused-vars` names an unused import; `deno task check` checks `src/main.ts` only and never sees `test/**`); type
+errors in both files surface in `npm run test:deno`.
 
 Create `apps/api-v1/test/services/ws-room-unicast-receipt.test.ts`:
 
@@ -1840,7 +1992,7 @@ In `packages/shared-test/black-box-runner/recipe-matrix.json` insert, immediatel
       }
     ]
   },
-  "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal and the server-addressed receipt."
+  "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt and the out-of-audience refusal."
 },
 ```
 
@@ -1864,7 +2016,7 @@ passed. Each Alice step matches its control by `payload.typeId`, so the later `t
 - [ ] **Step 14: Commit and push.**
 
 ```bash
-git add packages/shared/al-contracts packages/shared/alm/open-indexed-db-admission-database.ts packages/shared/alm/delivery/al-delivery-lifecycle.ts packages/shared/alm/outbound/compute-al-outbound-control-admission.ts packages/shared/alm/inbound/README.md packages/shared/services/ws-queue-box-server packages/shared/services/ws-queue-box-client packages/tests/shared/al-contracts packages/tests/shared/services packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-addressed-sends.json packages/shared-test/black-box-runner/recipe-matrix.json packages/tests/shared-test/recipe-matrix.test.ts apps/api-v1/test/services
+git add packages/shared/al-contracts packages/shared/alm/open-indexed-db-admission-database.ts packages/shared/alm/delivery/al-delivery-lifecycle.ts packages/shared/alm/outbound/compute-al-outbound-control-admission.ts packages/shared/alm/inbound/README.md packages/shared/services/ws-queue-box-server packages/shared/services/ws-queue-box-client packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts packages/shared-test/rallar-bb-test/alm/decode-alm-runtime-result.ts packages/tests/shared/al-contracts packages/tests/shared/services packages/tests/shared/ws-server-qos-policy.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-addressed-sends.json packages/shared-test/black-box-runner/recipe-matrix.json packages/tests/shared-test/recipe-matrix.test.ts apps/api-v1/test/services
 git commit -m "feat(alm): S3c-i -- a room unicast is router-delivered with a one-member receipt (D53, Q4, Q5)"
 git push
 ```
@@ -1877,29 +2029,34 @@ bump (`rallar-alm-2026-09-s3c-i`, C1) and the bundle figures.
 **Files:**
 
 - Create: `packages/shared-web/browser/connection/decode-api-config-response.ts`.
-- Modify: as "Task 2" in the file structure, plus `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:74-99`
-  (the `serverPeerId` field Relic's config route and Task 4 read) and `packages/tests/shared-web/api-middleware-test-double.ts:91`.
+- Modify: as "Task 2" in the file structure, plus `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts:74-99,152-175`
+  (the `serverPeerId` field Relic's config route and Task 4 read, and no default fanout for a unicast addressed to
+  the server, R-S3c-i-5) and `packages/tests/shared-web/api-middleware-test-double.ts:91`.
 - Test: create `packages/tests/shared-web/connection/decode-api-config-response.test.ts`,
   `packages/tests/shared-web/session/session-connection-operations-server-peer.test.ts`; modify
   `packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts` (one describe),
   `packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts` (one case),
   `packages/tests/shared-web/messages/browser-message-tracked-receipt.test.ts:41-58,128-151` (moved pins),
   `packages/tests/shared-web/api/browser-http-feature-ownership.test.ts:273-278`,
+  `packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts` (one case),
   `apps/api-v1/test/composition/create-api-v1-route-installers.test.ts:30,164-168`,
   `apps/api-v1/test/routes/config-route-test-runtime.ts:44-48`, and every WS client construction in tests (Step 8).
 
 **Interfaces:**
 
 - Consumes `isALUnicastAddressedTo` (Task 1).
-- Produces `interface ApiConfigResponse extends ApiConfig { readonly serverPeerId: string }` in `@shared/api/api-config.ts`.
+- Produces `interface ApiConfigResponse extends ApiConfig { readonly serverPeerId?: string }` in `@shared/api/api-config.ts`
+  (absent: a server that predates S3c-i, "server unknown", R-S3c-i-6).
 - Produces `decodeApiConfigResponse(value: unknown): Either<string, ApiConfigResponse>`;
   `readApiConfig(options?): Promise<ApiConfigResponse>` (throws the decoder's reason, as it throws HTTP failures).
-- Produces `WsQueueBoxClientService.Input.serverPeerId: string` and `.Dependencies.serverPeerId: string` (both
-  required), `WsQueueBoxClientService.serverPeerId: string` (public readonly),
-  `CreateBrowserWebSocketQueueBox.Input.serverPeerId: string`.
-- Produces `toWsQueueBoxClientAckTrackingPlan(effective: ALQosEffectivePolicy, msg: ALMessage, serverPeerId: string): ALOutboundAckTrackingPlan | undefined`.
+- Produces `WsQueueBoxClientService.Input.serverPeerId: string | undefined` and
+  `.Dependencies.serverPeerId: string | undefined` (both required keys; undefined = server unknown),
+  `WsQueueBoxClientService.serverPeerId: string | undefined` (public readonly),
+  `CreateBrowserWebSocketQueueBox.Input.serverPeerId: string | undefined`.
+- Produces `toWsQueueBoxClientAckTrackingPlan(effective: ALQosEffectivePolicy, msg: ALMessage, serverPeerId: string | undefined): ALOutboundAckTrackingPlan | undefined`.
 - Produces `RallarConnectionOperations.serverPeerId(): string | undefined` (Task 5's Relic client reads it).
-- Produces `RallarServerWsRouter.serverPeerId: string` (public readonly; Task 4's publish and Task 5's Relic server read it).
+- Produces `RallarServerWsRouter.serverPeerId: string` (public readonly; Task 4's publish and Task 5's Relic server read
+  it); `route()` publishes no default fanout for a unicast addressed to it.
 - Produces `ConfigRouteDependencies.publicConfiguration: ApiConfigResponse` and the same type on
   `CreateApiV1RouteInstallersInput.publicConfiguration`.
 
@@ -1917,21 +2074,27 @@ const SERVED = {
     serverPeerId: 'default-qbox-server'
 };
 
-describe('the /api/config boundary decoder (D57 as applied, C5)', () => {
+describe('the /api/config boundary decoder (D57 as applied, C5, R-S3c-i-6)', () => {
     it('reads the configuration and the WS server peer id', () => {
         expect(decodeApiConfigResponse({ ...SERVED, build: 'b-1' }).right).toEqual(SERVED);
     });
 
+    it('reads a server that names no peer id as one that predates S3c-i: the server stays unknown', () => {
+        const { serverPeerId: _serverPeerId, ...unknownServer } = SERVED;
+
+        expect(decodeApiConfigResponse(unknownServer).right).toEqual(unknownServer);
+    });
+
     it.each([
-        [
-            'a server that names no peer id',
-            { ...SERVED, serverPeerId: undefined },
-            'The /api/config response names no WS server peer id.'
-        ],
         [
             'an empty peer id',
             { ...SERVED, serverPeerId: '' },
-            'The /api/config response names no WS server peer id.'
+            'The /api/config response names an empty or non-string WS server peer id.'
+        ],
+        [
+            'a non-string peer id',
+            { ...SERVED, serverPeerId: 7 },
+            'The /api/config response names an empty or non-string WS server peer id.'
         ],
         [
             'no WS endpoint',
@@ -1958,7 +2121,11 @@ Expected: FAIL — the module does not exist.
 ```ts
 /** What `/api/config` serves: the configuration and the peer id a client addresses the WS server by (D57 as applied). */
 export interface ApiConfigResponse extends ApiConfig {
-    readonly serverPeerId: string;
+    /**
+     * Absent from a server that predates S3c-i: the server is unknown, so a client neither addresses it nor tracks
+     * it as its hop, and an app that would address it falls back (Relic: REST). Every S3c-i server serves it.
+     */
+    readonly serverPeerId?: string;
 }
 ```
 
@@ -1969,8 +2136,9 @@ import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 /**
- * The `/api/config` body the browser connects with. A server that names no WS server peer id is refused: the client
- * could neither address the server nor track its hop, and the field has no contractual default (S3c-i C5).
+ * The `/api/config` body the browser connects with. A body without `serverPeerId` comes from a server that predates
+ * S3c-i and reads as "server unknown" — a distinct meaning, not a default — so a rolling deploy never strands a new
+ * browser; an empty or non-string id is refused (S3c-i C5, R-S3c-i-6).
  */
 export function decodeApiConfigResponse(value: unknown): Either<string, ApiConfigResponse> {
     if (!isRecord(value) || !isRecord(value.endpoints)) {
@@ -1986,8 +2154,13 @@ export function decodeApiConfigResponse(value: unknown): Either<string, ApiConfi
             'The /api/config response names no API base URL, WS base URL or WS endpoint.'
         );
     }
+    if (serverPeerId === undefined) {
+        return Either.ofRight({ apiBaseUrl, wsBaseUrl, endpoints: { createWs } });
+    }
     if (typeof serverPeerId !== 'string' || serverPeerId.length === 0) {
-        return Either.ofLeft('The /api/config response names no WS server peer id.');
+        return Either.ofLeft(
+            'The /api/config response names an empty or non-string WS server peer id.'
+        );
     }
     return Either.ofRight({ apiBaseUrl, wsBaseUrl, endpoints: { createWs }, serverPeerId });
 }
@@ -2026,22 +2199,31 @@ export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiCon
 
 In `packages/tests/shared-web/api/browser-http-feature-ownership.test.ts:273-278` add `serverPeerId: 'server'` to
 the mocked `/api/config` body. Then find every other test that answers `/api/config` with a body and add the same
-field to each:
+field to each, so a mocked page runs the S3c-i path rather than "server unknown" (a mock without it still connects,
+R-S3c-i-6). Grep the path without quotes — several mocks route the absolute URL
+(`'http://localhost:8080/api/config'`) or compare `url.pathname`:
 
 ```bash
-grep -rn "'/api/config'" packages/tests tests/playwright apps/ar-eye-hunter-v1 apps/relic-hunters-v1/tests | grep -v node_modules
+grep -rn "api/config" packages/tests tests/playwright apps/ar-eye-hunter-v1 apps/relic-hunters-v1/tests | grep -v node_modules
 ```
 
 — among them `tests/playwright/relic-hunters/web.spec.ts:1083-1090`, where the field is
-`serverPeerId: 'default-qbox-server'` (Task 5 names it `MOCK_SERVER_PEER_ID`). A Playwright spec is type-checked by
-nothing, so read each hit rather than relying on `npm run typecheck`.
+`serverPeerId: 'default-qbox-server'` (Task 5 names it `MOCK_SERVER_PEER_ID`),
+`tests/playwright/rallar-black-box/tabbed-navigation.spec.ts:360,510,603,1182,1225,1255`,
+`tests/playwright/rallar-black-box/agent-session-ticket-ui.spec.ts:38` and
+`tests/playwright/rallar-black-box/recipe-console-history.spec.ts:595`. Hits that only name the path (a request log,
+a `configPath` option, an expected route list) take no edit. A Playwright spec is type-checked by nothing, so read each
+hit rather than relying on `npm run typecheck`.
 
 Run the Step 1 file and `npx vitest run packages/tests/shared-web/api/browser-http-feature-ownership.test.ts`.
 Expected: PASS.
 
 - [ ] **Step 3: RED — the client's server receipts.** In `packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts`
-      add `serverPeerId: 'server',` after `sessionId: 'self',` in `createReceiptTrackingFixture`, add
-      `newALAckControlMessage` to the `al-control.ts` import, and add after the Task 1 describe:
+      give `createReceiptTrackingFixture` the parameter
+      `input: Readonly<{ serverPeerId: string | undefined; }> = { serverPeerId: 'server' }` and add
+      `serverPeerId: input.serverPeerId,` after `sessionId: 'self',` in its service input (an object, not a defaulted
+      positional, so a case can pass `undefined`), add `newALAckControlMessage` to the `al-control.ts` import, and add
+      after the Task 1 describe:
 
 ```ts
 describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)', () => {
@@ -2107,6 +2289,18 @@ describe('WS client receipts the server answers itself (R-S3a-4, D57 as applied)
             complete: true
         });
     });
+
+    it('tracks no server hop while the server named no peer id: one that predates S3c-i (R-S3c-i-6)', async () => {
+        const fixture = await createReceiptTrackingFixture({ serverPeerId: undefined });
+
+        await fixture.service.enqueueOutboxIfAbsent({
+            ...roomMessage(),
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'hop' } }
+        });
+
+        expect(await readReceipt(fixture)).toBeUndefined();
+    });
 });
 
 /** The server's own ACK: it speaks for itself as the recipient and is addressed to the origin. */
@@ -2148,9 +2342,10 @@ it('acknowledges a subtree room send itself: the router owns the fanout, so no s
 ```
 
 Run: `npx vitest run packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts packages/tests/shared/services/ws-queue-box-server-addressed-receipts.test.ts`
-Expected: the two client cases FAIL (a hop room send tracks no receipt; the command expects nobody); the server
-case PASSES already — it pins what the client now relies on (the router composition cannot forward a room message,
-so `computeIncomingAcknowledgements` answers `subtree` at once, `compute-al-inbound-admission.ts:245-259`).
+Expected: the first two client cases FAIL (a hop room send tracks no receipt; the command expects nobody), the
+server-unknown case PASSES (it pins that Step 4 keeps the old plan without an id); the server case PASSES already —
+it pins what the client now relies on (the router composition cannot forward a room message, so
+`computeIncomingAcknowledgements` answers `subtree` at once, `compute-al-inbound-admission.ts:245-259`).
 
 - [ ] **Step 4: GREEN — the client learns and tracks the server.** In
       `packages/shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts` add
@@ -2161,12 +2356,14 @@ so `computeIncomingAcknowledgements` answers `subtree` at once, `compute-al-inbo
 /**
  * The receipt a WS send tracks. The server is the one hop a WS origin has (R-S3a-4): a unicast addressed to the server
  * and every `hop` or `subtree` send expect the server's own ACK. A `receiver` send to a session or a room expects
- * nobody yet: the server's `admitted` receipt names the frozen audience the row is created from (D53).
+ * nobody yet: the server's `admitted` receipt names the frozen audience the row is created from (D53). With no server
+ * id known (a server that predates S3c-i), a send tracks what it did before: a unicast its addressee, a room send
+ * nothing unless it asks `receiver`.
  */
 export function toWsQueueBoxClientAckTrackingPlan(
     effective: ALQosEffectivePolicy,
     msg: ALMessage,
-    serverPeerId: string
+    serverPeerId: string | undefined
 ): ALOutboundAckTrackingPlan | undefined {
     const receiptAudience = toReceiptAudience(effective, msg, serverPeerId);
 ```
@@ -2175,14 +2372,28 @@ export function toWsQueueBoxClientAckTrackingPlan(
 function toReceiptAudience(
     effective: ALQosEffectivePolicy,
     msg: ALMessage,
-    serverPeerId: string
+    serverPeerId: string | undefined
 ): readonly string[] | undefined {
-    if (msg.targets === undefined) {
+    const targets = msg.targets;
+    if (targets === undefined) {
         return undefined;
+    }
+    if (serverPeerId === undefined) {
+        return toServerUnknownReceiptAudience(effective, targets);
     }
     return isALUnicastAddressedTo(msg, serverPeerId) || effective.ack.algo !== 'receiver'
         ? [serverPeerId]
         : [];
+}
+
+function toServerUnknownReceiptAudience(
+    effective: ALQosEffectivePolicy,
+    targets: NonNullable<ALMessage['targets']>
+): readonly string[] | undefined {
+    if (targets.mode === 'unicast') {
+        return effective.ack.algo === 'receiver' ? [] : [targets.toPeerId];
+    }
+    return effective.ack.algo === 'receiver' ? [] : undefined;
 }
 ```
 
@@ -2191,12 +2402,16 @@ In `packages/shared/services/ws-queue-box-client-service.ts` (warn tier: these l
 - in `WsQueueBoxClientService.Input`, after `readonly sessionId: string;`:
 
 ```ts
-/** The peer id the WS server answers as, learned from `/api/config` (D57 as applied, Q3). */
-readonly serverPeerId: string;
+/**
+ * The peer id the WS server answers as, learned from `/api/config` (D57 as applied, Q3); undefined when the server
+ * names none (it predates S3c-i, R-S3c-i-6), so the client tracks no server hop.
+ */
+readonly serverPeerId: string | undefined;
 ```
 
-- in `WsQueueBoxClientService.Dependencies`, after `readonly sessionId: string;`: `readonly serverPeerId: string;`
-- in the class, after `public readonly sessionId: string;`: `public readonly serverPeerId: string;`, and in the
+- in `WsQueueBoxClientService.Dependencies`, after `readonly sessionId: string;`:
+  `readonly serverPeerId: string | undefined;`
+- in the class, after `public readonly sessionId: string;`: `public readonly serverPeerId: string | undefined;`, and in the
   constructor after `this.sessionId = dependencies.sessionId;`: `this.serverPeerId = dependencies.serverPeerId;`
 - in `planOutgoingMessage`: `ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg, this.serverPeerId),`
 - in `createDefaultWsQueueBoxClientService`, after `sessionId: input.sessionId,`: `serverPeerId: input.serverPeerId,`
@@ -2205,8 +2420,8 @@ In `packages/shared-web/browser/websocket/create-browser-web-socket-queue-box.ts
 `CreateBrowserWebSocketQueueBox.Input` after `readonly clientData: ClientInfo;`:
 
 ```ts
-/** The WS server's peer id from `/api/config`. */
-readonly serverPeerId: string;
+/** The WS server's peer id from `/api/config`; undefined when the server names none (R-S3c-i-6). */
+readonly serverPeerId: string | undefined;
 ```
 
 and in `createBrowserWebSocketQueueBoxService` after `sessionId: clientData.sessionId,`:
@@ -2221,7 +2436,10 @@ In `packages/shared-web/browser/connection/initialise-browser-middleware.ts` (`i
       `session(): AuthSession | undefined;`:
 
 ```ts
-/** The peer id the WS server answers as, learned from `/api/config`; undefined until connected (D57 as applied). */
+/**
+ * The peer id the WS server answers as, learned from `/api/config`; undefined until connected, and when the server
+ * names none (D57 as applied, R-S3c-i-6).
+ */
 serverPeerId(): string | undefined;
 ```
 
@@ -2277,9 +2495,61 @@ readonly serverPeerId: string;
 
 and in the constructor, after `this.service = service;`: `this.serverPeerId = service.name;`.
 
-Run: `npx vitest run packages/tests/shared-web/session/session-connection-operations-server-peer.test.ts packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts`
-Expected: PASS. `npm run typecheck` names every other object typed `RallarConnectionOperations` or `RallarFacade`
-that a test builds by hand; add `serverPeerId: () => 'server'` to each.
+A unicast addressed to the server ends at the server's handlers (R-S3c-i-5): the topic's default fanout would find no
+session for it — a `live-only` topic logs "had no recipients" on every such command, and an `outbox` topic enqueues a
+`WS_OUTBOX` row addressed to the server itself. In `route()` (`:152-175`) add
+`import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';` and replace
+`if (!suppressDefaultFanout) {` (`:170`) with:
+
+```ts
+// A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
+if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
+```
+
+In `packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts` add
+`import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';` and, after "can route registered topics
+through the QueueBox outbox":
+
+```ts
+it('publishes no default fanout for a unicast addressed to the server itself (R-S3c-i-5)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    onTestFinished(() => warn.mockRestore());
+    const { router, socket, outboundStores } = createRouter();
+    router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+    const handled: string[] = [];
+    router.on({ topicId: 'app.command' }, async (message) => {
+        handled.push(message.raw.id.msgId);
+    });
+    const liveOnly = newALUnicastMessage(
+        'peer-1',
+        newALRoute('app.command', 'all', 'command-1'),
+        router.serverPeerId,
+        'app.command.v1',
+        { go: true }
+    );
+    const durable = newALUnicastMessage(
+        'peer-1',
+        newALRoute('app.durable', 'all', 'command-2'),
+        router.serverPeerId,
+        'app.command.v1',
+        { go: true },
+        { reliability: 'at-least-once', ack: 'none' }
+    );
+
+    await router.route(liveOnly);
+    await router.route(durable);
+
+    expect(handled).toEqual([liveOnly.id.msgId]);
+    expect(socket.sent).toHaveLength(0);
+    expect(warn).not.toHaveBeenCalledWith('Rallar server WS topic had no recipients: app.command');
+    expect(await outboundStores.admissionStore.readSentMessage(durable.id.msgId)).toBeUndefined();
+});
+```
+
+Run: `npx vitest run packages/tests/shared-web/session/session-connection-operations-server-peer.test.ts packages/tests/shared/services/ws-queue-box-client-receipt-tracking.test.ts packages/tests/shared-server/rallar-system/rallar-server-ws-router.test.ts`
+Expected: PASS (the router case fails without the guard: the `live-only` unicast logs "had no recipients" and the
+`outbox` one is admitted as a `WS_OUTBOX` row). `npm run typecheck` names every other object typed
+`RallarConnectionOperations` or `RallarFacade` that a test builds by hand; add `serverPeerId: () => 'server'` to each.
 
 - [ ] **Step 6: The api-v1 and Relic config routes, and OpenAPI.** In `apps/api-v1/src/routes/config-route.ts` change
       the import to `import type { ApiConfigResponse } from '@shared/api/api-config.ts';` and
@@ -2334,7 +2604,8 @@ ApiConfig:
       minLength: 1
       description: >-
         The peer id the WebSocket server answers as. A client addresses the server with a unicast to it and
-        tracks the server as its one hop by it.
+        tracks the server as its one hop by it. Every server since S3c-i serves it; a browser reads a body
+        without it as a server that predates the field and falls back (no hop receipt, app commands over REST).
       example: default-qbox-server
   additionalProperties: true
 ```
@@ -2446,7 +2717,7 @@ new: the requested algorithm, no downgrade, open).
       `packages/tests/shared/browser-outbound-cancellation.test.ts`,
       `packages/tests/shared/multicast/rtc-outbound-transport-results.test.ts`,
       `packages/tests/shared/services/ws-outbound-send-deadline.test.ts`,
-      `packages/tests/shared/services/ws-queue-box-client-ingress.test.ts` (3 sites),
+      `packages/tests/shared/services/ws-queue-box-client-ingress.test.ts` (2 sites),
       `packages/tests/shared/services/ws-queue-box-client-reconnect.test.ts`,
       `packages/tests/shared/services/ws-queue-box-client-relay-rejection.test.ts`,
       `packages/tests/shared/services/ws-queue-box-client-send-live.test.ts` (2 sites),
@@ -2542,6 +2813,10 @@ and after `assertOutsiderNackShape`:
 },
 ```
 
+In `packages/shared-test/black-box-runner/recipe-matrix.json` extend the entry's description to
+`"No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config and the server-addressed receipt."`
+(R-S3c-i-12).
+
 Run the strict preflight on the recipe (zero findings), `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts`,
 and unsandboxed `npm run test:api-v1:black-box:memory` (the recipe passes; verify the summary line).
 
@@ -2554,10 +2829,13 @@ and unsandboxed `npm run test:api-v1:black-box:memory` (the recipe passes; verif
 - [ ] **Step 11: Commit and push.**
 
 ```bash
-git add packages/shared/api/api-config.ts packages/shared/services packages/shared-web/browser packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts apps/api-v1/src apps/api-v1/resources/api-v1-openapi.yaml apps/api-v1/test apps/relic-hunter-server-v1/src/main.ts packages/tests packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-addressed-sends.json
+git add packages/shared/api/api-config.ts packages/shared/services packages/shared-web/browser packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts apps/api-v1/src apps/api-v1/resources/api-v1-openapi.yaml apps/api-v1/test apps/relic-hunter-server-v1/src/main.ts packages/tests tests/playwright packages/shared-test/black-box-runner/tests/api-v1/api-v1-websocket-addressed-sends.json packages/shared-test/black-box-runner/recipe-matrix.json
 git commit -m "feat(alm): S3c-i -- clients learn the WS server id and track it as their one hop (D57 as applied, Q2, Q3, R-S3a-4)"
 git push
 ```
+
+Add every app test directory Step 2's grep or Step 5's typecheck sweep edited (for example
+`apps/relic-hunters-v1/tests`, `apps/ar-eye-hunter-v1`'s tests) to the `git add` (R-S3c-i-3).
 
 ### Task 3: The WS peer target on typed sends (Q11, WS only)
 
@@ -2653,17 +2931,25 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
             .rejects.toSatisfy(isRallarValidationError);
     });
 
-    it('refuses a peer target that carries exclusions or ordering', async () => {
-        const fixture = createBrowserMessageSenderFixture();
+    it.each([
+        ['exclusions', { exceptPeerIds: ['peer-c'] }],
+        ['ordering', { orderingKey: 'k', seq: 1 }],
+        ['a snapshot floor', { minSnapshotVersion: 3 }],
+        ['a hop limit', { ttlHops: 2 }]
+    ])(
+        'refuses a peer target that carries %s, which a unicast cannot honour',
+        async (_name, extra) => {
+            const fixture = createBrowserMessageSenderFixture();
 
-        await expect(fixture.sender.sendWs({
-            typeId: 'app.note.v1',
-            payload: {},
-            roomId: 'room',
-            peerId: 'peer-b',
-            exceptPeerIds: ['peer-c']
-        }, undefined)).rejects.toSatisfy(isRallarValidationError);
-    });
+            await expect(fixture.sender.sendWs({
+                typeId: 'app.note.v1',
+                payload: {},
+                roomId: 'room',
+                peerId: 'peer-b',
+                ...extra
+            }, undefined)).rejects.toSatisfy(isRallarValidationError);
+        }
+    );
 });
 ```
 
@@ -2677,7 +2963,7 @@ Expected: FAIL — `peerId` is not a member of `RallarWsSendInput`, and the send
 /**
  * The one session or server a WS send addresses; absent, the send reaches its scope. A peer send names the room it
  * resolves, so the room admits it and asks the peer's receipt under a `command` purpose (D53). WS only until the RTC
- * unicast lands; carries no exclusions and no ordering.
+ * unicast lands; carries no exclusions, no ordering, no snapshot floor and no hop limit, which a unicast cannot honour.
  */
 readonly peerId?: string;
 ```
@@ -2748,7 +3034,10 @@ export function createBrowserWsUnicastMessage<T>(
     );
 }
 
-/** A peer-addressed WS send names its peer and carries neither exclusions nor ordering. */
+/**
+ * A peer-addressed WS send names its peer and carries no exclusions, no ordering, no snapshot floor and no hop limit:
+ * the unicast it builds has no field for them, so they are refused rather than dropped (R-S3c-i-23).
+ */
 export function validateBrowserWsPeerInput<T>(
     input: RallarWsSendInput<T>
 ): readonly RallarValidationIssue[] {
@@ -2771,6 +3060,13 @@ export function validateBrowserWsPeerInput<T>(
             path: '$.peerId',
             code: 'unsupported',
             message: 'A peer-addressed send carries no exclusions and no ordering.'
+        });
+    }
+    if (input.minSnapshotVersion !== undefined || input.ttlHops !== undefined) {
+        issues.push({
+            path: '$.peerId',
+            code: 'unsupported',
+            message: 'A peer-addressed send carries no snapshot floor and no hop limit.'
         });
     }
     return issues;
@@ -3077,7 +3373,7 @@ export function createRallarAlmReceiptDiagnosticsRecorder(
                 input.nowEpochMs()
             );
             if (next !== undefined) {
-                writeBoundedEntry(entries, next, input.capacity);
+                setBoundedEntry(entries, next, input.capacity);
             }
         },
         readDiagnostics: () => ({ capacity: input.capacity, messages: [...entries.values()] })
@@ -3119,7 +3415,7 @@ export function toRallarAlmReceiptEntry(
 }
 
 /** The least recently updated entry leaves first. */
-function writeBoundedEntry(
+function setBoundedEntry(
     entries: Map<string, AdminOperationsAlmReceiptEntry>,
     entry: AdminOperationsAlmReceiptEntry,
     capacity: number
@@ -3796,6 +4092,10 @@ readAdmittedAudience(msgId) {
 }
 ```
 
+and pass `undefined` as the third argument of the direct publisher call at `:150`
+(`await outboxPublishers[0](message, entry, undefined);`), which the tests-typecheck ratchet otherwise reports
+(R-S3c-i-16).
+
 Run: `npx vitest run packages/tests/shared/services/ws-queue-box-server-originated-receipt.test.ts packages/tests/shared-server/rallar-system/queue-pubsub packages/tests/shared/services/ws-queue-box-server-receipt-aggregation.test.ts packages/tests/shared/services/ws-queue-box-server-receipt-row.test.ts packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
 Expected: PASS. `npm run typecheck` names any other object typed `ALOutboundAdmissionStore` or
 `QueueBoxPubSubWsService` a test builds by hand; add `readAdmittedAudience: async () => undefined` to each.
@@ -3837,9 +4137,24 @@ if (frozen !== undefined) {
 ```
 
 and extend its doc comment: "A multicast the origin froze (an RTC leg handed to WS) keeps that audience verbatim,
-so a session that left since reads unconfirmed (Q12); delivery stays the authorized sessions." Run the addressed
-receipts file and `ws-queue-box-server-receipt-aggregation.test.ts`: PASS. D66's "the WS server narrows its current
-room to the frozen set" is amended by this; Task 6 records it.
+so a session that left since reads unconfirmed (Q12); delivery stays the authorized sessions, so the expected set may
+exceed the delivered set by design." In the same step amend the invariant that aggregate now departs from
+(R-S3c-i-11): in `packages/shared/al-contracts/al-frozen-multicast-audience.ts` replace the doc comment of
+`resolveALAdmittedRoomAudience` (`:50-56`) with:
+
+```ts
+/**
+ * The sessions an admission stamps as a room message's delivery audience: every authorized session, narrowed to a
+ * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, whom the message is
+ * delivered to. The WS server's receipt aggregate is the one reader that may expect more: it keeps a frozen audience
+ * verbatim, so a frozen recipient the authority no longer admits reads unconfirmed (S3c-i C11). The origin stays in
+ * it, as it does in an unfrozen audience, so a narrowed audience is never empty: every consumer already excludes the
+ * origin, and the handling policy reads an empty member set as unrestricted.
+ */
+```
+
+Run the addressed receipts file and `ws-queue-box-server-receipt-aggregation.test.ts`: PASS. D66's "the WS server
+narrows its current room to the frozen set" is amended by this; Task 6 records it.
 
 - [ ] **Step 8: The sink on the server and the admin route.** In
       `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts` add to
@@ -3904,8 +4219,9 @@ to `RuntimeAdditions`,
 to `createRuntimeAdditions`, and `assert.equal(complete.almReceiptDiagnostics, additions.almReceiptDiagnostics);`
 after the `groupFormationMetrics` assertion.
 
-In `apps/api-v1/resources/api-v1-openapi.yaml` add to `AdminOperationsRealtimeResponse`'s properties (`:3675-3688`)
-after `groupFormation`:
+In `apps/api-v1/resources/api-v1-openapi.yaml`, in `AdminOperationsRealtimeResponse` (`:3675-3688`), add
+`required: [almReceipts]` to its inline `type: object` member (beside `properties`; the existing properties stay
+optional, and the TS type requires `almReceipts`, R-S3c-i-25), and add to its properties after `groupFormation`:
 
 ```yaml
 almReceipts:
@@ -3952,6 +4268,21 @@ AdminOperationsAlmReceiptEntry:
         type: string
     lastSettlementKind:
       type: string
+      description: The kind of the message's last settlement (`ALDeliverySettlement['kind']`).
+      enum:
+        - admission
+        - carrier-refused
+        - carrier-fallback
+        - attempts-exhausted
+        - attempt-started
+        - attempt-settled
+        - acknowledgement
+        - receipt-exhausted
+        - not-yet-in-sync-exhausted
+        - relay-rejected
+        - expired
+        - superseded
+        - cancelled
     receiptExhausted:
       type: boolean
     updatedAtEpochMs:
@@ -4000,7 +4331,7 @@ stays 4); unsandboxed `npm run test:api-v1:black-box:memory`. Expected: PASS, su
 - [ ] **Step 10: Commit and push.**
 
 ```bash
-git add packages/shared/alm/outbound/admission/al-outbound-admission-store.ts packages/shared/services/ws-queue-box-server packages/shared/api/admin-operations-types.ts packages/shared-server/rallar-system apps/api-v1/src apps/api-v1/resources/api-v1-openapi.yaml apps/api-v1/test packages/tests/shared packages/tests/shared-server packages/shared-test/black-box-runner/tests/api-v1/api-v1-admin-operations.json
+git add packages/shared/alm/outbound/admission/al-outbound-admission-store.ts packages/shared/al-contracts/al-frozen-multicast-audience.ts packages/shared/services/ws-queue-box-server packages/shared/api/admin-operations-types.ts packages/shared-server/rallar-system apps/api-v1/src apps/api-v1/resources/api-v1-openapi.yaml apps/api-v1/test packages/tests/shared packages/tests/shared-server packages/shared-test/black-box-runner/tests/api-v1/api-v1-admin-operations.json
 git commit -m "feat(alm): S3c-i -- server notifications carry receipts over the frozen room, both cluster sends honour it, the sink reports per-session confirmation (D58, D61, Q7, Q8, Q12)"
 git push
 ```
@@ -4011,10 +4342,12 @@ git push
 
 - Create: `apps/relic-hunter-server-v1/src/to-relic-snapshot-message.ts`,
   `apps/relic-hunter-server-v1/src/apply-relic-ws-command.ts`,
-  `apps/relic-hunters-v1/src/game/send-relic-ws-command.ts`, `apps/relic-hunters-v1/src/game/to-relic-command-phase.ts`.
+  `apps/relic-hunters-v1/src/game/send-relic-ws-command.ts`, `apps/relic-hunters-v1/src/game/to-relic-command-phase.ts`,
+  `apps/relic-hunters-v1/src/game/relic-command-delivery-row.tsx`.
 - Modify: `apps/relic-hunter-server-v1/src/relic-game-service.ts`, `apps/relic-hunter-server-v1/src/main.ts:60-69`,
   `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`, `apps/relic-hunters-v1/src/game/useRelicHunters.ts`
-  (review tier: the `sendCommand` try block and one import only), `apps/relic-hunters-v1/src/App.tsx:1583`,
+  (review tier: the `sendCommand` try block and one import only), `apps/relic-hunters-v1/src/App.tsx:1583` (one
+  import and one element line),
   `tests/playwright/relic-hunters/web.spec.ts` (the browser WebSocket double and the mocked backend).
 - Test: modify `apps/relic-hunter-server-v1/test/relic-server-service.test.ts`,
   `apps/relic-hunter-server-v1/test/relic-server-browser-contract.test.ts`,
@@ -4129,7 +4462,7 @@ it('ends a WebSocket command that breaks a rule as a value: nothing is thrown in
     expect(fake.published).toHaveLength(0);
 });
 
-it('drops a WebSocket command whose sender has no live session', async () => {
+it('drops a WebSocket command whose sender has no issued session', async () => {
     const fake = createFakeRallar();
     await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
@@ -4245,7 +4578,7 @@ export async function applyRelicWsCommand(
 ): Promise<RelicWsCommandOutcome> {
     const username = await input.readSessionUsername(input.senderId);
     if (username === undefined) {
-        return { kind: 'no-session', detail: `No live session ${input.senderId}.` };
+        return { kind: 'no-session', detail: `No issued session ${input.senderId}.` };
     }
     try {
         return {
@@ -4267,7 +4600,10 @@ In `apps/relic-hunter-server-v1/src/relic-game-service.ts`:
 - add to `RelicHunterGameServiceOptions`:
 
 ```ts
-/** The username of a live session, read from the auth store: a WS command's own username is never trusted (Q6). */
+/**
+ * The username of an issued session, read from the auth store: a WS command's own username is never trusted (Q6).
+ * The store also returns expired and logged-out sessions; the sender's open WS connection is what authenticated it.
+ */
 readonly readSessionUsername: (sessionId: string) => Promise<string | undefined>;
 ```
 
@@ -4319,8 +4655,8 @@ rallar.ws.on(
 In `apps/relic-hunter-server-v1/src/main.ts` (`:60-69`) add to the `installRelicHunterGame` options:
 
 ```ts
-readSessionUsername: (async (sessionId) =>
-    (await rallar.runtime.authSessionRepository.findBySessionId(sessionId))?.username);
+readSessionUsername: async (sessionId) =>
+    (await rallar.runtime.authSessionRepository.findBySessionId(sessionId))?.username,
 ```
 
 Run: `cd apps/relic-hunter-server-v1 && deno task check && deno test --allow-env --allow-read test/`. Expected: PASS.
@@ -4414,22 +4750,24 @@ describe('what the hunter sees after a command (D57 as applied, D72)', () => {
         });
     });
 
+    // A server-addressed command tracks the server as its expected peer, so the server's pre-admission refusal ends
+    // that receipt row: the handle reads `failed` with the receipt-exhausted detail, never C3's `rejected` fact.
     it('reads a WS command the server did not confirm as degraded, naming its state and reason', () => {
         const phase = toRelicCommandPhase({
             transport: 'ws',
             delivery: {
-                state: 'rejected',
-                reason: 'The server refused the message before admitting it: unauthorized.'
+                state: 'failed',
+                reason: 'Hop default-qbox-server refused the message: unauthorized.'
             }
         }, true);
 
         expect(phase.phase).toBe('degraded');
         expect(phase.error).toBe(
-            'The server did not confirm the command (rejected): The server refused the message before admitting it: unauthorized.'
+            'The server did not confirm the command (failed): Hop default-qbox-server refused the message: unauthorized.'
         );
         expect(phase.patch).toMatchObject({
             commandTransport: 'ws',
-            lastCommandDelivery: 'rejected',
+            lastCommandDelivery: 'failed',
             lastError: phase.error
         });
     });
@@ -4680,13 +5018,27 @@ setPhase(commandPhase.phase, { ...commandPhase.patch, lastHydratedAtEpochMs: Dat
 The `catch` keeps its "There is no review to continue" branch: it serves the REST fallback; after a WS command the
 rule-error text never reaches the browser (D72's stated regression).
 
-In `apps/relic-hunters-v1/src/App.tsx` after `:1583` add:
+Create `apps/relic-hunters-v1/src/game/relic-command-delivery-row.tsx` (the row owns its absence check, so
+`App.tsx` — cognitive load 776, above the refactor-or-register tier and unregistered — gains one import and one
+element line and no new branch, R-S3c-i-2):
 
 ```tsx
-{
-    diagnostics.lastCommandDelivery && <small>Last command {diagnostics.lastCommandDelivery}
-    </small>;
+import type { ALDeliveryState } from '@shared-web/browser/rallar.ts';
+
+/** The last WS command's receipt state in the diagnostics panel; nothing before the first WS command (D72). */
+export function RelicCommandDeliveryRow({
+    delivery
+}: Readonly<{ delivery: ALDeliveryState | undefined; }>) {
+    return delivery === undefined ? null : <small>Last command {delivery}</small>;
 }
+```
+
+In `apps/relic-hunters-v1/src/App.tsx` add `import { RelicCommandDeliveryRow } from './game/relic-command-delivery-row.tsx';`
+after the `./game/relic-hunters-runtime.ts` type import, and after `:1583`
+(`<small>Commands {diagnostics.commandTransport.toUpperCase()}</small>`) add:
+
+```tsx
+<RelicCommandDeliveryRow delivery={diagnostics.lastCommandDelivery} />;
 ```
 
 Run the Step 3 command, then `npm --workspace relic-hunters-v1 run test` and
@@ -4695,6 +5047,10 @@ Run the Step 3 command, then `npm --workspace relic-hunters-v1 run test` and
 - [ ] **Step 5: The Relic browser spec answers commands over its WebSocket double.** In
       `tests/playwright/relic-hunters/web.spec.ts`:
 
+  - add the imports `import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';` and
+    `import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';` (the `@shared` alias resolves at
+    runtime in Playwright, as `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts:7` already relies on), so the
+    double builds its frames with the production constructors instead of copying their envelopes (R-S3c-i-22);
   - add after the imports `const MOCK_SERVER_PEER_ID = 'default-qbox-server';` and use it for the `serverPeerId` Task 2
     put in the mocked `/api/config`;
   - in `installBrowserDoubles`' `FakeWebSocket`, replace `send` with:
@@ -4755,78 +5111,42 @@ type MockWsFrame = Readonly<{
     payload?: Readonly<{ typeId: string; resource: string; }>;
 }>;
 
-/** The server's own ACK, shaped as the AL control codec builds it (`computeALControlMessage`). */
+/** The server's own ACK, built by the AL control codec's own constructor, as the server builds it. */
 function toServerAckFrame(command: MockWsFrame): string {
-    const payload = {
-        ackedMsgId: command.id.msgId,
-        fromPeerId: MOCK_SERVER_PEER_ID,
-        toPeerId: command.id.senderId,
-        originPeerId: command.id.senderId,
-        logicalRecipientPeerId: MOCK_SERVER_PEER_ID,
-        carrier: 'ws',
-        status: 'delivered',
-        observedAtEpochMs: Date.now()
-    };
-    return JSON.stringify({
-        id: {
-            v: 2,
-            msgId: `ack-${command.id.msgId}`,
-            ts: Date.now(),
-            senderId: MOCK_SERVER_PEER_ID
-        },
-        route: {
-            topicId: 'al-control',
-            resourceId: command.id.msgId,
-            contextId: command.id.senderId
-        },
-        targets: { mode: 'unicast', toPeerId: command.id.senderId },
-        qos: {
-            delivery: { algo: 'best-effort' },
-            durability: { algo: 'volatile' },
-            ack: { algo: 'none', opts: { timeoutMs: 250 } }
-        },
-        payload: {
-            typeId: 'al.control.ack.v2',
-            contentType: 'application/json',
-            resource: JSON.stringify(payload)
+    return JSON.stringify(newALAckControlMessage(
+        { v: 2, msgId: `ack-${command.id.msgId}`, ts: Date.now(), senderId: MOCK_SERVER_PEER_ID },
+        {
+            ackedMsgId: command.id.msgId,
+            fromPeerId: MOCK_SERVER_PEER_ID,
+            toPeerId: command.id.senderId,
+            originPeerId: command.id.senderId,
+            logicalRecipientPeerId: MOCK_SERVER_PEER_ID,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
         }
-    });
+    ));
 }
 
+/** The applied snapshot as the Relic server publishes it (`toRelicSnapshotMessage`): `receiver`, at-least-once. */
 function toSnapshotFrame(snapshot: RelicSnapshot): string {
-    return JSON.stringify({
-        id: {
-            v: 2,
-            msgId: `snapshot-${snapshot.gameId}-${snapshot.round}-${Date.now()}`,
-            ts: Date.now(),
-            senderId: MOCK_SERVER_PEER_ID
-        },
-        route: {
-            topicId: 'room.relic.snapshot',
-            resourceId: `${snapshot.gameId}:${snapshot.round}`,
-            contextId: snapshot.roomId
-        },
-        targets: {
-            mode: 'broadcast',
-            scope: 'room',
+    return JSON.stringify(newALBroadcastMessage(
+        MOCK_SERVER_PEER_ID,
+        newALRoute('room.relic.snapshot', snapshot.roomId, `${snapshot.gameId}:${snapshot.round}`),
+        'room',
+        'relic.snapshot.v1',
+        { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
+        {
             groupRef: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: snapshot.roomId
-            }
-        },
-        constraints: { expiresAtMs: Date.now() + 15_000 },
-        delivery: { reliability: 'best-effort', ack: 'none' },
-        payload: {
-            typeId: 'relic.snapshot.v1',
-            contentType: 'application/json',
-            resource: JSON.stringify({
-                protocolVersion: snapshot.protocolVersion,
-                gameId: snapshot.gameId,
-                snapshot
-            })
+            },
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 15_000
         }
-    });
+    ));
 }
 ```
 
@@ -4853,6 +5173,24 @@ expect(commandFrames).toEqual([
         groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' }
     }
 ]);
+// Each snapshot frame asks `receiver`, so the page acknowledges it to the server: the snapshot receipt (D58, D77).
+await expect.poll(async () =>
+    await page.evaluate(
+        (serverPeerId) =>
+            ((window as unknown as { __rallarWsOutbox?: unknown[]; }).__rallarWsOutbox ?? [])
+                .map((frame) =>
+                    JSON.parse(String(frame)) as {
+                        payload?: { typeId?: string; resource?: string; };
+                    }
+                )
+                .filter((frame) => frame.payload?.typeId === 'al.control.ack.v2')
+                .map((frame) =>
+                    JSON.parse(frame.payload?.resource ?? '{}') as { toPeerId?: string; }
+                )
+                .filter((ack) => ack.toPeerId === serverPeerId).length,
+        MOCK_SERVER_PEER_ID
+    )
+).toBe(2);
 ```
 
 Run unsandboxed: `npm run test:playwright:relic` (it serves the Relic SPA; verify the summary line). Expected: PASS.
@@ -4865,8 +5203,11 @@ the test above does, and named in the commit body.
 
 - [ ] **Step 6: Validate.** The per-task set with both apps' Deno checks and tests (`npm run test:deno` runs
       `apps/relic-hunter-server-v1` check and test), `npm --workspace relic-hunters-v1 run test`,
-      `npm --workspace relic-hunters-v1 run build`, and, unsandboxed, `npm run test:playwright:relic`. Relic's REST route
-      and its recipe-free server share are unchanged (C15).
+      `npm --workspace relic-hunters-v1 run build`, and, unsandboxed, `npm run test:playwright:relic` and
+      `npm run test:playwright:relic:full-stack` — the real Relic server (which embeds API-v1) behind the SPA
+      (`tests/playwright/relic-hunters/full-stack-propagation.spec.ts`), the only gate on Relic's own `/api/config`
+      (Task 2), the WS command and the outbox snapshot outside fakes (R-S3c-i-10); verify both summary lines. Relic's
+      REST route and its recipe-free server share are unchanged (C15).
 
 - [ ] **Step 7: Commit and push.**
 
@@ -4879,13 +5220,15 @@ git push
 ### Task 6: Docs, the gates, the PR
 
 **Files:** `packages/shared/alm/outbound/README.md` ("### Server receipts on WS", `:292-322`),
-`packages/shared/alm/inbound/README.md` (`:155-170` the WS server rules, `:262` the schema identity),
+`packages/shared/alm/inbound/README.md` (`:155-170` the WS server rules; its `:262` schema identity moved to Task 1
+Step 7 with the bump),
 `playground/alm/alm-complete-product-description.md` (`:195-200` "Unicast", `:405-412` the S3a paragraph of
 "Acknowledgement modes", `:624-625` "Observability and privacy"), `playground/alm/alm-improvement-plan.md` (rows D46,
-D53, D57, D58, D61, D66, D71; the S3 bullet `:800-845`; matrix row F1 `:943`; the revision history),
-`playground/alm/alm-s3-design-proposal.md` (§2.3 `:210-231`), `apps/relic-hunters-v1/docs/runtime-data-flow.md`
-(`:44-58` "Command Path"), `apps/relic-hunters-v1/docs/current-state.md:26-28`. Line numbers are on `4550c66df`;
-re-read each anchor before editing.
+D53, D57, D58, D61, D66, D71; the S3 bullet `:809-843`; matrix row F1 `:952`; the revision history),
+`playground/alm/alm-s3-design-proposal.md` (§2.3 `:210-231`, the schema-id status line `:416`),
+`apps/relic-hunters-v1/docs/runtime-data-flow.md` (`:44-58` "Command Path"),
+`apps/relic-hunters-v1/docs/current-state.md:26-28`. Line numbers are on `75d503425`; re-read each anchor before
+editing.
 
 - [ ] **Step 1: The outbound README.** In "### Server receipts on WS" delete the sentence "No client learns a server
       id." and replace the paragraph's last sentence ("A `receiver` message addressed to the server itself keeps the
@@ -4924,8 +5267,7 @@ sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 - [ ] **Step 2: The inbound README.** In the WS server paragraph (`:155-170`), after "A `receiver` message whose
       logical recipient is the server keeps its ACK.", add: "The server receives an authorized room unicast to another
       session itself (D71), so its router delivers it; a unicast to a session outside the room's admitted audience is
-      refused before admission." Replace `:262`'s identity with `'rallar-alm-2026-09-s3c-i'` and add after the paragraph:
-      "S3c-i bumped it because a unicast may now name its room (`targets.groupRef`), which older decoders refuse (C1)."
+      refused before admission." (The schema identity at `:262` was updated with the bump in Task 1 Step 7.)
 
 - [ ] **Step 3: The product description.** Replace "**CURRENT** for basic RTC and WS routing." under "### Unicast"
       with:
@@ -4966,7 +5308,7 @@ most recent receipted messages, who confirmed each receipt and whether it ran ou
   - D71: append " **As applied (S3c-i):** the refusal keys on the unicast naming no room, not on its topic (C2).";
   - D46: append " **Extended by S3c-i (C1)** to the `rallar-alm-2026-09-s3c-i` bump: the server's admission rows holding
     a room-naming unicast stay undecodable to a rolled-back server for their TTL.";
-  - F1 (`:943`) state: "Partial: the default typed send is receipted and volatile (S3a, PR #597); every receipt end
+  - F1 (`:952`) state: "Partial: the default typed send is receipted and volatile (S3a, PR #597); every receipt end
     settles and `receipt-exhausted` hands `rtc-with-ws-fallback` to WS (S3b, PR #604); the WS unicast receipt, the WS
     `hop` receipt and the server's own receipts (S3c-i, PR #605); the RTC unicast is S3c-ii's.";
   - the S3 bullet, after the S3b sentence: "S3c-i delivered by PR #605 (branch
@@ -4979,7 +5321,9 @@ most recent receipted messages, who confirmed each receipt and whether it ran ou
   In `alm-s3-design-proposal.md` §2.3 add after its last bullet: "**As applied (S3c-i, PR #605):** a room unicast names
   its room (`groupRef`, schema bump — the server target needs no envelope bump, D76); the WS `hop` receipt tracks the
   server; the snapshot sender is the server peer id and the sink a per-process recorder; the typed-channel `peerId`
-  target landed WS-only for the Relic cutover (Q11's RTC half is S3c-ii's)."
+  target landed WS-only for the Relic cutover (Q11's RTC half is S3c-ii's)." At `:416` append to "`AL_ADMISSION_SCHEMA_ID`
+  is still `rallar-alm-2026-09-s2c-ii`." the sentence " S3c-i (PR #605) bumps it to `rallar-alm-2026-09-s3c-i` (C1)."
+  (R-S3c-i-24).
 
 - [ ] **Step 5: The Relic docs.** In `apps/relic-hunters-v1/docs/runtime-data-flow.md` replace "## Command Path"
       through "... does not send gameplay commands over that topic." with:
@@ -5006,7 +5350,7 @@ and the applied snapshot's arrival.
 In `current-state.md:26-28` replace "relic REST calls, WS snapshot fanout," with "relic commands on the Rallar WS
 `command` channel (REST before the server id is known), WS snapshot fanout with receipts,".
 
-- [ ] **Step 6: Validate the docs.** `npx dprint check <the eight edited files>`, `npm run test:repo-governance`,
+- [ ] **Step 6: Validate the docs.** `npx dprint check <the seven edited files>`, `npm run test:repo-governance`,
       `npm run check:repo-style:changed -- origin/main HEAD`. Commit and push:
 
 ```bash
@@ -5029,9 +5373,10 @@ git push
     `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts`;
   - unsandboxed: `npm run test:api-v1:black-box:memory`; with the Postgres container up,
     `npm run test:api-v1:black-box:postgres` (both new recipe steps pass on PostgreSQL);
-  - unsandboxed: `npm run test:e2e`, `npm run test:full-stack:memory`, `npm run test:playwright:relic`, the ALM smoke
-    lane, and the full lane two- and three-agent on every carrier on normal pages (S3c-i adds no scenario; every
-    carrier's expectations are unchanged except where a moved pin is named);
+  - unsandboxed: `npm run test:e2e`, `npm run test:full-stack:memory`, `npm run test:playwright:relic`,
+    `npm run test:playwright:relic:full-stack` (the real Relic server, R-S3c-i-10), the ALM smoke lane, and the full
+    lane two- and three-agent on every carrier on normal pages (S3c-i adds no scenario; every carrier's expectations
+    are unchanged except where a moved pin is named);
   - **the medium-scale gate, once (Q13, D76):** unsandboxed, the Postgres container `ar-eye-hunter-postgres` up and
     freshly migrated (`npm run db:test:up` in this worktree; `docker start` it if it stopped), run
     `npm run test:api-v1:black-box:postgres:medium-scale` and record its summary line in this step's notes and the PR
@@ -5045,17 +5390,27 @@ git push
       fails `gh` on TLS). Body sections, in the S3b shape: the decisions applied (D70–D73, D76, D77, D57 as applied; Q1–Q13)
       and the R-S3c-i rulings with C1–C16 as ruled; Corrections 21–23; the room unicast and its receipt; the server address
       and the WS hop receipt (the moved R-S3a-4 pins from Task 2 Step 7 and Step 8); the WS peer target (WS only, the RTC
-      half S3c-ii's); the server's own receipts, the cluster audience and the recorder; the Relic cutover (what the UI shows,
-      D72's stated regression, REST as the pre-id fallback, process-local serialization); every moved pin by task; the
-      bundle figures from Tasks 1–3; the schema bump `rallar-alm-2026-09-s3c-i` and what a deploy discards (every browser's
-      ALM IndexedDB stores reset once; PostgreSQL WS admission rows holding a room-naming unicast are undecodable to a
-      rolled-back server for their TTL, D46 extended); the medium-scale summary line; the gate list from Step 7; the carried
+      half S3c-ii's); the server's own receipts, the cluster audience and the recorder; the Relic cutover (what the UI shows;
+      D72's stated regression, whose paragraph says that the server log is the only surface for a caught rule or storage
+      error and a `no-session` drop — no counter, no recorder entry, and the client reads `acknowledged` (R-S3c-i-20);
+      REST as the pre-id fallback and where it is reachable — before connect, and against a server that serves no
+      `serverPeerId` (R-S3c-i-6); process-local serialization); **named debt for the maintainer:** Relic's WS command
+      writes app data through `AppDataOptimisticWriter.set` outside AppInbox, as the REST route already did — S3c-i
+      changes the transport, not the write (R-S3c-i-8); every moved pin by task; the bundle figures from Tasks 1–3; the
+      schema bump `rallar-alm-2026-09-s3c-i` and what a deploy discards (every browser's ALM IndexedDB stores reset once;
+      PostgreSQL WS admission rows holding a room-naming unicast are undecodable to a rolled-back server for their TTL,
+      D46 extended); the deploy order — the server before the browser: a new browser against a server without
+      `serverPeerId` runs as "server unknown" (no WS hop receipt, Relic commands over REST) until the server is upgraded
+      (R-S3c-i-6); the medium-scale summary line; the gate list from Step 7; the carried
       lists; and, last, the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Hosted: dispatch the
       Hetzner smoke from the PR branch (`gh workflow run hetzner-distributed-recipe.yml --ref claude/alm-s3c-consumer-proofs-volatile-bound -f ref=claude/alm-s3c-consumer-proofs-volatile-bound`,
       never from `main`) on both-normal runners, and the hosted full read with `RALLAR_BLACK_BOX_ALM_SCOPE=full` at most
       twice (D51), reported under the two-regime rule and never a blocker; poll with foreground `gh run list`. Wait for the
       Branch Release Gate on the final commit. Do not run `pr:delivery -- ready` or enable auto-merge: the maintainer lands
-      the PR.
+      the PR. After the maintainer merges it, the plan is complete only once **Run Hetzner Supported Distributed
+      Manifests** passes on the resulting default-branch commit (CLAUDE.md's completion gate; S3c-i changes no manifest
+      or conformance catalog entry, so the run is expected unchanged); record its run id and summary in the closing
+      report, and treat a red there under the hosted-manifest triage rules before blaming the branch (R-S3c-i-27).
 
 ## Rulings during execution
 
@@ -5072,10 +5427,78 @@ git push
   Relic client whose WS is down without a command path until reconnect (REST is a fallback for the missing id, not
   for a dead socket).
 
-- **R-S3c-i-0 (pre-execution).** To be recorded by the controller before Task 1: Q1–Q13 as settled (D57 as applied,
-  D70–D78), and its ruling on C1–C16 with each choice's cost as written above. C1 carries the one departure from the
-  caller's constraint list: `AL_ADMISSION_SCHEMA_ID` moves to `'rallar-alm-2026-09-s3c-i'`, by the bump rule, because a
-  room-scoped unicast must name its room for the room authorizer to admit it (Correction 21).
+R-S3c-i-1..27 rule on the pre-flight conflict scan's findings 1–27 (finding 28 is informational), one ruling per
+finding; the controller accepted every finding's smallest edit on 2026-09-28, with the specifics below, and the plan
+above is amended accordingly.
+
+- **R-S3c-i-5 (the router's default fanout skips a unicast to the server).** `route()` publishes a topic's default
+  fanout after its handlers, and nothing excluded a unicast addressed to the server: a `live-only` topic logged "had no
+  recipients" for every such command (Task 2's recipe step on `room.chat` included), and an `outbox` topic enqueued a
+  `WS_OUTBOX` row addressed to the server itself. Task 2 Step 5, where the router gains `serverPeerId`, guards the
+  fanout with `isALUnicastAddressedTo(message, this.serverPeerId)` and adds a router test (`live-only`: no log;
+  `outbox`: no row). Cost if wrong: a proxy rule or topic that meant to re-publish a server-addressed unicast must now
+  publish it explicitly.
+- **R-S3c-i-6 (an absent `serverPeerId` is "server unknown").** A strict decoder made REST reachable only before
+  connect and stranded a new browser against an old server (or an un-updated mock). `decodeApiConfigResponse` now reads
+  an absent id as a server that predates S3c-i — a distinct domain meaning that selects the old WS tracking and Relic's
+  REST path — and refuses only an empty or non-string id; `ApiConfigResponse.serverPeerId` and the WS client's
+  `serverPeerId` become `string | undefined`; C5 and C13 state the cost; the PR body states the deploy order (server
+  before browser) and REST's reachability (Task 6 Step 8). Cost if wrong: a server that should serve the id but
+  does not fails silently into REST and no hop receipt instead of refusing to connect.
+- **R-S3c-i-8 (Relic's WS app-data write stays outside AppInbox, as named debt).** The mutation doctrine makes AppInbox
+  mandatory for every incoming WS mutation, and Relic's WS command writes app data through
+  `AppDataOptimisticWriter.set` directly. That write predates S3c-i on the REST path; S3c-i changes its transport, not
+  the write, so no code changes here: the Global Constraints record it and the PR body names it as debt for the
+  maintainer. Cost if wrong: S3c-i makes the undoctrined path Relic's primary write path until a later slice routes it
+  through AppInbox.
+- **R-S3c-i-10 (the real Relic server gets a gate).** Relic's own `/api/config` edit and the WS command and outbox
+  snapshot cutover were proven only by fakes and a mocked Playwright double; `npm run test:playwright:relic:full-stack`
+  (unsandboxed; `tests/playwright/relic-hunters/full-stack-propagation.spec.ts` against the real Relic server) joins
+  Task 5 Step 6 and Task 6 Step 7, and C15 names it. Cost if wrong: a slower local gate that no CI workflow runs, so a
+  red there is found only by the executor.
+- **R-S3c-i-11 (the WS receipt's expected set may exceed its delivered set).** Q12 aggregates a handed-over message over
+  its frozen audience verbatim, which contradicts `al-frozen-multicast-audience.ts`'s "narrow, never widen" invariant.
+  That is by design — a leaver must read unconfirmed — so C11, the aggregation's doc comment and that invariant comment
+  (amended in Task 4 Step 7) say the invariant governs delivery and the receipt may expect more. Cost if wrong: an
+  origin can freeze ids the room never admitted (up to the collection limit) and make its own receipt unconfirmable.
+- **R-S3c-i-18 (the addressee refusal follows the authorizer's NACK policy).** The refusal hardcoded `sendNack: true`,
+  ignoring the router's `sendNacks` option. `WsServerInboundAuthorizer` gains the required `sendNacks` (the router passes
+  its option; every test authorizer states `true`, Task 1 Step 7 with a completeness grep), and
+  `toWsQueueBoxServerAddresseeAuthorization` takes it as `sendNack`. The check stays admission-only: C3 states that an
+  addressee who leaves between admission and dispatch is not re-refused and reads unconfirmed at the deadline. Cost if
+  wrong: one more required member on an internal interface (17 test sites), and a late leaver costs the origin its
+  receipt deadline instead of a prompt refusal.
+- **R-S3c-i-21 (the phase test pins a reachable state).** A server-addressed command tracks `[serverPeerId]`, so the
+  server's pre-admission `unauthorized` NACK ends that row as `receipt-exhausted` ("Hop default-qbox-server refused the
+  message: unauthorized.", state `failed`), never C3's `relay-rejected` fact; the degraded case of
+  `to-relic-command-phase.test.ts` now uses that state and detail. Cost if wrong: none beyond the pin; C3's fact stays
+  pinned by Task 1's relay-rejection test for a session-addressed unicast.
+- **R-S3c-i-22 (the Playwright double uses the production constructors).** The double hand-copied
+  `computeALControlMessage`'s envelope and sent its snapshot `best-effort`/`none`, so the spec never exercised the
+  snapshot receipt. It now builds both frames with `newALAckControlMessage` and `newALBroadcastMessage` through the
+  `@shared` alias, sends the snapshot `receiver` at-least-once as `toRelicSnapshotMessage` does, and asserts the page's
+  two snapshot ACKs to the server. Cost if wrong: the spec depends on runtime `@shared` resolution in Playwright, which
+  `tabbed-navigation.spec.ts` already relies on.
+- **R-S3c-i-1, -2, -19, -23, -26 (code validity and conventions).** The Relic `main.ts` option is a valid object member
+  (1); the command-delivery row renders in the new `relic-command-delivery-row.tsx` so `App.tsx` (cognitive load 776,
+  unregistered) gains one import and one element line and joins the Global Constraints' call-lines list (2); the
+  recorder's in-memory eviction is `setBoundedEntry` (19); a peer-addressed send refuses `minSnapshotVersion` and
+  `ttlHops` instead of dropping them (23); the WS command's `no-session` reads "No issued session", since the auth store
+  also returns expired and logged-out sessions (26).
+- **R-S3c-i-3, -4, -7, -9, -15, -16, -25 (edit completeness).** Task 2's `git add` carries `tests/playwright`, the recipe
+  matrix and every app test directory its sweeps edit (3); the black-box ALM result decoder accepts the trusted-server
+  `unauthorized` rejection, with a case, in Task 1 Step 10 (4); the `/api/config` mock grep drops the quotes and lists
+  the absolute-URL and `pathname` mocks (7); leftover imports are found with `deno lint`, not `deno task check` (9);
+  `ws-queue-box-client-ingress.test.ts` has 2 construction sites (15); the bridge test's direct publisher call passes
+  `undefined` as the new third argument (16); the OpenAPI realtime response requires `almReceipts` and enumerates
+  `lastSettlementKind` (25).
+- **R-S3c-i-12, -13, -14, -17, -20, -24, -27 (records, anchors and the PR).** Task 1's matrix description no longer
+  claims the server-addressed receipt, which Task 2 Step 9 adds (12); the duplicate R-S3c-i-0 entry is deleted (13);
+  Task 6's roadmap anchors are `:809-843` and `:952` and its docs step names seven files (14); Task 4 cites
+  `toFrozenAudience` by name and Task 5 no longer claims Relic `main.ts:89`, which Task 2 owns (17); the PR body's D72
+  paragraph says the server log is the only surface for a caught Relic error (20); the inbound README's schema id moves
+  with the bump into Task 1 Step 7 and the proposal's `:416` status line is updated in Task 6 (24); Task 6 names the
+  post-merge Hetzner supported-manifests gate on the default-branch commit (27).
 
 Later rulings follow as R-S3c-i-n with why and the cost if wrong.
 
