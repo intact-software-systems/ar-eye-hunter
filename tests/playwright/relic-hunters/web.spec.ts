@@ -2,6 +2,15 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
+import {
+    createActiveClientInstanceFixture,
+    createActiveClientSessionFixture,
+    createActiveGroupMemberFixture,
+    createActiveGroupPresenceSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
+
 type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
     relicSnapshot?: RelicSnapshot;
@@ -957,8 +966,9 @@ test.describe('Relic Hunters web app', () => {
         expect(
             requests.some((request) => request.startsWith('POST /api/auth/ws-ticket/requests/'))
         ).toBe(true);
-        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
-        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
+        // The state reads follow the WS connect, which can settle after the lobby controls render.
+        await expect.poll(() => requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
+        await expect.poll(() => requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
 
         const wsUrls = await page.evaluate(() =>
             (window as unknown as { __rallarWsUrls?: string[]; }).__rallarWsUrls ?? []
@@ -1409,47 +1419,21 @@ async function sceneCanvasMetrics(page: Page): Promise<
 
 function clientSnapshot(): MockClientSnapshot {
     const now = Date.now();
+    const instanceRef = {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        principalId: session.clientId,
+        clientInstanceId: session.clientId
+    };
+    const snapshot = createClientSnapshotFixture(instanceRef);
     return {
+        ...snapshot,
         stateRevision: ++clientStateRevision,
-        principal: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            principalId: session.clientId,
-            username: session.username,
-            displayName: 'Alice',
-            status: 'active',
-            roles: [],
-            metadata: {},
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: now },
-            updated: { atEpochMs: now }
-        },
-        instances: [
-            {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                principalId: session.clientId,
-                clientInstanceId: session.clientId,
-                status: 'active',
-                platform: 'web',
-                capabilities: [],
-                registered: { atEpochMs: now },
-                updated: { atEpochMs: now }
-            }
-        ],
+        principal: { ...snapshot.principal, username: session.username, displayName: 'Alice' },
+        instances: [createActiveClientInstanceFixture(instanceRef)],
         activeSessions: [
             {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                principalId: session.clientId,
-                clientInstanceId: session.clientId,
-                sessionId: session.sessionId,
-                status: 'active',
-                presenceState: 'online',
-                transport: 'ws',
-                authenticatedAtEpochMs: now,
-                connectedAtEpochMs: now,
+                ...createActiveClientSessionFixture({ ...instanceRef, sessionId: session.sessionId }),
                 lastHeartbeatAtEpochMs: now,
                 expiresAtEpochMs: now + 60_000
             }
@@ -1464,52 +1448,48 @@ function groupSnapshot(
     options: Readonly<{ onlineMemberCount: number; }>
 ): MockGroupSnapshot {
     const now = Date.now();
+    const scope = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' };
+    const principalIds = [
+        session.clientId,
+        ...Array.from({ length: Math.max(0, options.onlineMemberCount - 1) }, (_, index) => `hunter-${index + 2}`)
+    ];
+    const onlinePrincipalIds = principalIds.slice(0, options.onlineMemberCount);
+    const snapshot = createGroupSnapshotFixture({ ...scope, sessionIds: [] });
+    const groupRevision = ++groupStateRevision;
     return {
-        stateRevision: ++groupStateRevision,
+        ...snapshot,
+        causalRevision: { groupRevision, presenceRevision: onlinePrincipalIds.length },
         group: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'room-1',
+            ...snapshot.group,
+            snapshotVersion: groupRevision,
             slug: 'relic-hunters-expedition',
             displayName: 'Relic Hunters Expedition',
-            kind: 'room',
-            status: 'active',
             joinMode: 'invite-only',
-            metadata: {},
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: now, byPrincipalId: session.clientId },
-            updated: { atEpochMs: now, byPrincipalId: session.clientId }
+            activeMemberCount: principalIds.length,
+            ownerPrincipalId: session.clientId,
+            presenceVersion: onlinePrincipalIds.length,
+            formationElectorate: principalIds
         },
-        members: [
-            {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'room-1',
-                principalId: session.clientId,
-                role: 'owner',
-                status: 'active',
-                joined: { atEpochMs: now },
-                updated: { atEpochMs: now }
-            }
-        ],
-        activeSessions: options.onlineMemberCount > 0
-            ? [
-                {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'room-1',
-                    sessionId: session.sessionId,
-                    principalId: session.clientId,
-                    connectedAtEpochMs: now,
-                    lastHeartbeatAtEpochMs: now,
-                    expiresAtEpochMs: now + 60_000
-                }
-            ]
-            : [],
-        memberCount: 1,
-        onlineMemberCount: options.onlineMemberCount
+        members: principalIds.map((principalId) =>
+            createActiveGroupMemberFixture({
+                ...scope,
+                principalId,
+                role: principalId === session.clientId ? 'owner' : 'member',
+                actorPrincipalId: session.clientId
+            })
+        ),
+        activeSessions: onlinePrincipalIds.map((principalId) => ({
+            ...createActiveGroupPresenceSessionFixture({
+                ...scope,
+                principalId,
+                sessionId: principalId === session.clientId ? session.sessionId : `${principalId}-session`
+            }),
+            connectedAtEpochMs: now,
+            lastHeartbeatAtEpochMs: now,
+            expiresAtEpochMs: now + 60_000
+        })),
+        memberCount: principalIds.length,
+        onlineMemberCount: onlinePrincipalIds.length
     };
 }
 
