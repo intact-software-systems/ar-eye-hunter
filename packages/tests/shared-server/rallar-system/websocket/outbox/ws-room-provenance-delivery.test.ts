@@ -19,6 +19,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -161,9 +162,13 @@ describe('verified direct room row delivery', () => {
         const send = vi.spyOn(fixture.socket, 'sendEncoded').mockImplementation(() => {
             throw new Error('Transport unavailable before restart');
         });
-        const { entry } = await fixture.publish(['session']);
+        const { message, entry } = await fixture.publish(['session']);
         await fixture.engine.executeOnce();
-        await expect.poll(() => send.mock.calls.length).toBeGreaterThan(0);
+        await expect.poll(() => fixture.outcomes).toContainEqual({
+            status: 'retryable-transport-failure',
+            messageId: message.id.msgId,
+            reason: 'Transport unavailable before restart'
+        });
         fixture.restart();
         send.mockRestore();
         expect(await fixture.repository.findEntry(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key))).toBeUndefined();
@@ -246,6 +251,7 @@ class RoomFixture {
     readonly authentication = { scope: SCOPE, expiresAtEpochMs: Date.now() + 60_000 };
     readonly stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     readonly reader = new WsOutboxProvenanceReader({ repository: this.repository, nowMs: Date.now });
+    readonly outcomes: WsOutboxDeliveryOutcome[] = [];
     engine = new InboxOutboxEngine();
     service = this.createService();
 
@@ -274,6 +280,7 @@ class RoomFixture {
             outbox: this.stores.workQueue,
             outboundStores: this.stores,
             queueEngine: this.engine,
+            outboundDeliveryOutcome: (outcome) => this.outcomes.push(outcome),
             targetResolver: { resolveBroadcastRecipients: () => [{ peerId: 'session', connectionId: 'peer-socket' }] },
             readProducerProvenance: (message, entry) => this.reader.readProducerProvenance(message, entry),
             readAuthenticatedConnectionScope: () => this.authentication
