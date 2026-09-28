@@ -346,8 +346,8 @@ export namespace ALOutboundMessageRuntime {
  *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
  *   is computed once and handed to that lane's admission of the same message, so the admission never
  *   plans the message twice. The lane over the memory pair states no admission durable.
- * - A group whose members differ in durability commits as one group per lane: there is no
- *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
+ * - Members with different durability plans stay in one logical enqueue group but route to separate store lanes.
+ *   Each lane may commit its members together or individually; there is no cross-store atomicity.
  * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
  *   message (a memory read), else to the durable lane.
  * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
@@ -481,7 +481,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return ALOutboundMessageRuntime.toEnqueueResult(computed, retransmission.msg);
     }
 
-    /** The messages of one sender admitted as one commit per lane, each planned once; one result per message, in order. */
+    /** One sender's logical group; each message is planned once, commits may split by lane or member, and results keep input order. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
