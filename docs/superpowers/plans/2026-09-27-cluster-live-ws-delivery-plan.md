@@ -40,6 +40,14 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   unicast's outbound sent policy retains full scope for durable replay. Old
   rows without required proof fail closed; no historical migration, AL
   wire-target change, or legacy overload is authorized.
+- On 2026-09-28, the maintainer approved versioned per-row provenance written
+  atomically beside direct raw `WS_OUTBOX` rows, fail-closed handling of old
+  unproven rows, and a distinct session-global auth-logout authority variant.
+  The approved audience freeze uses the producer's authoritative read before
+  its write transaction; this read and write are not one serializable snapshot.
+  The approved browser bundle ceilings are `<225` KiB for the shared-web facade
+  and `<287` KiB for the headless agent, measured as Brotli bundles. This does
+  not approve a CRDT command-format change or a generic payload-type bypass.
 - `live-only` covers admitted inbound, proxy/handler replies, and
   server-generated messages; `none` remains handler-only.
 - Decide routing from effective QoS, not the `fanout` label alone. Never
@@ -479,16 +487,16 @@ Direct-producer adoption requires a separate focused design and reviewed
 slice on this same draft PR before readiness. A candidate is an owner-specific
 provenance record written atomically with each raw outbox row, verified against
 the complete row and expiry on first foreign dequeue, then captured in ALM's
-sent policy for prepared/replay delivery. This is **proposed, not approved**:
-the existing synchronous dequeue planner cannot read that record, and the
-authoritative audience-freeze point and auth session-global policy still need
-review. Any CRDT command/persisted-format or compatibility decision, new
-sidecar schema, or auth authority variant requires explicit maintainer
-approval before implementation. No migration, old overload, generic
-payload-type exemption, new queue, retry, or lock is approved. AL
+sent policy for prepared/replay delivery. The per-row sidecar, pre-write
+audience-freeze point, and session-global auth variant are approved. The
+existing synchronous dequeue planner still cannot read that record, so the
+first-dequeue integration needs independent review. A CRDT command-format or
+public compatibility change remains outside this approval. The sidecar uses
+existing runtime-state storage, without a new table or migration. No old
+overload, generic payload-type exemption, new queue, retry, or lock is approved. AL
 control/receipt remains a separate decoded-control path.
 
-### Proposed direct-producer adoption sequence (approval pending)
+### Approved direct-producer adoption sequence (implementation pending)
 
 Task 2f and this design status were published to draft PR #566 through
 `0311f9675`. The first exact-head gate was not green. Focused local repair
@@ -554,7 +562,7 @@ producers, not all ALM traffic:
 | Producer      | Proof required before foreign dequeue                                                                                                                                                                                                                                            |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CRDT AppInbox | Authenticated full application/workspace scope, final reply or fanout target, and the authorized room/principal audience frozen from the mutation's authoritative read. Optional document workspace is not proof.                                                                |
-| Auth logout   | Auth-owner proof of the exact invalidated session, explicitly session-global if approved; never treat it as a generic unscoped unicast.                                                                                                                                          |
+| Auth logout   | Auth-owner proof of the exact invalidated session under the approved session-global variant; never treat it as a generic unscoped unicast.                                                                                                                                       |
 | State-sync    | Full aggregate scope and the audience frozen from the authoritative client/group snapshot. Bind each per-session snapshot page, principal broadcast, client event, and group-presence delta to its own row; a target ID or current delivery-time cache is not publication proof. |
 | RTC topology  | Full GroupRef, validated publication/delivery-log identity, and each page's already-frozen recipient IDs. The existing replay check does not substitute for first-dequeue admission.                                                                                             |
 
@@ -585,15 +593,84 @@ producers, not all ALM traffic:
    exact-head release gate before branch review. Existing rows without the
    new proof fail closed; no migration or legacy decoder is planned.
 
-Before dispatching this slice, obtain explicit maintainer decisions on the
-versioned persisted CRDT command and provenance format/expiry, freezing the
-audience from the authoritative read that precedes its write transaction
-(rather than from later foreign dequeue), and the session-global auth owner
-variant. The authoritative read is recorded atomically with the outbox row,
-but is **not** itself one serializable database snapshot with that write;
-review whether stronger linearization is required. The Task 2f bundle
-remeasurement above leaves the proposed `<225` and `<287` ceilings pending
-explicit approval, not an automatic threshold change.
+The maintainer approved a versioned per-row sidecar bound to the raw row and
+its expiry, the pre-write authoritative audience freeze, and the session-global
+auth owner variant. Exact encoding and validation are implementation decisions
+subject to task review.
+The authoritative read is recorded atomically with the outbox row, but is
+**not** itself one serializable database snapshot with that write. Design and
+tests must acknowledge the read/write interval without inventing stronger
+linearization. A CRDT command-format or public compatibility change still
+requires a separate decision if implementation cannot carry authenticated
+scope through existing owner inputs. The measured `<225` and `<287` bundle
+ceilings are approved and should be changed only with their measurement tests.
+
+### Task 3: Apply the approved measured bundle ceilings
+
+**Status:** Complete in `c367362ed`; the focused boundary tests pass 6/6 and
+the shared-web measurement check passes at 224.28125 KiB. This does not prove
+any cross-process runtime behavior.
+
+**Scope:** Only the shared-web facade and black-box headless Brotli budgets
+approved above. Update the matching production measurement script and
+independent boundary test together: `packages/shared-web/scripts/measure-browser-bundles.mjs`,
+`packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`, and
+`packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`.
+Replace the outdated pending-approval comments with the measured combined-tree
+values (224.28125 and 286.58203125 KiB) and approved strict `<225` and `<287`
+ceilings. Do not relax unrelated entry budgets or dependency exclusions.
+
+**TDD/verification:** First run the two existing focused bundle boundary tests
+to preserve the red measurement evidence. Apply the minimal threshold/comment
+change, then rerun the same tests and the shared-web measurement script.
+Review all three changed files in full under touched-file standards closure;
+format/check the diff. The measurements are a budget decision, not proof of
+runtime cross-process behavior.
+
+### Task 4: Establish the direct-row first-dequeue proof boundary
+
+**Scope:** Add a narrow asynchronous `readDequeueAuthority` port to the
+existing ALM outbound dequeue path immediately before `commitDispatchPlan`.
+The WS owner classifies the exact observed row, not its payload type: an
+`AL_OUTBOUND_MESSAGE` canonical row requires its existing exact sent-admission
+and identity; a raw `WS_OUTBOX` row with sent admission reuses its validated
+captured policy; a raw row with identity but missing admission is corruption;
+only a virgin raw row reads a producer sidecar. No injected reader means raw
+work fails closed. The generic runtime must not acquire a database dependency.
+
+Create one versioned, collision-safe row-bound provenance contract in the
+shared-server outbox owner and a read port using existing `runtime_state_store`.
+Its lookup key encodes the complete queue key injectively; its digest covers
+the exact serialized row resource, full queue key, type, immutable audit
+creation/expiry facts, producer kind, and message/target identity. Exclude
+mutable queue status, reservation, attempts, and database metadata. Validate
+the claimed identities independently, not only the digest. Reject missing,
+expired, malformed, unknown-version, mismatched-key/target, and hash-mismatched
+proofs. Preserve an explicitly empty frozen audience. The verified proof feeds
+the existing synchronous planner and ALM captured sent policy; a concurrent
+winner's already-stored policy must take precedence. Do not refresh producer
+audience on retry or replay.
+
+For this task, allow the sidecar to authorize only a fully scoped public
+unicast with an explicitly frozen target; reject raw broadcast and the
+session-global variant until their final-send protections and producer-owned
+writers land in later reviewed slices. This is a temporary fail-closed draft
+state, not a shipped exemption. Do not add a table, queue, retry, lock,
+migration, legacy reader, or generic payload-type exemption. Do not change
+any producer yet or claim the Postgres recipes are fixed.
+
+**TDD/verification:** Begin with failing tests at the real WS dequeue boundary:
+canonical broadcast lacking sent admission/identity, orphaned raw identity,
+raw unicast with missing/tampered/expired/unknown-version proof, and a valid
+scoped synthetic row. Prove a captured empty audience and a race where another
+admission wins before commit. Verify prepared/replay uses captured policy
+after sidecar removal; wrong-scope or replaced-session recipients do not
+receive. Add focused sidecar codec/reader tests including complete-key
+collision and immutable-versus-mutable row fields. Run affected shared,
+shared-server, and API tests/typechecks and review all changed files in full
+with recursive support-file closure. The next slice writes this sidecar
+atomically with state-sync snapshot pages; later producer slices extend the
+contract to scoped broadcast and approved exact-session auth logout.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;

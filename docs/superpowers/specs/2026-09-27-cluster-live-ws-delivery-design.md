@@ -184,12 +184,26 @@ generic router's outbound sent-admission path. Its current actor command
 does not carry application/workspace scope, and optional document workspace
 is not authenticated recipient proof. Therefore the generic router's scoped
 policy change cannot by itself authorize these direct durable rows. Treat
-their command/provenance and persisted scope carrier as a separate reviewed
-producer-adoption decision on this same draft PR before readiness; do not
-infer scope from the AL wire target, preserve an unscoped bypass, or claim
-CRDT unicast delivery proved by the router slice. A format or compatibility
-choice for this authoritative persisted producer requires explicit maintainer
-approval before implementation.
+their provenance and persisted scope carrier as a separate reviewed
+producer-adoption slice on this same draft PR before readiness; do not infer
+scope from the AL wire target, preserve an unscoped bypass, or claim CRDT
+unicast delivery proved by the router slice. The maintainer approved a
+versioned per-row sidecar proof written in the same owner transaction as each
+raw `WS_OUTBOX` row, using existing runtime-state storage, and fail-closed
+handling of old unproven rows. The proof binds the complete queue key, raw row
+identity/content, producer kind, verified scope or a distinct session-global
+auth-logout variant, frozen audience, and expiry. First foreign dequeue must
+verify that proof before ALM captures a sent policy; prepared effects and
+replay use the captured policy rather than re-reading mutable audience state.
+The authoritative audience read may precede the write transaction: its
+observations are recorded atomically with the row, but the read and write are
+not one serializable snapshot. This limitation is accepted and must be tested
+at the boundary. The approved sidecar does not authorize a CRDT command-format
+or public compatibility change; that still needs a separate decision if
+authenticated scope cannot flow through existing owner inputs. No generic
+payload-type exception or historical migration is permitted. Auth logout
+requires the separately approved exact-session, session-global authority
+variant, not a generic unscoped unicast exemption.
 
 The local `sendToTargetsWithResult(message, recipientSessionIds)` path uses
 those explicit IDs and open sockets directly; it bypasses the normal local
