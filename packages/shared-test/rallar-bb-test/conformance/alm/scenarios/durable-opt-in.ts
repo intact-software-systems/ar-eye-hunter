@@ -1,5 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
+import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
@@ -47,13 +48,23 @@ function toDurableOptInSenderCommands(
     ];
 }
 
-/** The trailing absence window keeps the receiver inside the scenario until its acknowledgement has left. */
+/**
+ * The trailing absence window keeps the receiver inside the scenario until its acknowledgement has left.
+ * `received-1`'s wait opens at receiver connect and must additionally cover the durable admission commit
+ * and drain this `local-inbox` send pays for, so it carries the durable path's own budget (R-S3b-20).
+ */
 function toDurableOptInReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toStorageCountersCommand(receiver, 'storage-window-open', true),
-        toReceivedCommand({ ...receiver, index: 1, count: 1, absent: false }),
+        toReceivedCommand({
+            ...receiver,
+            index: 1,
+            count: 1,
+            absent: false,
+            durablePathBudgetMs: NON_EXPIRING_SEND_TIMEOUT_MS
+        }),
         toStorageCountersCommand(receiver, 'storage-window', false),
         toDurableStorageWindowAssertion(receiver),
         toReceivedCommand({ ...receiver, index: 2, count: 2, absent: true })

@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
@@ -29,6 +30,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
+/** Matches the lane's deadline (`hetzner-alm-manifest-entries.ts`'s `ALM_CONFORMANCE_DEADLINE_MS`). */
+const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 
 /** The three-peer scenarios run on three agents: an origin and two distinguishable recipients (D45). */
 const RECEIPTED_AUDIENCE_KEYS_BY_CARRIER = {
@@ -251,6 +254,11 @@ describe('alm-conformance recipe family', () => {
             for (const command of received) {
                 const pastExpiry = command.commandId?.includes('not-yet-in-sync-expires') === true ||
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
+                // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
+                const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
+                if (durableOptInReceived1) {
+                    continue;
+                }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
                     .toEqual(
                         pastExpiry
@@ -260,6 +268,25 @@ describe('alm-conformance recipe family', () => {
                             : { windowMs: 27_000, timeoutMs: 28_000 }
                     );
             }
+        }
+    });
+
+    it('gives durable-opt-in\'s positive wait one more non-expiring send budget for the durable path (R-S3b-20)', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const received = toReceivedCommands(
+                createAlmConformanceRecipes({ ...toConformanceInput(carrier), deadlineMs: ALM_CONFORMANCE_DEADLINE_MS })
+            );
+            const durableReceived1 = received.find((command) => command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true);
+            const baselineReceived1 = received.find((command) => command.commandId?.endsWith('delivery-baseline-receiver-received-1') === true);
+
+            expect({ windowMs: durableReceived1?.windowMs, timeoutMs: durableReceived1?.timeoutMs }, carrier).toEqual({
+                windowMs: ALM_CONFORMANCE_DEADLINE_MS + 2 * NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS,
+                timeoutMs: ALM_CONFORMANCE_DEADLINE_MS + 2 * NON_EXPIRING_SEND_TIMEOUT_MS
+            });
+            expect({ windowMs: baselineReceived1?.windowMs, timeoutMs: baselineReceived1?.timeoutMs }, carrier).toEqual({
+                windowMs: ALM_CONFORMANCE_DEADLINE_MS + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS,
+                timeoutMs: ALM_CONFORMANCE_DEADLINE_MS + NON_EXPIRING_SEND_TIMEOUT_MS
+            });
         }
     });
 

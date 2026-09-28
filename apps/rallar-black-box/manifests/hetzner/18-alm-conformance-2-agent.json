@@ -5199,8 +5199,8 @@
             "typeId": "alm.conformance.ws.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",
@@ -5520,8 +5520,8 @@
             "typeId": "alm.conformance.rtc.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",
@@ -5890,8 +5890,8 @@
             "typeId": "alm.conformance.rtc-with-ws-fallback.durable-opt-in",
             "count": 1,
             "absent": false,
-            "windowMs": 27000,
-            "timeoutMs": 28000
+            "windowMs": 37000,
+            "timeoutMs": 38000
           },
           {
             "kind": "storage.counters",

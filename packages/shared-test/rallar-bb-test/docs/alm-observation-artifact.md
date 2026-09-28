@@ -44,7 +44,9 @@ adjusted to make a run green.
   deadline, so connect budgets are harness budgets rather than product deadlines.
 - The receiver window is derived: `deadlineMs` (18 000 in the lane) plus
   `NON_EXPIRING_SEND_TIMEOUT_MS` for a positive observation, and the bare `deadlineMs` for an
-  absence proof.
+  absence proof. A durable positive wait (`durable-opt-in`'s `received-1`) carries one more
+  `NON_EXPIRING_SEND_TIMEOUT_MS` for the durable admission commit and drain it must additionally
+  cover (R-S3b-20).
 - `NON_EXPIRING_SEND_TIMEOUT_MS` 10 000 — hosted conformance may need more than five seconds to
   admit a non-expiring send.
 

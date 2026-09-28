@@ -11,6 +11,11 @@ import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities
 interface AlmConformanceReceivedInput extends AlmConformanceMessageStepInput {
     readonly count: number;
     readonly absent: boolean;
+    /**
+     * The durable admission commit and drain this positive wait must additionally cover; absence
+     * means the send has no durable cost (R-S3b-20).
+     */
+    readonly durablePathBudgetMs?: number;
 }
 
 interface AlmConformancePayloadWaitInput {
@@ -24,10 +29,14 @@ const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 /**
  * Positive observation starts before the sender's prologue, so it also owns the complete
- * non-expiring send budget. Absence proof retains the requested evidence deadline.
+ * non-expiring send budget. Absence proof retains the requested evidence deadline. A caller whose
+ * send pays for durable storage adds `durablePathBudgetMs` for the admission commit and drain that
+ * budget must additionally cover.
  */
 export function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBoxTestMessagesReceivedCommand {
-    const timeoutMs = received.input.deadlineMs + (received.absent ? 0 : NON_EXPIRING_SEND_TIMEOUT_MS);
+    const timeoutMs = received.input.deadlineMs +
+        (received.absent ? 0 : NON_EXPIRING_SEND_TIMEOUT_MS) +
+        (received.durablePathBudgetMs ?? 0);
     return {
         kind: 'messages.received',
         commandId: toCommandId(received, `received-${received.index}`),
