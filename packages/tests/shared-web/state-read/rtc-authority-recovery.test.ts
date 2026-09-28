@@ -1,4 +1,10 @@
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { assembleGroupStateSnapshot } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
 import { BlackBoxRallarRuntimeDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
@@ -68,7 +74,6 @@ import {
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
-
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -129,14 +134,20 @@ describe('RTC room authority recovery', () => {
             peerId: 'receiver',
             nativeRuntime,
             groups: senderGroups,
-            refresh: undefined
+            refresh: undefined,
+            faultPort: createPassThroughTransportFaultPort(),
+            qosProvider: undefined,
+            outboundSettlements: undefined
         });
         const receiver = new NativeAuthorityEndpoint({
             sessionId: 'receiver',
             peerId: 'sender',
             nativeRuntime,
             groups: readableGroupStateSnapshotCache(),
-            refresh
+            refresh,
+            faultPort: createPassThroughTransportFaultPort(),
+            qosProvider: undefined,
+            outboundSettlements: undefined
         });
         onTestFinished(() => {
             response.resolve(new Response('', { status: 503 }));
@@ -322,14 +333,18 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 groups,
                 refresh: undefined,
                 faultPort: faults,
-                qosProvider: scenario === 'ordinary-ordered' ? undefined : { defaultsForMessage: computeAlmConformanceQosDefaults }
+                qosProvider: scenario === 'ordinary-ordered' ? undefined : { defaultsForMessage: computeAlmConformanceQosDefaults },
+                outboundSettlements: undefined
             });
             const receiver = new NativeAuthorityEndpoint({
                 sessionId: 'receiver',
                 peerId: 'sender',
                 nativeRuntime,
                 groups,
-                refresh: undefined
+                refresh: undefined,
+                faultPort: createPassThroughTransportFaultPort(),
+                qosProvider: undefined,
+                outboundSettlements: undefined
             });
             onTestFinished(() => {
                 receiver.close();
@@ -496,7 +511,10 @@ it('delivers the canonical generated supersedence specimen through the page deco
         peerId: 'sender',
         nativeRuntime,
         groups: readableGroupStateSnapshotCache(),
-        refresh: undefined
+        refresh: undefined,
+        faultPort: createPassThroughTransportFaultPort(),
+        qosProvider: undefined,
+        outboundSettlements: undefined
     });
     onTestFinished(() => {
         receiver.close();
@@ -535,11 +553,26 @@ it('delivers the canonical generated supersedence specimen through the page deco
     faults.inject({ ...hold, remaining: 0 });
     await vi.advanceTimersByTimeAsync(100);
     expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.msgId]);
+    const releaseDeliveryClaim = Promise.withResolvers<void>();
+    const reserveEntries = receiver.inboundStores.workQueue.reserveEntries.bind(receiver.inboundStores.workQueue);
+    vi.spyOn(receiver.inboundStores.workQueue, 'reserveEntries').mockImplementation(async (reservation) => {
+        await releaseDeliveryClaim.promise;
+        return reserveEntries(reservation);
+    });
+    onTestFinished(() => releaseDeliveryClaim.resolve());
     await sender.transferTo(receiver);
     await receiver.transferTo(sender);
     await vi.advanceTimersByTimeAsync(100);
     await sender.transferTo(receiver);
     expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.msgId]);
+    expect(receiver.admissions).toContainEqual(expect.objectContaining({
+        kind: 'admission-outcome',
+        msgId: replacement.msgId,
+        outcome: 'committed'
+    }));
+    expect(receiver.delivered).toEqual([]);
+    releaseDeliveryClaim.resolve();
+    await waitForOwnedQueueWork(receiver.inboundStores.workQueue);
     expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([replacement.msgId]);
     expect(receiver.delivered[0].payload.resource).toBe(JSON.stringify(sends[1].payload));
 });
@@ -710,14 +743,20 @@ describe('authoritative room observation freshness', () => {
                 peerId: 'receiver',
                 nativeRuntime,
                 groups: readableGroupStateSnapshotCache(),
-                refresh: undefined
+                refresh: undefined,
+                faultPort: createPassThroughTransportFaultPort(),
+                qosProvider: undefined,
+                outboundSettlements: undefined
             });
             const receiver = new NativeAuthorityEndpoint({
                 sessionId: 'receiver',
                 peerId: 'sender',
                 nativeRuntime,
                 groups: receiverGroups,
-                refresh: undefined
+                refresh: undefined,
+                faultPort: createPassThroughTransportFaultPort(),
+                qosProvider: undefined,
+                outboundSettlements: undefined
             });
             onTestFinished(() => {
                 receiver.close();
@@ -845,9 +884,9 @@ namespace NativeAuthorityEndpoint {
         readonly nativeRuntime: NativeRtcRuntime;
         readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
         readonly refresh: RtcGroupSnapshotRefresh | undefined;
-        readonly faultPort?: TransportFaultPort;
-        readonly qosProvider?: ALQosInputProvider;
-        readonly outboundSettlements?: ALDeliverySettlementSink;
+        readonly faultPort: TransportFaultPort;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
     }
 }
 
@@ -877,7 +916,7 @@ class NativeAuthorityEndpoint {
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
             },
             input.nativeRuntime,
-            input.faultPort ?? createPassThroughTransportFaultPort()
+            input.faultPort
         );
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
         this.native = this.connection.nativePeer(input.peerId).channels[0];
