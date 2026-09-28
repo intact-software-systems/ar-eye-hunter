@@ -178,18 +178,13 @@ export class BrowserRallarMessageSender {
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const session = this.input.requireSession();
-        const resolved = { input, scope, roomId, roomRef };
-        const message = input.peerId === undefined
-            ? this.createWsMessage({ resolved, room, payloadValidation, session, channel })
-            : createBrowserWsUnicastMessage({
-                creation: this.input.creation,
-                resolved,
-                peerId: input.peerId,
-                serializedPayload: payloadValidation.serialized,
-                senderId: session.sessionId,
-                channel,
-                laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
-            });
+        const message = this.createWsSendMessage({
+            resolved: { input, scope, roomId, roomRef },
+            room,
+            payloadValidation,
+            session,
+            channel
+        });
 
         return this.startDelivery({
             context,
@@ -307,6 +302,22 @@ export class BrowserRallarMessageSender {
             throwRallarValidation(issues);
         }
         return { room, roomId, roomRef };
+    }
+
+    private createWsSendMessage<T>(input: CreateWsMessageInput<T>): ALMessage {
+        const peerId = input.resolved.input.peerId;
+        if (peerId === undefined) {
+            return this.createWsMessage(input);
+        }
+        return createBrowserWsUnicastMessage({
+            creation: this.input.creation,
+            resolved: input.resolved,
+            peerId,
+            payload: parseCapturedPayload(input.payloadValidation),
+            senderId: input.session.sessionId,
+            channel: input.channel,
+            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
     }
 
     private createWsMessage<T>(

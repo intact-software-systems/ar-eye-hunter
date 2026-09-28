@@ -9,14 +9,14 @@ import {
     type ALMessage,
     type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
+import { validateRallarRouteId, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
 export interface CreateBrowserWsUnicastMessageInput<T> {
     readonly creation: Readonly<{ createUnicast: typeof newALUnicastMessage; newResourceId(): string; }>;
     readonly resolved: ResolvedWsMessageInput<T>;
     readonly peerId: string;
-    /** The payload as the validator captured it; the message carries this copy, never the caller's object. */
-    readonly serializedPayload: string;
+    /** The payload as the validator captured it and parsed it back; the message carries this copy, never the caller's. */
+    readonly payload: unknown;
     readonly senderId: string;
     readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly laneTtlMs: number;
@@ -47,7 +47,7 @@ export function createBrowserWsUnicastMessage<T>(
         ),
         input.peerId,
         send.typeId,
-        JSON.parse(input.serializedPayload),
+        input.payload,
         {
             groupRef: resolved.roomRef,
             ttlMs: defaults.ttlMs,
@@ -76,6 +76,9 @@ export function validateBrowserWsPeerInput<T>(
             code: 'missing-peer-id',
             message: 'A peer-addressed send names its peer.'
         });
+    }
+    else {
+        issues.push(...validateRallarRouteId(input.peerId, '$.peerId', 'Peer ID').issues);
     }
     if (
         input.exceptPeerIds !== undefined || input.orderingKey !== undefined ||

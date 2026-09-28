@@ -83,13 +83,54 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
         async (_name, extra) => {
             const fixture = createBrowserMessageSenderFixture();
 
-            await expect(fixture.sender.sendWs({
+            const sending = fixture.sender.sendWs({
                 typeId: 'app.note.v1',
                 payload: {},
                 roomId: 'room',
                 peerId: 'peer-b',
                 ...extra
-            }, undefined)).rejects.toSatisfy(isRallarValidationError);
+            }, undefined);
+
+            await expect(sending).rejects.toSatisfy(isRallarValidationError);
+            await expect(sending).rejects.toMatchObject({
+                issues: expect.arrayContaining([expect.objectContaining({ path: '$.peerId', code: 'unsupported' })])
+            });
         }
     );
+
+    it.each([
+        ['an empty peer id', '', 'missing-peer-id'],
+        ['a peer id the route-id rule refuses', ' peer-b ', 'not-trimmed']
+    ])('refuses %s before it reaches the wire', async (_name, peerId, code) => {
+        const fixture = createBrowserMessageSenderFixture();
+
+        await expect(fixture.sender.sendWs({
+            typeId: 'app.note.v1',
+            payload: {},
+            roomId: 'room',
+            peerId
+        }, undefined)).rejects.toMatchObject({ issues: [{ path: '$.peerId', code }] });
+    });
+
+    it('sends a typed ws-strategy send to its peer as the same room unicast', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware.webSocketQueueBox,
+            'enqueueOutboxIfAbsent'
+        );
+
+        await fixture.sender.sendTyped({
+            typeId: 'relic.command.v1',
+            topicId: 'room.relic.command',
+            payload: { kind: 'start-expedition' },
+            roomId: 'room',
+            peerId: 'server',
+            strategy: 'ws'
+        }, COMMAND_CHANNEL);
+
+        expect(envelope.mock.calls[0][0]).toMatchObject({
+            targets: { mode: 'unicast', toPeerId: 'server', groupRef: ROOM_REF },
+            delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        });
+    });
 });

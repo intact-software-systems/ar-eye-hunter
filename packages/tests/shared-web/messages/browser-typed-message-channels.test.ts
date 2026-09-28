@@ -263,6 +263,28 @@ describe('Rallar typed message channel', () => {
         });
     });
 
+    it('sends a command channel\'s WS send to one peer as a receipted room unicast (Q11, Relic\'s call)', async () => {
+        mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1', 'peer-1']));
+        const channel = createFacade().messages.room<ChatMessage>({
+            topicId: 'room.chat',
+            typeId: 'chat.message.v1',
+            roomId: 'room-1',
+            purpose: 'command'
+        });
+
+        await channel.sendWs({ text: 'to the server' }, { peerId: 'server-peer' });
+
+        const message = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
+        // The room channel adds only its route: a default it injected (a snapshot floor) would be refused on a peer send.
+        expect(message.targets).toEqual({
+            mode: 'unicast',
+            toPeerId: 'server-peer',
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+        });
+        expect(message.route).toMatchObject({ topicId: 'room.chat', contextId: 'room-1' });
+        expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'receiver' });
+    });
+
     it('uses RTC with WS fallback by default for typed room message sends', async () => {
         mockRtcNoRoute();
         mockGroupSnapshot(createGroupSnapshot('room-1', ['session-1']));
