@@ -30,11 +30,14 @@ interface PortMessage {
     state: string;
     submitted: boolean;
     attemptCarriers: readonly ('rtc' | 'ws')[];
+    attemptOutcomes: readonly ('not-ready' | 'sent')[];
 }
 
 interface HandedOverOutcome {
     readonly outcome: 'committed' | 'not-handled';
     readonly reason: 'admitted' | 'duplicate';
+    /** The last outcome of each carrier's attempt row: a `not-ready` run ends the RTC leg of a dropped send. */
+    readonly attemptOutcomes: readonly ('not-ready' | 'sent')[];
 }
 
 /**
@@ -43,8 +46,8 @@ interface HandedOverOutcome {
  * RTC copy it already delivered.
  */
 const HANDED_OVER_WS_OUTCOMES: Readonly<Record<string, HandedOverOutcome>> = {
-    'fallback-within-deadline': { outcome: 'committed', reason: 'admitted' },
-    'receipt-exhausted-fallback': { outcome: 'not-handled', reason: 'duplicate' }
+    'fallback-within-deadline': { outcome: 'committed', reason: 'admitted', attemptOutcomes: ['not-ready', 'sent'] },
+    'receipt-exhausted-fallback': { outcome: 'not-handled', reason: 'duplicate', attemptOutcomes: ['sent', 'sent'] }
 };
 
 /** Controlled external facts prove recipe/control composition, never native storage or transport behavior. */
@@ -143,7 +146,8 @@ class GeneratedAlmPorts {
                         state: message?.state ?? 'unobservable',
                         enqueued,
                         submitted: message?.submitted ?? false,
-                        attemptCarriers: message?.attemptCarriers ?? []
+                        attemptCarriers: message?.attemptCarriers ?? [],
+                        attemptOutcomes: message?.attemptOutcomes ?? []
                     }
                 };
             }
@@ -253,7 +257,8 @@ class GeneratedAlmPorts {
             msgId: `port-message-${this.messages.length + 1}`,
             state: rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
-            attemptCarriers: []
+            attemptCarriers: [],
+            attemptOutcomes: []
         };
         this.messages.push(message);
         assert(command.handleId);
@@ -296,6 +301,7 @@ class GeneratedAlmPorts {
     private handOver(message: PortMessage, handedOver: HandedOverOutcome): void {
         this.deliver(message);
         message.attemptCarriers = ['rtc', 'ws'];
+        message.attemptOutcomes = handedOver.attemptOutcomes;
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',
