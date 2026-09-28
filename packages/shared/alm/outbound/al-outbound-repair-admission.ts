@@ -12,6 +12,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
+    ALOutboundPlanner,
     ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type {
@@ -40,7 +41,7 @@ export namespace ALOutboundRepairAdmission {
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly controlAdmission: ALOutboundControlAdmission<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,

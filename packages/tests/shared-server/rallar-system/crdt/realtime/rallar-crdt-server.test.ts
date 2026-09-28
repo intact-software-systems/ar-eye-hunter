@@ -11,6 +11,7 @@ import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/rea
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
+    ConnectionContext,
     createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
@@ -31,6 +32,7 @@ import {
     type RallarCrdtUpdateEnvelope,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
+import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
 const roomRef = {
     applicationId: 'rallar-test',
@@ -57,6 +59,36 @@ const principalDocumentRef: RallarCrdtDocumentRef = {
 };
 
 describe('installRallarCrdtWsTopics', () => {
+    it('replies in authenticated scope when the app document omits workspace', async () => {
+        const { router, socket } = createRouter();
+        installRallarCrdtWsTopics(router, {
+            allowAppDocuments: true,
+            logRepository: new InMemoryRallarCrdtLogRepository({ now: () => 2_000, serverId: 'server-1' })
+        });
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute(RALLAR_CRDT_APP_TOPIC_ID, 'rallar-test', 'catch-up-scope'),
+            'all',
+            RALLAR_CRDT_CATCH_UP_REQUEST_TYPE_ID,
+            {
+                protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+                document: { applicationId: 'rallar-test', scope: 'app', documentType: 'checklist', documentId: 'app-doc' },
+                requestId: 'catch-up-scope',
+                replicaId: 'replica',
+                createdAtEpochMs: 3_000,
+                afterSequence: 0,
+                maxUpdateCount: 10,
+                includeSnapshot: false
+            }
+        );
+        await router.route(message, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'rallar-test', workspaceId: 'main' }
+        });
+        expect(socket.sent.filter((entry) => entry.data.payload.typeId === RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID))
+            .toMatchObject([{ connectionId: 'conn-1', data: { targets: { mode: 'unicast', toPeerId: 'peer-1' } } }]);
+    });
     it('accepts room CRDT updates only through durable mutation ingress', async () => {
         const accepted = vi.fn();
         const enqueueUpdate = vi.fn().mockResolvedValue(undefined);
@@ -419,7 +451,11 @@ describe('installRallarCrdtWsTopics', () => {
             }
         );
 
-        await router.route(message);
+        await router.route(message, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'rallar-test', workspaceId: 'main' }
+        });
 
         const responseMessage = socket.sent.find((entry) => entry.data.payload.typeId === RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID);
         expect(responseMessage?.connectionId).toBe('conn-1');
@@ -508,12 +544,19 @@ describe('installRallarCrdtWsTopics', () => {
 
 function createRouter(options?: ConstructorParameters<typeof RallarServerWsRouter>[1]) {
     const socket = new RecordingJsonWebSocketServer();
+    const native = new TestWebSocket('ws://crdt-peer');
+    native.open();
+    socket.addConnection(new ConnectionContext({ id: 'conn-1', socket: native }));
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
         outbox: outbox,
         socket: socket,
         name: 'server-1',
-        targetResolver: createTargetResolver()
+        targetResolver: createTargetResolver(),
+        readAuthenticatedConnectionScope: () => ({
+            scope: { applicationId: 'rallar-test', workspaceId: 'main' },
+            expiresAtEpochMs: Date.now() + 30_000
+        })
     });
     onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, options);

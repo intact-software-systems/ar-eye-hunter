@@ -10,10 +10,10 @@ import {
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type {
-    RallarServerWsFanout,
     RallarServerWsMessage,
     RallarServerWsMessageContext,
     RallarServerWsPayload,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
     RallarServerWsTopicMetadata,
@@ -21,17 +21,21 @@ import type {
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createRallarGameAuthorityEnvelope,
     isRallarGameAuthorityEnvelope,
     type RallarGameAuthorityEnvelope,
     type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 // dprint-ignore
 import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -296,6 +300,7 @@ describe('Rallar Game Authority server installer', () => {
             mode: 'unicast',
             toPeerId: 'peer-a'
         });
+        expect(fake.published[0].scope).toEqual({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
         expect(fake.published[1].message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
@@ -471,7 +476,7 @@ describe('Rallar Game Authority server installer', () => {
             nowEpochMs,
             handleCommand: async () => ({ status: 'accepted' })
         });
-        vi.spyOn(fake.ws, 'publish').mockImplementation(async (message, fanout) => ({
+        vi.spyOn(fake.ws, 'publish').mockImplementation(async ({ message, fanout }) => ({
             fanout: fanout ?? 'live-only',
             status: routerStatus,
             message,
@@ -615,7 +620,7 @@ function createFakeServerRallar(
 ) {
     const definitions: StoredTopicDefinition[] = [];
     const handlers: HandlerSubscription[] = [];
-    const published: FakePublishedMessage[] = [];
+    const published: RallarServerWsPublishInputDto[] = [];
     const ws = createFakeGameAuthorityWebSocket({
         definitions,
         handlers,
@@ -651,7 +656,7 @@ function createFakeServerRallar(
 interface CreateFakeGameAuthorityWebSocketInput {
     readonly definitions: StoredTopicDefinition[];
     readonly handlers: HandlerSubscription[];
-    readonly published: FakePublishedMessage[];
+    readonly published: RallarServerWsPublishInputDto[];
 }
 
 function createFakeGameAuthorityWebSocket(
@@ -691,10 +696,10 @@ function createFakeGameAuthorityWebSocket(
             };
         },
         async publish(
-            message: ALMessage,
-            fanout?: RallarServerWsFanout
+            publication: RallarServerWsPublishInputDto
         ): Promise<RallarServerWsPublishResult> {
-            input.published.push({ message, fanout });
+            input.published.push(publication);
+            const { message, fanout } = publication;
             return {
                 fanout: fanout ?? 'live-only',
                 status: 'sent-live' as const,
@@ -724,14 +729,26 @@ function createMessageContext(
     senderId: string,
     roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>
 ): RallarServerWsMessageContext {
+    const service = createDefaultWsQueueBoxServerService({ name: 'authority-test', socket: new JsonWebSocketServer(), outbox: new InMemoryQueueBox() });
+    onTestFinished(() => service.dispose());
     return {
-        service: {} as RallarServerWsMessageContext['service'],
+        service,
         definition: definitions[0],
         roomId: roomContext.roomId,
         roomRef: roomContext.roomRef,
         senderId,
-        proxy: {} as RallarServerWsMessageContext['proxy']
+        authenticatedScope: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId },
+        proxy: {
+            toTargets: unexpectedProxyCall,
+            toPeer: unexpectedProxyCall,
+            toRoom: unexpectedProxyCall,
+            toAll: unexpectedProxyCall
+        }
     };
+}
+
+function unexpectedProxyCall(): never {
+    throw new Error('Game authority publishes through its WS port, not its inbound proxy');
 }
 
 interface EmitFakeGameAuthorityMessageInput<TPayload extends JsonWireValue> {
@@ -769,11 +786,6 @@ async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
             )
             .map((subscription) => subscription.invoke(message, messageContext))
     );
-}
-
-interface FakePublishedMessage {
-    readonly message: ALMessage;
-    readonly fanout?: RallarServerWsFanout;
 }
 
 interface StoredTopicDefinition extends RallarServerWsTopicMetadata {

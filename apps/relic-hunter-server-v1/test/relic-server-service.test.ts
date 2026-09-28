@@ -8,6 +8,7 @@ import {
     type RelicGameState
 } from '@relic-hunters/mod.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
@@ -19,22 +20,6 @@ interface TopicDefinition {
     readonly typeId: string;
     validate(value: unknown, context: Readonly<{ roomId?: string; roomRef?: GroupRef; }>): boolean;
 }
-
-type PublishedMessage = Readonly<{
-    message: Readonly<{
-        id: Readonly<{ senderId: string; }>;
-        route: Readonly<{ topicId: string; contextId: string; resourceId: string; }>;
-        payload: Readonly<{ typeId: string; resource: string; }>;
-        targets?: Readonly<{
-            mode: string;
-            scope?: string;
-            groupRef?: Readonly<{ applicationId: string; workspaceId?: string; groupId: string; }>;
-        }>;
-        delivery?: Readonly<{ reliability?: string; ack?: string; }>;
-        constraints?: Readonly<{ expiresAtMs?: number; }>;
-    }>;
-    fanout: string;
-}>;
 
 const SESSION_USERNAMES: Readonly<Record<string, string>> = {
     'alice-session': 'Alice',
@@ -354,46 +339,21 @@ async function captureWarnings(run: () => Promise<void>): Promise<readonly (stri
 function createFakeRallar(publishFailure: Error | undefined = undefined): Readonly<{
     rallar: Parameters<typeof installRelicHunterGame>[0];
     store: Map<string, RelicGameState>;
-    published: PublishedMessage[];
+    published: RallarServerWsPublishInputDto[];
     get topicDefinition(): TopicDefinition | undefined;
     get commandHandler():
         | ((message: { payload: RelicCommand; }, context: { senderId: string; roomId?: string; roomRef?: GroupRef; }) => Promise<void>)
         | undefined;
 }> {
     const store = new Map<string, RelicGameState>();
-    const published: PublishedMessage[] = [];
+    const published: RallarServerWsPublishInputDto[] = [];
     let topicDefinition: TopicDefinition | undefined;
     let commandHandler:
         | ((message: { payload: RelicCommand; }, context: { senderId: string; roomId?: string; roomRef?: GroupRef; }) => Promise<void>)
         | undefined;
 
     const rallar = {
-        appData: {
-            open: (
-                name: string,
-                options: Parameters<Parameters<typeof installRelicHunterGame>[0]['appData']['open']>[1]
-            ) => {
-                expect(name).toBe('relic-hunter-games');
-                expect(options.namespace).toBe('relic-hunter-v1');
-                expect(options.codec.schemaVersion).toBe(1);
-                return Promise.resolve({
-                    get: (key: string) => Promise.resolve(store.get(key)),
-                    set: (key: string, value: RelicGameState) => {
-                        store.set(key, value);
-                        return Promise.resolve();
-                    },
-                    setIfAbsent: (key: string, create: () => RelicGameState) => {
-                        const existing = store.get(key);
-                        if (existing) {
-                            return Promise.resolve(existing);
-                        }
-                        const value = create();
-                        store.set(key, value);
-                        return Promise.resolve(value);
-                    }
-                });
-            }
-        },
+        appData: createFakeAppData(store),
         ws: {
             serverPeerId: 'relic-server',
             defineTopic: (definition: TopicDefinition) => {
@@ -408,11 +368,11 @@ function createFakeRallar(publishFailure: Error | undefined = undefined): Readon
             ) => {
                 commandHandler = handler;
             },
-            publish: (message: PublishedMessage['message'], fanout?: string) => {
+            publish: (publication: RallarServerWsPublishInputDto) => {
                 if (publishFailure !== undefined) {
                     return Promise.reject(publishFailure);
                 }
-                published.push({ message, fanout: fanout ?? 'live-only' });
+                published.push(publication);
                 return Promise.resolve();
             }
         }
@@ -449,5 +409,34 @@ function continueReview(gameId: string): RelicCommand {
         kind: 'continue-review',
         gameId,
         username: 'Alice'
+    };
+}
+
+function createFakeAppData(store: Map<string, RelicGameState>): Parameters<typeof installRelicHunterGame>[0]['appData'] {
+    return {
+        open: (
+            name: string,
+            options: Parameters<Parameters<typeof installRelicHunterGame>[0]['appData']['open']>[1]
+        ) => {
+            expect(name).toBe('relic-hunter-games');
+            expect(options.namespace).toBe('relic-hunter-v1');
+            expect(options.codec.schemaVersion).toBe(1);
+            return Promise.resolve({
+                get: (key: string) => Promise.resolve(store.get(key)),
+                set: (key: string, value: RelicGameState) => {
+                    store.set(key, value);
+                    return Promise.resolve();
+                },
+                setIfAbsent: (key: string, create: () => RelicGameState) => {
+                    const existing = store.get(key);
+                    if (existing) {
+                        return Promise.resolve(existing);
+                    }
+                    const value = create();
+                    store.set(key, value);
+                    return Promise.resolve(value);
+                }
+            });
+        }
     };
 }

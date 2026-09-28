@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
 import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -87,6 +88,7 @@ export interface ALOutboundSupersedenceTrackingPlan {
 export type ALOutboundRepairTrigger = 'ack-timeout' | 'nack' | 'repair';
 
 export interface ALOutboundRepairRequest {
+    readonly recipientScope?: StateScope;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
@@ -131,6 +133,7 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.
      */
     readonly admittedAudience?: readonly string[];
+    readonly recipientScope?: StateScope;
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {
@@ -316,7 +319,7 @@ export namespace ALOutboundMessageRuntime {
         ) => Promise<PendingAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
@@ -630,6 +633,8 @@ function toPlannedOnce<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     planner: ALOutboundPlanner<TPrepared>
 ): ALOutboundPlanner<TPrepared> {
-    return (msg, admittedAudience) =>
-        msg === planned && admittedAudience === undefined ? plan : planner(msg, admittedAudience);
+    return (msg, admittedAudience, recipientScope) =>
+        msg === planned && admittedAudience === undefined && recipientScope === undefined
+            ? plan
+            : planner(msg, admittedAudience, recipientScope);
 }

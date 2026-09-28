@@ -173,7 +173,11 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
         });
         const message = roomMessage(snapshot);
 
-        await runtime.router.route(message);
+        await runtime.router.route(message, {
+            kind: 'ws-client',
+            peerId: 'session-1',
+            authenticatedScope: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId }
+        });
         assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['outsider', 'session-2']);
         assert.equal(
             runtime.sent[0]?.encoded,
@@ -183,7 +187,13 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
             })
         );
         runtime.sent.length = 0;
-        assert.equal((await runtime.router.publish(message)).status, 'no-recipients');
+        assert.equal(
+            (await runtime.router.publish({
+                message,
+                scope: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId }
+            })).status,
+            'no-recipients'
+        );
         assert.deepEqual(runtime.sent, []);
     }
     finally {

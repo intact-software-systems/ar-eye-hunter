@@ -16,6 +16,7 @@ import {
     type ALMessagePlanningObservations,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -23,6 +24,7 @@ import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbou
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
@@ -36,6 +38,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -47,6 +50,7 @@ import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
+import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
@@ -239,19 +243,21 @@ export class WsQueueBoxServerService {
                     WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
                 ),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (message) =>
+            planOutgoingMessage: (message, admittedAudience, recipientScope) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'immediate',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience: undefined
+                    admittedAudience,
+                    recipientScope
                 }),
-            planDequeuedMessage: (message, admittedAudience) =>
+            planDequeuedMessage: (message, admittedAudience, recipientScope) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'dequeue',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience
+                    admittedAudience,
+                    recipientScope
                 }),
             afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
@@ -369,13 +375,15 @@ export class WsQueueBoxServerService {
      */
     async enqueueOutboxIfAbsent(
         message: ALMessage,
-        admittedAudience?: readonly string[]
+        admittedAudience?: readonly string[],
+        recipientScope?: StateScope
     ): Promise<ALOutboundEnqueueResult> {
         const dispatchPlan = this.outboundPlanning.planOutboundMessage({
             message,
             phase: 'immediate',
             clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-            admittedAudience
+            admittedAudience,
+            recipientScope
         });
         const outgoingMessage = dispatchPlan.persist
             ? decodePersistedALMessageValue(message)
@@ -642,8 +650,15 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargets(message);
     }
 
-    async readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined> {
-        return await this.admissionStore.readVerifiedAdmittedAudience(message, entry);
+    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
+        const policy = await this.admissionStore.readCapturedPolicy(message, entry);
+        if (requiresWsQueueBoxServerRecipientScope(message) && policy.recipientScope === undefined) {
+            throw new ALAdmissionCorruptionError(
+                JSON.stringify(entry.key),
+                new TypeError('Persisted public WS unicast has no recipient scope')
+            );
+        }
+        return policy;
     }
 
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
@@ -658,7 +673,7 @@ export class WsQueueBoxServerService {
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        if (prepared.kind !== 'recipient') {
+        if (prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient') {
             return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
@@ -677,6 +692,9 @@ export class WsQueueBoxServerService {
                     retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS,
                     reason: 'WS connection is not open before native submission'
                 };
+            }
+            if (prepared.kind === 'scoped-recipient' && !this.isCurrentScopedRecipient(prepared)) {
+                return { status: 'no-targets', submissionAttempted: false };
             }
             this.socket.sendEncoded(prepared.connectionId, encoded);
             this.deliveryReporting.recordOutcome({
@@ -699,6 +717,19 @@ export class WsQueueBoxServerService {
             });
             throw runtimeError;
         }
+    }
+
+    private isCurrentScopedRecipient(
+        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'scoped-recipient'; }>
+    ): boolean {
+        const connection = this.socket.connections.get(prepared.connectionId);
+        if (!connection?.isOpen || connection.generationId !== prepared.generationId) {
+            return false;
+        }
+        const proof = this.readAuthenticatedConnectionScope(connection);
+        return proof !== undefined && proof.expiresAtEpochMs > this.clock.nowMs() &&
+            proof.scope.applicationId === prepared.recipientScope.applicationId &&
+            proof.scope.workspaceId === prepared.recipientScope.workspaceId;
     }
 
     private async forwardIncomingMessage(

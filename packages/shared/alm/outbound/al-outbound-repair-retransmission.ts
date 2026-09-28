@@ -1,6 +1,7 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundPlanner,
     ALOutboundRepairHint,
     ALOutboundRepairReadDto
 } from './admission/al-outbound-admission-store.ts';
@@ -30,7 +31,7 @@ export namespace ALOutboundRepairRetransmission {
     export interface Dependencies<TPrepared> {
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,
@@ -139,7 +140,8 @@ export class ALOutboundRepairRetransmission<TPrepared> {
                 ...request,
                 completedHopPeerIds: [],
                 repair,
-                admittedAudience: plan.admittedAudience
+                admittedAudience: plan.admittedAudience,
+                recipientScope: plan.recipientScope
             })
             : plan;
         if (repairedPlan?.dropReason) {
@@ -176,6 +178,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         const retryPlan = this.dependencies.planRepairMessage
             ? await this.dependencies.planRepairMessage(msg, {
                 ...request,
+                recipientScope: plan.recipientScope,
                 failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
                 repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts },

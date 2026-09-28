@@ -2,6 +2,7 @@ import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
     WsServerLiveSendFailure,
@@ -11,6 +12,18 @@ import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-serv
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
+
+export interface RallarServerWsPublishInputDto {
+    readonly message: ALMessage;
+    /** Mandatory for unicast at admission; broad broadcasts do not imply application/workspace scope. */
+    readonly scope?: StateScope;
+    readonly fanout?: RallarServerWsFanout;
+}
+
+export interface RallarServerWsUnicastInputDto extends RallarServerWsPublishInputDto {
+    readonly scope: StateScope;
+    readonly peerId: string;
+}
 
 export type RallarServerWsPublishStatus =
     | 'sent-live'
@@ -168,6 +181,7 @@ export interface RallarServerWsMessageContext {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly senderId: string;
+    readonly authenticatedScope: StateScope | undefined;
     readonly proxy: RallarServerWsProxyContext;
 }
 
@@ -177,9 +191,7 @@ export interface RallarServerWsProxyContext {
         fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult>;
     toPeer(
-        peerId: string,
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
+        input: RallarServerWsUnicastInputDto
     ): Promise<RallarServerWsPublishResult>;
     toRoom(
         roomRef: GroupRef,

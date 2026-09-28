@@ -3,6 +3,7 @@ import {
     hasALDeliveryDurableWork,
     type ALDeliveryAdmissionVerdict
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -22,7 +23,7 @@ export interface PublishRallarServerWsMessageInput {
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
     readonly admittedPeerIds?: readonly string[];
-    /** Null denotes a legacy inbound source without proof; undefined denotes server-originated publication. */
+    /** An explicit public scope or authenticated inbound scope; absent proof refuses unicast. */
     readonly inboundScope?: StateScope | null;
     readonly nowEpochMs: number;
 }
@@ -30,6 +31,9 @@ export interface PublishRallarServerWsMessageInput {
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
+    if (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(input.inboundScope).length > 0) {
+        return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
+    }
     switch (input.fanout) {
         case 'none':
             return {
@@ -40,12 +44,11 @@ export async function publishRallarServerWsMessage(
                 entries: []
             };
         case 'outbox': {
-            // The outbound owner has no persisted recipient-scope proof yet. Refuse client unicast
-            // here until that owner can enforce the same-scope policy at its send surface.
-            if (input.inboundScope !== undefined && input.message.targets?.mode === 'unicast') {
-                return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
-            }
-            const result = await input.service.enqueueOutboxIfAbsent(input.message, toAdmittedAudience(input));
+            const result = await input.service.enqueueOutboxIfAbsent(
+                input.message,
+                toAdmittedAudience(input),
+                input.message.targets?.mode === 'unicast' ? input.inboundScope ?? undefined : undefined
+            );
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }

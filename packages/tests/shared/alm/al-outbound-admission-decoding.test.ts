@@ -341,8 +341,15 @@ describe('outbound admission persisted-record validation', () => {
         const prepared = toALOutboundTransportMessage(msg);
         expect(() => decodeALOutboundTransportMessage(foreign, msg)).toThrow(TypeError);
         expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', message: msg }, msg)).toThrow(TypeError);
-        expect(decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: prepared }, msg))
-            .toEqual({ kind: 'recipient', peerId: 'peer', connectionId: 'connection', message: prepared });
+        const scoped = {
+            kind: 'scoped-recipient',
+            peerId: 'peer',
+            connectionId: 'connection',
+            message: prepared,
+            generationId: 'generation',
+            recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+        };
+        expect(decodeWsQueueBoxServerPreparedMessage(scoped, msg)).toEqual(scoped);
         expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'cluster-local-complete', message: prepared }, msg)).not.toThrow();
     });
 

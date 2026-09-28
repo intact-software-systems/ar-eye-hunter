@@ -404,6 +404,7 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         retryTracking: pending.policy.retryTracking ?? undefined,
         repairTracking: pending.policy.repairTracking ?? undefined,
         supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
-        admittedAudience: pending.policy.admittedAudience
+        admittedAudience: pending.policy.admittedAudience,
+        recipientScope: pending.policy.recipientScope
     };
 }

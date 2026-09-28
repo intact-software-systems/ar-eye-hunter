@@ -176,7 +176,7 @@ describe('QueueBoxPubSubBridge', () => {
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
             outbox,
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
-            readVerifiedAdmittedAudience: async () => ['admitted-session'],
+            readAudience: async () => ['admitted-session'],
             sendToTargetsWithResult: (message, recipientSessionIds) => {
                 addressed.push(recipientSessionIds);
                 return sentLiveResult(message);
@@ -202,7 +202,7 @@ describe('QueueBoxPubSubBridge', () => {
         const addressed: Array<readonly string[] | undefined> = [];
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
             registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
-            readVerifiedAdmittedAudience: async () => [],
+            readAudience: async () => [],
             sendToTargetsWithResult: (message, recipientSessionIds) => {
                 addressed.push(recipientSessionIds);
                 return noRecipientLiveSendResult(message);
@@ -404,7 +404,7 @@ describe('QueueBoxPubSubBridge', () => {
                 handedAudiences.push(admittedPeerIds);
                 return sentLiveResult(message);
             },
-            readVerifiedAdmittedAudience: () => Promise.resolve(undefined)
+            readAudience: () => Promise.resolve(undefined)
         });
         installQueueBoxPubSubBridge({
             wsQBoxServerService,
@@ -510,7 +510,7 @@ describe('QueueBoxPubSubBridge', () => {
         await installQueueBoxPubSubBridge({
             wsQBoxServerService: createTestQueueBoxPubSubWsService({
                 outbox,
-                readVerifiedAdmittedAudience: async () => {
+                readAudience: async () => {
                     throw new Error('admission backend unavailable');
                 },
                 sendToTargetsWithResult: send
@@ -539,7 +539,7 @@ describe('QueueBoxPubSubBridge', () => {
         await installQueueBoxPubSubBridge({
             wsQBoxServerService: createTestQueueBoxPubSubWsService({
                 outbox,
-                readVerifiedAdmittedAudience: async () => [],
+                readAudience: async () => [],
                 sendToTargetsWithResult: (message, _recipientSessionIds, admittedPeerIds) => {
                     addressed.push(admittedPeerIds);
                     return noRecipientLiveSendResult(message);
@@ -751,12 +751,12 @@ function createBridge(): TestQueueBoxPubSubBridge {
 interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly outbox?: InMemoryQueueBox;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
+    readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
     readonly sendToTargetsWithResult?: (
         message: ALMessage,
         recipientSessionIds?: readonly string[],
         admittedPeerIds?: readonly string[]
     ) => WsServerLiveSendResult;
-    readonly readVerifiedAdmittedAudience?: QueueBoxPubSubWsService['readVerifiedAdmittedAudience'];
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -772,8 +772,15 @@ function createTestQueueBoxPubSubWsService(
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },
-        readVerifiedAdmittedAudience(message, entry) {
-            return input.readVerifiedAdmittedAudience?.(message, entry) ?? Promise.resolve(undefined);
+        async readCapturedPolicy(message, entry) {
+            return {
+                persist: true,
+                ackTracking: null,
+                retryTracking: null,
+                repairTracking: null,
+                supersedenceTracking: null,
+                admittedAudience: await input.readAudience?.(message, entry)
+            };
         }
     };
 

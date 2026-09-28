@@ -42,6 +42,7 @@ import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 const RAW_ENTRY_KEY = { topicId: 'app.crdt', resourceId: 'reply-1', contextId: 'rallar-server' };
+const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 interface WsOutboxTestSocket {
     readonly socket: JsonWebSocketServer;
@@ -534,6 +535,7 @@ function createService(input: CreateWsOutboxServiceInput): WsOutboxServiceFixtur
         outboundStores: input.outboundStores,
         socket: input.socket.socket,
         name: input.name,
+        readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
             resolvePeerRecipients: input.resolveRecipients,
             resolveBroadcastRecipients: input.resolveRecipients
@@ -553,7 +555,7 @@ function createSharedOutboundStores(outbox: InMemoryQueueBox): ALOutboundRuntime
 }
 
 async function enqueueDurableOutboxEntry(service: WsQueueBoxServerService, message: ALMessage): Promise<ResourceEntry> {
-    const admission = await service.enqueueOutboxIfAbsent(message);
+    const admission = await service.enqueueOutboxIfAbsent(message, undefined, RECIPIENT_SCOPE);
     expect(admission.verdict.kind).toBe('admitted');
     expect(admission.entries).toHaveLength(1);
     expect(admission.entries[0]).toMatchObject({ typeId: EnqueuedType.WS_OUTBOX });

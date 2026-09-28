@@ -1,4 +1,3 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     assertRallarAiAuthorized,
@@ -9,6 +8,7 @@ import {
 import type { JsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult
 } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { isRallarServerAiJsonRequest, type RallarServerAiJsonRequest } from './decode-rallar-server-ai-json-request.ts';
@@ -27,8 +27,7 @@ export interface RallarServerAiWebSocketPort {
         handler: RallarServerAiWebSocketHandler
     ): () => boolean;
     publish(
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
+        input: RallarServerWsPublishInputDto
     ): Promise<RallarServerWsPublishResult>;
 }
 
@@ -131,14 +130,14 @@ export function installRallarServerAiWebSocketTopic(
                 input.config,
                 target
             );
-            await input.websocket.publish(
-                toRallarServerAiResultMessage({
+            await input.websocket.publish({
+                message: toRallarServerAiResultMessage({
                     publication,
                     senderId: input.config.serverSenderId,
                     target
                 }),
-                input.config.resultFanout
-            );
+                fanout: input.config.resultFanout
+            });
         }
     );
 }

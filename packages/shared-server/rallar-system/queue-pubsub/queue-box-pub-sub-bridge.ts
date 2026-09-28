@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALOutboundCanonicalMessage,
     decodeALOutboundIdentityEntry,
@@ -20,6 +21,7 @@ import type {
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
+import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -44,8 +46,8 @@ export interface QueueBoxPubSubWsService {
             admittedAudience: readonly string[] | undefined
         ) => Promise<void>
     ): QueueBoxPubSubWsService;
+    readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy>;
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
-    readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined>;
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
@@ -187,7 +189,10 @@ function registerQueueBoxOutboxPublisher(
             operation: 'outbox-cluster-publish',
             message: envelope
         });
-        const result = sendToCapturedLocalTargets(message, admittedAudience, options);
+        const policy = requiresWsQueueBoxServerRecipientScope(message)
+            ? await options.wsQBoxServerService.readCapturedPolicy(message, entry)
+            : undefined;
+        const result = sendToCapturedLocalTargets(message, admittedAudience, policy?.recipientScope, options);
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -276,10 +281,10 @@ async function sendRemoteQueueBoxOutboxEntry(
     const remoteMessage = decodePersistedALMessage(entry.resource);
     let result: WsServerLiveSendResult;
     try {
-        const admittedAudience = isWsQueueBoxServerReceiptRow(remoteMessage)
+        const policy = isWsQueueBoxServerReceiptRow(remoteMessage)
             ? undefined
-            : await options.wsQBoxServerService.readVerifiedAdmittedAudience(remoteMessage, entry);
-        result = sendToCapturedLocalTargets(remoteMessage, admittedAudience, options);
+            : await options.wsQBoxServerService.readCapturedPolicy(remoteMessage, entry);
+        result = sendToCapturedLocalTargets(remoteMessage, policy?.admittedAudience, policy?.recipientScope, options);
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -344,6 +349,7 @@ async function requeueFailedRemoteOutboxEntry(
 function sendToCapturedLocalTargets(
     message: ALMessage,
     captured: readonly string[] | undefined,
+    recipientScope: ALOutboundCapturedPolicy['recipientScope'],
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
 ): WsServerLiveSendResult {
     const eligible = captured === undefined || options.filterEligibleCapturedSessionIds === undefined
@@ -352,7 +358,8 @@ function sendToCapturedLocalTargets(
     return options.wsQBoxServerService.sendToTargetsWithResult({
         message,
         recipientSessionIds: eligible,
-        admittedPeerIds: captured
+        admittedPeerIds: captured,
+        inboundScope: recipientScope
     });
 }
 

@@ -88,6 +88,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outboundStores,
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -106,7 +107,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg, undefined, { applicationId: 'app-1', workspaceId: 'workspace-1' });
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
         await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
@@ -383,7 +384,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await service.enqueueOutboxIfAbsent(msg, undefined, { applicationId: 'app-1', workspaceId: 'workspace-1' });
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;

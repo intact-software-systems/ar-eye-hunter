@@ -78,7 +78,7 @@ describe('WS server outbound planning', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
-        expect((await service.enqueueOutboxIfAbsent(unicast)).verdict).toMatchObject({
+        expect((await service.enqueueOutboxIfAbsent(unicast, undefined, { applicationId: 'app', workspaceId: 'workspace' })).verdict).toMatchObject({
             kind: 'refused',
             reason: 'unsupported',
             detail: 'ack receiver is unsupported for ws unicast targets'

@@ -20,6 +20,8 @@ import {
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
+const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+
 describe('WS server pre-submission readiness', () => {
     afterEach(() => {
         vi.useRealTimers();
@@ -42,7 +44,7 @@ describe('WS server pre-submission readiness', () => {
             return result;
         });
         const message = createMessage();
-        await service.enqueueOutboxIfAbsent(message);
+        await service.enqueueOutboxIfAbsent(message, undefined, RECIPIENT_SCOPE);
         // Admission returns before its own send batch: the deferred attempt is what this asserts on.
         await vi.advanceTimersByTimeAsync(0);
         for (let cycle = 0; cycle < 25; cycle += 1) {
@@ -76,7 +78,7 @@ describe('WS server pre-submission readiness', () => {
             return result;
         });
         const message = createMessage();
-        await service.enqueueOutboxIfAbsent(message);
+        await service.enqueueOutboxIfAbsent(message, undefined, RECIPIENT_SCOPE);
         const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
         vi.setSystemTime(message.constraints!.expiresAtMs!);
         native.open();
@@ -93,7 +95,7 @@ describe('WS server pre-submission readiness', () => {
         const send = vi.spyOn(native, 'send').mockImplementation(() => {
             throw new Error('native write failed');
         });
-        await service.enqueueOutboxIfAbsent(createMessage());
+        await service.enqueueOutboxIfAbsent(createMessage(), undefined, RECIPIENT_SCOPE);
         await vi.advanceTimersByTimeAsync(0);
         expect(send).toHaveBeenCalledTimes(1);
         const [key] = (await backend.workQueue.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND');
@@ -142,6 +144,7 @@ function createServerRuntime(): ServerRuntime {
         outbox: new InMemoryQueueBox(),
         outboundStores: { admissionStore: store, workQueue: backend.workQueue },
         queueEngine: engine,
+        readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
         targetResolver: {
             resolvePeerRecipients: () => [{ ...selectedRecipient }],
             resolveGroupRecipients: () => [],

@@ -33,6 +33,14 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly expired: boolean;
     }
 
+    export interface SendInput {
+        readonly encoded: EncodedJsonWebSocketMessage;
+        readonly recipients: readonly WsServerResolvedRecipient[];
+        readonly expiresAtMs: number | undefined;
+        readonly scope: StateScope | undefined;
+        readonly generations: ReadonlyMap<string, string | undefined>;
+    }
+
     export interface SendToResolvedPeerInputDto {
         readonly peerId: string;
         readonly message: ALMessage;
@@ -91,12 +99,23 @@ export class WsQueueBoxServerLiveDelivery {
             return noRecipientResult(message);
         }
 
+        const generations = new Map(
+            recipients.map((
+                recipient
+            ) => [recipient.connectionId, this.#socket.connections.get(recipient.connectionId)?.generationId])
+        );
         const encodedAttempt = this.toEncodedAttempt(message);
         if (!encodedAttempt.encoded) {
             return encodingFailureResult(message, recipients, encodedAttempt.failureReason!);
         }
 
-        const sendAttempt = this.sendEncodedToRecipients(encodedAttempt.encoded, recipients, expiresAtMs);
+        const sendAttempt = this.sendEncodedToRecipients({
+            encoded: encodedAttempt.encoded,
+            recipients,
+            expiresAtMs,
+            scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
+            generations
+        });
         this.#deliveryReporting.recordDiagnostics({
             kind: 'live-send',
             topicId: message.route.topicId,
@@ -120,11 +139,22 @@ export class WsQueueBoxServerLiveDelivery {
                 inboundScope !== null &&
                 this.isCurrentRecipientInScope(recipient, inboundScope)
             );
+        const generations = new Map(
+            recipients.map((
+                recipient
+            ) => [recipient.connectionId, this.#socket.connections.get(recipient.connectionId)?.generationId])
+        );
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
         if (!encodedMessage) {
             return 0;
         }
-        return this.sendEncodedToRecipients(encodedMessage, recipients, expiresAtMs).sentCount;
+        return this.sendEncodedToRecipients({
+            encoded: encodedMessage,
+            recipients,
+            expiresAtMs,
+            scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
+            generations
+        }).sentCount;
     }
 
     tryEncodeDirectMessage(message: ALMessage): EncodedJsonWebSocketMessage | undefined {
@@ -154,15 +184,23 @@ export class WsQueueBoxServerLiveDelivery {
     }
 
     private sendEncodedToRecipients(
-        encoded: EncodedJsonWebSocketMessage,
-        recipients: readonly WsServerResolvedRecipient[],
-        expiresAtMs: number | undefined
+        input: WsQueueBoxServerLiveDelivery.SendInput
     ): WsQueueBoxServerLiveDelivery.SendAttempt {
+        const { encoded, recipients, expiresAtMs, scope, generations } = input;
         let sentCount = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
             if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
                 return { sentCount, failures, expired: true };
+            }
+            if (
+                scope !== undefined && (
+                    this.#socket.connections.get(recipient.connectionId)?.generationId !==
+                        generations.get(recipient.connectionId) ||
+                    !this.isCurrentRecipientInScope(recipient, scope)
+                )
+            ) {
+                continue;
             }
             try {
                 this.#socket.sendEncoded(recipient.connectionId, encoded);

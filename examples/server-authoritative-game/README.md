@@ -6,6 +6,7 @@ app data, then publishes a room snapshot to the players in that room.
 
 ```ts
 import type { AppDataValueCodec } from '@shared-server/app-data/app-data-value-codec.ts';
+import type { RallarServerAppDataStore } from '@shared-server/app-data/rallar-server-app-data-store.ts';
 import type {
     RallarServerApplication,
     RallarServerRuntime
@@ -45,15 +46,39 @@ export async function installGameAuthority(
         maxConflictRetries: 8
     });
 
-    async function publishSnapshot(state: GameState): Promise<void> {
+    const authority = new GameAuthority({ rallar, games });
+    authority.installTopics();
+    return {
+        applyCommand: (command: GameCommand, senderId: string) =>
+            authority.applyCommand(command, senderId),
+        readSnapshot: (gameId: string) => authority.readSnapshot(gameId)
+    };
+}
+
+namespace GameAuthority {
+    export interface Dependencies {
+        readonly rallar: RallarServerApplication<RallarServerRuntime, unknown>;
+        readonly games: RallarServerAppDataStore<GameState>;
+    }
+}
+
+class GameAuthority {
+    readonly #dependencies: GameAuthority.Dependencies;
+
+    constructor(dependencies: GameAuthority.Dependencies) {
+        this.#dependencies = dependencies;
+    }
+
+    private async publishSnapshot(state: GameState): Promise<void> {
         const snapshot: GameSnapshot = {
             gameId: state.gameId,
             revision: state.revision,
             readyPeerIds: state.readyPeerIds
         };
 
-        await rallar.ws.publish(
-            newALBroadcastMessage(
+        await this.#dependencies.rallar.ws.publish({
+            scope: { applicationId: 'demo-game', workspaceId: 'main' },
+            message: newALBroadcastMessage(
                 'demo-game-server',
                 newALRoute(
                     'room.demo.snapshot',
@@ -65,18 +90,23 @@ export async function installGameAuthority(
                 snapshot,
                 {
                     reliability: 'at-least-once',
-                    ttlMs: 15_000
+                    ttlMs: 15_000,
+                    groupRef: {
+                        applicationId: 'demo-game',
+                        workspaceId: 'main',
+                        groupId: state.roomId
+                    }
                 }
             ),
-            'live-only'
-        );
+            fanout: 'live-only'
+        });
     }
 
-    async function applyCommand(
+    async applyCommand(
         command: GameCommand,
         senderId: string
     ): Promise<GameSnapshot> {
-        const state = await games.updateOrCreate(command.gameId, (current) => {
+        const state = await this.#dependencies.games.updateOrCreate(command.gameId, (current) => {
             const previous: GameState = current ?? {
                 gameId: command.gameId,
                 roomId: command.gameId,
@@ -105,7 +135,7 @@ export async function installGameAuthority(
             };
         });
 
-        await publishSnapshot(state);
+        await this.publishSnapshot(state);
         return {
             gameId: state.gameId,
             revision: state.revision,
@@ -113,41 +143,40 @@ export async function installGameAuthority(
         };
     }
 
-    rallar.ws.defineTopic<GameCommand>({
-        topicId: 'room.demo.command',
-        typeId: 'room.demo.command.v1',
-        scope: 'room',
-        fanout: 'none',
-        maxPayloadBytes: 16 * 1024,
-        validate: (value, context) =>
-            isGameCommand(value) &&
-            context.roomId !== undefined &&
-            value.gameId === context.roomId
-    });
-
-    rallar.ws.on<GameCommand>(
-        {
+    installTopics(): void {
+        this.#dependencies.rallar.ws.defineTopic<GameCommand>({
             topicId: 'room.demo.command',
-            typeId: 'room.demo.command.v1'
-        },
-        async (message, context) => {
-            await applyCommand(message.payload, context.senderId);
-        }
-    );
+            typeId: 'room.demo.command.v1',
+            scope: 'room',
+            fanout: 'none',
+            maxPayloadBytes: 16 * 1024,
+            validate: (value, context) =>
+                isGameCommand(value) &&
+                context.roomId !== undefined &&
+                value.gameId === context.roomId
+        });
 
-    return {
-        applyCommand,
-        readSnapshot: async (gameId: string) => {
-            const state = await games.get(gameId);
-            return state
-                ? {
-                    gameId: state.gameId,
-                    revision: state.revision,
-                    readyPeerIds: state.readyPeerIds
-                }
-                : undefined;
-        }
-    };
+        this.#dependencies.rallar.ws.on<GameCommand>(
+            {
+                topicId: 'room.demo.command',
+                typeId: 'room.demo.command.v1'
+            },
+            async (message, context) => {
+                await this.applyCommand(message.payload, context.senderId);
+            }
+        );
+    }
+
+    async readSnapshot(gameId: string): Promise<GameSnapshot | undefined> {
+        const state = await this.#dependencies.games.get(gameId);
+        return state
+            ? {
+                gameId: state.gameId,
+                revision: state.revision,
+                readyPeerIds: state.readyPeerIds
+            }
+            : undefined;
+    }
 }
 
 function decodeGameState(value: JsonWireValue): GameState {
@@ -155,11 +184,16 @@ function decodeGameState(value: JsonWireValue): GameState {
         value === null ||
         Array.isArray(value) ||
         typeof value !== 'object' ||
+        !('gameId' in value) ||
         typeof value.gameId !== 'string' ||
+        !('roomId' in value) ||
         typeof value.roomId !== 'string' ||
+        !('revision' in value) ||
         typeof value.revision !== 'number' ||
+        !('readyPeerIds' in value) ||
         !Array.isArray(value.readyPeerIds) ||
         !value.readyPeerIds.every((entry) => typeof entry === 'string') ||
+        !('events' in value) ||
         !Array.isArray(value.events) ||
         !value.events.every((entry) => typeof entry === 'string')
     ) {
@@ -179,13 +213,13 @@ function isGameCommand(value: unknown): value is GameCommand {
         return false;
     }
 
-    const candidate = value as Partial<GameCommand>;
-    return typeof candidate.gameId === 'string' &&
-        typeof candidate.seq === 'number' &&
+    return 'gameId' in value && typeof value.gameId === 'string' &&
+        'seq' in value && typeof value.seq === 'number' &&
+        'action' in value &&
         (
-            candidate.action === 'ready' ||
-            candidate.action === 'fire' ||
-            candidate.action === 'pickup'
+            value.action === 'ready' ||
+            value.action === 'fire' ||
+            value.action === 'pickup'
         );
 }
 ```

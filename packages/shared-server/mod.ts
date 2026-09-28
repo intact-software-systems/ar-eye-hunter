@@ -215,6 +215,7 @@ export type {
     RallarServerWsPayload,
     RallarServerWsProxyContext,
     RallarServerWsProxyRule,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsPublishStatus,
     RallarServerWsRoomAuthorizationDecision,
@@ -225,6 +226,7 @@ export type {
     RallarServerWsTopicDefinition,
     RallarServerWsTopicMetadata,
     RallarServerWsTopicScope,
+    RallarServerWsUnicastInputDto,
     RallarServerWsValidator
 } from './rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 export { RallarServerWsRouter } from './rallar-system/websocket/router/rallar-server-ws-router.ts';

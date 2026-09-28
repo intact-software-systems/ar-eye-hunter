@@ -35,6 +35,7 @@ import type {
     RallarServerWsMessageContext,
     RallarServerWsPayload,
     RallarServerWsProxyRule,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsRoomAudience,
     RallarServerWsRouterOptions,
@@ -154,18 +155,20 @@ export class RallarServerWsRouter {
         return this.registry.addProxy(rule);
     }
 
-    async publish(
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
-    ): Promise<RallarServerWsPublishResult> {
-        const selected = fanout ?? this.defaultFanout;
+    async publish(input: RallarServerWsPublishInputDto): Promise<RallarServerWsPublishResult> {
+        const selected = input.fanout ?? this.defaultFanout;
         const frozen = await readRallarServerWsPublishAudience({
-            message,
+            message: input.message,
             fanout: selected,
             serverPeerId: this.serverPeerId,
             readRoomAudience: this.readServerPublishAudience
         });
-        return await this.publishToFanout({ message, fanout: selected, audience: frozen });
+        return await this.publishToFanout({
+            message: input.message,
+            fanout: selected,
+            audience: frozen,
+            inboundScope: input.scope
+        });
     }
 
     status(): RallarServerWsStatus {
@@ -366,7 +369,6 @@ export class RallarServerWsRouter {
         message: ALMessage,
         inboundScope?: StateScope | null
     ): RallarServerWsMessageContext {
-        const fanout = definition?.fanout ?? this.defaultFanout;
         return {
             service: this.service,
             definition: definition
@@ -375,51 +377,59 @@ export class RallarServerWsRouter {
             roomId: readRallarServerWsRoomId(message),
             roomRef: readRallarServerWsRoomRef(message),
             senderId: message.id.senderId,
-            proxy: {
-                toTargets: async (targetMessage, selectedFanout) =>
-                    await this.publishToFanout({
-                        message: targetMessage,
-                        fanout: selectedFanout ?? fanout,
-                        inboundScope
-                    }),
-                toPeer: async (peerId, targetMessage, selectedFanout) =>
-                    await this.publishToFanout({
-                        message: {
-                            ...targetMessage,
-                            targets: { mode: 'unicast', toPeerId: peerId }
-                        },
-                        fanout: selectedFanout ?? fanout,
-                        inboundScope
-                    }),
-                toRoom: async (roomRef, targetMessage, options) =>
-                    await this.publishToFanout({
-                        message: {
-                            ...targetMessage,
-                            route: { ...targetMessage.route, contextId: roomRef.groupId },
-                            targets: {
-                                mode: 'broadcast',
-                                scope: 'room',
-                                groupRef: roomRef,
-                                exceptPeerIds: options?.exceptPeerIds
-                            }
-                        },
-                        fanout: options?.fanout ?? fanout,
-                        inboundScope
-                    }),
-                toAll: async (targetMessage, options) =>
-                    await this.publishToFanout({
-                        message: {
-                            ...targetMessage,
-                            targets: {
-                                mode: 'broadcast',
-                                scope: 'all',
-                                exceptPeerIds: options?.exceptPeerIds
-                            }
-                        },
-                        fanout: options?.fanout ?? fanout,
-                        inboundScope
-                    })
-            }
+            authenticatedScope: inboundScope ?? undefined,
+            proxy: this.toMessageProxy(definition?.fanout ?? this.defaultFanout, inboundScope)
+        };
+    }
+
+    private toMessageProxy(
+        fanout: RallarServerWsFanout,
+        inboundScope: StateScope | null | undefined
+    ): RallarServerWsMessageContext['proxy'] {
+        return {
+            toTargets: async (targetMessage, selectedFanout) =>
+                await this.publishToFanout({
+                    message: targetMessage,
+                    fanout: selectedFanout ?? fanout,
+                    inboundScope
+                }),
+            toPeer: async (input) =>
+                await this.publishToFanout({
+                    message: {
+                        ...input.message,
+                        targets: { mode: 'unicast', toPeerId: input.peerId }
+                    },
+                    fanout: input.fanout ?? fanout,
+                    inboundScope: input.scope
+                }),
+            toRoom: async (roomRef, targetMessage, options) =>
+                await this.publishToFanout({
+                    message: {
+                        ...targetMessage,
+                        route: { ...targetMessage.route, contextId: roomRef.groupId },
+                        targets: {
+                            mode: 'broadcast',
+                            scope: 'room',
+                            groupRef: roomRef,
+                            exceptPeerIds: options?.exceptPeerIds
+                        }
+                    },
+                    fanout: options?.fanout ?? fanout,
+                    inboundScope
+                }),
+            toAll: async (targetMessage, options) =>
+                await this.publishToFanout({
+                    message: {
+                        ...targetMessage,
+                        targets: {
+                            mode: 'broadcast',
+                            scope: 'all',
+                            exceptPeerIds: options?.exceptPeerIds
+                        }
+                    },
+                    fanout: options?.fanout ?? fanout,
+                    inboundScope
+                })
         };
     }
 

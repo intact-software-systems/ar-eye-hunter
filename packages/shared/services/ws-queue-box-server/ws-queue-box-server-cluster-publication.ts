@@ -34,7 +34,10 @@ export namespace WsQueueBoxServerClusterPublication {
         readonly readAdmittedAudience: (msgId: string) => Promise<readonly string[] | undefined>;
     }
 
-    export type ClusterPreparedMessage = Exclude<WsQueueBoxServerPreparedMessage, { kind: 'recipient'; }>;
+    export type ClusterPreparedMessage = Extract<
+        WsQueueBoxServerPreparedMessage,
+        { kind: 'cluster-local-complete' | 'cluster-receipt'; }
+    >;
 }
 
 /**

@@ -15,6 +15,7 @@ import {
     shouldAwaitALRoute,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -22,12 +23,22 @@ import type {
     ALOutboundRepairTrackingPlan,
     ALOutboundSupersedenceTrackingPlan
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
+import type { StateScope } from '../../api/state-types.ts';
+import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export type WsQueueBoxServerPreparedMessage =
+    | Readonly<{
+        kind: 'scoped-recipient';
+        peerId: string;
+        connectionId: string;
+        generationId: string;
+        recipientScope: StateScope;
+        message: ALOutboundTransportMessage;
+    }>
     | Readonly<{
         kind: 'recipient';
         peerId: string;
@@ -60,6 +71,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly clusterPublisherRegistered: boolean;
         /** The audience the router admitted the message to, carried beside it; absent for every other message. */
         readonly admittedAudience: readonly string[] | undefined;
+        readonly recipientScope?: StateScope;
     }
 
     export interface RecipientResolution {
@@ -88,8 +100,21 @@ export class WsQueueBoxServerOutboundPlanning {
         request: WsQueueBoxServerOutboundPlanning.Request
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
         const { phase, clusterPublisherRegistered, admittedAudience } = request;
+        const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
         const normalized = this.normalizePolicy(request.message);
         const message = toALOutboundMessage(request.message, normalized.effective);
+        if (
+            requiresWsQueueBoxServerRecipientScope(message) &&
+            validateALOutboundRecipientScope(recipientScope).length > 0
+        ) {
+            return {
+                msg: message,
+                persist: false,
+                preparedMessages: [],
+                dropReasonCode: 'unauthorized',
+                dropReason: 'Public WS unicast has no verified recipient scope'
+            };
+        }
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const persist = shouldAwaitALRoute(normalized.effective);
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
@@ -116,7 +141,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                     ? toClusterPreparedMessages(message, recipients)
-                    : toRecipientPreparedMessages(message, recipients),
+                    : this.toRecipientPreparedMessages(message, recipients, recipientScope),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
                     resolveRecipients
@@ -125,9 +150,30 @@ export class WsQueueBoxServerOutboundPlanning {
                 ),
                 repairTracking: toRepairTrackingPlan(normalized.effective),
                 supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
-                ...(admittedAudience === undefined ? {} : { admittedAudience })
+                ...(admittedAudience === undefined ? {} : { admittedAudience }),
+                ...(recipientScope === undefined ? {} : { recipientScope })
             })
         );
+    }
+
+    private toRecipientPreparedMessages(
+        message: ALMessage,
+        recipients: readonly WsServerResolvedRecipient[],
+        recipientScope: StateScope | undefined
+    ): readonly WsQueueBoxServerPreparedMessage[] {
+        if (recipientScope === undefined || message.targets?.mode !== 'unicast') {
+            return toRecipientPreparedMessages(message, recipients);
+        }
+        return recipients.flatMap((recipient) => {
+            const generationId = this.#targetResolution.getConnectionGeneration(recipient.connectionId);
+            return generationId === undefined ? [] : [{
+                kind: 'scoped-recipient' as const,
+                ...recipient,
+                generationId,
+                recipientScope,
+                message: toALOutboundTransportMessage(message)
+            }];
+        });
     }
 
     /**
@@ -140,6 +186,12 @@ export class WsQueueBoxServerOutboundPlanning {
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined {
+        if (
+            requiresWsQueueBoxServerRecipientScope(message) &&
+            validateALOutboundRecipientScope(request.recipientScope).length > 0
+        ) {
+            return undefined;
+        }
         const requestedPeerIds = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
         const recipients = this.#targetResolution.resolveRepairRecipients(
             message,
@@ -154,7 +206,8 @@ export class WsQueueBoxServerOutboundPlanning {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
-            preparedMessages: toRecipientPreparedMessages(message, recipients),
+            preparedMessages: this.toRecipientPreparedMessages(message, recipients, request.recipientScope),
+            recipientScope: request.recipientScope,
             ackTracking: toAckTrackingPlan(
                 effective,
                 recipients.map((recipient) => recipient.peerId),

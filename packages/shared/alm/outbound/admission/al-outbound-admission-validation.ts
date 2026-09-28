@@ -6,7 +6,8 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
+import type { StateScope } from '../../../api/state-types.ts';
+import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -35,6 +36,7 @@ export interface ALOutboundCapturedPolicy {
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
+    readonly recipientScope?: StateScope;
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -44,7 +46,10 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
-        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience })
+        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
+        ...(plan.recipientScope === undefined
+            ? {}
+            : { recipientScope: decodeALOutboundRecipientScope(plan.recipientScope) })
     };
 }
 
@@ -87,7 +92,8 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         retryTracking: policy.retryTracking ?? undefined,
         repairTracking: policy.repairTracking ?? undefined,
         supersedenceTracking: policy.supersedenceTracking ?? undefined,
-        admittedAudience: policy.admittedAudience
+        admittedAudience: policy.admittedAudience,
+        recipientScope: policy.recipientScope
     };
 }
 
@@ -123,38 +129,16 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience']);
+    ], ['admittedAudience', 'recipientScope']);
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
+    if (policy.recipientScope !== undefined) {
+        decodeALOutboundRecipientScope(policy.recipientScope);
+    }
     if (typeof policy.persist !== 'boolean') {
         throw new TypeError('Captured outbound persistence policy is invalid');
     }
     if (policy.ackTracking !== null) {
-        const ack = decodeALAdmissionRecord(policy.ackTracking, [
-            'enabled',
-            'timeoutMs',
-            'maxAttempts',
-            'expectedPeerIds',
-            'nextHopPeerIds',
-            'mode'
-        ], ['expectedPeerIdsUpdate']);
-        requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
-        requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
-        requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
-        if (!Array.isArray(ack.expectedPeerIds)) {
-            throw new TypeError('Captured acknowledgement peers are missing');
-        }
-        requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
-        if (!Array.isArray(ack.nextHopPeerIds)) {
-            throw new TypeError('Captured acknowledgement next hops are missing');
-        }
-        requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
-        if (
-            ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
-            ack.expectedPeerIdsUpdate !== 'replace'
-        ) {
-            throw new TypeError('Captured acknowledgement peer update is invalid');
-        }
-        requirePersistedALReceiptMode(ack.mode, 'captured acknowledgement mode');
+        decodeALOutboundCapturedAcknowledgement(policy.ackTracking);
     }
     if (policy.retryTracking !== null) {
         const retry = decodeALAdmissionRecord(policy.retryTracking, ['enabled', 'maxAttempts'], ['retryDelayMs']);
@@ -253,4 +237,51 @@ function requirePersistedALReceiptMode(value: PersistedALValue | undefined, labe
     if (value !== 'hop' && value !== 'subtree' && value !== 'receiver') {
         throw new TypeError(`Persisted AL ${label} is invalid`);
     }
+}
+
+export function decodeALOutboundRecipientScope(value: unknown): StateScope {
+    const scope = decodeALAdmissionRecord(value, ['applicationId', 'workspaceId']);
+    return {
+        applicationId: decodeALAdmissionString(scope.applicationId),
+        workspaceId: decodeALAdmissionString(scope.workspaceId)
+    };
+}
+
+export function validateALOutboundRecipientScope(value: StateScope | null | undefined): readonly string[] {
+    try {
+        decodeALOutboundRecipientScope(value);
+        return [];
+    }
+    catch {
+        return ['Public WS unicast requires explicit application and workspace scope'];
+    }
+}
+
+function decodeALOutboundCapturedAcknowledgement(value: PersistedALValue | undefined): void {
+    const ack = decodeALAdmissionRecord(value, [
+        'enabled',
+        'timeoutMs',
+        'maxAttempts',
+        'expectedPeerIds',
+        'nextHopPeerIds',
+        'mode'
+    ], ['expectedPeerIdsUpdate']);
+    requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
+    requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
+    requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
+    if (!Array.isArray(ack.expectedPeerIds)) {
+        throw new TypeError('Captured acknowledgement peers are missing');
+    }
+    requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
+    if (!Array.isArray(ack.nextHopPeerIds)) {
+        throw new TypeError('Captured acknowledgement next hops are missing');
+    }
+    requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
+    if (
+        ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
+        ack.expectedPeerIdsUpdate !== 'replace'
+    ) {
+        throw new TypeError('Captured acknowledgement peer update is invalid');
+    }
+    requirePersistedALReceiptMode(ack.mode, 'captured acknowledgement mode');
 }

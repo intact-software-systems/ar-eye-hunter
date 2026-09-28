@@ -18,6 +18,10 @@ export class WsQueueBoxServerTargetResolution {
         this.#targetResolver = dependencies.targetResolver;
     }
 
+    getConnectionGeneration(connectionId: string): string | undefined {
+        return this.#socket.connections.get(connectionId)?.generationId;
+    }
+
     resolvePeerIdForConnection(connectionId: string, message: ALMessage): string | undefined {
         return this.#targetResolver.resolvePeerIdForConnection
             ? this.#targetResolver.resolvePeerIdForConnection(connectionId, message)

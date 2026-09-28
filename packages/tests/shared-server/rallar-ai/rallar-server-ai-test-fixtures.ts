@@ -134,7 +134,7 @@ export function createRallarServerAiTestWebSocket(): RallarServerAiTestWebSocket
             handler = registeredHandler;
             return () => true;
         },
-        publish: async (message, fanout) => {
+        publish: async ({ message, fanout }) => {
             publications.push({ message, fanout });
             return successfulPublication(message, fanout);
         }

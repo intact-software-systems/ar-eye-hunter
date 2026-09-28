@@ -6,6 +6,7 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
+import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
 import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
@@ -65,7 +66,7 @@ import {
     type ALOutboundStateWrite
 } from './al-outbound-admission-mutations.ts';
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
@@ -87,7 +88,8 @@ export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: 
 /** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
     msg: ALMessage,
-    admittedAudience: readonly string[] | undefined
+    admittedAudience?: readonly string[],
+    recipientScope?: StateScope
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {
@@ -264,11 +266,11 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** True while the admission fact is retained, including after the canonical payload expired. */
     readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
 
-    /** Missing or mismatched admission fails closed; an admitted non-frozen message returns undefined. */
-    readonly readVerifiedAdmittedAudience: (
+    /** Missing or mismatched admission fails closed. */
+    readonly readCapturedPolicy: (
         message: ALMessage,
         entry: ResourceEntry
-    ) => Promise<readonly string[] | undefined>;
+    ) => Promise<ALOutboundCapturedPolicy>;
 
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
@@ -400,8 +402,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.hasSentMessageAdmission(session, msgId));
     }
 
-    async readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined> {
-        return await this.backend.readWithin((session) => this.reads.readAdmittedAudience(session, message, entry));
+    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
+        return await this.backend.readWithin((session) => this.reads.readCapturedPolicy(session, message, entry));
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {

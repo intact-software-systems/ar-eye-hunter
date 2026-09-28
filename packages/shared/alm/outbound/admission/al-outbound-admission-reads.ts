@@ -56,6 +56,7 @@ import {
     decodeALOutboundPendingAck,
     decodeALOutboundRepairAttempt,
     decodeALOutboundSentMessage,
+    type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
 
@@ -145,14 +146,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             nowMs,
             clientRecord,
             plan,
-            sentSnapshot: stored && canonical && stored.reference.expiresAtMs > this.nowMs()
-                ? {
-                    msgId: stored.msgId,
-                    msg: canonical,
-                    outboxKey: stored.reference.key,
-                    supersedenceKey: stored.supersedenceKey ?? null
-                }
-                : undefined,
+            sentSnapshot: this.toLiveSentSnapshot(stored, canonical),
             ...control,
             repairs,
             supersedence,
@@ -183,7 +177,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const sentSnapshot = await this.readCanonicalSentMessage(session, msgId, stored);
         const msg = sentSnapshot?.msg;
         const plan = msg && stored
-            ? applyALOutboundCapturedPolicy(planner(msg, stored.policy.admittedAudience), stored.policy)
+            ? applyALOutboundCapturedPolicy(
+                planner(msg, stored.policy.admittedAudience, stored.policy.recipientScope),
+                stored.policy
+            )
             : undefined;
         if (msg && plan) {
             requireALOutboundPlannedMessage(msg, plan.msg);
@@ -232,11 +229,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return stored !== undefined;
     }
 
-    async readAdmittedAudience(
+    async readCapturedPolicy(
         session: ALAdmissionReadSession,
         message: ALMessage,
         entry: ResourceEntry
-    ): Promise<readonly string[] | undefined> {
+    ): Promise<ALOutboundCapturedPolicy> {
         const stored = await this.readStoredMessage(session, message.id.msgId);
         const expiresAtMs = resolveALMessageExpireAtMs(message);
         const admissionKey = toALOutboundSentMessageKey(this.namespace, message.id.msgId);
@@ -262,7 +259,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 new TypeError('Durable WS outbox message differs from captured outbound admission')
             );
         }
-        return stored.policy.admittedAudience;
+        return stored.policy;
     }
 
     async readSentMessage(
@@ -388,7 +385,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         stored: ALStoredOutboundMessage | undefined
     ): ALOutboundDispatchPlan<TPrepared> {
         const { msg, planner, intent } = input;
-        const selected = planner(canonical ?? msg, stored?.policy.admittedAudience);
+        const selected = planner(canonical ?? msg, stored?.policy.admittedAudience, stored?.policy.recipientScope);
         requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
         const planned = canonical ? { ...selected, msg: canonical } : selected;
         const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;
@@ -458,7 +455,21 @@ export class ALOutboundAdmissionReads<TPrepared> {
             return undefined;
         }
         const msg = decodeALOutboundCanonicalMessage(stored.reference, canonical, identity);
-        return { msgId, msg, outboxKey: stored.reference.key, supersedenceKey: stored.supersedenceKey ?? null };
+        return this.toLiveSentSnapshot(stored, msg);
+    }
+
+    private toLiveSentSnapshot(
+        stored: ALStoredOutboundMessage | undefined,
+        message: ALMessage | undefined
+    ): ALOutboundSentMessageSnapshot | undefined {
+        return stored && message && stored.reference.expiresAtMs > this.nowMs()
+            ? {
+                msgId: stored.msgId,
+                msg: message,
+                outboxKey: stored.reference.key,
+                supersedenceKey: stored.supersedenceKey ?? null
+            }
+            : undefined;
     }
 }
 
