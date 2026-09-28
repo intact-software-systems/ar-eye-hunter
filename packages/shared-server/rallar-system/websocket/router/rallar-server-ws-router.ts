@@ -168,18 +168,11 @@ export class RallarServerWsRouter {
 
     async publish(input: RallarServerWsPublishInputDto): Promise<RallarServerWsPublishResult> {
         assertRallarServerWsPublishInput(input);
-        const selected = input.fanout ?? this.defaultFanout;
-        const frozen = await readRallarServerWsPublishAudience({
-            message: input.message,
-            fanout: selected,
-            serverPeerId: this.serverPeerId,
-            readRoomAudience: this.readServerPublishAudience
-        });
         return await this.publishToFanout({
             message: input.message,
-            fanout: selected,
-            audience: frozen,
-            inboundScope: input.scope
+            fanout: input.fanout ?? this.defaultFanout,
+            inboundScope: input.scope,
+            origin: 'server'
         });
     }
 

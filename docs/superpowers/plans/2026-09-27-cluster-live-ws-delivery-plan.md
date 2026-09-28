@@ -445,8 +445,12 @@ deadline corrections. The common publisher routes effective best-effort
 messages on the existing outbox. It freezes scoped audiences, uses current
 authenticated socket/scope/principal and generation checks at both local and
 remote final sends, and reports `cluster-published` only for a successful
-notice publication. Provider-aware expiry is carried through both send
-paths; malformed or unauthorized room work is refused. Focused validation on
+notice publication. For best-effort QoS, even an explicit `fanout: 'outbox'`
+does not force durable work: `fanout` retains the requested preference while
+`status`, `entries`, and `verdict` report the actual live publication. This
+is the approved QoS-first contract, not a missing outbox insert.
+Provider-aware expiry is carried through both send paths; malformed or
+unauthorized room work is refused. Focused validation on
 the local head passed 112 shared-server, 67 shared QueueBox, and 32 API Deno
 tests, typechecks, changed-style, structure, and formatting. This does **not**
 replace the pending real three-process Postgres proof. The two bundle tests
@@ -486,17 +490,73 @@ control/receipt remains a separate decoded-control path.
 
 ### Proposed direct-producer adoption sequence (approval pending)
 
-Task 2f is locally reviewed and awaits publication to the existing draft PR.
+Task 2f and this design status were published to draft PR #566 through
+`0311f9675`. The first exact-head gate was not green. Focused local repair
+of its unscoped historical test fixtures and the removed positional public
+`publish()` call is committed in `880aeae7f` and `8e9fe8485`; a new
+exact-head gate has not yet validated the correction. They do not prove the
+Postgres path.
+
+The failed `prod-in-memory` ALM observation does **not** use the Postgres live
+notice bridge. It exposed a separate effective-QoS regression: ordinary typed
+room sends default to at-least-once, while the router passed its implicit
+`live-only` default as if explicitly requested. The new durable-policy check
+refused that send before socket delivery, although the original inbound
+admission receipt succeeded. Commit `6fc27bc21` preserves omitted fanout
+until effective QoS is known, selects the existing outbox for implicit
+durable-required work, and retains explicit `live-only` refusal and configured
+`none`. Its focused admitted-room red-to-green test includes receiver delivery
+and completed receipt. An initial local `prod-in-memory` ALM WS browser smoke
+reused services on the default ports from a different checkout, so that run
+cannot prove this branch. A follow-up on isolated API, SPA, and control ports
+reproduced zero receiver messages and timed-out sender receipts. Temporary
+router diagnostics, removed after the run, showed two admitted peers and two
+authorized sessions; the implicit durable publication then threw PGlite SQL
+`22001` because a value exceeded `resource_inbox.created_by`'s 16-character
+limit. The follow-up correction applies the existing
+`toAppQueueCreatedBy` transform only to the server's physical `WS_OUTBOX`
+entry audit; the serialized AL identity remains unchanged. Its long-browser-
+session regression was red before the change and green after it, with a
+receipt enqueue test and 27 adjacent WS service tests passing. The full
+two-agent WS smoke family then passed on fresh isolated API, SPA, and control
+ports (six scenarios, 2.4 minutes; normal page regime). This is local browser
+proof for that family, not Postgres cross-process proof or unchanged E3
+acceptance evidence.
+
+The touched WS service also carried a pre-existing cognitive-load warning.
+Inbound authority and inbound delivery now have separate private owners, while
+the service retains public composition and the synchronous final socket/scope
+check immediately before admission. A reconnect-during-authorization test
+guards that boundary. The touched ingress test was split into a delivery suite
+and shared fixture to close its own warning. Seven focused WS suites pass 70
+tests, and an independent review found no new correctness defect. The raw
+`unknown` socket value is decoded at the existing public service boundary;
+authority receives only the typed result. No touched file remains in a metric
+warning tier. The post-split isolated browser smoke passed again (six
+scenarios, 2.4 minutes); the exact-head remote gate is still pending.
+
+The exact-head Postgres formation artifacts identify a concrete direct-row
+gap: principal state-sync snapshots generate per-session unicast `WS_OUTBOX`
+pages and the first foreign dequeue has no captured recipient scope. The
+logged outbound planner drop then leaves initial authorization without its
+expected snapshot. Medium-scale CRDT mutations commit and their fanout can
+reach a remote process, but their direct unicast reply rows lack the same
+proof and the append reply is not observed. The warning lacks a row ID, so
+the reply-row attribution follows the producer and planner path rather than
+a direct per-row log correlation. Both producer families must be covered by
+any approved provenance design; retaining a generic unscoped bypass is not a
+remedy.
+
 The following direct-producer slice is a design candidate, not authorization
 to change a persisted contract. Its boundary is the four inventoried server
 producers, not all ALM traffic:
 
-| Producer | Proof required before foreign dequeue |
-| --- | --- |
-| CRDT AppInbox | Authenticated full application/workspace scope, final reply or fanout target, and the authorized room/principal audience frozen from the mutation's authoritative read. Optional document workspace is not proof. |
-| Auth logout | Auth-owner proof of the exact invalidated session, explicitly session-global if approved; never treat it as a generic unscoped unicast. |
-| State-sync | Full aggregate scope and the audience frozen from the authoritative client/group snapshot. Bind each per-session snapshot page, principal broadcast, client event, and group-presence delta to its own row; a target ID or current delivery-time cache is not publication proof. |
-| RTC topology | Full GroupRef, validated publication/delivery-log identity, and each page's already-frozen recipient IDs. The existing replay check does not substitute for first-dequeue admission. |
+| Producer      | Proof required before foreign dequeue                                                                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CRDT AppInbox | Authenticated full application/workspace scope, final reply or fanout target, and the authorized room/principal audience frozen from the mutation's authoritative read. Optional document workspace is not proof.                                                                |
+| Auth logout   | Auth-owner proof of the exact invalidated session, explicitly session-global if approved; never treat it as a generic unscoped unicast.                                                                                                                                          |
+| State-sync    | Full aggregate scope and the audience frozen from the authoritative client/group snapshot. Bind each per-session snapshot page, principal broadcast, client event, and group-presence delta to its own row; a target ID or current delivery-time cache is not publication proof. |
+| RTC topology  | Full GroupRef, validated publication/delivery-log identity, and each page's already-frozen recipient IDs. The existing replay check does not substitute for first-dequeue admission.                                                                                             |
 
 1. In each existing owner transaction, write one versioned provenance record
    beside each raw `WS_OUTBOX` row. A common storage mechanism may use the
@@ -506,7 +566,7 @@ producers, not all ALM traffic:
    the raw row hash, message/target identity, producer kind, and expiry.
    Do not repurpose `resource_inbox` or alter the AL wire target.
 2. Add a narrow asynchronous provenance read before the existing ALM
-   `commitDispatchPlan` on a *foreign* first dequeue. The current synchronous
+   `commitDispatchPlan` on a _foreign_ first dequeue. The current synchronous
    planner cannot perform this read. Reject missing, expired, mismatched, or
    unknown-version proof; do not fall back to current room/client cache or a
    payload-type exemption. Feed only verified scope and frozen audience to the

@@ -1,4 +1,3 @@
-import { Temporal } from '@js-temporal/polyfill';
 import {
     describe,
     expect,
@@ -11,34 +10,18 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALNackPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
-import {
-    createInMemoryALAdmissionState,
-    InMemoryAdmissionBackend,
-    type ALAdmissionMemoryState
-} from '@shared/alm/al-admission-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
-import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
-
-interface ServerIngressFixture {
-    readonly service: WsQueueBoxServerService;
-    readonly server: JsonWebSocketServer;
-    readonly socket: SimulatedWebSocket;
-    readonly admission: ALAdmissionMemoryState;
-    readonly backend: InMemoryAdmissionBackend;
-    readonly admissionStore: ALInboundAdmissionStore;
-    readonly delivered: ALMessage[];
-}
+import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
 describe('WS server bounded and authorized admission', () => {
     it('captures authenticated scope in admitted provenance before asynchronous admission', async () => {
@@ -147,25 +130,6 @@ describe('WS server bounded and authorized admission', () => {
 
         expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
         await expect.poll(() => fixture.delivered).toEqual([message]);
-    });
-
-    it('keeps admitted work unclaimed until an application consumer registers', async () => {
-        const fixture = await createServerIngressFixture();
-        fixture.service.removeAnyInboxMessageCallback('observer');
-        await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
-        const keys = await fixture.admission.workQueue.getAllKeys();
-        expect(keys).toHaveLength(1);
-        expect(await fixture.admission.workQueue.getItem(keys[0])).toMatchObject({ status: 'NEW', dequeueAudit: { attempts: 0 } });
-        fixture.service.onAnyInboxMessageDo('observer', {
-            onMessage: async (message) => {
-                fixture.delivered.push(message);
-            }
-        });
-
-        await expect.poll(async () => {
-            return fixture.admission.workQueue.getItem(keys[0]);
-        }).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 1 } });
-        expect(fixture.delivered).toEqual([createIncomingMessage()]);
     });
 
     it('requires room authority even when a message supplies no snapshot floor', async () => {
@@ -539,6 +503,27 @@ describe('WS server bounded and authorized admission', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
+    it('rejects a reconnect queued after authorization before admission starts', async () => {
+        const fixture = await createServerIngressFixture();
+        const replacement = new SimulatedWebSocket('ws://replacement');
+        await replacement.open();
+        fixture.service.authorizeInboundMessagesWith({
+            authorize: async () => {
+                queueMicrotask(() => {
+                    queueMicrotask(() => {
+                        fixture.server.addConnection(new ConnectionContext({ id: 'session-1', socket: replacement }));
+                    });
+                });
+                return { authorized: true };
+            }
+        });
+
+        expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left?.code)
+            .toBe('unauthorized');
+        expect(fixture.admission.data.size).toBe(0);
+        expect(fixture.delivered).toEqual([]);
+    });
+
     it('runs a typed application validator before authorization or admission', async () => {
         const fixture = await createServerIngressFixture(() => Either.ofLeft({ code: 'malformed', message: 'Invalid command' }));
         const authorize = vi.fn(async () => ({ authorized: true as const }));
@@ -656,71 +641,3 @@ describe('WS server bounded and authorized admission', () => {
         }).toBe('RETRY');
     });
 });
-
-async function createServerIngressFixture(
-    validateInboundMessage?: WsQueueBoxServerService.Input['validateInboundMessage'],
-    peerId = 'session-1',
-    readAuthenticatedConnectionScope: NonNullable<WsQueueBoxServerService.Input['readAuthenticatedConnectionScope']> = () => ({
-        scope: { applicationId: 'app', workspaceId: 'workspace' },
-        expiresAtEpochMs: Date.now() + 60_000
-    })
-): Promise<ServerIngressFixture> {
-    const server = new JsonWebSocketServer();
-    const socket = new SimulatedWebSocket('ws://server');
-    await socket.open();
-    server.addConnection(new ConnectionContext({ id: peerId, socket }));
-    const nowMs = Date.now;
-    vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs()));
-    const admission = createInMemoryALAdmissionState(new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs())));
-    const engine = new InboxOutboxEngine();
-    engine.start();
-    const backend = new InMemoryAdmissionBackend(admission, nowMs);
-    const admissionStore = createALInboundAdmissionStore({
-        namespace: 'ws-server-ingress',
-        nowMs,
-        backend,
-        orderingTrackTtlMs: 300000,
-        supersedenceTrackTtlMs: 300000,
-        retention: normalizeALRuntimeStoreRetention()
-    });
-    const service = createDefaultWsQueueBoxServerService({
-        outbox: new InMemoryQueueBox(new Map()),
-        socket: server,
-        name: 'server',
-        targetResolver: {
-            resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
-        },
-        validateInboundMessage,
-        readAuthenticatedConnectionScope,
-        inboundStores: { admissionStore, workQueue: admission.workQueue },
-        queueEngine: engine
-    });
-    const delivered: ALMessage[] = [];
-    service.onAnyInboxMessageDo('observer', {
-        onMessage: async (message) => {
-            delivered.push(message);
-        }
-    });
-    onTestFinished(() => {
-        service.dispose();
-        engine.stop();
-        vi.restoreAllMocks();
-    });
-    return { service, server, socket, admission, backend, admissionStore, delivered };
-}
-
-function createIncomingMessage(): ALMessage {
-    return {
-        id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'session-1' },
-        route: { topicId: 'topic', resourceId: 'resource', contextId: 'context' },
-        payload: { typeId: 'message.v1', contentType: 'application/json', resource: '{}' }
-    };
-}
-
-function createRoomMessage(): ALMessage {
-    return {
-        ...createIncomingMessage(),
-        route: { topicId: 'room.notification', resourceId: 'resource', contextId: 'room-1' },
-        targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' } }
-    };
-}
