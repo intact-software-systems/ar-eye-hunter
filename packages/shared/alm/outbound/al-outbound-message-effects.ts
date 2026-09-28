@@ -3,7 +3,6 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
-import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
@@ -143,13 +142,13 @@ export class ALOutboundMessageEffects<TPrepared> {
                 ])
             }
         });
-        if (isDiscardedDequeuedAdmission(computed.verdict)) {
-            return { status: 'completed' };
-        }
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }
-        await runtime.afterDequeueAdmission?.(msg, effect.entry);
+        const [entry] = computed.entries;
+        if (computed.msg && entry) {
+            await runtime.afterDequeueAdmission?.(computed.msg, entry);
+        }
         return { status: 'completed' };
     }
 
@@ -308,19 +307,6 @@ interface ComputeALOutboundRetainedAdmissionSkipInput {
     readonly nowMs: number;
     readonly disposed: boolean;
     readonly authority: ALOutboundMessageRuntime.PendingAdmissionAuthority;
-}
-
-/**
- * Skips `afterDequeueAdmission` for `expired`, `superseded`, `skipped`, `deferred`, and a `refused`
- * `unauthorized` verdict — the set the deleted status converter mapped to `skipped`. Publishing any
- * of them would deliver a message the planner already dropped.
- */
-function isDiscardedDequeuedAdmission(verdict: ALDeliveryAdmissionVerdict): boolean {
-    return verdict.kind === 'expired' ||
-        verdict.kind === 'superseded' ||
-        verdict.kind === 'skipped' ||
-        verdict.kind === 'deferred' ||
-        (verdict.kind === 'refused' && verdict.reason === 'unauthorized');
 }
 
 function computeALOutboundSendDisposition(

@@ -72,6 +72,47 @@ describe('verified direct room row delivery', () => {
             referenceKey: winner.entry!.key
         }]);
     });
+    it('publishes the winning canonical row when its admission races the verified direct dequeue', async () => {
+        const fixture = new RoomFixture();
+        const bridge = new RecordingBridge();
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: fixture.service,
+            bridge,
+            channel: 'events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+        });
+        const winnerEngine = new InboxOutboxEngine();
+        const winnerService = createDefaultWsQueueBoxServerService({
+            name: 'server',
+            socket: new JsonWebSocketServer(),
+            outbox: fixture.stores.workQueue,
+            outboundStores: fixture.stores,
+            queueEngine: winnerEngine
+        });
+        onTestFinished(() => {
+            winnerService.dispose();
+            winnerEngine.stop();
+        });
+        const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
+        vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
+            const authority = await readProof(message, entry);
+            const winner = await winnerService.enqueueOutboxIfAbsent(message, ['session'], SCOPE);
+            expect(winner.verdict.kind).toBe('admitted');
+            return authority;
+        });
+        const { message, entry } = await fixture.publish(['late']);
+        await fixture.engine.executeOnce();
+        await expect.poll(() => bridge.published.length).toBeGreaterThan(0);
+        const winner = await fixture.stores.admissionStore.readSentMessage(message.id.msgId);
+        expect(winner?.outboxKey?.topicId).toBe('AL_OUTBOUND_MESSAGE');
+        expect(bridge.published.map((publication) => publication.key)).toEqual([winner!.outboxKey]);
+        await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect(fixture.native.get('peer-socket')!.sent).toHaveLength(1);
+        expect(JSON.parse(fixture.native.get('peer-socket')!.sent[0]!)).toEqual(winner!.msg);
+        expect(fixture.native.get('session')!.sent).toEqual([]);
+        expect(fixture.native.get('late')!.sent).toEqual([]);
+    });
     it('keeps canonical room bridge delivery peer-based with the same captured IDs', async () => {
         const fixture = new RoomFixture();
         const bridge = new RecordingBridge();
