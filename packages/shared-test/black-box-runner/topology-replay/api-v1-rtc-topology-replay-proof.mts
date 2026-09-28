@@ -134,6 +134,7 @@ export async function runApiV1RtcTopologyReplayProof(
         }
         phase = 'establish-baseline-topology';
         await api.establishBaseline({ ...group, actor: sessions[0]! });
+        await waitForStableRegisteredState(input.databaseUrl);
         const baselineTopology = await api.readCurrentTopology({ ...group, actor: sessions[0]! });
         phase = 'attach-baseline-sessions';
         const attached = await attachAllSessions(api, sessions, group);
