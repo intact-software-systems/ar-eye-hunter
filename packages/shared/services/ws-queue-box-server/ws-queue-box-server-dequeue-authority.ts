@@ -8,10 +8,14 @@ import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import {
+    isWsQueueBoxServerDirectRoomRow,
+    requiresWsQueueBoxServerRecipientScope,
+    validateWsQueueBoxServerDirectRoomAuthority
+} from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
-/** A producer reader may authorize only a frozen, scoped public unicast at this boundary. */
+/** A producer reader authorizes a frozen scoped unicast or exact room broadcast at this boundary. */
 export interface WsOutboxProducerAuthority {
     readonly admittedAudience: readonly string[];
     readonly recipientScope: StateScope;
@@ -46,8 +50,10 @@ export class WsQueueBoxServerDequeueAuthority {
         if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
             const policy = await admissionStore.readCapturedPolicy(message, entry);
             if (
-                requiresWsQueueBoxServerRecipientScope(message) &&
-                validateALOutboundRecipientScope(policy.recipientScope).length > 0
+                isWsQueueBoxServerDirectRoomRow(message, entry.key)
+                    ? validateWsQueueBoxServerDirectRoomAuthority(message, policy).length > 0
+                    : requiresWsQueueBoxServerRecipientScope(message) &&
+                        validateALOutboundRecipientScope(policy.recipientScope).length > 0
             ) {
                 throw toDequeueCorruption(entry, 'Captured public unicast has no recipient scope');
             }
@@ -56,15 +62,20 @@ export class WsQueueBoxServerDequeueAuthority {
         if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || await outbox.getItem(toALOutboundIdentityKey(entry.key))) {
             throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
         }
-        if (!readProducerProvenance || !requiresWsQueueBoxServerRecipientScope(message)) {
+        const directRoom = isWsQueueBoxServerDirectRoomRow(message, entry.key);
+        if (!readProducerProvenance || (!requiresWsQueueBoxServerRecipientScope(message) && !directRoom)) {
             throw toDequeueCorruption(entry, 'Raw WS outbox row has no supported producer authority');
         }
         const authority = await readProducerProvenance(message, entry);
         const targets = message.targets;
         if (
             validateALOutboundRecipientScope(authority.recipientScope).length > 0 ||
-            targets?.mode !== 'unicast' ||
-            authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId)
+            (directRoom
+                ? targets?.mode !== 'broadcast' || !targets.groupRef ||
+                    targets.groupRef.applicationId !== authority.recipientScope.applicationId ||
+                    targets.groupRef.workspaceId !== authority.recipientScope.workspaceId
+                : targets?.mode !== 'unicast' ||
+                    authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId))
         ) {
             throw toDequeueCorruption(entry, 'Producer authority differs from scoped unicast target');
         }

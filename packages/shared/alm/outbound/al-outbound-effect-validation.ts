@@ -180,7 +180,7 @@ function decodeALOutboundPendingAdmission<TPrepared>(
         policy: decodeALOutboundCapturedPolicy(pending.policy),
         preparedMessages: decodeALAdmissionArray(
             pending.preparedMessages,
-            (prepared) => read.decodePrepared(prepared, canonical)
+            (prepared) => read.decodePrepared(prepared, canonical, message.key)
         )
     };
 }
@@ -224,7 +224,7 @@ function decodeALOutboundSendEffect<TPrepared>(
     return {
         kind: 'send-prepared',
         message,
-        prepared: preparedRead.decodePrepared(payload.prepared, msg),
+        prepared: preparedRead.decodePrepared(payload.prepared, msg, message.key),
         preparedFingerprint: payload.preparedFingerprint,
         attemptIdentity: payload.attemptIdentity as string,
         phase: payload.phase

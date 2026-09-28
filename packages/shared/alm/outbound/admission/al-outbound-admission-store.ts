@@ -9,7 +9,7 @@ import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
 import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
-import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type {
     ALAdmissionReadSession,
@@ -84,13 +84,23 @@ export interface ALOutboundVersionedClientRecord {
     readonly version: number;
 }
 
-export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: ALMessage) => TPrepared;
+export type ALOutboundPreparedMessageDecoder<TPrepared> = (
+    value: unknown,
+    msg: ALMessage,
+    referenceKey?: Key
+) => TPrepared;
+
+/** Transient authority from one verified observation; the physical key is never persisted again. */
+export interface ALOutboundPlanningAuthority {
+    readonly admittedAudience: readonly string[] | undefined;
+    readonly recipientScope: StateScope | undefined;
+    readonly referenceKey: Key | undefined;
+}
 
 /** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
     msg: ALMessage,
-    admittedAudience?: readonly string[],
-    recipientScope?: StateScope
+    authority?: ALOutboundPlanningAuthority
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {

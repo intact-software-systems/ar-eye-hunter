@@ -22,6 +22,16 @@ export class WsQueueBoxServerTargetResolution {
         return this.#socket.connections.get(connectionId)?.generationId;
     }
 
+    resolveCapturedSessionRecipients(
+        message: ALMessage,
+        sessionIds: readonly string[]
+    ): readonly WsServerResolvedRecipient[] {
+        const excluded = message.targets?.mode === 'broadcast' ? message.targets.exceptPeerIds : undefined;
+        return [...new Set(sessionIds)]
+            .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen && !excluded?.includes(sessionId))
+            .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+    }
+
     resolvePeerIdForConnection(connectionId: string, message: ALMessage): string | undefined {
         return this.#targetResolver.resolvePeerIdForConnection
             ? this.#targetResolver.resolvePeerIdForConnection(connectionId, message)

@@ -3,7 +3,7 @@ import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multic
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
-import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -44,9 +44,11 @@ export interface ALOutboundCanonicalFactWrite {
 export async function readALOutboundCanonicalMessage(
     input: ALOutboundCanonicalReadInput
 ): Promise<ALOutboundCanonicalObservation> {
-    const key = input.observedEntry?.key ?? input.stored?.reference.key ??
+    const key = input.stored?.reference.key ?? input.observedEntry?.key ??
         toALOutboundCanonicalKey(input.scope, input.message);
-    const entry = input.observedEntry ?? await input.queue.getItem(key);
+    const entry = input.observedEntry && isKeysEqual(input.observedEntry.key, key)
+        ? input.observedEntry
+        : await input.queue.getItem(key);
     const reference = input.stored?.reference ?? (entry
         ? toALOutboundMessageReference(input.scope, entry, decodePersistedALMessage(entry.resource))
         : undefined);

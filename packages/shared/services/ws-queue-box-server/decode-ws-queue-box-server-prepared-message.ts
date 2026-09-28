@@ -2,10 +2,18 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../alm/al-admission-value-validation.ts';
 import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { decodeALOutboundTransportMessage } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import type { Key } from '../../queuebox/ResourceEntry.ts';
+import {
+    isWsQueueBoxServerDirectRoomRow,
+    requiresWsQueueBoxServerRecipientScope
+} from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
-export function decodeWsQueueBoxServerPreparedMessage(value: unknown, msg: ALMessage): WsQueueBoxServerPreparedMessage {
+export function decodeWsQueueBoxServerPreparedMessage(
+    value: unknown,
+    msg: ALMessage,
+    referenceKey?: Key
+): WsQueueBoxServerPreparedMessage {
     const prepared = decodeALAdmissionRecord(value, ['kind', 'message'], [
         'peerId',
         'connectionId',
@@ -15,7 +23,19 @@ export function decodeWsQueueBoxServerPreparedMessage(value: unknown, msg: ALMes
     const message = decodeALOutboundTransportMessage(prepared.message, msg);
     if (prepared.kind === 'scoped-recipient') {
         decodeALAdmissionRecord(value, ['kind', 'message', 'peerId', 'connectionId', 'generationId', 'recipientScope']);
-        if (msg.targets?.mode !== 'unicast' || prepared.peerId !== msg.targets.toPeerId) {
+        if (isWsQueueBoxServerDirectRoomRow(msg, referenceKey)) {
+            const scope = decodeALOutboundRecipientScope(prepared.recipientScope);
+            const targets = msg.targets;
+            if (
+                targets?.mode !== 'broadcast' || !targets.groupRef ||
+                scope.applicationId !== targets.groupRef.applicationId ||
+                scope.workspaceId !== targets.groupRef.workspaceId ||
+                prepared.peerId !== prepared.connectionId
+            ) {
+                throw new TypeError('Persisted scoped recipient differs from direct room target');
+            }
+        }
+        else if (msg.targets?.mode !== 'unicast' || prepared.peerId !== msg.targets.toPeerId) {
             throw new TypeError('Persisted scoped recipient differs from unicast target');
         }
         return {
@@ -28,7 +48,7 @@ export function decodeWsQueueBoxServerPreparedMessage(value: unknown, msg: ALMes
         };
     }
     if (prepared.kind === 'recipient') {
-        if (requiresWsQueueBoxServerRecipientScope(msg)) {
+        if (requiresWsQueueBoxServerRecipientScope(msg) || isWsQueueBoxServerDirectRoomRow(msg, referenceKey)) {
             throw new TypeError('Persisted public WS unicast recipient has no scope proof');
         }
         decodeALAdmissionRecord(value, ['kind', 'message', 'peerId', 'connectionId']);

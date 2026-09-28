@@ -44,7 +44,11 @@ import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
-import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import {
+    isWsQueueBoxServerDirectRoomRow,
+    requiresWsQueueBoxServerRecipientScope,
+    validateWsQueueBoxServerDirectRoomAuthority
+} from './requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
@@ -256,21 +260,23 @@ export class WsQueueBoxServerService {
             toOutboxEntry: createWsQueueBoxServerOutboxEntry,
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             readDequeueAuthority: (message, entry) => dequeueAuthority.readDequeueAuthority(message, entry),
-            planOutgoingMessage: (message, admittedAudience, recipientScope) =>
+            planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'immediate',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience,
-                    recipientScope
+                    admittedAudience: authority?.admittedAudience,
+                    recipientScope: authority?.recipientScope,
+                    referenceKey: authority?.referenceKey
                 }),
-            planDequeuedMessage: (message, admittedAudience, recipientScope) =>
+            planDequeuedMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'dequeue',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience,
-                    recipientScope
+                    admittedAudience: authority?.admittedAudience,
+                    recipientScope: authority?.recipientScope,
+                    referenceKey: authority?.referenceKey
                 }),
             afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
@@ -455,10 +461,14 @@ export class WsQueueBoxServerService {
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
         const policy = await this.admissionStore.readCapturedPolicy(message, entry);
-        if (requiresWsQueueBoxServerRecipientScope(message) && policy.recipientScope === undefined) {
+        if (
+            isWsQueueBoxServerDirectRoomRow(message, entry.key)
+                ? validateWsQueueBoxServerDirectRoomAuthority(message, policy).length > 0
+                : requiresWsQueueBoxServerRecipientScope(message) && policy.recipientScope === undefined
+        ) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(entry.key),
-                new TypeError('Persisted public WS unicast has no recipient scope')
+                new TypeError('Persisted WS row has no valid captured recipient authority')
             );
         }
         return policy;

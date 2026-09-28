@@ -17,12 +17,15 @@ import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import {
+    isWsQueueBoxServerDirectRoomRow,
+    requiresWsQueueBoxServerRecipientScope
+} from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
-import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -195,10 +198,10 @@ function registerQueueBoxOutboxPublisher(
             operation: 'outbox-cluster-publish',
             message: envelope
         });
-        const policy = requiresWsQueueBoxServerRecipientScope(message)
+        const policy = requiresWsQueueBoxServerRecipientScope(message) || isWsQueueBoxServerDirectRoomRow(message, entry.key)
             ? await options.wsQBoxServerService.readCapturedPolicy(message, entry)
             : undefined;
-        const result = sendToCapturedLocalTargets(message, admittedAudience, policy?.recipientScope, options);
+        const result = sendToCapturedLocalTargets(message, entry, policy?.admittedAudience ?? admittedAudience, policy?.recipientScope, options);
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -290,7 +293,7 @@ async function sendRemoteQueueBoxOutboxEntry(
         const policy = isWsQueueBoxServerReceiptRow(remoteMessage)
             ? undefined
             : await options.wsQBoxServerService.readCapturedPolicy(remoteMessage, entry);
-        result = sendToCapturedLocalTargets(remoteMessage, policy?.admittedAudience, policy?.recipientScope, options);
+        result = sendToCapturedLocalTargets(remoteMessage, entry, policy?.admittedAudience, policy?.recipientScope, options);
     }
     catch (error) {
         if (error instanceof ALAdmissionCorruptionError) {
@@ -354,11 +357,14 @@ async function requeueFailedRemoteOutboxEntry(
 
 function sendToCapturedLocalTargets(
     message: ALMessage,
+    entry: ResourceEntry,
     captured: readonly string[] | undefined,
     recipientScope: ALOutboundCapturedPolicy['recipientScope'],
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
 ): WsServerLiveSendResult {
-    const eligible = captured === undefined || options.filterEligibleCapturedSessionIds === undefined
+    const directRoom = isWsQueueBoxServerDirectRoomRow(message, entry.key);
+    const eligible = (message.targets?.mode !== 'unicast' && !directRoom) ||
+        captured === undefined || options.filterEligibleCapturedSessionIds === undefined
         ? undefined
         : options.filterEligibleCapturedSessionIds({
             message,
@@ -369,7 +375,8 @@ function sendToCapturedLocalTargets(
         message,
         recipientSessionIds: eligible,
         admittedPeerIds: captured,
-        inboundScope: recipientScope
+        inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
+        recipientScope: directRoom ? recipientScope : undefined
     });
 }
 

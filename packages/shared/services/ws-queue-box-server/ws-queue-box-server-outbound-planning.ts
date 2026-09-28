@@ -16,7 +16,6 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
-import { validateALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -25,7 +24,11 @@ import type {
     ALOutboundSupersedenceTrackingPlan
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import type { Key } from '../../queuebox/ResourceEntry.ts';
+import {
+    isWsQueueBoxServerDirectRoomRow,
+    validateWsQueueBoxServerRecipientAuthority
+} from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.ts';
@@ -73,6 +76,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         /** The audience the router admitted the message to, carried beside it; absent for every other message. */
         readonly admittedAudience: readonly string[] | undefined;
         readonly recipientScope?: StateScope;
+        readonly referenceKey?: Key;
     }
 
     export interface RecipientResolution {
@@ -81,6 +85,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly allowClusterRecipients: boolean;
         /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
         readonly audience: readonly string[] | undefined;
+        readonly directRoom: boolean;
     }
 }
 
@@ -100,24 +105,18 @@ export class WsQueueBoxServerOutboundPlanning {
     planOutboundMessage(
         request: WsQueueBoxServerOutboundPlanning.Request
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-        const { phase, clusterPublisherRegistered, admittedAudience } = request;
-        const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
         const normalized = this.resolvePolicy(request.message);
         const message = toALOutboundMessage(request.message, normalized.effective);
-        if (
-            requiresWsQueueBoxServerRecipientScope(message) &&
-            validateALOutboundRecipientScope(recipientScope).length > 0
-        ) {
+        const issues = validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey);
+        if (issues.length > 0) {
             return {
                 msg: message,
                 persist: false,
                 preparedMessages: [],
                 dropReasonCode: 'unauthorized',
-                dropReason: 'Public WS unicast has no verified recipient scope'
+                dropReason: 'WS message has no verified scoped audience'
             };
         }
-        const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
-        const persist = shouldAwaitALRoute(normalized.effective);
         const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
             msg: message,
             carrier: 'ws',
@@ -126,13 +125,26 @@ export class WsQueueBoxServerOutboundPlanning {
         if (refusal.left) {
             return refusal.left;
         }
+        return this.planRecipientDispatch(request, message, normalized);
+    }
 
+    private planRecipientDispatch(
+        request: WsQueueBoxServerOutboundPlanning.Request,
+        message: ALMessage,
+        normalized: ALQosNormalizationResult
+    ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
+        const { phase, clusterPublisherRegistered, admittedAudience } = request;
+        const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
+        const directRoom = isWsQueueBoxServerDirectRoomRow(message, request.referenceKey);
+        const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
+        const persist = shouldAwaitALRoute(normalized.effective);
         const resolveRecipients = phase === 'dequeue' || !persist;
         return this.validateMessage(message, {
             resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
-            audience
+            audience,
+            directRoom
         }).fold(
             (error) =>
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
@@ -142,7 +154,11 @@ export class WsQueueBoxServerOutboundPlanning {
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                     ? toClusterPreparedMessages(message, recipients)
-                    : this.toRecipientPreparedMessages(message, recipients, recipientScope),
+                    : this.toRecipientPreparedMessages(
+                        message,
+                        recipients,
+                        directRoom || message.targets?.mode === 'unicast' ? recipientScope : undefined
+                    ),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
                     resolveRecipients
@@ -162,7 +178,7 @@ export class WsQueueBoxServerOutboundPlanning {
         recipients: readonly WsServerResolvedRecipient[],
         recipientScope: StateScope | undefined
     ): readonly WsQueueBoxServerPreparedMessage[] {
-        if (recipientScope === undefined || message.targets?.mode !== 'unicast') {
+        if (recipientScope === undefined) {
             return toRecipientPreparedMessages(message, recipients);
         }
         return recipients.flatMap((recipient) => {
@@ -187,17 +203,17 @@ export class WsQueueBoxServerOutboundPlanning {
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined {
-        if (
-            requiresWsQueueBoxServerRecipientScope(message) &&
-            validateALOutboundRecipientScope(request.recipientScope).length > 0
-        ) {
+        if (validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey).length > 0) {
             return undefined;
         }
-        const requestedPeerIds = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
-        const recipients = this.#targetResolution.resolveRepairRecipients(
-            message,
-            toAdmittedPeerIds(requestedPeerIds, request.admittedAudience)
-        );
+        const directRoom = isWsQueueBoxServerDirectRoomRow(message, request.referenceKey);
+        const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
+        const recipients = directRoom
+            ? this.#targetResolution.resolveCapturedSessionRecipients(
+                message,
+                (request.admittedAudience ?? []).filter((sessionId) => requested.includes(sessionId))
+            )
+            : this.#targetResolution.resolveRepairRecipients(message, requested);
         if (recipients.length === 0) {
             return undefined;
         }
@@ -207,7 +223,12 @@ export class WsQueueBoxServerOutboundPlanning {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
-            preparedMessages: this.toRecipientPreparedMessages(message, recipients, request.recipientScope),
+            preparedMessages: this.toRecipientPreparedMessages(
+                message,
+                recipients,
+                directRoom || message.targets?.mode === 'unicast' ? request.recipientScope : undefined
+            ),
+            admittedAudience: request.admittedAudience,
             recipientScope: request.recipientScope,
             ackTracking: toAckTrackingPlan(
                 effective,
@@ -240,7 +261,9 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const resolved = this.#targetResolution.resolveOutboundRecipients(message);
+        const resolved = resolution.directRoom
+            ? this.#targetResolution.resolveCapturedSessionRecipients(message, resolution.audience ?? [])
+            : this.#targetResolution.resolveOutboundRecipients(message);
         const audience = resolution.audience;
         const recipients = audience === undefined
             ? resolved

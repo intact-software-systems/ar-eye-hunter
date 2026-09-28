@@ -34,9 +34,7 @@ export class WsQueueBoxServerRecipientSelection {
         // Explicit authority, including an empty audience, replaces cache-based target resolution.
         const currentRecipients = recipientSessionIds === undefined
             ? this.#targetResolution.resolveOutboundRecipients(message)
-            : [...new Set(recipientSessionIds)]
-                .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
-                .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+            : this.#targetResolution.resolveCapturedSessionRecipients(message, recipientSessionIds);
         const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
         const admittedRecipients = admitted === undefined
             ? currentRecipients

@@ -10,6 +10,8 @@ import {
 import { decodeALAdmissionResourceEntryKey } from '@shared/alm/decode-al-admission-resource-entry-key.ts';
 import { decodeALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
     isKeysEqual,
@@ -34,7 +36,7 @@ export interface WsOutboxProvenance {
     readonly messageId: string;
     readonly senderId: string;
     readonly expiresAtMs: number;
-    readonly target: WsOutboxScopedUnicastTarget;
+    readonly target: WsOutboxScopedUnicastTarget | WsOutboxScopedRoomBroadcastTarget;
     readonly digest: string;
 }
 
@@ -42,6 +44,12 @@ export interface WsOutboxScopedUnicastTarget {
     readonly kind: 'scoped-unicast';
     readonly peerId: string;
     readonly scope: StateScope;
+    readonly admittedAudience: readonly string[];
+}
+
+export interface WsOutboxScopedRoomBroadcastTarget {
+    readonly kind: 'scoped-room-broadcast';
+    readonly groupRef: GroupRef;
     readonly admittedAudience: readonly string[];
 }
 
@@ -81,7 +89,11 @@ export class WsOutboxProvenanceReader {
             if (proof.expiresAtMs <= this.dependencies.nowMs()) {
                 throw new TypeError('WS producer provenance expired during verification');
             }
-            return { admittedAudience: proof.target.admittedAudience, recipientScope: proof.target.scope };
+            const scope = proof.target.kind === 'scoped-unicast' ? proof.target.scope : proof.target.groupRef;
+            return {
+                admittedAudience: proof.target.admittedAudience,
+                recipientScope: { applicationId: scope.applicationId, workspaceId: scope.workspaceId }
+            };
         }
         catch (cause) {
             throw new ALAdmissionCorruptionError(key, toError(cause));
@@ -148,26 +160,43 @@ export function decodeWsOutboxProvenance(value: unknown): WsOutboxProvenance {
         messageId: decodeALAdmissionString(proof.messageId),
         senderId: decodeALAdmissionString(proof.senderId),
         expiresAtMs: decodeALAdmissionNumber(proof.expiresAtMs),
-        target: decodeWsOutboxScopedUnicastTarget(proof.target),
+        target: decodeWsOutboxProvenanceTarget(proof.target),
         digest
     };
 }
 
-function decodeWsOutboxScopedUnicastTarget(value: unknown): WsOutboxScopedUnicastTarget {
-    const target = decodeALAdmissionRecord(value, ['kind', 'peerId', 'scope', 'admittedAudience']);
-    if (target.kind !== 'scoped-unicast' || !Array.isArray(target.admittedAudience)) {
-        throw new TypeError('WS producer provenance requires a frozen scoped unicast target');
+function decodeWsOutboxProvenanceTarget(value: unknown): WsOutboxProvenance['target'] {
+    const target = decodeALAdmissionRecord(value, ['kind', 'admittedAudience'], ['peerId', 'scope', 'groupRef']);
+    if (!Array.isArray(target.admittedAudience)) {
+        throw new TypeError('WS producer provenance requires a frozen audience');
     }
     const admittedAudience = target.admittedAudience.map(decodeALAdmissionString);
     if (new Set(admittedAudience).size !== admittedAudience.length) {
         throw new TypeError('WS producer audience contains duplicates');
     }
-    return {
-        kind: 'scoped-unicast',
-        peerId: decodeALAdmissionString(target.peerId),
-        scope: decodeALOutboundRecipientScope(target.scope),
-        admittedAudience
-    };
+    if (target.kind === 'scoped-unicast') {
+        decodeALAdmissionRecord(value, ['kind', 'peerId', 'scope', 'admittedAudience']);
+        return {
+            kind: 'scoped-unicast',
+            peerId: decodeALAdmissionString(target.peerId),
+            scope: decodeALOutboundRecipientScope(target.scope),
+            admittedAudience
+        };
+    }
+    if (target.kind === 'scoped-room-broadcast') {
+        decodeALAdmissionRecord(value, ['kind', 'groupRef', 'admittedAudience']);
+        const groupRef = decodeALAdmissionRecord(target.groupRef, ['applicationId', 'workspaceId', 'groupId']);
+        return {
+            kind: 'scoped-room-broadcast',
+            groupRef: {
+                applicationId: decodeALAdmissionString(groupRef.applicationId),
+                workspaceId: decodeALAdmissionString(groupRef.workspaceId),
+                groupId: decodeALAdmissionString(groupRef.groupId)
+            },
+            admittedAudience
+        };
+    }
+    throw new TypeError('WS producer provenance target kind is unsupported');
 }
 
 interface WsOutboxProvenanceValidation {
@@ -196,12 +225,20 @@ function validateWsOutboxProvenance(input: WsOutboxProvenanceValidation): readon
     ) {
         issues.push('WS provenance is expired or has an inconsistent deadline');
     }
-    if (
-        message.targets?.mode !== 'unicast' || !requiresWsQueueBoxServerRecipientScope(message) ||
-        message.targets.toPeerId !== proof.target.peerId ||
-        proof.target.admittedAudience.some((peerId) => peerId !== proof.target.peerId)
-    ) {
-        issues.push('WS provenance target differs from public unicast identity');
-    }
+    issues.push(...validateWsOutboxProvenanceTarget(message, proof.target));
     return issues;
+}
+
+function validateWsOutboxProvenanceTarget(message: ALMessage, target: WsOutboxProvenance['target']): readonly string[] {
+    const targets = message.targets;
+    if (target.kind === 'scoped-room-broadcast') {
+        return targets?.mode === 'broadcast' && targets.scope === 'room' && targets.groupRef &&
+                isSameGroupRef(targets.groupRef, target.groupRef)
+            ? []
+            : ['WS provenance target differs from scoped room identity'];
+    }
+    return targets?.mode === 'unicast' && requiresWsQueueBoxServerRecipientScope(message) &&
+            targets.toPeerId === target.peerId && target.admittedAudience.every((peerId) => peerId === target.peerId)
+        ? []
+        : ['WS provenance target differs from public unicast identity'];
 }

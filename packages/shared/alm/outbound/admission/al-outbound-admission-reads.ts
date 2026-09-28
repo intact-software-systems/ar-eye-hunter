@@ -182,7 +182,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const msg = sentSnapshot?.msg;
         const plan = msg && stored
             ? applyALOutboundCapturedPolicy(
-                planner(msg, stored.policy.admittedAudience, stored.policy.recipientScope),
+                planner(msg, {
+                    admittedAudience: stored.policy.admittedAudience,
+                    recipientScope: stored.policy.recipientScope,
+                    referenceKey: stored.reference.key
+                }),
                 stored.policy
             )
             : undefined;
@@ -390,7 +394,14 @@ export class ALOutboundAdmissionReads<TPrepared> {
     ): ALOutboundDispatchPlan<TPrepared> {
         const { msg, planner, intent } = input;
         const authority = stored?.policy ?? input.dequeueAuthority;
-        const selected = planner(canonical ?? msg, authority?.admittedAudience, authority?.recipientScope);
+        const selected = planner(
+            canonical ?? msg,
+            authority === undefined ? undefined : {
+                admittedAudience: authority.admittedAudience,
+                recipientScope: authority.recipientScope,
+                referenceKey: stored ? stored.reference.key : input.observedCanonicalEntry?.key
+            }
+        );
         requireALOutboundPlannedMessage(canonical ?? msg, selected.msg);
         const planned = canonical ? { ...selected, msg: canonical } : selected;
         const plan = stored && intent !== 'repair' ? applyALOutboundCapturedPolicy(planned, stored.policy) : planned;

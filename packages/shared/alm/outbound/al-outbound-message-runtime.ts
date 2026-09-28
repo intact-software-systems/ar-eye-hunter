@@ -9,7 +9,7 @@ import type {
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
@@ -105,6 +105,8 @@ export interface ALOutboundSupersedenceTrackingPlan {
 export type ALOutboundRepairTrigger = 'ack-timeout' | 'nack' | 'repair';
 
 export interface ALOutboundRepairRequest {
+    readonly referenceKey?: Key;
+    readonly admittedAudience?: readonly string[];
     readonly recipientScope?: StateScope;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
@@ -114,7 +116,6 @@ export interface ALOutboundRepairRequest {
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingSeqs: readonly number[];
-    readonly admittedAudience: readonly string[] | undefined;
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
@@ -651,8 +652,8 @@ function toPlannedOnce<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     planner: ALOutboundPlanner<TPrepared>
 ): ALOutboundPlanner<TPrepared> {
-    return (msg, admittedAudience, recipientScope) =>
-        msg === planned && admittedAudience === undefined && recipientScope === undefined
+    return (msg, authority) =>
+        msg === planned && authority === undefined
             ? plan
-            : planner(msg, admittedAudience, recipientScope);
+            : planner(msg, authority);
 }

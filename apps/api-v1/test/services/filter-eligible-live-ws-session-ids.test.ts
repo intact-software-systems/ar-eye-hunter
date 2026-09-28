@@ -190,11 +190,24 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
             socketServer: server,
             candidateSessionIds: ['eligible', 'stale-generation'],
             message: room.message,
-            recipientScope: undefined,
+            recipientScope: scope,
             nowMs: 1
         }),
         ['eligible']
     );
+
+    for (const recipientScope of [undefined, { ...scope, workspaceId: 'other' }]) {
+        assert.deepEqual(
+            filterEligibleDurableWsSessionIds({
+                socketServer: server,
+                candidateSessionIds: ['eligible'],
+                message: room.message,
+                recipientScope,
+                nowMs: 1
+            }),
+            []
+        );
+    }
 
     addConnection(server, 'eligible', {
         scope: { applicationId: 'other', workspaceId: 'workspace' },
@@ -205,7 +218,7 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
             socketServer: server,
             candidateSessionIds: ['eligible'],
             message: room.message,
-            recipientScope: undefined,
+            recipientScope: scope,
             nowMs: 1
         }),
         []

@@ -19,10 +19,15 @@ export interface FilterEligibleDurableWsSessionIdsInput extends CapturedWsRecipi
 }
 
 export function filterEligibleDurableWsSessionIds(input: FilterEligibleDurableWsSessionIdsInput): readonly string[] {
-    const scope = input.message.targets?.mode === 'unicast'
-        ? input.recipientScope
-        : readALTargetGroupRef(input.message);
-    if (!scope || (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(scope).length > 0)) {
+    const scope = input.recipientScope;
+    const groupRef = readALTargetGroupRef(input.message);
+    if (!scope || validateALOutboundRecipientScope(scope).length > 0) {
+        return [];
+    }
+    if (
+        input.message.targets?.mode !== 'unicast' &&
+        (!groupRef || groupRef.applicationId !== scope.applicationId || groupRef.workspaceId !== scope.workspaceId)
+    ) {
         return [];
     }
     const eligible: string[] = [];
