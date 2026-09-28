@@ -10,6 +10,7 @@ import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
     WsDeliveryDiagnosticsSink,
+    WsServerInboundConnectionScopeReader,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
@@ -80,6 +81,8 @@ export interface CreateRallarMiddlewareOptions {
     readonly webSocketServer?: JsonWebSocketServer;
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;
+    readonly readAuthenticatedConnectionScope?:
+        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];

@@ -19,6 +19,7 @@ import {
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import { readALInboundMessageOwner } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -40,6 +41,101 @@ interface ServerIngressFixture {
 }
 
 describe('WS server bounded and authorized admission', () => {
+    it('captures authenticated scope in admitted provenance before asynchronous admission', async () => {
+        const fixture = await createServerIngressFixture();
+        const message = createIncomingMessage();
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
+        await expect(readALInboundMessageOwner({
+            database: fixture.backend,
+            namespace: fixture.admissionStore.namespace,
+            msgId: message.id.msgId,
+            senderId: message.id.senderId
+        })).resolves.toMatchObject({
+            source: { kind: 'ws-client', peerId: 'session-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
+        });
+    });
+
+    it('rejects absent and expired authenticated connection scope before writing work', async () => {
+        for (const proof of [undefined, { scope: { applicationId: 'app', workspaceId: 'workspace' }, expiresAtEpochMs: 0 }]) {
+            const fixture = await createServerIngressFixture(undefined, 'session-1', () => proof);
+            expect((await fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1')).left?.code)
+                .toBe('unauthorized');
+            expect(fixture.admission.data.size).toBe(0);
+            expect(await fixture.admission.workQueue.getAllKeys()).toEqual([]);
+        }
+    });
+
+    it('rejects a proven scope that differs from an explicit room target', async () => {
+        const fixture = await createServerIngressFixture(undefined, 'session-1', () => ({
+            scope: { applicationId: 'other', workspaceId: 'workspace' },
+            expiresAtEpochMs: Date.now() + 60_000
+        }));
+        fixture.service.authorizeInboundMessagesWith({ authorize: async () => ({ authorized: true }) });
+
+        expect((await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1')).left?.code)
+            .toBe('unauthorized');
+        expect(fixture.admission.data.size).toBe(0);
+    });
+
+    it('rejects a proven scope that differs from an explicit principal target', async () => {
+        const fixture = await createServerIngressFixture();
+        const message: ALMessage = {
+            ...createIncomingMessage(),
+            targets: {
+                mode: 'broadcast',
+                scope: 'principal',
+                principalRef: { applicationId: 'other', workspaceId: 'workspace', principalId: 'alice' }
+            }
+        };
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).left?.code)
+            .toBe('unauthorized');
+        expect(fixture.admission.data.size).toBe(0);
+    });
+
+    it('admits a scoped client unicast even when its recipient is not connected locally', async () => {
+        const fixture = await createServerIngressFixture();
+        const message: ALMessage = {
+            ...createIncomingMessage(),
+            targets: { mode: 'unicast', toPeerId: 'remote-session' }
+        };
+
+        expect((await fixture.service.acceptIncomingMessage(message, 'session-1')).right?.kind).toBe('admitted');
+        await expect(readALInboundMessageOwner({
+            database: fixture.backend,
+            namespace: fixture.admissionStore.namespace,
+            msgId: message.id.msgId,
+            senderId: message.id.senderId
+        })).resolves.toMatchObject({ source: { authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } } });
+    });
+
+    it('does not send a client unicast to a same-ID local socket reconnected in another scope', async () => {
+        const fixture = await createServerIngressFixture(undefined, 'session-1', (connection) => ({
+            scope: connection.id === 'target-session'
+                ? { applicationId: 'other', workspaceId: 'workspace' }
+                : { applicationId: 'app', workspaceId: 'workspace' },
+            expiresAtEpochMs: Date.now() + 60_000
+        }));
+        const targetSocket = new SimulatedWebSocket('ws://target');
+        await targetSocket.open();
+        fixture.server.addConnection(new ConnectionContext({ id: 'target-session', socket: targetSocket }));
+        const message: ALMessage = {
+            ...createIncomingMessage(),
+            targets: { mode: 'unicast', toPeerId: 'target-session' }
+        };
+
+        const sent = fixture.service.sendToTargetsWithResult(
+            message,
+            ['target-session'],
+            undefined,
+            { applicationId: 'app', workspaceId: 'workspace' }
+        );
+
+        expect(sent.sentCount).toBe(0);
+        expect(targetSocket.sent).toEqual([]);
+    });
+
     it('rejects invalid envelopes and forged identities without poisoning a valid message identity', async () => {
         const fixture = await createServerIngressFixture();
         const message = createIncomingMessage();
@@ -564,7 +660,11 @@ describe('WS server bounded and authorized admission', () => {
 
 async function createServerIngressFixture(
     validateInboundMessage?: WsQueueBoxServerService.Input['validateInboundMessage'],
-    peerId = 'session-1'
+    peerId = 'session-1',
+    readAuthenticatedConnectionScope: NonNullable<WsQueueBoxServerService.Input['readAuthenticatedConnectionScope']> = () => ({
+        scope: { applicationId: 'app', workspaceId: 'workspace' },
+        expiresAtEpochMs: Date.now() + 60_000
+    })
 ): Promise<ServerIngressFixture> {
     const server = new JsonWebSocketServer();
     const socket = new SimulatedWebSocket('ws://server');
@@ -592,6 +692,7 @@ async function createServerIngressFixture(
             resolveBroadcastRecipients: () => [...server.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }))
         },
         validateInboundMessage,
+        readAuthenticatedConnectionScope,
         inboundStores: { admissionStore, workQueue: admission.workQueue },
         queueEngine: engine
     });

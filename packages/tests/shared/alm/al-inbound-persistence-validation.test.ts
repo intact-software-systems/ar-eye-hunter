@@ -209,6 +209,42 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
 }
 
 describe('inbound admission persisted values', () => {
+    it('reads back a complete authenticated WS scope from the message owner', async () => {
+        const { backend, store } = createFixture();
+        const authenticatedScope = { applicationId: 'app', workspaceId: 'workspace' };
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({
+            source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope }
+        });
+    });
+
+    it.each([
+        { applicationId: 'app' },
+        { applicationId: '', workspaceId: 'workspace' },
+        { applicationId: 'app', workspaceId: 'workspace', extra: 'untrusted' },
+        null
+    ])('rejects malformed stored authenticated WS scope %j', async (authenticatedScope) => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
     it('rejects a delimiter-containing message owner mismatch before admission planning', async () => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {

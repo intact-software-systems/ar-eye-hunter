@@ -382,6 +382,10 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'room-authority-delivery',
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })

@@ -793,6 +793,52 @@ describe('RallarServerWsRouter', () => {
         ]);
     });
 
+    it('does not deliver an inbound unicast to a same-ID recipient reconnected in another scope', async () => {
+        const matching = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only',
+            scopeBySessionId: { 'peer-2': { applicationId: 'other', workspaceId: 'workspace-1' } }
+        });
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('wrong-scope-unicast'),
+            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+        };
+
+        await matching.sockets['peer-1']!.receive(message);
+        await expect.poll(() => readChatRecipients(matching)).toEqual(['peer-2']);
+        await fixture.sockets['peer-1']!.receive(message);
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toHaveLength(1);
+
+        expect(readChatRecipients(fixture)).toEqual([]);
+    });
+
+    it('does not enqueue an inbound client unicast into an outbox without stored recipient scope', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'outbox'
+        });
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('client-unicast-outbox'),
+            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+        };
+        const enqueue = vi.spyOn(fixture.service, 'enqueueOutboxIfAbsent');
+
+        await fixture.sockets['peer-1']!.receive(message);
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toHaveLength(1);
+
+        expect(enqueue.mock.calls.some(([queued]) => queued.id.msgId === message.id.msgId)).toBe(false);
+    });
+
     // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
     // unconfirmed (Q12, C11, R-S3c-i-11); delivery stays the authorized sessions.
     it.each([
@@ -1219,6 +1265,8 @@ function createRouter(
     };
 }
 
+const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+
 interface IngressRouterFixture {
     readonly router: RallarServerWsRouter;
     readonly service: WsQueueBoxServerService;
@@ -1237,6 +1285,10 @@ function createIngressRouter(
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: AUDIENCE_ROOM, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         inboundStores,
         qosProvider,
         targetResolver: {
@@ -1252,10 +1304,9 @@ function createIngressRouter(
     return { router: new RallarServerWsRouter(service, options), service, socket };
 }
 
-const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-
 interface AudienceRouterFixture {
     readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
     readonly sockets: Readonly<Record<string, RouterIngressWebSocket>>;
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
@@ -1266,6 +1317,7 @@ interface AudienceRouterInput {
     readonly disconnectedSessionIds: readonly string[];
     /** `outbox`: the room topic leaves through the server's own outbound owner, to every session connected here. */
     readonly fanout: 'live-only' | 'outbox';
+    readonly scopeBySessionId?: Readonly<Record<string, { applicationId: string; workspaceId: string; }>>;
 }
 
 /**
@@ -1288,6 +1340,13 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
         outboundStores,
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? {
+                    scope: input.scopeBySessionId?.[connection.id] ?? AUDIENCE_ROOM,
+                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+                }
+                : undefined,
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
@@ -1317,7 +1376,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
         }
     });
     router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
-    return { router, sockets, outboundStores };
+    return { router, service, sockets, outboundStores };
 }
 
 /** A room of `sessionIds`, each connected here, whose room topic fans out through the server outbox. */
@@ -1333,6 +1392,10 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
         outboundStores,
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: AUDIENCE_ROOM, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],

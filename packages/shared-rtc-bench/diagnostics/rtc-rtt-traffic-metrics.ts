@@ -156,16 +156,26 @@ const sessionIds = Array.from(
 );
 const senderSessionId = sessionIds[0];
 const server = new JsonWebSocketServer();
+const diagnosticConnections = new WeakSet<ConnectionContext>();
 const sockets = new Map(sessionIds.map((id) => {
     const socket = new RtcRttTrafficWebSocket();
-    server.addConnection(new ConnectionContext({ id, socket }));
+    const connection = new ConnectionContext({ id, socket });
+    diagnosticConnections.add(connection);
+    server.addConnection(connection);
     return [id, socket] as const;
 }));
 
 const service = createDefaultWsQueueBoxServerService({
     outbox: new InMemoryQueueBox(new Map()),
     socket: server,
-    name: 'rtc-rtt-traffic-diagnostic'
+    name: 'rtc-rtt-traffic-diagnostic',
+    readAuthenticatedConnectionScope: (connection) =>
+        diagnosticConnections.has(connection) && server.connections.get(connection.id) === connection
+            ? {
+                scope: { applicationId: 'rtc-rtt-traffic', workspaceId: 'diagnostic' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }
+            : undefined
 });
 const enqueuedMeasurements: RttMeasurementInfo[] = [];
 installRtcRttSystemTopic(service, {

@@ -3,6 +3,7 @@ import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -45,7 +46,13 @@ export namespace ALInboundMessageRuntime {
             readonly groupRecipientPeerIds?: readonly string[];
             readonly snapshotVersion?: number;
         }
-        | { readonly kind: 'ws-client'; readonly peerId: string; readonly groupRecipientPeerIds?: readonly string[]; }
+        | {
+            readonly kind: 'ws-client';
+            readonly peerId: string;
+            /** Absent only for previously retained work without authenticated scope proof. */
+            readonly authenticatedScope?: StateScope;
+            readonly groupRecipientPeerIds?: readonly string[];
+        }
         | { readonly kind: 'trusted-server'; };
 
     export type Acceptance =
@@ -103,7 +110,8 @@ export namespace ALInboundMessageRuntime {
         readonly forwardMessage?: (
             msg: ALMessage,
             fromPeerId: string,
-            plan: ALMessageHandlingPlan
+            plan: ALMessageHandlingPlan,
+            source: Source
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means a retried copy of an admitted message is never forwarded again. */
         readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
@@ -272,5 +280,4 @@ export class ALInboundMessageRuntime {
             ? await this.durable.admitControl(msg, source)
             : volatile;
     }
-
 }

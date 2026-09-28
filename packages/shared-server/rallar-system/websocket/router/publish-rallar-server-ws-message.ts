@@ -4,6 +4,7 @@ import {
     type ALDeliveryAdmissionVerdict
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
@@ -21,6 +22,8 @@ export interface PublishRallarServerWsMessageInput {
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
     readonly admittedPeerIds?: readonly string[];
+    /** Null denotes a legacy inbound source without proof; undefined denotes server-originated publication. */
+    readonly inboundScope?: StateScope | null;
     readonly nowEpochMs: number;
 }
 
@@ -37,6 +40,11 @@ export async function publishRallarServerWsMessage(
                 entries: []
             };
         case 'outbox': {
+            // The outbound owner has no persisted recipient-scope proof yet. Refuse client unicast
+            // here until that owner can enforce the same-scope policy at its send surface.
+            if (input.inboundScope !== undefined && input.message.targets?.mode === 'unicast') {
+                return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
+            }
             const result = await input.service.enqueueOutboxIfAbsent(input.message, toAdmittedAudience(input));
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
@@ -52,7 +60,8 @@ export async function publishRallarServerWsMessage(
                     admittedPeerIds: input.admittedPeerIds,
                     nowEpochMs: input.nowEpochMs
                 }),
-                input.admittedPeerIds
+                input.admittedPeerIds,
+                input.inboundScope
             );
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);

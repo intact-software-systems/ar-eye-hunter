@@ -42,7 +42,10 @@ import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-auth
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
-import { readAuthorisedWsConnectionIdentity } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
+import {
+    readAuthorisedWsConnectionEligibility,
+    readAuthorisedWsConnectionIdentity
+} from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
     createApiRtcTopologyQueuePubSubBridge
 } from '../runtime/rtc-topology/create-api-rtc-topology-queue-pub-sub-bridge.ts';
@@ -296,6 +299,7 @@ function createSharedMiddleware(
         outbox: mutation.queueBox,
         appInboxDequeueOptions: mutation.appInboxDequeueOptions,
         webSocketServer: mutation.webSocketServer,
+        readAuthenticatedConnectionScope: readAuthorisedWsConnectionEligibility,
         wsRuntimeName: input.wsRuntimeName,
         findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
         findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),

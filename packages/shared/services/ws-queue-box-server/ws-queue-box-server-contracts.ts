@@ -1,6 +1,17 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALNackReason } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { StateScope } from '../../api/state-types.ts';
+import type { ConnectionContext } from '../../websocket/json-web-socket-server.ts';
+
+export interface WsServerInboundConnectionScopeProof {
+    readonly scope: StateScope;
+    readonly expiresAtEpochMs: number;
+}
+
+export interface WsServerInboundConnectionScopeReader {
+    readAuthenticatedConnectionScope(connection: ConnectionContext): WsServerInboundConnectionScopeProof | undefined;
+}
 
 export interface WsServerResolvedRecipient {
     readonly peerId: string;

@@ -44,6 +44,56 @@ afterEach(() => {
 });
 
 describe('ALInboundMessageRuntime', () => {
+    it('does not dispatch or forward an already admitted unscoped WS client unicast', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
+        const message: ALMessage = {
+            ...createOrderedMessage(1, 'old unicast'),
+            ordering: undefined,
+            targets: { mode: 'unicast', toPeerId: 'self' }
+        };
+
+        await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'peer-1' });
+        await waitForSettledALInboundWork(stores.workQueue);
+
+        expect(dispatchedTexts).toEqual([]);
+        expect(forwardedIds).toEqual([]);
+    });
+
+    it('does not admit an old unscoped WS client unicast pending row on replay', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
+        const message: ALMessage = {
+            ...createOrderedMessage(1, 'old pending unicast'),
+            ordering: undefined,
+            targets: { mode: 'unicast', toPeerId: 'self' }
+        };
+
+        expect((await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'peer-1' })).right?.kind)
+            .toBe('pending-admission');
+        await waitForSettledALInboundWork(stores.workQueue);
+
+        expect(dispatchedTexts).toEqual([]);
+        expect(forwardedIds).toEqual([]);
+    });
+
+    it('does not release an old unscoped ordered WS client unicast after its gap closes', async () => {
+        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness();
+        const seq2: ALMessage = {
+            ...createOrderedMessage(2, 'old buffered unicast'),
+            targets: { mode: 'unicast', toPeerId: 'self' }
+        };
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+
+        expect((await runtime.admitIncomingMessage(seq2, source)).right?.kind).toBe('admitted');
+        expect(dispatchedTexts).toEqual([]);
+        expect((await runtime.admitIncomingMessage(createOrderedMessage(1, 'one'), source)).right?.kind).toBe('admitted');
+        await expect.poll(() => dispatchedTexts).toEqual(['one']);
+
+        expect(forwardedIds).not.toContain(seq2.id.msgId);
+    });
+
     it('buffers ordered gaps, emits negative controls, and releases buffered messages in order', async () => {
         const { runtime, dispatchedTexts, controlMessages, forwardedIds } = createInboundHarness();
 

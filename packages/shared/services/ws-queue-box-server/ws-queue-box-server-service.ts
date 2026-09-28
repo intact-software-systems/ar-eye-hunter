@@ -1,5 +1,5 @@
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
-import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import {
     decodeALMessageValue,
@@ -36,6 +36,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
@@ -53,6 +54,8 @@ import {
     type WsOutboxDeliveryOutcome,
     type WsServerInboundAuthorization,
     type WsServerInboundAuthorizer,
+    type WsServerInboundConnectionScopeProof,
+    type WsServerInboundConnectionScopeReader,
     type WsServerLiveSendResult,
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
@@ -84,6 +87,8 @@ export namespace WsQueueBoxServerService {
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly readAuthenticatedConnectionScope?:
+            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
         /**
          * Whether inbound ALM forwarding relays room-scoped messages (default
          * true, the standalone service contract). A composition that installs a
@@ -109,6 +114,8 @@ export namespace WsQueueBoxServerService {
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly readAuthenticatedConnectionScope:
+            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
         readonly forwardsRoomScopedMessages: boolean;
     }
 }
@@ -142,6 +149,8 @@ export class WsQueueBoxServerService {
     /** Counts relayed receiver ACKs and routes every other control to the server's own outbound owner. */
     private readonly receipts: WsQueueBoxServerReceiptAggregation;
     private readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+    private readonly readAuthenticatedConnectionScope:
+        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     private readonly forwardsRoomScopedMessages: boolean;
     private inboundAuthorizer: WsServerInboundAuthorizer | undefined;
     private disposed = false;
@@ -175,11 +184,13 @@ export class WsQueueBoxServerService {
             diagnostics: dependencies.deliveryDiagnostics
         });
         this.validateInboundMessage = dependencies.validateInboundMessage;
+        this.readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
         this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         this.liveDelivery = new WsQueueBoxServerLiveDelivery({
             socket: dependencies.socket,
             targetResolution: this.targetResolution,
-            deliveryReporting: this.deliveryReporting
+            deliveryReporting: this.deliveryReporting,
+            readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
         this.outboundPlanning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: dependencies.name,
@@ -263,7 +274,8 @@ export class WsQueueBoxServerService {
                 await this.receipts.acceptControlMessage(message);
             },
             readRelayedAckRejection: (ack) => this.receipts.readRelayedAckRejection(ack),
-            forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
+            forwardMessage: (message, fromPeerId, plan, source) =>
+                this.forwardIncomingMessage(message, fromPeerId, plan, source),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
         });
@@ -455,17 +467,26 @@ export class WsQueueBoxServerService {
         if (!authorization.authorized) {
             return await this.rejectIncomingMessage(message, authorization);
         }
-        return await this.admitAuthorizedMessage(message, fromPeerId, authorization);
+        const proof = this.readAuthenticatedConnectionScope(connection);
+        if (!proof || proof.expiresAtEpochMs <= this.clock.nowMs() || !matchesInboundTargetScope(message, proof)) {
+            return Either.ofLeft({
+                code: 'unauthorized',
+                message: 'Authenticated WS scope is unavailable or mismatched'
+            });
+        }
+        return await this.admitAuthorizedMessage(message, fromPeerId, authorization, proof);
     }
 
     private async admitAuthorizedMessage(
         message: ALMessage,
         fromPeerId: string,
-        authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>
+        authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>,
+        proof: WsServerInboundConnectionScopeProof
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const admitted = await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
+            authenticatedScope: { applicationId: proof.scope.applicationId, workspaceId: proof.scope.workspaceId },
             ...(authorization.roomAudience === undefined
                 ? {}
                 : { groupRecipientPeerIds: [...authorization.roomAudience.recipientPeerIds] })
@@ -624,9 +645,10 @@ export class WsQueueBoxServerService {
     sendToTargetsWithResult(
         message: ALMessage,
         recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[]
+        admittedPeerIds?: readonly string[],
+        inboundScope?: StateScope | null
     ): WsServerLiveSendResult {
-        return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds);
+        return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds, inboundScope);
     }
 
     readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
@@ -683,7 +705,8 @@ export class WsQueueBoxServerService {
     private async forwardIncomingMessage(
         message: ALMessage,
         fromPeerId: string,
-        plan: ALMessageHandlingPlan
+        plan: ALMessageHandlingPlan,
+        source: ALInboundMessageRuntime.Source
     ): Promise<void | 'completed' | 'retry'> {
         const authority = await this.readCurrentDispatchAuthority(message);
         if (typeof authority === 'string') {
@@ -713,7 +736,12 @@ export class WsQueueBoxServerService {
             return Promise.resolve();
         }
         for (const peerId of nextHopPeerIds) {
-            sent += this.liveDelivery.sendToResolvedPeer(peerId, message, encoded);
+            sent += this.liveDelivery.sendToResolvedPeer(
+                peerId,
+                message,
+                encoded,
+                source.kind === 'ws-client' ? source.authenticatedScope ?? null : undefined
+            );
         }
 
         if (sent === 0) {
@@ -801,6 +829,15 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,
+        readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope ?? (() => undefined),
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
+}
+
+function matchesInboundTargetScope(message: ALMessage, proof: WsServerInboundConnectionScopeProof): boolean {
+    const target = message.targets;
+    const scope = readALTargetGroupRef(message) ??
+        (target?.mode === 'broadcast' && target.scope === 'principal' ? target.principalRef : undefined);
+    return scope === undefined ||
+        (scope.applicationId === proof.scope.applicationId && scope.workspaceId === proof.scope.workspaceId);
 }

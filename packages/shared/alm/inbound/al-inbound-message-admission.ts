@@ -13,7 +13,7 @@ import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
-import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { toALInboundReceiver, validateALInboundMessage } from './validate-al-inbound-message.ts';
@@ -185,6 +185,12 @@ export class ALInboundMessageAdmission {
             return authority.kind === 'retry'
                 ? { outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs }, wroteWork: false }
                 : REPLAY_COMPLETED_WITHOUT_WORK;
+        }
+        if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
+            return {
+                outcome: { kind: 'non-retryable', reason: 'Stored WS client scope does not authorize delivery' },
+                wroteWork: false
+            };
         }
         const validation = validateALInboundMessage(
             pending.msg,

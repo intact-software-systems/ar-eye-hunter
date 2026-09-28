@@ -1,7 +1,9 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import type {
+    WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
     WsServerLiveSendResult,
     WsServerLiveSendStatus,
@@ -15,6 +17,8 @@ export namespace WsQueueBoxServerLiveDelivery {
         readonly socket: JsonWebSocketServer;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
+        readonly readAuthenticatedConnectionScope:
+            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     }
 
     export interface EncodedAttempt {
@@ -33,21 +37,26 @@ export class WsQueueBoxServerLiveDelivery {
     readonly #socket: JsonWebSocketServer;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #deliveryReporting: WsQueueBoxServerDeliveryReporting;
+    readonly #readAuthenticatedConnectionScope:
+        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
 
     constructor(dependencies: WsQueueBoxServerLiveDelivery.Dependencies) {
         this.#socket = dependencies.socket;
         this.#targetResolution = dependencies.targetResolution;
         this.#deliveryReporting = dependencies.deliveryReporting;
+        this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
     }
 
     sendToTargets(message: ALMessage): number {
         return this.sendToTargetsWithResult(message).sentCount;
     }
 
+    /** Client unicast scope is recipient policy, not proof that a local recipient exists. */
     sendToTargetsWithResult(
         message: ALMessage,
         recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[]
+        admittedPeerIds?: readonly string[],
+        inboundScope?: StateScope | null
     ): WsServerLiveSendResult {
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
@@ -61,9 +70,15 @@ export class WsQueueBoxServerLiveDelivery {
                 .filter((sessionId) => this.#socket.connections.get(sessionId)?.isOpen)
                 .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
         const admitted = admittedPeerIds === undefined ? undefined : new Set(admittedPeerIds);
-        const recipients = admitted === undefined
+        const admittedRecipients = admitted === undefined
             ? currentRecipients
             : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
+        const recipients = inboundScope === undefined || message.targets?.mode !== 'unicast'
+            ? admittedRecipients
+            : admittedRecipients.filter((recipient) =>
+                inboundScope !== null &&
+                this.isCurrentRecipientInScope(recipient, inboundScope)
+            );
         if (recipients.length === 0) {
             this.#deliveryReporting.recordDiagnostics({
                 kind: 'no-local-recipient',
@@ -91,13 +106,20 @@ export class WsQueueBoxServerLiveDelivery {
     sendToResolvedPeer(
         peerId: string,
         message: ALMessage,
-        encoded?: EncodedJsonWebSocketMessage
+        encoded?: EncodedJsonWebSocketMessage,
+        inboundScope?: StateScope | null
     ): number {
         const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
         if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
             return 0;
         }
-        const recipients = this.#targetResolution.resolveRepairRecipients(message, [peerId]);
+        const resolved = this.#targetResolution.resolveRepairRecipients(message, [peerId]);
+        const recipients = inboundScope === undefined || message.targets?.mode !== 'unicast'
+            ? resolved
+            : resolved.filter((recipient) =>
+                inboundScope !== null &&
+                this.isCurrentRecipientInScope(recipient, inboundScope)
+            );
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
         if (!encodedMessage) {
             return 0;
@@ -108,6 +130,16 @@ export class WsQueueBoxServerLiveDelivery {
     tryEncodeDirectMessage(message: ALMessage): EncodedJsonWebSocketMessage | undefined {
         const attempt = this.toEncodedAttempt(message);
         return attempt.encoded ?? undefined;
+    }
+
+    private isCurrentRecipientInScope(recipient: WsServerResolvedRecipient, scope: StateScope): boolean {
+        const connection = this.#socket.connections.get(recipient.connectionId);
+        if (!connection?.isOpen) {
+            return false;
+        }
+        const proof = this.#readAuthenticatedConnectionScope(connection);
+        return proof !== undefined && proof.expiresAtEpochMs > Date.now() &&
+            proof.scope.applicationId === scope.applicationId && proof.scope.workspaceId === scope.workspaceId;
     }
 
     private toEncodedAttempt(message: ALMessage): WsQueueBoxServerLiveDelivery.EncodedAttempt {

@@ -1,6 +1,8 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { PersistedALRecord } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
@@ -41,10 +43,16 @@ export function toALRtcPeerSource(peerId: string, message: ALMessage | undefined
 }
 
 export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.Source {
-    const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds', 'snapshotVersion']);
+    const source = decodeALAdmissionRecord(value, ['kind'], [
+        'peerId',
+        'authenticatedScope',
+        'groupRecipientPeerIds',
+        'snapshotVersion'
+    ]);
     if (
         source.kind === 'trusted-server' && source.peerId === undefined &&
-        source.groupRecipientPeerIds === undefined && source.snapshotVersion === undefined
+        source.authenticatedScope === undefined && source.groupRecipientPeerIds === undefined &&
+        source.snapshotVersion === undefined
     ) {
         return { kind: 'trusted-server' };
     }
@@ -52,15 +60,45 @@ export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.S
         return {
             kind: 'ws-client',
             peerId: decodeALAdmissionString(source.peerId),
+            ...(source.authenticatedScope === undefined
+                ? {}
+                : { authenticatedScope: decodeAuthenticatedScope(source.authenticatedScope) }),
             ...(source.groupRecipientPeerIds === undefined
                 ? {}
                 : { groupRecipientPeerIds: decodeFrozenGroupAudience(source.groupRecipientPeerIds) })
         };
     }
-    if (source.kind === 'rtc-peer') {
+    if (source.kind === 'rtc-peer' && source.authenticatedScope === undefined) {
         return decodeRtcPeerSource(source);
     }
     throw new TypeError('Persisted AL ingress source is invalid');
+}
+
+function decodeAuthenticatedScope(value: unknown): StateScope {
+    const scope = decodeALAdmissionRecord(value, ['applicationId', 'workspaceId']);
+    return {
+        applicationId: decodeALAdmissionString(scope.applicationId),
+        workspaceId: decodeALAdmissionString(scope.workspaceId)
+    };
+}
+
+/** Old stored WS client unicast has no recipient-scope proof and cannot produce an effect. */
+export function isAuthorizedStoredWsClientDelivery(
+    message: ALMessage,
+    source: ALInboundMessageRuntime.Source
+): boolean {
+    if (source.kind !== 'ws-client' || isALControlTypeId(message.payload.typeId)) {
+        return true;
+    }
+    if (message.targets?.mode === 'unicast' && source.authenticatedScope === undefined) {
+        return false;
+    }
+    const target = message.targets;
+    const targetScope = readALTargetGroupRef(message) ??
+        (target?.mode === 'broadcast' && target.scope === 'principal' ? target.principalRef : undefined);
+    return source.authenticatedScope === undefined || targetScope === undefined ||
+        (source.authenticatedScope.applicationId === targetScope.applicationId &&
+            source.authenticatedScope.workspaceId === targetScope.workspaceId);
 }
 
 function decodeRtcPeerSource(source: PersistedALRecord): ALInboundMessageRuntime.Source {

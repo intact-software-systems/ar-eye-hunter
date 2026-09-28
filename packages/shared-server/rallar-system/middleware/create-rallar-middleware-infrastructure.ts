@@ -46,6 +46,7 @@ export function createRallarMiddlewareInfrastructure(
         socket: webSocketServer,
         name: options.wsRuntimeName ?? 'default-qbox-server',
         targetResolver,
+        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
