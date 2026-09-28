@@ -630,7 +630,10 @@ function clientMutationRead(
         session: null,
         expiredSessionEntry: null,
         snapshot: null,
-        receiptEvent: null
+        receiptEvent: null,
+        audienceObservedAtEpochMs: command.facts.nowEpochMs,
+        audienceGroupSnapshots: [],
+        audienceClientSnapshots: []
     };
     if (!sessionPresent || !requiresCurrentSession(command)) {
         return base;

@@ -1,11 +1,10 @@
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { isExactAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
-import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { computeClientStateSyncEntries } from '../../state-sync/state-sync-entry-computation.ts';
 import {
     computeWsOutboxProvenanceDigest,
@@ -31,16 +30,6 @@ export async function computeClientSnapshotProvenance(
     if (mutation.outcome !== 'write') {
         return [];
     }
-    const hasAcceptedRecipient = mutation.stateSync.some((sync) =>
-        sync.effects.some((effect) =>
-            effect.payloadKind === 'snapshot' &&
-            effect.payload.activeSessions.some((session) => isClientSnapshotSessionLive(session, sync.createdAtEpochMs))
-        )
-    );
-    if (!hasAcceptedRecipient) {
-        // Full operation validation still compares every raw write against canonical domain output.
-        return [];
-    }
     const entries = mutation.stateSync.flatMap((sync) => computeClientStateSyncEntries(sync, senderId));
     if (entries.length !== mutation.outboxWrites.length) {
         throw new TypeError('Client snapshot outbox write set differs from accepted state sync');
@@ -56,7 +45,11 @@ export async function computeClientSnapshotProvenance(
         ) {
             throw new TypeError('Client snapshot outbox row differs from accepted state sync');
         }
-        const proof = await computeClientSnapshotProvenanceInsert(write, mutation.snapshot.principal);
+        const proof = await computeClientSnapshotProvenanceInsert(
+            write,
+            mutation.snapshot.principal,
+            mutation.principalAudienceSessionIds
+        );
         if (proof !== null) {
             proofs.push(proof);
         }
@@ -66,29 +59,50 @@ export async function computeClientSnapshotProvenance(
 
 async function computeClientSnapshotProvenanceInsert(
     write: AppOutboxInsert,
-    scope: StateScope
+    principalRef: ClientPrincipalRef,
+    principalAudienceSessionIds: readonly string[]
 ): Promise<ClientSnapshotProvenanceInsert | null> {
     const message = decodePersistedALMessage(write.entry.resource);
-    if (message.targets?.mode !== 'unicast') {
+    const targets = message.targets;
+    if (targets?.mode !== 'unicast' && !(targets?.mode === 'broadcast' && targets.scope === 'principal')) {
         return null;
+    }
+    if (
+        targets.mode === 'broadcast' && (
+            targets.principalRef?.applicationId !== principalRef.applicationId ||
+            targets.principalRef.workspaceId !== principalRef.workspaceId ||
+            targets.principalRef.principalId !== principalRef.principalId
+        )
+    ) {
+        throw new TypeError('Client state-sync principal target differs from the accepted snapshot');
     }
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
-        producerKind: 'state-sync-snapshot',
+        producerKind: 'state-sync',
         queueKey: write.entry.key,
         typeId: write.entry.typeId,
         messageId: message.id.msgId,
         senderId: message.id.senderId,
         expiresAtMs: write.entry.audit.expiryTs.epochMilliseconds,
-        target: {
-            kind: 'scoped-unicast',
-            peerId: message.targets.toPeerId,
-            scope: {
-                applicationId: scope.applicationId,
-                workspaceId: scope.workspaceId
-            },
-            admittedAudience: [message.targets.toPeerId]
-        }
+        target: targets.mode === 'unicast'
+            ? {
+                kind: 'scoped-unicast',
+                peerId: targets.toPeerId,
+                scope: {
+                    applicationId: principalRef.applicationId,
+                    workspaceId: principalRef.workspaceId
+                },
+                admittedAudience: [targets.toPeerId]
+            }
+            : {
+                kind: 'scoped-principal-broadcast',
+                principalRef: {
+                    applicationId: principalRef.applicationId,
+                    workspaceId: principalRef.workspaceId,
+                    principalId: principalRef.principalId
+                },
+                admittedAudience: principalAudienceSessionIds
+            }
     };
     const proof: WsOutboxProvenance = {
         ...facts,

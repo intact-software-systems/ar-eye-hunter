@@ -237,17 +237,33 @@ describe('client mutation operation validation', () => {
             lifecycle: undefined
         };
         const computed = await computeClientMutationOperation(input);
-        if (computed.outcome !== 'completed' || computed.sidecarWrites.length !== 1) {
-            throw new Error('Expected one frozen session proof');
+        if (computed.outcome !== 'completed') {
+            throw new Error('Expected a completed mutation');
         }
-        const proof = computed.sidecarWrites[0]!;
+        const proofs = computed.sidecarWrites;
+        const proof = proofs.find((candidate) => JSON.parse(candidate.value).target.kind === 'scoped-unicast');
+        if (!proof) {
+            throw new Error('Expected a frozen unicast snapshot proof');
+        }
         const variants = [
-            [],
-            [proof, proof],
-            [{ ...proof, value: proof.value.replace('workspace-1', 'wrong-workspace') }],
-            [{ ...proof, value: proof.value.replaceAll('session-1', 'late-session') }],
-            [{ ...proof, key: 'wrong-slot' }],
-            [{ ...proof, expiresAt: '1970-01-01T00:00:01Z' }]
+            proofs.filter((candidate) => candidate !== proof),
+            [...proofs, proof],
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, value: proof.value.replace('workspace-1', 'wrong-workspace') }
+                    : candidate
+            ),
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, value: proof.value.replaceAll('session-1', 'late-session') }
+                    : candidate
+            ),
+            proofs.map((candidate) => candidate === proof ? { ...proof, key: 'wrong-slot' } : candidate),
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, expiresAt: '1970-01-01T00:00:01Z' }
+                    : candidate
+            )
         ];
         for (const sidecarWrites of variants) {
             await expect(assertClientMutationOperation({ ...input, computed: { ...computed, sidecarWrites } }))

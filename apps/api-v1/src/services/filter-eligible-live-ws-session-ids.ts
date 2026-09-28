@@ -1,7 +1,7 @@
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import type { CapturedWsRecipientEligibilityInputDto } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
-import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import { readWsQueueBoxServerScopedTargetScope } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { readAuthorisedWsConnectionEligibility } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
@@ -20,13 +20,15 @@ export interface FilterEligibleDurableWsSessionIdsInput extends CapturedWsRecipi
 
 export function filterEligibleDurableWsSessionIds(input: FilterEligibleDurableWsSessionIdsInput): readonly string[] {
     const scope = input.recipientScope;
-    const groupRef = readALTargetGroupRef(input.message);
+    const targets = input.message.targets;
+    const targetScope = readWsQueueBoxServerScopedTargetScope(input.message);
     if (!scope || validateALOutboundRecipientScope(scope).length > 0) {
         return [];
     }
     if (
-        input.message.targets?.mode !== 'unicast' &&
-        (!groupRef || groupRef.applicationId !== scope.applicationId || groupRef.workspaceId !== scope.workspaceId)
+        targets?.mode !== 'unicast' &&
+        (!targetScope || targetScope.applicationId !== scope.applicationId ||
+            targetScope.workspaceId !== scope.workspaceId)
     ) {
         return [];
     }

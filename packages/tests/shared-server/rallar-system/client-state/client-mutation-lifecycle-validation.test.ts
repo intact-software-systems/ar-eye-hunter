@@ -111,7 +111,10 @@ function expectCorruptReadAndComputedRejection(): void {
                 session: storedEntry(corruptSession) as never,
                 expiredSessionEntry: null,
                 snapshot: computed.snapshot,
-                receiptEvent: null
+                receiptEvent: null,
+                audienceObservedAtEpochMs: 1_000,
+                audienceGroupSnapshots: [],
+                audienceClientSnapshots: []
             }
         })
     ).toThrow(ClientMutationRejectedError);

@@ -155,7 +155,7 @@ async function createFixture() {
 async function createProof(messageId: string, entry: ResourceEntry): Promise<WsOutboxProvenance> {
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
-        producerKind: 'state-sync-snapshot',
+        producerKind: 'state-sync',
         queueKey: entry.key,
         typeId: entry.typeId,
         messageId,

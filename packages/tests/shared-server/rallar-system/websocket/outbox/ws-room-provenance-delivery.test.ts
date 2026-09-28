@@ -342,7 +342,7 @@ interface RoomProofInput {
 async function createProof(message: ALMessage, entry: ResourceEntry, input: RoomProofInput): Promise<WsOutboxProvenance> {
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
-        producerKind: 'state-sync-snapshot',
+        producerKind: 'state-sync',
         queueKey: entry.key,
         typeId: entry.typeId,
         messageId: message.id.msgId,

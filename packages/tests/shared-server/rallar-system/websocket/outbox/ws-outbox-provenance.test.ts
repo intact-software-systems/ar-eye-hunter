@@ -132,7 +132,7 @@ async function createFixture(admittedAudience: readonly string[]) {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
     const facts: Omit<WsOutboxProvenance, 'digest'> = {
         version: 1,
-        producerKind: 'state-sync-snapshot',
+        producerKind: 'state-sync',
         queueKey: entry.key,
         typeId: entry.typeId,
         messageId: message.id.msgId,

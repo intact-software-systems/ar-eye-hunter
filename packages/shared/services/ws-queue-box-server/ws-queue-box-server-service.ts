@@ -45,9 +45,9 @@ import type { OnWebSocketServerMessageCallback } from '../queue-message-callback
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import {
-    isWsQueueBoxServerDirectRoomRow,
+    isWsQueueBoxServerDirectScopedBroadcastRow,
     requiresWsQueueBoxServerRecipientScope,
-    validateWsQueueBoxServerDirectRoomAuthority
+    validateWsQueueBoxServerDirectScopedBroadcastAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -462,8 +462,8 @@ export class WsQueueBoxServerService {
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
         const policy = await this.admissionStore.readCapturedPolicy(message, entry);
         if (
-            isWsQueueBoxServerDirectRoomRow(message, entry.key)
-                ? validateWsQueueBoxServerDirectRoomAuthority(message, policy).length > 0
+            isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
+                ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, policy).length > 0
                 : requiresWsQueueBoxServerRecipientScope(message) && policy.recipientScope === undefined
         ) {
             throw new ALAdmissionCorruptionError(

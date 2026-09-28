@@ -9,13 +9,13 @@ import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import {
-    isWsQueueBoxServerDirectRoomRow,
+    isWsQueueBoxServerDirectScopedBroadcastRow,
     requiresWsQueueBoxServerRecipientScope,
-    validateWsQueueBoxServerDirectRoomAuthority
+    validateWsQueueBoxServerDirectScopedBroadcastAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
-/** A producer reader authorizes a frozen scoped unicast or exact room broadcast at this boundary. */
+/** A producer reader authorizes a frozen scoped unicast or exact scoped broadcast at this boundary. */
 export interface WsOutboxProducerAuthority {
     readonly admittedAudience: readonly string[];
     readonly recipientScope: StateScope;
@@ -50,8 +50,8 @@ export class WsQueueBoxServerDequeueAuthority {
         if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
             const policy = await admissionStore.readCapturedPolicy(message, entry);
             if (
-                isWsQueueBoxServerDirectRoomRow(message, entry.key)
-                    ? validateWsQueueBoxServerDirectRoomAuthority(message, policy).length > 0
+                isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
+                    ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, policy).length > 0
                     : requiresWsQueueBoxServerRecipientScope(message) &&
                         validateALOutboundRecipientScope(policy.recipientScope).length > 0
             ) {
@@ -62,18 +62,16 @@ export class WsQueueBoxServerDequeueAuthority {
         if (entry.key.topicId === 'AL_OUTBOUND_MESSAGE' || await outbox.getItem(toALOutboundIdentityKey(entry.key))) {
             throw toDequeueCorruption(entry, 'Canonical identity has no sent admission');
         }
-        const directRoom = isWsQueueBoxServerDirectRoomRow(message, entry.key);
-        if (!readProducerProvenance || (!requiresWsQueueBoxServerRecipientScope(message) && !directRoom)) {
+        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
+        if (!readProducerProvenance || (!requiresWsQueueBoxServerRecipientScope(message) && !directBroadcast)) {
             throw toDequeueCorruption(entry, 'Raw WS outbox row has no supported producer authority');
         }
         const authority = await readProducerProvenance(message, entry);
         const targets = message.targets;
         if (
             validateALOutboundRecipientScope(authority.recipientScope).length > 0 ||
-            (directRoom
-                ? targets?.mode !== 'broadcast' || !targets.groupRef ||
-                    targets.groupRef.applicationId !== authority.recipientScope.applicationId ||
-                    targets.groupRef.workspaceId !== authority.recipientScope.workspaceId
+            (directBroadcast
+                ? validateWsQueueBoxServerDirectScopedBroadcastAuthority(message, authority).length > 0
                 : targets?.mode !== 'unicast' ||
                     authority.admittedAudience.some((peerId) => peerId !== targets.toPeerId))
         ) {

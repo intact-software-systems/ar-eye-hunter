@@ -52,8 +52,11 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   group read and preserve own plus authorized co-group sessions. Measure the
   representative read cost before changing storage. The existing
   `runtime_state_store_namespace_key_c_ix` already supports the scope prefix;
-  do not add a duplicate index. The maintainer permits a distinct additive
-  index only if measurement shows the remaining scan is inadequate; this is
+  do not add a duplicate index. If the scope-wide read misses the performance
+  gate, measure the existing scoped membership prefix and exact batched
+  principal reads before changing storage; keep the full authorized audience.
+  The maintainer permits a distinct additive index only if measurement shows
+  the remaining scan is inadequate; this is
   not permission to narrow the audience, change persisted contracts, or add a
   legacy path.
 - `live-only` covers admitted inbound, proxy/handler replies, and
@@ -865,10 +868,22 @@ Prove exact row/proof rollback, replay, no-op, and collision handling; retain
 the existing per-session snapshot-page behavior. First use the current
 durable `listSnapshots(scope)` reads and the existing composite prefix index.
 Measure representative workspace read cost and full state-write performance;
-add a distinct index only if the observed plan and latency demonstrate need,
-and rerun the same workload. Run focused shared-server and API tests, typechecks,
+if the full read misses the gate, compare existing scoped membership and
+exact batched client reads before considering an additive index. Add a distinct
+index only if the observed plan and latency demonstrate need, then rerun the
+same workload. Run focused shared-server and API tests, typechecks,
 the unchanged medium-scale and relevant three-process recipes, and touched-file
 standards closure.
+
+**2026-09-28 read-path checkpoint:** The existing composite C-collated index
+was selected by the focused Postgres prefix integration test. On a local
+5-group/100-client diagnostic scope, warm scope-wide group plus client
+snapshot reads took roughly 24–35 ms combined; a raw existing-selector batch
+was faster, but did not perform the same snapshot assembly or validation.
+The first state-write diagnostic became conflict-heavy in its shared workload
+and was interrupted, so it is not a governed before/after result. Keep the
+existing read path for correctness while obtaining comparable gate evidence;
+do not add an index from these non-equivalent diagnostics alone.
 
 ### Task 12: Publish auth logout's exact-session proof
 

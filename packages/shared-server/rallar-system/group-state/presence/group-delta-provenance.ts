@@ -31,7 +31,7 @@ export async function computeGroupDeltaProvenance(
         const message = decodePersistedALMessage(write.entry.resource);
         const facts: Omit<WsOutboxProvenance, 'digest'> = {
             version: 1,
-            producerKind: 'state-sync-snapshot',
+            producerKind: 'state-sync',
             queueKey: write.entry.key,
             typeId: write.entry.typeId,
             messageId: message.id.msgId,

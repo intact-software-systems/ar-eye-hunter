@@ -26,7 +26,7 @@ import type {
 import type { StateScope } from '../../api/state-types.ts';
 import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
-    isWsQueueBoxServerDirectRoomRow,
+    isWsQueueBoxServerDirectScopedBroadcastRow,
     validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
@@ -85,7 +85,7 @@ export namespace WsQueueBoxServerOutboundPlanning {
         readonly allowClusterRecipients: boolean;
         /** The audience the message was admitted or frozen to: never a session that joined after it (D24, D43). */
         readonly audience: readonly string[] | undefined;
-        readonly directRoom: boolean;
+        readonly directBroadcast: boolean;
     }
 }
 
@@ -135,7 +135,7 @@ export class WsQueueBoxServerOutboundPlanning {
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
         const { phase, clusterPublisherRegistered, admittedAudience } = request;
         const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
-        const directRoom = isWsQueueBoxServerDirectRoomRow(message, request.referenceKey);
+        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const persist = shouldAwaitALRoute(normalized.effective);
         const resolveRecipients = phase === 'dequeue' || !persist;
@@ -144,7 +144,7 @@ export class WsQueueBoxServerOutboundPlanning {
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
             audience,
-            directRoom
+            directBroadcast
         }).fold(
             (error) =>
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
@@ -157,7 +157,7 @@ export class WsQueueBoxServerOutboundPlanning {
                     : this.toRecipientPreparedMessages(
                         message,
                         recipients,
-                        directRoom || message.targets?.mode === 'unicast' ? recipientScope : undefined
+                        directBroadcast || message.targets?.mode === 'unicast' ? recipientScope : undefined
                     ),
                 ackTracking: toAckTrackingPlan(
                     normalized.effective,
@@ -206,9 +206,9 @@ export class WsQueueBoxServerOutboundPlanning {
         if (validateWsQueueBoxServerRecipientAuthority(message, request, request.referenceKey).length > 0) {
             return undefined;
         }
-        const directRoom = isWsQueueBoxServerDirectRoomRow(message, request.referenceKey);
+        const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
         const requested = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
-        const recipients = directRoom
+        const recipients = directBroadcast
             ? this.#targetResolution.resolveCapturedSessionRecipients(
                 message,
                 (request.admittedAudience ?? []).filter((sessionId) => requested.includes(sessionId))
@@ -226,7 +226,7 @@ export class WsQueueBoxServerOutboundPlanning {
             preparedMessages: this.toRecipientPreparedMessages(
                 message,
                 recipients,
-                directRoom || message.targets?.mode === 'unicast' ? request.recipientScope : undefined
+                directBroadcast || message.targets?.mode === 'unicast' ? request.recipientScope : undefined
             ),
             admittedAudience: request.admittedAudience,
             recipientScope: request.recipientScope,
@@ -261,7 +261,7 @@ export class WsQueueBoxServerOutboundPlanning {
             return Either.ofRight([]);
         }
 
-        const resolved = resolution.directRoom
+        const resolved = resolution.directBroadcast
             ? this.#targetResolution.resolveCapturedSessionRecipients(message, resolution.audience ?? [])
             : this.#targetResolution.resolveOutboundRecipients(message);
         const audience = resolution.audience;

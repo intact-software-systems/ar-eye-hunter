@@ -112,6 +112,7 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
             'idempotency',
             'stateSync',
             'outboxWrites',
+            'principalAudienceSessionIds',
             'persistence'
         ],
         'Client mutation computed'
@@ -152,6 +153,16 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
     }
     if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length < 2) {
         rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
+    }
+    const principalAudienceSessionIds = value.principalAudienceSessionIds;
+    if (
+        !Array.isArray(principalAudienceSessionIds) ||
+        principalAudienceSessionIds.some((sessionId) => typeof sessionId !== 'string' || sessionId.length === 0) ||
+        principalAudienceSessionIds.some((sessionId, index) =>
+            index > 0 && sessionId <= principalAudienceSessionIds[index - 1]!
+        )
+    ) {
+        rejectClientMutation('Client mutation computed principal audience is invalid');
     }
     assertClientPersistenceShape(value.persistence);
 }

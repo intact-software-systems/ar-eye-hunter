@@ -18,7 +18,7 @@ import {
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import {
-    isWsQueueBoxServerDirectRoomRow,
+    isWsQueueBoxServerDirectScopedBroadcastRow,
     requiresWsQueueBoxServerRecipientScope
 } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
 import type {
@@ -198,7 +198,7 @@ function registerQueueBoxOutboxPublisher(
             operation: 'outbox-cluster-publish',
             message: envelope
         });
-        const policy = requiresWsQueueBoxServerRecipientScope(message) || isWsQueueBoxServerDirectRoomRow(message, entry.key)
+        const policy = requiresWsQueueBoxServerRecipientScope(message) || isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key)
             ? await options.wsQBoxServerService.readCapturedPolicy(message, entry)
             : undefined;
         const result = sendToCapturedLocalTargets(message, entry, policy?.admittedAudience ?? admittedAudience, policy?.recipientScope, options);
@@ -362,8 +362,8 @@ function sendToCapturedLocalTargets(
     recipientScope: ALOutboundCapturedPolicy['recipientScope'],
     options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
 ): WsServerLiveSendResult {
-    const directRoom = isWsQueueBoxServerDirectRoomRow(message, entry.key);
-    const eligible = (message.targets?.mode !== 'unicast' && !directRoom) ||
+    const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
+    const eligible = (message.targets?.mode !== 'unicast' && !directBroadcast) ||
         captured === undefined || options.filterEligibleCapturedSessionIds === undefined
         ? undefined
         : options.filterEligibleCapturedSessionIds({
@@ -376,7 +376,7 @@ function sendToCapturedLocalTargets(
         recipientSessionIds: eligible,
         admittedPeerIds: captured,
         inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
-        recipientScope: directRoom ? recipientScope : undefined
+        recipientScope: directBroadcast ? recipientScope : undefined
     });
 }
 

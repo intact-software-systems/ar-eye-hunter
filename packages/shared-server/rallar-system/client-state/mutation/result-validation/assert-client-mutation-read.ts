@@ -1,4 +1,8 @@
-import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import {
+    validateAuthoritativeClientSnapshot,
+    validateAuthoritativeClientSnapshotList,
+    validateAuthoritativeGroupSnapshotList
+} from '@shared/api/authoritative-state-validation.ts';
 
 import {
     // Receipt validation remains a direct dependency on its canonical owner.
@@ -32,7 +36,10 @@ export function assertClientMutationRead(
             'session',
             'expiredSessionEntry',
             'snapshot',
-            'receiptEvent'
+            'receiptEvent',
+            'audienceObservedAtEpochMs',
+            'audienceGroupSnapshots',
+            'audienceClientSnapshots'
         ],
         'Client mutation read'
     );
@@ -52,6 +59,11 @@ export function assertClientMutationRead(
         validateClientMutationIdempotencyRecordValue
     );
     assertClientMutationSnapshotRead(command, read);
+    if (!Number.isSafeInteger(read.audienceObservedAtEpochMs) || read.audienceObservedAtEpochMs < 0) {
+        throw new ClientMutationRejectedError('Client mutation audience observation time is invalid');
+    }
+    validateAuthoritativeGroupSnapshotList(read.audienceGroupSnapshots, command.aggregateRef);
+    validateAuthoritativeClientSnapshotList(read.audienceClientSnapshots, command.aggregateRef);
     assertClientMutationReadScope(command, read);
 }
 

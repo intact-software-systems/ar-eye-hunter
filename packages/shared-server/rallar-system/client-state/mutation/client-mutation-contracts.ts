@@ -11,6 +11,7 @@ import type {
     ClientSnapshot,
     ClientTransport
 } from '@shared/api/client-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
@@ -219,6 +220,9 @@ export type ClientMutationRead = Readonly<{
     expiredSessionEntry: RuntimeStateEntry | null;
     snapshot: ClientSnapshot | null;
     receiptEvent: ClientEvent | null;
+    audienceObservedAtEpochMs: number;
+    audienceGroupSnapshots: readonly GroupSnapshot[];
+    audienceClientSnapshots: readonly ClientSnapshot[];
 }>;
 
 export type ClientMutationFacts = Readonly<{
@@ -269,6 +273,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     idempotency: ClientMutationIdempotencyRecord | null;
     stateSync: readonly ComputedClientStateSync[];
     outboxWrites: readonly AppOutboxInsert[];
+    principalAudienceSessionIds: readonly string[];
 }>;
 
 export type ClientRuntimePersistenceOperation =

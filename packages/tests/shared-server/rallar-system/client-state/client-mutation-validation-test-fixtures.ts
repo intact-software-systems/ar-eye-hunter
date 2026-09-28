@@ -116,7 +116,10 @@ export function emptyClientMutationRead(sessionId = 'session-1'): ClientMutation
         session: null,
         expiredSessionEntry: null,
         snapshot: null,
-        receiptEvent: null
+        receiptEvent: null,
+        audienceObservedAtEpochMs: 1_000,
+        audienceGroupSnapshots: [],
+        audienceClientSnapshots: []
     };
 }
 

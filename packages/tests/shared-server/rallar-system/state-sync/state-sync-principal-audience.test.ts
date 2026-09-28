@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { computePrincipalStateSyncAudience } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -18,6 +19,55 @@ import { createOpenTestWebSocket } from '../websocket/test-support/open-test-web
 const NOW_EPOCH_MS = 1_800_000_000_000;
 
 describe('principal state-sync audience', () => {
+    it('freezes own and authorized co-group sessions from scoped snapshots', () => {
+        const own = createClientSnapshot('alice', ['alice-session']);
+        const bob = createClientSnapshot('bob', ['bob-session']);
+        const carol = createClientSnapshot('carol', ['carol-session']);
+        const dave = createClientSnapshot('dave', ['expired-session']);
+        const expiredDave = {
+            ...dave,
+            activeSessions: dave.activeSessions.map((session) => ({
+                ...session,
+                expiresAtEpochMs: NOW_EPOCH_MS
+            }))
+        };
+        const otherScope = {
+            ...createClientSnapshot('mallory', ['mallory-session']),
+            principal: { ...createClientPrincipal('mallory'), workspaceId: 'other' }
+        };
+        const baseGroup = createGroupSnapshot(['alice', 'bob', 'carol', 'dave'], {
+            alice: 'alice-session',
+            bob: 'bob-session',
+            carol: 'carol-session',
+            dave: 'expired-session'
+        });
+        const carolMember = baseGroup.members.find((member) => member.principalId === 'carol');
+        if (!carolMember || carolMember.status !== 'active') {
+            throw new Error('Expected an active Carol fixture member');
+        }
+        const inactiveCarol = { ...carolMember, status: 'left' as const, left: createAuditStamp() };
+        const group: GroupSnapshot = {
+            ...baseGroup,
+            members: baseGroup.members.map((member) => member.principalId === 'carol' ? inactiveCarol : member)
+        };
+        const wrongScopeGroup = {
+            ...createGroupSnapshot(['alice', 'mallory'], {
+                alice: 'alice-session',
+                mallory: 'mallory-session'
+            }),
+            group: { ...group.group, workspaceId: 'other', groupId: 'other-room' }
+        };
+        const audience = computePrincipalStateSyncAudience({
+            principalRef: own.principal,
+            ownSnapshot: own,
+            clientSnapshots: [bob, carol, expiredDave, otherScope],
+            groupSnapshots: [group, wrongScopeGroup],
+            nowEpochMs: NOW_EPOCH_MS
+        });
+
+        expect(audience).toEqual(['alice-session', 'bob-session']);
+    });
+
     it('stamps principal-audience rows with the principal scope', () => {
         const [entry] = computeClientStateSyncEntries(
             createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])),

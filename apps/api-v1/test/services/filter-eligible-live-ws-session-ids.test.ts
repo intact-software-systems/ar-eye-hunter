@@ -160,47 +160,52 @@ Deno.test('durable unicast requires valid captured scope and current authenticat
     assert.deepEqual(filterEligibleDurableWsSessionIds(input), []);
 });
 
-Deno.test('captured scope does not authorize raw principal or broad durable broadcasts', () => {
+Deno.test('verified principal broadcasts keep scoped co-group sockets while broad durable broadcasts stay excluded', () => {
     const server = new JsonWebSocketServer();
-    addConnection(server, 'raw-broadcast-recipient', { scope });
-    const principal = notice({ mode: 'principal', principalRef: { ...scope, principalId: 'principal' }, recipientSessionIds: ['raw-broadcast-recipient'] });
+    addConnection(server, 'co-group-recipient', { scope, principalId: 'bob' });
+    addConnection(server, 'wrong-workspace', { scope: { ...scope, workspaceId: 'other' }, principalId: 'bob' });
+    const principal = notice({ mode: 'principal', principalRef: { ...scope, principalId: 'alice' }, recipientSessionIds: ['co-group-recipient'] });
     const broad = notice({ mode: 'broad', targetMode: 'all' });
-    for (const message of [principal.message, broad.message]) {
-        assert.deepEqual(
-            filterEligibleDurableWsSessionIds({
-                socketServer: server,
-                candidateSessionIds: ['raw-broadcast-recipient'],
-                message,
-                recipientScope: scope,
-                nowMs: 1
-            }),
-            []
-        );
-    }
+    const input = {
+        socketServer: server,
+        candidateSessionIds: ['co-group-recipient', 'wrong-workspace'],
+        recipientScope: scope,
+        nowMs: 1
+    };
+    assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, message: principal.message }), ['co-group-recipient']);
+    assert.deepEqual(
+        filterEligibleDurableWsSessionIds({
+            ...input,
+            message: principal.message,
+            recipientScope: { ...scope, workspaceId: 'other' }
+        }),
+        []
+    );
+    assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, message: broad.message }), []);
 });
 
 Deno.test('durable captured audience excludes a reconnected same-ID socket in another scope', () => {
     const server = new JsonWebSocketServer();
-    addConnection(server, 'eligible', { scope });
-    addConnection(server, 'stale-generation', { scope, registeredGenerationId: 'older-generation' });
-    const room = notice({ mode: 'room', groupRef, recipientSessionIds: ['eligible', 'stale-generation'] });
+    addConnection(server, 'captured-eligible', { scope });
+    addConnection(server, 'captured-stale', { scope, registeredGenerationId: 'older-generation' });
+    const room = notice({ mode: 'room', groupRef, recipientSessionIds: ['captured-eligible', 'captured-stale'] });
 
     assert.deepEqual(
         filterEligibleDurableWsSessionIds({
             socketServer: server,
-            candidateSessionIds: ['eligible', 'stale-generation'],
+            candidateSessionIds: ['captured-eligible', 'captured-stale'],
             message: room.message,
             recipientScope: scope,
             nowMs: 1
         }),
-        ['eligible']
+        ['captured-eligible']
     );
 
     for (const recipientScope of [undefined, { ...scope, workspaceId: 'other' }]) {
         assert.deepEqual(
             filterEligibleDurableWsSessionIds({
                 socketServer: server,
-                candidateSessionIds: ['eligible'],
+                candidateSessionIds: ['captured-eligible'],
                 message: room.message,
                 recipientScope,
                 nowMs: 1
@@ -209,14 +214,14 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
         );
     }
 
-    addConnection(server, 'eligible', {
+    addConnection(server, 'captured-eligible', {
         scope: { applicationId: 'other', workspaceId: 'workspace' },
         socketGenerationId: 'replacement'
     });
     assert.deepEqual(
         filterEligibleDurableWsSessionIds({
             socketServer: server,
-            candidateSessionIds: ['eligible'],
+            candidateSessionIds: ['captured-eligible'],
             message: room.message,
             recipientScope: scope,
             nowMs: 1
