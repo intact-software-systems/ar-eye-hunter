@@ -6,12 +6,17 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { rememberAuthorisedWsConnection } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
-import { filterEligibleLiveWsSessionIds } from '../../src/services/filter-eligible-live-ws-session-ids.ts';
+import {
+    filterEligibleDurableWsSessionIds,
+    filterEligibleLiveWsSessionIds
+} from '../../src/services/filter-eligible-live-ws-session-ids.ts';
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
 const groupRef = { ...scope, groupId: 'room' };
 
-function notice(audience: Extract<LiveWsNotice, { delivery: 'inline'; }>['audience']): LiveWsNotice {
+function notice(
+    audience: Extract<LiveWsNotice, { delivery: 'inline'; }>['audience']
+): Extract<LiveWsNotice, { delivery: 'inline'; }> {
     const common = {
         kind: 'live-ws' as const,
         version: 1 as const,
@@ -118,6 +123,37 @@ Deno.test('frozen room delivery keeps only currently open authenticated sockets 
             socketServer: server,
             candidateSessionIds: ['eligible'],
             notice: room,
+            nowMs: 1
+        }),
+        []
+    );
+});
+
+Deno.test('durable captured audience excludes a reconnected same-ID socket in another scope', () => {
+    const server = new JsonWebSocketServer();
+    addConnection(server, 'eligible', { scope });
+    addConnection(server, 'stale-generation', { scope, registeredGenerationId: 'older-generation' });
+    const room = notice({ mode: 'room', groupRef, recipientSessionIds: ['eligible', 'stale-generation'] });
+
+    assert.deepEqual(
+        filterEligibleDurableWsSessionIds({
+            socketServer: server,
+            candidateSessionIds: ['eligible', 'stale-generation'],
+            message: room.message,
+            nowMs: 1
+        }),
+        ['eligible']
+    );
+
+    addConnection(server, 'eligible', {
+        scope: { applicationId: 'other', workspaceId: 'workspace' },
+        socketGenerationId: 'replacement'
+    });
+    assert.deepEqual(
+        filterEligibleDurableWsSessionIds({
+            socketServer: server,
+            candidateSessionIds: ['eligible'],
+            message: room.message,
             nowMs: 1
         }),
         []

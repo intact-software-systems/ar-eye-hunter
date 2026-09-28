@@ -3,6 +3,7 @@ import type { InstallQueueBoxPubSubBridgeOptions } from '@shared-server/rallar-s
 import {
     isRtcTopologyPublicationOutboxEntry
 } from '@shared-server/rallar-system/topology/replay/work/is-rtc-topology-publication-outbox-entry.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 import type { ApiV1DatabaseConfiguration } from '../../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from '../../db/api-v1-database-lifecycle.ts';
@@ -20,6 +21,10 @@ interface CreateApiRtcTopologyQueuePubSubBridgeInput {
     readonly publisherId: string;
     readonly timing: RallarTimingSink;
     readonly wakeReplay: () => void;
+    readonly filterEligibleCapturedSessionIds: (
+        message: ALMessage,
+        sessionIds: readonly string[]
+    ) => readonly string[];
 }
 
 type ApiRtcTopologyQueuePubSubBridgeOptions = Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
@@ -40,6 +45,7 @@ export function createApiRtcTopologyQueuePubSubBridge(
         channel: input.channel,
         publisherId: input.publisherId,
         timing: input.timing,
+        filterEligibleCapturedSessionIds: input.filterEligibleCapturedSessionIds,
         onValidatedOutboxKeyReceived: (entry) => {
             if (isRtcTopologyPublicationOutboxEntry(entry)) {
                 input.wakeReplay();

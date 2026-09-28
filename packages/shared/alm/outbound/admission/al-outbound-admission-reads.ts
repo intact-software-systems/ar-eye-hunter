@@ -1,9 +1,12 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../../al-contracts/al-control.ts';
+import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import type { ALSupersedenceInput } from '../../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../../al-contracts/al-runtime.ts';
+import { EnqueuedType } from '../../../api/api-config.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import type { Key, ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { isKeysEqual, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { jsonEquals } from '../../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError, type ALAdmissionDecoder } from '../../al-admission-decoder.ts';
 import {
     decodeALAdmissionClientRecord,
@@ -227,6 +230,39 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const stored = await this.readStoredMessage(session, msgId);
         this.assertSentMessageScope(msgId, stored);
         return stored !== undefined;
+    }
+
+    async readAdmittedAudience(
+        session: ALAdmissionReadSession,
+        message: ALMessage,
+        entry: ResourceEntry
+    ): Promise<readonly string[] | undefined> {
+        const stored = await this.readStoredMessage(session, message.id.msgId);
+        const expiresAtMs = resolveALMessageExpireAtMs(message);
+        const admissionKey = toALOutboundSentMessageKey(this.namespace, message.id.msgId);
+        if (
+            !stored || entry.typeId !== EnqueuedType.WS_OUTBOX ||
+            !isKeysEqual(stored.reference.key, entry.key) ||
+            stored.reference.scope !== this.canonicalScope ||
+            stored.reference.typeId !== entry.typeId ||
+            stored.reference.senderId !== message.id.senderId ||
+            expiresAtMs === undefined || stored.reference.expiresAtMs !== expiresAtMs ||
+            entry.audit.expiryTs.epochMilliseconds < expiresAtMs
+        ) {
+            throw new ALAdmissionCorruptionError(
+                admissionKey,
+                new TypeError('Durable WS outbox row differs from captured outbound admission')
+            );
+        }
+        const identity = await this.readQueueItem(session, toALOutboundIdentityKey(entry.key));
+        const canonical = decodeALOutboundCanonicalMessage(stored.reference, entry, identity);
+        if (!jsonEquals(canonical, message)) {
+            throw new ALAdmissionCorruptionError(
+                admissionKey,
+                new TypeError('Durable WS outbox message differs from captured outbound admission')
+            );
+        }
+        return stored.policy.admittedAudience;
     }
 
     async readSentMessage(

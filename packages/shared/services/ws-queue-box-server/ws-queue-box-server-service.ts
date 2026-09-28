@@ -22,6 +22,7 @@ import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-ru
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
+import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
@@ -614,6 +615,10 @@ export class WsQueueBoxServerService {
 
     sendToTargets(message: ALMessage): number {
         return this.liveDelivery.sendToTargets(message);
+    }
+
+    async readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined> {
+        return await this.admissionStore.readVerifiedAdmittedAudience(message, entry);
     }
 
     sendToTargetsWithResult(

@@ -264,6 +264,12 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** True while the admission fact is retained, including after the canonical payload expired. */
     readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
 
+    /** Missing or mismatched admission fails closed; an admitted non-frozen message returns undefined. */
+    readonly readVerifiedAdmittedAudience: (
+        message: ALMessage,
+        entry: ResourceEntry
+    ) => Promise<readonly string[] | undefined>;
+
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
     /** The audience a server admitted the message to, captured with its policy; undefined for every other message (D58). */
@@ -392,6 +398,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async hasSentMessageAdmission(msgId: string): Promise<boolean> {
         return await this.backend.readWithin((session) => this.reads.hasSentMessageAdmission(session, msgId));
+    }
+
+    async readVerifiedAdmittedAudience(message: ALMessage, entry: ResourceEntry): Promise<readonly string[] | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readAdmittedAudience(session, message, entry));
     }
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {

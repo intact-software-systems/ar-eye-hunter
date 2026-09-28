@@ -55,7 +55,10 @@ import {
     createApiStateSnapshotReadSelectors,
     type ApiStateSnapshotReadSelectors
 } from '../services/create-api-state-snapshot-read-selectors.ts';
-import { filterEligibleLiveWsSessionIds } from '../services/filter-eligible-live-ws-session-ids.ts';
+import {
+    filterEligibleDurableWsSessionIds,
+    filterEligibleLiveWsSessionIds
+} from '../services/filter-eligible-live-ws-session-ids.ts';
 import {
     runRuntimeStateExpiryStartupBarrier,
     type RuntimeStateExpiryStartupGeneration
@@ -324,7 +327,14 @@ function createSharedMiddleware(
             channel: input.queuePubSubChannel,
             publisherId: input.queuePubSubPublisherId,
             timing: input.timing,
-            wakeReplay: () => rtcTopology.topologyReplay.wake('notification')
+            wakeReplay: () => rtcTopology.topologyReplay.wake('notification'),
+            filterEligibleCapturedSessionIds: (message, sessionIds) =>
+                filterEligibleDurableWsSessionIds({
+                    socketServer: mutation.webSocketServer,
+                    candidateSessionIds: sessionIds,
+                    message,
+                    nowMs: input.nowEpochMs()
+                })
         }),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
         readiness: rtcTopology.readiness,

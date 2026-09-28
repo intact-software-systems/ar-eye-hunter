@@ -24,6 +24,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -453,7 +454,9 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
         outboundStores,
         outboundSettlements: (settlement) => settlements.push(settlement)
     });
-    const remoteOrigin = options.origin === 'remote' ? await createRemoteOriginInstance(service, outbox) : undefined;
+    const remoteOrigin = options.origin === 'remote'
+        ? await createRemoteOriginInstance(service, outbox, outboundStores)
+        : undefined;
     service.authorizeInboundMessagesWith({
         sendNacks: true,
         authorize: async (message) =>
@@ -476,8 +479,12 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     return { service, engine, outbox, sockets, clock, remoteOrigin, settlements, admissionStore: outboundStores.admissionStore };
 }
 
-/** A second instance holding the origin's live socket; the two meet only through the shared outbox and the bus. */
-async function createRemoteOriginInstance(local: WsQueueBoxServerService, outbox: InMemoryQueueBox): Promise<SimulatedWebSocket> {
+/** A second instance holding the origin's live socket; both instances share durable outbox and admission state. */
+async function createRemoteOriginInstance(
+    local: WsQueueBoxServerService,
+    outbox: InMemoryQueueBox,
+    outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>
+): Promise<SimulatedWebSocket> {
     const server = new JsonWebSocketServer();
     const origin = new SimulatedWebSocket('ws://a-on-remote');
     await origin.open();
@@ -489,6 +496,7 @@ async function createRemoteOriginInstance(local: WsQueueBoxServerService, outbox
         socket: server,
         name: 'remote-server',
         queueEngine: engine,
+        outboundStores,
         targetResolver: { resolvePeerRecipients: (peerId) => peerId === 'a' ? [{ peerId, connectionId: 'a' }] : [] }
     });
     onTestFinished(() => {
