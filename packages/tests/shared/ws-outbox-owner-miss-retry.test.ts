@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import {
     afterEach,
     describe,
@@ -29,6 +28,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -74,16 +74,13 @@ describe('durable WS outbox owner misses', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const outbox = new InMemoryQueueBox();
-        const entry = QueueBoxUtilities.toResourceEntryFromMsg(
-            createUnicastMessage(),
-            EnqueuedType.WS_OUTBOX
-        );
-        await outbox.enqueue(entry);
+        const outboundStores = createSharedOutboundStores(outbox);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
         const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
+            outboundStores,
             socket: createSocket().socket,
             name: 'server-without-target',
             targetResolver: { resolvePeerRecipients: () => [] },
@@ -93,22 +90,25 @@ describe('durable WS outbox owner misses', () => {
         onTestFinished(() => nonOwner.dispose());
         const ownerEngine = new InboxOutboxEngine();
         const owner = createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
+            outboundStores,
             socket: ownerSocket.socket,
             name: 'server-with-target',
+            readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
             queueEngine: ownerEngine
         });
         onTestFinished(() => owner.dispose());
+        const entry = await enqueueDurableOutboxEntry(nonOwner, createUnicastMessage());
 
         // One trigger, then a passive wait for that one attempt to settle: a poll that redrives
         // finds isWork() false while the prior attempt is still in flight (its own batch guard), so
         // it can spin past the real-time poll timeout without ever giving that attempt a turn.
         await drainEngine(nonOwnerEngine);
-        await expect.poll(async () => (await readEntry(outbox, RAW_ENTRY_KEY)).status).not.toBe(EntityStatus.RESERVED);
-        expect((await readEntry(outbox, RAW_ENTRY_KEY)).status).toBe(EntityStatus.RETRY);
+        await expect.poll(async () => (await readEntry(outbox, entry.key)).status).not.toBe(EntityStatus.RESERVED);
+        expect((await readEntry(outbox, entry.key)).status).toBe(EntityStatus.RETRY);
         expect(misses.length).toBeGreaterThanOrEqual(1);
         expect(misses.every((outcome) =>
             JSON.stringify(outcome) === JSON.stringify({
@@ -119,17 +119,13 @@ describe('durable WS outbox owner misses', () => {
 
         vi.advanceTimersByTime(1);
         await drainEngine(ownerEngine);
-        await expect.poll(async () => (await readEntry(outbox, RAW_ENTRY_KEY)).status).not.toBe(EntityStatus.RESERVED);
-        expect((await readEntry(outbox, RAW_ENTRY_KEY)).status).toBe(EntityStatus.COMPLETED);
+        await expect.poll(async () => (await readEntry(outbox, entry.key)).status).not.toBe(EntityStatus.RESERVED);
+        expect((await readEntry(outbox, entry.key)).status).toBe(EntityStatus.COMPLETED);
         expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
     });
 
     it('redrives a durable send after a shared admission claim conflict', async () => {
         const outbox = new InMemoryQueueBox();
-        await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
-            createUnicastMessage(),
-            EnqueuedType.WS_OUTBOX
-        ));
         const ownerSocket = createSocket();
         const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now);
         const admissionStore = createALOutboundAdmissionStore({
@@ -156,9 +152,10 @@ describe('durable WS outbox owner misses', () => {
         engine.start();
         onTestFinished(() => engine.stop());
         const owner = createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
+            readAuthenticatedConnectionScope: () => ({ scope: RECIPIENT_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }),
             targetResolver: {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             },
@@ -166,6 +163,7 @@ describe('durable WS outbox owner misses', () => {
             queueEngine: engine
         });
         onTestFinished(() => owner.dispose());
+        await enqueueDurableOutboxEntry(owner, createUnicastMessage());
 
         await drainEngine(engine);
         await vi.waitFor(() => {
@@ -377,10 +375,6 @@ describe('durable WS outbox owner misses', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const outbox = new InMemoryQueueBox();
-        await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
-            createUnicastMessage(),
-            EnqueuedType.WS_OUTBOX
-        ));
         const { service, engine } = createService({
             outbox,
             outboundStores: createSharedOutboundStores(outbox),
@@ -400,10 +394,11 @@ describe('durable WS outbox owner misses', () => {
             channel: 'ws',
             publisherId: 'claimant'
         });
+        const entry = await enqueueDurableOutboxEntry(service, createUnicastMessage());
 
         await drainEngine(engine);
-        await expect.poll(async () => (await readEntry(outbox, RAW_ENTRY_KEY)).status).not.toBe(EntityStatus.RESERVED);
-        expect((await readEntry(outbox, RAW_ENTRY_KEY)).status).toBe(EntityStatus.RETRY);
+        await expect.poll(async () => (await readEntry(outbox, entry.key)).status).not.toBe(EntityStatus.RESERVED);
+        expect((await readEntry(outbox, entry.key)).status).toBe(EntityStatus.RETRY);
     });
 
     it.each(['before', 'after'] as const)(
