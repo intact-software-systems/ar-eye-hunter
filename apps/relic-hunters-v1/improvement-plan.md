@@ -239,9 +239,9 @@ the single authoritative command transport through `RelicHuntersRuntime`, with
 Rallar WS reserved for live snapshot fanout. Runtime diagnostics expose the
 chosen command and snapshot transports, and the React adapter accepts snapshots
 through a monotonic guard that rejects wrong-room or older same-room snapshots.
-The server still registers the Rallar WS command topic for server-level
-compatibility tests and future transport experiments, but the browser client
-does not send gameplay commands over that topic.
+The server still registers the Rallar WS command topic; since S3c-i (PR #605)
+the browser sends gameplay commands over it to the server peer id, and REST is
+the fallback only before the browser learns that id.
 
 Options:
 

@@ -316,11 +316,14 @@ A unicast addressed to the server, and every `hop` or `subtree` send, expects th
 one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`targets.groupRef`) is aggregated like a
 room send over one member: the router delivers it to its addressee
 ([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
-`admitted` receipt names the addressee, and the addressee's own ACK completes it. A unicast to a session outside the
-room's admitted audience is refused before admission with a NACK
+`admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
+refusal by the trusted server is answered with a NACK, which the origin states as a trusted-server `relay-rejected`
+`unauthorized`, so a receipted send reads `rejected` at once rather than at its deadline: a unicast to a session outside
+the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
-which the origin states as a trusted-server `relay-rejected` `unauthorized`; a `receiver` unicast that names no room
-is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), and any room send the room
+authorizer refuses — a sender that is not an active member, a halted transport, a scope mismatch, data before
+activation. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
 
@@ -335,7 +338,8 @@ message, never on the wire, where a room larger than the collection limit would 
 carries it as `admittedAudience`, the captured policy keeps it with the sent row, and every later plan of
 the message receives it. The server sends to that audience only and a `receiver` row expects exactly it,
 never a session that joined after admission (D24, D43); a `hop` or `subtree` row expects the hops this
-instance sent to. A multicast frozen by its origin and sent without a router keeps planning against its
+instance sent to. WS never re-routes, so a retry or a repair of any receipt mode keeps every peer the row expects and
+every one that confirmed, and resends only to a failed peer the message was admitted to (R-S3c-i-31). A multicast frozen by its origin and sent without a router keeps planning against its
 own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
 naming the message and its origin.
 
@@ -359,6 +363,9 @@ Known limitations:
   one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
 - On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
   non-retryable, so a receipt row it claims stops being published.
+- A multicast or a room broadcast that carries a `groupRef` is authorized in the room it names, but its
+  `route.contextId` is not bound to that room, so an application keying on `route.contextId` can misattribute it
+  (known debt, D82; it predates S3c-i). Only a room unicast is refused when the two differ (R-S3c-i-33).
 - With the cluster publisher registered (the pub/sub bridge), a dequeued room message is planned as one
   `cluster-local-complete` publication, and every instance then delivers it to the room's current
   sessions: the audience the outbox carried is ignored there, so a session that joined after admission

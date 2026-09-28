@@ -5538,6 +5538,21 @@ above is amended accordingly.
   fixes beyond the brief, (a) and (b) as pre-existing. Cost if wrong: (c) is silent data loss above 16
   characters on every SQL-backed server notification Task 4's `'outbox'` path publishes, not only Relic's;
   memory mode has no limit, which is why the unit tests, Deno tests and smoke lane all missed it.
+- **R-S3c-i-31 (final review finding 4, 2026-09-28).** WS receipt retries use `merge` for every mode (`receiver`,
+  `hop`, `subtree`) in `ws-queue-box-server-outbound-planning.ts`: WS never re-routes, so `replace` could only drop
+  confirmed hops, and `merge` aligns WS with RTC's `subtree` merge (R-S2c-ii-14). Pinned by `hop` and `subtree` retries
+  that keep their confirmed hop. Cost if wrong: a hop receipt keeps a hop that should have left its expected set (WS has
+  exactly one hop).
+- **R-S3c-i-32 (final review finding 17, 2026-09-28).** A typed `{ peerId }` WS send while `serverPeerId()` is
+  undefined ("server unknown", an old server) is refused typed at the sender (`unsupported` on `$.peerId`, naming the
+  server that names no peer id) instead of building a room-naming unicast an old server refuses `malformed` and the
+  handle waits out. The Relic REST fallback (C13) is unchanged; the three mixed-version outcomes and the deploy order
+  go into the PR body.
+- **R-S3c-i-33 (final review finding 20, 2026-09-28).** The router's ingress authorization refuses a room-scoped
+  unicast whose `route.contextId` differs from `targets.groupRef.groupId` (`unauthorized`, the verdict the room
+  authorizer already gives a scope mismatch), pinned with a member of room A naming room B in `route.contextId`. The
+  same gap for multicast and room broadcasts predates this branch: it is recorded as known debt in the outbound README
+  limits and the roadmap (D82), and their behaviour is unchanged.
 
 Later rulings follow as R-S3c-i-n with why and the cost if wrong.
 

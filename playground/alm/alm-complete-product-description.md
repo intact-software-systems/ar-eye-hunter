@@ -416,8 +416,9 @@ Durability is decoupled from reliability, so a lane send (`messages.rtc.send`,
 `messages.ws.send`) that names no durability is volatile too; CRDT sync keeps its
 own HTTP/WS catch-up.
 
-**CURRENT — S3c-i, the WS hop receipt:** a WS `hop` or `subtree` send tracks the server as its one hop, so it is
-receipted by the server's own ACK and no longer ends at `transport-accepted` with a downgrade (R-S3a-4 closed). The
+**CURRENT — S3c-i, the WS hop receipt:** when the server names its peer id, a WS `hop` or `subtree` send tracks the
+server as its one hop, so it is receipted by the server's own ACK and no longer ends at `transport-accepted` with a
+downgrade (R-S3a-4 closed). The
 server's own room notifications carry `receiver` receipts over the room's live sessions frozen at publish, and cluster
 delivery honours that audience (D58, D77).
 
@@ -632,7 +633,7 @@ without polling internal stores.
 
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
 Full RTC envelopes are no longer logged by the receive service. The WS server records, per process and for its 256
-most recent receipted messages, who confirmed each receipt and whether it ran out, on
+most recently updated receipted messages, who confirmed each receipt and whether it ran out, on
 `/api/admin/operations/realtime` (S3c-i, D61, D73).
 
 **PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared

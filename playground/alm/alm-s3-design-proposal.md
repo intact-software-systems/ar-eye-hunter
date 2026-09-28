@@ -584,5 +584,5 @@ answer, Q1–Q13** (roadmap: D57 "As applied", D70–D78); the S3c-i plan is wri
   `ws-queue-box-server/**` change in S3c-ii; hosted smoke on both PRs; ≤2 hosted full reads each (D51).
 
 **Delivered** by PR #605 (`claude/alm-s3c-consumer-proofs-volatile-bound`); the rulings recorded during execution,
-R-S3c-i-0 through R-S3c-i-30, live in the plan's "Rulings during execution"
+R-S3c-i-0 through R-S3c-i-33, live in the plan's "Rulings during execution"
 (`plans/alm-s3c-i-addressed-sends-and-server-receipts-implementation-plan.md`).
