@@ -39,7 +39,6 @@ tooling files below are not plans to delete.
 
 ## Tooling kept beside the prose
 
-These files are checker and governance inputs. They are not product plans:
+These files are governance inputs. They are not product plans:
 
-- `plans/policy.json`
 - `plans/*.closure.json`
