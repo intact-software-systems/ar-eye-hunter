@@ -369,6 +369,7 @@ export class RallarServerWsRouter {
             nowEpochMs: this.nowEpochMs(),
             wakeOutbox: this.wakeOutbox,
             livePublication: this.livePublication,
+            readServerPublishAudience: this.readServerPublishAudience,
             inbound: input.inbound,
             origin: input.origin,
             authorizeRoomMessage: this.authorizeRoomMessage

@@ -34,7 +34,6 @@ Deno.test('Postgres publisher uses the shared notice channel and freezes only li
             listen: async () => {}
         },
         nowEpochMs: () => 100,
-        readGroupSnapshot: async () => undefined,
         readClientSnapshot: async () => ({
             ...snapshot,
             activeSessions: [
@@ -68,7 +67,6 @@ Deno.test('local and disabled API modes do not claim a cluster publisher', () =>
                 mode,
                 notification: null,
                 nowEpochMs: () => 100,
-                readGroupSnapshot: async () => undefined,
                 readClientSnapshot: async () => undefined
             }),
             undefined

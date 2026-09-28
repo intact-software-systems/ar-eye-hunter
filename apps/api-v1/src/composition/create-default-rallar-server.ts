@@ -140,7 +140,6 @@ function createDefaultRallarServerWsOptions(
             mode: input.configuration.database.pubSub,
             notification: input.databaseLifecycle.notification,
             nowEpochMs,
-            readGroupSnapshot: (ref) => runtime.groupStateService.readCurrentSnapshot(ref),
             readClientSnapshot: (ref) => runtime.clientStateService.readCurrentSnapshot(ref)
         }),
         ...input.ws

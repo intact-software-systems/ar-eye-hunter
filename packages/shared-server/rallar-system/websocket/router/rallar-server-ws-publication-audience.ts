@@ -12,9 +12,7 @@ export interface ReadRallarServerWsPublicationAudienceInput {
     readonly fanout: RallarServerWsFanout;
     readonly origin: 'server' | 'proxy' | 'admitted' | undefined;
     readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
-    readonly readServerRoomAudience: NonNullable<
-        RallarServerWsRouterOptions['livePublication']
-    >['readServerRoomAudience'];
+    readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
 }
 
 export async function readRallarServerWsPublicationAudience(
@@ -31,7 +29,7 @@ export async function readRallarServerWsPublicationAudience(
         });
         return authorization.authorized ? authorization.audience : undefined;
     }
-    return await input.readServerRoomAudience?.(input.message, groupRef);
+    return await input.readServerPublishAudience?.(input.message);
 }
 
 export interface ResolveAuthorizedRoomSessionIdsInput {

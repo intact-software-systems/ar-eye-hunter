@@ -180,10 +180,6 @@ export interface RallarServerWsRouterOptions {
         readonly transport: LiveWsNoticeTransport;
         readonly channel: string;
         readonly publisherId: string;
-        readonly readServerRoomAudience?: (
-            message: ALMessage,
-            groupRef: GroupRef
-        ) => Promise<RallarServerWsRoomAudience | undefined>;
         readonly readPrincipalSessionIds?: (
             principalRef: ClientPrincipalRef
         ) => Promise<readonly string[] | undefined>;

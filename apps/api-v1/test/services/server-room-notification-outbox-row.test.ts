@@ -17,10 +17,9 @@ interface OutboxRow {
 
 const RESOURCE_INBOX_CREATED_BY_WIDTH = 16;
 
-// A server room notification is sent by the WS server's own peer id, which is wider than the stored creator column
-// (R-S3c-i-30). The publish goes through the router's frozen server-audience path (readServerPublishAudience).
+// A server notification is sent by the WS server's own peer id, which is wider than the stored creator column.
 Deno.test({
-    name: 'a server room notification from a peer id wider than the creator column is stored and dispatched (R-S3c-i-30)',
+    name: 'a server notification from a peer id wider than the creator column is stored and dispatched',
     sanitizeOps: false,
     sanitizeResources: false,
     fn: async () => {
@@ -37,7 +36,10 @@ Deno.test({
                 const serverPeerId = server.ws.serverPeerId;
                 assert.ok(serverPeerId.length > RESOURCE_INBOX_CREATED_BY_WIDTH);
 
-                const published = await server.ws.publish(toServerRoomNotification(serverPeerId), 'outbox');
+                const published = await server.ws.publish({
+                    message: toServerNotification(serverPeerId),
+                    fanout: 'outbox'
+                });
 
                 assert.equal(published?.status, 'queued-outbox');
                 const row = await waitForCompletedOutboxRow(databaseLifecycle.database);
@@ -55,17 +57,16 @@ Deno.test({
     }
 });
 
-function toServerRoomNotification(serverPeerId: string): ALMessage {
+function toServerNotification(serverPeerId: string): ALMessage {
     return newALBroadcastMessage(
         serverPeerId,
-        newALRoute('room.notification', 'room-1', 'room-1:1'),
-        'room',
-        'room.notification.v1',
+        newALRoute('server.notification', 'all', 'notification-1'),
+        'all',
+        'server.notification.v1',
         { round: 1 },
         {
-            groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' },
             reliability: 'at-least-once',
-            ack: 'receiver',
+            ack: 'none',
             ttlMs: 15_000
         }
     );

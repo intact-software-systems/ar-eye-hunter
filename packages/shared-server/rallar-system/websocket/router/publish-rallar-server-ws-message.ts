@@ -34,6 +34,7 @@ export interface PublishRallarServerWsMessageInput {
     readonly inboundScope?: StateScope | null;
     readonly nowEpochMs: number;
     readonly livePublication?: RallarServerWsRouterOptions['livePublication'];
+    readonly readServerPublishAudience?: RallarServerWsRouterOptions['readServerPublishAudience'];
     readonly inbound?: LiveWsInboundReference;
     readonly origin?: 'server' | 'proxy' | 'admitted';
     readonly authorizeRoomMessage?: RallarServerWsRouterOptions['authorizeRoomMessage'];
@@ -71,12 +72,12 @@ export async function publishRallarServerWsMessage(
                 fanout: publication.fanout,
                 origin: publication.origin,
                 authorizeRoomMessage: publication.authorizeRoomMessage,
-                readServerRoomAudience: publication.livePublication?.readServerRoomAudience
+                readServerPublishAudience: publication.readServerPublishAudience
             });
         }
         catch (error) {
             // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
-            if (publication.origin !== undefined) {
+            if (publication.origin === 'proxy' || publication.origin === 'admitted') {
                 throw error;
             }
             return toFailedPublishResult(publication, error instanceof Error ? error.message : String(error));
@@ -144,6 +145,7 @@ async function publishRallarServerWsFanout(
             return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
+            const groupRef = readALTargetGroupRef(input.message);
             const result = input.service.sendToTargetsWithResult({
                 message: input.message,
                 recipientSessionIds: input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
@@ -153,7 +155,10 @@ async function publishRallarServerWsFanout(
                     nowEpochMs: input.nowEpochMs
                 }),
                 admittedPeerIds: input.admittedPeerIds,
-                inboundScope: input.inboundScope
+                inboundScope: input.inboundScope,
+                recipientScope: input.audience && groupRef
+                    ? { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId }
+                    : undefined
             });
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);

@@ -202,7 +202,11 @@ describe('Rallar server WS live cluster publication', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         onTestFinished(() => error.mockRestore());
         const message = newALBroadcastMessage(
-            'sender', newALRoute('app.live', 'message', 'all'), 'all', 'app.live.v1', {}
+            'sender',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
         );
 
         await expect(router.route(message)).resolves.toBeUndefined();
@@ -249,7 +253,11 @@ describe('Rallar server WS live cluster publication', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         onTestFinished(() => error.mockRestore());
         const source = newALBroadcastMessage(
-            'sender', newALRoute('app.source', 'message', 'all'), 'all', 'app.source.v1', {}
+            'sender',
+            newALRoute('app.source', 'message', 'all'),
+            'all',
+            'app.source.v1',
+            {}
         );
 
         await expect(router.route(source)).resolves.toBeUndefined();
@@ -336,7 +344,11 @@ describe('Rallar server WS live cluster publication', () => {
             }
         });
         const message = newALBroadcastMessage(
-            'server-a', newALRoute('app.live', 'message', 'all'), 'all', 'app.live.v1', {}
+            'server-a',
+            newALRoute('app.live', 'message', 'all'),
+            'all',
+            'app.live.v1',
+            {}
         );
 
         const result = await router.publish({ message, fanout: 'live-only' });
@@ -558,15 +570,15 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
+            readServerPublishAudience: async (message) => ({
+                targets: message.targets!,
+                sessions: snapshot.activeSessions,
+                snapshotVersion: 2
+            }),
             livePublication: {
                 transport,
                 channel: 'ws-channel',
-                publisherId: 'server-a',
-                readServerRoomAudience: async (message) => ({
-                    targets: message.targets!,
-                    sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
-                })
+                publisherId: 'server-a'
             }
         });
         const message = newALBroadcastMessage(
@@ -586,6 +598,62 @@ describe('Rallar server WS live cluster publication', () => {
             scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
             audience: { mode: 'room', groupRef, recipientSessionIds: ['remote-session'] }
         });
+    });
+
+    it('keeps a local server room send inside the frozen scope after a session reconnects elsewhere', async () => {
+        const snapshot = createGroupSnapshot(2, ['room-session', 'reconnected-session']);
+        const groupRef = {
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId: snapshot.group.groupId
+        };
+        const socket = new JsonWebSocketServer();
+        const roomSocket = new TestWebSocket('ws://room');
+        const reconnectedSocket = new TestWebSocket('ws://other-workspace');
+        roomSocket.open();
+        reconnectedSocket.open();
+        socket.addConnection(new ConnectionContext({ id: 'room-session', socket: roomSocket }));
+        socket.addConnection(new ConnectionContext({ id: 'reconnected-session', socket: reconnectedSocket }));
+        const service = createDefaultWsQueueBoxServerService({
+            outbox: new InMemoryQueueBox(new Map()),
+            socket,
+            name: 'server-a',
+            readAuthenticatedConnectionScope: (connection) => ({
+                scope: {
+                    applicationId: groupRef.applicationId,
+                    workspaceId: connection.id === 'room-session' ? groupRef.workspaceId : 'other-workspace'
+                },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }),
+            targetResolver: {
+                resolveBroadcastRecipients: () => [
+                    { peerId: 'room-session', connectionId: 'room-session' },
+                    { peerId: 'reconnected-session', connectionId: 'reconnected-session' }
+                ]
+            }
+        });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service, {
+            readServerPublishAudience: async (message) => ({
+                targets: message.targets!,
+                sessions: snapshot.activeSessions,
+                snapshotVersion: 2
+            })
+        });
+        const message = newALBroadcastMessage(
+            'game-server',
+            newALRoute('room.match', 'message', groupRef.groupId),
+            'room',
+            'room.match.v1',
+            { tick: 1 },
+            { groupRef }
+        );
+
+        const result = await router.publish({ message, fanout: 'live-only' });
+
+        expect(result.status).toBe('sent-live');
+        expect(roomSocket.sent).toHaveLength(1);
+        expect(reconnectedSocket.sent).toEqual([]);
     });
 
     it('does not send the locally frozen room ID to a same-ID connection in another workspace', async () => {
@@ -612,6 +680,11 @@ describe('Rallar server WS live cluster publication', () => {
         let notices = 0;
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
+            readServerPublishAudience: async (message) => ({
+                targets: message.targets!,
+                sessions: snapshot.activeSessions,
+                snapshotVersion: 2
+            }),
             livePublication: {
                 transport: {
                     publish: async () => {
@@ -620,12 +693,7 @@ describe('Rallar server WS live cluster publication', () => {
                     subscribe: async () => {}
                 },
                 channel: 'ws-channel',
-                publisherId: 'server-a',
-                readServerRoomAudience: async (message) => ({
-                    targets: message.targets!,
-                    sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
-                })
+                publisherId: 'server-a'
             }
         });
         const message = newALBroadcastMessage(
@@ -777,13 +845,13 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
+            readServerPublishAudience: async () => {
+                throw new TypeError('snapshot unavailable');
+            },
             livePublication: {
                 transport: { publish: async () => {}, subscribe: async () => {} },
                 channel: 'ws-channel',
-                publisherId: 'server-a',
-                readServerRoomAudience: async () => {
-                    throw new TypeError('snapshot unavailable');
-                }
+                publisherId: 'server-a'
             }
         });
         const message = newALBroadcastMessage(
@@ -823,15 +891,15 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
+            readServerPublishAudience: async (message) => ({
+                targets: { ...message.targets!, exceptPeerIds: ['different'] },
+                sessions: snapshot.activeSessions,
+                snapshotVersion: 2
+            }),
             livePublication: {
                 transport,
                 channel: 'ws-channel',
-                publisherId: 'server-a',
-                readServerRoomAudience: async (message) => ({
-                    targets: { ...message.targets!, exceptPeerIds: ['different'] },
-                    sessions: snapshot.activeSessions,
-                    snapshotVersion: 2
-                })
+                publisherId: 'server-a'
             }
         });
         const message = newALBroadcastMessage(
@@ -865,11 +933,11 @@ describe('Rallar server WS live cluster publication', () => {
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service, {
             nowEpochMs: () => 100,
+            readServerPublishAudience: async () => undefined,
             livePublication: {
                 transport: { publish: async () => {}, subscribe: async () => {} },
                 channel: 'ws-channel',
-                publisherId: 'server-a',
-                readServerRoomAudience: async () => undefined
+                publisherId: 'server-a'
             }
         });
         const base = newALBroadcastMessage(
