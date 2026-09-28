@@ -77,7 +77,7 @@ export function lineage(fixture: SplitFixture, override: LineageOverride = {}) {
 }
 
 export function writeLineageManifest(root: string, lineages: readonly unknown[]): void {
-    writeLineageManifestAt(root, 'plans/repo-style-lineages/example.json', lineages);
+    writeLineageManifestAt(root, 'scripts/repo-style-check/lineages/example.json', lineages);
 }
 
 export function writeLineageManifestAt(root: string, relativePath: string, lineages: readonly unknown[]): void {

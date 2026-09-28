@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { isProductionCodeFile } from './repository-scan.mjs';
 
-const manifestDirectory = 'plans/repo-style-lineages';
+const manifestDirectory = 'scripts/repo-style-check/lineages';
 const worktreeTarget = 'WORKTREE';
 const commitPattern = /^[0-9a-f]{40}$/u;
 const manifestKeys = ['lineages', 'version'];

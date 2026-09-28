@@ -564,6 +564,19 @@ branch yet. They do not suppress a similarly named finding elsewhere. Every
 unmatched finding remains blocking, including a finding with a different path,
 rule, or symbol beside an otherwise reviewed finding.
 
+#### Structural lineage manifests
+
+A branch that moves code out of one file into other files declares the move in
+a manifest under `scripts/repo-style-check/lineages/`. The comparison then
+judges the new files against the findings their source file already had at the
+merge base. A rename that Git detects needs no manifest.
+
+[The lineage manifest guide](../scripts/repo-style-check/lineages/README.md)
+owns the format, the lifetime of an entry, and the retirement rule. Review every
+changed manifest against that rule: an entry whose `mergeBase` is not the merge
+base of the branch is spent, and the pull request that works in that directory
+deletes it.
+
 ## Review outcome
 
 Review pressure exists at more than 100 changed files, more than 10,000 changed

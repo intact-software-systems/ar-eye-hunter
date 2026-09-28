@@ -43,4 +43,3 @@ These files are checker and governance inputs. They are not product plans:
 
 - `plans/policy.json`
 - `plans/*.closure.json`
-- `plans/repo-style-lineages/`
