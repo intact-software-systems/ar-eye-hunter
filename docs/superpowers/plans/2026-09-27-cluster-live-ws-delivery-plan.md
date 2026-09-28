@@ -885,9 +885,23 @@ was faster, but did not perform the same snapshot assembly or validation.
 The first state-write diagnostic became conflict-heavy in its shared workload
 and was interrupted, so it is not a governed before/after result. Keep the
 existing read path for correctness while obtaining comparable gate evidence;
-do not add an index from these non-equivalent diagnostics alone. Before adding
-one, capture a natural planner choice and comparable full state-write results
-on the same representative Postgres workload.
+do not add an index from these non-equivalent diagnostics alone. A natural
+PostgreSQL planner choice and comparable full state-write results on the same
+representative workload must inform any index decision.
+
+**2026-09-28 unforced PostgreSQL index probe:** On the existing local
+PostgreSQL 16.12 development database (41,294 runtime-state rows), the most
+populated group scope had 100 groups and a selected client scope had 100
+principals. Without disabling sequential or bitmap scans, `EXPLAIN (ANALYZE,
+BUFFERS)` chose a bitmap index scan on the existing
+`runtime_state_store_namespace_key_c_ix` for each exact C-collated prefix read.
+The single-run queries returned 100 rows in 0.553 ms for groups and 1.260 ms
+for principals, including the diagnostic scope-selection CTE; the latter had
+93 shared-buffer reads. This establishes that the natural planner can use the
+existing index for these raw reads. It does not measure complete snapshot
+assembly, the full state-write path, a controlled baseline/candidate comparison,
+or a production-equivalent workload. Keep the existing index and do not infer
+that another index is needed or that the performance gate passes from this probe.
 
 **2026-09-28 implementation/review checkpoint:** Principal state-sync now
 captures the durable own-plus-co-group session audience and binds each actual
@@ -902,6 +916,16 @@ latency comparison or a complete branch acceptance. No additive index was
 introduced. A separate Release Gate PGlite RTT fixture lacked the newly
 required current-connection authenticated scope; its focused test is repaired
 and reviewed on this branch, awaiting the next exact-head gate.
+
+**2026-09-28 browser fixture checkpoint:** The native ALM timing fixture also
+used an unscoped synthetic WS-client source, so the new fail-closed unicast
+reader correctly withheld every delivery. The fixture now supplies a matching
+authenticated scope. Its eight focused Chromium tests pass, and the main
+black-box browser suite passes 70 tests with 60 environment-gated skips. The
+separate Recipe Console suite passes 209 tests, skips one, and fails one offline
+Fleet assertion because a concurrent full-stack ALM job in another worktree
+serves a live empty control snapshot on port 5180; an isolated rerun reproduced
+that environment collision. No IndexedDB lock, retry, or index was added.
 
 ### Task 12: Publish auth logout's exact-session proof
 

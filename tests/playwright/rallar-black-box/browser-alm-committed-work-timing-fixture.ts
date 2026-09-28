@@ -115,7 +115,11 @@ const NATIVE_INDEXED_DB_SAMPLE_CAPACITY = 50_000;
 const ALM_PAGE_SIZE = 16;
 const ALM_SELF_PEER_ID = 'native-timing-receiver';
 const ALM_SENDER_PEER_ID = 'native-timing-sender';
-const ALM_SOURCE: ALInboundMessageRuntime.Source = { kind: 'ws-client', peerId: ALM_SENDER_PEER_ID };
+const ALM_SOURCE: ALInboundMessageRuntime.Source = {
+    kind: 'ws-client',
+    peerId: ALM_SENDER_PEER_ID,
+    authenticatedScope: { applicationId: 'native-timing', workspaceId: 'native-timing-room' }
+};
 interface NativeAlmSession {
     readonly actorId: string;
     readonly databaseId: string;
