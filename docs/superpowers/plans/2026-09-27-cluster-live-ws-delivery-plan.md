@@ -289,6 +289,16 @@ unauthorized sessions while retaining current retry and receipt behavior. No
 parallel durable carrier is selected. Choose the exact code and test slice
 from Task 1–2 evidence before implementing this outcome.
 
+The captured-audience correction is implemented in `d5d8cf313`: local and
+remote `WS_OUTBOX` sends read the same validated ALM admission policy, preserve
+an admitted empty audience, and filter captured room sessions against the
+current authenticated socket scope/generation. The existing receipt and
+requeue behavior remains in place. Focused Vitest (70) and Deno (7) tests,
+affected typechecks, and independent review passed. This does not yet prove
+the cross-process PostgreSQL path: the three-process acceptance slice must
+exercise a shared admission store, a late joiner, and receipt completion after
+reconnect. Effective-QoS routing for `live-only` remains open.
+
 ### Later outcome: prove three-process API behavior and branch readiness
 
 Behavior-named black-box recipes must prove a sole claimant on one API process
