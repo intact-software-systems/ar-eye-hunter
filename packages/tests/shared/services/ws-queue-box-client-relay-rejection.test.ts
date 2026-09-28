@@ -134,10 +134,9 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         });
     });
 
-    // Task 1 review forward note: the origin now tracks the server as the hop of a `hop` room unicast (R-S3a-4), but
-    // its control admission takes a unicast's NACK from the addressee alone, so the server's refusal is not admitted
-    // and the receipt stays open until its retries are spent.
-    it('keeps the server hop receipt of a hop room unicast to a non-member open: its refusal NACK is not admitted yet', async () => {
+    // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
+    // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
+    it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
         const fixture = await createRelayFixture();
         const origin = await createOriginClient();
         const unicast: ALMessage = {
@@ -152,15 +151,36 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(refused.left?.code).toBe('unauthorized');
         expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
         await relayFrames(fixture.sockets.a, origin);
-        expect(
-            origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected' || settlement.kind === 'receipt-exhausted')
-        ).toEqual([]);
+        const settlements = origin.settlements.filter((settlement) => settlement.msgId === 'hop-to-outsider');
+        expect(settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([{
+            kind: 'receipt-exhausted',
+            msgId: 'hop-to-outsider',
+            carrier: 'ws',
+            atMs: expect.any(Number),
+            mode: 'hop',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['server-1'],
+            detail: 'Hop server-1 refused the message: unauthorized.'
+        }]);
         expect(
             await origin.outboundStores.admissionStore.readReceiptState({
                 originPeerId: 'a',
                 msgId: 'hop-to-outsider'
             })
-        ).toMatchObject({ mode: 'hop', expectedPeerIds: ['server-1'], ackedPeerIds: [] });
+        ).toBeUndefined();
+        const lifecycle = settlements.reduce(
+            computeALDeliveryLifecycle,
+            createInitialALDeliveryLifecycle({
+                msgId: 'hop-to-outsider',
+                typeId: 'command.v1',
+                ackMode: 'none',
+                receiptAlgo: 'hop',
+                expiresAtMs: undefined,
+                submittedAtMs: 0
+            })
+        );
+        expect(lifecycle.state).toBe('failed');
+        expect(lifecycle.evidence.relayRejection).toBeUndefined();
     });
 });
 

@@ -667,6 +667,36 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
         expect(settlements).toEqual([]);
     });
 
+    it('admits a unicast refusal from the hop its receipt tracks, not only from its addressee (R-S3c-i-28)', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control } = createFixture(settlements);
+        await seedTrackedHopUnicastObligation(admissionStore);
+
+        expect(await control.admit(refusalNack('ws-server-1', 'unauthorized'), 'trusted-server')).toEqual({
+            kind: 'committed'
+        });
+
+        expect(settlements).toMatchObject([
+            { kind: 'acknowledgement', msgId: 'message' },
+            { kind: 'receipt-exhausted', detail: 'Hop ws-server-1 refused the message: unauthorized.' }
+        ]);
+        expect(await admissionStore.readReceiptState({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
+    });
+
+    it('still refuses a unicast refusal from a peer that is neither its addressee nor a hop its receipt tracks', async () => {
+        const settlements: ALOutboundSettlementFact[] = [];
+        const { admissionStore, control, state } = createFixture(settlements);
+        await seedTrackedHopUnicastObligation(admissionStore);
+        const seeded = [...state.data];
+
+        expect(await control.admit(refusalNack('stranger', 'unauthorized'), 'peer')).toEqual({
+            kind: 'rejected',
+            reason: 'AL repair sender has no retained outbound obligation'
+        });
+        expect([...state.data]).toEqual(seeded);
+        expect(settlements).toEqual([]);
+    });
+
     it('ends the receipt of a relay-rejected send, so nothing retries it', async () => {
         const { admissionStore, control } = createFixture();
         await seedDirectObligation(admissionStore);
@@ -795,6 +825,19 @@ async function seedMulticastObligation(
     await seedObligation(admissionStore, {
         targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
         expectedPeerIds: ['receiver', 'other-receiver'],
+        ackedPeerIds: [],
+        ordering: undefined,
+        retryTracking: undefined
+    });
+}
+
+/** A unicast to an outsider whose receipt tracks the WS server as its one hop (R-S3a-4). */
+async function seedTrackedHopUnicastObligation(
+    admissionStore: ALOutboundAdmissionStore<ALOutboundTransportMessage>
+): Promise<void> {
+    await seedObligation(admissionStore, {
+        targets: { mode: 'unicast', toPeerId: 'outsider' },
+        expectedPeerIds: ['ws-server-1'],
         ackedPeerIds: [],
         ordering: undefined,
         retryTracking: undefined

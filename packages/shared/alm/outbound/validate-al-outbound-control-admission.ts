@@ -119,15 +119,13 @@ function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
     return isResyncRequired || isALServerRefusalBeforeReceipt(read);
 }
 
+/** A repair or NACK comes from a unicast's addressee or from any peer its receipt expects: on WS, the tracked server hop. */
 function isExpectedRepairPeer(
     sent: ALStoredOutboundMessage,
     pending: ALOutboundPendingAckSnapshot | undefined,
     peerId: string
 ): boolean {
-    if (sent.unicastPeerId !== null) {
-        return sent.unicastPeerId === peerId;
-    }
-    return pending?.expectedPeerIds.includes(peerId) === true;
+    return sent.unicastPeerId === peerId || pending?.expectedPeerIds.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(
