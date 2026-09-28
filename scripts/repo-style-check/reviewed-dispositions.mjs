@@ -32,12 +32,16 @@ export const reviewedDispositions = Object.freeze([
     }),
     // Scenario composition, provider selection, recipe expansion, execution
     // and reporting have distinct linked owners beneath this public runner
-    // root. Five navigation probes support retaining the current entry files.
+    // root. The group-delta command is a direct three-process acceptance entry:
+    // it reuses managed API and WS owners, then writes its proof artifact here.
+    // Recipe examples are JSON fixtures, while topology and managed-API folders
+    // own helpers rather than this scenario. The exact cap keeps new growth
+    // reviewable without moving a runnable entry away from its command peers.
     Object.freeze({
         path: 'packages/shared-test/black-box-runner',
         rule: 'layout.directory-density',
         symbol: 'black-box-runner',
-        maximumMagnitude: 22
+        maximumMagnitude: 23
     }),
     // The receipt validator accepts raw artifact input before narrowing its
     // fields. Its malformed-artifact test deliberately crosses that same
