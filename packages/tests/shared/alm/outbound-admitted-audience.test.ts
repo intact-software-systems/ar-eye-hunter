@@ -98,7 +98,9 @@ async function createFixture(admittedAudience: readonly string[] | undefined) {
         backend: new InMemoryAdmissionBackend(state, () => nowMs),
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
-        decodePrepared: (value: unknown) => value
+        decodePrepared: () => {
+            throw new TypeError('Captured audience fixture has no prepared messages');
+        }
     });
     return { store, state, stored, message, entry };
 }
