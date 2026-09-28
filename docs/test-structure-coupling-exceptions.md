@@ -1441,6 +1441,7 @@ moved or changed test.
     },
     {
       "id": "queue-pubsub-admission-read-failure-no-send",
+      "sharedCoverageGroup": "queue-pubsub-captured-admission-read-failure",
       "domain": "QueueBox pub/sub captured outbound admission",
       "owner": "Rallar server maintainers",
       "summary": "A transient captured-admission read failure requeues durable work without sending it. Executable assertion: “requeues a remote row when reading captured admission fails transiently”.",
@@ -1456,6 +1457,7 @@ moved or changed test.
     },
     {
       "id": "queue-pubsub-admission-read-failure-wakes-requeue",
+      "sharedCoverageGroup": "queue-pubsub-captured-admission-read-failure",
       "domain": "QueueBox pub/sub captured outbound admission",
       "owner": "Rallar server maintainers",
       "summary": "A transient captured-admission read failure announces the requeued durable row once. Executable assertion: “requeues a remote row when reading captured admission fails transiently”.",
