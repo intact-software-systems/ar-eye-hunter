@@ -419,12 +419,24 @@ client-unicast replay requires it, and direct sends check current socket
 scope/generation. The branch-gate fixture/evidence repair in
 `e3adaddbe..48a6adac7` and the authenticated lifecycle fixture and
 schedule-insensitive composite test correction in `1767be0e8` are also
-locally review-clean. The broad shared suite now has one remaining failure:
-the browser facade measures 223.08984375 KiB against the current strict
-223 KiB ceiling. These local commits have not yet been pushed, and none of
-this proves cross-process WS delivery or RTC-B06 E3 acceptance. Task 2e is
-the next concrete implementation slice; only after its review should the
-sole effective-QoS publisher be connected and proved across API processes.
+locally review-clean. Task 2e's public API, captured outbound policy,
+prepared effect, claimant/remote guard, and lower-level live-send guard are
+locally implemented in `024b57698`, `72de53202`, and `1de6a1c6a`. Two
+independent fix re-reviews found no remaining Critical or Important issue in
+their scoped diffs. The last fix carries validated peer-notice scope through
+middleware to native send; its integrated red/green test covers matching,
+wrong-scope, and broad notices. These commits have not yet been pushed, and
+none proves the sole effective-QoS publisher, cross-process WS delivery, or
+RTC-B06 E3.
+
+The latest `main` ALM S3b change was merged locally in `119af2c59` to repair
+PR #566's real source conflict. Post-merge focused live-notice/unicast tests
+pass 110/110 and shared/shared-server typechecks pass. Bundle checks remain
+red on the combined tree: the browser facade measures 224.28125 KiB against
+`<223`, and headless measures 286.58203125 KiB against `<286`. The measured
+next whole-KiB ceilings (`<225` and `<287`) await maintainer approval; do
+not call the merge or branch gates green while those checks fail. The older
+request to raise the facade limit to `<224` is superseded by this measurement.
 
 Task 2e placement also found a distinct authoritative producer: the CRDT
 AppInbox mutation writes direct `WS_OUTBOX` resources for replies and
@@ -434,10 +446,17 @@ that proof. Task 2e covers the router/proxy catch-up boundary, captured AL
 sent policy, prepared effects, and replay. Direct AppInbox producer adoption
 needs a later focused design and reviewed slice on this same draft PR before
 readiness, with explicit maintainer approval for its persisted-format or
-compatibility choice. Until then, unproven direct CRDT unicast may fail
-closed; do not re-enable it through a generic exemption or call the public
-unicast outcome complete. Internal auth logout and AL control/receipt paths
-retain their separate owners and require exact-path tests.
+compatibility choice. Until then, unproven direct CRDT unicast fails closed
+in three broad shared tests; do not re-enable it through a generic exemption
+or call the public unicast outcome complete. The direct auth-logout
+`WS_OUTBOX` path also lacks an exact persisted owner proof in this branch, so
+both new admission and old prepared effects currently refuse; restore session
+invalidation through its verified owner-specific path before readiness. AL
+control/receipt remains a separate decoded-control path. The direct-producer
+design must settle CRDT scope capture and its persisted carrier, and the
+exact session-global logout contract, before an implementation slice is
+dispatched; no migration, old overload, or generic payload-type exemption is
+approved.
 
 For each fix, review and remediate every changed human-authored file in full;
 include every support file changed by remediation recursively until closure;
