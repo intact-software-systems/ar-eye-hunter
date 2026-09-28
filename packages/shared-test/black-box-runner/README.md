@@ -40,6 +40,27 @@ protocol and distributed-run contracts live in `../rallar-bb-test/`. Recipes
 assert liveness and contracts. Storm quantities are captured in the run
 artifacts and are not judged by the runner.
 
+## Managed cluster proofs
+
+The direct executables in [cluster-proofs](./cluster-proofs/) each create an
+isolated PostgreSQL run database, migrate it, start three managed API processes,
+assert delivery across processes, write a JSON proof, then stop the managed
+processes and release the run database.
+
+- `npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:group-delta`
+  runs [group delta delivery](./cluster-proofs/api-v1-group-delta-cluster-proof.mts#runGroupDeltaClusterProof).
+  It writes `group-delta-cluster-proof.json` beneath the command's artifact
+  directory and records the committed message and admitted audience.
+- `npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:auth-logout`
+  runs [auth logout delivery](./cluster-proofs/api-v1-auth-logout-cluster-proof.mts#runLogoutClusterProof).
+  It writes `auth-logout-cluster-proof.json` beneath its artifact directory and
+  records the committed notice while the unrelated C socket stays open.
+
+Both commands require an available PostgreSQL server. They use the runner's
+local default connection unless `DATABASE_URL` selects another server.
+The package `check:deno` command type checks both executable entries without
+starting services.
+
 ## Recipe execution and observations
 
 - [scenario-black-box.ts](./scenario-black-box.ts) owns CLI execution and

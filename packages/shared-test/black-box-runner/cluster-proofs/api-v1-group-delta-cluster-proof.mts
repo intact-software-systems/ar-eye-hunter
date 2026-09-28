@@ -15,34 +15,34 @@ import {
     toApiV1ServerCommand,
     toManagedApiServerPlans,
     type ApiV1BlackBoxOptions
-} from './api-v1-black-box-run.mts';
-import { createDefaultExecutionDependencies } from './execution/black-box-scenario-context.ts';
+} from '../api-v1-black-box-run.mts';
+import { createDefaultExecutionDependencies } from '../execution/black-box-scenario-context.ts';
 import {
     closeWs,
     openWs,
     type LocalWsContext
-} from './execution/local-websocket-session.ts';
+} from '../execution/local-websocket-session.ts';
 import {
     managedApiDiagnosticSecrets,
     waitForManagedApiReady
-} from './managed-api/api-v1-managed-api-readiness.mts';
-import { withManagedPostgresRunDatabase } from './managed-api/api-v1-managed-postgres-run-database.mts';
-import { startManagedApiServer, stopManagedApiServer } from './managed-api/api-v1-managed-process-lifecycle.mts';
+} from '../managed-api/api-v1-managed-api-readiness.mts';
+import { withManagedPostgresRunDatabase } from '../managed-api/api-v1-managed-postgres-run-database.mts';
+import { startManagedApiServer, stopManagedApiServer } from '../managed-api/api-v1-managed-process-lifecycle.mts';
 import {
     withManagedApiServerPlans,
     type ManagedApiServerPlan
-} from './managed-api/with-managed-api-server-plans.mts';
-import { verifyApiV1FairnessProof } from './state-write-evidence/api-v1-fairness-proof.ts';
+} from '../managed-api/with-managed-api-server-plans.mts';
+import { verifyApiV1FairnessProof } from '../state-write-evidence/api-v1-fairness-proof.ts';
 import {
     ApiV1RtcTopologyProofApi,
     type ProofGroupInput,
     type ProofSession
-} from './topology-replay/api-v1-rtc-topology-proof-api.mts';
+} from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 import {
     waitForWsMessage,
     waitForWsMessageAbsence,
     type WsInteraction
-} from './ws/ws-wait-expectations.ts';
+} from '../ws/ws-wait-expectations.ts';
 
 interface GroupDeltaClusterRun {
     readonly options: ApiV1BlackBoxOptions;
@@ -89,7 +89,7 @@ async function runGroupDeltaClusterProof(): Promise<void> {
         options,
         environment,
         artifactDir: resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!),
-        repoRoot: fileURLToPath(new URL('../../../', import.meta.url))
+        repoRoot: fileURLToPath(new URL('../../../../', import.meta.url))
     };
     await Deno.mkdir(run.artifactDir, { recursive: true });
     await withManagedPostgresRunDatabase(environment.DATABASE_URL!, options.runId, async (databaseUrl) => {

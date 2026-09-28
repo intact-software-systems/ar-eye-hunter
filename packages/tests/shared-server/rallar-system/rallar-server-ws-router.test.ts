@@ -1231,6 +1231,9 @@ interface RouterFixture {
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
+const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const AUDIENCE_SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ): RouterFixture {
@@ -1261,9 +1264,6 @@ function createRouter(
         outboundStores
     };
 }
-
-const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-const AUDIENCE_SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 interface IngressRouterFixture {
     readonly router: RallarServerWsRouter;

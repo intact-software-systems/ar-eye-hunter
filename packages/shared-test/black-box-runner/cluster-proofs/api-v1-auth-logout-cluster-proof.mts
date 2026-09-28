@@ -12,12 +12,12 @@ import {
     toApiV1BlackBoxEnvironment,
     toApiV1ServerCommand,
     toManagedApiServerPlans
-} from './api-v1-black-box-run.mts';
-import { managedApiDiagnosticSecrets, waitForManagedApiReady } from './managed-api/api-v1-managed-api-readiness.mts';
-import { withManagedPostgresRunDatabase } from './managed-api/api-v1-managed-postgres-run-database.mts';
-import { startManagedApiServer, stopManagedApiServer } from './managed-api/api-v1-managed-process-lifecycle.mts';
-import { withManagedApiServerPlans, type ManagedApiServerPlan } from './managed-api/with-managed-api-server-plans.mts';
-import { ApiV1RtcTopologyProofApi, type ProofSession } from './topology-replay/api-v1-rtc-topology-proof-api.mts';
+} from '../api-v1-black-box-run.mts';
+import { managedApiDiagnosticSecrets, waitForManagedApiReady } from '../managed-api/api-v1-managed-api-readiness.mts';
+import { withManagedPostgresRunDatabase } from '../managed-api/api-v1-managed-postgres-run-database.mts';
+import { startManagedApiServer, stopManagedApiServer } from '../managed-api/api-v1-managed-process-lifecycle.mts';
+import { withManagedApiServerPlans, type ManagedApiServerPlan } from '../managed-api/with-managed-api-server-plans.mts';
+import { ApiV1RtcTopologyProofApi, type ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
 interface LogoutClusterScenario {
     readonly plans: readonly ManagedApiServerPlan[];
@@ -36,7 +36,7 @@ async function runLogoutClusterProof(): Promise<void> {
     assert(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
     const environment = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
     const artifactDir = resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!);
-    const repoRootPath = fileURLToPath(new URL('../../../', import.meta.url));
+    const repoRootPath = fileURLToPath(new URL('../../../../', import.meta.url));
     await Deno.mkdir(artifactDir, { recursive: true });
     await withManagedPostgresRunDatabase(environment.DATABASE_URL!, options.runId, async (databaseUrl) => {
         const env = { ...environment, DATABASE_URL: databaseUrl };
@@ -112,7 +112,9 @@ async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Pro
         });
         const proof = await readLogoutProof(scenario.databaseUrl, requestId);
         assertEquals(proof.messageId, frame.id.msgId);
-        assertEquals(proof.target.kind, 'exact-invalidated-session');
+        if (proof.target.kind !== 'exact-invalidated-session') {
+            throw new Error(`Expected exact invalidated session proof, got ${proof.target.kind}`);
+        }
         assertEquals(proof.target.admittedAudience, [recipient.sessionId]);
         await new Promise((resolve) => setTimeout(resolve, 500));
         assertEquals(target.frames.filter((value) => JSON.parse(value).id?.msgId === frame.id.msgId).length, 1);
