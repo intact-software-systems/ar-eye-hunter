@@ -21,19 +21,25 @@ Chromium, and repository diagnostic/performance tooling; no new dependencies.
 ## Global Constraints
 
 - Use existing QueueBox, readiness, CAS, leases, retries, and release handling.
-- Add no queue, retry mechanism, fence, lock, timer, dependency, persisted format,
-  migration, or legacy path.
+- Within this committed-work slice, add no queue, retry mechanism, fence, lock,
+  timer, dependency, persisted format, migration, or legacy path. The separately
+  approved [cluster live-WS delivery plan](2026-09-27-cluster-live-ws-delivery-plan.md)
+  owns its versioned per-row provenance; it does not change the ALM
+  committed-work storage or retry owner.
 - Remove affected obsolete code; remediate whole touched files and recursively
   affected support files under current repo guidance, not historical line caps.
-- Do not change protocol/public exports or weaken deadlines, workloads, or gates.
-- Preserve the maintainer-approved current branch ceilings: strict `<221 KiB`
-  for the browser facade and `<283 KiB` for headless, with unchanged compression
-  and dependency exclusions. Earlier limits below are historical measurements;
-  further increases require approval.
+- Within the committed-work slice, do not change protocol/public exports or
+  weaken deadlines, workloads, or gates. The separate live-WS plan owns its
+  approved scoped public-unicast contract changes.
+- The last ALM-only ceilings were strict `<221 KiB` for the browser facade
+  and `<283 KiB` for headless. They are historical for the combined PR: the
+  separately approved cluster live-WS delivery plan sets current strict
+  `<225 KiB` and `<287 KiB` ceilings, respectively, with unchanged compression
+  and dependency exclusions. Further increases require approval.
 - The maintainer approved the spec's narrow RTC offer/answer correlation contract,
   including fail-closed old descriptions and coordinated consumer replacement.
-  This is the sole exception to the protocol-change constraint; no general
-  fencing mechanism or compatibility fallback is authorized.
+  This is the sole protocol exception within this committed-work plan; no general
+  fencing mechanism or compatibility fallback is authorized here.
 - The 2026-09-13 approval additionally authorizes the spec's exact canonical
   runtime-handle/registration contract replacements and faultPort relocation to
   service dependencies. Update consumers together; no aliases or old overloads.
@@ -2083,7 +2089,7 @@ Vitest invocation timed out seven tests while overlapping capture and build;
 all 29 tests in the five affected files later passed sequentially with one
 worker. The initial failure remains recorded, not relabelled as green.
 
-### Next slice: heartbeat lease renewal across cache expiry
+### Resolved slice: heartbeat lease renewal across cache expiry
 
 A post-rebase independent review found a reproducible liveness edge in the
 already-selected heartbeat-only authority renewal. If the group HTTP response
@@ -2101,8 +2107,11 @@ adoption. It can renew an expired entry still physically present, while a
 newer replacement or removed entry still fails; there is no fallback write
 after a lost CAS. Add a fake-time in-flight TTL-crossing test and a newer-winner
 control first, then run focused heartbeat/authority tests, shared-web typing,
-and the affected browser bundle boundaries. This proposal awaits maintainer
-design approval; no implementation or acceptance-rule change is implied here.
+and the affected browser bundle boundaries. This was the pending proposal at
+the time of that review. The later reviewed implementation in `6401d0e75`,
+`a50ea8044`, `c014a54b3`, and `3793cbd09` uses exact-object identity CAS;
+the focused cache-TTL heartbeat test now covers the renewed joined-room case.
+This resolution is not RTC-B06 E3 acceptance evidence.
 
 ### Subsequent decision: explicit IndexedDB lifetime ownership
 
