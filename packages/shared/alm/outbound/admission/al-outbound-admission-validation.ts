@@ -164,35 +164,47 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
     if (policy.ackTracking !== null) {
         decodeALOutboundCapturedAcknowledgement(policy.ackTracking);
     }
-    if (policy.retryTracking !== null) {
-        const retry = decodeALAdmissionRecord(policy.retryTracking, ['enabled', 'maxAttempts'], ['retryDelayMs']);
-        requirePersistedALBoolean(retry.enabled, 'captured retry tracking flag');
-        requirePersistedALSafeInteger(retry.maxAttempts, 0, 'captured retry attempts');
-        if (retry.retryDelayMs !== undefined) {
-            requirePersistedALSafeInteger(retry.retryDelayMs, 0, 'captured retry delay');
-        }
-    }
-    if (policy.repairTracking !== null) {
-        const repair = decodeALAdmissionRecord(policy.repairTracking, ['enabled', 'algo', 'maxAttempts']);
-        requirePersistedALBoolean(repair.enabled, 'captured repair tracking flag');
-        requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
-        if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
-            throw new TypeError('Captured repair algorithm is invalid');
-        }
-    }
-    if (policy.supersedenceTracking !== null) {
-        const supersedence = decodeALAdmissionRecord(policy.supersedenceTracking, ['enabled', 'algo'], [
-            'key',
-            'replacesMsgId'
-        ]);
-        requirePersistedALBoolean(supersedence.enabled, 'captured supersedence tracking flag');
-        requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
-        requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
-        if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
-            throw new TypeError('Captured supersedence algorithm is invalid');
-        }
-    }
+    decodeALOutboundCapturedRetry(policy.retryTracking);
+    decodeALOutboundCapturedRepair(policy.repairTracking);
+    decodeALOutboundCapturedSupersedence(policy.supersedenceTracking);
     return value as ALOutboundCapturedPolicy;
+}
+
+function decodeALOutboundCapturedRetry(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const retry = decodeALAdmissionRecord(value, ['enabled', 'maxAttempts'], ['retryDelayMs']);
+    requirePersistedALBoolean(retry.enabled, 'captured retry tracking flag');
+    requirePersistedALSafeInteger(retry.maxAttempts, 0, 'captured retry attempts');
+    if (retry.retryDelayMs !== undefined) {
+        requirePersistedALSafeInteger(retry.retryDelayMs, 0, 'captured retry delay');
+    }
+}
+
+function decodeALOutboundCapturedRepair(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const repair = decodeALAdmissionRecord(value, ['enabled', 'algo', 'maxAttempts']);
+    requirePersistedALBoolean(repair.enabled, 'captured repair tracking flag');
+    requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
+    if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
+        throw new TypeError('Captured repair algorithm is invalid');
+    }
+}
+
+function decodeALOutboundCapturedSupersedence(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const supersedence = decodeALAdmissionRecord(value, ['enabled', 'algo'], ['key', 'replacesMsgId']);
+    requirePersistedALBoolean(supersedence.enabled, 'captured supersedence tracking flag');
+    requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
+    requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
+    if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
+        throw new TypeError('Captured supersedence algorithm is invalid');
+    }
 }
 
 export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string): ALOutboundPendingAckSnapshot {

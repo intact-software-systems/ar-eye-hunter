@@ -75,7 +75,7 @@ export class WsQueueBoxServerLiveDelivery {
 
     /** Unicast scope is recipient policy, not proof that a local recipient exists. */
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
-        const { message, inboundScope } = input;
+        const { message } = input;
         if (validateLiveSendAuthority(input).length > 0) {
             return noRecipientResult(message);
         }
@@ -95,11 +95,19 @@ export class WsQueueBoxServerLiveDelivery {
             return noRecipientResult(message);
         }
 
-        const generations = new Map(
-            recipients.map((
-                recipient
-            ) => [recipient.connectionId, this.#socket.connections.get(recipient.connectionId)?.generationId])
-        );
+        return this.writeLiveRecipients(input, recipients, expiresAtMs);
+    }
+
+    private writeLiveRecipients(
+        input: WsServerLiveSendInputDto,
+        recipients: readonly WsServerResolvedRecipient[],
+        expiresAtMs: number | undefined
+    ): WsServerLiveSendResult {
+        const { message, inboundScope } = input;
+        const generations = new Map(recipients.map((recipient) => [
+            recipient.connectionId,
+            this.#socket.connections.get(recipient.connectionId)?.generationId
+        ]));
         const encodedAttempt = this.toEncodedAttempt(message);
         if (!encodedAttempt.encoded) {
             return encodingFailureResult(message, recipients, encodedAttempt.failureReason!);
@@ -193,10 +201,7 @@ export class WsQueueBoxServerLiveDelivery {
         for (const recipient of recipients) {
             if (
                 input.invalidatedSessionId !== undefined &&
-                (recipient.connectionId !== input.invalidatedSessionId ||
-                    !this.#socket.connections.get(recipient.connectionId)?.isOpen ||
-                    this.#socket.connections.get(recipient.connectionId)?.generationId !==
-                        generations.get(recipient.connectionId))
+                !this.isCurrentInvalidatedSession(recipient, input)
             ) {
                 continue;
             }
@@ -230,6 +235,16 @@ export class WsQueueBoxServerLiveDelivery {
             }
         }
         return { sentCount, failures, expired: false };
+    }
+
+    private isCurrentInvalidatedSession(
+        recipient: WsServerResolvedRecipient,
+        input: WsQueueBoxServerLiveDelivery.SendInput
+    ): boolean {
+        const connection = this.#socket.connections.get(recipient.connectionId);
+        return recipient.connectionId === input.invalidatedSessionId &&
+            connection?.isOpen === true &&
+            connection.generationId === input.generations.get(recipient.connectionId);
     }
 }
 

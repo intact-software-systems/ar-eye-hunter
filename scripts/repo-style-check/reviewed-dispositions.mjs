@@ -676,18 +676,40 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 105
     }),
-    // These reviewed owners keep one policy codec, one optimistic admission
-    // lifecycle, one RTC carrier coordinator, and one peer receive lifecycle
-    // respectively. Storage, frozen-audience policy, native submission and
-    // heartbeat implementation already have direct named owners; splitting the
-    // remaining coordination by metric would scatter the same causal path.
-    // The exact caps below cover cohesion/separation review, not exception-tier growth.
+    // Admission decoding keeps the stored identity and the captured dispatch
+    // policy together. Retry, repair, supersedence and acknowledgement fields
+    // each have a direct decoder; none owns another lifecycle or store.
+    // This exact warning-tier cap records that cohesion review, not permission
+    // to grow or to change the persisted contract.
     Object.freeze({
         path: 'packages/shared/alm/outbound/admission/al-outbound-admission-validation.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    // Live delivery owns the synchronous admission-to-socket attempt and its
+    // caller-visible result. Keeping generation capture, encoding, expiry,
+    // final authority checks and per-recipient failure accounting here exposes
+    // the one-attempt boundary without adding a transport facade or lifecycle.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    // Initial dispatch and repair share one frozen-audience planning owner.
+    // Recipient resolution, prepared delivery and receipt expectations remain
+    // adjacent so local socket availability cannot silently redefine the
+    // captured logical audience. The business workflow uses direct branches.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
         maximumMagnitude: 50
     }),
+    // These reviewed owners keep one optimistic admission lifecycle, one RTC
+    // carrier coordinator, and one peer receive lifecycle respectively.
+    // Storage, native submission and heartbeat have direct named owners.
     Object.freeze({
         path: 'packages/shared/alm/outbound/al-outbound-dispatch-admission.ts',
         rule: 'file.cognitive-load',

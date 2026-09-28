@@ -99,13 +99,11 @@ async function publishAuthorizedRallarServerWsMessage(
     const targets = input.message.targets;
     const roomTarget = targets?.mode === 'multicast' ||
         (targets?.mode === 'broadcast' && targets.scope === 'room');
-    if (input.livePublication && roomTarget) {
-        if (!readALTargetGroupRef(input.message)) {
-            return toFailedPublishResult(input, 'Room publication requires a full group reference.');
-        }
-        if (!input.audience) {
-            return toFailedPublishResult(input, 'Room publication has no authorized frozen audience.');
-        }
+    if (input.livePublication && roomTarget && !readALTargetGroupRef(input.message)) {
+        return toFailedPublishResult(input, 'Room publication requires a full group reference.');
+    }
+    if (input.livePublication && roomTarget && !input.audience) {
+        return toFailedPublishResult(input, 'Room publication has no authorized frozen audience.');
     }
     if (input.audience && !isAuthorizedRoomAudience(input.message, input.audience, input.nowEpochMs)) {
         return toFailedPublishResult(input, 'Room publication audience does not authorize the final message targets.');

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
-import { newALBroadcastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { WsQueueBoxServerDeliveryReporting } from '@shared/services/ws-queue-box-server/ws-queue-box-server-delivery-reporting.ts';
@@ -15,9 +15,15 @@ const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 const DIRECT_KEY = { topicId: 'snapshot', resourceId: 'room', contextId: 'event' };
 const CANONICAL_KEY = { ...DIRECT_KEY, topicId: 'AL_OUTBOUND_MESSAGE' };
 
+interface RoomProvenanceFixture {
+    readonly planner: WsQueueBoxServerOutboundPlanning;
+    readonly message: ALMessage;
+    readonly socket: JsonWebSocketServer;
+}
+
 describe('room publication identity at WS planning', () => {
     it('keeps canonical peer receipts while resolving the same direct audience as sessions', () => {
-        const { planner, message } = createFixture();
+        const { planner, message, socket } = createFixture();
         const request = {
             message,
             phase: 'dequeue' as const,
@@ -26,7 +32,13 @@ describe('room publication identity at WS planning', () => {
             recipientScope: SCOPE
         };
         const canonical = planner.planOutboundMessage({ ...request, referenceKey: CANONICAL_KEY });
-        expect(canonical.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'frozen', connectionId: 'peer-socket' }]);
+        expect(canonical.preparedMessages).toMatchObject([{
+            kind: 'scoped-recipient',
+            peerId: 'frozen',
+            connectionId: 'peer-socket',
+            recipientScope: SCOPE,
+            generationId: socket.connections.get('peer-socket')!.generationId
+        }]);
         expect(canonical.ackTracking?.expectedPeerIds).toEqual(['frozen']);
         const direct = planner.planOutboundMessage({ ...request, referenceKey: DIRECT_KEY });
         expect(direct.preparedMessages).toMatchObject([{ kind: 'scoped-recipient', peerId: 'frozen', connectionId: 'frozen', recipientScope: SCOPE }]);
@@ -34,7 +46,7 @@ describe('room publication identity at WS planning', () => {
     });
 
     it.each([CANONICAL_KEY, DIRECT_KEY])('repairs only the retained audience for $topicId', (referenceKey) => {
-        const { planner, message } = createFixture();
+        const { planner, message, socket } = createFixture();
         const repair = planner.planRepairMessage(message, {
             trigger: 'ack-timeout',
             repair: { enabled: true, algo: 'retransmit', maxAttempts: 2 },
@@ -46,9 +58,11 @@ describe('room publication identity at WS planning', () => {
             referenceKey
         });
         expect(repair?.preparedMessages).toMatchObject([{
-            kind: referenceKey === DIRECT_KEY ? 'scoped-recipient' : 'recipient',
+            kind: 'scoped-recipient',
             peerId: 'frozen',
-            connectionId: referenceKey === DIRECT_KEY ? 'frozen' : 'peer-socket'
+            connectionId: referenceKey === DIRECT_KEY ? 'frozen' : 'peer-socket',
+            recipientScope: SCOPE,
+            generationId: socket.connections.get(referenceKey === DIRECT_KEY ? 'frozen' : 'peer-socket')!.generationId
         }]);
         expect(repair?.ackTracking?.expectedPeerIds).toEqual(['frozen']);
     });
@@ -61,7 +75,7 @@ describe('room publication identity at WS planning', () => {
     });
 });
 
-function createFixture() {
+function createFixture(): RoomProvenanceFixture {
     const socket = new JsonWebSocketServer();
     for (const id of ['peer-socket', 'frozen', 'late']) {
         const native = new TestWebSocket(`ws://${id}`);

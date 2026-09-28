@@ -151,47 +151,51 @@ export class WsQueueBoxServerOutboundPlanning {
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
         const persist = shouldAwaitALRoute(normalized.effective);
         const resolveRecipients = phase === 'dequeue' || !persist;
-        return this.validateMessage(message, {
+        const resolved = this.readRecipients(message, {
             resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
             allowClusterRecipients: phase === 'dequeue' && clusterPublisherRegistered,
             audience,
             capturedSessions: directBroadcast || request.principalTargetId !== undefined ||
                 request.sessionInvalidation !== undefined
-        }).fold(
-            (error) =>
-                toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
-            (recipients) => ({
-                msg: message,
-                dropReasonCode: undefined,
-                persist,
-                preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
-                    ? toClusterPreparedMessages(message, recipients)
-                    : this.toRecipientPreparedMessages(
-                        message,
-                        recipients,
-                        {
-                            recipientScope,
-                            principalTargetId: request.principalTargetId,
-                            sessionInvalidation: request.sessionInvalidation
-                        }
-                    ),
-                ackTracking: toAckTrackingPlan(
-                    normalized.effective,
-                    resolveRecipients
-                        ? toExpectedPeerIds({ message, recipients, audience, effective: normalized.effective })
-                        : []
+        });
+        if (resolved.right === undefined) {
+            return toNoRouteDispatchPlan(
+                message,
+                `Invalid WS server outbound message ${message.id.msgId}: ${resolved.left}`
+            );
+        }
+        const recipients = resolved.right;
+        return {
+            msg: message,
+            dropReasonCode: undefined,
+            persist,
+            preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
+                ? toClusterPreparedMessages(message, recipients)
+                : this.toRecipientPreparedMessages(
+                    message,
+                    recipients,
+                    {
+                        recipientScope,
+                        principalTargetId: request.principalTargetId,
+                        sessionInvalidation: request.sessionInvalidation
+                    }
                 ),
-                repairTracking: toRepairTrackingPlan(normalized.effective),
-                supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
-                ...(admittedAudience === undefined ? {} : { admittedAudience }),
-                ...(request.sessionInvalidation === undefined
-                    ? {}
-                    : { sessionInvalidation: request.sessionInvalidation }),
-                ...(recipientScope === undefined ? {} : { recipientScope }),
-                ...(request.principalTargetId === undefined ? {} : { principalTargetId: request.principalTargetId })
-            })
-        );
+            ackTracking: toAckTrackingPlan(
+                normalized.effective,
+                resolveRecipients
+                    ? toExpectedPeerIds({ message, recipients, audience, effective: normalized.effective })
+                    : []
+            ),
+            repairTracking: toRepairTrackingPlan(normalized.effective),
+            supersedenceTracking: toSupersedenceTrackingPlan(normalized.effective, message),
+            ...(admittedAudience === undefined ? {} : { admittedAudience }),
+            ...(request.sessionInvalidation === undefined
+                ? {}
+                : { sessionInvalidation: request.sessionInvalidation }),
+            ...(recipientScope === undefined ? {} : { recipientScope }),
+            ...(request.principalTargetId === undefined ? {} : { principalTargetId: request.principalTargetId })
+        };
     }
 
     private toRecipientPreparedMessages(
@@ -297,7 +301,7 @@ export class WsQueueBoxServerOutboundPlanning {
         );
     }
 
-    private validateMessage(
+    private readRecipients(
         message: ALMessage,
         resolution: WsQueueBoxServerOutboundPlanning.RecipientResolution
     ): Either<string, readonly WsServerResolvedRecipient[]> {
@@ -427,13 +431,6 @@ function toAckTrackingPlan(
         nextHopPeerIds,
         mode: effective.ack.algo
     };
-}
-
-function toAdmittedPeerIds(
-    peerIds: readonly string[],
-    admittedAudience: readonly string[] | undefined
-): readonly string[] {
-    return admittedAudience === undefined ? peerIds : peerIds.filter((peerId) => admittedAudience.includes(peerId));
 }
 
 function toRepairTrackingPlan(
