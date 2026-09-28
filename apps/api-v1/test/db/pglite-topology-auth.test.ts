@@ -511,10 +511,18 @@ Deno.test(
             });
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
-            wsServer.addConnection(new ConnectionContext({ id: authority.sessionId, socket: wsSocket }));
+            const wsConnection = new ConnectionContext({ id: authority.sessionId, socket: wsSocket });
+            wsServer.addConnection(wsConnection);
             const wsService = createDefaultWsQueueBoxServerService({
                 outbox: new InMemoryQueueBox(new Map()),
                 socket: wsServer,
+                readAuthenticatedConnectionScope: (connection) =>
+                    connection === wsConnection && wsServer.connections.get(connection.id) === connection
+                        ? {
+                            scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
+                            expiresAtEpochMs: FUTURE_MS
+                        }
+                        : undefined,
                 name: 'pglite-ws-ingress'
             });
             try {
@@ -532,25 +540,50 @@ Deno.test(
                     createdAtEpochMs: nowEpochMs,
                     version: 1
                 };
+                const rttMessage = newALUntargetedMessage(
+                    authority.sessionId,
+                    newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                    AppTopics.rtt,
+                    rtt
+                );
                 const dispatchRtt = () =>
                     wsSocket.dispatchMessage(newALUntargetedMessage(
                         authority.sessionId,
-                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay-second'),
                         AppTopics.rtt,
                         rtt
                     ));
-                const rttPending = dispatchRtt();
+                const rttAdmission = await wsService.acceptIncomingMessage(rttMessage, authority.sessionId);
+                assert.deepEqual(rttAdmission.right, { kind: 'admitted' });
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
                     createApiV1TestQueueResilience()
                 );
-                await rttPending;
                 await new Promise((resolve) => setTimeout(resolve, 2));
                 await dispatchRtt();
                 await waitForWsIngressCaptures(wsIngressCapturedAt, 2);
                 assert.equal(wsIngressCapturedAt.length, 2);
                 assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
+
+                wsServer.addConnection(
+                    new ConnectionContext({
+                        id: authority.sessionId,
+                        socket: new PGliteTestSocket()
+                    })
+                );
+                await dispatchRtt();
+                assert.equal(wsIngressCapturedAt.length, 2);
+                const replacedAdmission = await wsService.acceptIncomingMessage(
+                    newALUntargetedMessage(
+                        authority.sessionId,
+                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replaced'),
+                        AppTopics.rtt,
+                        rtt
+                    ),
+                    authority.sessionId
+                );
+                assert.equal(replacedAdmission.left?.code, 'unauthorized');
 
                 assert.equal(
                     Number(
