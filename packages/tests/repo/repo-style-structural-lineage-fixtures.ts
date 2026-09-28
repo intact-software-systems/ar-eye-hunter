@@ -22,6 +22,17 @@ interface CreateSplitFixtureInput {
     readonly manifest?: boolean;
 }
 
+interface LineageSource {
+    readonly path: string;
+    readonly blob: string;
+}
+
+interface LineageEntry {
+    readonly mergeBase: string;
+    readonly source: LineageSource;
+    readonly targets: readonly string[];
+}
+
 interface LineageOverride {
     readonly mergeBase?: string;
     readonly sourcePath?: string;
@@ -65,7 +76,7 @@ export function createSplitFixture(input: CreateSplitFixtureInput): SplitFixture
     return fixture;
 }
 
-export function lineage(fixture: SplitFixture, override: LineageOverride = {}) {
+export function lineage(fixture: SplitFixture, override: LineageOverride = {}): LineageEntry {
     return {
         mergeBase: override.mergeBase ?? fixture.mergeBase,
         source: {
@@ -76,11 +87,11 @@ export function lineage(fixture: SplitFixture, override: LineageOverride = {}) {
     };
 }
 
-export function writeLineageManifest(root: string, lineages: readonly unknown[]): void {
+export function writeLineageManifest(root: string, lineages: readonly LineageEntry[]): void {
     writeLineageManifestAt(root, 'scripts/repo-style-check/lineages/example.json', lineages);
 }
 
-export function writeLineageManifestAt(root: string, relativePath: string, lineages: readonly unknown[]): void {
+export function writeLineageManifestAt(root: string, relativePath: string, lineages: readonly LineageEntry[]): void {
     writeFixture(root, relativePath, `${JSON.stringify({ version: 1, lineages }, null, 2)}\n`);
 }
 
