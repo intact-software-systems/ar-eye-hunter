@@ -237,6 +237,20 @@ skipped/duplicate/superseded outcomes do not inflate publication counts.
 Focused game and Relic tests, both game builds, the full unit suite, style,
 and independent re-review passed. This does not prove cluster publication.
 
+The approved public generic-unicast scope migration was attempted but not
+committed. The existing AL unicast target stores only a peer ID. Public
+`outbox` publication would therefore lose an explicit application/workspace
+scope during durable replay, and a guard on the common router path would also
+reject previously admitted inbound unicast before its persisted Source can
+prove scope. The interim edits were removed. This is a persisted-contract
+decision, not permission to silently downgrade durable delivery or retain an
+unscoped overload. Proposed narrow design, pending maintainer approval: capture
+authenticated scope in new WS inbound Source records and public unicast scope
+in the outbound sent policy; old rows without scoped proof fail closed only
+where that proof is required. No historical migration or AL wire-target change
+is proposed. After approval, implement the public API and common publisher
+atomically with tests for durable replay and admitted inbound unicast.
+
 Placement review after Task 1 found one notice-contract correction needed
 before publisher wiring: `all`/`world` AL targets have no application/workspace
 scope. Amend the codec and its focused tests so genuinely broad notices omit
