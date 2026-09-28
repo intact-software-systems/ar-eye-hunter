@@ -27,7 +27,6 @@ export function adoptGroupSnapshotsFromHeartbeat(
             decideGroupSnapshotCausalRevision(observed, returned);
             const renewed = isGroupHeartbeatSnapshotRenewal(observed, returned);
             const restoredSession = !renewed &&
-                groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group) === observed &&
                 isGroupHeartbeatSessionReappearance(observed, returned);
             if (renewed || restoredSession) {
                 const replacement = Object.is(observed, returned)

@@ -431,7 +431,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         unsubscribe();
     });
 
-    it('reconciles RTC peers when a current heartbeat restores a same-tuple room session', async () => {
+    it('reconciles RTC peers when a TTL-crossing heartbeat restores a same-tuple room session', async () => {
         const full = createGroupSnapshot({
             groupId: 'renewed-room',
             applicationId: 'app-1',
@@ -471,13 +471,21 @@ describe('browser state cache lifecycle scope filtering', () => {
         manager.acceptGroupUpdate.mockClear();
         listener.mockClear();
 
-        adoptGroupSnapshotsFromHeartbeat([observed], [renewed]);
-        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(heartbeatAtEpochMs + 61_001);
+            expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBeUndefined();
 
-        expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(renewed);
-        expect(listener).toHaveBeenCalledWith({ clients: [], groups: [renewed] });
+            adoptGroupSnapshotsFromHeartbeat([observed], [renewed]);
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
-        unsubscribe();
+            expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(renewed);
+            expect(listener).toHaveBeenCalledWith({ clients: [], groups: [renewed] });
+        }
+        finally {
+            vi.useRealTimers();
+            unsubscribe();
+        }
     });
 
     it('retains durable incomparable recovery across initialise and hydrate', async () => {

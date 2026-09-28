@@ -29,6 +29,7 @@ import {
     onGroupStateSnapshotChange,
     readableGroupStateSnapshotCache,
     removeGroupStateSnapshotIfUnchanged,
+    replaceGroupStateSnapshotIfUnchanged,
     setGroupStateSnapshot,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -218,6 +219,63 @@ describe('browser group authority retention', () => {
         expect(findGroupStateSnapshotsBySessionIds(['origin'])).toEqual([returned]);
     });
 
+    it('restores a same-tuple room session when the in-flight heartbeat crosses the cache TTL', () => {
+        const full = withLeasePairs(createRoomAuthority(120_000, 20_000), [
+            [20_000, 25_000],
+            [20_000, 120_000]
+        ]);
+        const observed = withActiveSessions(full, [full.activeSessions[1]!]);
+        const returned = withLeasePairs(full, [
+            [60_000, 150_000],
+            [60_000, 150_000]
+        ]);
+        vi.setSystemTime(30_000);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+
+        vi.setSystemTime(50_000);
+        const observedBeforeHeartbeat = getAllGroupStateSnapshots();
+        expect(observedBeforeHeartbeat).toEqual([observed]);
+        vi.setSystemTime(91_001);
+        expect(readRtcRoomAuthority()).toBeUndefined();
+
+        adoptGroupSnapshotsFromHeartbeat(observedBeforeHeartbeat, [returned]);
+
+        expect(readRtcRoomAuthority()).toBe(returned);
+        expect(findGroupStateSnapshotsBySessionIds(['origin'])).toEqual([returned]);
+    });
+
+    it('does not let a delayed same-tuple expansion overwrite concurrent lease renewal after cache TTL', () => {
+        const full = createRoomAuthority(120_000, 20_000);
+        const observed = withActiveSessions(full, [full.activeSessions[1]!]);
+        const returned = withLeasePairs(full, [
+            [30_000, 140_000],
+            [30_000, 140_000]
+        ]);
+        const concurrent = withLeasePairs(observed, [[40_000, 160_000]]);
+        vi.setSystemTime(30_000);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+        vi.setSystemTime(91_001);
+        expect(readRtcRoomAuthority()).toBeUndefined();
+        expect(replaceGroupStateSnapshotIfUnchanged(observed, concurrent)).toBe(true);
+
+        adoptGroupSnapshotsFromHeartbeat([observed], [returned]);
+
+        expect(readRtcRoomAuthority()).toBe(concurrent);
+    });
+
+    it('adopts a trusted same-tuple expansion across cache TTL when session timestamps tie', () => {
+        const full = createRoomAuthority(120_000, 30_000);
+        const observed = withActiveSessions(full, [full.activeSessions[1]!]);
+        vi.setSystemTime(30_000);
+        expect(observeGroupStateSnapshot(observed)).toBe('inserted');
+        vi.setSystemTime(91_001);
+        expect(readRtcRoomAuthority()).toBeUndefined();
+
+        adoptGroupSnapshotsFromHeartbeat([observed], [full]);
+
+        expect(readRtcRoomAuthority()).toBe(full);
+    });
+
     it.each([
         {
             caseName: 'an older lease pair',
@@ -259,17 +317,6 @@ describe('browser group authority retention', () => {
                     lastHeartbeatAtEpochMs: 10_000,
                     expiresAtEpochMs: 130_000
                 }])
-        },
-        {
-            caseName: 'an expanded session inventory',
-            candidate: (current: GroupSnapshot) =>
-                withActiveSessions(current, [
-                    ...current.activeSessions,
-                    {
-                        ...current.activeSessions[0]!,
-                        sessionId: 'origin-other-session'
-                    }
-                ])
         }
     ])('does not revive expired authority from $caseName', ({ candidate }) => {
         const current = createRoomAuthority(120_000, 20_000);
