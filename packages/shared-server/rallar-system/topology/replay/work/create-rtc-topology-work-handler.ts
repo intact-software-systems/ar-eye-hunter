@@ -196,8 +196,8 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
-    const computedWrite = computeRtcTopologyWorkWrite(writeInput);
-    const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
+    const computedWrite = await computeRtcTopologyWorkWrite(writeInput);
+    const issues = await validateRtcTopologyWorkWrite(writeInput, computedWrite);
     if (issues[0] !== undefined) {
         throw issues[0].cause;
     }

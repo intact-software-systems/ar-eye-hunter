@@ -8,6 +8,11 @@ import {
 } from '../../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyMutationComputed } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
+import {
+    computeRtcTopologyOutboxProvenance,
+    writeRtcTopologyOutboxProvenance,
+    type RtcTopologyOutboxProvenanceInsert
+} from '../../publication/rtc-topology-outbox-provenance.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
     computeRtcTopologyPublicationOutboxWrites
@@ -33,13 +38,21 @@ export interface RtcTopologyPublicationTransactionWrite {
     readonly reservationFinish: ResourceInboxReservationFinish;
 }
 
+export interface RtcTopologyPublicationDeliveryWrite {
+    readonly outboxWrites: readonly AppOutboxInsert[];
+    readonly provenanceWrites: readonly RtcTopologyOutboxProvenanceInsert[];
+    readonly deliveryAppend: RtcTopologyDeliveryAppend | null;
+}
+
+interface RtcTopologyPublicationTransactionDependencies {
+    readonly database: PSqlSql;
+    readonly executionRepository: RtcTopologyExecutionRepository;
+    readonly deliveryAppend: RtcTopologyDeliveryAppendPort | undefined;
+}
+
 /** Executes only computed writes; immutable delivery and reservation completion are atomic. */
 export async function writeRtcTopologyPublicationTransaction(
-    options: Readonly<{
-        database: PSqlSql;
-        executionRepository: RtcTopologyExecutionRepository;
-        deliveryAppend: RtcTopologyDeliveryAppendPort | undefined;
-    }>,
+    options: RtcTopologyPublicationTransactionDependencies,
     computed: RtcTopologyPublicationTransactionWrite
 ): Promise<void> {
     try {
@@ -80,18 +93,14 @@ export async function writeRtcTopologyPublicationTransaction(
     }
 }
 
-export interface RtcTopologyPublicationDeliveryWrite {
-    readonly outboxWrites: readonly AppOutboxInsert[];
-    readonly deliveryAppend: RtcTopologyDeliveryAppend | null;
-}
-
-export function computeRtcTopologyPublicationDeliveryWrite(
+export async function computeRtcTopologyPublicationDeliveryWrite(
     publication: RtcTopologyPublication,
     publisherStreamId: string | undefined
-): RtcTopologyPublicationDeliveryWrite {
+): Promise<RtcTopologyPublicationDeliveryWrite> {
     const outboxWrites = computeRtcTopologyPublicationOutboxWrites(publication);
     return {
         outboxWrites,
+        provenanceWrites: await computeRtcTopologyOutboxProvenance(publication, outboxWrites),
         deliveryAppend: publisherStreamId === undefined
             ? null
             : computeRtcTopologyDeliveryAppend(
@@ -110,6 +119,7 @@ export async function writePublicationDelivery(
     for (const write of computed.outboxWrites) {
         await writeAppOutboxInsert(transaction, write);
     }
+    await writeRtcTopologyOutboxProvenance(transaction, computed.provenanceWrites);
     if (!append || computed.deliveryAppend === null) {
         return;
     }
