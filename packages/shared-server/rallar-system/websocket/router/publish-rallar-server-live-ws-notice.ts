@@ -7,7 +7,7 @@ import {
     type LiveWsInboundReference,
     type LiveWsPublicationInput
 } from '../../queue-pubsub/live-ws-notice.ts';
-import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
+import type { ResolvedRallarServerWsPublication } from './publish-rallar-server-ws-message.ts';
 import { resolveAuthorizedRoomSessionIds } from './rallar-server-ws-publication-audience.ts';
 import type { RallarServerWsPublishResult } from './rallar-server-ws-router-contracts.ts';
 
@@ -22,7 +22,7 @@ interface ToLiveWsPublicationInput {
 }
 
 export async function publishRallarServerLiveWsNotice(
-    input: PublishRallarServerWsMessageInput,
+    input: ResolvedRallarServerWsPublication,
     effective: ALQosEffectivePolicy
 ): Promise<RallarServerWsPublishResult> {
     const publication = input.livePublication;
@@ -85,7 +85,7 @@ function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): LiveWsPublic
 }
 
 function sendLocalPublishedLiveWsNotice(
-    input: PublishRallarServerWsMessageInput,
+    input: ResolvedRallarServerWsPublication,
     notice: LiveWsPublicationInput
 ): string | undefined {
     try {
@@ -108,7 +108,7 @@ function sendLocalPublishedLiveWsNotice(
 }
 
 async function readLiveWsPublicationAudience(
-    input: PublishRallarServerWsMessageInput
+    input: ResolvedRallarServerWsPublication
 ): Promise<LiveWsAudience | undefined> {
     const targets = input.message.targets;
     if (!targets) {
@@ -169,6 +169,6 @@ function readLiveWsPublicationScope(message: ALMessage, inboundScope: StateScope
     throw new TypeError('Scoped live WS publication has no full recipient scope.');
 }
 
-function failedLivePublication(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {
+function failedLivePublication(input: ResolvedRallarServerWsPublication, reason: string): RallarServerWsPublishResult {
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
 }

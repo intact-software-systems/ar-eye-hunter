@@ -83,7 +83,7 @@ export namespace RallarServerWsRouter {
 
     export interface PublishToFanoutInputDto {
         readonly message: ALMessage;
-        readonly fanout: RallarServerWsFanout;
+        readonly fanout: RallarServerWsFanout | undefined;
         readonly audience?: PublishAudience;
         readonly inboundScope?: StateScope | null;
         readonly origin?: 'server' | 'proxy' | 'admitted';
@@ -96,7 +96,7 @@ export class RallarServerWsRouter {
     private readonly maxPayloadBytes: number;
     private readonly sendNacks: boolean;
     private readonly allowImplicitUserTopics: boolean;
-    private readonly defaultFanout: RallarServerWsFanout;
+    private readonly defaultFanout: RallarServerWsFanout | undefined;
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
     private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
@@ -117,7 +117,7 @@ export class RallarServerWsRouter {
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
-        this.defaultFanout = options.defaultFanout ?? 'live-only';
+        this.defaultFanout = options.defaultFanout;
         this.authorizeRoomMessage = options.authorizeRoomMessage;
         this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
@@ -401,7 +401,7 @@ export class RallarServerWsRouter {
     }
 
     private toMessageProxy(
-        fanout: RallarServerWsFanout,
+        fanout: RallarServerWsFanout | undefined,
         inboundScope: StateScope | null | undefined
     ): RallarServerWsMessageContext['proxy'] {
         return {

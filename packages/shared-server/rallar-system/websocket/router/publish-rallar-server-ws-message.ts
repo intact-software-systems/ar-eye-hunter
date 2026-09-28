@@ -1,13 +1,8 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { shouldAwaitALRoute } from '@shared/al-contracts/al-policy.ts';
-import {
-    hasALDeliveryDurableWork,
-    type ALDeliveryAdmissionVerdict
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { shouldAwaitALRoute, type ALQosNormalizationResult } from '@shared/al-contracts/al-policy.ts';
+import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
@@ -16,11 +11,14 @@ import {
     readRallarServerWsPublicationAudience,
     resolveAuthorizedRoomSessionIds
 } from './rallar-server-ws-publication-audience.ts';
+import {
+    toRallarServerWsLivePublishResult,
+    toRallarServerWsOutboxPublishResult
+} from './rallar-server-ws-publish-result.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
-    RallarServerWsPublishStatus,
     RallarServerWsRoomAudience,
     RallarServerWsRouterOptions
 } from './rallar-server-ws-router-contracts.ts';
@@ -28,7 +26,7 @@ import type {
 export interface PublishRallarServerWsMessageInput {
     readonly service: WsQueueBoxServerService;
     readonly message: ALMessage;
-    readonly fanout: RallarServerWsFanout;
+    readonly fanout: RallarServerWsFanout | undefined;
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
     readonly admittedPeerIds?: readonly string[];
@@ -39,6 +37,10 @@ export interface PublishRallarServerWsMessageInput {
     readonly inbound?: LiveWsInboundReference;
     readonly origin?: 'server' | 'proxy' | 'admitted';
     readonly authorizeRoomMessage?: RallarServerWsRouterOptions['authorizeRoomMessage'];
+}
+
+export interface ResolvedRallarServerWsPublication extends PublishRallarServerWsMessageInput {
+    readonly fanout: RallarServerWsFanout;
 }
 
 /** A malformed call is a programmer error, before operational audience reads can fail. */
@@ -58,30 +60,34 @@ export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInp
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
-    let audience = input.audience;
+    const normalized = input.fanout === 'none' ? undefined : input.service.resolveOutboundPolicy(input.message);
+    const fanout = input.fanout ?? (normalized && shouldAwaitALRoute(normalized.effective) ? 'outbox' : 'live-only');
+    const publication: ResolvedRallarServerWsPublication = { ...input, fanout };
+    let audience = publication.audience;
     if (audience === undefined) {
         try {
             audience = await readRallarServerWsPublicationAudience({
-                message: input.message,
-                fanout: input.fanout,
-                origin: input.origin,
-                authorizeRoomMessage: input.authorizeRoomMessage,
-                readServerRoomAudience: input.livePublication?.readServerRoomAudience
+                message: publication.message,
+                fanout: publication.fanout,
+                origin: publication.origin,
+                authorizeRoomMessage: publication.authorizeRoomMessage,
+                readServerRoomAudience: publication.livePublication?.readServerRoomAudience
             });
         }
         catch (error) {
             // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
-            if (input.origin !== undefined) {
+            if (publication.origin !== undefined) {
                 throw error;
             }
-            return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
+            return toFailedPublishResult(publication, error instanceof Error ? error.message : String(error));
         }
     }
-    return await publishAuthorizedRallarServerWsMessage({ ...input, audience });
+    return await publishAuthorizedRallarServerWsMessage({ ...publication, audience }, normalized);
 }
 
 async function publishAuthorizedRallarServerWsMessage(
-    input: PublishRallarServerWsMessageInput
+    input: ResolvedRallarServerWsPublication,
+    normalized: ALQosNormalizationResult | undefined
 ): Promise<RallarServerWsPublishResult> {
     if (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(input.inboundScope).length > 0) {
         return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
@@ -103,25 +109,25 @@ async function publishAuthorizedRallarServerWsMessage(
     if (input.audience && !isAuthorizedRoomAudience(input.message, input.audience, input.nowEpochMs)) {
         return toFailedPublishResult(input, 'Room publication audience does not authorize the final message targets.');
     }
-    const normalized = input.service.resolveOutboundPolicy(input.message);
-    if (normalized.unmetRequirements.length > 0) {
-        return toFailedPublishResult(input, normalized.unmetRequirements.join('; '));
+    const policy = normalized ?? input.service.resolveOutboundPolicy(input.message);
+    if (policy.unmetRequirements.length > 0) {
+        return toFailedPublishResult(input, policy.unmetRequirements.join('; '));
     }
-    const requiresDurableWork = shouldAwaitALRoute(normalized.effective);
-    if (normalized.effective.delivery.algo !== 'best-effort' && !requiresDurableWork) {
+    const requiresDurableWork = shouldAwaitALRoute(policy.effective);
+    if (policy.effective.delivery.algo !== 'best-effort' && !requiresDurableWork) {
         return toFailedPublishResult(input, 'Effective delivery requires durable outbound work.');
     }
     if (requiresDurableWork && input.fanout !== 'outbox') {
         return toFailedPublishResult(input, 'Explicit live-only fanout is incompatible with durable outbound work.');
     }
     if (!requiresDurableWork && input.livePublication) {
-        return await publishRallarServerLiveWsNotice(input, normalized.effective);
+        return await publishRallarServerLiveWsNotice(input, policy.effective);
     }
     return await publishRallarServerWsFanout(input);
 }
 
 async function publishRallarServerWsFanout(
-    input: PublishRallarServerWsMessageInput
+    input: ResolvedRallarServerWsPublication
 ): Promise<RallarServerWsPublishResult> {
     switch (input.fanout) {
         case 'none':
@@ -135,7 +141,7 @@ async function publishRallarServerWsFanout(
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
-            return toOutboxPublishResult(input.message, input.fanout, result);
+            return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
             const result = input.service.sendToTargetsWithResult({
@@ -152,12 +158,12 @@ async function publishRallarServerWsFanout(
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
             }
-            return toLivePublishResult(input.message, input.fanout, result);
+            return toRallarServerWsLivePublishResult(input.message, input.fanout, result);
         }
     }
 }
 
-function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {
+function toFailedPublishResult(input: ResolvedRallarServerWsPublication, reason: string): RallarServerWsPublishResult {
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
 }
 
@@ -167,67 +173,9 @@ function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason:
  * be connected to the instance that dequeues it (D24, D43). The wire message stays as the origin sent it,
  * so a room larger than the collection limit still fans out.
  */
-function toAdmittedAudience(input: PublishRallarServerWsMessageInput): readonly string[] | undefined {
+function toAdmittedAudience(input: ResolvedRallarServerWsPublication): readonly string[] | undefined {
     const { message, audience, admittedPeerIds } = input;
     return audience === undefined
         ? undefined
         : resolveAuthorizedRoomSessionIds({ message, audience, admittedPeerIds, nowEpochMs: input.nowEpochMs });
-}
-
-function toLivePublishResult(
-    message: ALMessage,
-    fanout: RallarServerWsFanout,
-    result: WsServerLiveSendResult
-): RallarServerWsPublishResult {
-    return {
-        fanout,
-        status: result.status,
-        message,
-        sentCount: result.sentCount,
-        recipientCount: result.recipientCount,
-        failedCount: result.failedCount,
-        recipients: result.recipients,
-        failures: result.failures,
-        entries: []
-    };
-}
-
-function toOutboxPublishResult(
-    message: ALMessage,
-    fanout: RallarServerWsFanout,
-    result: ALOutboundEnqueueResult
-): RallarServerWsPublishResult {
-    return {
-        fanout,
-        status: toOutboxPublishStatus(result.verdict),
-        message,
-        entry: result.entry,
-        entries: result.entries,
-        verdict: result.verdict,
-        reason: result.reason
-    };
-}
-
-function toOutboxPublishStatus(
-    verdict: ALDeliveryAdmissionVerdict
-): RallarServerWsPublishStatus {
-    switch (verdict.kind) {
-        case 'admitted':
-        case 'pending':
-            return 'queued-outbox';
-        case 'duplicate':
-            return 'duplicate';
-        case 'refused':
-            return verdict.reason === 'unauthorized' ? 'skipped' : 'failed';
-        case 'unroutable':
-            return verdict.reason;
-        // An enqueue-time deferred writes no outbox row, so it reports the same status as skipped.
-        case 'deferred':
-            return 'skipped';
-        case 'superseded':
-        case 'expired':
-        case 'skipped':
-        case 'failed':
-            return verdict.kind;
-    }
 }
