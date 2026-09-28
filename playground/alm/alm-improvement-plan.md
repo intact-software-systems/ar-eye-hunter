@@ -1117,7 +1117,7 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
   (P1, I2a, and I2b, the last conditional) with the later releases renumbered 5 to 8, the release 4
   conformance families, matrix rows Q1–Q3, and the storage-budget rule under "Validation and
   performance".
-- 2026-09-28 (spike): the storage spike's findings recorded in the QoS plan's section 7.5 (harness
-  on the throwaway branch `claude/alm-perf-spike`). D86 re-ranks P1's levers: the Temporal polyfill
+- 2026-09-28 (spike): the storage spike's findings recorded in the QoS plan's section 7.5 (the
+  throwaway harness is deleted). D86 re-ranks P1's levers: the Temporal polyfill
   first, then sequential transactions, then commit batching. It drops the transaction durability
   hint, amending D82.

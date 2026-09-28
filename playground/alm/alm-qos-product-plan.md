@@ -238,8 +238,8 @@ rows that changed.
 
 - **Environment.** Measured on `bdb3ecd8b` in headless Chromium 149, driven by Playwright 1.61, on
   an Apple M2 Max running macOS.
-- **Harness.** The harness is on the throwaway branch `claude/alm-perf-spike` (`68f09e378`,
-  `tmp/perf/alm-spike/`).
+- **Harness.** A throwaway harness produced these figures, and it was deleted once they were
+  recorded. The bullets below describe its method.
 - **What runs.** It uses ALM's real durable outbound path, the lane's readiness probe, and raw
   IndexedDB transactions.
 - **Samples.** Each configuration ran three times, with 90 durable sends after warm-up.
