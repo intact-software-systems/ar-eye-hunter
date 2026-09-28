@@ -70,7 +70,10 @@ import {
     NEVER_EXPIRE_TS,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
+import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import {
     connectCommand,
     disconnectCommand,
@@ -149,7 +152,7 @@ describe('ClientStateInboxHandler phases', () => {
             }, false)
         } as const;
         const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000 };
-        const computed = computeClientMutationOperation({
+        const computed = await computeClientMutationOperation({
             command,
             read,
             completionFacts,
@@ -159,7 +162,7 @@ describe('ClientStateInboxHandler phases', () => {
             throw new TypeError('Expected a completed disconnect computation');
         }
 
-        expect(() =>
+        await expect(
             assertClientMutationOperation({
                 command,
                 read,
@@ -167,7 +170,7 @@ describe('ClientStateInboxHandler phases', () => {
                 lifecycle,
                 computed: { ...computed, lifecycleComputed: undefined }
             })
-        ).toThrow(/lifecycleComputed/);
+        ).rejects.toThrow(/lifecycleComputed/);
     });
 
     it.each([
@@ -595,6 +598,9 @@ function createHandlerMutationService(
 function createHandlerTransactionWriter(
     { actions, writesByTransaction }: ClientHandlerMutationObservations
 ): ClientStateInboxHandler.Input['transactionWriter'] {
+    const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults(), {
+        runtimeRepository: new FakeRuntimeStateRepository()
+    });
     return {
         readCompletionFacts: (context) => {
             actions.push('completion.read');
@@ -603,7 +609,7 @@ function createHandlerTransactionWriter(
         writeComputedMutation: async (_context, computed, write) => {
             actions.push('transaction');
             writesByTransaction.push(0);
-            await write({} as PSqlSql);
+            await database.begin(write);
             actions.push('commit');
             return computed.durableResult;
         }
@@ -657,7 +663,7 @@ function currentSessionRead(
 }
 
 function currentPrincipal(command: CurrentSessionCommand): ClientPrincipal {
-    const principal: ClientPrincipal = {
+    return {
         ...command.aggregateRef,
         username: command.aggregateRef.principalId,
         displayName: null,
@@ -676,7 +682,6 @@ function currentPrincipal(command: CurrentSessionCommand): ClientPrincipal {
         deleted: null,
         lastSeenAtEpochMs: 700
     };
-    return principal;
 }
 
 function currentInstance(command: CurrentSessionCommand): ClientInstance {
@@ -838,7 +843,7 @@ function createContext<Result>(
         },
         entry,
         attemptTelemetry: computeResourceInboxAttempt({
-            entry: entry,
+            entry,
             selectedLane: Reservator.NEW,
             selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
             selectedDueAtEpochMs: undefined

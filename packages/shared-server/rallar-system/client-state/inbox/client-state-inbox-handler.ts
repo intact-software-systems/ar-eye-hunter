@@ -17,6 +17,7 @@ import {
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
 import {
+    timeClientStateMutationAsyncPhase,
     timeClientStateMutationCommit,
     timeClientStateMutationPhase,
     type ClientStateMutationTiming
@@ -33,6 +34,7 @@ import { toDisconnectClientSessionMutationInput } from '../mutation/command-inpu
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -107,7 +109,12 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const command = await this.toCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.measureMutationComputation({ command, read, completionFacts, lifecycle: undefined });
+        const computed = await this.measureMutationComputation({
+            command,
+            read,
+            completionFacts,
+            lifecycle: undefined
+        });
         if (computed.outcome === 'idempotency-conflict') {
             throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
@@ -125,7 +132,7 @@ export class ClientStateInboxHandler {
         const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
         const command = await this.toAuthorisedWsConnectCommand(context, connection);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.measureAuthorisedConnectComputation({
+        const computed = await this.measureAuthorisedConnectComputation({
             connection,
             command,
             read,
@@ -173,7 +180,7 @@ export class ClientStateInboxHandler {
                     await this.dependencies.sessionGenerationLifecycle.write(transaction, computed.lifecycleComputed)
             );
         }
-        const computed = this.measureMutationComputation({
+        const computed = await this.measureMutationComputation({
             command,
             read,
             completionFacts,
@@ -194,7 +201,7 @@ export class ClientStateInboxHandler {
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const page = await this.dependencies.expiryCandidates.readExpiredSessionPage(input);
         const reads = await this.readExpiredSessionMutations(context, page.candidates);
-        const computed = this.measureExpiredSessionsComputation({
+        const computed = await this.measureExpiredSessionsComputation({
             context,
             pageInput: input,
             page,
@@ -231,34 +238,36 @@ export class ClientStateInboxHandler {
         return reads;
     }
 
-    private measureMutationComputation(input: ComputeClientMutationOperationInput): ClientMutationOperationComputed {
+    private async measureMutationComputation(
+        input: ComputeClientMutationOperationInput
+    ): Promise<ClientMutationOperationComputed> {
         const { command, read } = input;
-        const computed = timeClientStateMutationPhase(
+        const computed = await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
             () => computeClientMutationOperation(input)
         );
-        timeClientStateMutationPhase(
+        await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () => {
-                assertClientMutationOperation({ ...input, computed });
+            async () => {
+                await assertClientMutationOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
             }
         );
         return computed;
     }
 
-    private measureAuthorisedConnectComputation(
+    private async measureAuthorisedConnectComputation(
         input: ComputeAuthorisedWsConnectOperationInput
-    ): AuthorisedWsConnectOperationComputed {
+    ): Promise<AuthorisedWsConnectOperationComputed> {
         const { command, read } = input;
-        const computed = timeClientStateMutationPhase(
+        const computed = await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
             () => computeAuthorisedWsConnectOperation(input)
         );
-        timeClientStateMutationPhase(
+        await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () => {
-                assertAuthorisedWsConnectOperation({ ...input, computed });
+            async () => {
+                await assertAuthorisedWsConnectOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(validateClientMutationAuthorityPolicy(command, read));
             }
         );
@@ -283,23 +292,23 @@ export class ClientStateInboxHandler {
         return computed;
     }
 
-    private measureExpiredSessionsComputation(
+    private async measureExpiredSessionsComputation(
         input: ComputeExpiredSessionsOperationInput
-    ): ExpiredSessionsOperationComputed {
+    ): Promise<ExpiredSessionsOperationComputed> {
         const firstRead = input.reads[0];
         if (!firstRead) {
-            const computed = computeExpiredSessionsOperation(input);
-            assertExpiredSessionsOperation({ ...input, computed });
+            const computed = await computeExpiredSessionsOperation(input);
+            await assertExpiredSessionsOperation({ ...input, computed });
             return computed;
         }
-        const computed = timeClientStateMutationPhase(
+        const computed = await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.compute' },
             () => computeExpiredSessionsOperation(input)
         );
-        timeClientStateMutationPhase(
+        await timeClientStateMutationAsyncPhase(
             { timing: this.dependencies.mutationTiming, command: firstRead.command, operation: 'mutation.validate' },
-            () => {
-                assertExpiredSessionsOperation({ ...input, computed });
+            async () => {
+                await assertExpiredSessionsOperation({ ...input, computed });
                 throwFirstClientMutationValidationIssue(
                     input.reads.flatMap(({ command, read }) => validateClientMutationAuthorityPolicy(command, read))
                 );
@@ -326,6 +335,7 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
+                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                     }
                 )
         );
@@ -345,6 +355,7 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
+                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                         if (computed.successorWrite !== null) {
                             await this.dependencies.expiryContinuationWriter.write(
                                 transaction,

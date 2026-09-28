@@ -42,6 +42,10 @@ import type {
 } from '../mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationComparison } from '../mutation/result-validation/assert-client-mutation.ts';
+import {
+    computeClientSnapshotProvenance,
+    type ClientSnapshotProvenanceInsert
+} from '../persistence/client-snapshot-provenance.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
@@ -74,6 +78,7 @@ export type ClientMutationOperationComputed =
         durableResult: ClientStateWritten;
         completion: AppInboxCompletionComputed<ClientStateWritten>;
         writes: readonly ClientMutationComputedWrite[];
+        sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
     }>;
 
@@ -102,6 +107,7 @@ export type ExpiredSessionsOperationComputed =
         durableResult: readonly ClientStateWritten[];
         completion: AppInboxCompletionComputed<readonly ClientStateWritten[]>;
         writes: readonly ClientMutationComputedWrite[];
+        sidecarWrites: readonly ClientSnapshotProvenanceInsert[];
         committedSnapshots: readonly ClientSnapshot[];
         successorWrite: AppOutboxInsert | null;
     }>;
@@ -177,9 +183,9 @@ interface AssertExpiredSessionsOperationInput {
     readonly computed: ExpiredSessionsOperationComputed;
 }
 
-export function computeClientMutationOperation(
+export async function computeClientMutationOperation(
     input: ComputeClientMutationOperationInput
-): ClientMutationOperationComputed {
+): Promise<ClientMutationOperationComputed> {
     const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
@@ -203,14 +209,15 @@ export function computeClientMutationOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
+        sidecarWrites: await computeClientSnapshotProvenance(mutation, input.command.facts.serviceId),
         committedSnapshots: [mutation.snapshot]
     };
 }
 
-export function assertClientMutationOperation(
+export async function assertClientMutationOperation(
     input: AssertClientMutationOperationInput
-): void {
-    const expected = computeClientMutationOperation(input);
+): Promise<void> {
+    const expected = await computeClientMutationOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
@@ -224,9 +231,9 @@ export function assertClientMutationOperation(
     });
 }
 
-export function computeAuthorisedWsConnectOperation(
+export async function computeAuthorisedWsConnectOperation(
     input: ComputeAuthorisedWsConnectOperationInput
-): AuthorisedWsConnectOperationComputed {
+): Promise<AuthorisedWsConnectOperationComputed> {
     if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
         const durableResult = {
             status: 'inactive',
@@ -259,14 +266,15 @@ export function computeAuthorisedWsConnectOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: requiresClientWrite(mutation) ? [mutation] : [],
+        sidecarWrites: await computeClientSnapshotProvenance(mutation, input.command.facts.serviceId),
         committedSnapshots: [mutation.snapshot]
     };
 }
 
-export function assertAuthorisedWsConnectOperation(
+export async function assertAuthorisedWsConnectOperation(
     input: AssertAuthorisedWsConnectOperationInput
-): void {
-    const expected = computeAuthorisedWsConnectOperation(input);
+): Promise<void> {
+    const expected = await computeAuthorisedWsConnectOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
@@ -312,9 +320,9 @@ export function assertMissingSessionDisconnect(
     );
 }
 
-export function computeExpiredSessionsOperation(
+export async function computeExpiredSessionsOperation(
     input: ComputeExpiredSessionsOperationInput
-): ExpiredSessionsOperationComputed {
+): Promise<ExpiredSessionsOperationComputed> {
     const mutations = input.reads.map(({ command, read }) => computeClientMutation({ command, read }));
     if (mutations.some((mutation) => mutation.outcome === 'idempotency-conflict')) {
         return { outcome: 'idempotency-conflict', mutations };
@@ -331,15 +339,20 @@ export function computeExpiredSessionsOperation(
         durableResult,
         completion: computeCompletion(input.completionFacts, durableResult),
         writes: completedMutations.filter(requiresClientWrite),
+        sidecarWrites: (await Promise.all(
+            completedMutations.map((mutation, index) =>
+                computeClientSnapshotProvenance(mutation, input.reads[index]!.command.facts.serviceId)
+            )
+        )).flat(),
         committedSnapshots: applied.map((mutation) => mutation.snapshot),
         successorWrite: computeExpiredSessionSuccessorWrite(input)
     };
 }
 
-export function assertExpiredSessionsOperation(
+export async function assertExpiredSessionsOperation(
     input: AssertExpiredSessionsOperationInput
-): void {
-    const expected = computeExpiredSessionsOperation(input);
+): Promise<void> {
+    const expected = await computeExpiredSessionsOperation(input);
     assertExactOperationComputed(
         expected,
         input.computed,
@@ -421,16 +434,15 @@ function computeExpiredSessionSuccessorEntry(
         resourceId: `expire-client-sessions:${pageInput.atEpochMs}:${nextAfterKey}`,
         contextId: context.entry.key.contextId
     });
-    const successorInput: ClientExpiredSessionPageInput = {
-        atEpochMs: pageInput.atEpochMs,
-        afterKey: nextAfterKey
-    };
     const enqueue = {
         ...context.enqueue,
         topicId: key.topicId,
         resourceId: key.resourceId,
         contextId: key.contextId,
-        data: encodeAppInboxCommand(successorInput, 'Expired client sessions AppInbox continuation')
+        data: encodeAppInboxCommand(
+            { atEpochMs: pageInput.atEpochMs, afterKey: nextAfterKey },
+            'Expired client sessions AppInbox continuation'
+        )
     };
     const message: ALMessage = {
         id: {
