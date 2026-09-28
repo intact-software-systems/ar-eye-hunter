@@ -32,6 +32,7 @@
 
 ## High-Signal Docs
 
+- `docs/product.md`: what Rallar is, the subproducts, and which products it fits.
+- `docs/architecture.md`: current architectural choices and the alternatives they refuse.
 - `docs/rallar-api-reference.md`: browser facade, room transport helpers, Rallar Motion, CRDT, data, middleware.
 - `docs/environment-variables.md`: app/server env conventions.
-- `docs/rallar-product-and-implementation-evaluation.md`: product review context.

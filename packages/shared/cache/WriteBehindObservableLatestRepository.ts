@@ -1,4 +1,5 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
+import { toError } from '../resilience/to-error.ts';
 import { ObservableLatestRepository, type ObservableLatestRepositoryOptions } from './ObservableLatestRepository.ts';
 import type { ObservableLatestValue } from './ObservableLatestValue.ts';
 import {
@@ -13,7 +14,7 @@ import {
 } from './RepositoryInterfaces.ts';
 
 export type PersistenceErrorHandler<K, V> = (
-    error: unknown,
+    error: Error,
     event: ObservableKeyedValueEvent<K, V>
 ) => void | Promise<void>;
 
@@ -36,8 +37,11 @@ export type WriteBehindObservableLatestRepositoryOptions<K, V> =
  * - Reads are served from RAM; the persistence layer never participates in the read path.
  * - Created/Updated events propagate to setItem; Deleted events propagate to removeItem.
  * - Refreshed events are ignored: the equality predicate already determined no real change.
- * - Hydrate before use. The persistence-mirror listener is installed only after the initial
- *   load completes, so disk -> RAM events do not loop back through the writer.
+ * - The persistence mirror is attached at construction, so writes made before hydration persist
+ *   too. Hydration loads only keys RAM does not already hold, so it never replaces a newer write,
+ *   and the values it loads are not written back.
+ * - Deletes and conditional writes decide from RAM alone; hydrate first when that decision must
+ *   include keys that exist only in the persistence layer.
  *
  * Strong points: low write latency, observers fire immediately, simple API
  * (still implements PushKeyedValues<K, V>). Weak point: a tab-close mid-flush
@@ -49,9 +53,11 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     private readonly persistence: PersistenceProvider<K, V>;
     private readonly onPersistenceError?: PersistenceErrorHandler<K, V>;
     private readonly expireAtFor: (value: V) => number;
+    private readonly valuesLoadedFromPersistence = new Map<K, V>();
+    private readonly mirrorSubscription: Unsubscribe;
 
     private hydrationPromise: Promise<void> | undefined;
-    private mirrorSubscription: Unsubscribe | undefined;
+    private hydrated = false;
     private writeChain: Promise<void> = Promise.resolve();
 
     public constructor(
@@ -66,6 +72,10 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
             ttlMs !== undefined && Number.isFinite(ttlMs)
                 ? Date.now() + ttlMs
                 : NEVER_EXPIRE_AT_TIMESTAMP);
+
+        this.mirrorSubscription = this.memory.onChangeDo((event) => {
+            this.mirror(event);
+        });
     }
 
     public hydrate(): Promise<void> {
@@ -80,35 +90,40 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     }
 
     public isHydrated(): boolean {
-        return this.mirrorSubscription !== undefined;
+        return this.hydrated;
     }
 
     private async runHydrate(): Promise<void> {
         const keys = await this.persistence.getAllKeys();
         for (const key of keys) {
             const value = await this.persistence.getItem(key);
-            if (value !== undefined) {
+            if (value !== undefined && !this.memory.hasValue(key)) {
+                this.valuesLoadedFromPersistence.set(key, value);
                 this.memory.accept(key, value);
             }
         }
 
-        // Drain any observer tasks queued by the hydration writes before we
-        // attach the persistence mirror, so that re-loaded values do not loop
-        // back to disk.
         await this.memory.whenIdle();
-
-        this.mirrorSubscription = this.memory.onChangeDo((event) => {
-            this.mirror(event);
-        });
+        this.hydrated = true;
     }
 
     private mirror(event: ObservableKeyedValueEvent<K, V>): void {
         if (event.type === ObservableValueEventType.Refreshed) {
             return;
         }
+        if (this.isLoadedFromPersistence(event)) {
+            this.valuesLoadedFromPersistence.delete(event.key);
+            return;
+        }
 
-        const apply = () => this.applyMirror(event).catch((error) => this.handlePersistenceError(error, event));
+        const apply = () =>
+            this.applyMirror(event).catch((error) => this.handlePersistenceError(toError(error), event));
         this.writeChain = this.writeChain.then(apply, apply);
+    }
+
+    private isLoadedFromPersistence(event: ObservableKeyedValueEvent<K, V>): boolean {
+        return event.type === ObservableValueEventType.Created &&
+            Object.is(this.valuesLoadedFromPersistence.get(event.key), event.value);
     }
 
     private async applyMirror(
@@ -130,7 +145,7 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     }
 
     private async handlePersistenceError(
-        error: unknown,
+        error: Error,
         event: ObservableKeyedValueEvent<K, V>
     ): Promise<void> {
         if (this.onPersistenceError) {
@@ -353,7 +368,6 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     public async dispose(): Promise<void> {
         this.memory.dispose();
         await this.whenIdle();
-        this.mirrorSubscription?.unsubscribe();
-        this.mirrorSubscription = undefined;
+        this.mirrorSubscription.unsubscribe();
     }
 }

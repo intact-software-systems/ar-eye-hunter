@@ -76,8 +76,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // (receipt-exhausted, the not-yet-in-sync exhaustion, completion at dispatch and the untracked receipt)
         // measure 284.0087890625 KiB here. The next whole-KiB ceiling is 285. The S3b final review head measures
         // 284.79 of 285, and its fix wave 284.82421875 here. S3c-i's room-naming unicast and the unicast receipt
-        // measure 285.017578125 KiB here. The next whole-KiB ceiling is 286. All operator dependency exclusions
-        // above remain enforced.
+        // measure 285.017578125 KiB here. The next whole-KiB ceiling is 286. Rallar Data's write-behind hydration
+        // fix (the persistence mirror attached at construction, a load that keeps newer writes, and one normalized
+        // persistence error) measures 285.00390625 KiB on main alone; the S3c-i tree with it merged in is measured
+        // below. All operator dependency exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(286);
         expect(result.brotliKiB).toBeLessThan(286);
     });
 });

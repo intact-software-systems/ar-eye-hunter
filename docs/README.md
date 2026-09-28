@@ -1,116 +1,89 @@
 # Rallar Documentation
 
-This directory contains user-facing and AI-facing documentation for the browser
-Rallar facade, Rallar browser data stores, and Rallar server middleware.
+Start with the product, then the architecture, then the guide for the job.
+Package and app notes stay next to the code they describe. This index links to
+them. It does not copy them.
 
-## API-v1 Database Mutation Doctrine
+Historical implementation plans are not product documentation.
+[plans/README.md](../plans/README.md) says where a written plan belongs. The ALM
+design that is still underway lives in `playground/alm/`, starting at
+`playground/alm/alm-improvement-plan.md`. Open pull request
+[#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566) still
+edits
+`docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`.
+The ALM committed-work design and implementation plan for that pull request
+exist only on its branch.
 
-**AppInbox is mandatory for incoming database mutations**, including all HTTP
-and WebSocket client/group/topology, authentication/session/ticket, CRDT
-append/admin, and mutating admin paths. AppInbox owns the transaction and retry
-boundary. The `read` stage loads the repository decision surface outside the
-write transaction. Only `compute` and `validate` are pure, and they produce
-computed persistence data, not a plan. Service `write(transaction, computed)`
-applies it: service write receives the transaction and never opens or retries
-one.
+## Product
 
-State/event/receipt/result and final `APP_OUTBOX`/`WS_OUTBOX` rows commit in the
-same transaction; write final queue rows directly through
-`ResourceInboxRepository`. There is no intermediate mutation outbox. Resource
-inbox uses 20 total processing attempts, staged from 1, 2, 4, 8, and 16 ms to
-seconds capped at 30 seconds with jitter, plus a separate best-effort fairness
-lane for retries more than 30 seconds overdue. Queue locks are coordination-only
-and authoritative persisted/shared contracts use mandatory fields by default.
+- [Rallar](./product.md) — what the platform is, what each subproduct owns, and
+  which kinds of multiplayer it fits.
+- [Architecture](./architecture.md) — choices in the current tree, and the
+  alternatives those choices refuse.
+- [Convergent State And RTC Topology](./rallar-convergent-state-and-rtc-topology.md)
+  — durable causal revisions, optimistic snapshot reads, and cross-server
+  topology delivery.
+- [Group Formation Architecture](./rallar-group-formation-architecture.md) —
+  lifecycle policy, admission, activation, and the recipes that pin each
+  behavior.
+- [Group Lifecycle Cutover Runbook](./rallar-group-lifecycle-cutover-runbook.md)
+  — stop, drain, reset, deploy, and rollback for the formation cutover.
 
-## Documents
+## Use
+
+- [Quickstart And Recipes](./rallar-quickstart-and-recipes.md)
+- [API Reference](./rallar-api-reference.md)
+- [Examples](../examples/README.md)
+- [CRDT Guide](./rallar-crdt-guide.md)
+- [CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
+- [Motion Guide](./rallar-motion-guide.md)
+- [Game Guide](./rallar-game-guide.md)
+- [RallarAI Recipes](./rallar-ai-recipes.md)
+- [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
+- [RallarAI Skill Guide](./rallar-ai-skill.md) — operating notes for an agent
+  implementing Rallar usage.
+- [RallarAI Prompting Guide](./rallar-ai-prompting-guide.md)
+
+## Operate
 
 - [Production Deployment And Branch Controls](./production-deployment.md)
-  Main-only Cloudflare and Deno deployment policy, staged Deno Actions cutover,
-  and human verification steps for provider configuration drift.
-- [Repo Human Style Review Guide](./repo-human-style-guide.md) Human review
-  sequence and warning-only checker usage for the authoritative repo TypeScript
-  standard in
-  [repo-code-style.md](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
-- [PR-Centered Governance](./superpowers/specs/2026-08-14-pr-centered-governance-design.md)
-  Live pull-request delivery state, conflict-first finalization, and zero post-merge bookkeeping.
-- [Production Legacy Exception Registry](./production-legacy-exceptions.md)
-  Durable human approvals for retained affected-surface production legacy.
-- [Repo Code-Style Exception Registry](./repo-code-style-exceptions.md)
-  Human-approved persistent exceptions for materially touched files and
-  functions that remain above the hard size tiers.
-- [Rallar API Reference](./rallar-api-reference.md) Complete public API
-  description for `rallar.ts`, `rallar-data.ts`, and the canonical server
-  middleware construction owners, with
-  usage examples.
-- [Rallar AI Skill Guide](./rallar-ai-skill.md) A skill-style operating guide
-  for AI agents implementing or reviewing Rallar usage.
-- [Rallar AI Prompting Guide](./rallar-ai-prompting-guide.md) Prompt templates
-  and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server,
-  including the required completion handoff format.
-- [RallarAI Recipes](./rallar-ai-recipes.md) Opt-in schema-guided JSON
-  generation flows for browser, server, fallback, host approval, CRDT proposals,
-  and local live-provider setup.
-- [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
-  Provider/model governance metadata, production review guidance, and live-gated
-  evaluation practices.
-- [Rallar Quickstart And Recipes](./rallar-quickstart-and-recipes.md) Short
-  recipes for common application tasks.
-- [Rallar CRDT Guide](./rallar-crdt-guide.md) Explicit collaborative document
-  API, WS/RTC transport choices, durable append behavior, diagnostics, and
-  current limitations.
-- [Rallar CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
-  Operational controls, feature flags, admin inspection, backup/restore,
-  corruption recovery, metrics, and domain follow-ups for CRDT deployments.
+- [Environment Variables](./environment-variables.md)
 - [Production Env Hardening Checklist](./production-env-hardening-checklist.md)
-  Fail-closed environment profile for API-v1, Relic server, and black-box
-  control production deployments.
-- [Rallar Product And Implementation Evaluation](./rallar-product-and-implementation-evaluation.md)
-  Current product-level assessment of the browser facade, Rallar Data, Rallar
-  Server, apps, tests, and next hardening work.
-- [Rallar Troubleshooting Checklist](./rallar-troubleshooting-checklist.md)
-  Practical checks for auth, rooms, WS, RTC, data stores, server middleware, and
-  tests.
-- [Rallar API-v1 In-Memory Performance Mode](./rallar-api-v1-in-memory-performance-mode.md)
-  How to run API-v1 with PGlite memory persistence and local queue pub/sub for
-  single-server performance tests, including black-box SPA and RTC validation.
-- [Rallar RTC RTT Reporting](./rallar-rtc-rtt-reporting.md) Browser to server
-  RTC RTT reporting flow, server acceptance policy, and bounded per-client RTT
-  reporting degree.
-- [Convergent State And RTC Topology Architecture](./rallar-convergent-state-and-rtc-topology.md)
-  Durable causal revisions, optimistic snapshot reads, atomic topology
-  execution, cross-server authorization, fanout, and retry guarantees.
-- [Rallar Group Formation Architecture](./rallar-group-formation-architecture.md)
-  Formation intent lifecycle, the lifecycle policy document and presets,
-  admission and the manager role, readiness and the activation criterion,
-  pre-activation data gating, the observed activation status, the read surface,
-  and the recipes that pin each behaviour.
-- [Rallar Group Lifecycle Cutover Runbook](./rallar-group-lifecycle-cutover-runbook.md)
-  Why the lifecycle ships as a hard cutover, what to verify before resetting,
-  the stop/drain/reset/deploy ordering across both databases and both servers,
-  and the rollback path when a decode fails afterwards.
+- [Troubleshooting Checklist](./rallar-troubleshooting-checklist.md)
+- [API-v1 In-Memory Performance Mode](./rallar-api-v1-in-memory-performance-mode.md)
+- [RTC RTT Reporting](./rallar-rtc-rtt-reporting.md)
+- [Hetzner Distributed Recipes](./rallar-hetzner-distributed-recipes.md)
+- [GitHub Free Headless Runbook](./github-actions-black-box-headless-runbook.md)
+- [Upgrade Verification Matrix](./upgrade-verification-matrix.md)
 
-## Repo Codex Skills
+## Repo rules
 
-Use the root `AGENTS.md` for lightweight agent orientation.
-The repo skills under `.agents/skills/**` are directly discoverable in this
-checkout. The repo-local Codex plugin declared in `.codex-plugin/plugin.json`
-packages that same canonical tree. For a new consumer application, start with
-the `building-rallar-apps` skill and inspect the relevant `examples/**`. Codex
-can select specialist skills from each `SKILL.md` frontmatter description;
-explicitly name a skill in the prompt when you want to guarantee its use, for
-example: "Use the `rallar-realtime` and `rallar-testing` skills."
+The coding standard lives in
+[repo-code-style.md](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
+Agents load it through the `rallar-code-writing` skill. Humans review with:
 
-## Source Files
+- [Repo Human Style Review Guide](./repo-human-style-guide.md)
+- [Repo Code-Style Exception Registry](./repo-code-style-exceptions.md)
+- [Production Legacy Exception Registry](./production-legacy-exceptions.md)
+- [Test Structure Coupling Exceptions](./test-structure-coupling-exceptions.md)
 
-- Browser facade: `packages/shared-web/browser/rallar.ts`
-- Browser data facade: `packages/shared-web/browser/rallar-data.ts`
-- Server middleware:
-  `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
-- Server application owner:
-  `packages/shared-server/rallar-server/rallar-server-application.ts`
+Agent orientation is `AGENTS.md`. Skills live under `.agents/skills/**`.
 
-## Run Environment Notes
+## Beside the code
 
-- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers via Playwright (`127.0.0.1` + local ports).
-- In sandboxed environments that block loopback binds, these commands can fail with `listen EPERM` / `Operation not permitted` even when code is healthy.
-- In normal local or CI environments with loopback bind allowed, both suites pass.
+- Browser runtime: `packages/shared-web/browser/README.md`
+- Server runtime and persistence: `packages/shared-server/README.md`,
+  `packages/shared-server/docs/runtime-navigation.md`,
+  `packages/shared-server/docs/persistence-and-replay.md`
+- Relic Hunters: `apps/relic-hunters-v1/docs/README.md`
+- Black Box: `apps/rallar-black-box/docs/README.md`
+- Black-box runner: `packages/shared-test/black-box-runner/README.md`
+
+## Run environment notes
+
+- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers via
+  Playwright (`127.0.0.1` plus local ports).
+- In sandboxed environments that block loopback binds, these commands can fail
+  with `listen EPERM` even when the code is healthy.
+- In normal local or CI environments with loopback bind allowed, both suites
+  pass.

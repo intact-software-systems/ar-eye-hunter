@@ -127,8 +127,7 @@ const RESOURCE_REGRESSION_METRICS = [
  * `shared` (5), +2.7% on `hot` (1). They therefore share the tolerance already
  * used for latency and throughput rather than being compared for strict
  * increase, which no identical-code run could satisfy. Exceeding the band still
- * requires a recorded reason. Evidence: issue #157 and
- * `playground/rtc-design/baselines/2026-08-15-state-write-pooling-control-results.md`.
+ * requires a recorded reason. Evidence: issue #157.
  */
 export const RESOURCE_REGRESSION_RATIO = 0.05;
 

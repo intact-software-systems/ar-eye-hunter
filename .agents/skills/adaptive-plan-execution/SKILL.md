@@ -82,7 +82,9 @@ active slice.
 
 1. State the goal, observable acceptance criteria, important constraints, affected owners, and the
    next one or two slices in the agent's working plan. A durable design document may explain a large
-   architectural decision, but it is not a live status database.
+   architectural decision, but it is not a live status database. A written multi-slice spec, when one
+   is useful, lives at `plans/active/<topic>.md` as `plans/README.md` describes; it is not a status
+   catalog, and the pull request remains the delivery record.
 2. Before implementation, recover the current owner, entry, dataflow, failure boundary, and tests
    from the repository. Do not use a historical plan as the only navigation map.
 3. Implement one slice test-first and run its focused checks.
@@ -93,6 +95,22 @@ active slice.
    not perform a bookkeeping checkpoint.
 6. Finish only after affected validation, code/structure review, production-legacy review, and the
    live PR delivery state support the claimed outcome.
+
+## Obsolete plans
+
+The pull request that finishes a written plan deletes that plan file before merge, and removes any
+line in `plans/README.md` or `docs/README.md` that names it as current work. Git history is the
+archive. After GitHub reports the pull request merged, do not return to delete the file.
+
+A later agent may delete a plan only when all three are true:
+
+- The outcomes the plan names are already in the tree, or in a merged pull request.
+- No open pull request still modifies that path.
+- `plans/README.md` and `docs/README.md` do not name it as current work.
+
+If any check fails, leave the file. `plans/backlog.md`, `plans/policy.json`, `plans/*.closure.json`,
+and `plans/repo-style-lineages/` are not plans to delete. A filename that contains "plan" is not
+evidence that the file is obsolete.
 
 ## Pull-request state comes first
 

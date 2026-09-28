@@ -17,7 +17,6 @@ const GROUP_DOCS = [
 ] as const;
 
 const ARCHITECTURE_DOC = 'docs/rallar-group-formation-architecture.md';
-const PRODUCT_PLAN = 'playground/rtc-design/2026-08-22-group-activation-product-plan.md';
 
 /**
  * The tracked paths, which are the comparison basis rather than `existsSync`
@@ -60,14 +59,6 @@ describe('Rallar group documentation', () => {
         );
 
         expect(unnamed).toEqual([]);
-    });
-
-    it('accounts for every acceptance scenario the product plan names', () => {
-        const planned = toScenarioIds(readRepositoryFile(PRODUCT_PLAN), 'Named acceptance scenarios:');
-        const documented = toScenarioIds(readRepositoryFile(ARCHITECTURE_DOC), '### Acceptance scenarios');
-
-        expect(planned).toHaveLength(26);
-        expect([...documented].sort()).toEqual([...planned].sort());
     });
 
     /**
@@ -153,9 +144,4 @@ function toBacktickedKebabTokens(section: string): readonly string[] {
 function toSection(document: string, heading: string): string {
     const start = document.indexOf(heading);
     return start === -1 ? '' : document.slice(start, document.indexOf('\n## ', start));
-}
-
-/** The first-column ids of the scenario table that follows `heading`. */
-function toScenarioIds(document: string, heading: string): readonly string[] {
-    return [...toSection(document, heading).matchAll(/^\| `([a-z-]+)`\s*\|/gm)].map((match) => match[1]);
 }
