@@ -522,7 +522,7 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
 owner: it remembers the id for the owner's lifetime, aborts the live attempt (which still settles its own
 `attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in
 one commit, and states no settlement -- the message is not cancelled. A conflict on that delete leaves an
-inert row that nothing retries before it expires. RTC reaches it through
+inert row that nothing retries before it expires in this owner's lifetime. RTC reaches it through
 `WebRtcRxStreamerService.handOverOutbox` -> `WebRtcOverlayMulticastManager.handOver`. The hand-over is held
 in memory like a cancellation: a durable RTC message resumed after a reload is not handed over (D64).
 

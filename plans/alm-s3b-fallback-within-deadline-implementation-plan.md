@@ -4332,6 +4332,21 @@ git push
   (30 000 / 18 000 / 10 000 / 7 500 ms), which stay untouched; the first run at 360 000 ms failed with
   "Test timeout of 360000ms exceeded". Cost if wrong: hosted manifest 18 is now ≈80 s longer for its
   fallback carrier against its 300 s terminal timeout, which Task 6's hosted read checks.
+- **R-S3b-20 (Task 6 hosted finding).** `durable-opt-in`'s `received-1` gets a scenario-derived budget of
+  the deadline plus 2 × `NON_EXPIRING_SEND_TIMEOUT_MS` (38 s, window 37 s) through an optional
+  `durablePathBudgetMs` on `toReceivedCommand` (Task 6b); `delivery-reload` keeps its waits, which open
+  after its absence window and ride a 60 s reload margin. Why: the diagnosis read harness timing — the one
+  27 s positive wait opens at receiver connect and must cover the sender's remaining prologue, the durable
+  admission commit, the outbound drain and the receiver's durable admission, 23–35 s on the slow regime.
+  No fixed constant changes; the structural alternative (the receiver window opens after the sender's
+  prologue, as D62's barrier does hosted) is carried. Cost if wrong: a real durable-path regression up to
+  10 s slower passes this wait.
+- **R-S3b-21 (final review I1).** A cross-carrier copy arriving at a peer that holds a relay row also sends
+  the peer's own `{ kind: 'self' }` ACK over the arrival carrier; the relay's forwarded ACKs stay on the
+  first carrier (`compute-al-inbound-duplicate-changes.ts`, its `it.each` rows, the inbound README). Why:
+  D56's `receipt-exhausted` path must work for every frozen member, not two peers — after the hand-over the
+  WS `receiver` receipt counts a WS ACK from every member, and a relay never sent one, so a relayed room
+  read `expired`. Cost if wrong: one extra own ACK per relayed cross-carrier copy.
 
 Later rulings follow as R-S3b-n with why and the cost if wrong.
 

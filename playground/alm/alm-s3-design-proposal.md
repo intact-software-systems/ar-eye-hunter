@@ -381,8 +381,8 @@ Written after S3a merged (461b54cfe, #597), from a fresh code survey of the fall
 registry paths (session scratchpad `s3b-code-survey.md`; 15 corrections to §1.2/§2.2, the material
 ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-27: the maintainer took every recommended
 answer, Q1–Q12** (roadmap: D56 "As applied", D63–D66); the S3b plan is written under them.
-**Delivered by PR #604** (branch `claude/alm-s3b-fallback-within-deadline`); the rulings R-S3b-1
-through R-S3b-19 live in the plan's "Rulings during execution".
+**Delivered by PR #604** (branch `claude/alm-s3b-fallback-within-deadline`); the rulings R-S3b-0
+through R-S3b-21 live in the plan's "Rulings during execution".
 
 **What the survey changed in §2.2's picture**
 

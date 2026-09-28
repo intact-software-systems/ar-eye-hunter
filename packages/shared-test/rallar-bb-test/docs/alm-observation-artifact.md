@@ -50,8 +50,10 @@ adjusted to make a run green.
 - `NON_EXPIRING_SEND_TIMEOUT_MS` 10 000 — hosted conformance may need more than five seconds to
   admit a non-expiring send.
 
-All three live in
-[`conformance/alm/create-alm-conformance-recipes.ts`](../conformance/alm/create-alm-conformance-recipes.ts).
+Both constants live in
+[`conformance/alm/alm-conformance-budgets.ts`](../conformance/alm/alm-conformance-budgets.ts); the receiver
+window is derived from them in
+[`conformance/alm/alm-conformance-receiver-commands.ts`](../conformance/alm/alm-conformance-receiver-commands.ts).
 
 ## The regime file
 
