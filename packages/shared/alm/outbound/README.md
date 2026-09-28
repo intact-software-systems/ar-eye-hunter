@@ -543,9 +543,9 @@ past the deadline, hands nothing over again (C7).
 keeps a settlement that still arrives from the carrier it left -- an acknowledgement, `receipt-exhausted`
 or `relay-rejected` -- from moving the handle again; the handle already reads the fallback carrier's
 outcome, and the left carrier's own attempt rows still land as evidence. A receiver on the other carrier
-still answers its own ACK again over the arrival carrier when it holds no relay row (R-S3b-1); see
-[the inbound README](../inbound/README.md) for that duplicate-answer rule -- it is the receipt the WS leg
-needs to complete.
+still answers its own ACK again over the arrival carrier, whether or not it holds a relay row (R-S3b-1,
+R-S3b-21); see [the inbound README](../inbound/README.md) for that duplicate-answer rule -- it is the
+receipt the WS leg needs from every member of the frozen audience to complete.
 
 ## Atomic IndexedDB work storage
 

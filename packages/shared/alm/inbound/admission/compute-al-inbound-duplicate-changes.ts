@@ -41,9 +41,9 @@ const NO_DUPLICATE_CHANGES: ALInboundDuplicateChanges = { mutations: [], effects
  * missed (R-S2c-ii-8c). The origin, or any sender once the recorded parent left, becomes the parent of
  * the row, and is answered in full (R-S2c-ii-12); a former parent still present then gets the sibling
  * answer (R-S2c-ii-14). A copy on the other carrier than the first admission -- the envelope a sender
- * re-admitted there after a hand-over (D56) -- gets the own ACK of a peer with no relay row again over the
- * carrier it came in on, whatever its next hops: the first ACK went out on the carrier the sender left
- * (R-S3b-1).
+ * re-admitted there after a hand-over (D56) -- gets the own ACK of this peer again over the carrier it came
+ * in on, whatever its next hops and whether or not it holds a relay row: the first ACK went out on the
+ * carrier the sender left (R-S3b-1), and a relay's forwarded ACKs stay on that first carrier (R-S3b-21).
  */
 export function computeALInboundDuplicateChanges(
     read: ALInboundMessageReadDto,
@@ -54,14 +54,13 @@ export function computeALInboundDuplicateChanges(
     if (plan.dropReasonCode !== 'duplicate' || plan.ack.algo === 'none' || toPeerId === undefined) {
         return NO_DUPLICATE_CHANGES;
     }
-    const addressedToSelf = isAddressedToSelf(read.msg, input.selfPeerId);
-    if (pendingAck === undefined) {
-        return addressedToSelf || isCrossCarrierCopy(read)
+    if (!isAddressedToSelf(read.msg, input.selfPeerId)) {
+        return isCrossCarrierCopy(read)
             ? { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] }
             : NO_DUPLICATE_CHANGES;
     }
-    if (!addressedToSelf) {
-        return NO_DUPLICATE_CHANGES;
+    if (pendingAck === undefined) {
+        return { mutations: [], effects: [toOwnRepeatedAck(read, toPeerId, input.selfPeerId)] };
     }
     if (read.fromPeerId === pendingAck.toPeerId) {
         return { mutations: [], effects: toParentAnswer(read, pendingAck) };

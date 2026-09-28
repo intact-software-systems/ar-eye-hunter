@@ -1,7 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { resolveALDeliveryFallbackTrigger } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
+import {
+    isALDeliveryFallbackPastDeadline,
+    resolveALDeliveryFallbackTrigger
+} from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 
 /**
  * The admitted RTC leg of an `rtc-with-ws-fallback` send: what a hand-over needs, and the dispatch's own
@@ -55,11 +58,12 @@ export class BrowserMessageFallbackController {
     }
 
     /**
-     * What the registry records for this settlement: the settlement itself, or, when it ends a watched RTC
-     * leg inside the deadline, the `carrier-fallback` beside it -- instead of it for a `receipt-exhausted`,
-     * which would otherwise end a message the WS leg now owns.
+     * Starts the hand-over and the WS re-admission when this settlement ends a watched RTC leg inside the
+     * deadline. Returns what the registry records for it: the settlement itself, or the `carrier-fallback`
+     * beside it -- instead of it for a `receipt-exhausted`, which would otherwise end a message the WS leg
+     * now owns.
      */
-    observe(settlement: ALDeliverySettlement): readonly ALDeliverySettlement[] {
+    recordSettlement(settlement: ALDeliverySettlement): readonly ALDeliverySettlement[] {
         const watch = this.watches.get(settlement.msgId);
         if (watch === undefined) {
             return [settlement];
@@ -75,7 +79,7 @@ export class BrowserMessageFallbackController {
         }
         this.watches.delete(settlement.msgId);
         const atMs = this.input.nowMs();
-        if (isPastDeadline(watch.candidate.message, atMs)) {
+        if (isALDeliveryFallbackPastDeadline(watch.candidate.message.constraints?.expiresAtMs, atMs)) {
             return [settlement];
         }
         void this.writeFallback(watch.candidate);
@@ -104,9 +108,4 @@ export class BrowserMessageFallbackController {
         );
         await candidate.readmit();
     }
-}
-
-function isPastDeadline(message: ALMessage, nowMs: number): boolean {
-    const expiresAtMs = message.constraints?.expiresAtMs;
-    return expiresAtMs !== undefined && expiresAtMs <= nowMs;
 }

@@ -281,7 +281,9 @@ message whose RTC leg settles `not-ready` three times in a row, spends its `not-
 out of receipt retries is handed to WS once, inside its unchanged deadline: the RTC owner ends its work
 without a `cancelled`, the same envelope is admitted on WS, and the handle records a `carrier-fallback`
 evidence row; receipts of the left carrier no longer move the handle (D56, D63–D66). One inbound store
-per session is shared by both carriers (D20, D54), so the second copy meets its first admission. Limits:
+per session is shared by both carriers (D20, D54), so the second copy meets its first admission, and
+every member of the frozen audience, relay or leaf, sends its own ACK again over WS: the receipt the WS
+leg needs (R-S3b-1, R-S3b-21). Limits:
 `ws-then-rtc` falls back at admission only, and a durable RTC message resumed after a reload has no handle
 and never hands over (D64).
 

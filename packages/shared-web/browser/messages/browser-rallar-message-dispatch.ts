@@ -7,7 +7,10 @@ import type {
     ALDeliveryCarrier,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { isALDeliveryAdmissionFallbackVerdict } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
+import {
+    isALDeliveryAdmissionFallbackVerdict,
+    isALDeliveryFallbackPastDeadline
+} from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -213,7 +216,7 @@ export function computeFallbackDisposition(
     if (!isALDeliveryAdmissionFallbackVerdict(verdict)) {
         return 'stop';
     }
-    return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
+    return isALDeliveryFallbackPastDeadline(expiresAtMs, nowMs) ? 'expired' : 'retry';
 }
 
 /** A refusal the fallback carrier takes over is evidence of the refused leg, not the verdict: `rejected` is terminal. */

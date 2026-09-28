@@ -2,18 +2,20 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryAttemptOutcome,
     ALDeliveryCarrier,
+    ALDeliveryFallbackReason,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
-    AL_DELIVERY_FALLBACK_REASONS,
     AL_FALLBACK_NOT_READY_ATTEMPTS,
     isALDeliveryAdmissionFallbackVerdict,
+    isALDeliveryFallbackPastDeadline,
     resolveALDeliveryFallbackTrigger,
     type ALDeliveryFallbackTrigger
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import {
     describe,
     expect,
+    expectTypeOf,
     it
 } from 'vitest';
 
@@ -70,11 +72,7 @@ const RTC_ACKNOWLEDGEMENT: ALDeliverySettlement = {
 describe('the declared retryable outcomes (D56)', () => {
     it('declares the not-ready bound and the three post-admission reasons', () => {
         expect(AL_FALLBACK_NOT_READY_ATTEMPTS).toBe(3);
-        expect(AL_DELIVERY_FALLBACK_REASONS).toEqual([
-            'not-ready',
-            'not-yet-in-sync-exhausted',
-            'receipt-exhausted'
-        ]);
+        expectTypeOf<ALDeliveryFallbackReason>().toEqualTypeOf<'not-ready' | 'not-yet-in-sync-exhausted' | 'receipt-exhausted'>();
     });
 
     it.each(
@@ -89,6 +87,18 @@ describe('the declared retryable outcomes (D56)', () => {
         ] satisfies ReadonlyArray<readonly [ALDeliveryAdmissionVerdict, boolean]>
     )('hands %o to the fallback carrier at admission: %s', (verdict, expected) => {
         expect(isALDeliveryAdmissionFallbackVerdict(verdict)).toBe(expected);
+    });
+
+    // One guard for the admission-time and the post-admission decision: the deadline instant is already past.
+    it.each(
+        [
+            [undefined, 1_000, false],
+            [1_001, 1_000, false],
+            [1_000, 1_000, true],
+            [999, 1_000, true]
+        ] as const
+    )('reads a deadline of %s at %s as past: %s', (expiresAtMs, nowMs, expected) => {
+        expect(isALDeliveryFallbackPastDeadline(expiresAtMs, nowMs)).toBe(expected);
     });
 
     it('hands the RTC leg over on its third consecutive not-ready attempt, across its send-prepared rows', () => {

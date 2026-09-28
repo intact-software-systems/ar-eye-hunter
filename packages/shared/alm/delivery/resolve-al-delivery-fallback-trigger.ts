@@ -23,13 +23,6 @@ export const AL_DELIVERY_FALLBACK_REFUSAL_REASONS: readonly ALDeliveryRefusalRea
     'unsupported'
 ];
 
-/** What ends an admitted RTC leg and hands the message to WS inside its deadline (D56). */
-export const AL_DELIVERY_FALLBACK_REASONS: readonly ALDeliveryFallbackReason[] = [
-    'not-ready',
-    'not-yet-in-sync-exhausted',
-    'receipt-exhausted'
-];
-
 export interface ResolveALDeliveryFallbackTriggerInput {
     readonly settlement: ALDeliverySettlement;
     /** The carrier of the watched leg: a settlement of any other carrier moves nothing. */
@@ -51,6 +44,10 @@ export function isALDeliveryAdmissionFallbackVerdict(verdict: ALDeliveryAdmissio
         default:
             return false;
     }
+}
+
+export function isALDeliveryFallbackPastDeadline(expiresAtMs: number | undefined, nowMs: number): boolean {
+    return expiresAtMs !== undefined && expiresAtMs <= nowMs;
 }
 
 /**

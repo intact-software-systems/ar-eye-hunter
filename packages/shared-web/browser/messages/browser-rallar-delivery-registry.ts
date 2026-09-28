@@ -32,7 +32,10 @@ interface DeliveryObservation {
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
     lifecycle: ALDeliveryLifecycle;
-    /** The carrier of the last settlement seen, which is the one a cancel is recorded against. */
+    /**
+     * The carrier of the last settlement seen, which is the one a cancel is recorded against; after a
+     * `carrier-fallback` row it names the carrier the message left until the WS admission settles.
+     */
     carrier: ALDeliveryCarrier;
     /** When the lifecycle first became terminal; retention ages a terminal entry from it. */
     terminalAtMs: number | undefined;
@@ -127,7 +130,7 @@ export class BrowserRallarDeliveryRegistry {
             return;
         }
 
-        for (const recorded of this.fallback.observe(settlement)) {
+        for (const recorded of this.fallback.recordSettlement(settlement)) {
             entry.observation.carrier = recorded.carrier;
             this.publishLifecycle(
                 entry.observation,
