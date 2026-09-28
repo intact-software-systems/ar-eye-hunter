@@ -326,8 +326,11 @@ summary retains the full count; use a focused `--root` when the cap is reached.
 
 Current default warnings cover:
 
-- production files over the line-count threshold;
-- lines over the configured width;
+- file cognitive load at the warn, review, and refactor-or-register tiers
+  (50/110/330, `file.cognitive-load`);
+- files exporting 12 or more runtime values (`file.responsibility-count`);
+- production files over the 1,200-line navigation backstop after the
+  data-literal discount (`file.length`);
 - route handler size and estimated complexity;
 - optional fields in `*Command` contracts;
 - supported function and arrow-function declarations with more than three
@@ -499,8 +502,11 @@ filenames. This includes common forms such as `__tests__`, `mocks`, `fixtures`,
 `*.generated.d.ts`, `*.gen.ts`, and `*.pb.ts`. It also excludes test-runner
 configuration files for Playwright, Vitest, Jest, and Cypress.
 
-These are checker exclusions only. Humans should still write readable tests and
-support artifacts.
+These exclusions apply to the full-repository scan. The changed-file gate below
+also scans changed test sources, and blocks new or worsened `boundary.unknown`
+and `construction.forward-capture` findings in them; the other rules stay
+warning-only for tests, whose line backstop is 1,500. Humans should still write
+readable tests and support artifacts.
 
 ### No global strict mode yet
 
@@ -563,6 +569,19 @@ Dormant entries are allowed when their reviewed feature has not reached the
 branch yet. They do not suppress a similarly named finding elsewhere. Every
 unmatched finding remains blocking, including a finding with a different path,
 rule, or symbol beside an otherwise reviewed finding.
+
+#### Structural lineage manifests
+
+A branch that moves code out of one file into other files declares the move in
+a manifest under `scripts/repo-style-check/lineages/`. The comparison then
+judges the new files against the findings their source file already had at the
+merge base. A rename that Git detects needs no manifest.
+
+[The lineage manifest guide](../scripts/repo-style-check/lineages/README.md)
+owns the format, the lifetime of an entry, and the retirement rule. Review every
+changed manifest against that rule: an entry whose `mergeBase` is not the merge
+base of the branch is spent, and the pull request that works in that directory
+deletes it.
 
 ## Review outcome
 

@@ -18,6 +18,7 @@ Template:
 ```text
 Read these files first:
 - packages/shared-web/browser/rallar.ts
+- packages/shared-web/browser/rallar-facade-contract.ts
 - packages/shared-web/browser/rallar-data.ts
 - packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts
 - packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts
@@ -26,7 +27,7 @@ Task:
 Implement [feature] using the Rallar facade.
 
 Constraints:
-- Use rallar.setDefaults({ applicationId: ..., workspaceId: ... }) where possible.
+- Pass applicationId and workspaceId to rallar.setup({ ... }) at initial boot; use rallar.setDefaults only to update an already-configured facade.
 - Prefer roomRef over roomId when scope matters.
 - Wait for WS/RTC readiness before sending.
 - Add tests first, then code changes, then more tests.
@@ -131,7 +132,7 @@ Requirements:
 - Use rallar.messages.ws.send for outgoing messages.
 - Include topicId and typeId.
 - Use scope: 'room' and roomRef when sending.
-- Handle send status and display failures.
+- Keep the returned RallarMessageHandle and use wait() or onEvent() to display delivery failures.
 - Add tests for selector matching and send result handling.
 ```
 
@@ -205,16 +206,17 @@ const drafts = await rallar.data.open<Draft>('drafts', {
 });
 ```
 
-### Schema Migration
+### Stored Value Changes
 
 ```text
-Add a Rallar Data schema migration for an existing store.
+Change the stored value shape of an existing Rallar Data store.
 
 Requirements:
-- Increase schemaVersion.
-- Provide migrate(persistedValue, context).
-- Preserve unknown-but-valid fields only if the domain requires it.
-- Add tests for old envelope migration and raw pre-envelope values.
+- Rallar Data has no schemaVersion or migrate hook; handle old values in app code.
+- Use isValid so values the new code cannot read are treated as absent, or open
+  a new store name (for example drafts-v2) and copy converted values once.
+- Keep store options identical everywhere the store is opened.
+- Add tests for reading old values, rejecting invalid values, and reload/hydrate.
 ```
 
 ## Server Prompts
@@ -235,8 +237,8 @@ Requirements:
 - Deliver final WS_OUTBOX state and fixed-recipient topology messages through
   QueueBox/pub-sub or durable replay target resolution.
 - Provide findGroupSnapshotByRef for scoped room routing.
-- Install default middleware topics and websocket lifecycle cleanup.
-- Start qboxEngine.
+- Call installSystemTopics() and installWebSocketLifecycle() on the server application before mounting routes.
+- Start queue workers with start(), which starts runtime.qboxEngine.
 - Add tests for route mounting and lifecycle cleanup.
 ```
 
@@ -273,7 +275,7 @@ Requirements:
 Review this Rallar browser usage.
 
 Prioritize:
-- Missing configure/setDefaults/start.
+- Missing initial rallar.setup(...) or post-login rallar.start(...), or a configure/setDefaults sequence used in place of setup.
 - Direct API calls where facade methods exist.
 - Missing unsubscribe cleanup.
 - First realtime send before RTC lane readiness.

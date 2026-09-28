@@ -1,7 +1,6 @@
 # Relic Hunters V1 Docs
 
-These notes describe the current state of the Relic Hunters SPA and should be
-updated as the `improvement-plan.md` iterations change the app.
+These notes describe the current state of the Relic Hunters SPA.
 
 - [Current State](./current-state.md): architecture, known risks, and validation status.
 - [UI And Gameplay](./ui-gameplay.md): player-facing flow, controls, and current UX gaps.

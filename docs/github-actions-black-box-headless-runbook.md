@@ -51,11 +51,16 @@ This creates 17 shards with agents_per_job=3. Shards 1 through 16 start three
 agents each, and shard 17 starts the final two agents. The Hetzner operator job
 runs concurrently, so Do not set max_parallel_jobs above 19 on GitHub Free.
 
-The GitHub agent jobs use:
+The `prepare-hetzner` and `operator` jobs pass `agent_source=external` to the
+reusable Hetzner runner, so it starts no Hetzner workers and waits for these
+agents instead. Each GitHub agent shard runs
+`npm --workspace rallar-black-box run worker:headless` with a 75-minute job
+timeout and:
 
 ```text
-agent_source=external
 RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal
+RALLAR_BLACK_BOX_IDLE_EXIT_MS=4500000
+RALLAR_AGENT_PROVIDER=github-actions
 ```
 
 The worker exit mode makes each shard poll the target distributed run and exit
@@ -66,8 +71,9 @@ Before launching a shard, the workflow calls
 the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. It also
 writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` using that global `agentId` and
 the configured password as `RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
-is enabled by default and every global agent ID therefore registers and uses
-one distinct username. The short-lived run tokens are the only control tokens
+(`register_before_login`) is enabled by default and required for every
+multi-agent run (the `plan` job fails otherwise), so every global agent ID
+registers and uses one distinct username. The short-lived run tokens are the only control tokens
 forwarded into browser-agent URLs. The admin/operator read token stays in the
 Node-side worker environment.
 
@@ -85,26 +91,36 @@ ready_timeout_seconds=180
 terminal_timeout_seconds=300
 ```
 
-2. Run a 10-agent 30-second tree smoke with `agents_per_job=2` and
-   `max_parallel_jobs=5`.
-3. Run a 20-agent 30-second tree smoke.
+2. Run a 10-agent 30-second tree smoke with
+   `manifest_path=apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-principal-10-agent-30s-20hz-tree.json`,
+   `target_agent_count=10`, `agents_per_job=2`, and `max_parallel_jobs=5`.
+3. Run a 20-agent 30-second tree smoke with
+   `manifest_path=apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-principal-20-agent-30s-20hz-tree.json`
+   and `target_agent_count=20`.
 4. Run the 50-agent 30-second tree smoke using the dispatch values above.
-5. Run the 50-agent 60-minute tree only after the 30-second run is stable and
-   identity checks pass.
+5. Run the 50-agent 60-minute tree,
+   `apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json`,
+   only after the 30-second run is stable and identity checks pass.
 
 ## Prefix And Role Map
 
 The default `agent_prefix=controller` exists because the current 50-agent
 manifests target `controller-01` through `controller-50`. Before changing the
 prefix, inspect the manifest role map and `roleAssignments[].agentId` values.
-The workflow preflight fails when the unique role-map IDs do not match
-`target_agent_count` or when an ID uses the wrong prefix.
+The workflow preflight fails when the manifest `expectedParticipantCount` differs
+from `target_agent_count`, when a `role-map` manifest's unique IDs do not number
+`target_agent_count`, or when a role ID is not `<agent_prefix>-NN` within
+`1..target_agent_count`. It also requires `barrier.enabled=true` for 10 or more
+agents and `metadata.recommendedTerminalTimeoutSeconds` for 60-minute manifests.
 
 ## Prepare Phase
 
 The `prepare-hetzner` job runs before any GitHub agent job starts. It invokes
 the reusable Hetzner runner with `operator_phase=prepare`,
-`agent_source=external`, and `rollout_before_run=true`.
+`agent_source=external`, and `rollout_before_run` taken from the workflow's
+`rollout_control_plane` input (default `true`). The `plan` job rejects
+`rollout_control_plane=false` for a manifest that sets
+`metadata.rtcTopologyEnv`, because those values are applied during rollout.
 
 This phase applies `metadata.rtcTopologyEnv` to the Hetzner API/control
 environment and writes a remote prepare marker. The later operator run uses
@@ -129,6 +145,8 @@ After the operator job finishes, download:
 
 - `hetzner-distributed-<distributed_run_id>` for raw exported artifacts.
 - `hetzner-distributed-analysis-<distributed_run_id>` for generated analysis.
+- `hetzner-operation-<distributed_run_id>` for `operation-report.json`,
+  `summary.md`, and `evidence.log`; read it first when the recipe never started.
 
 The raw artifact directory should include `manifest.json`,
 `distributed-run.json`, `distributed-artifact-bundle.json`, `events.jsonl`,
@@ -166,8 +184,10 @@ principal. The workflow supplies the existing per-agent
   `targetPolicy.expectedParticipantCount`, or choose the matching manifest.
 - Role-map prefix mismatch: keep `agent_prefix=controller` unless the manifest
   role map is changed too.
-- Topology prepare marker failure: rerun the same ref and manifest through
-  `prepare-hetzner` before the operator run.
+- Topology prepare marker failure: re-run all jobs of the workflow with the
+  same ref and manifest so `prepare-hetzner` writes a fresh marker before the
+  operator run; `prepare-hetzner` is a job of this workflow, not a separate
+  dispatch.
 - Short barrier timeout: the current 50-agent smoke uses
   `barrier.timeoutMs=15000`. If all agents connect but staged command delivery
   misses the barrier, create a GitHub-specific manifest copy that changes only

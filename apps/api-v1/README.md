@@ -102,7 +102,7 @@ supports user topics under `app.*` and `room.*`; `game.*` is not a supported nam
 import { installRallarGameAuthorityServer } from '@shared-server/game/install-rallar-game-authority-server.ts';
 import { createDefaultRallarServer } from './src/composition/create-default-rallar-server.ts';
 
-const rallar = createDefaultRallarServer();
+const rallar = await createDefaultRallarServer({ configuration, databaseLifecycle });
 
 installRallarGameAuthorityServer<CashChaseCommand, CashChaseSnapshot, CashChaseEvent>({
     rallar,
@@ -114,8 +114,10 @@ installRallarGameAuthorityServer<CashChaseCommand, CashChaseSnapshot, CashChaseE
     readSnapshot: cashChaseService.readSnapshot
 });
 
-rallar.system.useDefaultMiddlewareTopics().useWebSocketLifecycle();
-rallar.ws.mount(app);
-rallar.rest.mount(app);
+rallar.installSystemTopics();
+rallar.installWebSocketLifecycle();
+rallar.mountWebSocket(app);
+rallar.mountRest(app);
+await rallar.runtime.readiness;
 rallar.start();
 ```
