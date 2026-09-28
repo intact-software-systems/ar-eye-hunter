@@ -8,7 +8,10 @@ import {
 } from '@shared/persistence/PersistenceProvider.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-type Versioned = Readonly<{ version: number; payload: string; }>;
+interface Versioned {
+    readonly version: number;
+    readonly payload: string;
+}
 
 describe('WriteBehindObservableLatestRepository', () => {
     afterEach(() => {
@@ -45,6 +48,71 @@ describe('WriteBehindObservableLatestRepository', () => {
         await repository.whenIdle();
 
         expect(setItem).not.toHaveBeenCalled();
+    });
+
+    it('mirrors writes made before hydration', async () => {
+        const persistence = new InMemoryPersistenceProvider<string, number>();
+        const repository = new WriteBehindObservableLatestRepository<string, number>({
+            persistence
+        });
+
+        // Never hydrated: a lazily hydrated store can flush and close without ever loading.
+        repository.set('a', 1);
+        await repository.whenIdle();
+
+        expect(await persistence.getItem('a')).toBe(1);
+    });
+
+    it('keeps a write made while hydration loads over the persisted value', async () => {
+        const persisted = new InMemoryPersistenceProvider<string, number>([
+            ['a', 1]
+        ]);
+        const readStarted = Promise.withResolvers<void>();
+        const readReleased = Promise.withResolvers<void>();
+        const persistence: PersistenceProvider<string, number> = {
+            getAllKeys: () => persisted.getAllKeys(),
+            getItem: async (key) => {
+                readStarted.resolve();
+                await readReleased.promise;
+                return await persisted.getItem(key);
+            },
+            setItem: (key, value, options) => persisted.setItem(key, value, options),
+            removeItem: (key) => persisted.removeItem(key),
+            deleteExpired: () => persisted.deleteExpired()
+        };
+        const repository = new WriteBehindObservableLatestRepository<string, number>({
+            persistence
+        });
+
+        // Hydration has listed 'a' and is reading its stale value when the newer write lands.
+        const hydration = repository.hydrate();
+        await readStarted.promise;
+        repository.set('a', 2);
+        readReleased.resolve();
+        await hydration;
+        await repository.whenIdle();
+
+        expect(repository.read('a')).toBe(2);
+        expect(await persisted.getItem('a')).toBe(2);
+    });
+
+    it('mirrors a hydrated value that is written again after a delete', async () => {
+        const persistence = new InMemoryPersistenceProvider<string, Versioned>([
+            ['item', { version: 1, payload: 'A' }]
+        ]);
+        const repository = new WriteBehindObservableLatestRepository<string, Versioned>({
+            persistence
+        });
+
+        await repository.hydrate();
+
+        // Undo a delete by writing back the very object hydration loaded; it must reach disk again.
+        const loaded = repository.get('item');
+        repository.delete('item');
+        repository.set('item', loaded);
+        await repository.whenIdle();
+
+        expect(await persistence.getItem('item')).toEqual({ version: 1, payload: 'A' });
     });
 
     it('mirrors created and updated writes to persistence', async () => {
