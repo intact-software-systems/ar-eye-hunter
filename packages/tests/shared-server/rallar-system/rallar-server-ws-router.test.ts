@@ -11,6 +11,7 @@ import {
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -323,6 +324,104 @@ describe('RallarServerWsRouter', () => {
         });
         expect(message.constraints).toBeUndefined();
         expect(outboxWakeRequested).toBe(true);
+    });
+
+    it('publishes no default fanout for a unicast addressed to the server itself (R-S3c-i-5)', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        onTestFinished(() => warn.mockRestore());
+        const { router, socket, outboundStores } = createRouter();
+        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        const handled: string[] = [];
+        router.on({ topicId: 'app.command' }, async (message) => {
+            handled.push(message.raw.id.msgId);
+        });
+        const liveOnly = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.command', 'all', 'command-1'),
+            router.serverPeerId,
+            'app.command.v1',
+            { go: true }
+        );
+        const durable = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.durable', 'all', 'command-2'),
+            router.serverPeerId,
+            'app.command.v1',
+            { go: true },
+            { reliability: 'at-least-once', ack: 'none' }
+        );
+
+        await router.route(liveOnly);
+        await router.route(durable);
+
+        expect(handled).toEqual([liveOnly.id.msgId]);
+        expect(socket.sent).toHaveLength(0);
+        expect(warn).not.toHaveBeenCalledWith('Rallar server WS topic had no recipients: app.command');
+        expect(await outboundStores.admissionStore.readSentMessage(durable.id.msgId)).toBeUndefined();
+    });
+
+    it('keeps the default fanout for a unicast addressed to another peer, in a room or on an outbox topic (R-S3c-i-5)', async () => {
+        const { router, socket, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
+        router.defineTopic({ topicId: 'app.durable', typeId: 'app.command.v1', fanout: 'outbox' });
+        const handled: string[] = [];
+        router.on({ topicId: 'room.command' }, async (message) => {
+            handled.push(message.raw.id.msgId);
+        });
+        const roomUnicast = newALUnicastMessage(
+            'peer-1',
+            newALRoute('room.command', 'room-1', 'command-1'),
+            'peer-2',
+            'app.command.v1',
+            { go: true },
+            { groupRef: createGroupSnapshot('room-1', ['peer-1', 'peer-2'], 1).group }
+        );
+        const durable = newALUnicastMessage(
+            'peer-1',
+            newALRoute('app.durable', 'all', 'command-2'),
+            'peer-2',
+            'app.command.v1',
+            { go: true },
+            { reliability: 'at-least-once', ack: 'none' }
+        );
+
+        await router.route(roomUnicast);
+        await router.route(durable);
+
+        expect(handled).toEqual([roomUnicast.id.msgId]);
+        expect(socket.sent.map((entry) => [entry.connectionId, entry.data.id.msgId])).toEqual([
+            ['conn-2', roomUnicast.id.msgId]
+        ]);
+        expect((await outboundStores.admissionStore.readSentMessage(durable.id.msgId))?.msg).toMatchObject({
+            id: durable.id,
+            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+        });
+    });
+
+    it('refuses a member\'s room unicast whose route names another room than the one it is addressed in (R-S3c-i-33)', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        onTestFinished(() => warn.mockRestore());
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-1', 'peer-2'],
+            currentSessionIds: ['peer-1', 'peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const misattributed = newALUnicastMessage(
+            'peer-1',
+            newALRoute('room.chat', 'room-2', 'unicast-naming-room-2'),
+            'peer-2',
+            'chat.message.v1',
+            { text: 'for room 2?' },
+            { groupRef: AUDIENCE_ROOM }
+        );
+
+        await fixture.sockets['peer-1']!.receive(misattributed);
+
+        expect(readChatRecipients(fixture)).toEqual([]);
+        expect(fixture.sockets['peer-1']!.sent.map((sent) => parseALControlMessage(sent))).toMatchObject([{
+            type: 'nack',
+            payload: { msgId: misattributed.id.msgId, reason: 'unauthorized' }
+        }]);
     });
 
     it('publishes a proxy room message with its full scoped identity', async () => {
@@ -670,10 +769,22 @@ describe('RallarServerWsRouter', () => {
         ]);
     });
 
+    // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
+    // unconfirmed (Q12, C11, R-S3c-i-11); delivery stays the authorized sessions.
     it.each([
-        { frozen: ['peer-2'], expected: ['peer-2'], label: 'honours a frozen audience narrower than the room' },
-        { frozen: ['peer-2', 'stranger'], expected: ['peer-2'], label: 'trims a frozen audience naming a non-member' }
-    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, expected }) => {
+        {
+            frozen: ['peer-2'],
+            delivered: ['peer-2'],
+            expected: ['peer-2'],
+            label: 'honours a frozen audience narrower than the room'
+        },
+        {
+            frozen: ['peer-2', 'stranger'],
+            delivered: ['peer-2'],
+            expected: ['peer-2', 'stranger'],
+            label: 'delivers a frozen audience naming a non-member to members only and expects all of it'
+        }
+    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, delivered, expected }) => {
         const fixture = createAudienceRouter({
             admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
@@ -690,7 +801,7 @@ describe('RallarServerWsRouter', () => {
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
         ]);
-        expect(readChatRecipients(fixture)).toEqual(expected);
+        expect(readChatRecipients(fixture)).toEqual(delivered);
     });
 
     it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {

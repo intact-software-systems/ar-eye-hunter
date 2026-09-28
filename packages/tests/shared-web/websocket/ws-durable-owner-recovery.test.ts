@@ -88,6 +88,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         qboxEngine: oldEngine,
         socket: new JsonWebSocketClient('ws://test', oldFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
@@ -131,6 +132,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         qboxEngine: freshEngine,
         socket: new JsonWebSocketClient('ws://test', freshFaults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0
@@ -452,6 +454,7 @@ async function openRecoveryOwner(
         qboxEngine: engine,
         socket: new JsonWebSocketClient('ws://test', faults),
         clientData: { clientId: principalId, sessionId, isOnline: true },
+        serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         connectTimeoutMs: 0

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
@@ -63,6 +64,26 @@ Deno.test('runtime construction stops at a synchronous ownership failure', () =>
         'runtime-state-expiry',
         'middleware'
     ]);
+});
+
+Deno.test('runtime construction hands one receipt recorder to the middleware and to the admin runtime', () => {
+    const operations = createOperations([]);
+    const handedRecorders: RallarAlmReceiptDiagnosticsRecorder[] = [];
+    constructApiV1Runtime(createInput([]), {
+        ...operations,
+        createMiddleware: (input) => {
+            handedRecorders.push(input.almReceiptDiagnostics);
+            return SHARED_RUNTIME;
+        },
+        requireRuntime: (input) => {
+            handedRecorders.push(input.almReceiptDiagnostics);
+            return COMPLETE_RUNTIME;
+        }
+    });
+
+    assert.equal(handedRecorders.length, 2);
+    assert.ok(handedRecorders[0]?.readDiagnostics().capacity === 256);
+    assert.equal(handedRecorders[0], handedRecorders[1]);
 });
 
 const MUTATION_RUNTIME: ApiV1MutationRuntime = {

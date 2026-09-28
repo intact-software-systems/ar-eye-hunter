@@ -89,6 +89,7 @@ describe('WS client typed ingress and transport effects', () => {
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',
+            serverPeerId: 'server',
             inboundStores: { admissionStore: fixture.admissionStore, workQueue: fixture.admission.workQueue },
             queueEngine: ownership === 'shared' ? engine : undefined
         });
@@ -335,6 +336,7 @@ async function createClientIngressFixture(
         outbox,
         socket: client,
         sessionId: 'self',
+        serverPeerId: 'server',
         inboundStores: { admissionStore, workQueue: admission.workQueue },
         outboundStores
     }).enableDefaultCallbacks();

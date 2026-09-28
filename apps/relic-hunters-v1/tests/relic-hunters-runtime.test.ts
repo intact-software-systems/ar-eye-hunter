@@ -78,32 +78,42 @@ describe('RelicHuntersRuntime', () => {
         expect(deps.publishRtcSnapshot).toHaveBeenCalledWith(snapshot);
     });
 
-    it('sends gameplay commands through the configured command transport', async () => {
-        const deps = runtimeDeps();
+    it('sends gameplay commands to the server over WS and reports the receipt (D57 as applied)', async () => {
+        const deps = runtimeDeps({
+            sendWsCommand: vi.fn(async () => ({ state: 'acknowledged' as const, reason: undefined }))
+        });
         const runtime = new RelicHuntersRuntime(deps);
 
-        await runtime.sendCommand(session(), 'room-42', { kind: 'start-expedition' });
+        const outcome = await runtime.sendCommand(session(), 'room-42', { kind: 'start-expedition' });
 
-        expect(deps.sendCommand).toHaveBeenCalledWith('room-42', {
+        expect(deps.sendWsCommand).toHaveBeenCalledWith('room-42', {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-42',
             username: 'Alice',
             kind: 'start-expedition'
         });
+        expect(deps.sendRestCommand).not.toHaveBeenCalled();
+        expect(outcome).toEqual({
+            transport: 'ws',
+            delivery: { state: 'acknowledged', reason: undefined }
+        });
     });
 
-    it('sends force-resolve commands through the configured command transport', async () => {
+    it('falls back to REST only while no WS server id is known (C13)', async () => {
         const deps = runtimeDeps();
         const runtime = new RelicHuntersRuntime(deps);
 
-        await runtime.sendCommand(session(), 'room-42', { kind: 'force-resolve-round' });
+        const outcome = await runtime.sendCommand(session(), 'room-42', {
+            kind: 'force-resolve-round'
+        });
 
-        expect(deps.sendCommand).toHaveBeenCalledWith('room-42', {
+        expect(deps.sendRestCommand).toHaveBeenCalledWith('room-42', {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-42',
             username: 'Alice',
             kind: 'force-resolve-round'
         });
+        expect(outcome).toMatchObject({ transport: 'rest' });
     });
 
     it('does not connect or subscribe when no browser session can be restored', async () => {
@@ -223,7 +233,8 @@ function runtimeDeps(
         createRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
         joinRoom: vi.fn(async () => ({ roomId: 'room-1' })),
         fetchSnapshot: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
-        sendCommand: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
+        sendWsCommand: vi.fn(async () => undefined),
+        sendRestCommand: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
         resetGame: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
         ...overrides
     };

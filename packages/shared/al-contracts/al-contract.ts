@@ -33,6 +33,8 @@ export type ALTargets =
     | Readonly<{
         mode: 'unicast';
         toPeerId: string;
+        /** The room the unicast is addressed in: its room's authority admits it and the room's router delivers it (D53). */
+        groupRef?: GroupRef;
     }>
     | Readonly<{
         mode: 'multicast';
@@ -166,6 +168,15 @@ type ALMessageBuilderOptions = Readonly<{
     ttlMs?: number;
 }>;
 
+type ALUnicastMessageBuilderOptions =
+    & ALMessageBuilderOptions
+    & Readonly<{
+        groupRef?: GroupRef;
+        reliability?: 'best-effort' | 'at-least-once';
+        ack?: ALAckMode;
+        ownership?: 'shared' | 'exclusive';
+    }>;
+
 export function newALRoute(
     topicId: string,
     contextId: string,
@@ -239,14 +250,22 @@ export function newALUnicastMessage<T>(
     toPeerId: string,
     typeId: string,
     resource: T,
-    options?: ALMessageBuilderOptions
+    options?: ALUnicastMessageBuilderOptions
 ): ALMessage {
     return {
         ...newALUntargetedMessage(senderId, route, typeId, resource, options),
-        targets: {
-            mode: 'unicast',
-            toPeerId
-        }
+        targets: options?.groupRef === undefined
+            ? { mode: 'unicast', toPeerId }
+            : { mode: 'unicast', toPeerId, groupRef: toALGroupRef(options.groupRef) },
+        ...(options?.reliability === undefined && options?.ack === undefined
+            ? {}
+            : {
+                delivery: {
+                    ownership: options?.ownership,
+                    reliability: options?.reliability ?? 'best-effort',
+                    ack: options?.ack ?? 'none'
+                }
+            })
     };
 }
 
@@ -350,19 +369,23 @@ export function readALMulticastTargetGroupRef(message: ALMessage): GroupRef | un
 
 /**
  * Whether a message addresses a room audience by its own shape — a `room.`
- * topic, a multicast, or a room-scoped broadcast. Room-scoped delivery is
+ * topic, a multicast, a unicast that names its room, or a room-scoped broadcast. Room-scoped delivery is
  * owned by the topic router behind its room authorizer; transports must not
  * relay these on their own, or the authorization is bypassed.
  */
 export function isRoomScopedALMessage(message: ALMessage): boolean {
     return message.route.topicId.startsWith('room.') ||
         message.targets?.mode === 'multicast' ||
+        (message.targets?.mode === 'unicast' && message.targets.groupRef !== undefined) ||
         (message.targets?.mode === 'broadcast' &&
             message.targets.scope === 'room');
 }
 
 export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
+    if (targets?.mode === 'unicast') {
+        return targets.groupRef === undefined ? undefined : toALGroupRef(targets.groupRef);
+    }
     if (targets?.mode === 'multicast') {
         return toALGroupRef(targets.groupRef);
     }

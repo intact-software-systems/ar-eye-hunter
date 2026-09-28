@@ -27,6 +27,11 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
+import {
+    createBrowserWsUnicastMessage,
+    validateBrowserWsPeerInput,
+    validateBrowserWsPeerServer
+} from './create-browser-ws-unicast-message.ts';
 
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
@@ -170,16 +175,19 @@ export class BrowserRallarMessageSender {
 
         throwIfMessageIssues([
             ...this.input.inputValidator.validateWs({ input, scope, roomId, roomRef }),
-            ...this.input.inputValidator.validateWsOrdering(input)
+            ...this.input.inputValidator.validateWsOrdering(input),
+            ...validateBrowserWsPeerInput(input)
         ]);
 
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
-        const message = this.createWsMessage({
+        throwIfMessageIssues(validateBrowserWsPeerServer(input, context.middleware.webSocketQueueBox.serverPeerId));
+        const session = this.input.requireSession();
+        const message = this.createWsSendMessage({
             resolved: { input, scope, roomId, roomRef },
             room,
             payloadValidation,
-            session: this.input.requireSession(),
+            session,
             channel
         });
 
@@ -196,7 +204,15 @@ export class BrowserRallarMessageSender {
         input: BrowserRallarMessageSender.TypedInput<T>,
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
-        switch (input.strategy ?? 'rtc-with-ws-fallback') {
+        const strategy = input.strategy ?? 'rtc-with-ws-fallback';
+        if (input.peerId !== undefined && strategy !== 'ws') {
+            return throwMessageValidationIssue(
+                '$.peerId',
+                'unsupported',
+                'A peer-addressed typed send travels WS only until the RTC unicast lands.'
+            );
+        }
+        switch (strategy) {
             case 'ws':
                 return await this.sendWs(input, channel);
             case 'rtc':
@@ -291,6 +307,22 @@ export class BrowserRallarMessageSender {
             throwRallarValidation(issues);
         }
         return { room, roomId, roomRef };
+    }
+
+    private createWsSendMessage<T>(input: CreateWsMessageInput<T>): ALMessage {
+        const peerId = input.resolved.input.peerId;
+        if (peerId === undefined) {
+            return this.createWsMessage(input);
+        }
+        return createBrowserWsUnicastMessage({
+            creation: this.input.creation,
+            resolved: input.resolved,
+            peerId,
+            payload: parseCapturedPayload(input.payloadValidation),
+            senderId: input.session.sessionId,
+            channel: input.channel,
+            laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
     }
 
     private createWsMessage<T>(

@@ -102,7 +102,7 @@ async function authorizeGroupRoomMessage(
     };
 }
 
-function toAuthorizedRoomAudience(
+export function toAuthorizedRoomAudience(
     snapshot: GroupSnapshot,
     targets: ALTargets,
     nowEpochMs: number

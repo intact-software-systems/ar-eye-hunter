@@ -33,6 +33,7 @@ export function createRallarSessionConnectionOperations(
             input.connectionRuntime.readConnectState() === 'connected' &&
             input.connectionRuntime.readMiddleware() !== undefined,
         session: readSession,
+        serverPeerId: () => input.connectionRuntime.readMiddleware()?.middleware.webSocketQueueBox.serverPeerId,
         subscriptions: () => new BrowserRallarSubscriptionScope(),
         flow: <K, V>(policies = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
     };

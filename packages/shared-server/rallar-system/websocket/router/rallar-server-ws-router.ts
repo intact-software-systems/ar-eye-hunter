@@ -4,6 +4,7 @@ import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { isALUnicastAddressedTo } from '@shared/al-contracts/is-al-unicast-addressed-to.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
@@ -41,6 +42,7 @@ import type {
 } from './rallar-server-ws-router-contracts.ts';
 import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-server-ws-status.ts';
 import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.ts';
+import { readRallarServerWsPublishAudience } from './read-rallar-server-ws-publish-audience.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
@@ -78,9 +80,12 @@ export class RallarServerWsRouter {
     private readonly allowImplicitUserTopics: boolean;
     private readonly defaultFanout: RallarServerWsFanout;
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
+    private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly service: WsQueueBoxServerService;
     private readonly nowEpochMs: () => number;
+    /** The peer id the WS server answers as: the id clients address it by and its own publishes carry (D57, D58). */
+    readonly serverPeerId: string;
     private installed = false;
 
     constructor(
@@ -88,12 +93,14 @@ export class RallarServerWsRouter {
         options: RallarServerWsRouterOptions = {}
     ) {
         this.service = service;
+        this.serverPeerId = service.name;
         this.maxPayloadBytes = options.maxPayloadBytes ??
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;
         this.allowImplicitUserTopics = options.allowImplicitUserTopics ?? true;
         this.defaultFanout = options.defaultFanout ?? 'live-only';
         this.authorizeRoomMessage = options.authorizeRoomMessage;
+        this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
         this.nowEpochMs = options.nowEpochMs ?? Date.now;
     }
@@ -103,6 +110,7 @@ export class RallarServerWsRouter {
             throw new Error('Rallar server websocket router is already installed.');
         }
         this.service.authorizeInboundMessagesWith({
+            sendNacks: this.sendNacks,
             authorize: async (message) => await this.authorizeBeforeAdmission(message)
         });
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {
@@ -138,11 +146,18 @@ export class RallarServerWsRouter {
         return this.registry.addProxy(rule);
     }
 
-    publish(
+    async publish(
         message: ALMessage,
         fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
-        return this.publishToFanout(message, fanout ?? this.defaultFanout);
+        const selected = fanout ?? this.defaultFanout;
+        const frozen = await readRallarServerWsPublishAudience({
+            message,
+            fanout: selected,
+            serverPeerId: this.serverPeerId,
+            readRoomAudience: this.readServerPublishAudience
+        });
+        return await this.publishToFanout(message, selected, frozen);
     }
 
     status(): RallarServerWsStatus {
@@ -167,7 +182,8 @@ export class RallarServerWsRouter {
             defaultFanout: this.defaultFanout,
             publish: async (targetMessage, fanout) => await this.publishToFanout(targetMessage, fanout)
         });
-        if (!suppressDefaultFanout) {
+        // A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
+        if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
             await this.publishToFanout(message, ingress.definition?.fanout ?? this.defaultFanout, {
                 current: audience,
                 admittedPeerIds

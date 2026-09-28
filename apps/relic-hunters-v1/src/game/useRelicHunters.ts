@@ -17,6 +17,7 @@ import {
     type RelicRuntimeDiagnostics
 } from './relic-hunters-runtime.ts';
 import { classifyRelicSnapshotAcceptance, type RelicSnapshotSource } from './relic-snapshot-ordering.ts';
+import { toRelicCommandPhase } from './to-relic-command-phase.ts';
 
 const RTC_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
 const ROUND_TIMEOUT_SNAPSHOT_REPAIR_INTERVAL_MS = 2_000;
@@ -634,16 +635,15 @@ export function useRelicHunters(): RelicHuntersConnection {
         }));
 
         try {
-            const next = await runtime.sendCommand(currentSession, currentRoomId, input);
-            if (next) {
-                acceptSnapshotCandidate(next, 'rest-command', currentRoomId);
+            const outcome = await runtime.sendCommand(currentSession, currentRoomId, input);
+            if (outcome.transport === 'rest' && outcome.snapshot) {
+                acceptSnapshotCandidate(outcome.snapshot, 'rest-command', currentRoomId);
             }
-            const snapshotReady = !!snapshotRef.current;
-            setPhase(snapshotReady ? 'ready' : 'degraded', {
-                snapshotReady,
-                lastHydratedAtEpochMs: Date.now(),
-                lastError: next ? undefined : 'No relic snapshot returned for command.'
-            });
+            const commandPhase = toRelicCommandPhase(outcome, !!snapshotRef.current);
+            if (commandPhase.error) {
+                setError(commandPhase.error);
+            }
+            setPhase(commandPhase.phase, { ...commandPhase.patch, lastHydratedAtEpochMs: Date.now() });
         }
         catch (err) {
             const message = toErrorMessage(err);

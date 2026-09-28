@@ -27,7 +27,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -59,7 +60,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
         const msg = shared.newALUnicastMessage(
@@ -92,6 +94,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox: outbox,
             socket: socket.client,
             sessionId: 'self',
+            serverPeerId: 'server',
             qosProvider: {
                 defaultsForMessage: (msg) =>
                     msg.payload.typeId === 'chat.private-text.v1'
@@ -135,7 +138,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
         const route = { topicId: 'chat', resourceId: 'msg-world', contextId: 'world' };
@@ -179,7 +183,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             const service = shared.createDefaultWsQueueBoxClientService({
                 outbox: outbox,
                 socket: socket.client,
-                sessionId: 'self'
+                sessionId: 'self',
+                serverPeerId: 'server'
             }).enableDefaultCallbacks();
             onTestFinished(() => service.close());
 
@@ -229,22 +234,6 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
             expect(socket.sentJsonStrings).toHaveLength(2);
             expect(decodePersistedALMessage(socket.sentJsonStrings[1]).id.msgId).toBe(msg.id.msgId);
-
-            await socket.receive(
-                shared.newALAckControlMessage(
-                    { v: 2, msgId: 'control-ack', ts: 0, senderId: 'peer-1' },
-                    {
-                        ackedMsgId: msg.id.msgId,
-                        originPeerId: 'self',
-                        logicalRecipientPeerId: 'peer-1',
-                        fromPeerId: 'peer-1',
-                        toPeerId: 'self',
-                        status: 'delivered',
-                        observedAtEpochMs: 0,
-                        carrier: 'ws'
-                    }
-                )
-            );
         }
         finally {
             vi.useRealTimers();
@@ -256,7 +245,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -336,7 +326,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -414,7 +405,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -468,7 +460,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -555,6 +548,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
             sessionId: 'self',
+            serverPeerId: 'server',
             inboundStores: stores,
             queueEngine: engine,
             qosProvider: {
@@ -627,7 +621,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: outbox,
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
 
@@ -701,7 +696,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());
         const msg = shared.newALBroadcastMessage(
@@ -727,6 +723,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,
             sessionId: 'self',
+            serverPeerId: 'server',
             outboundVolatileStores: volatileStores
         }).enableDefaultCallbacks();
         onTestFinished(() => service.close());

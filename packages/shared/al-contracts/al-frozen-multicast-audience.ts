@@ -48,11 +48,12 @@ export function toALFreezeComparableMessage(original: ALMessage, candidate: ALMe
 }
 
 /**
- * The sessions an admission stamps as a room message's audience: every authorized session, narrowed to a
- * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, what the
- * admitting authority allows. The origin stays in it, as it does in an unfrozen audience, so a narrowed
- * audience is never empty: every consumer already excludes the origin, and the handling policy reads an
- * empty member set as unrestricted.
+ * The sessions an admission stamps as a room message's delivery audience: every authorized session, narrowed to a
+ * multicast's frozen recipients when it carries them. A frozen audience can narrow, never widen, whom the message is
+ * delivered to. The WS server's receipt aggregate is the one reader that may expect more: it keeps a frozen audience
+ * verbatim, so a frozen recipient the authority no longer admits reads unconfirmed (S3c-i C11). The origin stays in
+ * it, as it does in an unfrozen audience, so a narrowed audience is never empty: every consumer already excludes the
+ * origin, and the handling policy reads an empty member set as unrestricted.
  */
 export function resolveALAdmittedRoomAudience(
     message: ALMessage,

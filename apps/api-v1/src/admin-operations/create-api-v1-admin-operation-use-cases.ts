@@ -9,6 +9,7 @@ import { ReadAdminOverview } from '@shared-server/rallar-system/admin-operations
 import { ReadAdminRealtime } from '@shared-server/rallar-system/admin-operations/read-admin-realtime.ts';
 import { ResetAdminMetrics } from '@shared-server/rallar-system/admin-operations/reset-admin-metrics.ts';
 import { VerifyAdminCrdtIntegrity } from '@shared-server/rallar-system/admin-operations/verify-admin-crdt-integrity.ts';
+import type { RallarAlmReceiptDiagnosticsRecorder } from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-status.ts';
@@ -34,6 +35,7 @@ export interface CreateApiV1AdminOperationUseCasesInput {
     readonly resetRtcTopologyMetrics: () => void;
     readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
     readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
+    readonly readAlmReceipts: RallarAlmReceiptDiagnosticsRecorder['readDiagnostics'];
     readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
     readonly appAdminInboxService: PruneApiAdminExpiredData.Options['appAdminInbox'];
     readonly crdtAdminMutations: CrdtAdminMutations;
@@ -60,7 +62,8 @@ export function createApiV1AdminOperationUseCases(
         serverId: input.serviceId,
         readWebSocketStatus: input.readWebSocketStatus,
         readRtcTopologyMetrics: input.readRtcTopologyMetrics,
-        readGroupFormationMetrics: input.readGroupFormationMetrics
+        readGroupFormationMetrics: input.readGroupFormationMetrics,
+        readAlmReceipts: input.readAlmReceipts
     });
     const operations: AdminOperationUseCases = {
         overview: new ReadAdminOverview({

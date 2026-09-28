@@ -155,10 +155,12 @@ word to an origin, addressed and routed to `originPeerId`.
 On the WS server the same inbound admission runs for every client message,
 with two receipt rules. A `receiver` room message the server aggregates
 withholds the server's own ACK
-([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)):
+([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would re-originate the
 receivers' ACKs under the origin's name. A `receiver` message whose logical
-recipient is the server keeps its ACK. A receiver's ACK for a room message
+recipient is the server keeps its ACK. The server receives an authorized room unicast to another
+session itself (D71), so its router delivers it; a unicast to a session outside the room's admitted audience is
+refused before admission. A receiver's ACK for a room message
 is addressed to the origin, not to the server; the server admits it as the
 aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
 lives, the ACK speaks for its own sender, and it confirms an uncounted
@@ -259,10 +261,13 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c-ii'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s3c-i'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
+
+S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
+which older decoders refuse (C1).
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays

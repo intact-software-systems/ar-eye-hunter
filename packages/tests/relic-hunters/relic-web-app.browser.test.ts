@@ -85,6 +85,8 @@ vi.mock('@shared-web/browser/rallar.ts', () => ({
             logout: vi.fn()
         },
         session: () => rallarMock.session,
+        // No WS server id is known, so commands take the REST fallback these tests read (C13).
+        serverPeerId: () => undefined,
         connect: async () => {
             rallarMock.connectCalls += 1;
         },
@@ -424,7 +426,7 @@ describe('Relic Hunters browser app', () => {
         expect(container.textContent).toContain('Step into an adjacent room');
     });
 
-    it('keeps Submit Plan on the REST command path after AI priming', async () => {
+    it('keeps Submit Plan on the REST fallback command path after AI priming (C13)', async () => {
         const snapshot = snapshotWithPlayers(1, 'planning');
         writeSession(session());
         rallarMock.roomState = roomState(1);

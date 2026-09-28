@@ -2,6 +2,19 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    createActiveClientInstanceFixture,
+    createActiveClientSessionFixture,
+    createActiveGroupMemberFixture,
+    createActiveGroupPresenceSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
+
+const MOCK_SERVER_PEER_ID = 'default-qbox-server';
+
 type MockBackendOptions = Readonly<{
     rooms?: readonly MockGroupSnapshot[];
     relicSnapshot?: RelicSnapshot;
@@ -469,6 +482,40 @@ test.describe('Relic Hunters web app', () => {
             gameId: 'room-1',
             username: 'alice'
         });
+        const commandFrames = await page.evaluate(() =>
+            ((window as unknown as { __rallarWsOutbox?: unknown[]; }).__rallarWsOutbox ?? [])
+                .map((frame) => JSON.parse(String(frame)) as { targets?: unknown; payload?: { typeId?: string; }; })
+                .filter((frame) => frame.payload?.typeId === 'relic.command.v1')
+                .map((frame) => frame.targets)
+        );
+        expect(commandFrames).toEqual([
+            {
+                mode: 'unicast',
+                toPeerId: MOCK_SERVER_PEER_ID,
+                groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' }
+            },
+            {
+                mode: 'unicast',
+                toPeerId: MOCK_SERVER_PEER_ID,
+                groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' }
+            }
+        ]);
+        // Each snapshot frame asks `receiver`, so the page acknowledges it to the server: the snapshot receipt (D58, D77).
+        await expect.poll(async () =>
+            await page.evaluate(
+                (serverPeerId) =>
+                    ((window as unknown as { __rallarWsOutbox?: unknown[]; }).__rallarWsOutbox ?? [])
+                        .map((frame) =>
+                            JSON.parse(String(frame)) as {
+                                payload?: { typeId?: string; resource?: string; };
+                            }
+                        )
+                        .filter((frame) => frame.payload?.typeId === 'al.control.ack.v2')
+                        .map((frame) => JSON.parse(frame.payload?.resource ?? '{}') as { toPeerId?: string; })
+                        .filter((ack) => ack.toPeerId === serverPeerId).length,
+                MOCK_SERVER_PEER_ID
+            )
+        ).toBe(2);
     });
 
     test('can force-resolve a timed-out round from the browser UI', async ({ page }) => {
@@ -498,7 +545,8 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByText('1 timed-out hunter.')).toBeVisible();
         await page.getByRole('button', { name: 'Resolve Timed-Out Round' }).click();
 
-        expect(commandBodies).toHaveLength(1);
+        // The command now leaves on the WS double, whose reply arrives after the click resolves.
+        await expect.poll(() => commandBodies.length).toBe(1);
         expect(commandBodies[0]).toMatchObject({
             protocolVersion: 1,
             kind: 'force-resolve-round',
@@ -541,6 +589,7 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByRole('button', { name: /Join as/ })).toBeVisible();
 
         await page.getByRole('button', { name: /Join as/ }).click();
+        // The joined snapshot arrives as the WS double's reply frame, well inside the default expect timeout.
         await expect(page.getByText('Keeper: Alice')).toBeVisible();
         await expect(page.locator('.lobby-begin-btn')).toBeEnabled();
         await page.locator('.lobby-begin-btn').click();
@@ -957,8 +1006,9 @@ test.describe('Relic Hunters web app', () => {
         expect(
             requests.some((request) => request.startsWith('POST /api/auth/ws-ticket/requests/'))
         ).toBe(true);
-        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
-        expect(requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
+        // The state reads follow the WS connect, which can settle after the lobby controls render.
+        await expect.poll(() => requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/clients');
+        await expect.poll(() => requests).toContain('GET /api/state/apps/rallar-server/workspaces/default/groups');
 
         const wsUrls = await page.evaluate(() =>
             (window as unknown as { __rallarWsUrls?: string[]; }).__rallarWsUrls ?? []
@@ -998,9 +1048,19 @@ async function installBrowserDoubles(page: Page): Promise<void> {
             }
 
             send(data: unknown): void {
-                const target = window as unknown as { __rallarWsOutbox?: unknown[]; };
+                const target = window as unknown as {
+                    __rallarWsOutbox?: unknown[];
+                    __rallarWsReply?: (frame: string) => Promise<readonly string[]>;
+                };
                 target.__rallarWsOutbox ??= [];
                 target.__rallarWsOutbox.push(data);
+                void target.__rallarWsReply?.(String(data)).then((frames) => {
+                    for (const frame of frames) {
+                        const event = new MessageEvent('message', { data: frame });
+                        this.dispatchEvent(event);
+                        this.onmessage?.(event);
+                    }
+                });
             }
 
             close(code = 1000, reason = ''): void {
@@ -1069,10 +1129,79 @@ async function captureSceneBaseline(page: Page, name: string): Promise<Buffer> {
     });
 }
 
+type MockWsFrame = Readonly<{
+    id: Readonly<{ msgId: string; senderId: string; }>;
+    targets?: Readonly<{ toPeerId?: string; }>;
+    payload?: Readonly<{ typeId: string; resource: string; }>;
+}>;
+
+/** The server's own ACK, built by the AL control codec's own constructor, as the server builds it. */
+function toServerAckFrame(command: MockWsFrame): string {
+    return JSON.stringify(newALAckControlMessage(
+        { v: 2, msgId: `ack-${command.id.msgId}`, ts: Date.now(), senderId: MOCK_SERVER_PEER_ID },
+        {
+            ackedMsgId: command.id.msgId,
+            fromPeerId: MOCK_SERVER_PEER_ID,
+            toPeerId: command.id.senderId,
+            originPeerId: command.id.senderId,
+            logicalRecipientPeerId: MOCK_SERVER_PEER_ID,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    ));
+}
+
+/** The applied snapshot as the Relic server publishes it (`toRelicSnapshotMessage`): `receiver`, at-least-once. */
+function toSnapshotFrame(snapshot: RelicSnapshot): string {
+    const roomId = String(snapshot.roomId);
+    return JSON.stringify(newALBroadcastMessage(
+        MOCK_SERVER_PEER_ID,
+        newALRoute('room.relic.snapshot', roomId, `${String(snapshot.gameId)}:${String(snapshot.round)}`),
+        'room',
+        'relic.snapshot.v1',
+        { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
+        {
+            groupRef: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: roomId
+            },
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 15_000
+        }
+    ));
+}
+
 async function mockBackend(page: Page, options: MockBackendOptions): Promise<void> {
     let rooms = [...(options.rooms ?? [])];
     let currentRelicSnapshot = options.relicSnapshot ?? relicSnapshotWithPlayers(1);
     let commandSnapshotIndex = 0;
+
+    const nextCommandSnapshot = (commandBody: unknown): RelicSnapshot => {
+        const next = options.commandResponse?.(commandBody) ??
+            options.commandSnapshots?.[commandSnapshotIndex] ??
+            options.commandSnapshot ??
+            relicSnapshotWithPlayers(1);
+        commandSnapshotIndex += 1;
+        return next;
+    };
+
+    // The server's side of a WS command: its own ACK, then the applied snapshot on the snapshot channel (D57, D58).
+    await page.exposeFunction('__rallarWsReply', (frame: string): readonly string[] => {
+        const message = JSON.parse(frame) as MockWsFrame;
+        if (
+            message.payload?.typeId !== 'relic.command.v1' ||
+            message.targets?.toPeerId !== MOCK_SERVER_PEER_ID
+        ) {
+            return [];
+        }
+        const commandBody: unknown = JSON.parse(message.payload.resource);
+        options.commandBodies?.push(commandBody);
+        currentRelicSnapshot = nextCommandSnapshot(commandBody);
+        return [toServerAckFrame(message), toSnapshotFrame(currentRelicSnapshot)];
+    });
 
     await page.route('http://127.0.0.1:5175/api/**', async (route) => {
         const request = route.request();
@@ -1086,7 +1215,8 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
                 wsBaseUrl: 'ws://127.0.0.1:5175',
                 endpoints: {
                     createWs: '/api/ws/:id'
-                }
+                },
+                serverPeerId: MOCK_SERVER_PEER_ID
             });
         }
 
@@ -1132,11 +1262,7 @@ async function mockBackend(page: Page, options: MockBackendOptions): Promise<voi
         if (path === '/api/relic/games/room-1/commands') {
             const commandBody = parseJsonBody(request.postData());
             options.commandBodies?.push(commandBody);
-            currentRelicSnapshot = options.commandResponse?.(commandBody) ??
-                options.commandSnapshots?.[commandSnapshotIndex] ??
-                options.commandSnapshot ??
-                relicSnapshotWithPlayers(1);
-            commandSnapshotIndex += 1;
+            currentRelicSnapshot = nextCommandSnapshot(commandBody);
             return json(route, currentRelicSnapshot);
         }
 
@@ -1408,47 +1534,21 @@ async function sceneCanvasMetrics(page: Page): Promise<
 
 function clientSnapshot(): MockClientSnapshot {
     const now = Date.now();
+    const instanceRef = {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        principalId: session.clientId,
+        clientInstanceId: session.clientId
+    };
+    const snapshot = createClientSnapshotFixture(instanceRef);
     return {
+        ...snapshot,
         stateRevision: ++clientStateRevision,
-        principal: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            principalId: session.clientId,
-            username: session.username,
-            displayName: 'Alice',
-            status: 'active',
-            roles: [],
-            metadata: {},
-            profileVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: now },
-            updated: { atEpochMs: now }
-        },
-        instances: [
-            {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                principalId: session.clientId,
-                clientInstanceId: session.clientId,
-                status: 'active',
-                platform: 'web',
-                capabilities: [],
-                registered: { atEpochMs: now },
-                updated: { atEpochMs: now }
-            }
-        ],
+        principal: { ...snapshot.principal, username: session.username, displayName: 'Alice' },
+        instances: [createActiveClientInstanceFixture(instanceRef)],
         activeSessions: [
             {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                principalId: session.clientId,
-                clientInstanceId: session.clientId,
-                sessionId: session.sessionId,
-                status: 'active',
-                presenceState: 'online',
-                transport: 'ws',
-                authenticatedAtEpochMs: now,
-                connectedAtEpochMs: now,
+                ...createActiveClientSessionFixture({ ...instanceRef, sessionId: session.sessionId }),
                 lastHeartbeatAtEpochMs: now,
                 expiresAtEpochMs: now + 60_000
             }
@@ -1463,52 +1563,48 @@ function groupSnapshot(
     options: Readonly<{ onlineMemberCount: number; }>
 ): MockGroupSnapshot {
     const now = Date.now();
+    const scope = { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' };
+    const principalIds = [
+        session.clientId,
+        ...Array.from({ length: Math.max(0, options.onlineMemberCount - 1) }, (_, index) => `hunter-${index + 2}`)
+    ];
+    const onlinePrincipalIds = principalIds.slice(0, options.onlineMemberCount);
+    const snapshot = createGroupSnapshotFixture({ ...scope, sessionIds: [] });
+    const groupRevision = ++groupStateRevision;
     return {
-        stateRevision: ++groupStateRevision,
+        ...snapshot,
+        causalRevision: { groupRevision, presenceRevision: onlinePrincipalIds.length },
         group: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'room-1',
+            ...snapshot.group,
+            snapshotVersion: groupRevision,
             slug: 'relic-hunters-expedition',
             displayName: 'Relic Hunters Expedition',
-            kind: 'room',
-            status: 'active',
             joinMode: 'invite-only',
-            metadata: {},
-            metadataVersion: 1,
-            rosterVersion: 1,
-            presenceVersion: 1,
-            created: { atEpochMs: now, byPrincipalId: session.clientId },
-            updated: { atEpochMs: now, byPrincipalId: session.clientId }
+            activeMemberCount: principalIds.length,
+            ownerPrincipalId: session.clientId,
+            presenceVersion: onlinePrincipalIds.length,
+            formationElectorate: principalIds
         },
-        members: [
-            {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'room-1',
-                principalId: session.clientId,
-                role: 'owner',
-                status: 'active',
-                joined: { atEpochMs: now },
-                updated: { atEpochMs: now }
-            }
-        ],
-        activeSessions: options.onlineMemberCount > 0
-            ? [
-                {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'room-1',
-                    sessionId: session.sessionId,
-                    principalId: session.clientId,
-                    connectedAtEpochMs: now,
-                    lastHeartbeatAtEpochMs: now,
-                    expiresAtEpochMs: now + 60_000
-                }
-            ]
-            : [],
-        memberCount: 1,
-        onlineMemberCount: options.onlineMemberCount
+        members: principalIds.map((principalId) =>
+            createActiveGroupMemberFixture({
+                ...scope,
+                principalId,
+                role: principalId === session.clientId ? 'owner' : 'member',
+                actorPrincipalId: session.clientId
+            })
+        ),
+        activeSessions: onlinePrincipalIds.map((principalId) => ({
+            ...createActiveGroupPresenceSessionFixture({
+                ...scope,
+                principalId,
+                sessionId: principalId === session.clientId ? session.sessionId : `${principalId}-session`
+            }),
+            connectedAtEpochMs: now,
+            lastHeartbeatAtEpochMs: now,
+            expiresAtEpochMs: now + 60_000
+        })),
+        memberCount: principalIds.length,
+        onlineMemberCount: onlinePrincipalIds.length
     };
 }
 

@@ -166,6 +166,44 @@ describe('WS server outbound planning', () => {
 
         expect(plan).toMatchObject({ dropReasonCode: undefined, persist: true, preparedMessages: [] });
     });
+
+    it('repairs a room message only to a requester of the audience it was admitted to, never to a later joiner (D24, D43)', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: {
+                    resolveGroupRecipients: () => [
+                        { peerId: 'b', connectionId: 'b' },
+                        { peerId: 'late-joiner', connectionId: 'late-joiner' }
+                    ]
+                }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-audience' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        );
+        const repairRequestedBy = (requestedByPeerId: string) =>
+            planning.planRepairMessage(message, {
+                trigger: 'repair',
+                requestedByPeerId,
+                failedPeerIds: [],
+                completedHopPeerIds: [],
+                missingSeqs: [],
+                repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
+                admittedAudience: ['b']
+            });
+
+        expect(repairRequestedBy('late-joiner')).toBeUndefined();
+        expect(repairRequestedBy('b')?.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'b' }]);
+    });
 });
 
 interface PlanningFixture {

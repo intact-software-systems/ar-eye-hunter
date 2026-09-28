@@ -65,6 +65,7 @@ it.each([
         socket: client,
         outbox: new InMemoryQueueBox(),
         sessionId: 'self',
+        serverPeerId: 'server',
         inboundStores,
         outboundStores
     }).enableDefaultCallbacks();

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
@@ -228,6 +229,22 @@ describe('QueueBoxUtilities', () => {
             },
             route: msg.route
         });
+    });
+
+    it('clamps a creator wider than the stored 16-character column and keeps the full one in the message (R-S3c-i-30)', () => {
+        const creator = 'default-qbox-server';
+        const msg: ALMessage = {
+            ...newALUnicastMessage('sender', { topicId: 'chat', contextId: 'room', resourceId: 'wide-creator' }, 'peer', 'chat.v1', {}),
+            audit: { createdBy: creator, createdTs: 123 }
+        };
+
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'ws.outbox');
+
+        expect(creator.length).toBeGreaterThan(16);
+        expect(entry.audit.createdBy).toBe(toAppQueueCreatedBy(creator));
+        expect(entry.audit.createdBy.length).toBeLessThanOrEqual(16);
+        expect(entry.audit.createdBy).not.toBe(toAppQueueCreatedBy('default-qbox-servers'));
+        expect(JSON.parse(entry.resource).audit.createdBy).toBe(creator);
     });
 
     it('preserves an absent message deadline without turning queue retention into a delivery TTL', () => {

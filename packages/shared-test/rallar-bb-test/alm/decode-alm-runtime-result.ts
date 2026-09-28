@@ -250,7 +250,10 @@ function readAlmReceiptModeField(record: RallarBlackBoxTestRecord, path: string)
     return record.receiptMode as ALReceiptMode | undefined;
 }
 
-/** Absent unless a hop refused the message; a trusted server relay is never named, so an id on one is refused. */
+/**
+ * Absent unless a hop refused the message; a trusted server relay is never named, so an id on one is refused. A
+ * trusted server refuses with `resync-required` after admission or `unauthorized` before it (S3c-i C3).
+ */
 function readAlmRelayRejectionField(
     record: RallarBlackBoxTestRecord,
     path: string
@@ -261,9 +264,10 @@ function readAlmRelayRejectionField(
     }
     const rejection = decodeAlmRuntimeRecord(value);
     if (
-        rejection.reason === 'resync-required' && rejection.relay === 'trusted-server' && rejection.peerId === undefined
+        (rejection.reason === 'resync-required' || rejection.reason === 'unauthorized') &&
+        rejection.relay === 'trusted-server' && rejection.peerId === undefined
     ) {
-        return { relay: 'trusted-server', reason: 'resync-required' };
+        return { relay: 'trusted-server', reason: rejection.reason };
     }
     if (rejection.reason === 'resync-required' && rejection.relay === 'peer' && typeof rejection.peerId === 'string') {
         return { relay: 'peer', peerId: rejection.peerId, reason: 'resync-required' };

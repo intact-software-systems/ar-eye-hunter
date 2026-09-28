@@ -274,7 +274,8 @@ function connectionAndCrdtResponse(url: string): Response {
         return jsonResponse({
             apiBaseUrl: 'https://api.example.test',
             wsBaseUrl: 'wss://api.example.test',
-            endpoints: { createWs: '/api/ws' }
+            endpoints: { createWs: '/api/ws' },
+            serverPeerId: 'server'
         });
     }
     if (url.endsWith('/api/webrtc/ice')) {

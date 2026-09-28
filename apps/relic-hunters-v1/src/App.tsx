@@ -20,6 +20,7 @@ import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
 import { IntroScene } from './game/IntroScene.tsx';
 import { UI, type Lang } from './game/lang.ts';
 import { OpeningRelicScene } from './game/OpeningRelicScene.tsx';
+import { RelicCommandDeliveryRow } from './game/relic-command-delivery-row.tsx';
 import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { RelicScene as LegacyRelicScene } from './game/RelicScene.tsx';
 import { RelicSceneNext } from './game/RelicSceneNext.tsx';
@@ -1581,6 +1582,7 @@ function RallarDiagnosticsPanel({
             </div>
             {diagnostics.roomId && <small>Room {diagnostics.roomId}</small>}
             <small>Commands {diagnostics.commandTransport.toUpperCase()}</small>
+            <RelicCommandDeliveryRow delivery={diagnostics.lastCommandDelivery} />
             <small>Snapshots {diagnostics.snapshotTransport}</small>
             {diagnostics.lastSnapshotSource && <small>Last snapshot {diagnostics.lastSnapshotSource}</small>}
             {diagnostics.lastAcceptedSnapshot && (

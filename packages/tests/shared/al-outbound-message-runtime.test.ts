@@ -779,6 +779,34 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('hands a retry the audience the message was admitted to, so the planner never widens it (D24, D43)', async () => {
+        vi.useFakeTimers();
+
+        const audiences: (readonly string[] | undefined)[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1'], nextHopPeerIds: ['r1'], mode: 'receiver' },
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 },
+                admittedAudience: ['r1']
+            }),
+            planRepairMessage: async (msg, request) => {
+                audiences.push(request.admittedAudience);
+                return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] };
+            }
+        });
+        await enqueueOutboundOrThrow(runtime, createOutboundMessage('msg-admitted-audience-retry'));
+
+        await vi.advanceTimersByTimeAsync(102);
+
+        expect(audiences).toEqual([['r1']]);
+        runtime.dispose();
+    });
+
     it('stops pending acknowledgement timers when disposed', async () => {
         vi.useFakeTimers();
 

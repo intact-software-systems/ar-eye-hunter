@@ -55,7 +55,8 @@ describe('ReadAdminOverview', () => {
                         openConnectionIds: ['open-1']
                     },
                     rtcTopology: { metrics: { recomputeCount: 2 }, processLocal: true },
-                    groupFormation: { processLocal: true }
+                    groupFormation: { processLocal: true },
+                    almReceipts: { diagnostics: { capacity: 256, messages: [] }, processLocal: true }
                 })
         });
 

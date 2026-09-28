@@ -70,7 +70,8 @@ describe('browser RTC runtime composition', () => {
         const queueBox = createDefaultWsQueueBoxClientService({
             outbox: new InMemoryQueueBox(),
             socket,
-            sessionId: 'self'
+            sessionId: 'self',
+            serverPeerId: 'server'
         });
         const initializing = initialiseRtcConnectionService({
             webSocketQueueBox: queueBox,

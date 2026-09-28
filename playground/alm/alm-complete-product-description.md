@@ -197,7 +197,11 @@ audience (S2c-ii).
 One logical recipient. A transport may route through an authorized next hop,
 but only the addressed recipient delivers locally.
 
-**CURRENT** for basic RTC and WS routing.
+**CURRENT** for basic RTC and WS routing. **CURRENT — S3c-i, addressed WS sends:** a unicast may name its room;
+the room's authority admits it and the room's router delivers it, and a `receiver` unicast's receipt is its addressee's
+own ACK, aggregated by the server over one member (D53, D71). A client addresses the server itself with a unicast to
+the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the message,
+not that the application applied it (D76). The RTC unicast and the unicast fallback are S3c-ii's.
 
 ### Multicast
 
@@ -412,6 +416,12 @@ Durability is decoupled from reliability, so a lane send (`messages.rtc.send`,
 `messages.ws.send`) that names no durability is volatile too; CRDT sync keeps its
 own HTTP/WS catch-up.
 
+**CURRENT — S3c-i, the WS hop receipt:** when the server names its peer id, a WS `hop` or `subtree` send tracks the
+server as its one hop, so it is receipted by the server's own ACK and no longer ends at `transport-accepted` with a
+downgrade (R-S3a-4 closed). The
+server's own room notifications carry `receiver` receipts over the room's live sessions frozen at publish, and cluster
+delivery honours that audience (D58, D77).
+
 **PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
 behavior; all-recipient is the frozen logical audience since S2. A2 defines the
 leader as the group's appointed director session.
@@ -622,7 +632,9 @@ payloads. Applications can subscribe to lifecycle events and aggregate metrics
 without polling internal stores.
 
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
-Full RTC envelopes are no longer logged by the receive service.
+Full RTC envelopes are no longer logged by the receive service. The WS server records, per process and for its 256
+most recently updated receipted messages, who confirmed each receipt and whether it ran out, on
+`/api/admin/operations/realtime` (S3c-i, D61, D73).
 
 **PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared
 lifecycle event stream, IndexedDB cost telemetry, trace propagation, or

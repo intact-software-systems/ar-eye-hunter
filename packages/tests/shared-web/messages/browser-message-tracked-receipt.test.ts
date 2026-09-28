@@ -24,6 +24,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 
 const SESSION_ID = 'session-1';
 const TTL_MS = 30_000;
+const SERVER_PEER_ID = 'server';
 
 interface DispatchHarness {
     readonly registry: BrowserRallarDeliveryRegistry;
@@ -39,15 +40,58 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     });
 
     it.each([
-        { ackLabel: 'qos.ack hop', ack: 'none' as const, qos: { ack: { algo: 'hop' as const } }, requested: 'hop' as const },
-        { ackLabel: 'ack group-leader', ack: 'group-leader' as const, qos: undefined, requested: 'subtree' as const }
+        {
+            ackLabel: 'qos.ack hop',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'hop' as const } },
+            requested: 'hop' as const
+        },
+        {
+            ackLabel: 'ack group-leader',
+            ack: 'group-leader' as const,
+            qos: undefined,
+            requested: 'subtree' as const
+        }
     ])(
-        'ends a room send asking $ackLabel at transport-accepted, tracking none and naming the downgrade',
+        'keeps a room send asking $ackLabel open past transport acceptance, tracking the server as its hop (R-S3a-4)',
         async ({ ack, qos, requested }) => {
-            const harness = await createWsDispatchHarness();
-            const handle = harness.send(newALMulticastMessage(SESSION_ID, toRoute('room-hop'), ORIGIN_ROOM, 'chat.message.v1', {
-                text: 'hop'
-            }, { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos }));
+            const harness = await createWsDispatchHarness(SERVER_PEER_ID);
+            const handle = harness.send(
+                newALMulticastMessage(SESSION_ID, toRoute('room-hop'), ORIGIN_ROOM, 'chat.message.v1', {
+                    text: 'hop'
+                }, { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos })
+            );
+
+            await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
+
+            expect(handle.lifecycle()).toMatchObject({ receiptAlgo: requested });
+            expect(handle.lifecycle().evidence.receiptDowngrade).toBeUndefined();
+            expect(isALDeliveryTerminal(handle.lifecycle())).toBe(false);
+        }
+    );
+
+    it.each([
+        {
+            ackLabel: 'qos.ack hop',
+            ack: 'none' as const,
+            qos: { ack: { algo: 'hop' as const } },
+            requested: 'hop' as const
+        },
+        {
+            ackLabel: 'ack group-leader',
+            ack: 'group-leader' as const,
+            qos: undefined,
+            requested: 'subtree' as const
+        }
+    ])(
+        'ends a room send asking $ackLabel at transport-accepted, naming the downgrade, while the server named no peer id (R-S3c-i-6)',
+        async ({ ack, qos, requested }) => {
+            const harness = await createWsDispatchHarness(undefined);
+            const handle = harness.send(
+                newALMulticastMessage(SESSION_ID, toRoute('room-hop-server-unknown'), ORIGIN_ROOM, 'chat.message.v1', {
+                    text: 'hop'
+                }, { reliability: 'at-least-once', ack, ttlMs: TTL_MS, qos })
+            );
 
             await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
@@ -58,7 +102,7 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     );
 
     it('keeps a unicast send asking qos.ack hop open past transport acceptance, with no downgrade', async () => {
-        const harness = await createWsDispatchHarness();
+        const harness = await createWsDispatchHarness(SERVER_PEER_ID);
         const handle = harness.send({
             ...newALUnicastMessage(SESSION_ID, toRoute('unicast-hop'), 'peer-b', 'chat.message.v1', { text: 'hop' }, {
                 ttlMs: TTL_MS
@@ -75,7 +119,7 @@ describe('the receipt a WS send tracks reaches its handle (R-S3a-4)', () => {
     });
 
     it('keeps a default notification room send tracking receiver, with no downgrade', async () => {
-        const harness = await createWsDispatchHarness();
+        const harness = await createWsDispatchHarness(SERVER_PEER_ID);
         const defaults = resolveALChannelSendDefaults({ purpose: 'notification', durability: undefined, hasLogicalAudience: true });
         const handle = harness.send(newALMulticastMessage(SESSION_ID, toRoute('room-default'), ORIGIN_ROOM, 'chat.message.v1', {
             text: 'default'
@@ -125,29 +169,41 @@ describe('the receipt a WS fallback leg tracks reaches its handle (R-S3a-4)', ()
         TestWebSocket.instances.length = 0;
     });
 
-    // Task 2 re-review N2: the RTC leg's `unroutable` leaves the handle's receipt alone; the WS leg that
-    // takes over tracks none for a room `hop` send, so the handle ends where that WS leg ends.
-    it('ends a room send asking qos.ack hop at WS transport-accepted after its RTC leg is unroutable', async () => {
+    // The RTC leg's `unroutable` leaves the handle's receipt alone; the WS leg that takes over tracks the server as the
+    // room send's one hop, so the handle stays open for the server's ACK (R-S3a-4 closed by S3c-i).
+    it('keeps a room send asking qos.ack hop open on its WS leg after its RTC leg is unroutable', async () => {
         const registry = createRegistry();
-        const ws = await createWsClient(registry, 'a');
-        const fixture = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b'], 4), nextHopPeerIds: [] });
+        const ws = await createWsClient(registry, 'a', SERVER_PEER_ID);
+        const fixture = createRtcOriginOverlayFixture({
+            snapshot: createOriginSnapshot(['a', 'b'], 4),
+            nextHopPeerIds: []
+        });
         const harness = createDispatchHarness(registry, 'rtc', {
             rtc: (message) => fixture.manager.enqueueIfAbsent(message),
             ws: (message) => ws.enqueueOutboxIfAbsent(message)
         });
-        const handle = harness.send(newALMulticastMessage('a', toRoute('fallback-hop'), ORIGIN_ROOM, 'chat.message.v1', {
-            text: 'hop'
-        }, { reliability: 'at-least-once', ack: 'none', ttlMs: TTL_MS, qos: { ack: { algo: 'hop' } } }));
+        const handle = harness.send(
+            newALMulticastMessage('a', toRoute('fallback-hop'), ORIGIN_ROOM, 'chat.message.v1', {
+                text: 'hop'
+            }, {
+                reliability: 'at-least-once',
+                ack: 'none',
+                ttlMs: TTL_MS,
+                qos: { ack: { algo: 'hop' } }
+            })
+        );
 
         await expect.poll(() => handle.lifecycle().state).toBe('transport-accepted');
 
-        expect(handle.lifecycle()).toMatchObject({ receiptAlgo: 'none' });
-        expect(handle.lifecycle().evidence.receiptDowngrade).toEqual({ requested: 'hop', tracked: 'none' });
-        expect(handle.lifecycle().evidence.attempts.map(({ carrier, outcome }) => ({ carrier, outcome }))).toEqual([
+        expect(handle.lifecycle()).toMatchObject({ receiptAlgo: 'hop' });
+        expect(handle.lifecycle().evidence.receiptDowngrade).toBeUndefined();
+        expect(
+            handle.lifecycle().evidence.attempts.map(({ carrier, outcome }) => ({ carrier, outcome }))
+        ).toEqual([
             { carrier: 'rtc', outcome: 'unroutable' },
             { carrier: 'ws', outcome: 'sent' }
         ]);
-        expect(isALDeliveryTerminal(handle.lifecycle())).toBe(true);
+        expect(isALDeliveryTerminal(handle.lifecycle())).toBe(false);
     });
 });
 
@@ -156,13 +212,17 @@ function toRoute(resourceId: string): ALMessage['route'] {
 }
 
 /** The origin WS client, connected to a native socket that accepts every frame it writes. */
-async function createWsDispatchHarness(): Promise<DispatchHarness> {
+async function createWsDispatchHarness(serverPeerId: string | undefined): Promise<DispatchHarness> {
     const registry = createRegistry();
-    const service = await createWsClient(registry, SESSION_ID);
+    const service = await createWsClient(registry, SESSION_ID, serverPeerId);
     return createDispatchHarness(registry, 'ws', { ws: (message) => service.enqueueOutboxIfAbsent(message) });
 }
 
-async function createWsClient(registry: BrowserRallarDeliveryRegistry, sessionId: string): Promise<WsQueueBoxClientService> {
+async function createWsClient(
+    registry: BrowserRallarDeliveryRegistry,
+    sessionId: string,
+    serverPeerId: string | undefined
+): Promise<WsQueueBoxClientService> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
     const connected = client.connect();
@@ -173,6 +233,7 @@ async function createWsClient(registry: BrowserRallarDeliveryRegistry, sessionId
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId,
+        serverPeerId,
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
         outboundSettlements: (settlement) => registry.record(settlement)
     });

@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
+import { toAppQueueCreatedBy } from '../queuebox/AppQueueIdentity.ts';
 import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import {
@@ -84,7 +85,8 @@ export class QueueBoxUtilities {
             typeId: typeId,
             audit: {
                 date: createdAt.toPlainTime(),
-                createdBy: msg.audit?.createdBy ?? 'test',
+                // The stored creator column is 16 characters wide; the message keeps its full audit (R-S3c-i-30).
+                createdBy: toAppQueueCreatedBy(msg.audit?.createdBy ?? 'test'),
                 createdTs: createdAt.toPlainDateTime(),
                 expiryTs
             },

@@ -34,9 +34,19 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
     onOutboxClusterPublishDo(
-        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
+        publisher: (
+            message: ALMessage,
+            entry: ResourceEntry,
+            admittedAudience: readonly string[] | undefined
+        ) => Promise<void>
     ): QueueBoxPubSubWsService;
-    sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult;
+    sendToTargetsWithResult(
+        message: ALMessage,
+        recipientSessionIds?: readonly string[],
+        admittedPeerIds?: readonly string[]
+    ): WsServerLiveSendResult;
+    /** The audience the row was admitted to, captured in the shared admission store (D58, C9). */
+    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined>;
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
@@ -147,7 +157,7 @@ export function installQueueBoxPubSubBridge(
 function registerQueueBoxOutboxPublisher(
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
-    options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry) => {
+    options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry, admittedAudience) => {
         const envelope = toPubSubMessage({
             channel: options.channel,
             publisherId: options.publisherId,
@@ -162,7 +172,7 @@ function registerQueueBoxOutboxPublisher(
             operation: 'outbox-cluster-publish',
             message: envelope
         });
-        const result = options.wsQBoxServerService.sendToTargetsWithResult(message);
+        const result = options.wsQBoxServerService.sendToTargetsWithResult(message, undefined, admittedAudience);
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -247,8 +257,11 @@ async function sendRemoteQueueBoxOutboxEntry(
     entry: ResourceEntry,
     options: SendRemoteQueueBoxOutboxEntryDependencies
 ): Promise<void> {
+    const remoteMessage = decodePersistedALMessage(entry.resource);
     const result = options.wsQBoxServerService.sendToTargetsWithResult(
-        decodePersistedALMessage(entry.resource)
+        remoteMessage,
+        undefined,
+        await options.wsQBoxServerService.readAdmittedAudience(remoteMessage.id.msgId)
     );
     recordPubSubTiming({
         timing: options.timing,

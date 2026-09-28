@@ -1,0 +1,521 @@
+{
+  "variables": {
+    "apiPrimary": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+    "rallarWsBaseUrl": { "env": "RALLAR_WS_BASE_URL", "default": "ws://127.0.0.1:18080" },
+    "applicationId": "addressed-sends-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "addressed-sends-room-{runId}",
+    "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
+    "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
+    "bobUsername": { "env": "RALLAR_BOB_USERNAME", "default": "bob" },
+    "bobPassword": { "env": "RALLAR_BOB_PASSWORD", "default": "secret", "secret": true },
+    "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
+  },
+  "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": { "Content-Type": "application/json" },
+      "timeoutMs": 10000
+    },
+    "wsAlice": { "type": "ws", "timeoutMs": 10000 },
+    "wsBob": { "type": "ws", "timeoutMs": 10000 }
+  },
+  "steps": [
+    {
+      "name": "readConfigNamesTheServerPeerId",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/config",
+        "outputs": { "serverPeerId": "body.serverPeerId" }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "serverPeerId": "string", "endpoints": { "createWs": "string" } }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-addressed-login-alice-{runId}",
+        "body": { "username": "{aliceUsername}", "password": "{alicePassword}" },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.aliceAccessToken" }] }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-addressed-login-bob-{runId}",
+        "body": { "username": "{bobUsername}", "password": "{bobPassword}" },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.bobAccessToken" }] }
+    },
+    {
+      "name": "aliceCreatesTheRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-addressed-create-room-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Addressed sends {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": { "status": 201, "body": { "group": { "groupId": "{groupId}" } } }
+    },
+    {
+      "name": "bobJoinsTheRoom",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/bb-addressed-join-bob-{runId}",
+        "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": { "members": [{ "principalId": "{bobClientId}", "status": "active" }] }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/bb-addressed-presence-alice-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": { "generationId": "generation-{runId}", "principalId": "{aliceClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/bb-addressed-presence-bob-{runId}",
+        "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
+        "body": { "generationId": "generation-{runId}", "principalId": "{bobClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-addressed-ticket-alice-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "outputs": { "aliceWsTicket": { "path": "body.ticket", "secret": true } }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveAliceWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          { "path": "variables.rallarWsBaseUrl" },
+          "/api/ws/",
+          { "path": "outputs.aliceSessionId" },
+          "?ticket=",
+          { "urlEncode": { "path": "outputs.aliceWsTicket" } }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWs",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": { "url": "{aliceWsUrl}", "timeoutMs": 10000 }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-addressed-ticket-bob-{runId}",
+        "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
+        "outputs": { "bobWsTicket": { "path": "body.ticket", "secret": true } }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveBobWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          { "path": "variables.rallarWsBaseUrl" },
+          "/api/ws/",
+          { "path": "outputs.bobSessionId" },
+          "?ticket=",
+          { "urlEncode": { "path": "outputs.bobWsTicket" } }
+        ]
+      }
+    },
+    {
+      "name": "openBobWs",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": { "url": "{bobWsUrl}", "timeoutMs": 10000 }
+    },
+    {
+      "name": "receiverUnicastToBobIsAdmittedForBobAlone",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "addressed-to-bob-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "addressed-to-bob-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "addressed-to-bob-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{bobSessionId}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "at-least-once", "ack": "receiver" },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"for bob\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": { "admittedReceiptResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.receipt.v1" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseAdmittedReceipt",
+      "type": "set",
+      "output": "admittedReceipt",
+      "transform": { "jsonParse": { "path": "outputs.admittedReceiptResource" } }
+    },
+    {
+      "name": "assertAdmittedReceiptNamesBobAlone",
+      "type": "assert",
+      "actual": {
+        "msgId": "{admittedReceipt.msgId}",
+        "phase": "{admittedReceipt.phase}",
+        "firstExpected": "{admittedReceipt.expectedRecipientPeerIds.0}",
+        "secondExpected": "{admittedReceipt.expectedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "addressed-to-bob-{runId}",
+          "phase": "admitted",
+          "firstExpected": "{bobSessionId}",
+          "secondExpected": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "bobReceivesTheUnicast",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 10000,
+        "message": {
+          "id": { "msgId": "addressed-to-bob-{runId}" },
+          "route": { "topicId": "room.chat" }
+        }
+      }
+    },
+    {
+      "name": "bobAcknowledgesTheUnicastToItsOrigin",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "ack-addressed-to-bob-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "addressed-to-bob-{runId}",
+            "contextId": "{aliceSessionId}"
+          },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "qos": {
+            "delivery": { "algo": "best-effort" },
+            "durability": { "algo": "volatile" },
+            "ack": { "algo": "none", "opts": { "timeoutMs": 250 } }
+          },
+          "payload": {
+            "typeId": "al.control.ack.v2",
+            "contentType": "application/json",
+            "resource": "{\"ackedMsgId\":\"addressed-to-bob-{runId}\",\"fromPeerId\":\"{bobSessionId}\",\"toPeerId\":\"{aliceSessionId}\",\"originPeerId\":\"{aliceSessionId}\",\"logicalRecipientPeerId\":\"{bobSessionId}\",\"carrier\":\"ws\",\"status\":\"delivered\",\"observedAtEpochMs\":0}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceReceivesTheCompleteReceipt",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "request": {
+        "outputs": { "completeReceiptResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.receipt.v1" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseCompleteReceipt",
+      "type": "set",
+      "output": "completeReceipt",
+      "transform": { "jsonParse": { "path": "outputs.completeReceiptResource" } }
+    },
+    {
+      "name": "assertBobsAckCompletesTheReceipt",
+      "type": "assert",
+      "actual": {
+        "msgId": "{completeReceipt.msgId}",
+        "phase": "{completeReceipt.phase}",
+        "firstConfirmed": "{completeReceipt.confirmedRecipientPeerIds.0}",
+        "secondConfirmed": "{completeReceipt.confirmedRecipientPeerIds.1}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "addressed-to-bob-{runId}",
+          "phase": "complete",
+          "firstConfirmed": "{bobSessionId}",
+          "secondConfirmed": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "unicastToANonMemberIsRefused",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "addressed-to-outsider-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "addressed-to-outsider-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "addressed-to-outsider-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "not-a-member-{runId}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "at-least-once", "ack": "receiver" },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"for nobody\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": { "outsiderNackResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.nack.v1" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseOutsiderNack",
+      "type": "set",
+      "output": "outsiderNack",
+      "transform": { "jsonParse": { "path": "outputs.outsiderNackResource" } }
+    },
+    {
+      "name": "assertOutsiderNackShape",
+      "type": "assert",
+      "actual": { "msgId": "{outsiderNack.msgId}", "reason": "{outsiderNack.reason}" },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": { "msgId": "addressed-to-outsider-{runId}", "reason": "unauthorized" }
+      }
+    },
+    {
+      "name": "commandAddressedToTheServerIsAcknowledgedByTheServer",
+      "type": "ws.send",
+      "connection": "wsAlice",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "addressed-to-server-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "addressed-to-server-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "addressed-to-server-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{serverPeerId}",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": { "reliability": "at-least-once", "ack": "receiver" },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"for the server\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": { "serverAckResource": "matchedMessage.data.payload.resource" }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "id": { "senderId": "{serverPeerId}" },
+          "route": { "topicId": "al-control" },
+          "targets": { "mode": "unicast", "toPeerId": "{aliceSessionId}" },
+          "payload": { "typeId": "al.control.ack.v2" }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseServerAck",
+      "type": "set",
+      "output": "serverAck",
+      "transform": { "jsonParse": { "path": "outputs.serverAckResource" } }
+    },
+    {
+      "name": "assertTheServerSpeaksForItself",
+      "type": "assert",
+      "actual": {
+        "ackedMsgId": "{serverAck.ackedMsgId}",
+        "fromPeerId": "{serverAck.fromPeerId}",
+        "logicalRecipientPeerId": "{serverAck.logicalRecipientPeerId}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "ackedMsgId": "addressed-to-server-{runId}",
+          "fromPeerId": "{serverPeerId}",
+          "logicalRecipientPeerId": "{serverPeerId}"
+        }
+      }
+    },
+    {
+      "name": "closeBobWs",
+      "type": "ws.close",
+      "connection": "wsBob",
+      "request": { "code": 1000, "reason": "addressed sends recipe done" }
+    },
+    {
+      "name": "closeAliceWs",
+      "type": "ws.close",
+      "connection": "wsAlice",
+      "request": { "code": 1000, "reason": "addressed sends recipe done" }
+    }
+  ]
+}

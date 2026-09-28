@@ -130,7 +130,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             missingSeqs: control.payload.missingSeqs ?? [],
             failedPeerIds: [],
             completedHopPeerIds: [],
-            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
+            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 },
+            admittedAudience: read.plan?.admittedAudience
         });
         return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;
     }

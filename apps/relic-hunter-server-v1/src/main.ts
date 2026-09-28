@@ -7,6 +7,7 @@ import { createApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lif
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { isRelicCommand } from '@relic-hunters/mod.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
@@ -65,7 +66,9 @@ const relicGame = await installRelicHunterGame(rallar, {
                 `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`
             );
         }
-    })
+    }),
+    readSessionUsername: async (sessionId) =>
+        (await rallar.runtime.authSessionRepository.findBySessionId(sessionId))?.username
 });
 
 const apiCors = cors({
@@ -86,7 +89,16 @@ app.use('/api/*', async (c, next) => {
     return await apiCors(c, next);
 });
 
-app.get('/api/config', (c) => c.json(configuration.browser));
+app.get(
+    '/api/config',
+    (c) =>
+        c.json(
+            {
+                ...configuration.browser,
+                serverPeerId: rallar.ws.serverPeerId
+            } satisfies ApiConfigResponse
+        )
+);
 
 initRelicSwaggerRoutes(app);
 

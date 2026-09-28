@@ -230,6 +230,11 @@ remains (C1).
   pair with a typed `refused/capacity` admission verdict, and that bound as the first producer of the
   congestion aspect's `overloaded`; track, intake, age budgets and fairness stay V1 (Q8).
 
+**As applied (S3c-i, PR #605):** a room unicast names its room (`groupRef`, schema bump — the server target needs no
+envelope bump, D76); the WS `hop` receipt tracks the server; the snapshot sender is the server peer id and the sink a
+per-process recorder; the typed-channel `peerId` target landed WS-only for the Relic cutover (Q11's RTC half is
+S3c-ii's).
+
 ## 3. Recommendation
 
 **S3a, then S3b, then S3c, as three medium PRs.** S3a first because fallback and both proofs consume
@@ -413,7 +418,8 @@ through R-S3b-21 live in the plan's "Rulings during execution".
   holds (`deadline-expiry`, both `not-yet-in-sync` variants, `delivery-lifecycle` holds,
   `delivery-reload`'s hold); `frozen-audience-membership` sits within ~0.5 s of the ≈8 s receipt budget.
 - Bundle ceilings after S3a: facade 222 KiB (221.8 recorded), headless 284 KiB (283.62 recorded).
-  `AL_ADMISSION_SCHEMA_ID` is still `rallar-alm-2026-09-s2c-ii`.
+  `AL_ADMISSION_SCHEMA_ID` is still `rallar-alm-2026-09-s2c-ii`. S3c-i (PR #605) bumps it to
+  `rallar-alm-2026-09-s3c-i` (C1).
 
 **Questions**
 
@@ -481,3 +487,102 @@ through R-S3b-21 live in the plan's "Rulings during execution".
 **Task cut under the recommendations** (six tasks): every receipt end settles; the retryable list, the
 constant and the hand-over; the fallback controller; harness evidence (attempt carriers); the three
 scenarios and the five re-reads; docs and the D56 record.
+
+## 10. S3c execution questions and decisions (2026-09-28)
+
+Written after S3b merged (bdb3ecd8b, #604), from a fresh code survey of the unicast, server-target, server
+publish, volatile-store and game-intent paths (session scratchpad `s3c-code-survey.md`; 20 corrections to
+§1.4/§2.3, the material ones folded into the questions). The recommended answer is first in each case. **Settled 2026-09-28: the maintainer took every recommended
+answer, Q1–Q13** (roadmap: D57 "As applied", D70–D78); the S3c-i plan is written under them.
+
+**What the survey changed in §2.3's picture**
+
+- The RTC carrier already plans a direct unicast to a directly ready peer; a relayed RTC unicast is refused
+  at the receiver. What is missing is the sender and typed-channel path; the fallback dispatch and
+  controller are target-agnostic, only `sendRoomWithFallback`'s room gate is sender-side.
+- Room-topic WS unicasts are never delivered on the Rallar server today (`forwardsRoomScopedMessages:
+  false`; a client-to-client unicast on a `room.*` topic is admitted but neither forwarded nor delivered to
+  the router) — this includes the director relay's WS fallback. D53 and D60 need it fixed first.
+- "The server aggregates a one-member audience" is not a flag flip: aggregation requires an authorizer
+  room audience, `toFrozenAudience` expects the whole room, an out-of-audience addressee completes
+  vacuously, and the addressee's ACK is refused at server ingress.
+- No connection state carries a server id: the server peer id is the constant `'default-qbox-server'` on
+  every cluster instance; Relic's snapshots use `'relic-hunter-server'`. A `unicast` to the server id
+  already reaches the router as a local delivery with no wire change; a `server` mode + envelope v3 touches
+  two decoders, seven constructors and ~73 `targets.mode` sites.
+- The server withholds its own ACK for every room-scoped message, so a `room.relic.command` to the server
+  would be aggregated over the room unless exempted; "receipt" from the server means admitted to its inbox,
+  not applied (rule errors throw through the handler today and are retried).
+- Relic snapshots are room broadcasts without `groupRef` and cannot go through `fanout: 'outbox'` as built;
+  "freeze the room's current sessions at publish" cannot reuse the room authorizer (it checks the sender's
+  membership); cluster delivery drops the audience in two places, not one.
+- The volatile pair keeps sent snapshots and owner rows for `max(deadline, now + 60 min)`; a count or byte
+  bound over the raw pair measures retention, not load. A congestion drop becomes `skipped/planner-drop`;
+  no `capacity` refusal reason or drop code exists.
+- Match start never travels a carrier (director-local); only pickup, the two combat intents and
+  `requestSync` (which shares the transport) move. The director's RTC subscriptions exclude the intent type
+  ids. The zero-`al-admission` intent pin cannot live in the app tests (mocked facade).
+- An S3a pin (`sendWsUnicast` best-effort with no `delivery`, "until S3c") flips.
+
+**Questions**
+
+- **Q1 — One PR or two?** Recommended: **two** — S3c-i "addressed sends and server receipts" (D53, D57,
+  D58, D61; the Relic cutover as its proof; ~5 tasks) then S3c-ii "the director command and the volatile
+  bound" (RTC unicast + unicast fallback, D60, D59, the lane scenarios; ~5 tasks). S3c-ii depends on
+  S3c-i's WS unicast delivery and receipt. Alternative: one PR of ≥10 tasks.
+- **Q2 — The `server` target's shape (D57).** Recommended: **a `unicast` to the learned server id** — no
+  envelope version bump, no new mode, reaches the router as a local delivery today; the server-side
+  exemptions (keep the server's own ACK, open no aggregate for a server-addressed message) are the same
+  either way; D57 recorded "as applied". Alternative: `mode: 'server'` + envelope v3 as decided (~35 files
+  gain a case; both decoders accept {2, 3}; a schema bump if v3 persists). Cost of the recommendation: no
+  type-level "this goes to the server" marker on the envelope.
+- **Q3 — How a client learns the server id.** Recommended: **a field on `/api/config`** (the id is a
+  cluster-wide constant today). Alternatives: a server-to-client frame on open (D57's "connection state"
+  wording; needed only once the id becomes per-instance), or the auth/ticket response.
+- **Q4 — Room-topic WS unicast delivery.** Recommended: the server becomes a logical recipient of an
+  authorized room-topic unicast so the **router publishes it per topic fanout** (router-owned, like every
+  other room delivery). Alternative: allow forwarding for unicasts only.
+- **Q5 — D53 aggregation rules.** Recommended: `toFrozenAudience` gets a unicast case (the addressee
+  alone); a `receiver` unicast on a non-room topic is **refused** (no second aggregate source in S3c); an
+  addressee outside the authorized audience is refused, not completed; the client plans
+  `expectedPeerIds: []` and the server's `admitted` receipt names `[toPeerId]`.
+- **Q6 — Relic command semantics.** Recommended: the WS handler catches rule errors (no inbox retry
+  loop), the server derives `username` from the session instead of the payload, REST stays one release
+  as the fallback, and the UI's rule-error text (the "no review to continue" branch) is a stated
+  regression until a reply channel exists; per-game serialization stays process-local (recorded).
+  Alternative: keep REST for the commands that need the rule-error text.
+- **Q7 — The snapshot publish (D58).** Recommended: `groupRef` added, `senderId` = the server peer id,
+  `ack: 'receiver'` at-least-once, the audience frozen from a server-side live-sessions read passed as the
+  admitted audience; the 15 s TTL stays. Alternative: raise the TTL to the notification default.
+- **Q8 — The settlement sink (D58/D61).** Recommended: a **bounded in-memory per-process recorder**
+  beside the formation metrics, exposed on `/api/admin/operations/realtime` (already process-local): per
+  msgId the confirmed/unconfirmed sessions, the last settlement kind, `receipt-exhausted`. No durable row,
+  no migration. Alternative: a Postgres row (a migration and an AppInbox path).
+- **Q9 — The volatile bound (D59).** Recommended, in order: (1) **shorten the volatile pair's retention
+  to the message deadline plus the receipt grace** (closes the 1 h carry); (2) one per-session counter
+  shared by the two outbound pairs and the inbound pair, counting admissions and envelope bytes, controls,
+  receipts and ACKs exempt, named constants `AL_VOLATILE_SESSION_MAX_ADMISSIONS = 1_000` and
+  `AL_VOLATILE_SESSION_MAX_BYTES = 4 MiB` (tunable; the lane lowers them through a connect field); (3) a
+  new refusal reason `capacity` + drop code `refused/capacity` surfaced as the `carrier-refused` end
+  settlement — **not** a fallback trigger; (4) `overloaded` through `qosProvider.liveForMessage`; the
+  relay-row retention figure recorded in the same task. Alternative: keep the 1 h retention and count only
+  rows inside their deadline.
+- **Q10 — D60 scope.** Recommended: pickup, the two combat intents **and `requestSync`** move to the
+  `command` channel unicast to the director (they share `transport.sendIntent`); match start stays
+  director-local (it never travels). The director's RTC subscriptions gain the intent and sync-request
+  type ids; the director's handlers already dedup by msgId (a 30 s at-least-once replay of a stale pickup
+  is verified idempotent in the task). Alternative: `requestSync` stays on the realtime lane.
+- **Q11 — The typed-channel unicast surface.** Recommended: a **per-send target option `{ peerId }`** on
+  the existing typed channel (purpose defaults with a logical audience), no new channel factory; public
+  API snapshots move. Alternative: a `unicast(peerId)` channel factory.
+- **Q12 — Carries in or out.** Recommended: IN S3c-i — leavers read unconfirmed on the WS leg (cheap once
+  the sink exists); IN S3c-ii — the empty-audience volatile pin, and a typed `evidence.failure`
+  discriminator (with `refused/capacity` a third failure meaning would otherwise be read from prose); OUT
+  (V1) — post-admission fallback for `ws-then-rtc` and for a resumed durable message.
+- **Q13 — Gates.** Recommended: the medium-scale Postgres gate runs once in S3c-i (server mutation paths:
+  the router-published unicast, the server outbox publish, the sink) and only on a
+  `ws-queue-box-server/**` change in S3c-ii; hosted smoke on both PRs; ≤2 hosted full reads each (D51).
+
+**Delivered** by PR #605 (`claude/alm-s3c-consumer-proofs-volatile-bound`); the rulings recorded during execution,
+R-S3c-i-0 through R-S3c-i-33, live in the plan's "Rulings during execution"
+(`plans/alm-s3c-i-addressed-sends-and-server-receipts-implementation-plan.md`).
