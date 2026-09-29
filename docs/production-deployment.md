@@ -10,16 +10,17 @@ drift, not an additional application release gate.
 `.github/workflows/deploy.yml` accepts pushes to `main` and explicit manual
 dispatches. It never listens to `pull_request` or non-main push events. Every
 deployment job also checks that its ref is `refs/heads/main`, so dispatching the
-workflow from another ref cannot publish. Deno deployments and the repository's
-Cloudflare build checks wait for the shared release gate unless an operator
-explicitly uses the manual `skip_release_gate` break-glass input from `main`.
+workflow from another ref cannot publish. Deno deployments wait for the shared
+release gate unless an operator explicitly uses the manual `skip_release_gate`
+break-glass input from `main`.
 
-The three Cloudflare-named jobs in this workflow are repository build checks;
-they do not publish to Cloudflare. Until a separate authenticated Actions
-cutover is implemented, Cloudflare's Git integration publishes `main`
-independently and therefore does not wait for this workflow's release gate.
-The provider branch controls below enforce branch scope, not release-gate
-ordering.
+This workflow has no Cloudflare job. The release gate's "Build deployable apps"
+step builds the three Cloudflare web apps as the repository build check.
+Cloudflare's Git integration publishes them when `main` moves: Pages for
+`ar-eye-hunter`, Workers Builds for `rallar-kit` and `relic-hunters-v1`. Until a
+separate authenticated Actions cutover is implemented, those publishes do not
+wait for the release gate. The provider branch controls below enforce branch
+scope, not release-gate ordering.
 
 Deno deployment through GitHub Actions is staged behind the repository variable
 `DENO_DEPLOY_ACTIONS_ENABLED=true`. Leaving the variable unset or false keeps

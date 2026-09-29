@@ -162,7 +162,14 @@ jobs:
           path: .artifacts/api-v1-black-box/postgres
           if-no-files-found: warn
 
+      - name: Record exact topology replay checkout
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/topology-replay
+          git rev-parse HEAD > .artifacts/api-v1-black-box/topology-replay/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/topology-replay/validated-tree.txt
+
       - name: Run deterministic topology replay proof
+        id: topology_replay
         uses: ./.github/actions/api-v1-black-box-test
         with:
           backend: postgres
@@ -174,7 +181,7 @@ jobs:
           run-id: '${{ github.run_id }}-${{ github.run_attempt }}-topology-replay'
 
       - name: Upload topology replay artifacts
-        if: always()
+        if: ${{ !cancelled() && steps.topology_replay.outcome != 'skipped' }}
         uses: actions/upload-artifact@v7
         with:
           name: api-v1-topology-replay-${{ github.sha }}
