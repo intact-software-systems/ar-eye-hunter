@@ -691,7 +691,8 @@ The texts below are the plan's, kept here because the pull request that finishes
   nothing in the page tells the two recipients apart; the four scenarios run on two agents and manifest 22 does not
   change. Manifest 18's `recommendedTerminalTimeoutSeconds` rises from 300 to 1 200: the receiver's absence windows
   alone take 530 s in the generated manifest (360 s of `messages.received` windows and 170 s of absent `wait`s; the
-  plan stated 513 s), so 300 s never held (the concern PR #604 carried). R-S3c-ii-9 raises it to 1 800 s.
+  plan stated 513 s), so 300 s never held (the concern PR #604 carried). R-S3c-ii-9 raises it to 1 800 s. With the
+  two reload cells withheld (R-S3c-ii-14) the absence windows take 496 s and the sender's waits 93 s.
   Cost if wrong: a hosted run that hangs is cut off later.
 - **R-S3c-ii-3 (plan writing, 2026-09-29).** Inbound data counts toward the same session limit as outbound data (C4,
   C6), so a busy receiver can have its own volatile sends refused `capacity`: at the 30 s default deadline that starts
