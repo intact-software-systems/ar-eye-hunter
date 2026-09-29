@@ -433,9 +433,7 @@ describe('Rallar typed message channel', () => {
             ack: 'all-logical-recipients'
         });
         expect(message.qos?.durability).toEqual({ algo: 'volatile' });
-        // The builder reads the clock once for the id and once for the deadline.
-        expect(message.constraints?.expiresAtMs).toBeGreaterThanOrEqual(message.id.ts + 30_000);
-        expect(message.constraints?.expiresAtMs).toBeLessThan(message.id.ts + 30_050);
+        expect(message.constraints?.expiresAtMs).toBe(message.id.ts + 30_000);
     });
 
     it('asks the addressed receiver for a command and keeps the channel durability opt-in', async () => {
