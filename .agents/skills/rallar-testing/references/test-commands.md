@@ -208,7 +208,8 @@ npm run test:postgres:presence-expiry
 `test:postgres:integration` owns the reusable repository and true-overlap
 concurrency cases. Run `test:postgres:presence-expiry` separately and last
 because it retains fixed-ID outbox evidence that can affect later global
-outbox workers. Release Gate follows this same order.
+outbox workers. The Release Gate's Postgres integration lane follows this same
+order.
 
 ## Working-Plan Validation Routing
 
