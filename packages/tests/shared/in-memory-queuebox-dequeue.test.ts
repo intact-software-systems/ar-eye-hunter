@@ -23,7 +23,7 @@ class TestData {
     }
 }
 
-describe('queuedeno compatibility', () => {
+describe('InMemoryQueueBox dequeue for compute', () => {
     it('dequeues a queued resource entry', async () => {
         const queue = new InMemoryQueueBox();
         const typeId = 'WHACK';
