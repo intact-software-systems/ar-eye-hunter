@@ -8,6 +8,12 @@ import {
     type BlackBoxRunnerLivePreflightMatrixRequirement,
     type BlackBoxRunnerLivePreflightReport
 } from './preflight/live-preflight.ts';
+import {
+    parseRecipeMatrixShard,
+    resolveRecipeMatrixShard,
+    type RecipeMatrixShard,
+    type RecipeShardWeights
+} from './recipe-matrix/resolve-recipe-matrix-shard.mts';
 
 type MatrixMode = 'dry-run' | 'run';
 
@@ -40,6 +46,7 @@ type CliOptions = {
     preflightOnly: boolean;
     verbose: boolean;
     help: boolean;
+    shard?: RecipeMatrixShard;
 };
 
 type MatrixPreflightSummary = {
@@ -77,6 +84,7 @@ type MatrixRun = SkippedMatrixRun | ExecutedMatrixRun;
 const SCRIPT_DIR = new URL('.', import.meta.url);
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
 const MATRIX_FILE = new URL('./recipe-matrix.json', SCRIPT_DIR);
+const SHARD_WEIGHTS_FILE = new URL('./recipe-matrix/recipe-shard-weights.json', SCRIPT_DIR);
 const SCENARIO_CLI = new URL('./scenario-black-box.ts', SCRIPT_DIR);
 const OFFLINE_VALIDATION_PROFILE = 'validation';
 
@@ -93,6 +101,7 @@ function usage(): string {
         '  --preflight-only              Run live-environment preflight and do not execute recipes.',
         '  --live-preflight              Alias for --preflight-only.',
         '  --require-gates               Treat skipped live gates as failures.',
+        '  --shard=<index>/<count>       Run one balanced share of the selected entries, e.g. 1/2. Every share together runs each entry once.',
         '  --fail-fast                   Stop after the first failed or skipped required entry.',
         '  --verbose                     Print command output for every executed entry.',
         '  --help                        Print this help.'
@@ -150,6 +159,9 @@ function parseArgs(args: string[]): CliOptions {
             case '--require-gates':
                 options.requireGates = true;
                 break;
+            case '--shard':
+                options.shard = parseRecipeMatrixShard(nextValue());
+                break;
             case '--fail-fast':
                 options.failFast = true;
                 break;
@@ -176,6 +188,10 @@ function repoRelativePath(url: URL): string {
 
 async function readMatrix(): Promise<MatrixFile> {
     return JSON.parse(await Deno.readTextFile(MATRIX_FILE));
+}
+
+async function readShardWeights(): Promise<RecipeShardWeights> {
+    return JSON.parse(await Deno.readTextFile(SHARD_WEIGHTS_FILE));
 }
 
 function selectedEntries(matrix: MatrixFile, options: CliOptions): MatrixEntry[] {
@@ -449,7 +465,7 @@ function summarize(runs: MatrixRun[]): Record<string, number> {
     });
 }
 
-function printList(entries: MatrixEntry[]): void {
+function printList(entries: readonly MatrixEntry[]): void {
     entries.forEach((entry) => {
         console.log(`${entry.id} | ${entry.mode} | ${entry.recipe} | ${entry.profiles.join(',')}`);
     });
@@ -486,7 +502,10 @@ async function main(): Promise<void> {
     }
 
     const matrix = await readMatrix();
-    const entries = selectedEntries(matrix, options);
+    const selected = selectedEntries(matrix, options);
+    const entries = options.shard === undefined
+        ? selected
+        : resolveRecipeMatrixShard({ entries: selected, shard: options.shard, weights: await readShardWeights() });
     if (entries.length === 0) {
         throw new Error('No recipe matrix entries selected for profile ' + options.profile);
     }

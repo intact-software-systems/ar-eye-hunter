@@ -185,9 +185,13 @@ jobs:
         run: npm run test:full-stack:memory
 
   e2e-recipe-console:
-    name: Browser tests (Recipe Console)
+    name: Browser tests (Recipe Console ${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -205,12 +209,32 @@ jobs:
           playwright: 'true'
 
       - name: Run Recipe Console browser tests
-        run: npm run test:rallar:recipe-console
+        run: npm run test:rallar:recipe-console -- --shard=${{ matrix.shard }}
 
+  # The standard profile runs as two balanced shares and the cluster profile beside them, each on its own
+  # runner with its own Postgres and all three API servers, so every lane keeps the full topology. The run
+  # id stays the same in every lane: recipes build their app, workspace and group ids from it, and the group
+  # admission limiter cuts its keys at 160 characters, so a longer run id merges principals into one limiter.
   black-box:
-    name: API black-box recipes
+    name: API black-box recipes (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: standard 1/2
+            id: standard-1
+            scope: standard
+            shard: 1/2
+          - name: standard 2/2
+            id: standard-2
+            scope: standard
+            shard: 2/2
+          - name: cluster
+            id: cluster
+            scope: cluster
+            shard: ''
     services:
       postgres:
         image: postgres:16
@@ -248,17 +272,19 @@ jobs:
           api-port: '18080'
           secondary-api-port: '18081'
           tertiary-api-port: '18082'
-          artifact-dir: .artifacts/api-v1-black-box/postgres
+          artifact-dir: .artifacts/api-v1-black-box/postgres-${{ matrix.id }}
           profile: api-v1-black-box
           run-migrations: 'true'
           run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres'
+          scope: ${{ matrix.scope }}
+          shard: ${{ matrix.shard }}
 
       - name: Upload API v1 black-box artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: api-v1-black-box-postgres
-          path: .artifacts/api-v1-black-box/postgres
+          name: api-v1-black-box-postgres-${{ matrix.id }}
+          path: .artifacts/api-v1-black-box/postgres-${{ matrix.id }}
           if-no-files-found: warn
 
   postgres-integration:
