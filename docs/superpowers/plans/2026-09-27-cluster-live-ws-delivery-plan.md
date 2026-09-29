@@ -941,6 +941,19 @@ batched client reads against the current scope-wide assembly, and repeat the
 same workload. Add an index only if that evidence demonstrates need; neither
 the earlier raw-prefix probe nor this aggregate result alone proves one does.
 
+**2026-09-29 artifact cross-check:** Later saved candidate captures at
+`b8699239` and `244458a2` used the same declared 100-client/100-group,
+10-concurrency, one-warmup/three-run workload. Only test files changed between
+those commits, yet uncontended median serialized SQL result bytes differed
+98.14 versus 25.84 MB and p95 latency differed 291.91 versus 133.45 ms.
+The artifacts do not establish identical database contents or host conditions;
+the SQL wrapper reports only aggregate bytes, not bytes by query. Therefore
+neither capture attributes the excess to `listSnapshotsForPrincipal`, and a
+single candidate/baseline pair is insufficient to accept or reject the read
+path. Before a schema change, capture a controlled, order-balanced comparison
+on fresh equivalent databases, with query-level attribution for the scope
+read and full correctness evidence. Preserve existing development data.
+
 **2026-09-28 browser fixture checkpoint:** The native ALM timing fixture also
 used an unscoped synthetic WS-client source, so the new fail-closed unicast
 reader correctly withheld every delivery. The fixture now supplies a matching

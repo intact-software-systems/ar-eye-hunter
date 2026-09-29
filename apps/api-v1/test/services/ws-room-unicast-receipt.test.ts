@@ -35,9 +35,14 @@ Deno.test('a receiver room unicast reaches only its addressee and its receipt na
         await runtime.service.acceptIncomingMessage(receiverAck(message, 'session-2'), 'session-2');
         await waitForRoomSends(() => readOriginReceipts(runtime.sent).length >= 2);
 
-        assert.deepEqual(roomSends(runtime.sent), [{
+        // Outbound admission stamps its selected expiry QoS; this case proves the routed envelope and addressee.
+        const expectedWire = decodePersistedALMessage(JSON.stringify(message));
+        assert.deepEqual(roomSends(runtime.sent).map((send) => ({
+            sessionId: send.sessionId,
+            message: { ...decodePersistedALMessage(send.encoded), qos: undefined }
+        })), [{
             sessionId: 'session-2',
-            encoded: JSON.stringify(message)
+            message: { ...expectedWire, qos: undefined }
         }]);
         assert.deepEqual(
             readOriginReceipts(runtime.sent).map((
