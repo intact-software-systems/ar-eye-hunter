@@ -37,11 +37,7 @@ import {
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
-import {
-    disconnectLostRetainedDials,
-    WebRtcOutboundDialing,
-    type OutboundDialsStarted
-} from './webrtc-outbound-dialing.ts';
+import { WebRtcOutboundDialing, type OutboundDialsStarted } from './webrtc-outbound-dialing.ts';
 
 export type {
     WebRtcGroupManagerDeleteOptions,
@@ -443,10 +439,10 @@ export class WebRtcGroupManager {
         this.diagnostics.reconcileRunCount += 1;
         const ownership = this.readPeerOwnership();
         const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
-        this.removeRetainedDesiredPeers(desiredPeerIds);
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
+        this.removeRetainedDesiredPeers(desiredPeerIds);
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
         const dialPlan = computeOutboundDialPlan({
@@ -784,11 +780,6 @@ export class WebRtcGroupManager {
     }
 
     private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>): void {
-        disconnectLostRetainedDials({
-            desiredPeerIds,
-            retainedPeerConnections: this.retainedPeerConnections,
-            rtcQBox: this.rtcQBox
-        });
         for (const peerId of desiredPeerIds) {
             this.retainedPeerConnections.delete(peerId);
         }
