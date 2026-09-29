@@ -9,12 +9,12 @@ import {
     envValue,
     firstEnvValue,
     hasThreeAgentConfig,
-    numberEnv,
     openAgentTrio,
     rawEnvironmentValue,
     readLiveRtcClusterApiOrigins,
     roomSeed,
-    workspaceId
+    workspaceId,
+    type LiveRtcAgentTrio
 } from './live-rtc-agent-environment.ts';
 import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -354,23 +354,61 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             const clusterOrigins = readLiveRtcClusterApiOrigins();
             if (clusterOrigins) {
                 expect(new Set(clusterOrigins).size).toBe(3);
+                const expectedSocketOrigins = clusterOrigins.map((origin) => {
+                    const url = new URL(origin);
+                    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+                    return url.origin;
+                });
+                const sessionIds = [realtime.sessions.A, realtime.sessions.B, realtime.sessions.C];
+                const sessionPairs = [
+                    [realtime.sessions.A, realtime.sessions.B],
+                    [realtime.sessions.A, realtime.sessions.C],
+                    [realtime.sessions.B, realtime.sessions.C]
+                ] as const;
                 await expect.poll(async () => {
                     const observations = await Promise.all(
                         realtimeAgents.map((agent) => agent.readSignalingObservation?.())
                     );
-                    const sessionIds = [realtime.sessions.A, realtime.sessions.B, realtime.sessions.C];
-                    return [
-                        ...new Set(observations.flatMap((observation, index) =>
-                            observation?.received
-                                .filter((signal) =>
-                                    signal.toId === sessionIds[index] &&
-                                    signal.fromId !== signal.toId &&
-                                    sessionIds.includes(signal.fromId ?? '')
-                                )
-                                .map((signal) => signal.signalType) ?? []
-                        ))
-                    ].sort();
-                }, { timeout: 20_000 }).toEqual(['Answer', 'IceCandidate', 'Offer']);
+                    if (
+                        observations.some((observation) =>
+                            !observation?.available || observation.droppedReceived > 0 ||
+                            observation.droppedSocketLifetimes > 0
+                        )
+                    ) {
+                        return false;
+                    }
+                    const received = observations.flatMap((observation, recipientIndex) =>
+                        observation?.received.filter((signal) =>
+                            signal.msgId !== null &&
+                            signal.toId === sessionIds[recipientIndex] &&
+                            signal.fromId !== signal.toId &&
+                            sessionIds.includes(signal.fromId ?? '') &&
+                            observation.socketLifetimes.some((socket) =>
+                                socket.socketInstanceOrdinal === signal.socketInstanceOrdinal &&
+                                socket.endpointOrigin === expectedSocketOrigins[recipientIndex]
+                            )
+                        ) ?? []
+                    );
+                    const offers = received.filter((signal) =>
+                        signal.signalType === 'Offer' && signal.offerId !== null
+                    );
+                    const answers = received.filter((signal) => signal.signalType === 'Answer');
+                    const iceCandidates = received.filter((signal) => signal.signalType === 'IceCandidate');
+                    return sessionPairs.every(([first, second]) =>
+                        offers.some((offer) =>
+                            ((offer.fromId === first && offer.toId === second) ||
+                                (offer.fromId === second && offer.toId === first)) &&
+                            answers.some((answer) =>
+                                answer.offerId === offer.offerId &&
+                                answer.fromId === offer.toId && answer.toId === offer.fromId
+                            )
+                        ) && iceCandidates.some((candidate) =>
+                            candidate.hasCandidate &&
+                            ((candidate.fromId === first && candidate.toId === second) ||
+                                (candidate.fromId === second && candidate.toId === first))
+                        )
+                    );
+                }, { timeout: 20_000 }).toBe(true);
             }
             commandIds.push(...realtime.commandIds);
             timings.push(...realtime.timings);
