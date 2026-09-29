@@ -1116,15 +1116,18 @@ the mapping. `typecheck:tests` passes. No public overload, production contract
 loosening, or retained affected legacy was added. These fixes are not remote
 acceptance evidence until checked on the exact PR head.
 
-**Next slice — resolve the two measured release and performance regressions.**
-The exact-head Release Gate passed style, structure, typecheck, ALM
-conformance, and 13,157 tests (12 skipped); it failed only the two unchanged
-strict bundle tests. The local whole suite likewise
+**Next slice — resolve the measured release, ALM, and performance regressions.**
+At the implementation head, the Release Gate passed style, structure,
+typecheck, ALM conformance, and 13,157 tests (12 skipped); it failed only the
+two unchanged strict bundle tests. The local whole suite likewise
 passes 13,157 tests and skips 12; only the two strict bundle tests fail:
 `browser/rallar.ts` measures 225.419921875 KiB against `<225` and the headless
 agent measures 287.8095703125 KiB against `<287`. The one-millisecond timing
-failure seen in an earlier whole-suite run did not recur. Compare the exact
-entry-point bundles and their inputs against an environment-matched baseline,
+failure seen in an earlier whole-suite run did not recur locally, but it did
+recur at the later plan-only branch head. That later head also failed the
+remote ALM WS replacement observation despite a focused local pass. Treat
+both as unresolved until classified with independent evidence. Compare the
+exact entry-point bundles and their inputs against a matched baseline,
 identify avoidable shipped code on the changed path, and make the smallest
 behavior-preserving reduction. Keep both approved ceilings strict; do not
 raise them, hide inputs, or omit required runtime behavior. Recheck focused
@@ -1137,13 +1140,22 @@ and the measured query plan, then rerun the identical state-write workload.
 local gate is green, run the branch Release Gate and reconcile remaining raw
 WS-outbox producers against the approved authority policy. Existing exact-head
 three-process group-delta, auth-logout, and CRDT proofs pass; they do not prove
-topology first-dequeue or E3 browser acceptance. The branch E3 diagnostic is
-running at `c39dcb388`, not yet acceptance evidence. Run the remaining
-required cluster and unchanged E3 diagnostics, obtain a governed
-environment-matched state-write comparison without disrupting existing
-PostgreSQL data, then perform whole-branch standards/legacy review and update
-the draft PR evidence map. Keep the PR draft until the exact-head gate and
-required acceptance evidence are green.
+topology first-dequeue or E3 browser acceptance. Three branch E3 retention-100
+diagnostics failed at reconnect cycles 4, 2, and 5; none reached the required
+100 cycles. In each final capture A remained ready while B and C knew each
+other but lacked a ready lane. One side had a fresh peer connection without
+descriptions while the other side had completed offer/answer signaling but had
+not reached an ICE-connected state. The offerer differed between runs, and the
+bounded causal tails cannot identify why the peers were replaced or whether
+candidate data belonged to the same native generation. Do not infer a
+stale-offer root cause from one run or relax readiness and attempt limits.
+Gather generation-linked, payload-safe signaling and ICE-state evidence,
+identify the failure boundary, then rerun the unchanged E3 case. Run the
+remaining required cluster proofs,
+obtain a governed environment-matched state-write comparison without
+disrupting existing PostgreSQL data, then perform whole-branch standards/legacy
+review and update the draft PR evidence map. Keep the PR draft until the
+exact-head gate and required acceptance evidence are green.
 
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
