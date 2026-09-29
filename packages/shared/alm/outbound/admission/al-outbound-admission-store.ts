@@ -304,14 +304,12 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
-/** Every store but the session's memory pair: its message rows keep their TTL retention. */
 export function createALOutboundAdmissionStore<TPrepared>(
     input: CreateALOutboundAdmissionStoreInput<TPrepared>
 ): ALOutboundAdmissionStore<TPrepared> {
     return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'durable' });
 }
 
-/** The memory pair's store: a message's owner and sent rows live for its deadline plus the receipt grace (D74). */
 export function createVolatileALOutboundAdmissionStore<TPrepared>(
     input: CreateALOutboundAdmissionStoreInput<TPrepared>
 ): ALOutboundAdmissionStore<TPrepared> {

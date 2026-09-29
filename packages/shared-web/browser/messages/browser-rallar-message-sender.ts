@@ -4,6 +4,7 @@ import type {
 } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageHandle,
+    RallarMessagePayload,
     RallarRtcSendInput,
     RallarTypedMessageSendStrategy,
     RallarWsSendInput
@@ -173,15 +174,14 @@ export class BrowserRallarMessageSender {
         channel: BrowserTypedChannelPolicy | undefined
     ): Promise<RallarMessageHandle> {
         const strategy = input.strategy ?? 'rtc-with-ws-fallback';
-        if (input.peerId !== undefined && strategy === 'ws-then-rtc') {
-            return throwMessageValidationIssue(
-                '$.peerId',
-                'unsupported',
-                'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
-            );
-        }
-        if (input.peerId !== undefined && (strategy === 'rtc' || strategy === 'rtc-with-ws-fallback')) {
-            return await this.sendRtcPeer({ send: input, peerId: input.peerId, strategy }, channel);
+        if (input.peerId !== undefined && strategy !== 'ws') {
+            return strategy === 'ws-then-rtc'
+                ? throwMessageValidationIssue(
+                    '$.peerId',
+                    'unsupported',
+                    'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
+                )
+                : await this.sendRtcPeer({ send: input, peerId: input.peerId, strategy }, channel);
         }
         switch (strategy) {
             case 'ws':
@@ -227,7 +227,7 @@ export class BrowserRallarMessageSender {
                 creation: this.input.creation,
                 resolved,
                 peerId: peer.peerId,
-                serializedPayload: payloadValidation.serialized,
+                payload: parseCapturedPayload(payloadValidation),
                 senderId: this.input.requireSession().sessionId,
                 channel,
                 laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
@@ -325,7 +325,7 @@ export class BrowserRallarMessageSender {
             creation: this.input.creation,
             resolved: input.resolved,
             peerId,
-            serializedPayload: input.payloadValidation.serialized,
+            payload: parseCapturedPayload(input.payloadValidation),
             senderId: input.session.sessionId,
             channel: input.channel,
             laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
@@ -434,7 +434,7 @@ function validateRoomFallbackInput<T>(
 }
 
 /** The parser sees only the immutable JSON already accepted by the configured validator. */
-function parseCapturedPayload(payload: CapturedMessagePayload): unknown {
+function parseCapturedPayload(payload: CapturedMessagePayload): RallarMessagePayload {
     return JSON.parse(payload.serialized);
 }
 

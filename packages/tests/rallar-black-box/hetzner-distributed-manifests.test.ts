@@ -1198,7 +1198,7 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
             expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
         }
-        // The server is no RTC peer (C9), so only the ws block addresses it.
+        // The server is no RTC peer, so only the ws block addresses it.
         expect(commandIds).toContain('alm-ws-server-command-sender-send-1');
         expect(
             commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))

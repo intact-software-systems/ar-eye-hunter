@@ -13,7 +13,7 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type {
-    AlmConformanceScenarioId,
+    AlmConformanceLaneFamily,
     CreateAlmConformanceRecipesInput
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
@@ -32,7 +32,6 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -56,17 +55,11 @@ import {
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-/**
- * A three-role scenario runs on its own three agents (D45), and the addressed sends on their own two agents so the
- * baseline cell keeps its wall time (R-S3c-ii-5); each family records its own cell.
- */
-type ScenarioFamily = 'two-agent' | 'addressed' | 'three-agent';
-
-type TwoAgentScenarioFamily = Exclude<ScenarioFamily, 'three-agent'>;
+type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent'>;
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
-    readonly family: ScenarioFamily;
+    readonly family: AlmConformanceLaneFamily;
     /** Every page of the run, whose captured page diagnostics the cell records. */
     readonly participants: readonly TwoAgentRunParticipant[];
     readonly testInfo: TestInfo;
@@ -109,13 +102,6 @@ const CONFORMANCE_DEADLINE_MS = 18_000;
 // Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
 // widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family.
 const CARRIER_TEST_TIMEOUT_MS = 480_000;
-
-const ADDRESSED_SCENARIO_IDS: readonly AlmConformanceScenarioId[] = [
-    'ws-unicast-receipt',
-    'unicast-fallback',
-    'server-command',
-    'capacity'
-];
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -332,7 +318,7 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
 function selectScenarios(
     selection: ScenarioSelectionInput,
     carrier: AlmConformanceCarrier,
-    family: ScenarioFamily
+    family: AlmConformanceLaneFamily
 ): readonly AlmConformanceScenario[] {
     return createAlmConformanceRecipes({
         ...selection,
@@ -340,17 +326,10 @@ function selectScenarios(
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS
     }).filter((scenario) =>
-        toScenarioFamily(scenario) === family &&
+        scenario.laneFamily === family &&
         (scope === 'full' || scenario.tags.includes('smoke')) &&
         !skippedScenarioIds.includes(scenario.scenarioId)
     );
-}
-
-function toScenarioFamily(scenario: AlmConformanceScenario): ScenarioFamily {
-    if (isThreeAgentScenario(scenario)) {
-        return 'three-agent';
-    }
-    return ADDRESSED_SCENARIO_IDS.includes(scenario.scenarioId) ? 'addressed' : 'two-agent';
 }
 
 function toRunSelection(run: TwoAgentRun): ScenarioSelectionInput {
@@ -488,7 +467,11 @@ async function writeObservationFiles(
  * An unsuffixed name would let a retried cell overwrite the regime and snapshot of the first attempt, or the
  * three-agent cell overwrite the two-agent one.
  */
-function toObservationFileName(carrier: AlmConformanceCarrier, family: ScenarioFamily, retry: number): string {
+function toObservationFileName(
+    carrier: AlmConformanceCarrier,
+    family: AlmConformanceLaneFamily,
+    retry: number
+): string {
     const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
     return retry === 0 ? cell : `${cell}-retry${retry}`;
 }

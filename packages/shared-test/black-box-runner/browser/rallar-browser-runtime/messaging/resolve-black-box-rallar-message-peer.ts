@@ -14,7 +14,7 @@ export interface ResolveBlackBoxRallarMessagePeerInput {
 
 /**
  * The roster names no role, so `receiver` resolves only while exactly one other session is live; sessions are told
- * apart by id, since hosted agents may share one principal (C11).
+ * apart by id, since hosted agents may share one principal.
  */
 export function resolveBlackBoxRallarMessagePeer(
     input: ResolveBlackBoxRallarMessagePeerInput

@@ -659,8 +659,8 @@ The texts below are the plan's, kept here because the pull request that finishes
 
 - **One vocabulary.** `capacity` is a refusal reason read through `evidence.failure`. I2a's `storage-unavailable`
   becomes one more reason on the same union; no second failure surface is added.
-- **One retention rule.** `resolveALReceiptRetentionExpiryMs`
-  (`packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`) is the rule "deadline plus the receipt
+- **One retention rule.** `computeALReceiptRetentionExpiryMs`
+  (`packages/shared/alm/delivery/compute-al-receipt-retention-expiry-ms.ts`) is the rule "deadline plus the receipt
   grace". I2a's dedup retention (QoS plan §5) reuses it.
 - **The bound is the checkpoint basis.** `AL_VOLATILE_SESSION_MAX_ADMISSIONS` and `AL_VOLATILE_SESSION_MAX_BYTES` are
   the figures the QoS plan's H4 measured a checkpoint at. They stay named constants behind `ALVolatileSessionLimits`,

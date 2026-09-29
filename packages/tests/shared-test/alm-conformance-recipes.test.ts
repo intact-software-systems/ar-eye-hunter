@@ -170,6 +170,22 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
 }
 
 describe('alm-conformance recipe family', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('names each %s scenario the lane family whose agents it needs', (carrier) => {
+        const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+
+        for (const scenario of scenarios) {
+            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(isThreeAgentScenario(scenario));
+        }
+        expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
+            .toEqual(
+                carrier === 'ws'
+                    ? ['ws-unicast-receipt', 'server-command', 'capacity']
+                    : carrier === 'rtc'
+                    ? ['ws-unicast-receipt', 'capacity']
+                    : ['ws-unicast-receipt', 'unicast-fallback', 'capacity']
+            );
+    });
+
     it('generates the pinned recipe list for every carrier, in scenario order', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)

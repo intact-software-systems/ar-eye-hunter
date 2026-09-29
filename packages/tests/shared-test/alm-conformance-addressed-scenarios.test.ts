@@ -42,7 +42,7 @@ const ADDRESSEE_RECEIPT = [
 const CAPACITY_LIMITS = { maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS, maxBytes: 160 * 1024 };
 /**
  * The platform's state sync the capacity sender's rejoin admits inbound: 6 entries of 25.8-26.6 KB in total across
- * six local lane samples on every carrier (R-S3c-ii-7), rounded up.
+ * six local lane samples on every carrier, rounded up.
  */
 const PLATFORM_STATE_SYNC_BYTES = 26 * 1024;
 

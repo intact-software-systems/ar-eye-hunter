@@ -1,5 +1,9 @@
 import type { ResolvedWsMessageInput } from '@shared-web/browser/messages/browser-message-input-validator.ts';
-import type { RallarWsSendInput } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessagePayload,
+    RallarTypedMessageSendStrategy,
+    RallarWsSendInput
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     toBrowserMessageSendDefaults,
     type BrowserTypedChannelPolicy
@@ -15,15 +19,13 @@ import {
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
 
-/** The strategies a peer send travels; `ws-then-rtc` hands over at admission only and stays refused (V1). */
-export type BrowserPeerSendStrategy = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
+export type BrowserPeerSendStrategy = Exclude<RallarTypedMessageSendStrategy, 'ws-then-rtc'>;
 
 export interface CreateBrowserUnicastMessageInput<T> {
     readonly creation: Readonly<{ createUnicast: typeof newALUnicastMessage; newResourceId(): string; }>;
     readonly resolved: ResolvedWsMessageInput<T>;
     readonly peerId: string;
-    /** The payload as the validator captured and serialized it; the message carries a parse of this copy. */
-    readonly serializedPayload: string;
+    readonly payload: RallarMessagePayload;
     readonly senderId: string;
     readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly laneTtlMs: number;
@@ -31,23 +33,15 @@ export interface CreateBrowserUnicastMessageInput<T> {
 
 export interface ValidateBrowserPeerInput<T> {
     readonly send: RallarWsSendInput<T>;
-    /** The room the unicast names; `undefined` for a WS peer send outside a room, whose context is its scope. */
     readonly roomRef: GroupRef | undefined;
 }
 
 export interface ValidateBrowserPeerServerInput {
     readonly peerId: string | undefined;
     readonly strategy: BrowserPeerSendStrategy;
-    /** The peer id the server named at connect; `undefined` for a server that names none. */
     readonly serverPeerId: string | undefined;
 }
 
-/**
- * A send to one peer (Q11) on either carrier: a unicast that names the room it resolved, so the room authority admits
- * it on RTC and on WS, and the WS leg of a fallback is the same envelope (D53, D56). The channel purpose fills what
- * the send left out, with the addressee as the logical audience when a room is named, so a `command` asks the
- * addressee receipt.
- */
 export function createBrowserUnicastMessage<T>(
     input: CreateBrowserUnicastMessageInput<T>
 ): ALMessage {
@@ -68,7 +62,7 @@ export function createBrowserUnicastMessage<T>(
         ),
         input.peerId,
         send.typeId,
-        JSON.parse(input.serializedPayload),
+        input.payload,
         {
             groupRef: resolved.roomRef,
             ttlMs: defaults.ttlMs,
@@ -80,11 +74,6 @@ export function createBrowserUnicastMessage<T>(
     );
 }
 
-/**
- * A peer send names its peer, routes in the room it names and carries no exclusions, no ordering, no snapshot floor
- * and no hop limit: the unicast has no field for them, so they are refused rather than dropped (R-S3c-i-23), and a
- * context naming another room is refused at the sender on every strategy (N1).
- */
 export function validateBrowserPeerInput<T>(
     input: ValidateBrowserPeerInput<T>
 ): readonly RallarValidationIssue[] {
@@ -99,10 +88,6 @@ export function validateBrowserPeerInput<T>(
     ];
 }
 
-/**
- * The server is addressed over WS only, and a send whose WS leg needs the server peer id is refused while the server
- * names none (R-S3c-i-32): on `ws`, and on `rtc-with-ws-fallback`, whose second leg is WS.
- */
 export function validateBrowserPeerServer(
     input: ValidateBrowserPeerServerInput
 ): readonly RallarValidationIssue[] {

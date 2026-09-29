@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { computeALMessageEnvelopeBytes } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import { toALVolatileSessionAdmission } from '@shared/alm/volatile-budget/to-al-volatile-session-admission.ts';
@@ -21,7 +20,7 @@ describe('a message as the session budget counts it', () => {
 
         expect(toALVolatileSessionAdmission(msg, NOW_MS)).toEqual({
             msgId: msg.id.msgId,
-            bytes: computeALMessageEnvelopeBytes(msg).right,
+            bytes: new TextEncoder().encode(JSON.stringify(msg)).length,
             deadlineAtMs: msg.constraints?.expiresAtMs,
             nowMs: NOW_MS
         });

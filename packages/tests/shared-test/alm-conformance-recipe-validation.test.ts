@@ -21,7 +21,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
- * The addressed family (C11) runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
+ * The addressed family runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [

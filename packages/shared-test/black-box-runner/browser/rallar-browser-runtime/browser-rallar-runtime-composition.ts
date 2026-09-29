@@ -130,7 +130,7 @@ export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarD
 /** What the page reads to name a peer by its lane role: the WS server's id, its own session and the room's roster. */
 export interface BlackBoxBrowserPeersDependency extends Pick<RallarConnectionOperations, 'serverPeerId' | 'session'> {
     /** Undefined while the page holds no snapshot of the room. */
-    readRoomSessions(roomRef: GroupRef): readonly GroupPresenceSession[] | undefined;
+    getRoomSessions(roomRef: GroupRef): readonly GroupPresenceSession[] | undefined;
 }
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
@@ -247,7 +247,7 @@ function toBlackBoxBrowserMessagingPorts(
         peers: {
             serverPeerId: () => session.connection.serverPeerId(),
             session: () => session.connection.session(),
-            readRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions
+            getRoomSessions: (roomRef) => state.roomStateStore.findGroupSnapshot(roomRef)?.activeSessions
         }
     };
 }

@@ -56,6 +56,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -530,8 +531,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
-        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', undefined);
-        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', undefined);
+        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
+        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
 
         expect(first.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(second.workQueue).not.toBe(first.workQueue);
@@ -566,7 +567,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
-            undefined
+            createDefaultVolatileSessionBudget()
         );
         const message = createOutboundUnicastMessage('inbound-memory');
         await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));

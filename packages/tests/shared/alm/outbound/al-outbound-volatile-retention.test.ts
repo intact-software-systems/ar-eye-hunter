@@ -13,8 +13,6 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import {
-    DEFAULT_AL_EPHEMERAL_TTL_MS,
-    DEFAULT_AL_REPOSITORY_TTL_MS,
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -83,7 +81,7 @@ describe('the rows a volatile outbound send keeps (D74)', () => {
 
         await enqueueOutboundOrThrow(runtime, message);
 
-        const keptUntilMs = admittedAtMs + DEFAULT_AL_REPOSITORY_TTL_MS;
+        const keptUntilMs = admittedAtMs + 60 * 60_000;
         expect(readRowExpiries(pair.state, message)).toEqual({
             owner: keptUntilMs,
             sent: keptUntilMs
@@ -208,7 +206,7 @@ function readRowExpiries(
     };
 }
 
-/** The trusted server refusing a message it holds no receipt row for (S3c-i C3): the owner and sent rows decide it. */
+/** The trusted server refusing a message it holds no receipt row for: the owner and sent rows decide it. */
 function toServerRefusal(message: ALMessage): ALMessage {
     return newALNackControlMessage(
         { v: 2, msgId: `refusal-${message.id.msgId}`, senderId: SERVER_PEER_ID, ts: Date.now() },
@@ -282,7 +280,7 @@ describe('the control rows a volatile outbound send keeps (D74)', () => {
         expect(await runtime.acceptControlMessage(toOutboundTestAck(message, 'peer-1'), 'peer'))
             .toEqual({ kind: 'committed' });
 
-        const keptUntilMs = acknowledgedAtMs + DEFAULT_AL_EPHEMERAL_TTL_MS;
+        const keptUntilMs = acknowledgedAtMs + 30 * 60_000;
         expect(readControlRowExpiries(pair.state, message)).toEqual({
             receipt: keptUntilMs,
             acks: keptUntilMs

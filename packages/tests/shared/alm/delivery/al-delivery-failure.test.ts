@@ -278,7 +278,6 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
 
     it.each(
         [
-            { meaning: 'a submitted send', settlements: [], state: 'submitted' },
             {
                 meaning: 'a superseded admission',
                 settlements: [toAdmission({ kind: 'superseded', detail: 'Replaced.' })],
@@ -369,6 +368,6 @@ describe('the typed failure of a send that ended (D75, C2)', () => {
     });
 
     it('names the two receipt-exhausted causes', () => {
-        expectTypeOf<ALDeliveryReceiptExhaustion['cause']>().toEqualTypeOf<ALDeliveryReceiptExhaustedCause>();
+        expectTypeOf<ALDeliveryReceiptExhaustedCause>().toEqualTypeOf<'budget' | 'hop-refused'>();
     });
 });

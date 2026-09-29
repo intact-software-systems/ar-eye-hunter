@@ -328,7 +328,7 @@ export type RallarBlackBoxTestMessagesSendCommand =
         seq?: number;
         handleId?: string;
         /**
-         * One peer by its lane role (C11): `receiver` is the one other live session of the room, resolved by the page at
+         * One peer by its lane role: `receiver` is the one other live session of the room, resolved by the page at
          * send time. Absent, the send addresses its scope.
          */
         toPeer?: 'server' | 'receiver';

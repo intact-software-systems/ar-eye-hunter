@@ -45,7 +45,7 @@ export namespace BrowserRallarMessagesController {
 }
 
 export class BrowserRallarMessagesController {
-    public readonly sender: BrowserRallarMessageSender;
+    private readonly sender: BrowserRallarMessageSender;
     public readonly subscriptions: BrowserRallarMessageSubscriptions;
     public readonly operations: RallarMessagesOperations;
     public readonly crdtTransport: RallarCrdtMessageTransport;

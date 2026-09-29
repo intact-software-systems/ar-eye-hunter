@@ -139,7 +139,6 @@ export interface ALOutboundRuntimeStores<TPrepared> {
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
 export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
     evictExpired(): void;
-    /** The session's bound over what this pair holds; `undefined` leaves the pair unbounded (C3). */
     readonly budget: ALVolatileSessionBudget | undefined;
 }
 
@@ -346,8 +345,6 @@ export namespace ALOutboundMessageRuntime {
  *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
  *   is computed once and handed to that lane's admission of the same message, so the admission never
  *   plans the message twice. The lane over the memory pair states no admission durable.
- * - An admission the owner plans itself that resolves to the volatile lane counts against the session's
- *   bound, which the memory pair carries; past it, the plan drops with the code `capacity` (D74, D78).
  * - A group whose members differ in durability commits as one group per lane: there is no
  *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
  * - A control, a receipt and a retransmission go to the volatile lane when it owns the target

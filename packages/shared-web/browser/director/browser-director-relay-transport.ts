@@ -27,7 +27,6 @@ export namespace BrowserDirectorRelayTransport {
         readSession(): AuthSession | undefined;
     }
 
-    /** An intent or a sync request to the appointed director; it counts as sent only once the director's receipt arrives. */
     export interface SendCommandInput<T> {
         readonly current: RallarDirectorStatus;
         readonly topicId: string;

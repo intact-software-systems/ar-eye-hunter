@@ -417,6 +417,9 @@ describe('arena game realtime acceptance and egress', () => {
             const fixture = acceptedIntentFixture(kind, Date.now());
             await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
             const published: ArenaSnapshot[] = [];
+            onTestFinished(() => {
+                mockMatch.publishSnapshot.mockReset();
+            });
             mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
                 published.push(snapshot);
                 return { status: 'sent' };
@@ -439,7 +442,6 @@ describe('arena game realtime acceptance and egress', () => {
             expect(published).toHaveLength(1);
             expect(kind === 'hit' ? arena.current?.remotePlayerHits : arena.current?.pickupAcceptances)
                 .toHaveLength(1);
-            mockMatch.publishSnapshot.mockReset();
         }
     );
 
@@ -466,6 +468,10 @@ describe('arena game realtime acceptance and egress', () => {
         });
         const events: GameRealtimeMessage[] = [];
         const snapshots: ArenaSnapshot[] = [];
+        onTestFinished(() => {
+            mockMatch.publishEvent.mockReset();
+            mockMatch.publishSnapshot.mockReset();
+        });
         mockMatch.publishEvent.mockImplementation(async (event) => {
             events.push(event);
             return { status: 'sent' };
@@ -481,8 +487,6 @@ describe('arena game realtime acceptance and egress', () => {
         expect(events).toEqual([shot, shot]);
         expect(snapshots).toEqual([]);
         expect(arena.current?.arenaSnapshot).toEqual(before);
-        mockMatch.publishEvent.mockReset();
-        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(
@@ -501,6 +505,9 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const eventDone = Promise.withResolvers<void>();
         const publishedSnapshots: ArenaSnapshot[] = [];
+        onTestFinished(() => {
+            mockMatch.publishSnapshot.mockReset();
+        });
         mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
             await eventDone.promise;
@@ -537,7 +544,6 @@ describe('arena game realtime acceptance and egress', () => {
             await completion;
         });
         expect(publishedSnapshots.map((snapshot) => snapshot.roomId)).toEqual([]);
-        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(['hit', 'pickup'] as const)('fences accepted %s continuation when its network ends with its match still installed', async (kind) => {
@@ -546,6 +552,9 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const publishedSnapshots: string[] = [];
         let networkEnabled = true;
+        onTestFinished(() => {
+            mockMatch.publishSnapshot.mockReset();
+        });
         mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
             await eventDone.promise;
@@ -591,7 +600,6 @@ describe('arena game realtime acceptance and egress', () => {
         eventDone.resolve();
         await completion;
         expect(publishedSnapshots).toEqual([]);
-        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(['snapshot', 'hit', 'pickup'] as const)('keeps deferred %s publication out of a replacement runtime', async (kind) => {

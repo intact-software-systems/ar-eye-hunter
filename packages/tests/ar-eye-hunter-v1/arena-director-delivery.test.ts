@@ -338,14 +338,12 @@ describe('arena director delivery and appointment', () => {
     it('starts the peer-ready sync while the director has not yet confirmed the join sync (D60)', async () => {
         const joinSync = Promise.withResolvers<RallarGameSendResult>();
         mockMatch.requestSync.mockReturnValueOnce(joinSync.promise);
+        mockMatch.waitForReadyLanes.mockResolvedValueOnce({ ...emptyPeerReadiness(), readyPeerIds: ['peer-b'] });
 
         await arena.render();
 
-        await vi.waitFor(() =>
-            expect(mockMatch.waitForReadyLanes).toHaveBeenCalledWith(
-                expect.objectContaining({ expect: { min: 0 }, timeoutMs: 650 })
-            )
-        );
+        // One ready peer: its sync request goes out while the join sync still waits on the director.
+        await vi.waitFor(() => expect(mockMatch.requestSync).toHaveBeenCalledWith({ reason: 'arena-peer-ready' }));
         expect(mockMatch.requestSync).toHaveBeenCalledWith({ reason: 'arena-join' });
         await act(async () => {
             joinSync.resolve({ status: 'sent', transport: 'director-relay' });

@@ -38,12 +38,12 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
-        /** The WS server's peer id from `/api/config`; undefined when the server names none (R-S3c-i-6). */
+        /** The WS server's peer id from `/api/config`; undefined when the server names none. */
         readonly serverPeerId: string | undefined;
         readonly inboundStores: ALInboundRuntimeStores;
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
-        readonly volatileBudget: ALVolatileSessionBudget | undefined;
+        readonly volatileBudget: ALVolatileSessionBudget;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;
         readonly newConnectionRequestId: (() => string) | undefined;

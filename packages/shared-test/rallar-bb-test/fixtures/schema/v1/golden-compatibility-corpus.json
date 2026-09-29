@@ -1058,6 +1058,30 @@
           }
         ]
       }
+    },
+    {
+      "caseId": "director-relay-start-lane-id",
+      "expectedErrors": [
+        "$.commands[0].laneId: Unexpected property."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "director-relay-start-lane-id",
+        "commands": [
+          {
+            "kind": "director.relay.start",
+            "commandId": "director-relay-start-with-lane-id",
+            "handle": "goldenDirector",
+            "roomId": "golden-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "topicId": "app.golden.director",
+            "intentTypeId": "app.golden.director.intent",
+            "outputTypeId": "app.golden.director.output",
+            "laneId": "game-intent"
+          }
+        ]
+      }
     }
   ],
   "invalidDistributedManifests": [

@@ -54,7 +54,6 @@ export type ALDeliveryAttemptOutcome =
 /** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
 export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
 
-/** `capacity`: the sending session is over its volatile bound (D78); it ends the send and never hands it over. */
 export type ALDeliveryRefusalReason =
     | 'unauthorized'
     | 'malformed'
@@ -121,7 +120,7 @@ export type ALDeliverySettlement =
         reason: ALDeliveryFallbackReason;
         detail: string;
     }>
-    /** The sender's strategy has no carrier left to try after an `unroutable` verdict: the last carrier's reason. */
+    /** The sender's strategy has no carrier left to try after an `unroutable` verdict. */
     | Readonly<{
         kind: 'attempts-exhausted';
         msgId: string;
@@ -167,8 +166,7 @@ export type ALDeliverySettlement =
     /**
      * A receipt ended before every expected peer confirmed: its retry budget ran out, or a hop refused the
      * message for good. Terminal. The peer lists are the receipt row's own -- next hops under `hop` and
-     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence. The
-     * producer states which of the two ended it.
+     * `subtree`, logical recipients under `receiver` -- so the confirmed progress stays in evidence.
      */
     | (
         & Readonly<{
@@ -253,7 +251,7 @@ export interface ALDeliveryReceiptEvidence {
 
 /**
  * The hop whose admitted NACK refused the message, and the reason it gave (D50); a trusted server may also refuse
- * a message the origin holds no receipt row for (`unauthorized`, S3c-i C3). A trusted server relay is not named.
+ * a message the origin holds no receipt row for (`unauthorized`). A trusted server relay is not named.
  */
 export type ALDeliveryRelayRejection =
     | Readonly<{ relay: 'trusted-server'; reason: 'resync-required' | 'unauthorized'; }>
@@ -291,7 +289,6 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly receiptDowngrade: ALDeliveryReceiptDowngrade | undefined;
     /** Undefined unless the strategy handed the admitted message to its fallback carrier (D56). */
     readonly carrierFallback: ALDeliveryCarrierFallback | undefined;
-    /** Undefined until the send ends `rejected`, `failed` or `expired`: why it ended, typed beside `reason`. */
     readonly failure: ALDeliveryFailure | undefined;
     /** The detail of the settlement that made the state terminal; undefined before that. */
     readonly reason: string | undefined;

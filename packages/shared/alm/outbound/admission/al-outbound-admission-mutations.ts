@@ -16,7 +16,7 @@ import type {
     ALLatestSupersedenceValue,
     ALReplacementSupersedenceValue
 } from '../../compute-al-supersedence-observation.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
+import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import {
     toALOutboundMessageOwnerKey,
@@ -109,7 +109,6 @@ export interface CreateALOutboundAdmissionMutationsInput {
     readonly canonicalScope: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly supersedenceTrackTtlMs: number;
-    /** The pair the rows are written to: the volatile pair keeps a message's rows only through its receipt grace. */
     readonly durability: ALStoreDurability;
 }
 
@@ -330,7 +329,7 @@ export class ALOutboundAdmissionMutations {
      */
     private computeMessageRowExpiryMs(deadlineAtMs: number | undefined, nowMs: number, rowTtlMs: number): number {
         if (this.durability === 'volatile') {
-            return resolveALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
+            return computeALReceiptRetentionExpiryMs(deadlineAtMs ?? nowMs);
         }
         return Math.max(deadlineAtMs ?? 0, nowMs + rowTtlMs, nowMs + this.retention.controlHistoryTtlMs);
     }

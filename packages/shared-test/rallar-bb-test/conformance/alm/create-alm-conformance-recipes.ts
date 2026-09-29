@@ -14,6 +14,7 @@ import { toStorageCountersCommand } from './alm-conformance-message-commands.ts'
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
+    AlmConformanceLaneFamily,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
     AlmConformanceStepInput,
@@ -51,6 +52,7 @@ export interface AlmConformanceScenario {
     /** Every recipe, command, handle and type id the pair mints derives from it; distinct per recipe pair. */
     readonly scenarioKey: string;
     readonly roles: readonly AlmConformanceRole[];
+    readonly laneFamily: AlmConformanceLaneFamily;
     readonly sender: RallarBlackBoxTestRecipe;
     readonly receiver: RallarBlackBoxTestRecipe;
     /** The second recipient's recipe; undefined exactly when `roles` does not declare `recipient-b`. */
@@ -143,6 +145,7 @@ function toAlmConformanceScenario(
         scenarioId: definition.scenarioId,
         scenarioKey: definition.scenarioKey,
         roles: definition.roles,
+        laneFamily: definition.laneFamily,
         tags: definition.tags,
         sender: toRoleRecipe('sender'),
         receiver: toRoleRecipe('receiver'),

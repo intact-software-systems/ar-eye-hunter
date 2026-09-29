@@ -336,7 +336,8 @@ describe('Rallar director relay', () => {
             // The mocked carriers deliver no receipt, so the command must not read as sent (correction 11).
             expect(result).toMatchObject({
                 status: 'failed',
-                receipt: expect.objectContaining({ typeId })
+                receipt: expect.objectContaining({ typeId }),
+                reason: 'The director did not confirm the command before its deadline.'
             });
             expect(result.rtc).toBeUndefined();
             expect(result.ws).toBeUndefined();

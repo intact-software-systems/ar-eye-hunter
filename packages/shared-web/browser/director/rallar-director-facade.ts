@@ -71,7 +71,6 @@ export interface RallarDirectorRelaySendResult {
     readonly status: RallarDirectorRelaySendStatus;
     readonly rtc?: RallarMessageHandle;
     readonly ws?: RallarMessageHandle;
-    /** The one carrier-neutral handle of a command, or of an output sent with a logical receipt request. */
     readonly receipt?: RallarMessageHandle;
     readonly reason?: string;
 }

@@ -50,6 +50,9 @@ export interface AlmConformanceMessageStepInput extends AlmConformanceStepInput 
     readonly index: number;
 }
 
+/** The addressed sends run on their own two agents, so the baseline cell keeps its wall time. */
+export type AlmConformanceLaneFamily = 'two-agent' | 'addressed' | 'three-agent';
+
 export interface AlmConformanceScenarioDefinition {
     readonly scenarioId: AlmConformanceScenarioId;
     readonly scenarioKey: string;
@@ -57,6 +60,8 @@ export interface AlmConformanceScenarioDefinition {
     readonly carriers: readonly AlmConformanceCarrier[];
     /** Every scenario declares the sender and the receiver; a three-agent scenario adds `recipient-b` (D45). */
     readonly roles: readonly AlmConformanceRole[];
+    /** The lane test that runs it: `three-agent` exactly when `roles` declares `recipient-b`. */
+    readonly laneFamily: AlmConformanceLaneFamily;
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
     /** Called once per recipient role the scenario declares; the step's role tells the recipients apart. */
     readonly toRecipientCommands: (recipient: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];

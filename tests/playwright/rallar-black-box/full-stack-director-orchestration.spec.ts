@@ -347,8 +347,10 @@ function directorRoomFields(groupId: string): Record<string, unknown> {
 
 function expectDirectorConfirmed(result: ControlResult): void {
     const sendResult = asRecord(resultValue(result).sendResult);
-    expect(sendResult, JSON.stringify(sendResult)).toMatchObject({ status: 'sent' });
-    expect(sendResult).toHaveProperty('receipt');
+    expect(sendResult, JSON.stringify(sendResult)).toMatchObject({
+        status: 'sent',
+        receipt: { msgId: expect.any(String) }
+    });
     expect(sendResult).not.toHaveProperty('rtc');
     expect(sendResult).not.toHaveProperty('ws');
 }

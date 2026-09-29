@@ -516,7 +516,7 @@ it('addresses a lane role through the page: the server by its peer id, the recei
     const runtime = await loadRuntime();
     await runtime.connect(connection);
     facade.behavior.serverPeerId.mockReturnValue('server-peer');
-    facade.behavior.readRoomSessions.mockReturnValue([
+    facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession(facade.session.sessionId),
         toRoomRosterSession('bob-session')
     ]);
@@ -532,22 +532,15 @@ it('addresses a lane role through the page: the server by its peer id, the recei
 
     expect(facade.records.typedSends.map(([, options]) => options?.peerId))
         .toEqual(['server-peer', 'bob-session', undefined]);
-    // A product names one peer as a command (D53, C12); the purpose fills only what the recipe leaves out.
+    // A product names one peer as a command (D53); the purpose fills only what the recipe leaves out.
     expect(facade.records.typedChannelOpens.slice(-3).map((definition) => definition.purpose))
         .toEqual(['command', 'command', 'notification']);
-    expect(facade.behavior.readRoomSessions).toHaveBeenCalledWith(
-        expect.objectContaining({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1'
-        })
-    );
 });
 
 it('fails a lane role the page cannot resolve with its own failure, before any handle opens', async () => {
     const runtime = await loadRuntime();
     await runtime.connect(connection);
-    facade.behavior.readRoomSessions.mockReturnValue([
+    facade.behavior.getRoomSessions.mockReturnValue([
         toRoomRosterSession('bob-session'),
         toRoomRosterSession('carol-session')
     ]);

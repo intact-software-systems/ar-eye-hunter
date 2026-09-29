@@ -55,6 +55,7 @@ export const capacity: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'addressed',
     toSenderCommands: toCapacitySenderCommands,
     toRecipientCommands: toCapacityReceiverCommands
 };

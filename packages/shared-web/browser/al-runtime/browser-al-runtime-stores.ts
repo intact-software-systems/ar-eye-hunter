@@ -127,7 +127,7 @@ export function createBrowserALOutboundRuntimeStores(
 /** Always memory, whatever the browser supports: the pair a carrier routes volatile admissions to. */
 export function createBrowserALVolatileOutboundRuntimeStores(
     name: string,
-    budget: ALVolatileSessionBudget | undefined
+    budget: ALVolatileSessionBudget
 ): ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage> {
     return createVolatileALOutboundRuntimeStores(
         { namespace: `browser:${name}:volatile`, decodePrepared: decodeALOutboundTransportMessage },
@@ -142,7 +142,7 @@ export function createBrowserALVolatileOutboundRuntimeStores(
  */
 export function createBrowserALVolatileInboundRuntimeStores(
     name: string,
-    budget: ALVolatileSessionBudget | undefined
+    budget: ALVolatileSessionBudget
 ): ALVolatileInboundRuntimeStores {
     return createVolatileALInboundRuntimeStores({ namespace: `browser:${name}:volatile` }, budget);
 }

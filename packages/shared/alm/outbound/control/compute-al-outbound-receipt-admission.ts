@@ -1,7 +1,7 @@
 import type { ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
+import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundAdmissionMutation } from '../admission/al-outbound-admission-mutations.ts';
 import type { ALOutboundVersionedClientRecord } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
@@ -60,7 +60,7 @@ export function computeALOutboundReceiptAdmission(
                 expectedPeerIds: expected,
                 ackedPeerIds: expected.filter((peerId) => acked.has(peerId))
             },
-            expireAtTimestamp: resolveALReceiptRetentionExpiryMs(current.deadlineAtMs)
+            expireAtTimestamp: computeALReceiptRetentionExpiryMs(current.deadlineAtMs)
         }
     };
 }

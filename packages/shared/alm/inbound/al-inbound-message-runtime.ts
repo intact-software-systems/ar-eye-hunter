@@ -37,7 +37,6 @@ export interface ALInboundRuntimeStores {
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
 export interface ALVolatileInboundRuntimeStores extends ALInboundRuntimeStores {
     evictExpired(): void;
-    /** The session's bound over what this pair holds; `undefined` leaves the pair unbounded (C3). */
     readonly budget: ALVolatileSessionBudget | undefined;
 }
 
@@ -128,8 +127,6 @@ export namespace ALInboundMessageRuntime {
  * - A data message goes to the lane `resolveALInboundStoreDurability(msg)` names: `durable` exactly
  *   when the envelope's normalized durability is `local-inbox`. The decision reads the envelope alone,
  *   so every copy and retry of one message resolves to the same lane.
- * - A data message the volatile lane admits counts against the session's bound, which the memory pair
- *   carries; an inbound admission is never refused for it (D74, C6).
  * - An acknowledgement of a message this peer originated is `not-handled` and reads no store: the
  *   origin keeps no inbound decision surface for its own message.
  * - Any other control goes to the volatile lane first, and to the durable lane when that lane answers

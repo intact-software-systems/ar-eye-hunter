@@ -14,6 +14,7 @@ import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
+import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -54,7 +55,6 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
-import { computeALOutboundControlRowExpiryMs } from './compute-al-outbound-control-row-expiry-ms.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -83,7 +83,6 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly reads: ALOutboundAdmissionReads<TPrepared>;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
-    /** The pair the control rows are written to: the volatile pair keeps them only through the receipt grace. */
     readonly durability: ALStoreDurability;
     readonly port: ALWorkQueuePort;
     readonly settlements: ALOutboundSettlementEmitter;
@@ -374,7 +373,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         await tx.set(
             toALOutboundControlHistoryKey(this.namespace, candidate.history.kind, read.targetMsgId),
             candidate.history,
-            computeALOutboundControlRowExpiryMs(
+            computeALVolatileControlRowExpiryMs(
                 candidate.controlExpireAtTimestamp,
                 this.durability,
                 read.sent?.reference.expiresAtMs
@@ -392,7 +391,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.set(
                 pendingAckKey,
                 candidate.pending.value,
-                computeALOutboundControlRowExpiryMs(
+                computeALVolatileControlRowExpiryMs(
                     candidate.receiptExpireAtTimestamp,
                     this.durability,
                     read.sent?.reference.expiresAtMs

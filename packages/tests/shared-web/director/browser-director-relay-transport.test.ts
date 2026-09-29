@@ -141,7 +141,11 @@ describe('director command', () => {
                 durable: false,
                 queuedAttempts: 1
             }, 'receiver');
-            const room = createRoomChannel(async () => command.handle);
+            const sentEnvelopes: RallarDirectorRelayEnvelope<OutputPayload>[] = [];
+            const room = createRoomChannel(async (envelope) => {
+                sentEnvelopes.push(envelope);
+                return command.handle;
+            });
             const transport = createTransport(
                 createMessageDelivery('rtc', undefined),
                 rejectCarrierSend,
@@ -152,7 +156,7 @@ describe('director command', () => {
             );
 
             const sending = transport.sendCommand({ ...commandInput, typeId });
-            await vi.waitFor(() => expect(room.send).toHaveBeenCalledTimes(1));
+            await vi.waitFor(() => expect(sentEnvelopes).toHaveLength(1));
             recordDirectorReceipt(command);
 
             expect(await sending).toEqual({ status: 'sent', receipt: command.handle });

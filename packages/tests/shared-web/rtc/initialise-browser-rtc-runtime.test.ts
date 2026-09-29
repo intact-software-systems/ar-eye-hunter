@@ -53,6 +53,7 @@ import {
     installNativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -184,7 +185,7 @@ describe('browser RTC runtime composition', () => {
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -257,7 +258,7 @@ describe('browser RTC runtime composition', () => {
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: undefined,
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine

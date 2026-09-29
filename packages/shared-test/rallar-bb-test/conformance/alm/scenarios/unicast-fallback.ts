@@ -1,19 +1,11 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import {
-    MESSAGE_CONTROL_TIMEOUT_MS,
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    NON_EXPIRING_TTL_MS,
-    toBudgetMs
-} from '../alm-conformance-budgets.ts';
+import { MESSAGE_CONTROL_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toRtcDropFaultCommand } from '../alm-conformance-fault-commands.ts';
 import {
-    toAdmissionCommands,
     toHandedOverAssertions,
-    toObserveCommand,
-    toResultAssertion,
-    toSendCommand
+    toResultAssertion
 } from '../alm-conformance-message-commands.ts';
 import { toAdmissionOutcomeWait, toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
@@ -22,10 +14,12 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 
+import { toAddressedSendCommands } from './to-addressed-send-commands.ts';
+
 const HAND_OVER = [['from', 'rtc'], ['to', 'ws'], ['reason', 'not-ready']] as const;
 
 /**
- * Q11's fallback: the sender drops its own RTC frames of an addressed send, so the third `not-ready` attempt hands the
+ * The fallback: the sender drops its own RTC frames of an addressed send, so the third `not-ready` attempt hands the
  * unicast to WS inside its deadline. That no second copy follows a hand-over is `fallback-within-deadline`'s pin on
  * the same fallback controller, so the receiver holds no absence window.
  */
@@ -35,6 +29,7 @@ export const unicastFallback: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'addressed',
     toSenderCommands: toUnicastFallbackSenderCommands,
     toRecipientCommands: toUnicastFallbackReceiverCommands
 };
@@ -44,19 +39,7 @@ function toUnicastFallbackSenderCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toRtcDropFaultCommand(sender, 'hold-rtc', 'until-cleared'),
-        toSendCommand({
-            ...sender,
-            index: 1,
-            payload: { marker: sender.scenarioId, carrier: sender.input.carrier },
-            delivery: {
-                toPeer: 'receiver',
-                ack: 'receiver',
-                ttlMs: NON_EXPIRING_TTL_MS,
-                commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
-            }
-        }),
-        ...toAdmissionCommands({ ...sender, index: 1 }),
-        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
+        ...toAddressedSendCommands(sender, 'receiver'),
         ...toHandedOverAssertions(sender, 'observe-acknowledged-1'),
         ...HAND_OVER.map(([field, expected]) =>
             toResultAssertion({

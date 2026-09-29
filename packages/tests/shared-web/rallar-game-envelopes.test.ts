@@ -345,6 +345,24 @@ describe('Rallar Game envelopes', () => {
         });
     });
 
+    it('measures the window below the highest intent sequence, however many it has accepted', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const intent = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'intent', seq });
+        for (let seq = 1; seq <= 4 * RALLAR_GAME_INTENT_SEQUENCE_WINDOW; seq++) {
+            tracker.accept(intent(seq));
+        }
+        const highest = 4 * RALLAR_GAME_INTENT_SEQUENCE_WINDOW;
+
+        expect(tracker.accept(intent(highest - RALLAR_GAME_INTENT_SEQUENCE_WINDOW))).toMatchObject({
+            accepted: false,
+            reason: 'stale-sequence'
+        });
+        expect(tracker.accept(intent(highest - RALLAR_GAME_INTENT_SEQUENCE_WINDOW + 1))).toMatchObject({
+            accepted: false,
+            reason: 'duplicate-sequence'
+        });
+    });
+
     it('forgets remembered intent sequences on reset', () => {
         const tracker = createRallarGameSequenceTracker();
         const intent = createRallarGameEnvelope({ ...validEnvelope, kind: 'intent', seq: 5 });

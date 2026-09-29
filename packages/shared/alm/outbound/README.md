@@ -78,7 +78,7 @@ every server message keeps its one backend.
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most once per
   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s, the IndexedDB eviction's cadence) of its clock; no
   timer runs for it. Its message-owner and sent-message rows live for the message deadline plus the 30 s
-  receipt grace ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74), the
+  receipt grace ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts), D74), the
   window in which a receipt or a late control about the message is still answered; the durable pair keeps
   them for `max(deadline, now + 1 h)`. A control that arrives after them finds no lane owning its message,
   goes to the durable lane and is refused there as a control about an unknown message. The control-history
@@ -427,7 +427,7 @@ refused at the sender.
 ### The volatile bound
 
 The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
-([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts)), not for an hour. One
+([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts)), not for an hour. One
 budget per session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data
 admissions the session originates and receives on its volatile pairs, by message and by envelope bytes. An outbound
 admission is released at its own deadline; an inbound one at the earlier of its deadline and 30 s after its arrival

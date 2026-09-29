@@ -112,7 +112,7 @@ export interface BlackBoxRallarConfig {
     readonly expectedSessionId?: string;
     readonly leaveRoomOnClose?: boolean;
     readonly logoutOnClose?: boolean;
-    /** Harness-only (C11): lowers the volatile bound of the session this connect initialises. */
+    /** Harness-only: lowers the volatile bound of the session this connect initialises. */
     readonly almVolatileLimits?: ALVolatileSessionLimits;
 }
 

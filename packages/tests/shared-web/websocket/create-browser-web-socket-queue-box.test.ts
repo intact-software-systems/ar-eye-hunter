@@ -28,6 +28,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -70,9 +71,9 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                undefined
+                createDefaultVolatileSessionBudget()
             ),
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -125,9 +126,9 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                undefined
+                createDefaultVolatileSessionBudget()
             ),
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -168,9 +169,9 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                undefined
+                createDefaultVolatileSessionBudget()
             ),
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -225,9 +226,9 @@ describe('createBrowserWebSocketQueueBox', () => {
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
-                undefined
+                createDefaultVolatileSessionBudget()
             ),
-            volatileBudget: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs,
             signal: controller.signal
         });

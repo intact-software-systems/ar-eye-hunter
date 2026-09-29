@@ -323,7 +323,6 @@ export interface CreateALInboundAdmissionStoreInput {
 export interface ALInboundAdmissionStore extends ALReadyable {
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
-    /** The pair this store is: the volatile pair keeps a message's rows only through its receipt grace (D74). */
     readonly durability: ALStoreDurability;
     readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead>;
 
@@ -352,14 +351,12 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     ): Promise<'committed' | 'conflict' | 'expired'>;
 }
 
-/** Every store but the session's memory pair: its message rows keep their TTL retention. */
 export function createALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {
     return new ProviderBackedALInboundAdmissionStore({ ...input, durability: 'durable' });
 }
 
-/** The session's memory pair's store: a message's owner row lives for its deadline plus the receipt grace (D74). */
 export function createVolatileALInboundAdmissionStore(
     input: CreateALInboundAdmissionStoreInput
 ): ALInboundAdmissionStore {

@@ -4,8 +4,8 @@ import type { ALQosInputProvider, ALQosMessageContext } from '../../al-contracts
 import type { ALVolatileSessionBudget } from './al-volatile-session-budget.ts';
 
 /**
- * Only outbound data this session originates reads `overloaded`: a control, a relay forward or an inbound plan that read
- * it would stop this session acknowledging, forwarding and delivering for other sessions at its bound.
+ * Only outbound data this session originates reads `overloaded`: a control, a relay forward or an inbound plan
+ * that read it would stop this session acknowledging, forwarding and delivering for other sessions at its bound.
  */
 export function toALVolatileSessionQosProvider(
     provider: ALQosInputProvider | undefined,

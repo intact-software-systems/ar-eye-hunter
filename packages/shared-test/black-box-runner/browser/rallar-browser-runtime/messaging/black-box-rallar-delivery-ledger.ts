@@ -190,7 +190,7 @@ export class BlackBoxRallarDeliveryLedger {
         return { minSnapshotVersion: current + floor.aboveCurrentBy };
     }
 
-    /** Resolved at send time, where the session ids live; a role no one peer answers fails the send (C11). */
+    /** Resolved at send time, where the session ids live; a role no one peer answers fails the send. */
     #resolvePeer(send: BlackBoxRallarMessageSendInput, roomRef: GroupRef | undefined): string | undefined {
         if (send.toPeer === undefined) {
             return undefined;
@@ -200,7 +200,7 @@ export class BlackBoxRallarDeliveryLedger {
             toPeer: send.toPeer,
             serverPeerId: peers.serverPeerId(),
             ownSessionId: peers.session()?.sessionId,
-            roomSessions: roomRef === undefined ? undefined : peers.readRoomSessions(roomRef),
+            roomSessions: roomRef === undefined ? undefined : peers.getRoomSessions(roomRef),
             nowMs: this.#input.now()
         }).fold(
             (detail) => {

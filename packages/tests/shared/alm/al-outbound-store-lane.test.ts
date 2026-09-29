@@ -8,6 +8,10 @@ import {
     AL_VOLATILE_STORE_EVICTION_INTERVAL_MS,
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
+import {
+    toALOutboundMessageOwnerKey,
+    toALOutboundSentMessageKey
+} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
 import { createVolatileALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundDispatchPlan,
@@ -108,7 +112,13 @@ describe('outbound store lanes (S3a, D54)', () => {
             planOutgoingMessage: planVolatileSend,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
-        await enqueueOutboundOrThrow(runtime, createOutboundMessage('expiring', { ttlMs: 1_000 }));
+        const message = createOutboundMessage('expiring', { ttlMs: 1_000 });
+        await enqueueOutboundOrThrow(runtime, message);
+        const rowKeys = [
+            toALOutboundMessageOwnerKey('lane-eviction', message.id.msgId),
+            toALOutboundSentMessageKey('lane-eviction', message.id.msgId)
+        ];
+        expect(rowKeys.map((key) => lane.state.data.has(key))).toEqual([true, true]);
         // The bootstrap round sweeps first; the admission's own round falls inside the interval.
         expect(lane.evictExpired).toHaveBeenCalledTimes(1);
         const rowsAfterSend = lane.state.data.size;
@@ -127,6 +137,7 @@ describe('outbound store lanes (S3a, D54)', () => {
         await runOutboundWorkTask(runtime);
         expect(lane.evictExpired).toHaveBeenCalledTimes(3);
         expect(lane.state.data.size).toBeLessThan(rowsAfterSend);
+        expect(rowKeys.map((key) => lane.state.data.has(key))).toEqual([false, false]);
     });
 });
 

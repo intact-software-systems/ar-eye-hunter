@@ -10,8 +10,6 @@ import {
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
 import {
-    DEFAULT_AL_EPHEMERAL_TTL_MS,
-    DEFAULT_AL_REPOSITORY_TTL_MS,
     normalizeALRuntimeStoreRetention
 } from '@shared/alm/ALStoreRetention.ts';
 import {
@@ -82,7 +80,7 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
             .toEqual({ kind: 'admitted' });
 
         expect(readRowExpiries(pairs.durable, message).owner).toBe(
-            admittedAtMs + DEFAULT_AL_REPOSITORY_TTL_MS
+            admittedAtMs + 60 * 60_000
         );
     });
 
@@ -105,7 +103,7 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
 
         // The admission implies `nowMs + durableEffectTtlMs` (30 min) for a message with no expiry of its own.
         expect(readRowExpiries(pairs.volatile, message).owner)
-            .toBe(admittedAtMs + DEFAULT_AL_EPHEMERAL_TTL_MS + AL_RECEIPT_DEADLINE_GRACE_MS);
+            .toBe(admittedAtMs + 30 * 60_000 + AL_RECEIPT_DEADLINE_GRACE_MS);
     });
 });
 
@@ -246,7 +244,7 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
             .toEqual({ kind: 'control', handled: true });
 
         expect(readAcksExpiry(pairs.durable, tracked)).toBe(
-            acknowledgedAtMs + DEFAULT_AL_EPHEMERAL_TTL_MS
+            acknowledgedAtMs + 30 * 60_000
         );
     });
 });

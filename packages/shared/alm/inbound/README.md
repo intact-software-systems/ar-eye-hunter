@@ -84,7 +84,7 @@ its own pair on the shared engine.
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
   once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. Its message-owner
   row lives for the message deadline plus the 30 s receipt grace
-  ([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts), D74),
+  ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts), D74),
   or longer when the work the message owns does; a message with no expiry of its own has
   the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
   the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their

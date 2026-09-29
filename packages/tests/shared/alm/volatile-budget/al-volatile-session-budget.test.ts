@@ -108,6 +108,20 @@ describe('the per-session volatile budget (D74)', () => {
         expect(budget.readUsage(NOW_MS + 9_000)).toEqual({ admissions: 0, bytes: 0 });
     });
 
+    it('releases admissions held out of deadline order, each at its own deadline, with their bytes', () => {
+        const budget = new ALVolatileSessionBudget({ maxAdmissions: 10, maxBytes: 10_000 });
+        budget.tryAdmit(toAdmission('third', { deadlineAtMs: NOW_MS + 3_000, bytes: 3 }));
+        budget.tryAdmit(toAdmission('first', { deadlineAtMs: NOW_MS + 1_000, bytes: 1 }));
+        budget.record(toAdmission('second', { deadlineAtMs: NOW_MS + 2_000, bytes: 2 }));
+
+        expect([0, 1_000, 2_000, 3_000].map((elapsedMs) => budget.readUsage(NOW_MS + elapsedMs))).toEqual([
+            { admissions: 3, bytes: 6 },
+            { admissions: 2, bytes: 5 },
+            { admissions: 1, bytes: 3 },
+            { admissions: 0, bytes: 0 }
+        ]);
+    });
+
     it('holds nothing for an admission whose deadline already passed', () => {
         const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
 

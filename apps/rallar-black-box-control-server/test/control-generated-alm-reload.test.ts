@@ -14,6 +14,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ALDeliveryCarrierFallback } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
@@ -24,6 +25,10 @@ import {
     toRegisterEnvelope
 } from './support/control-service-test-fixtures.ts';
 
+type MessagesPortKind = 'messages.send' | 'messages.observe' | 'messages.cancel' | 'messages.receipts' | 'messages.received';
+
+type PortCommand<TKind extends RallarBlackBoxTestCommand['kind']> = Extract<RallarBlackBoxTestCommand, Readonly<{ kind: TKind; }>>;
+
 interface PortMessage {
     readonly command: RallarBlackBoxTestMessagesSendCommand;
     readonly msgId: string;
@@ -33,9 +38,7 @@ interface PortMessage {
     attemptOutcomes: readonly ('not-ready' | 'sent')[];
     /** The volatile bound's refusal (D78); undefined for every send it admits. */
     readonly failure: Readonly<{ kind: 'refused'; reason: 'capacity'; }> | undefined;
-    carrierFallback:
-        | Readonly<{ from: 'rtc'; to: 'ws'; reason: HandedOverOutcome['fallbackReason']; }>
-        | undefined;
+    carrierFallback: ALDeliveryCarrierFallback | undefined;
 }
 
 interface HandedOverOutcome {
@@ -153,70 +156,11 @@ class GeneratedAlmPorts {
             case 'fault.inject':
                 return this.injectFault(command);
             case 'messages.send':
-                return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
-            case 'messages.observe': {
-                const message = this.handles.get(command.handleId);
-                if (message && command.state.length === 1 && command.state[0] === 'expired') {
-                    message.state = 'expired';
-                }
-                // Only a send that opted into a durability is enqueued; the default is volatile.
-                const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile';
-                return {
-                    status: 'ok',
-                    value: {
-                        handleId: command.handleId,
-                        state: message?.state ?? 'unobservable',
-                        enqueued,
-                        submitted: message?.submitted ?? false,
-                        attempts: message?.attemptCarriers.length ?? 0,
-                        attemptCarriers: message?.attemptCarriers ?? [],
-                        attemptOutcomes: message?.attemptOutcomes ?? [],
-                        failure: message?.failure,
-                        carrierFallback: message?.carrierFallback,
-                        ...(message?.command.toPeer !== undefined && message.state === 'acknowledged'
-                            ? toAddresseeReceipt(message.command.toPeer)
-                            : {})
-                    }
-                };
-            }
-            case 'messages.cancel': {
-                const message = this.handles.get(command.handleId);
-                assert(message);
-                if (!message.submitted && message.state !== 'rejected') {
-                    message.state = 'cancelled';
-                }
-                return { status: 'ok', value: { handleId: command.handleId, state: message.state, submitted: message.submitted } };
-            }
-            case 'messages.receipts': {
-                const message = this.handles.get(command.handleId);
-                assert(message);
-                if (message.command.toPeer !== undefined) {
-                    return { status: 'ok', value: toAddresseeReceipt(message.command.toPeer) };
-                }
-                // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
-                const isWs = message.command.carrier === 'ws';
-                const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
-                return {
-                    status: 'ok',
-                    value: {
-                        confirmedHopPeerIds: isWs ? [] : [confirmed],
-                        unconfirmedHopPeerIds: [],
-                        confirmedRecipientPeerIds: [confirmed],
-                        unconfirmedRecipientPeerIds: []
-                    }
-                };
-            }
-            case 'messages.received': {
-                // A command addressed to the server reaches no member of the room.
-                const arrived = this.messages.filter((message) =>
-                    message.command.typeId === command.typeId && message.submitted &&
-                    message.command.toPeer !== 'server'
-                );
-                this.admitReceiverInbox(arrived);
-                const count = arrived.length;
-                const passed = command.absent ? count < command.count : count >= command.count;
-                return { status: passed ? 'ok' : 'failed', value: { count } };
-            }
+            case 'messages.observe':
+            case 'messages.cancel':
+            case 'messages.receipts':
+            case 'messages.received':
+                return this.executeMessagesPort(command);
             case 'close':
                 return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
@@ -229,6 +173,88 @@ class GeneratedAlmPorts {
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
+    }
+
+    private executeMessagesPort(command: PortCommand<MessagesPortKind>): RallarBlackBoxTestCommandOutcome {
+        switch (command.kind) {
+            case 'messages.send':
+                return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
+            case 'messages.observe':
+                return this.observe(command);
+            case 'messages.cancel':
+                return this.cancel(command);
+            case 'messages.receipts':
+                return this.readReceipts(command);
+            case 'messages.received':
+                return this.readReceived(command);
+        }
+    }
+
+    private observe(command: PortCommand<'messages.observe'>): RallarBlackBoxTestCommandOutcome {
+        const message = this.handles.get(command.handleId);
+        if (message && command.state.length === 1 && command.state[0] === 'expired') {
+            message.state = 'expired';
+        }
+        // Only a send that opted into a durability is enqueued; the default is volatile.
+        const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile';
+        return {
+            status: 'ok',
+            value: {
+                handleId: command.handleId,
+                state: message?.state ?? 'unobservable',
+                enqueued,
+                submitted: message?.submitted ?? false,
+                attempts: message?.attemptCarriers.length ?? 0,
+                attemptCarriers: message?.attemptCarriers ?? [],
+                attemptOutcomes: message?.attemptOutcomes ?? [],
+                failure: message?.failure,
+                carrierFallback: message?.carrierFallback,
+                ...(message?.command.toPeer !== undefined && message.state === 'acknowledged'
+                    ? toAddresseeReceipt(message.command.toPeer)
+                    : {})
+            }
+        };
+    }
+
+    private cancel(command: PortCommand<'messages.cancel'>): RallarBlackBoxTestCommandOutcome {
+        const message = this.handles.get(command.handleId);
+        assert(message);
+        if (!message.submitted && message.state !== 'rejected') {
+            message.state = 'cancelled';
+        }
+        return { status: 'ok', value: { handleId: command.handleId, state: message.state, submitted: message.submitted } };
+    }
+
+    private readReceipts(command: PortCommand<'messages.receipts'>): RallarBlackBoxTestCommandOutcome {
+        const message = this.handles.get(command.handleId);
+        assert(message);
+        if (message.command.toPeer !== undefined) {
+            return { status: 'ok', value: toAddresseeReceipt(message.command.toPeer) };
+        }
+        // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
+        const isWs = message.command.carrier === 'ws';
+        const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
+        return {
+            status: 'ok',
+            value: {
+                confirmedHopPeerIds: isWs ? [] : [confirmed],
+                unconfirmedHopPeerIds: [],
+                confirmedRecipientPeerIds: [confirmed],
+                unconfirmedRecipientPeerIds: []
+            }
+        };
+    }
+
+    private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
+        // A command addressed to the server reaches no member of the room.
+        const arrived = this.messages.filter((message) =>
+            message.command.typeId === command.typeId && message.submitted &&
+            message.command.toPeer !== 'server'
+        );
+        this.admitReceiverInbox(arrived);
+        const count = arrived.length;
+        const passed = command.absent ? count < command.count : count >= command.count;
+        return { status: passed ? 'ok' : 'failed', value: { count } };
     }
 
     /** The receiver admits a local-inbox arrival to IndexedDB on its own timeline: when its page reads the arrival. */
@@ -290,7 +316,6 @@ class GeneratedAlmPorts {
         // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
         const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
         const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused;
-        const handedOver = HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)];
         const message: PortMessage = {
             command,
             msgId: `port-message-${this.messages.length + 1}`,
@@ -314,21 +339,7 @@ class GeneratedAlmPorts {
                 }
             }
         }
-        if (command.minSnapshotVersion !== undefined) {
-            this.refuseNotYetInSync(message);
-        }
-        else if (command.payload.seq === 300) {
-            this.refuseGappedSend(message);
-        }
-        else if (handedOver !== undefined) {
-            this.handOver(message, handedOver);
-        }
-        else if (command.toPeer === 'server') {
-            this.acknowledgeByServer(message);
-        }
-        else if (!rejected && !this.isHeld(command.typeId)) {
-            this.deliver(message);
-        }
+        this.route(message, rejected);
         return {
             status: 'ok',
             value: {
@@ -345,12 +356,40 @@ class GeneratedAlmPorts {
         };
     }
 
+    private route(message: PortMessage, rejected: boolean): void {
+        const { command } = message;
+        const handedOver = isJsonRecordValue(command.payload)
+            ? HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)]
+            : undefined;
+        if (command.minSnapshotVersion !== undefined) {
+            this.refuseNotYetInSync(message);
+        }
+        else if (isJsonRecordValue(command.payload) && command.payload.seq === 300) {
+            this.refuseGappedSend(message);
+        }
+        else if (handedOver !== undefined) {
+            this.handOver(message, handedOver);
+        }
+        else if (command.toPeer === 'server') {
+            this.acknowledgeByServer(message);
+        }
+        else if (!rejected && !this.isHeld(command.typeId)) {
+            this.deliver(message);
+        }
+    }
+
     /** Delivered with an attempt on each carrier; the receiver states its verdict on the WS copy. */
     private handOver(message: PortMessage, handedOver: HandedOverOutcome): void {
         this.deliver(message);
         message.attemptCarriers = ['rtc', 'ws'];
         message.attemptOutcomes = handedOver.attemptOutcomes;
-        message.carrierFallback = { from: 'rtc', to: 'ws', reason: handedOver.fallbackReason };
+        message.carrierFallback = {
+            from: 'rtc',
+            to: 'ws',
+            reason: handedOver.fallbackReason,
+            atMs: Date.now(),
+            detail: 'The RTC leg handed the send over to WS.'
+        };
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',

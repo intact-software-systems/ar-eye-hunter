@@ -248,7 +248,7 @@ export function toHandedOverAssertions(
 }
 
 /**
- * An addressed send's receipt names one recipient, its addressee (Q11). Which session that is, the identity
+ * An addressed send's receipt names one recipient, its addressee. Which session that is, the identity
  * assessment joins after the run.
  */
 export function toAddresseeReceiptAssertions(

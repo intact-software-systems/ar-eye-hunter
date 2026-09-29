@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
+import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -42,17 +42,12 @@ export function toALInboundAdmittedMessageMutations(
     return mutations;
 }
 
-/**
- * The owner row answers a copy or a control that arrives after the message: the durable pair keeps it for its TTL,
- * the volatile pair for the deadline plus the receipt grace (D74), a message with no expiry of its own having the
- * deadline its admission implies. The commit bundle then extends either to outlive the work the message owns.
- */
 export function computeALInboundMessageOwnerExpiryMs(
     read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto,
     deadlineAtMs: number
 ): number {
     return read.durability === 'volatile'
-        ? resolveALReceiptRetentionExpiryMs(deadlineAtMs)
+        ? computeALReceiptRetentionExpiryMs(deadlineAtMs)
         : read.nowMs + read.retention.msgOwnerTtlMs;
 }
 

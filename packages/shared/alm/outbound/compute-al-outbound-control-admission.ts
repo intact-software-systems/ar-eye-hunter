@@ -156,7 +156,7 @@ function toRefusedReceiptFact(
 }
 
 /**
- * The trusted server refused a message this owner sent and holds no receipt row for (C3): at admission, or at the
+ * The trusted server refused a message this owner sent and holds no receipt row for: at admission, or at the
  * dispatch-time re-authorization before its `admitted` receipt reached the origin. The NACK has no row to end, so it
  * needs no expected repair peer and states the refusal itself.
  */

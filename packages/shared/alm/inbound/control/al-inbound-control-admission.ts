@@ -5,7 +5,7 @@ import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
+import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
@@ -128,15 +128,12 @@ export class ALInboundControlAdmission {
      * is refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
      */
     private toStoreCandidate(candidate: ALInboundControlAdmissionCandidate): ALInboundControlAdmissionCandidate {
-        const deadlineAtMs = candidate.read.pending?.expireAtTimestamp;
-        if (this.admissionStore.durability !== 'volatile' || deadlineAtMs === undefined) {
-            return candidate;
-        }
         return {
             ...candidate,
-            controlExpireAtTimestamp: Math.min(
+            controlExpireAtTimestamp: computeALVolatileControlRowExpiryMs(
                 candidate.controlExpireAtTimestamp,
-                resolveALReceiptRetentionExpiryMs(deadlineAtMs)
+                this.admissionStore.durability,
+                candidate.read.pending?.expireAtTimestamp
             )
         };
     }

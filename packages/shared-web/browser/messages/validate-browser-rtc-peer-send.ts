@@ -12,10 +12,8 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
-/** The peer send strategies whose first leg is RTC: alone, or with WS inside the deadline (D56). */
 export type BrowserRtcPeerSendStrategy = Exclude<BrowserPeerSendStrategy, 'ws'>;
 
-/** A typed send addressed to one peer whose first leg is RTC (Q11). */
 export interface BrowserRtcPeerSend<T> {
     readonly send: RallarRtcSendInput<T> & RallarWsSendInput<T>;
     readonly peerId: string;
@@ -24,15 +22,10 @@ export interface BrowserRtcPeerSend<T> {
 
 export interface ValidateBrowserRtcPeerSendInput<T> {
     readonly peer: BrowserRtcPeerSend<T>;
-    /** The send resolved to the room its unicast names: over RTC a peer send always names one. */
     readonly resolved: ResolvedWsMessageInput<T>;
     readonly inputValidator: BrowserMessageInputValidator;
 }
 
-/**
- * A peer send over RTC keeps the rules of every peer send and, when it may fall back, the room rules of its WS leg.
- * It carries no scope but its room, no membership fence and no overlay routing: the unicast has no field for them.
- */
 export function validateBrowserRtcPeerSend<T>(
     input: ValidateBrowserRtcPeerSendInput<T>
 ): readonly RallarValidationIssue[] {
