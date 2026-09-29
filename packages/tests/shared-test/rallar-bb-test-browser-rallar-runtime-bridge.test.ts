@@ -66,8 +66,15 @@ describe('browser Rallar runtime bridge', () => {
     });
 
     it('decodes the lane-only volatile limits of a connect and refuses a partial or non-positive pair', async () => {
-        const connect = vi.fn(async (input) => input);
-        vi.stubGlobal('window', { __blackBoxRallar: { connect } });
+        const forwarded: unknown[] = [];
+        vi.stubGlobal('window', {
+            __blackBoxRallar: {
+                connect: async (config: unknown) => {
+                    forwarded.push(config);
+                    return config;
+                }
+            }
+        });
         const bridge = createSpaBrowserRallarRuntime();
         const input = {
             connection: 'alice',
@@ -91,7 +98,8 @@ describe('browser Rallar runtime bridge', () => {
                     'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
                 );
         }
-        expect(connect).toHaveBeenCalledTimes(1);
+        // Only the well-formed pair reached the native runtime.
+        expect(forwarded).toEqual([input]);
     });
 
     it('installs and restores the SPA browser event bridge', async () => {

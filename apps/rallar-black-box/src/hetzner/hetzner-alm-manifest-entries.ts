@@ -36,7 +36,7 @@ const ALM_CONFORMANCE_TYPE_ID = 'alm.conformance';
 
 const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 
-/** Also each combined root's execution budget (distributed-run-commands.ts), so it bounds the whole hosted run. */
+/** Also the execution budget of each combined root (distributed-run-commands.ts), so it bounds the whole hosted run. */
 const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_200;
 
 const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
