@@ -49,17 +49,20 @@ behaviour without a row.
 | P6  | **RTC authority gaps:** the gap decides the carrier; authorization fails only for an explicitly foreign or inactive overlay (section "RTC gap").                                                                                                                                                                                                         |
 | P7  | **Ingress scope check** stays. A mismatch is refused with a NACK, through the same policy as S3c-i's addressee refusal.                                                                                                                                                                                                                                  |
 | P8  | **Schema:** `AL_ADMISSION_SCHEMA_ID` gets a new id. Decoders are strict and there is no migration; old rows are refused, as with the S3c-i bump.                                                                                                                                                                                                         |
-| P9  | **Statuses:** `sent-live` and `cluster-published` map to the game's `sent`; `queued-outbox` maps to `accepted`.                                                                                                                                                                                                                                          |
+| P9  | **Statuses:** `sent-live`, `cluster-published` and `queued-outbox` all map to the game's `sent`, meaning handed to a carrier. Main already maps `queued-outbox` to `sent`; only `cluster-published` is new.                                                                                                                                              |
 | P10 | **NOTIFY notice** is a best-effort, one-attempt cluster carrier and amends D37. Receipts keep their meaning. An oversized publication with no canonical inbound row is refused with a typed result.                                                                                                                                                      |
 | P11 | **Initial control** messages skip the sender queue and the Web Lock only if a two-tab test proves no duplicate and no out-of-order control send. Otherwise the change is reverted.                                                                                                                                                                       |
 | P12 | **Raw outbox rows** without producer provenance fail closed. A unicast `router.publish` without a scope returns a typed `failed`, not `skipped`.                                                                                                                                                                                                         |
 | P13 | **Duplicates removed:** one D58 audience path (#566's, D58 widened), one cluster audience read (`readCapturedPolicy`), the wire `groupRef` as the scope authority for room and unicast messages, one accepted-layout predicate in `packages/shared`, and one `created_by` clamp.                                                                         |
 | P14 | **Experiments out:** the RTC diagnostics harness, the ALM probes and `docs/superpowers/**` leave the PR; tag `pr566-pre-reconcile` keeps them. The E3 phase timing stays (P17).                                                                                                                                                                          |
-| P15 | **State-write:** the #566 comparison workflow becomes generic (a label on any PR, base against head). The regression is attributed first; then the principal-relevant read design is built. It is accepted only if the unchanged comparator passes.                                                                                                      |
-| P16 | **Issue #594** (RTC redial after a reload) is fixed in this PR on top of `offerId` (section "RTC redial").                                                                                                                                                                                                                                               |
+| P15 | **State-write:** the #566 comparison workflow becomes generic (a label on any PR, base against head). The regression is attributed first; then the principal-relevant read design is built. It is accepted only if the unchanged comparator passes. If both measurement runs pass, the read is built only when the bytes show the double read.           |
+| P16 | **Issue #594** (RTC redial after a reload) is fixed in this PR on top of `offerId` (section "RTC redial"). It fixes the reload case; the issue stays open for the rest.                                                                                                                                                                                  |
 | P17 | **E3 phase timing** (`d211d4667`, `39c70b5ed`: named phases and non-TTY start markers in the unchanged three-browser E3 spec, list reporter `printSteps`) stays, because P2 reports E3.                                                                                                                                                                  |
 | P18 | **Principal-relevant read design** (`docs/superpowers/specs/2026-09-29-principal-relevant-state-sync-read-design.md` on the branch) is the design task 10 builds. Its text moves into this file's section "State-write", and the source file leaves with P14.                                                                                            |
 | P19 | **Bundle ceilings** are re-measured at the end and raised to the next whole KiB, with the figures recorded.                                                                                                                                                                                                                                              |
+| P20 | **Acknowledgements across processes:** an ACK that finds no receipt aggregate on its process is relayed once over the cluster notice to the process that owns the receipt. Best effort. Amends D37 (a second notice kind).                                                                                                                               |
+| P21 | **Three-process RTC browser mode** stays, with a simpler assertion: three browsers, each on its own API origin, reach RTC readiness and exchange a message. It reads nothing from the removed harness.                                                                                                                                                   |
+| P22 | **E3 workflow:** #566's version of `rtc-b06-performance-observation.yml` stays, because main's cannot run the 100-cycle case from a branch.                                                                                                                                                                                                              |
 
 ## Work order
 
@@ -74,6 +77,7 @@ Each task is committed, reviewed and pushed to the branch before the next one st
 | 4  | RTC gap (P6)                                                                                                                                                                                    | Tests in section "RTC gap" pass                                                                                                                                                                               |
 | 5  | RTC redial, #594 (P16); manifest 18 stops withholding `delivery-reload` on `rtc` and `rtc-with-ws-fallback`                                                                                     | Tests in section "RTC redial" pass, including the counter-case; the local lane's `delivery-reload` RTC cells pass                                                                                             |
 | 6  | Live-only fanout (P4)                                                                                                                                                                           | The game authority server's default publish succeeds through the real router                                                                                                                                  |
+| 6b | Acknowledgements across processes (P20)                                                                                                                                                         | The cluster recipe's receipt ends `complete` for a recipient on another process; a forged relayed acknowledgement is dropped                                                                                  |
 | 7  | Scope, statuses, schema (P7–P9, P12)                                                                                                                                                            | S3c-i's addressed-sends recipe passes with scoped URLs; a new step proves a mismatched-scope send gets the typed NACK; every WS client (Relic server, black-box runner, headless agent) carries the URL scope |
 | 8  | Duplicates (P13)                                                                                                                                                                                | The deleted copies have no references left                                                                                                                                                                    |
 | 9  | Initial control, two-tab test (P11)                                                                                                                                                             | Kept or reverted, with the result recorded                                                                                                                                                                    |
@@ -130,19 +134,21 @@ checks but gives two kinds of outcome.
 - **Authority refused:** the selected overlay is explicitly foreign or inactive for the message's `groupRef`. It
   stays `unauthorized` for every strategy.
 
-| Case                                                                  | Admission                                | Dispatch                                                                                                                                                           |
-| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Fallback strategies (`rtc-with-ws-fallback`, S3c-ii unicast fallback) | `no-route`: WS at once, as on main (D56) | `not-ready`: WS after 3, as on main (S3 §11.1(2))                                                                                                                  |
-| `rtc` only, durable                                                   | Admitted                                 | D10 `pending-authority`: each dequeue in the gap settles `not-ready` and retries, with attempt rows and its receipt budget, until the deadline ends it `timed out` |
-| `rtc` only, volatile                                                  | `no-route`, as on main                   | —                                                                                                                                                                  |
+| Case                                                                  | Admission                                | Dispatch                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fallback strategies (`rtc-with-ws-fallback`, S3c-ii unicast fallback) | `no-route`: WS at once, as on main (D56) | `not-ready`: WS after 3, as on main (S3 §11.1(2))                                                                                                                                                                                                                                                                        |
+| `rtc` only, durable                                                   | Admitted                                 | Held as dequeue work with no prepared copy. The handle reads `accepted`. One `not-ready` attempt is stated when the gap begins. When the accepted overlay returns inside the deadline, the copies are planned to the audience frozen at admission and the receipt starts. Otherwise the deadline ends the send `expired` |
+| `rtc` only, volatile                                                  | `no-route`, as on main                   | —                                                                                                                                                                                                                                                                                                                        |
 
-Every durable send in an overlay gap has attempt rows, so the fallback triggers can fire.
+The message carries no strategy, so the leg tells the manager what a gap means: `hand-over` for a leg with a
+fallback carrier, `hold` for a leg without one (`rtc`, and the RTC leg of `ws-then-rtc`). A copy already prepared
+when a gap opens settles `not-ready` on every attempt, so a fallback strategy hands it to WS after three.
 
 **Tests:**
 
 - S3b's fallback suites and S3c-ii's director `{peerId}` fallback, unchanged;
 - #566's overlay-gap tests with the new verdicts;
-- new: an `rtc`-only durable send in a gap ends `timed out` with its attempts recorded;
+- new: an `rtc`-only durable send in a gap ends `expired`, with one `not-ready` attempt recorded for the gap;
 - new: a foreign overlay stays `unauthorized`.
 
 **D-row:** carrier versus authorization for RTC room authority; D56, D65 and D10 are cited, not changed.
@@ -168,10 +174,19 @@ the same session id. The late answer to the old offer then landed on the new con
 correlation settles this: an answer is accepted only when its `offerId` is the pc's outstanding offer
 (`qrtc-peer-connection.ts`), so a late answer to a replaced offer is discarded.
 
-**The design.** In `runReconcilePass`, when a retained peer becomes desired again and the connection service
-still reports it in flight (it never established), disconnect it without spending the attempt budget before
-`computeOutboundDialPlan`. The same pass then redials, now to a live socket. A peer that established is never
-touched by this rule.
+**The design.** In `runReconcilePass`, a retained peer that becomes desired again is disconnected, without
+spending the attempt budget, before `computeOutboundDialPlan`. The same pass then redials, now to a live socket.
+The rule applies only when all of these hold:
+
+- this side offers (it is the impolite side);
+- its offer is still unanswered;
+- the peer was retained for an overlay transition.
+
+A peer that established, and a polite side's peer, are never touched by this rule.
+
+**What is left.** `offerId` correlates answers, not offers. If the old offer is applied after the new one, the
+pair recovers at the 30 s establishment timeout. The server drops an offer to an offline session, so this needs
+the old offer to reach a page that is back online but not yet ready. The residual is recorded in D98.
 
 **Tests:**
 
@@ -195,10 +210,30 @@ branch passes it.
   - `outbox`: a WS_OUTBOX row, with retries and the frozen audience;
   - `live-only`: one live attempt to local sockets plus the cluster notice, at any QoS;
   - `none`: the handler only.
-- Both refusals are removed ("requires durable outbound work", "incompatible with durable outbound work").
+- Both refusals are removed ("requires durable outbound work", "incompatible with durable outbound work"). So is
+  the router's unmet-requirements refusal on a live-only topic, which #566 also added.
+- The rule holds in both directions: a best-effort message on an `outbox` topic goes to the outbox, not to a
+  notice.
 - The oversized-live refusal stays (P10).
 - **Test:** the game authority server's default snapshot, event and command-result publishes succeed through the
   real router, not a fake.
+
+## Acknowledgements across processes
+
+- **The gap.** A recipient's ACK is admitted on the process that holds its socket. The receipt aggregate lives on
+  the process that admitted the message. When they differ, the ACK is refused, and the sender's receipt ends
+  `timed out` for a recipient that did get the message. Main has this gap on every fanout.
+- **The design (P20).** The recipient's process checks the connection and scope, then publishes the control
+  message as a `relayed-ack` notice. The process that holds the aggregate checks that the sender is in the frozen
+  audience and feeds it to the receipt aggregation. Other processes ignore it.
+- **Rules.**
+  - A process that holds the aggregate never relays.
+  - A relayed notice is never relayed again.
+  - No handler runs on a subscriber.
+  - A lost notice leaves the recipient unconfirmed.
+  - Only ACKs are relayed. No server code consumes a recipient's NACK.
+- **Tests:** the receipt completes when the ACK arrives by notice; a forged relayed acknowledgement is dropped;
+  a duplicate changes nothing; the cluster recipe ends `complete`; the medium-scale gate still passes.
 
 ## Scope, statuses, schema
 
@@ -219,6 +254,10 @@ branch passes it.
    branch after task 9, and the same branch with the principal reads reverted.
    - If only the second passes, the reads are the cause.
    - If both fail, revert one theme at a time (cluster notice, provenance) until the cause is found.
+   - If both pass, the read is built only when the bytes show the double read: the first run's uncontended
+     result-bytes ratio is at least 1.01 and above its hot ratio, and the second run's is lower.
+   - The second run goes through a throwaway draft pull request, because GitHub cannot dispatch a workflow that
+     is not on main yet. The maintainer consented to those pull requests and to the label `measure-state-write`.
 2. **The principal-relevant read.**
    - The current reader loads and validates every group in the application/workspace twice before it finds the
      actor's memberships.
