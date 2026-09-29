@@ -1307,11 +1307,40 @@ hosted miss. Independent review removed unsafe raw-stdout forwarding and
 separated cross-service readiness ownership; focused tests and changed-style
 checks pass.
 
-(1) Publish those reviewed changes together in draft PR #566, then run the
-exact-head hosted ALM observation and Release Gate. Inspect the retained ALM
-JSONL on pass or failure, prove the five recipe WS paths against PostgreSQL,
-and fix only a demonstrated remaining defect. Do not change delivery behavior
-merely because one prior browser receiver missed. (2) Present the
+**2026-09-29 same-head hosted evidence:** At `fa12644aca84ad47140620e576e27d6ad63e7e33`,
+the hosted ALM lane passed. Its retained safe artifact correlates six admitted
+messages through dequeue, cluster publish, and direct socket send: 11/11
+intended sends succeeded, with zero recorded send failures. The formation and
+medium-scale API-v1 gates also passed. The Release Gate's broader PostgreSQL
+checks remain in progress at this checkpoint. The unchanged branch-only E3
+diagnostic cohort did not produce acceptance evidence: runner 2 failed C
+readiness on reconnect cycle 1, runner 3 failed B readiness on cycle 4, and
+runner 1 was terminated with exit 143 during cycle 21 at about 30 minutes,
+before artifact upload, despite the workflow's 360-minute job declaration.
+The source of that apparent runtime cap is not yet proven. Runner 1's first
+20 completed reconnect phases took roughly 25–72 seconds each; a 100-cycle
+run cannot fit a 30-minute limit at that pace, even if every connection
+eventually opens. This runtime/throughput concern is separate from fixing the
+premature expiry. The phase markers
+locate both readiness failures in the reconnect step. Correlated signaling and
+native-lifetime diagnostics show surviving browsers allocated polite receiver
+peers while C was absent; their existing 30-second establishment watchdogs
+were nearly exhausted when C's valid offers arrived and retired the peers
+before answer/ICE settlement. The offers reached and were applied by the
+browsers, so these two failures are not evidence of the earlier cross-server
+WS signaling-loss path. A bounded one-time renewal of the existing watchdog
+on the first valid offer, while retaining idle expiry and attempt bounds, is
+proposed for review, not implemented. The diagnostic cohort is non-publishing
+and cannot substitute for a valid E3 primary.
+
+(1) Finish the in-progress exact-head Release Gate, prove the five corrected
+recipe WS paths against PostgreSQL, and repair only a demonstrated remaining
+defect. Keep the successful ALM trace as same-head browser evidence, not proof
+of unrelated RTC retention. (2) Resolve the E3 receiver-watchdog design gate,
+then, if approved, use focused tests and the unchanged browser case to verify
+the smallest bounded correction. Determine why the third diagnostic runner
+was terminated near 30 minutes before planning another 100-cycle cohort.
+Present the
 [principal-relevant state-sync read design](../specs/2026-09-29-principal-relevant-state-sync-read-design.md)
 for maintainer review. It keeps the full authorized audience, validates only
 relevant live groups, and preserves omission of purged groups with persistent
