@@ -334,9 +334,16 @@ obligation short-circuits, because the remaining checks read that obligation.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
-it through `commitWork()`: the handler invalidates readiness and schedules its existing
-batch or follow-up batch. The selector preserves its cursor and cached page, so rows behind
-the cursor are reached on the next natural rotation. A retained
+it through `commitWork()`: it asks the rotation page for a head read
+([`ALInboundRotationPage`](./lane/al-inbound-rotation-page.ts)) and then tells the handler.
+The next page read starts at the head of NEW and stores no position, so the rotation resumes
+where it stood; a page a probe held is dropped without moving the rotation. The row reaches the
+batch the commit starts when the owner is idle, or the follow-up batch the running batch's end
+runs. At most one head read runs between two rotation reads: a commit that lands during a head
+batch waits for the read after the next rotation read, and the lane announces it again at that
+rotation read, so the handler's own follow-up batch runs it. The rotation therefore advances at
+least every other batch while commits keep arriving, and later NEW pages, RETRY rows and expired
+reservations keep their turn. A retained
 conflict announces for the same reason, and only when retention left a claimable row: a message
 already past its deadline is rejected before the write or as a row written already expired, and a
 row that is already terminal holds nothing to claim. An admission that wrote no row announces nothing, because
@@ -422,10 +429,9 @@ carried by neither, and are taken fresh instead — `readALInboundEffectFacts` c
 `selfPeerId`, `observedAtEpochMs` and a new `controlIdPrefix` from the replay's own clock
 and this owner's effect preparation. So the retained payload carries nothing it did not
 carry before and the stored schema identity did not move. The replay runs in the batch the
-existing worker selects its retained row. The owner's commit starts a batch when idle,
-or requests the follow-up batch through `commitPending` when a batch is already running.
-Those batches preserve natural rotation; notification does not promise that the next batch
-will select the newly committed row.
+owner's own commit starts when the worker is idle, or in the follow-up batch `commitPending`
+schedules when a batch is already running (one batch later when that running batch was itself a
+head read); it never waits for the rotation to come round to it.
 
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
@@ -462,8 +468,10 @@ The delivery that an eligibility read cleared does not read that surface again. 
 `dispatch-local` or `forward-message` row the read takes the retained message and its
 stored planning state, and the selector carries exactly that surface to the claim by effect
 id ([`ALInboundDeliveryObservation`](./al-inbound-admitted-delivery.ts)). It is recorded
-only for a row the port went on to reserve, and it is replaced by the next claimed selection.
-A concurrent commit preserves these observations. The delivery then decides again only what cannot be decided as early
+only for a row the port went on to reserve, and it is replaced by the next claimed selection. A
+commit leaves it in place: it describes a row the running batch holds, and a commit changes neither
+that reservation nor the stored message, source and plan it carries. The delivery then decides
+again only what cannot be decided as early
 as the page: every expiry, against a fresh clock reading, and an ordered message's
 predecessor, which can land inside the claim window. A claim that carries no observation
 reads the surface for itself.
@@ -484,7 +492,7 @@ selection. The first of those claims to run hands the whole array to `sendContro
 every other claim of that batch awaits the same send. The browser carriers commit that array as one
 outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
 order. The round is keyed by that array's identity, never by time, so a row retried in a later
-batch never joins a finished round. New commits preserve both the rotation and its claimed array.
+batch never joins a finished round. A commit leaves the claimed array in place, so a running batch's control claims still send as one round.
 When the round's send throws, each of its claims sends its own message alone, so each
 claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
 a member's storage throw once every member ran: a message the round already admitted then answers
@@ -497,7 +505,8 @@ message id.
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather
 than the remembered readiness the outbound owners use: a remembered answer would skip
-the read and leave the scan where it stood. Measured over a hundred engine passes of an
+the read and leave the scan where it stood. A head read is the one page
+read that leaves the scan position where it stood. Measured over a hundred engine passes of an
 idle owner — `al-indexeddb-operation-counts.test.ts`, both an empty queue and one holding
 a row no consumer claims — the probe reaches storage on more than half of them (97 of
 100 as measured, the rest being rounds spent inside the batch the round before started),

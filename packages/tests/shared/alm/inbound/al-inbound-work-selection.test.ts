@@ -6,7 +6,6 @@ import {
     describe,
     expect,
     it,
-    onTestFinished,
     vi
 } from 'vitest';
 
@@ -66,6 +65,8 @@ const DUE_SINCE_MS = 250;
 const SCAN_STATUS_COUNT = 3;
 /** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
 const ROTATION_ROUND_LIMIT = 16;
+/** Rows that are not due yet: with a commit's own row they fill three NEW pages. */
+const WAITING_NEW_ROWS = 40;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -95,15 +96,109 @@ describe('ALInboundWorkSelector readiness', () => {
         expect(selection.nextReadyAtMs).toBe(NOW_MS);
     });
 
-    it('reaches work committed behind a cached empty page on a natural rotation', async () => {
+    it('drops the page a probe cached when a commit asks for a head read', async () => {
         const fixture = createSelectorFixture();
 
         // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
 
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
-        const selection = await readFirstClaimingSelection(fixture, 6);
+        fixture.selector.requestHeadRead();
+
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         expect(selection.claims).toHaveLength(1);
+    });
+});
+
+describe('ALInboundWorkSelector head read', () => {
+    it('reads the head of NEW for a commit and resumes the rotation where it stood', async () => {
+        // The order of page reads is the contract here: a head read reads NEW and stores no position, so
+        // the rotation read after it continues at RETRY. No other boundary exposes the rotation position.
+        const fixture = createSelectorFixture();
+        const scanned = recordScannedStatuses(fixture.port);
+        // An empty NEW page moves the rotation on to RETRY.
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toEqual([]);
+
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+        fixture.selector.requestHeadRead();
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toHaveLength(1);
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(scanned).toEqual([EntityStatus.NEW, EntityStatus.NEW, EntityStatus.RETRY]);
+    });
+
+    it('hands the head read a probe took to the batch that follows it', async () => {
+        const fixture = createSelectorFixture();
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+        fixture.selector.requestHeadRead();
+
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        // A due row written after the probe, with no commit asking for a head read: a batch that read
+        // NEW again would claim it too, so claiming only the probe's row shows the batch took its page.
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'after-probe'));
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(selection.claims).toHaveLength(1);
+        expect(fixture.selector.isHeadReadPending()).toBe(false);
+    });
+
+    it('runs at most one head read between two rotation reads', async () => {
+        // The order of page reads is the contract here: under back-to-back commits, head reads (NEW) and
+        // rotation reads (NEW, RETRY, RESERVED) alternate. No other boundary exposes which read ran.
+        const fixture = createSelectorFixture();
+        const scanned = recordScannedStatuses(fixture.port);
+
+        await readClaimsWhileCommitting(fixture, ['commit-1', 'commit-2', 'commit-3', 'commit-4', 'commit-5']);
+
+        // The first read is the rotation's own start, which is already the head of NEW.
+        expect(scanned).toEqual([
+            EntityStatus.NEW,
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.NEW,
+            EntityStatus.RESERVED
+        ]);
+    });
+
+    it('claims a due RETRY row and an expired RESERVED row within a bounded number of batches while commits keep arriving', async () => {
+        const fixture = createSelectorFixture();
+        await retainEntries(fixture.port, [
+            ...createWaitingEntries(fixture.namespace, WAITING_NEW_ROWS),
+            createRetryEntry(fixture.namespace, 'retry-row'),
+            createExpiredReservationEntry(fixture.namespace, 'reserved-row')
+        ]);
+
+        const claimedAtBatch = await readClaimsWhileCommitting(fixture, [
+            'commit-1',
+            'commit-2',
+            'commit-3',
+            'commit-4',
+            'commit-5',
+            'commit-6',
+            'commit-7',
+            'commit-8',
+            'commit-9',
+            'commit-10'
+        ]);
+
+        // Rewinding to NEW page 1 on every commit would never reach RETRY or RESERVED. Here head reads
+        // and rotation reads alternate, every commit is taken in its own batch or the next one, and
+        // the rotation walks three NEW pages, then RETRY and RESERVED, in the batches between.
+        expect(Object.fromEntries(claimedAtBatch)).toEqual({
+            'commit-1': 1,
+            'commit-2': 2,
+            'commit-3': 4,
+            'commit-4': 4,
+            'commit-5': 6,
+            'commit-6': 6,
+            'retry-row': 7,
+            'commit-7': 8,
+            'commit-8': 8,
+            'reserved-row': 9,
+            'commit-9': 10,
+            'commit-10': 10
+        });
     });
 });
 
@@ -271,8 +366,6 @@ describe('ALInboundWorkSelector claim order', () => {
                 effectWorkerId: 'al-inbound:claim-order'
             });
             await fixture.runtime.ready();
-            fixture.queueEngine.start();
-            onTestFinished(() => fixture.queueEngine.stop());
 
             await fixture.runtime.admitIncomingMessage(
                 createInboundTestMessage({ msgId: 'claim-order', acknowledged: true }),
@@ -345,7 +438,7 @@ describe('ALInboundWorkSelector claim order', () => {
     });
 
     it(
-        'each admission wakes the running engine while an earlier dispatch is held',
+        'pin: a commit reaches the engine wake, and lands at the latest in the second batch after one already running',
         async () => {
             let releaseHeld: (() => void) | undefined;
             const held = new Promise<void>((resolve) => {
@@ -375,12 +468,11 @@ describe('ALInboundWorkSelector claim order', () => {
             });
             const wake = vi.spyOn(fixture.queueEngine, 'wake');
             await fixture.runtime.ready();
-            fixture.queueEngine.start();
-            onTestFinished(() => fixture.queueEngine.stop());
             wake.mockClear();
 
-            // The caller-owned engine is running, but each admission must still announce its
-            // own write, including one that lands while a claim is held by the current batch.
+            // The commit starts a batch through `ALWorkHandler.committed()` alone: the engine is
+            // never started or driven by this test, so nothing here can claim `held`'s row except
+            // that same batch.
             await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'held' }), INBOUND_TEST_SOURCE);
             await heldEntered;
             expect(wake).toHaveBeenCalledTimes(1);
@@ -392,8 +484,9 @@ describe('ALInboundWorkSelector claim order', () => {
             expect(wake).toHaveBeenCalledTimes(2);
 
             releaseHeld?.();
-            // The test does not execute a batch manually; the running worker must discover
-            // and deliver the second message after the first claim is released.
+            // No `start()` and no `executeOnce()` run in this test. The running batch read the head of
+            // NEW, so its follow-up batch is a rotation read, and the head read `second` is owed runs
+            // in the batch the handler starts after that one.
             await expect.poll(() => dispatchedIds).toEqual(['held', 'second']);
         }
     );
@@ -549,8 +642,8 @@ function createCostBoundaryPort(originalPort: ALWorkQueuePort, advance: (duratio
 }
 
 /** The rotation's next few rounds, stopped at the one that took work. */
-async function readFirstClaimingSelection(fixture: SelectorFixture, maxRounds = SCAN_STATUS_COUNT) {
-    for (let round = 0; round < maxRounds; round += 1) {
+async function readFirstClaimingSelection(fixture: SelectorFixture) {
+    for (let round = 0; round < SCAN_STATUS_COUNT; round += 1) {
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         if (selection.claims.length > 0) {
             return selection;
@@ -634,6 +727,93 @@ function createTestClaim(resourceId: string): ALWorkClaim {
         },
         attempts: 0,
         leaseUntilMs: NOW_MS
+    };
+}
+
+/** Every status the port pages through from here on, in read order. */
+function recordScannedStatuses(port: ALWorkQueuePort): EntityStatus[] {
+    const scanned: EntityStatus[] = [];
+    const readPage = port.readPage.bind(port);
+    vi.spyOn(port, 'readPage').mockImplementation(async (input) => {
+        scanned.push(input.status);
+        return await readPage(input);
+    });
+    return scanned;
+}
+
+/**
+ * One batch per commit: each commit retains its row and asks for a head read before its batch's
+ * selection, as the lane's `commitWork()` does. Answers the batch that claimed each row, by msgId.
+ */
+async function readClaimsWhileCommitting(
+    fixture: SelectorFixture,
+    commits: readonly string[]
+): Promise<ReadonlyMap<string, number>> {
+    const claimedAtBatch = new Map<string, number>();
+    for (const [index, msgId] of commits.entries()) {
+        await fixture.port.retainIfAbsent(
+            createPendingAdmissionEntry(fixture.namespace, NOW_MS, msgId)
+        );
+        fixture.selector.requestHeadRead();
+        const selection = await fixture.selector.selectReady(
+            fixture.port,
+            AL_INBOUND_WORK_PAGE_SIZE
+        );
+        selection.claims.forEach((claim) =>
+            claimedAtBatch.set(
+                decodeALInboundWorkEntry(claim.entry, fixture.namespace).effectId.split(':').at(
+                    -1
+                )!,
+                index + 1
+            )
+        );
+    }
+    return claimedAtBatch;
+}
+
+async function retainEntries(
+    port: ALWorkQueuePort,
+    entries: readonly ResourceEntry[]
+): Promise<void> {
+    for (const entry of entries) {
+        await port.retainIfAbsent(entry);
+    }
+}
+
+/** Admissions that are not due yet: the rotation reads past them and claims none. */
+function createWaitingEntries(namespace: string, count: number): ResourceEntry[] {
+    return Array.from(
+        { length: count },
+        (_, index) =>
+            createPendingAdmissionEntry(
+                namespace,
+                NOW_MS + 30_000,
+                `waiting-${String(index).padStart(2, '0')}`
+            )
+    );
+}
+
+/** A retried row whose retry is already due. */
+function createRetryEntry(namespace: string, msgId: string): ResourceEntry {
+    return {
+        ...createPendingAdmissionEntry(namespace, NOW_MS - 1_000, msgId),
+        status: EntityStatus.RETRY,
+        dequeueAudit: {
+            attempts: 1,
+            nextTs: Temporal.Instant.fromEpochMilliseconds(NOW_MS - 1_000)
+        }
+    };
+}
+
+/** A reservation whose lease a crashed worker left to expire. */
+function createExpiredReservationEntry(namespace: string, msgId: string): ResourceEntry {
+    return {
+        ...createPendingAdmissionEntry(namespace, NOW_MS - 30_000, msgId),
+        status: EntityStatus.RESERVED,
+        dequeueAudit: {
+            attempts: 1,
+            startTs: Temporal.Instant.fromEpochMilliseconds(NOW_MS - 20_000)
+        }
     };
 }
 

@@ -29,12 +29,18 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
-it('finishes the preserved scan before discovering a successor committed behind it', async () => {
+it('takes a row committed to an idle owner in the batch its commit starts, and keeps the rotation where it stood', async () => {
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
-        stores: createInboundTestStores({ namespace: 'scan-successor', storage: 'memory', observer: createPassThroughIndexedDbOperationObserver() }),
-        effectWorkerId: 'scan-successor'
+        stores: createInboundTestStores({
+            namespace: 'idle-head-read',
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: 'idle-head-read'
     });
+    // The delivery is the owned boundary for the first half; the order of page reads is the contract for
+    // the second: the head read leaves no position behind, so the rotation resumes at RETRY.
     const scanned: EntityStatus[] = [];
     const readPage = fixture.stores.workQueue.readWorkPage.bind(fixture.stores.workQueue);
     vi.spyOn(fixture.stores.workQueue, 'readWorkPage').mockImplementation(async (request) => {
@@ -42,20 +48,78 @@ it('finishes the preserved scan before discovering a successor committed behind 
         return await readPage(request);
     });
     await fixture.runtime.ready();
+    // The bootstrap batch read NEW from the start, so the rotation now stands at RETRY.
     expect(scanned).toEqual([EntityStatus.NEW]);
-    await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'successor' }), INBOUND_TEST_SOURCE);
-    await expect.poll(() => scanned).toEqual([EntityStatus.NEW, EntityStatus.RETRY]);
-    // The supplied engine belongs to this caller. An admission wake cannot start it.
-    expect(fixture.delivered).toEqual([]);
+
+    await fixture.runtime.admitIncomingMessage(
+        createInboundTestMessage({ msgId: 'successor' }),
+        INBOUND_TEST_SOURCE
+    );
+
+    // The engine is never started here: the batch the commit ran read the head of NEW and took the row.
+    await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
+    expect(scanned).toEqual([EntityStatus.NEW, EntityStatus.NEW]);
     fixture.queueEngine.start();
     onTestFinished(() => fixture.queueEngine.stop());
-    await expect.poll(() => fixture.delivered, { timeout: 500 }).toEqual(['dispatched']);
+    await expect.poll(() => scanned.length).toBeGreaterThanOrEqual(4);
+    // The head read did not store a position: the rotation resumes at RETRY.
     expect(scanned.slice(0, 4)).toEqual([
         EntityStatus.NEW,
+        EntityStatus.NEW,
         EntityStatus.RETRY,
-        EntityStatus.RESERVED,
-        EntityStatus.NEW
+        EntityStatus.RESERVED
     ]);
+});
+
+it('takes a row committed during a rotation batch in the follow-up batch that batch runs', async () => {
+    const held = Promise.withResolvers<void>();
+    let heldEntered = false;
+    const dispatchedIds: string[] = [];
+    const fixture = createInboundTestRuntime({
+        carrier: 'ws',
+        stores: createInboundTestStores({
+            namespace: 'busy-follow-up',
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: 'busy-follow-up',
+        gateDispatch: async (msg) => {
+            dispatchedIds.push(msg.id.msgId);
+            if (msg.id.msgId === 'rotation-held') {
+                heldEntered = true;
+                await held.promise;
+            }
+        }
+    });
+    onTestFinished(() => held.resolve());
+    await fixture.runtime.ready();
+    // Committed straight into the store, so no commit announces it: only the rotation finds it.
+    const admissionStore = fixture.stores.admissionStore;
+    const unannounced = createInboundTestMessage({ msgId: 'rotation-held' });
+    expect(
+        await admissionStore.commitBundle(
+            await readInboundTestAdmission(admissionStore, unannounced)
+        )
+    ).toBe('committed');
+    for (let round = 0; round < 8 && !heldEntered; round += 1) {
+        await fixture.queueEngine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(heldEntered).toBe(true);
+
+    expect(
+        (await fixture.runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'follow-up' }),
+            INBOUND_TEST_SOURCE
+        )).right
+    )
+        .toEqual({ kind: 'admitted' });
+    held.resolve();
+
+    // No engine round runs after the commit, so only a batch the handler runs itself can deliver
+    // `follow-up`: the rotation-held batch had already moved the rotation past NEW, and the follow-up
+    // batch its end starts takes the row through the head read the commit asked for.
+    await expect.poll(() => dispatchedIds).toEqual(['rotation-held', 'follow-up']);
 });
 
 it('announces data replay work before releasing its admission claim', async () => {

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntime {
-    const fixture = createInboundTestRuntime({
+    return createInboundTestRuntime({
         carrier: 'rtc',
         stores: createInboundTestStores({
             namespace: DIAGNOSTICS_NAMESPACE,
@@ -57,11 +57,6 @@ function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntim
         dispatchOutcome: input.dispatchOutcome,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority
     });
-    if (input.dispatchOutcome !== 'retry') {
-        fixture.queueEngine.start();
-    }
-    onTestFinished(() => fixture.queueEngine.stop());
-    return fixture;
 }
 
 function admissionOutcomesOf(
@@ -116,7 +111,6 @@ it.each(['memory', 'indexeddb'] as const)(
         }]);
 
         await expect.poll(() => delivered).toEqual(['dispatched']);
-        await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         // Only batches that touched work report; the rotation's empty rounds stay silent.
         const claimed = drainsOf(diagnostics);
         expect(claimed.map((event) => ({
@@ -198,19 +192,14 @@ it.each(['memory', 'indexeddb'] as const)(
 it.each(['memory', 'indexeddb'] as const)(
     'settles the claim as a retry when the dispatch it ran asked for one over %s',
     async (kind) => {
-        const { runtime, diagnostics, delivered, queueEngine } = createRuntime({ kind, dispatchOutcome: 'retry' });
+        const { runtime, diagnostics, delivered } = createRuntime({ kind, dispatchOutcome: 'retry' });
 
         await runtime.ready();
         await runtime.admitIncomingMessage(
             createInboundTestMessage({ msgId: 'rescheduled-delivery' }),
             { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID }
         );
-        await expect.poll(async () => {
-            if (delivered.length === 0) {
-                await queueEngine.executeOnce();
-            }
-            return delivered;
-        }).toEqual(['dispatched']);
+        await expect.poll(() => delivered).toEqual(['dispatched']);
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
 
         // The row goes back to the queue, so the drain counts it rescheduled and the claim says why.

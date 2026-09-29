@@ -137,6 +137,7 @@ describe('inbound store lanes', () => {
                 .right
         ).toEqual({ kind: 'duplicate' });
 
+        await vi.waitFor(() => expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']));
         await runInboundRounds(overWs);
         await runInboundRounds(overRtc);
         expect([...overWs.delivered, ...overRtc.delivered]).toEqual(['dispatched']);
@@ -179,8 +180,7 @@ describe('inbound store lanes', () => {
         // The bootstrap round sweeps first.
         expect(pairs.volatile.evictExpired).toHaveBeenCalledTimes(1);
         await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'expiring' }), INBOUND_TEST_SOURCE);
-        await runInboundRounds(fixture);
-        expect(fixture.delivered).toEqual(['dispatched']);
+        await vi.waitFor(() => expect(fixture.delivered).toEqual(['dispatched']));
         const rowsAfterDelivery = pairs.volatile.state.data.size;
         expect(rowsAfterDelivery).toBeGreaterThan(0);
         const ownerKey = toALInboundMessageOwnerKey('lane-volatile', 'expiring', INBOUND_TEST_SENDER_PEER_ID);

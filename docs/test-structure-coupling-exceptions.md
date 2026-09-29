@@ -188,9 +188,9 @@ moved or changed test.
       "id": "alm-ingress-wake-reaches-followup-batch",
       "domain": "ALM inbound work handler wake-on-admission",
       "owner": "Rallar shared maintainers",
-      "summary": "Each committed ingress admission reaches the work handler's existing engine wake, including while an earlier dispatch is held; the running worker delivers both messages after release (S2a ruling R-S2a-6).",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held",
-      "coverageRelation": "The test starts the caller-owned engine, holds a first admission's dispatch open behind a gate, admits a second message while that batch is still running, counts the queueEngine.wake spy across both admissions, then releases the gate and proves the second message dispatches without manually calling executeOnce.",
+      "summary": "A committed ingress admission reaches the work handler's existing engine wake even while a batch it started is still running, and the newly admitted row is drained by a batch the handler runs itself after that batch rather than by a later engine tick (S2a ruling R-S2a-6).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands at the latest in the second batch after one already running",
+      "coverageRelation": "The test holds a first admission's dispatch open behind a gate, admits a second message while that batch is still running, counts the queueEngine.wake spy across both admissions, then releases the gate and proves the second message dispatches without the test ever starting or ticking the engine itself.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "InboxOutboxEngine.wake called by ALWorkHandler.committed()",
@@ -6422,7 +6422,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The count-of-one after the held admission's own commit is the only witness that admitting inbound work reaches the engine wake through ALWorkHandler.committed(), not merely through the batch it starts.",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held"
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands at the latest in the second batch after one already running"
     },
     {
       "id": "test-structure-coupling-425d655aa28cc0d0",
@@ -6433,7 +6433,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar shared maintainers",
       "rationale": "The count-of-two after a second admission lands while the first batch is still running its held claim proves that admission's own commit reaches the same wake too, even though the running batch cannot claim the new row until its own follow-up round.",
-      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#each admission wakes the running engine while an earlier dispatch is held"
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands at the latest in the second batch after one already running"
     },
     {
       "id": "test-structure-coupling-6a5c7121c5ec0433",

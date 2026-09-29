@@ -667,9 +667,10 @@ async function readAdmittedInboundDelivery(
         await runInboundRotationUntilSettled(fixture, fixture.stores.workQueue);
     }
     else {
-        // The test engine is stopped, so drive its natural scan until the volatile pair settles.
-        // An idle IndexedDB rotation may only add probes, not admission or work mutations.
-        await runInboundRotationUntilSettled(fixture, volatileStores.workQueue);
+        // The memory lane's own commit runs the batch that delivers. An engine round would also run
+        // the idle IndexedDB rotation's batch -- 1 work-page and 1 work-probe per batch, measured
+        // with no message at all -- which is that idle owner's cost, not this message's.
+        await vi.waitFor(async () => expect(await readSettledInboundWork(volatileStores.workQueue)).toBe(true));
     }
 
     const counts = observer.getCounts();

@@ -109,8 +109,6 @@ it('retries durable local delivery after restart with a single admission work ow
         vi.useRealTimers();
     });
     const engine = new InboxOutboxEngine();
-    engine.start();
-    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
@@ -171,8 +169,6 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
         });
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const engine = new InboxOutboxEngine();
-        engine.start();
-        onTestFinished(() => engine.stop());
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
             queueEngine: engine,
@@ -242,8 +238,6 @@ it.each([
     });
     const admittedAt = nowMs;
     const engine = new InboxOutboxEngine();
-    engine.start();
-    onTestFinished(() => engine.stop());
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         queueEngine: engine,
@@ -309,8 +303,6 @@ it('retains predecessor completion through the longest admitted deadline across 
         retention: normalizeALRuntimeStoreRetention({ bufferedMessageTtlMs: 50, durableEffectTtlMs: 500 })
     });
     const engine = new InboxOutboxEngine();
-    engine.start();
-    onTestFinished(() => engine.stop());
     const delivered: string[] = [];
     const createRuntime = () =>
         new ALInboundMessageRuntime({
@@ -670,8 +662,6 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     backend.workQueue.cleanup();
 
     const afterCleanup = createRuntime();
-    afterCleanup.engine.start();
-    onTestFinished(() => afterCleanup.engine.stop());
     await afterCleanup.runtime.admitIncomingMessage(createOrderedMessage(257), { kind: 'rtc-peer', peerId: 'sender' });
     await expect.poll(() => delivered).toEqual(Array.from({ length: 257 }, (_, index) => index + 1));
 }, 45_000);

@@ -226,25 +226,22 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     expect(controls).toEqual([]);
 });
 
-it('wakes an idle worker and replays a retained conflict through its natural rotation', async () => {
+it('replays a retained conflict in the batch an idle owner runs on its own commit', async () => {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
-    const dependencies = runtimeDependencies(stores, [], []);
-    const runtime = new ALInboundMessageRuntime(dependencies);
-    onTestFinished(() => {
-        runtime.dispose();
-        dependencies.queueEngine.stop();
-    });
+    const runtime = new ALInboundMessageRuntime(runtimeDependencies(stores, [], []));
+    onTestFinished(() => runtime.dispose());
     await runtime.ready();
-    dependencies.queueEngine.start();
 
     setNextInboundCommitConflicted(stores.admissionStore);
     const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'idle-owner' }), PENDING_SOURCE);
 
     expect(acceptance.right).toEqual({ kind: 'pending-admission' });
+    // The engine is never started and no round is ever executed here, so the batch the commit itself
+    // runs is the only thing that can have claimed the retained row.
     await expect.poll(() => readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
 });
 
-it('replays a retained conflict after an active delivery finishes', async () => {
+it('replays a retained conflict in a batch the handler runs after the one already running', async () => {
     const stores = createDefaultInMemoryALInboundRuntimeStores();
     const dependencies = runtimeDependencies(stores, [], []);
     const dispatching = Promise.withResolvers<void>();
@@ -260,10 +257,9 @@ it('replays a retained conflict after an active delivery finishes', async () => 
     onTestFinished(() => {
         dispatching.resolve();
         runtime.dispose();
-        dependencies.queueEngine.stop();
     });
     await runtime.ready();
-    dependencies.queueEngine.start();
+    // The first message's own commit starts a batch and holds it inside the delivery it claimed.
     expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'running-blocker' }), PENDING_SOURCE)).right)
         .toEqual({ kind: 'admitted' });
     await expect.poll(() => dispatchStarted).toBe(true);

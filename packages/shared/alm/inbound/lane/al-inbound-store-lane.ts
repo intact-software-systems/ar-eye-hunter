@@ -182,14 +182,22 @@ export class ALInboundStoreLane {
         return acceptance;
     }
 
-    /** A commit wakes the worker; the bounded rotation reaches the new row without rewinding. */
     private commitWork(): void {
+        this.workSelector.requestHeadRead();
         this.work.committed();
     }
 
+    /**
+     * A head read a commit was owed can become due at a rotation read, when the commit landed during
+     * the head batch before it. Announcing it here gives it the batch this batch's end runs.
+     */
     private async selectInboundWork(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
-        return await this.workSelector.selectReady(port, pageSize);
+        const selection = await this.workSelector.selectReady(port, pageSize);
+        if (this.workSelector.isHeadReadPending()) {
+            this.work.committed();
+        }
+        return selection;
     }
 
     /** The memory pair has no eviction loop of its own: its round sweeps it, at most once per interval. */
@@ -339,8 +347,9 @@ export class ALInboundStoreLane {
     }
 
     /**
-     * A replay can commit work after this batch selected its page. Announce it to wake a follow-up
-     * scan; the bounded rotation reaches the new row without rewinding to its status immediately.
+     * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
+     * batch already read. Announcing it here gives that work a head read in the batch this batch's
+     * end runs, instead of the next round the rotation happens to reach.
      */
     private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
         const payload = effect.payload;
