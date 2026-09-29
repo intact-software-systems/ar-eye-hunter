@@ -4,6 +4,7 @@ import path from 'node:path';
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
 const packageRoot = path.join(repoRoot, 'packages/shared-rtc-bench');
 const benchmarkPackageName = '@ar-eye-hunter/shared-rtc-bench';
+const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/perf'] as const;
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
     '@playwright/test',
@@ -28,6 +29,12 @@ function filesBelow(root: string): string[] {
         }
         return entry.isFile() ? [entryPath] : [];
     });
+}
+
+function rtcPerformanceScriptSources(): string[] {
+    return performanceScriptRoots
+        .flatMap((root) => filesBelow(path.join(repoRoot, root)))
+        .filter((file) => /(^|\/)(rtc|webrtc)/.test(path.relative(repoRoot, file)));
 }
 
 function importSpecifiers(source: string): string[] {
@@ -121,16 +128,17 @@ describe('shared RTC benchmark package boundaries', () => {
         expect(isBenchmarkPackageSpecifier('@ar-eye-hunter/shared-rtc-bench/internal')).toBe(true);
     });
 
+    it('scans performance script roots that exist', () => {
+        expect(performanceScriptRoots.filter((root) => !fs.existsSync(path.join(repoRoot, root)))).toEqual([]);
+    });
+
     it('owns every RTC/WebRTC performance source outside scripts', () => {
-        const oldSources = filesBelow(path.join(repoRoot, 'scripts/perf'))
-            .map((file) => path.relative(repoRoot, file))
-            .filter((file) => /(^|\/)(rtc|webrtc)/.test(file));
+        const oldSources = rtcPerformanceScriptSources().map((file) => path.relative(repoRoot, file));
         expect(oldSources, `old RTC/WebRTC performance sources:\n${oldSources.join('\n')}`).toEqual([]);
     });
 
     it('has no prohibited package imports or reverse product imports', () => {
-        const oldSources = filesBelow(path.join(repoRoot, 'scripts/perf')).filter((file) => /(^|\/)(rtc|webrtc)/.test(path.relative(repoRoot, file)));
-        const packageViolations = [...filesBelow(packageRoot), ...oldSources]
+        const packageViolations = [...filesBelow(packageRoot), ...rtcPerformanceScriptSources()]
             .filter((file) => /\.[cm]?[jt]s$/.test(file))
             .flatMap(unapprovedImports);
         const reverseImports = [path.join(repoRoot, 'apps'), path.join(repoRoot, 'packages')]
