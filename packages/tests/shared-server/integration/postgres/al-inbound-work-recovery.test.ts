@@ -25,6 +25,11 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
+const SCOPED_WS_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'sender',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
 
 describe('Postgres inbound ordered work recovery', () => {
     postgresIt('retains ordered completion across runtime restart and work-row cleanup', async () => {
@@ -35,7 +40,7 @@ describe('Postgres inbound ordered work recovery', () => {
         const first = createRuntime(firstStores, received);
         const secondMessage = createMessage('second', 2);
         const trackKey = toALOrderingTrackKey(secondMessage)!;
-        await first.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+        await first.admitIncomingMessage(secondMessage, SCOPED_WS_SOURCE);
 
         // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
         await waitForSettledInboundWork(firstStores);
@@ -46,7 +51,7 @@ describe('Postgres inbound ordered work recovery', () => {
 
         const second = createRuntime(secondStores, received);
         const firstMessage = createMessage('first', 1);
-        await second.admitIncomingMessage(firstMessage, { kind: 'ws-client', peerId: 'sender' });
+        await second.admitIncomingMessage(firstMessage, SCOPED_WS_SOURCE);
         await expect.poll(() => received).toEqual(['first', 'second']);
         await expect.poll(() => firstStore.readOrderedDelivery(trackKey, 3))
             .toEqual({ completedThrough: 2, predecessor: undefined });
@@ -63,11 +68,11 @@ describe('Postgres inbound ordered work recovery', () => {
             await firstStores.workQueue.removeItem(entry.key);
         }
         const restarted = createRuntime(firstStores, received);
-        await restarted.admitIncomingMessage(createMessage('third', 3), { kind: 'ws-client', peerId: 'sender' });
+        await restarted.admitIncomingMessage(createMessage('third', 3), SCOPED_WS_SOURCE);
         await expect.poll(() => received).toEqual(['first', 'second', 'third']);
         await expect.poll(() => secondStore.readOrderedDelivery(trackKey, 4))
             .toEqual({ completedThrough: 3, predecessor: undefined });
-        await restarted.admitIncomingMessage(secondMessage, { kind: 'ws-client', peerId: 'sender' });
+        await restarted.admitIncomingMessage(secondMessage, SCOPED_WS_SOURCE);
 
         // The redelivered duplicate must not dispatch again: settle every retained row before reading.
         await waitForSettledInboundWork(firstStores);
@@ -175,8 +180,8 @@ describe('Postgres inbound ordered work recovery', () => {
             dequeueAudit: { attempts: 1, nextTs: undefined }
         });
         const blocked = createMessage('blocked', 2);
-        await runtime.admitIncomingMessage(blocked, { kind: 'ws-client', peerId: 'sender' });
-        await runtime.admitIncomingMessage(createMessage('independent'), { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(blocked, SCOPED_WS_SOURCE);
+        await runtime.admitIncomingMessage(createMessage('independent'), SCOPED_WS_SOURCE);
         await expect.poll(() => received).toEqual(['independent']);
         await expect.poll(() =>
             controls.flatMap((message) => {
@@ -282,7 +287,7 @@ function createMessage(resourceId: string, sequence?: number): ALMessage {
 
 async function admit(store: ALInboundAdmissionStore, message: ALMessage): Promise<void> {
     const nowMs = Date.now();
-    const source = { kind: 'ws-client' as const, peerId: 'sender' };
+    const source = SCOPED_WS_SOURCE;
     const prePlan = planALMessageHandling(message, { selfPeerId: 'receiver', fromPeerId: 'sender', nowMs });
     const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });
     const plan = planALMessageHandling(message, {
