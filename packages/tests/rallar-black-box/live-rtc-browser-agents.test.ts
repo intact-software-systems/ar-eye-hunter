@@ -69,6 +69,8 @@ describe('live RTC browser agent startup', () => {
     });
 
     it('carries a failed context close through the real single-agent opener and trio boundary', async () => {
+        vi.stubEnv('VITE_RALLAR_API_BASE_URL', 'http://localhost');
+        vi.stubEnv('RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER', '0');
         vi.stubEnv('VITE_RALLAR_AGENT_A_USERNAME', 'fixture-user');
         vi.stubEnv('VITE_RALLAR_AGENT_A_PASSWORD', 'fixture-password');
         onTestFinished(() => {

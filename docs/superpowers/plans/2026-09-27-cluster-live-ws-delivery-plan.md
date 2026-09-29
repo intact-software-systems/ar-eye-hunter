@@ -1274,21 +1274,33 @@ intended scope guard. A fixture-only correction passed focused and full Relic
 tests and independent review; no production guard was weakened. It has not yet
 passed a new exact-head Release Gate.
 
-**Next two slices:** (1) Publish the reviewed corrected browser proof on the
-PR branch and rerun the existing three-process matrix on its exact head. The
-fresh local pass is not the remote gate. (2) Document and review the approved
-principal-relevant validation design, then implement and measure the smallest
-read-selector change against the unchanged full authorized audience and
-order-balanced state-write comparison. The existing development PostgreSQL
-container must remain untouched. Following those slices, correlate E3 signaling, peer
-generation, and ICE state without weakening the workload; run unchanged
-default, all-scenarios, and retention-100 plus the required same-SHA diagnostic
-cohort. The most recent retention run reached cycle 40 but exhausted the
-30-minute test deadline, so it is not acceptance. Reconcile any remaining raw
-outbox producer, complete whole-branch standards/legacy review, and require a
-green exact-head Release Gate before marking the draft PR ready. No diagnostic
-artifact is a valid B06 primary or a substitute for later main-stream
-publication.
+**2026-09-29 published-head checkpoint:** The reviewed three-process browser
+matrix passed at the published branch head with distinct A/B/C API origins,
+per-pair Offer/Answer and decoder-valid ICE on the observed recipient sockets.
+Unchanged E3-memory default and all-scenarios cases also passed at that head
+with zero retries; neither is the 100-cycle retention primary. The latest
+retention run reached cycle 40 but exhausted the 30-minute test deadline, so
+it remains diagnostic. Branch Release Gate at that head passed changed style,
+test coupling, and workspace typecheck but failed one new live-RTC browser
+startup unit fixture and one ALM WS conformance observation. The unit failure
+reproduced locally and was caused by a missing API URL in the test fixture.
+One isolated exact-head ALM WS-smoke rerun passed, so the hosted receiver miss
+is not yet a proven deterministic product regression. Its artifact shows
+browser admission and a server admission receipt, but no server outbox verdict
+or socket-send result; do not change delivery behavior on an unproven cause.
+
+**Next two slices:** (1) Publish and gate the focused startup-fixture repair;
+classify any repeated ALM failure with server outbox admission/dequeue/send
+evidence using the existing browser harness. (2) Document and review the
+approved principal-relevant validation design, then implement and measure the
+smallest read-selector change after design/spec/plan approval against the
+unchanged full authorized audience and order-balanced state-write comparison.
+The existing development PostgreSQL container must remain untouched. After
+those slices, obtain unchanged E3 retention-100 and its required same-head
+diagnostic cohort without weakening the workload, complete whole-branch
+standards/legacy review, and require a green exact-head Release Gate before
+marking the draft PR ready. No diagnostic artifact is a valid B06 primary or a
+substitute for later main-stream publication.
 
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
