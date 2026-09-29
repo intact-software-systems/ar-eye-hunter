@@ -29,19 +29,20 @@ import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 
 /**
- * The scenario is deterministic only while 2 * S + B < maxBytes < 3 * S, where S is one send's envelope (the filler
- * plus about 0.7 KB of envelope, about 55.7 KB) and B is the platform's own state sync the lowered session admits
- * inbound when the reconnect joins the room again (the close keeps the membership): `group-state.event`,
- * `client-state.snapshot` and `event`, 6 entries and about 26 KB in a fresh two-member room, each counted for at most
- * 30 s. The sender waits that long after the reconnect before its first send, so B has left the budget however large
- * a long-lived hosted room makes it. The admitted sends stay counted until their 30 s deadline, so the third never
- * fits (about 167.2 KB > 163.8 KB), and the second keeps about 52 KB of headroom for state sync that arrives during
- * the sends. The count bound keeps its constant, so bytes alone decide.
+ * The scenario is deterministic only while 3 * F = maxBytes and 2 * S + H <= maxBytes, where F is the filler, S is the
+ * envelope of one send and H is the headroom kept for the platform traffic that arrives during the sends. An envelope
+ * always weighs more than its filler, so the admitted sends, counted until their 30 s deadline, refuse the third
+ * however small the envelope: 3 * S > 3 * 12 000 = 36 000. A planned send weighs 1 039 to 1 410 bytes over its filler
+ * on the three carriers, so the second send leaves at least 36 000 - 2 * 13 410 = 9 180 bytes, above 8 KB. The
+ * reconnect joins the room again (the close keeps the membership), and the lowered session admits the platform state
+ * sync inbound (`group-state.event`, `client-state.snapshot` and `event`, 6 entries and about 26 KB in a fresh
+ * two-member room), counted for at most 30 s; the sender waits that long after the reconnect before its first send,
+ * so that sync has left the budget. The count bound keeps its constant, so bytes alone decide.
  */
-const CAPACITY_FILLER = 'x'.repeat(55_000);
+const CAPACITY_FILLER = 'x'.repeat(12_000);
 const CAPACITY_LIMITS: ALVolatileSessionLimits = {
     maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    maxBytes: 160 * 1024
+    maxBytes: 36_000
 };
 const REJOIN_SETTLE_MS = AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS + 1_000;
 const REJOIN_SETTLE_TOPIC = 'rallar.black-box.alm.capacity-rejoin-settled';

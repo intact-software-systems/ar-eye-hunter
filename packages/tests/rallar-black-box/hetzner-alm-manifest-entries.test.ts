@@ -111,7 +111,7 @@ describe('ALM conformance combined recipe', () => {
                 ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
                     [`alm-${carrier}-capacity-sender-connect-lowered`, {
                         maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-                        maxBytes: 163_840
+                        maxBytes: 36_000
                     }],
                     [`alm-${carrier}-capacity-sender-connect-restored`, undefined]
                 ])

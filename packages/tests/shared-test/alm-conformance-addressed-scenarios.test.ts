@@ -39,12 +39,15 @@ const ADDRESSEE_RECEIPT = [
     'expectedRecipientPeerIds.length equals 1',
     'confirmedRecipientPeerIds.length equals 1'
 ];
-const CAPACITY_LIMITS = { maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS, maxBytes: 160 * 1024 };
+const CAPACITY_LIMITS = { maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS, maxBytes: 36_000 };
+const CAPACITY_FILLER_BYTES = 12_000;
 /**
- * The platform's state sync the capacity sender's rejoin admits inbound: 6 entries of 25.8-26.6 KB in total across
- * six local lane samples on every carrier, rounded up.
+ * A planned capacity send weighs 1 039 to 1 410 bytes over its filler: the volatile-bound refusals of six local lane
+ * runs over the three carriers reported two sends of 55 000-byte filler as 112 078 to 112 820 bytes.
  */
-const PLATFORM_STATE_SYNC_BYTES = 26 * 1024;
+const PLANNED_ENVELOPE_OVERHEAD_BYTES = 1_410;
+/** Room kept for the platform traffic that arrives during the sends, after the rejoin state sync has aged out. */
+const BACKGROUND_HEADROOM_BYTES = 8 * 1024;
 
 function scenarioOf(carrier: AlmConformanceCarrier, key: string): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -225,7 +228,7 @@ describe('the addressed-send family (C11)', () => {
         }
     });
 
-    it('fits two capacity sends beside the platform state sync with room to spare, and never a third', () => {
+    it('fits two capacity sends with room for background traffic, and never a third', () => {
         const send = scenarioOf('rtc', 'capacity').sender.commands.find(
             isRallarBlackBoxTestMessagesSendCommand
         );
@@ -245,9 +248,15 @@ describe('the addressed-send family (C11)', () => {
             throw new Error('A capacity send must be measurable.');
         }
 
-        // The two admitted sends stay counted until their deadline, so the third is refused whatever else arrived.
-        expect(3 * bytes).toBeGreaterThan(CAPACITY_LIMITS.maxBytes);
-        // The second send must fit beside the measured state sync, with room for that background to grow.
-        expect(CAPACITY_LIMITS.maxBytes - 2 * bytes - PLATFORM_STATE_SYNC_BYTES).toBeGreaterThan(24 * 1024);
+        expect(send.payload).toMatchObject({ filler: 'x'.repeat(CAPACITY_FILLER_BYTES) });
+        // 3 * 12 000 = 36 000: any envelope outweighs its filler, so two counted sends refuse the third.
+        expect(3 * CAPACITY_FILLER_BYTES).toBe(CAPACITY_LIMITS.maxBytes);
+        expect(bytes).toBeGreaterThan(CAPACITY_FILLER_BYTES);
+        // The bare envelope stays under the planned one, so the planned overhead bounds the measured send.
+        expect(bytes - CAPACITY_FILLER_BYTES).toBeLessThanOrEqual(PLANNED_ENVELOPE_OVERHEAD_BYTES);
+        // 36 000 - 2 * (12 000 + 1 410) = 9 180 bytes are left after the second send.
+        const headroom = CAPACITY_LIMITS.maxBytes - 2 * (CAPACITY_FILLER_BYTES + PLANNED_ENVELOPE_OVERHEAD_BYTES);
+        expect(headroom).toBe(9_180);
+        expect(headroom).toBeGreaterThanOrEqual(BACKGROUND_HEADROOM_BYTES);
     });
 });
