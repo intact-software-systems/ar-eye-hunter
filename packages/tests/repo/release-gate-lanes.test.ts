@@ -9,10 +9,14 @@ interface WorkflowStep {
     readonly run?: string;
 }
 
+interface WorkflowService {
+    readonly image: string;
+}
+
 interface WorkflowJob {
     readonly 'continue-on-error'?: boolean;
     readonly env?: Readonly<Record<string, string>>;
-    readonly services?: Readonly<Record<string, unknown>>;
+    readonly services?: Readonly<Record<string, WorkflowService>>;
     readonly steps: readonly WorkflowStep[];
 }
 
@@ -89,7 +93,7 @@ describe('Release Gate lanes', () => {
         const [lane] = postgresLanes;
         const commands = lane.steps.flatMap(toNpmScripts);
 
-        expect(lane.services).toHaveProperty('postgres');
+        expect(lane.services?.postgres?.image).toBe('postgres:16');
         expect(commands.slice(-2)).toEqual(['test:postgres:presence-expiry', 'test:postgres:presence-expiry']);
         expect(commands).toContain('test:postgres:integration');
     });
