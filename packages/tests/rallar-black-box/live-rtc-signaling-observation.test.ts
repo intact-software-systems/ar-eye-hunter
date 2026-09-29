@@ -13,11 +13,13 @@ import { installLiveRtcWireObservation } from '../../../tests/playwright/rallar-
 
 class NativeSocket extends EventTarget {
     static readonly OPEN = 1;
+    readonly url: string;
     readonly protocols: string | string[] | undefined;
     onmessage: ((event: MessageEvent) => void) | null = null;
 
-    constructor(_url: string | URL, protocols?: string | string[]) {
+    constructor(url: string | URL, protocols?: string | string[]) {
         super();
+        this.url = new URL(url).href;
         this.protocols = protocols;
         this.addEventListener('message', (event) => this.onmessage?.(event as MessageEvent));
     }
@@ -60,7 +62,8 @@ function installObserver(clock: Pick<Performance, 'timeOrigin' | 'now'> = perfor
         window,
         crypto,
         performance: clock,
-        WeakRef: reference
+        WeakRef: reference,
+        URL
     });
 }
 
@@ -94,6 +97,55 @@ describe('live RTC signaling observation', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('ties received signaling and native application to the actual WebSocket instance', async () => {
+        let now = 1;
+        installObserver({ timeOrigin: 1_000, now: () => now });
+        NativePeer.completion = Promise.resolve();
+        const first = new window.WebSocket('ws://localhost:6179/secret-first?token=secret-first');
+        now = 2;
+        first.dispatchEvent(new Event('open'));
+        now = 3;
+        first.dispatchEvent(new MessageEvent('message', { data: signalFrame('old-offer', 'Offer', 'old-sdp') }));
+        now = 4;
+        first.dispatchEvent(new Event('close'));
+
+        now = 5;
+        const replacement = new window.WebSocket('wss://example.test:443/secret-replacement?token=secret-replacement');
+        now = 6;
+        replacement.dispatchEvent(new Event('open'));
+        now = 7;
+        replacement.dispatchEvent(new MessageEvent('message', { data: signalFrame('new-offer', 'Offer', 'new-sdp') }));
+        await new window.RTCPeerConnection().setRemoteDescription({ type: 'offer', sdp: 'new-sdp' });
+
+        const snapshot = decodeLiveRtcSignalingObservationSnapshot(readSnapshot());
+        expect(snapshot.socketLifetimes).toEqual([
+            { socketInstanceOrdinal: 1, endpointOrigin: 'ws://localhost:6179', createdAtEpochMs: 1_001, openedAtEpochMs: 1_002, closedAtEpochMs: 1_004 },
+            { socketInstanceOrdinal: 2, endpointOrigin: 'wss://example.test', createdAtEpochMs: 1_005, openedAtEpochMs: 1_006, closedAtEpochMs: null }
+        ]);
+        expect(snapshot.received).toMatchObject([
+            { msgId: 'old-offer', offerId: 'offer-a', socketInstanceOrdinal: 1 },
+            { msgId: 'new-offer', offerId: 'offer-a', socketInstanceOrdinal: 2 }
+        ]);
+        expect(snapshot.attempts).toMatchObject([
+            { msgId: 'new-offer', socketInstanceOrdinal: 2, nativeInstanceOrdinal: 1, settlement: 'applied' }
+        ]);
+        expect(JSON.stringify(snapshot)).not.toContain('secret-');
+    });
+
+    it('keeps a bounded payload-free window of actual WebSocket lifetimes', () => {
+        installObserver();
+        for (let index = 0; index < 140; index++) {
+            new window.WebSocket(`ws://localhost/secret-${index}`);
+        }
+
+        const snapshot = readSnapshot();
+        expect(snapshot.socketLifetimes).toHaveLength(128);
+        expect(snapshot.socketLifetimes[0].socketInstanceOrdinal).toBe(13);
+        expect(snapshot.socketLifetimes[0].endpointOrigin).toBe('ws://localhost');
+        expect(snapshot.droppedSocketLifetimes).toBe(12);
+        expect(JSON.stringify(snapshot)).not.toContain('secret-');
     });
 
     it('captures old native retirement and replacement creation without another description attempt', async () => {
@@ -260,6 +312,28 @@ describe('live RTC signaling observation', () => {
         }
     });
 
+    it('rejects unsanitized or non-WebSocket origins at the artifact decoder', () => {
+        installObserver();
+        new window.WebSocket('ws://localhost:6179/private?token=secret-token');
+        const observed = readSnapshot();
+        expect(observed.socketLifetimes[0].endpointOrigin).toBe('ws://localhost:6179');
+        for (
+            const endpointOrigin of [
+                'ws://localhost:6179/private',
+                'ws://localhost:6179?token=secret-token',
+                'https://localhost:6179',
+                'ws://user:secret@localhost:6179'
+            ]
+        ) {
+            const decoded = decodeLiveRtcSignalingObservationSnapshot({
+                ...observed,
+                socketLifetimes: [{ ...observed.socketLifetimes[0], endpointOrigin }]
+            });
+            expect(decoded.available).toBe(false);
+            expect(JSON.stringify(decoded)).not.toContain('secret-');
+        }
+    });
+
     it('marks an observer runtime failure unavailable while preserving delivery', () => {
         installObserver({
             timeOrigin: 0,
@@ -350,6 +424,102 @@ describe('live RTC signaling observation', () => {
             { msgId: null, match: 'ambiguous', settlement: 'applied' },
             { msgId: null, match: 'unmatched', settlement: 'applied' }
         ]);
+    });
+
+    it('does not attribute a repeated signaling message to an arbitrary socket lifetime', async () => {
+        installObserver();
+        NativePeer.completion = Promise.resolve();
+        const frame = signalFrame('repeated-offer', 'Offer');
+        const first = new window.WebSocket('ws://localhost/first?token=secret-first');
+        first.dispatchEvent(new MessageEvent('message', { data: frame }));
+        const replacement = new window.WebSocket('ws://localhost/replacement?token=secret-replacement');
+        replacement.dispatchEvent(new MessageEvent('message', { data: frame }));
+
+        await new window.RTCPeerConnection().setRemoteDescription({ type: 'offer', sdp: 'secret-sdp' });
+
+        const snapshot = readSnapshot();
+        expect(snapshot.received).toMatchObject([
+            { msgId: 'repeated-offer', socketInstanceOrdinal: 1 },
+            { msgId: 'repeated-offer', socketInstanceOrdinal: 2 }
+        ]);
+        expect(snapshot.attempts).toMatchObject([{
+            msgId: null,
+            socketInstanceOrdinal: null,
+            match: 'ambiguous',
+            settlement: 'applied'
+        }]);
+        expect(JSON.stringify(snapshot)).not.toContain('secret-');
+    });
+
+    it('records candidate evidence only for a valid payload without retaining the candidate', () => {
+        installObserver();
+        const socket = new window.WebSocket('ws://localhost');
+        const valid = signalFrame('valid-ice', 'IceCandidate');
+        const invalid = JSON.parse(signalFrame('invalid-ice', 'IceCandidate'));
+        const signal = JSON.parse(invalid.payload.resource);
+        signal.payload.candidate = null;
+        invalid.payload.resource = JSON.stringify(signal);
+        socket.dispatchEvent(new MessageEvent('message', { data: valid }));
+        socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(invalid) }));
+
+        const snapshot = readSnapshot();
+        expect(snapshot.received).toMatchObject([{
+            msgId: 'valid-ice',
+            signalType: 'IceCandidate',
+            hasCandidate: true
+        }]);
+        expect(snapshot.received).toHaveLength(1);
+        expect(JSON.stringify(snapshot)).not.toMatch(/secret-candidate|candidate\":/);
+        expect(
+            decodeLiveRtcSignalingObservationSnapshot({
+                ...snapshot,
+                received: [{ ...snapshot.received[0], hasCandidate: false }]
+            }).available
+        ).toBe(false);
+    });
+
+    it('rejects ICE evidence with decoder-invalid optional fields or unexpected keys', () => {
+        installObserver();
+        const socket = new window.WebSocket('ws://localhost');
+        const invalidCandidates = [
+            { candidate: 'secret-candidate', sdpMid: 7 },
+            { candidate: 'secret-candidate', sdpMLineIndex: -1 },
+            { candidate: 'secret-candidate', sdpMLineIndex: 65536 },
+            { candidate: 'secret-candidate', sdpMLineIndex: 1.5 },
+            { candidate: 'secret-candidate', usernameFragment: 7 },
+            { candidate: 'secret-candidate', unexpected: true }
+        ];
+        for (const [index, candidate] of invalidCandidates.entries()) {
+            const frame = JSON.parse(signalFrame(`invalid-ice-${index}`, 'IceCandidate'));
+            const signal = JSON.parse(frame.payload.resource);
+            signal.payload.candidate = candidate;
+            frame.payload.resource = JSON.stringify(signal);
+            socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) }));
+        }
+        const invalidPayload = JSON.parse(signalFrame('invalid-payload', 'IceCandidate'));
+        const signal = JSON.parse(invalidPayload.payload.resource);
+        signal.payload.unexpected = true;
+        invalidPayload.payload.resource = JSON.stringify(signal);
+        socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(invalidPayload) }));
+
+        for (
+            const [name, mutate] of [
+                ['missing-token', (value: Record<string, unknown>) => {
+                    delete value.token;
+                }],
+                ['extra-signal-field', (value: Record<string, unknown>) => {
+                    value.unexpected = true;
+                }]
+            ] as const
+        ) {
+            const frame = JSON.parse(signalFrame(name, 'IceCandidate'));
+            const signal = JSON.parse(frame.payload.resource);
+            mutate(signal);
+            frame.payload.resource = JSON.stringify(signal);
+            socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(frame) }));
+        }
+
+        expect(readSnapshot().received).toHaveLength(0);
     });
 
     it('does not attribute a native description to an envelope with inconsistent routing or signal kind', async () => {

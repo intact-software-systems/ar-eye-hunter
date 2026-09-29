@@ -149,6 +149,7 @@ describe('live RTC control client readiness evidence', () => {
                 droppedSocketLifetimes: 0,
                 socketLifetimes: [{
                     socketInstanceOrdinal: 1,
+                    endpointOrigin: 'ws://api.test',
                     createdAtEpochMs: 1,
                     openedAtEpochMs: 2,
                     closedAtEpochMs: 40,
@@ -170,6 +171,7 @@ describe('live RTC control client readiness evidence', () => {
                     msgId: 'signal-1',
                     socketInstanceOrdinal: 1,
                     signalType: 'Offer' as const,
+                    hasCandidate: false,
                     offerId: 'offer-1',
                     fromId: 'session-a',
                     toId: 'session-b',
@@ -217,7 +219,7 @@ describe('live RTC control client readiness evidence', () => {
                 available: true,
                 received: [{ msgId: 'signal-1', signalType: 'Offer' }],
                 attempts: [{ nativeInstanceOrdinal: 2, settlement: 'applied' }],
-                socketLifetimes: [{ socketInstanceOrdinal: 1, closedAtEpochMs: 40 }],
+                socketLifetimes: [{ socketInstanceOrdinal: 1, endpointOrigin: 'ws://api.test', closedAtEpochMs: 40 }],
                 nativeLifetimes: [{ nativeInstanceOrdinal: 2, closedAtEpochMs: 40, observation: 'live', state: { connectionState: 'closed' } }]
             },
             'agent-b': { available: false, received: [], attempts: [] },

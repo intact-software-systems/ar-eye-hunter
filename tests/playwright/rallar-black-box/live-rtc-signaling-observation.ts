@@ -7,7 +7,9 @@ declare global {
 export namespace LiveRtcSignalingObservation {
     export interface Received {
         readonly msgId: string | null;
+        readonly socketInstanceOrdinal: number;
         readonly signalType: 'Offer' | 'Answer' | 'IceCandidate';
+        readonly hasCandidate: boolean;
         readonly offerId: string | null;
         readonly fromId: string | null;
         readonly toId: string | null;
@@ -22,6 +24,7 @@ export namespace LiveRtcSignalingObservation {
 
     export interface Attempt {
         readonly msgId: string | null;
+        readonly socketInstanceOrdinal: number | null;
         readonly signalType: 'Offer' | 'Answer' | null;
         readonly offerId: string | null;
         readonly fromId: string | null;
@@ -41,8 +44,18 @@ export namespace LiveRtcSignalingObservation {
         readonly attempts: readonly Attempt[];
         readonly droppedReceived: number;
         readonly droppedAttempts: number;
+        readonly socketLifetimes: readonly SocketLifetime[];
+        readonly droppedSocketLifetimes: number;
         readonly nativeLifetimes: readonly NativeLifetime[];
         readonly droppedNativeLifetimes: number;
+    }
+
+    export interface SocketLifetime {
+        readonly socketInstanceOrdinal: number;
+        readonly endpointOrigin: string | null;
+        readonly createdAtEpochMs: number;
+        readonly openedAtEpochMs: number | null;
+        readonly closedAtEpochMs: number | null;
     }
 
     export interface NativeLifetime {
@@ -78,13 +91,16 @@ export function installLiveRtcSignalingObservation(): void {
     const received: LiveRtcSignalingObservation.Received[] = [];
     const joins: (Join | null)[] = [];
     const attempts = new Map<number, LiveRtcSignalingObservation.Attempt>();
+    const socketLifetimes = new Map<number, LiveRtcSignalingObservation.SocketLifetime>();
     const nativeOrdinals = new WeakMap<RTCPeerConnection, number>();
     const nativeLifetimes = new Map<number, TrackedNative>();
     let nativeOrdinal = 0;
+    let socketOrdinal = 0;
     let attemptOrdinal = 0;
     let available = true;
     let droppedReceived = 0;
     let droppedAttempts = 0;
+    let droppedSocketLifetimes = 0;
     let droppedNativeLifetimes = 0;
 
     function decodeAllowedState(value: unknown, allowed: readonly string[]): string | null {
@@ -148,6 +164,55 @@ export function installLiveRtcSignalingObservation(): void {
         return { type: description.type, sdp: description.sdp };
     }
 
+    function hasOnlyFields(value: object | null | undefined, fields: readonly string[]): value is object {
+        return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+            Object.getPrototypeOf(value) === Object.prototype &&
+            Object.keys(value).every((field) => fields.includes(field));
+    }
+
+    function hasValidIceCandidate(signal: object | null | undefined): boolean {
+        if (
+            !hasOnlyFields(signal, [
+                'channel',
+                'type',
+                'fromId',
+                'toId',
+                'sessionId',
+                'token',
+                'signalType',
+                'payload'
+            ]) ||
+            Object.keys(signal).length !== 8 ||
+            !['fromId', 'toId', 'sessionId', 'token'].every((field) =>
+                typeof Reflect.get(signal, field) === 'string' && Reflect.get(signal, field).length > 0
+            )
+        ) {
+            return false;
+        }
+        const payload = Reflect.get(signal, 'payload');
+        if (
+            !hasOnlyFields(payload, ['description', 'candidate']) ||
+            Object.keys(payload).length !== 2 || Reflect.get(payload, 'description') !== null
+        ) {
+            return false;
+        }
+        const candidate = Reflect.get(payload, 'candidate');
+        if (
+            !hasOnlyFields(candidate, ['candidate', 'sdpMid', 'sdpMLineIndex', 'usernameFragment']) ||
+            typeof Reflect.get(candidate, 'candidate') !== 'string'
+        ) {
+            return false;
+        }
+        const sdpMid = Reflect.get(candidate, 'sdpMid');
+        const sdpMLineIndex = Reflect.get(candidate, 'sdpMLineIndex');
+        const usernameFragment = Reflect.get(candidate, 'usernameFragment');
+        return (sdpMid === undefined || sdpMid === null || typeof sdpMid === 'string') &&
+            (sdpMLineIndex === undefined || sdpMLineIndex === null ||
+                (typeof sdpMLineIndex === 'number' && Number.isInteger(sdpMLineIndex) &&
+                    sdpMLineIndex >= 0 && sdpMLineIndex <= 65535)) &&
+            (usernameFragment === undefined || usernameFragment === null || typeof usernameFragment === 'string');
+    }
+
     function computeFingerprint(description: RTCSessionDescriptionInit | null): string | null {
         if (
             description === null || (description.type !== 'offer' && description.type !== 'answer') ||
@@ -198,9 +263,60 @@ export function installLiveRtcSignalingObservation(): void {
             attempts: [...attempts.values()].map((attempt) => ({ ...attempt, state: { ...attempt.state } })),
             droppedReceived,
             droppedAttempts,
+            socketLifetimes: [...socketLifetimes.values()].map((lifetime) => ({ ...lifetime })),
+            droppedSocketLifetimes,
             nativeLifetimes: [...nativeLifetimes.values()].map(readNativeLifetime),
             droppedNativeLifetimes
         };
+    }
+
+    function recordSocketCreation(socketUrl: string): number {
+        const ordinal = ++socketOrdinal;
+        try {
+            const endpoint = new URL(socketUrl);
+            socketLifetimes.set(ordinal, {
+                socketInstanceOrdinal: ordinal,
+                endpointOrigin: endpoint.protocol === 'ws:' || endpoint.protocol === 'wss:' ? endpoint.origin : null,
+                createdAtEpochMs: epochNow(),
+                openedAtEpochMs: null,
+                closedAtEpochMs: null
+            });
+            if (socketLifetimes.size > 128) {
+                const oldest = socketLifetimes.keys().next().value;
+                if (oldest !== undefined) {
+                    socketLifetimes.delete(oldest);
+                    droppedSocketLifetimes++;
+                }
+            }
+        }
+        catch {
+            available = false;
+        }
+        return ordinal;
+    }
+
+    function recordSocketOpen(ordinal: number): void {
+        try {
+            const lifetime = socketLifetimes.get(ordinal);
+            if (lifetime && lifetime.openedAtEpochMs === null) {
+                socketLifetimes.set(ordinal, { ...lifetime, openedAtEpochMs: epochNow() });
+            }
+        }
+        catch {
+            available = false;
+        }
+    }
+
+    function recordSocketClose(ordinal: number): void {
+        try {
+            const lifetime = socketLifetimes.get(ordinal);
+            if (lifetime && lifetime.closedAtEpochMs === null) {
+                socketLifetimes.set(ordinal, { ...lifetime, closedAtEpochMs: epochNow() });
+            }
+        }
+        catch {
+            available = false;
+        }
     }
 
     function recordNativeCreation(peer: RTCPeerConnection): void {
@@ -251,7 +367,7 @@ export function installLiveRtcSignalingObservation(): void {
         }
     }
 
-    function receive(frame: string): void {
+    function receive(frame: string, socketInstanceOrdinal: number): void {
         try {
             const envelope = JSON.parse(frame);
             if (envelope?.payload?.typeId !== 'rtc-signaling' || typeof envelope.payload.resource !== 'string') {
@@ -267,16 +383,20 @@ export function installLiveRtcSignalingObservation(): void {
                 return;
             }
             const description = decodeDescription(signal.payload?.description);
+            const hasCandidate = signal.signalType === 'IceCandidate' && hasValidIceCandidate(signal);
             if (
-                signal.signalType !== 'IceCandidate' &&
-                (description?.type !== (signal.signalType === 'Offer' ? 'offer' : 'answer') ||
-                    decodeIdentity(signal.offerId) === null)
+                signal.signalType === 'IceCandidate'
+                    ? !hasCandidate
+                    : description?.type !== (signal.signalType === 'Offer' ? 'offer' : 'answer') ||
+                        decodeIdentity(signal.offerId) === null
             ) {
                 return;
             }
             const entry: LiveRtcSignalingObservation.Received = {
                 msgId: decodeIdentity(envelope.id?.msgId),
+                socketInstanceOrdinal,
                 signalType: signal.signalType,
+                hasCandidate,
                 offerId: signal.signalType === 'IceCandidate' ? null : decodeIdentity(signal.offerId),
                 fromId: decodeIdentity(signal.fromId),
                 toId: decodeIdentity(signal.toId),
@@ -306,14 +426,16 @@ export function installLiveRtcSignalingObservation(): void {
             }
             const matches = joins.filter((join) => join !== null && join.fingerprint === fingerprint);
             const messageIds = new Set(matches.map((join) => join?.received.msgId));
+            const socketOrdinals = new Set(matches.map((join) => join?.received.socketInstanceOrdinal));
             const match = matches.length === 0
                 ? 'unmatched'
-                : messageIds.size === 1 && !messageIds.has(null)
+                : messageIds.size === 1 && !messageIds.has(null) && socketOrdinals.size === 1
                 ? 'unique'
                 : 'ambiguous';
             const matchedReceived = match === 'unique' ? matches[0]?.received : undefined;
             const attempt: LiveRtcSignalingObservation.Attempt = {
                 msgId: matchedReceived?.msgId ?? null,
+                socketInstanceOrdinal: matchedReceived?.socketInstanceOrdinal ?? null,
                 signalType: matchedReceived?.signalType === 'Offer' || matchedReceived?.signalType === 'Answer'
                     ? matchedReceived.signalType
                     : null,
@@ -386,9 +508,12 @@ export function installLiveRtcSignalingObservation(): void {
     window.WebSocket = class extends NativeWebSocket {
         constructor(url: string | URL, protocols?: string | string[]) {
             super(url, protocols);
+            const socketInstanceOrdinal = recordSocketCreation(this.url);
+            this.addEventListener('open', () => recordSocketOpen(socketInstanceOrdinal));
+            this.addEventListener('close', () => recordSocketClose(socketInstanceOrdinal));
             this.addEventListener('message', (event) => {
                 if (typeof event.data === 'string') {
-                    receive(event.data);
+                    receive(event.data, socketInstanceOrdinal);
                 }
             });
         }
@@ -444,6 +569,9 @@ export function decodeLiveRtcSignalingObservationSnapshot(
         !Number.isSafeInteger(snapshot.droppedReceived) || snapshot.droppedReceived < 0 ||
         !('droppedAttempts' in snapshot) || typeof snapshot.droppedAttempts !== 'number' ||
         !Number.isSafeInteger(snapshot.droppedAttempts) || snapshot.droppedAttempts < 0 ||
+        !('socketLifetimes' in snapshot) || !Array.isArray(snapshot.socketLifetimes) ||
+        !('droppedSocketLifetimes' in snapshot) || typeof snapshot.droppedSocketLifetimes !== 'number' ||
+        !Number.isSafeInteger(snapshot.droppedSocketLifetimes) || snapshot.droppedSocketLifetimes < 0 ||
         !('nativeLifetimes' in snapshot) || !Array.isArray(snapshot.nativeLifetimes) ||
         !('droppedNativeLifetimes' in snapshot) || typeof snapshot.droppedNativeLifetimes !== 'number' ||
         !Number.isSafeInteger(snapshot.droppedNativeLifetimes) || snapshot.droppedNativeLifetimes < 0
@@ -452,9 +580,11 @@ export function decodeLiveRtcSignalingObservationSnapshot(
     }
     const received = Array.from(snapshot.received.slice(-128), decodeLiveRtcSignalingReceived);
     const attempts = Array.from(snapshot.attempts.slice(-128), decodeLiveRtcSignalingAttempt);
+    const socketLifetimes = Array.from(snapshot.socketLifetimes.slice(-128), decodeLiveRtcSocketLifetime);
     const nativeLifetimes = Array.from(snapshot.nativeLifetimes.slice(-128), decodeLiveRtcNativeLifetime);
     if (
         received.some((entry) => entry === null) || attempts.some((entry) => entry === null) ||
+        socketLifetimes.some((entry) => entry === null) ||
         nativeLifetimes.some((entry) => entry === null)
     ) {
         return unavailable;
@@ -465,6 +595,8 @@ export function decodeLiveRtcSignalingObservationSnapshot(
         attempts: attempts.filter((entry) => entry !== null),
         droppedReceived: Number(snapshot.droppedReceived) + Math.max(0, snapshot.received.length - 128),
         droppedAttempts: Number(snapshot.droppedAttempts) + Math.max(0, snapshot.attempts.length - 128),
+        socketLifetimes: socketLifetimes.filter((entry) => entry !== null),
+        droppedSocketLifetimes: snapshot.droppedSocketLifetimes + Math.max(0, snapshot.socketLifetimes.length - 128),
         nativeLifetimes: nativeLifetimes.filter((entry) => entry !== null),
         droppedNativeLifetimes: snapshot.droppedNativeLifetimes + Math.max(0, snapshot.nativeLifetimes.length - 128)
     };
@@ -475,11 +607,48 @@ function createUnavailableLiveRtcSignalingObservationSnapshot(): LiveRtcSignalin
         available: false,
         received: [],
         attempts: [],
+        socketLifetimes: [],
         nativeLifetimes: [],
         droppedReceived: 0,
         droppedAttempts: 0,
+        droppedSocketLifetimes: 0,
         droppedNativeLifetimes: 0
     };
+}
+
+function decodeLiveRtcSocketLifetime(lifetime: unknown): LiveRtcSignalingObservation.SocketLifetime | null {
+    if (
+        !lifetime || typeof lifetime !== 'object' ||
+        !('socketInstanceOrdinal' in lifetime) || typeof lifetime.socketInstanceOrdinal !== 'number' ||
+        !Number.isSafeInteger(lifetime.socketInstanceOrdinal) || lifetime.socketInstanceOrdinal <= 0 ||
+        !('endpointOrigin' in lifetime) || (lifetime.endpointOrigin !== null &&
+            (typeof lifetime.endpointOrigin !== 'string' || !isLiveRtcSocketOrigin(lifetime.endpointOrigin))) ||
+        !('createdAtEpochMs' in lifetime) || typeof lifetime.createdAtEpochMs !== 'number' ||
+        !Number.isFinite(lifetime.createdAtEpochMs) ||
+        !('openedAtEpochMs' in lifetime) || (lifetime.openedAtEpochMs !== null &&
+            (typeof lifetime.openedAtEpochMs !== 'number' || !Number.isFinite(lifetime.openedAtEpochMs))) ||
+        !('closedAtEpochMs' in lifetime) || (lifetime.closedAtEpochMs !== null &&
+            (typeof lifetime.closedAtEpochMs !== 'number' || !Number.isFinite(lifetime.closedAtEpochMs)))
+    ) {
+        return null;
+    }
+    return {
+        socketInstanceOrdinal: lifetime.socketInstanceOrdinal,
+        endpointOrigin: typeof lifetime.endpointOrigin === 'string' ? lifetime.endpointOrigin : null,
+        createdAtEpochMs: lifetime.createdAtEpochMs,
+        openedAtEpochMs: lifetime.openedAtEpochMs,
+        closedAtEpochMs: lifetime.closedAtEpochMs
+    };
+}
+
+function isLiveRtcSocketOrigin(value: string): boolean {
+    try {
+        const endpoint = new URL(value);
+        return (endpoint.protocol === 'ws:' || endpoint.protocol === 'wss:') && endpoint.origin === value;
+    }
+    catch {
+        return false;
+    }
 }
 
 function decodeLiveRtcNativeLifetime(lifetime: unknown): LiveRtcSignalingObservation.NativeLifetime | null {
@@ -522,6 +691,9 @@ function decodeLiveRtcSignalingReceived(received: unknown): LiveRtcSignalingObse
         !received || typeof received !== 'object' || !('signalType' in received) ||
         (received.signalType !== 'Offer' && received.signalType !== 'Answer' &&
             received.signalType !== 'IceCandidate') ||
+        !('hasCandidate' in received) || received.hasCandidate !== (received.signalType === 'IceCandidate') ||
+        !('socketInstanceOrdinal' in received) || typeof received.socketInstanceOrdinal !== 'number' ||
+        !Number.isSafeInteger(received.socketInstanceOrdinal) || received.socketInstanceOrdinal <= 0 ||
         !('receivedAtEpochMs' in received) || typeof received.receivedAtEpochMs !== 'number' ||
         !Number.isFinite(received.receivedAtEpochMs)
     ) {
@@ -529,7 +701,9 @@ function decodeLiveRtcSignalingReceived(received: unknown): LiveRtcSignalingObse
     }
     return {
         msgId: decodeLiveRtcIdentity('msgId' in received ? received.msgId : null),
+        socketInstanceOrdinal: received.socketInstanceOrdinal,
         signalType: received.signalType,
+        hasCandidate: received.hasCandidate,
         offerId: decodeLiveRtcIdentity('offerId' in received ? received.offerId : null),
         fromId: decodeLiveRtcIdentity('fromId' in received ? received.fromId : null),
         toId: decodeLiveRtcIdentity('toId' in received ? received.toId : null),
@@ -543,6 +717,9 @@ function decodeLiveRtcSignalingAttempt(attempt: unknown): LiveRtcSignalingObserv
         (attempt.match !== 'unique' && attempt.match !== 'ambiguous' && attempt.match !== 'unmatched') ||
         !('settlement' in attempt) || (attempt.settlement !== 'attempted' && attempt.settlement !== 'applied' &&
             attempt.settlement !== 'rejected') ||
+        !('socketInstanceOrdinal' in attempt) || (attempt.socketInstanceOrdinal !== null &&
+            (typeof attempt.socketInstanceOrdinal !== 'number' ||
+                !Number.isSafeInteger(attempt.socketInstanceOrdinal) || attempt.socketInstanceOrdinal <= 0)) ||
         !('nativeInstanceOrdinal' in attempt) || typeof attempt.nativeInstanceOrdinal !== 'number' ||
         !Number.isSafeInteger(attempt.nativeInstanceOrdinal) || attempt.nativeInstanceOrdinal <= 0 ||
         !('attemptedAtEpochMs' in attempt) || typeof attempt.attemptedAtEpochMs !== 'number' ||
@@ -554,6 +731,7 @@ function decodeLiveRtcSignalingAttempt(attempt: unknown): LiveRtcSignalingObserv
     }
     return {
         msgId: decodeLiveRtcIdentity('msgId' in attempt ? attempt.msgId : null),
+        socketInstanceOrdinal: attempt.socketInstanceOrdinal,
         nativeInstanceOrdinal: attempt.nativeInstanceOrdinal,
         signalType: 'signalType' in attempt && (attempt.signalType === 'Offer' || attempt.signalType === 'Answer')
             ? attempt.signalType

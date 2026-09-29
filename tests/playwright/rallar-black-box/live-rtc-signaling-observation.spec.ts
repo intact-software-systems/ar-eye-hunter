@@ -33,7 +33,7 @@ test('installs the signaling witness when TypeScript is loaded by Playwright', a
 });
 
 test('associates native WebSocket signaling with its replacement socket', async ({ page }) => {
-    const socketUrl = 'ws://127.0.0.1:6179/rtc-signaling-observation';
+    const socketUrl = 'ws://127.0.0.1:6179/rtc-signaling-observation?token=secret-token';
     const signalingFrame = JSON.stringify({
         id: { msgId: 'replacement-offer', senderId: 'session-a' },
         targets: { mode: 'unicast', toPeerId: 'session-b' },
@@ -84,16 +84,18 @@ test('associates native WebSocket signaling with its replacement socket', async 
         socketLifetimes: [
             {
                 socketInstanceOrdinal: 1,
+                endpointOrigin: 'ws://127.0.0.1:6179',
                 openedAtEpochMs: expect.any(Number),
                 closedAtEpochMs: expect.any(Number)
             },
             {
                 socketInstanceOrdinal: 2,
+                endpointOrigin: 'ws://127.0.0.1:6179',
                 openedAtEpochMs: expect.any(Number),
                 closedAtEpochMs: null
             }
         ],
         received: [{ msgId: 'replacement-offer', offerId: 'offer-b', socketInstanceOrdinal: 2 }]
     });
-    expect(JSON.stringify(snapshot)).not.toContain('secret-sdp');
+    expect(JSON.stringify(snapshot)).not.toMatch(/secret-sdp|secret-token|rtc-signaling-observation/);
 });

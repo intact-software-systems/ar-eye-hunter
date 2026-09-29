@@ -178,8 +178,10 @@ describe('live RTC readiness failure diagnostic order', () => {
             received: [],
             droppedReceived: 0,
             droppedAttempts: 0,
+            droppedSocketLifetimes: 0,
             droppedNativeLifetimes: 0,
             attempts: [],
+            socketLifetimes: [],
             nativeLifetimes: []
         });
         expect(causalCutBeforeFinalSignaling).toMatchObject(BEFORE_FINAL_SIGNALING_CUT);
@@ -212,19 +214,23 @@ describe('live RTC readiness failure diagnostic order', () => {
             .toHaveLength(128);
         expect(optionalJsonArray(finalSignaling.attempts, '$.final.attempts'))
             .toHaveLength(128);
+        expect(optionalJsonArray(finalSignaling.socketLifetimes, '$.final.socketLifetimes'))
+            .toHaveLength(128);
         expect(optionalJsonArray(finalSignaling.nativeLifetimes, '$.final.nativeLifetimes'))
             .toHaveLength(128);
         expect(finalSignaling).toMatchObject({
             available: true,
             droppedReceived: 7,
             droppedAttempts: 8,
+            droppedSocketLifetimes: 10,
             droppedNativeLifetimes: 9
         });
         expect(optionalJsonArray(finalSignaling.received, '$.final.received').at(-1))
-            .toMatchObject({ msgId: 'answer-message', signalType: 'Answer' });
+            .toMatchObject({ msgId: 'answer-message', signalType: 'Answer', socketInstanceOrdinal: 130 });
         expect(optionalJsonArray(finalSignaling.attempts, '$.final.attempts').at(-1))
             .toMatchObject({
                 msgId: 'answer-message',
+                socketInstanceOrdinal: 130,
                 nativeInstanceOrdinal: 130,
                 match: 'unique',
                 settlement: 'applied'
@@ -274,6 +280,8 @@ describe('live RTC readiness failure diagnostic order', () => {
             attempts: [],
             droppedReceived: 0,
             droppedAttempts: 0,
+            socketLifetimes: [],
+            droppedSocketLifetimes: 0,
             nativeLifetimes: [],
             droppedNativeLifetimes: 0
         });
@@ -354,6 +362,8 @@ function toInitialSignalingObservation(): RawSignalingObservation {
         attempts: [],
         droppedReceived: 0,
         droppedAttempts: 0,
+        socketLifetimes: [],
+        droppedSocketLifetimes: 0,
         nativeLifetimes: [],
         droppedNativeLifetimes: 0,
         sdp: SENTINEL,
@@ -366,7 +376,9 @@ function toFinalSignalingObservation(): RawSignalingObservation {
         available: true,
         received: Array.from({ length: 130 }, (_, index) => ({
             msgId: index === 129 ? 'answer-message' : `received-${index}`,
+            socketInstanceOrdinal: index + 1,
             signalType: 'Answer' as const,
+            hasCandidate: false,
             offerId: 'offer-1',
             fromId: 'session-b',
             toId: 'session-a',
@@ -374,6 +386,7 @@ function toFinalSignalingObservation(): RawSignalingObservation {
         })),
         attempts: Array.from({ length: 130 }, (_, index) => ({
             msgId: index === 129 ? 'answer-message' : `received-${index}`,
+            socketInstanceOrdinal: index + 1,
             signalType: 'Answer' as const,
             offerId: 'offer-1',
             fromId: 'session-b',
@@ -388,6 +401,14 @@ function toFinalSignalingObservation(): RawSignalingObservation {
         })),
         droppedReceived: 5,
         droppedAttempts: 6,
+        socketLifetimes: Array.from({ length: 130 }, (_, index) => ({
+            socketInstanceOrdinal: index + 1,
+            endpointOrigin: 'ws://api.test',
+            createdAtEpochMs: 100 + index,
+            openedAtEpochMs: 150 + index,
+            closedAtEpochMs: null
+        })),
+        droppedSocketLifetimes: 8,
         nativeLifetimes: Array.from({ length: 130 }, (_, index) => ({
             nativeInstanceOrdinal: index + 1,
             createdAtEpochMs: 200 + index,
