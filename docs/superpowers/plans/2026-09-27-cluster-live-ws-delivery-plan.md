@@ -1219,7 +1219,7 @@ generic inbound plan skipped the reserved RTC callback. The corrected plan
 dispatches that admitted callback once and suppresses only RTC's separate
 generic forwarding; the callback uses the existing live notice carrier, while
 each receiving process attempts a direct scoped local send. Two subsequent
-three-process browser runs passed with A/B/C on distinct *bootstrap* API origins
+three-process browser runs passed with A/B/C on distinct _bootstrap_ API origins
 and real addressed Offer, Answer, and IceCandidate observations. Focused 60/60 tests,
 affected checks, independent review, and a scoped clock-injection fix review
 passed. The oversized canonical RTC key path now requires matching persisted
@@ -1244,16 +1244,28 @@ and offer ID, and the unchanged three-process browser matrix passes again.
 canonical A/B/C URL per agent for bootstrap, `rtc.connect`, configuration, and
 raw WebSocket commands. The existing browser observer records the native socket
 origin and a bounded socket-generation identity without retaining payloads;
-the matrix checks Offer/Answer per peer pair and offer ID, plus received ICE
-and recipient socket identity. Against three separate API processes and a
-fresh task-owned PostgreSQL database, the focused existing Playwright matrix
-passed once (`1 passed`, 1.3 minutes, retry disabled). This establishes a
-corrected **local working-tree** cross-process RTC signaling proof, not an
-exact published PR-head result: the observer/matrix edits are still under
-review and the remote PR head remains older. The browser logged malformed-RTC
-warnings without an attributed payload; those are not silently classified as
-harmless. Publish and rerun the corrected test on an exact branch head before
-using it for readiness.
+the matrix checks Offer/Answer per peer pair and offer ID, decoder-valid
+received ICE per pair, and recipient socket identity. Duplicate deliveries on
+different socket generations are ambiguous rather than falsely attributed to
+the old socket. Against three separate API processes and a fresh task-owned
+PostgreSQL database, the final focused existing Playwright matrix passed
+(`1 passed`, 1.4 minutes, retry disabled) after the observer and matrix edits.
+This is corrected **local** cross-process RTC signaling proof on the committed
+branch content, not an exact published PR-head result: the remote PR head
+remains older. The browser logged malformed-RTC data-channel warnings without
+an attributed payload; those are not silently classified as harmless. Publish
+and rerun the corrected test on an exact branch head before using it for
+readiness.
+
+**2026-09-29 principal-read decision:** The maintainer approved validating
+only groups relevant to the principal. Unrelated corrupt group records in the
+same scope will no longer block that principal's state-sync publication; every
+selected membership, group, and client still requires canonical validation,
+and the full authorized audience remains unchanged. This authorizes the
+semantic boundary, not an unreviewed query/index design or a performance-pass
+claim. A focused design/spec and implementation plan precede the repository
+read-selector change; the unchanged hosted comparison remains the acceptance
+gate. No additive index is justified by the current evidence.
 
 The exact prior-head Release Gate passed medium-scale, formation-large, ALM,
 and earlier stages but failed one Relic storage test. Read-only reproduction
@@ -1262,14 +1274,13 @@ intended scope guard. A fixture-only correction passed focused and full Relic
 tests and independent review; no production guard was weakened. It has not yet
 passed a new exact-head Release Gate.
 
-**Next two slices:** (1) Complete the corrected browser observer/matrix review,
-publish that proof on the PR branch, and rerun the existing three-process
-matrix on the exact head. The fresh local pass is not the remote gate. (2)
-Resolve the measured state-write regression using query-level attribution,
-the unchanged full authorized audience, and an order-balanced comparison;
-decide the unrelated-corrupt-group validation boundary before changing the
-candidate-discovery read. The existing development PostgreSQL container must
-remain untouched. Following those slices, correlate E3 signaling, peer
+**Next two slices:** (1) Publish the reviewed corrected browser proof on the
+PR branch and rerun the existing three-process matrix on its exact head. The
+fresh local pass is not the remote gate. (2) Document and review the approved
+principal-relevant validation design, then implement and measure the smallest
+read-selector change against the unchanged full authorized audience and
+order-balanced state-write comparison. The existing development PostgreSQL
+container must remain untouched. Following those slices, correlate E3 signaling, peer
 generation, and ICE state without weakening the workload; run unchanged
 default, all-scenarios, and retention-100 plus the required same-SHA diagnostic
 cohort. The most recent retention run reached cycle 40 but exhausted the
