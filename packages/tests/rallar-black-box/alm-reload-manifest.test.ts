@@ -10,12 +10,12 @@ import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-b
 import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 
 describe('hosted ALM reload composition', () => {
-    it('keeps three contiguous reload checkpoints before ordinary work and preserves the receiver subscription', () => {
+    it('keeps the ws reload checkpoint before ordinary work and preserves the receiver subscription', () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
         const sender = manifest.recipes.find((selection) => selection.role === 'sender')!.recipe!;
         const receiver = manifest.recipes.find((selection) => selection.role === 'receiver')!.recipe!;
         const checkpoints = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints);
-        expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(3);
+        expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(1);
         expect(receiver.metadata?.almReloadCheckpoints).toEqual(checkpoints);
         expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
         expect(
@@ -53,11 +53,12 @@ describe('hosted ALM reload composition', () => {
 
         let senderStart = 0;
         let receiverStart = 0;
-        for (const [index, checkpoint] of checkpoints!.entries()) {
+        // Hosted manifest 18 withholds the reload over rtc and rtc-with-ws-fallback until issue #594 is fixed.
+        const carrier = 'ws';
+        for (const checkpoint of checkpoints!) {
             const prefixEnd = sender.commands.findIndex((command) => command.commandId === checkpoint.senderPrefixEnd);
             const reloadIndex = sender.commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = sender.commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
-            const carrier = ['ws', 'rtc', 'rtc-with-ws-fallback'][index];
             const prefix = sender.commands.slice(senderStart, prefixEnd + 1);
             expect(prefix.filter(isRallarBlackBoxTestMessagesSendCommand).map((command) => command.payload))
                 .toEqual([{ marker: 'delivery-reload', carrier }]);

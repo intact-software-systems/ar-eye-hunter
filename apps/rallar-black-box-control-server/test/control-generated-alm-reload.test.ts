@@ -606,7 +606,7 @@ for (const replacesDocument of [true, false]) {
         const senderRoot = started.commandLinks.find((link) => link.phase === 'start' && link.role === 'sender')!.commandId;
         const root = service.snapshotRun(runId)!.commands.find((command) => command.envelope.commandId === senderRoot)!.envelope;
         const pair = toAlmReloadPair(root.command)!;
-        assertEquals(pair.checkpoints.length, 3);
+        assertEquals(pair.checkpoints.length, 1);
         for (const checkpoint of pair.checkpoints) {
             const [prefix] = service.takeDispatchableCommands(runId, agents[0]);
             const [ready] = service.takeDispatchableCommands(runId, agents[1]);
@@ -678,7 +678,7 @@ for (const replacesDocument of [true, false]) {
         }
         assertEquals(
             ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'delivery-reload').length,
-            3,
+            1,
             'restored suffixes and roots never resend an original'
         );
         assertEquals(

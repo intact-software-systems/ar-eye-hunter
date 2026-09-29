@@ -1,6 +1,7 @@
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import {
-    ALM_CONFORMANCE_CARRIERS
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
@@ -48,9 +49,19 @@ const ALM_CONFORMANCE_EXTENDED_AGENT_COUNTS = [15, 30, 50] as const;
 /** Long enough for the slowest role to finish the windows of the previous scenario while the others wait (D62). */
 export const ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS = 60_000;
 
-/** Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is never reached. */
-const HETZNER_WITHHELD_ALM_SCENARIO_KEYS: readonly string[] = [
-    'not-yet-in-sync-delivered-after-refresh'
+interface HetznerWithheldAlmScenario {
+    readonly scenarioKey: string;
+    readonly carriers: readonly AlmConformanceCarrier[];
+}
+
+const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
+    // Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is
+    // never reached.
+    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS },
+    // On hosted agents the side that stayed dials the reloading peer before its signalling is back, the dial is kept
+    // through the grace, and recovery takes the 30 s peer establishment timeout, longer than the scenario wait of 27 s
+    // (issue #594). The local lane, whose timing differs, keeps the scenario on every carrier.
+    { scenarioKey: 'delivery-reload', carriers: ['rtc', 'rtc-with-ws-fallback'] }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
@@ -64,7 +75,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
             'not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no ' +
             'fallback after the deadline, and the addressed sends: a command to the receiver, its unicast ' +
             'fallback, a command to the server, and the volatile session bound) across ws, rtc, and ' +
-            'rtc-with-ws-fallback carriers.',
+            'rtc-with-ws-fallback carriers; durable reload runs on ws only.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender', 'two-agent'),
@@ -141,11 +152,8 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
             senderConnection: ALM_CONFORMANCE_SENDER_CONNECTION,
             receiverConnection: ALM_CONFORMANCE_RECEIVER_CONNECTION,
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
-        })
-    ).filter((scenario) =>
-        isThreeAgentScenario(scenario) === (family === 'three-agent') &&
-        !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey)
-    );
+        }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
+    ).filter((scenario) => isThreeAgentScenario(scenario) === (family === 'three-agent'));
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
     // capacity block closes and reconnects its sender, so nothing but another capacity block follows it.
     const isHoisted = (scenario: AlmConformanceScenario) =>
@@ -155,6 +163,12 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
         ...scenarios.filter((scenario) => !isHoisted(scenario)),
         ...scenarios.filter((scenario) => scenario.scenarioId === 'capacity')
     ];
+}
+
+function isHetznerWithheldAlmScenario(scenarioKey: string, carrier: AlmConformanceCarrier): boolean {
+    return HETZNER_WITHHELD_ALM_SCENARIOS.some((withheld) =>
+        withheld.scenarioKey === scenarioKey && withheld.carriers.includes(carrier)
+    );
 }
 
 export function toAlmConformanceCombinedRecipe(

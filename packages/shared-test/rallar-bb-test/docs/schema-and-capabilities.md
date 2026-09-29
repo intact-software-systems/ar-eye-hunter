@@ -373,6 +373,8 @@ lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets i
 send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone refuse the third, and the second keeps
 at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
 reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
+Manifest 18 runs `delivery-reload` on `ws` only: on hosted agents a reload over RTC recovers only through the 30 s
+peer establishment timeout, longer than the scenario's 27 s wait (issue #594). The local lane runs it on every carrier.
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,

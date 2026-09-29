@@ -1216,8 +1216,8 @@ describe('Hetzner distributed manifest catalog', () => {
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        // Two prologues, three reload reconnects, and the capacity sender's lowered and restored connect per carrier.
-        expect(rtcConnects).toHaveLength(11);
+        // Two prologues, the ws reload reconnect, and the capacity sender's lowered and restored connect per carrier.
+        expect(rtcConnects).toHaveLength(9);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 

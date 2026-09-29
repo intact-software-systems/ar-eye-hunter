@@ -4,8 +4,10 @@ import {
     it
 } from 'vitest';
 
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
+    isThreeAgentScenario,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
@@ -63,14 +65,16 @@ describe('ALM conformance combined recipe', () => {
         const families = [
             {
                 entry: createAlmConformance2AgentEntry(),
-                scenarioKeys: ['delivery-baseline', 'delivery-reload', 'ws-unicast-receipt', 'capacity']
+                scenarioKeys: ['delivery-baseline', 'ws-unicast-receipt', 'capacity'],
+                wsOnlyScenarioKeys: ['delivery-reload']
             },
             {
                 entry: createAlmConformance3AgentEntry(),
-                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership']
+                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership'],
+                wsOnlyScenarioKeys: []
             }
         ];
-        for (const { entry, scenarioKeys } of families) {
+        for (const { entry, scenarioKeys, wsOnlyScenarioKeys } of families) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe as RallarBlackBoxTestRecipe;
                 const connects = recipe.commands.filter((command) => command.kind === 'rtc.connect');
@@ -90,6 +94,10 @@ describe('ALM conformance combined recipe', () => {
                         for (const scenarioKey of scenarioKeys) {
                             expect(listed).toContain(`alm.conformance.${carrier}.${scenarioKey}`);
                         }
+                    }
+                    for (const scenarioKey of wsOnlyScenarioKeys) {
+                        expect(listed).toContain(`alm.conformance.ws.${scenarioKey}`);
+                        expect(listed).not.toContain(`alm.conformance.rtc.${scenarioKey}`);
                     }
                     // A protocol control type is owned by the ALM runtime's own RTC callback, never by the harness.
                     expect(listed?.some((typeId) => typeId.startsWith('al.control.'))).toBe(false);
@@ -117,6 +125,36 @@ describe('ALM conformance combined recipe', () => {
                 ])
             );
         expect(connects.every((command) => command.readiness?.minReadyPeers === 1)).toBe(true);
+    });
+});
+
+describe('ALM conformance 2-agent hosted withholdings', () => {
+    it('withholds exactly the named cells: the reload over rtc and rtc-with-ws-fallback, and the refresh variant', () => {
+        const defined = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000
+            }).filter((scenario) => !isThreeAgentScenario(scenario)).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
+        );
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: issue #594 for the reload over RTC,
+        // and no plain-member write advancing the snapshot version for the refresh variant.
+        const withheld = [
+            'alm-rtc-delivery-reload',
+            'alm-rtc-with-ws-fallback-delivery-reload',
+            'alm-rtc-not-yet-in-sync-delivered-after-refresh',
+            'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh'
+        ];
+        const sender = createAlmConformance2AgentEntry().manifest.recipes
+            .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
+        const cells = toBarrierIds(sender).filter((id) => id.endsWith('-start')).map((id) => id.replace(/-start$/, ''));
+
+        expect(defined).toEqual(expect.arrayContaining(withheld));
+        expect(new Set(cells)).toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
+        expect(cells.filter((cell) => cell.endsWith('-delivery-reload'))).toEqual(['alm-ws-delivery-reload']);
     });
 });
 
