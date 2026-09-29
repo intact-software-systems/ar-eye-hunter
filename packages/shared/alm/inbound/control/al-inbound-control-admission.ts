@@ -5,6 +5,7 @@ import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
+import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
@@ -112,13 +113,29 @@ export class ALInboundControlAdmission {
         candidate: ALInboundControlAdmissionCandidate,
         nowMs: number
     ): Promise<ALInboundControlAdmissionResult> {
-        const bundle = toALInboundControlCommitBundle(candidate);
+        const bundle = toALInboundControlCommitBundle(this.toStoreCandidate(candidate));
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'committed') {
             return { kind: 'committed', acceptance: candidate.acceptance };
         }
         await this.retainPendingControl(arrival, nowMs);
         return { kind: 'pending-control' };
+    }
+
+    /**
+     * The volatile pair keeps a message's acknowledgement history no longer than its deadline plus the receipt grace
+     * (D74): the control-owner index that admits an acknowledgement expires at the deadline, and a data copy past it
+     * is refused expired. A relay row of a message that named no deadline carries none, so its history keeps the TTL.
+     */
+    private toStoreCandidate(candidate: ALInboundControlAdmissionCandidate): ALInboundControlAdmissionCandidate {
+        return {
+            ...candidate,
+            controlExpireAtTimestamp: computeALVolatileControlRowExpiryMs(
+                candidate.controlExpireAtTimestamp,
+                this.admissionStore.durability,
+                candidate.read.pending?.expireAtTimestamp
+            )
+        };
     }
 
     private async retainPendingControl(arrival: ALInboundControlArrival, nowMs: number): Promise<void> {

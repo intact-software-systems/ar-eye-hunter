@@ -96,6 +96,7 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateEnumField({ record: command, key: 'durability', path, allowed: values.messagesDurability }),
+        ...validateEnumField({ record: command, key: 'toPeer', path, allowed: values.messagesToPeer }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
         ...validateNumberField(command, 'seq', path),
         ...validateMessagesSnapshotFloorField(command),

@@ -66,6 +66,7 @@ function toExhausted(carrier: ALDeliveryCarrier): ALDeliverySettlement {
         mode: 'receiver',
         confirmedPeerIds: [],
         unconfirmedPeerIds: ['b', 'c'],
+        cause: 'budget',
         detail: EXHAUSTED_DETAIL
     };
 }

@@ -36,6 +36,7 @@ export const fallbackWithinDeadline: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toFallbackWithinDeadlineSenderCommands,
     toRecipientCommands: toFallbackWithinDeadlineReceiverCommands
 };

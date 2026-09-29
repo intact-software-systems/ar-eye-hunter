@@ -1,3 +1,5 @@
+import { RallarGameIntentSequences } from './rallar-game-intent-sequences.ts';
+
 export type RallarGameEnvelopeKind =
     | 'capability'
     | 'presence'
@@ -140,54 +142,57 @@ export function isRallarGameEnvelope(
 
 export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
     const lastSeqByKey = new Map<string, number>();
+    const intentSequencesByKey = new Map<string, RallarGameIntentSequences>();
+    const rejectBySequence = <T>(envelope: RallarGameEnvelope<T>, key: string) =>
+        envelope.kind === 'intent'
+            ? getIntentSequences(intentSequencesByKey, key).accept(envelope.seq)
+            : rejectByOrderedSequence(lastSeqByKey.get(key), envelope.seq);
 
     return {
         accept<T>(
             envelope: RallarGameEnvelope<T>,
             constraints: RallarGameSequenceAcceptConstraints = {}
         ): RallarGameSequenceAcceptResult<T> {
-            const rejected = rejectByConstraints(envelope, constraints);
-            if (rejected) {
-                return {
-                    accepted: false,
-                    reason: rejected,
-                    envelope
-                };
-            }
-
             const key = sequenceKey(envelope);
-            const previous = lastSeqByKey.get(key);
-            if (previous !== undefined) {
-                if (envelope.seq === previous) {
-                    return {
-                        accepted: false,
-                        reason: 'duplicate-sequence',
-                        envelope
-                    };
-                }
-
-                if (envelope.seq < previous) {
-                    return {
-                        accepted: false,
-                        reason: 'stale-sequence',
-                        envelope
-                    };
-                }
+            const reason = rejectByConstraints(envelope, constraints) ??
+                rejectBySequence(envelope, key);
+            if (reason) {
+                return { accepted: false, reason, envelope };
             }
-
-            lastSeqByKey.set(key, envelope.seq);
-            return {
-                accepted: true,
-                envelope
-            };
+            lastSeqByKey.set(key, Math.max(envelope.seq, lastSeqByKey.get(key) ?? envelope.seq));
+            return { accepted: true, envelope };
         },
         last(envelope): number | undefined {
             return lastSeqByKey.get(sequenceKey(envelope));
         },
         reset(): void {
             lastSeqByKey.clear();
+            intentSequencesByKey.clear();
         }
     };
+}
+
+function rejectByOrderedSequence(
+    previous: number | undefined,
+    seq: number
+): 'duplicate-sequence' | 'stale-sequence' | undefined {
+    if (previous === undefined || seq > previous) {
+        return undefined;
+    }
+    return seq === previous ? 'duplicate-sequence' : 'stale-sequence';
+}
+
+function getIntentSequences(
+    byKey: Map<string, RallarGameIntentSequences>,
+    key: string
+): RallarGameIntentSequences {
+    const existing = byKey.get(key);
+    if (existing) {
+        return existing;
+    }
+    const created = new RallarGameIntentSequences();
+    byKey.set(key, created);
+    return created;
 }
 
 function rejectByConstraints<T>(

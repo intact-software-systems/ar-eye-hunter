@@ -114,6 +114,8 @@ describe('ALM lifecycle recipe evidence', () => {
             attemptOutcomes: [],
             attemptCarriers: [],
             relayRejection: undefined,
+            carrierFallback: undefined,
+            failure: undefined,
             reason: undefined
         };
         const confirmsOne = await runSubmissionReceipts(sender, acknowledged);

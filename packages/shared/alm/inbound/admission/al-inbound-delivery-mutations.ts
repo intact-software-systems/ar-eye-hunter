@@ -1,13 +1,20 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
-import type { ALInboundAdmissionMutation, ALInboundMessageReadDto } from '../al-inbound-admission-store.ts';
+import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
+import type {
+    ALInboundAdmissionMutation,
+    ALInboundBufferedReleaseReadDto,
+    ALInboundMessageReadDto
+} from '../al-inbound-admission-store.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 
 /** The provenance, ordering and dedup rows an admitted message owns. */
 export function toALInboundAdmittedMessageMutations(
     read: ALInboundMessageReadDto
 ): readonly ALInboundAdmissionMutation[] {
+    const deadlineAtMs = resolveALMessageExpireAtMs(read.msg, read.plan.effective) ??
+        read.nowMs + read.retention.durableEffectTtlMs;
     const mutations: ALInboundAdmissionMutation[] = [
         {
             kind: 'set-msg-owner',
@@ -17,7 +24,7 @@ export function toALInboundAdmittedMessageMutations(
                 source: read.source,
                 supersedenceKey: read.plan.supersedence.key ?? null
             },
-            expireAtTimestamp: read.nowMs + read.retention.msgOwnerTtlMs
+            expireAtTimestamp: computeALInboundMessageOwnerExpiryMs(read, deadlineAtMs)
         }
     ];
     if (read.orderingAcceptance.observation.trackKey && read.orderingAcceptance.nextSnapshot) {
@@ -33,6 +40,15 @@ export function toALInboundAdmittedMessageMutations(
         expireAtTimestamp: read.nowMs + Math.max(0, read.plan.effective.dedup.opts.windowMs)
     });
     return mutations;
+}
+
+export function computeALInboundMessageOwnerExpiryMs(
+    read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto,
+    deadlineAtMs: number
+): number {
+    return read.durability === 'volatile'
+        ? computeALReceiptRetentionExpiryMs(deadlineAtMs)
+        : read.nowMs + read.retention.msgOwnerTtlMs;
 }
 
 /** The buffered ordered-message slot, plus the older superseded slots this message replaces. */

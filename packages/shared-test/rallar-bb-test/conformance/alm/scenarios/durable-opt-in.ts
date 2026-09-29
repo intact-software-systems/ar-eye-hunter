@@ -26,6 +26,7 @@ export const durableOptIn: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toDurableOptInSenderCommands,
     toRecipientCommands: toDurableOptInReceiverCommands
 };

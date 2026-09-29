@@ -181,6 +181,7 @@ describe('typed message fallback identity', () => {
             ['failed', 'failed', { kind: 'failed', detail: 'failed' }],
             ['unauthorized', 'rejected', { kind: 'refused', reason: 'unauthorized', detail: 'unauthorized' }],
             ['malformed', 'rejected', { kind: 'refused', reason: 'malformed', detail: 'malformed' }],
+            ['capacity', 'rejected', { kind: 'refused', reason: 'capacity', detail: 'capacity' }],
             ['accepted', 'queued', { kind: 'admitted', durable: false, queuedAttempts: 1 }],
             ['enqueued', 'queued', { kind: 'admitted', durable: true, queuedAttempts: 1 }],
             ['duplicate', 'accepted', { kind: 'duplicate' }]
@@ -194,6 +195,29 @@ describe('typed message fallback identity', () => {
             expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
         }
     );
+
+    it('ends a send its first carrier refuses for capacity rejected with the typed failure, and starts no WS leg (D78)', async () => {
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({
+                msg,
+                persist: false,
+                preparedMessages: [],
+                dropReason: 'The session is over its volatile bound.',
+                dropReasonCode: 'capacity'
+            })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' });
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: {
+                failure: { kind: 'refused', reason: 'capacity' },
+                reason: 'The session is over its volatile bound.'
+            }
+        });
+        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
+    });
 
     it.each(
         [

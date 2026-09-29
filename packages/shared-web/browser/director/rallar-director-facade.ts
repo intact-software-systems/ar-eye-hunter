@@ -3,7 +3,6 @@ import type {
     RallarMessagePayload
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
-import type { RallarTargetedSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarGroupDirectorAppointment, RallarGroupDirectorFreshness } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -70,9 +69,8 @@ export type RallarDirectorRelaySendStatus =
 
 export interface RallarDirectorRelaySendResult {
     readonly status: RallarDirectorRelaySendStatus;
-    readonly rtc?: RallarTargetedSendResult | RallarMessageHandle;
+    readonly rtc?: RallarMessageHandle;
     readonly ws?: RallarMessageHandle;
-    /** The one carrier-neutral handle of an output sent with a logical receipt request. */
     readonly receipt?: RallarMessageHandle;
     readonly reason?: string;
 }
@@ -85,7 +83,6 @@ export interface RallarDirectorOutputOptions {
 export interface RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
-    readonly laneId?: string;
     readonly topicId?: string;
     readonly intentTypeId: string;
     readonly outputTypeId: string;

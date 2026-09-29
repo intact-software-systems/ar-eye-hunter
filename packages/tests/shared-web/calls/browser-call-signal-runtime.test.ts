@@ -6,7 +6,7 @@ import {
 } from 'vitest';
 
 import { BrowserCallSignalRuntime } from '@shared-web/browser/calls/browser-call-signal-runtime.ts';
-import type { RallarMessage, RallarMessageHandler } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandler, RallarWsSendInput } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarCallHandle,
@@ -20,7 +20,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { createMessageDelivery } from '../messages/test-message-delivery.ts';
 
 interface CallSignalTestInput {
-    readonly onSend?: (input: BrowserCallSignalRuntime.SignalSendInput<unknown>) => void;
+    readonly onSend?: (input: RallarWsSendInput<unknown>) => void;
     readonly resolveTargetPeerIds?: (
         input?: RallarTargetSelector
     ) => readonly string[];
@@ -111,7 +111,7 @@ describe('BrowserCallSignalRuntime', () => {
     });
 
     it('uses composition time and identity while excluding the sending session', async () => {
-        const sent: BrowserCallSignalRuntime.SignalSendInput<unknown>[] = [];
+        const sent: RallarWsSendInput<unknown>[] = [];
         const runtime = createDefaultCallSignalRuntime({
             resolveTargetPeerIds: () => ['session-1', 'peer', 'peer'],
             onSend: (value) => {
@@ -121,7 +121,12 @@ describe('BrowserCallSignalRuntime', () => {
         const result = await runtime.invite({ peerIds: ['session-1', 'peer'], media: { audio: false, video: true } });
         expect(result.callId).toBe('generated-call');
         expect(sent).toMatchObject([{
+            scope: 'all',
             peerId: 'peer',
+            topicId: 'app.rallar.calls',
+            typeId: 'app.rallar.calls.invite.v1',
+            contextId: 'generated-call',
+            reliability: 'best-effort',
             payload: {
                 fromPeerId: 'session-1',
                 callId: 'generated-call',
@@ -191,10 +196,6 @@ function createDefaultCallSignalRuntime(
         resolveTargetPeerIds: input.resolveTargetPeerIds ?? (() => ['peer-caller']),
         messages: createMessages(input),
         readSourceStatus: () => undefined,
-        sendWsUnicast: async (send) => {
-            input.onSend?.(send);
-            return createMessageDelivery('ws', undefined).handle;
-        },
         startCall
     });
 }
@@ -202,7 +203,10 @@ function createDefaultCallSignalRuntime(
 function createMessages(input: CallSignalTestInput): RallarMessagesOperations {
     return {
         ws: {
-            send: unsupportedCallOperation,
+            send: async (send) => {
+                input.onSend?.(send);
+                return createMessageDelivery('ws', undefined).handle;
+            },
             onMessage: (_selector, handler) => {
                 input.onSubscribe?.(handler as RallarMessageHandler<unknown>);
                 return () => {};

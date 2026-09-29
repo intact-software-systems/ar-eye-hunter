@@ -20,6 +20,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type {
     ClientInfo,
     IceConfig,
@@ -50,6 +51,7 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly qosProvider: ALQosInputProvider | undefined;
+    readonly volatileBudget: ALVolatileSessionBudget;
     readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
@@ -72,7 +74,8 @@ export function initialiseRtcOverlayMulticastManager(
             queueEngine: qboxEngine,
             stores,
             volatileStores: createBrowserALVolatileOutboundRuntimeStores(
-                toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId)
+                toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
+                input.volatileBudget
             )
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),

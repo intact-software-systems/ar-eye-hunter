@@ -8,11 +8,15 @@ import {
     newALReceiptControlMessage,
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
-import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import {
+    createDefaultInMemoryALOutboundRuntimeStores,
+    createVolatileALOutboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeStores
+    ALOutboundRuntimeStores,
+    ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -112,6 +116,40 @@ describe('WS client receipt tracking for a receiver room send', () => {
         expect(acknowledgements()).toHaveLength(1);
         expect(await fixture.outboundStores.admissionStore.readReceiptState({ originPeerId: 'self', msgId: 'unsent-message' }))
             .toBeUndefined();
+    });
+});
+
+describe('WS client receipt tracking for a volatile send whose server receipt arrives after the deadline (D74)', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        TestWebSocket.instances.length = 0;
+    });
+
+    it('settles a timed-out aggregate that arrives inside the receipt grace', async () => {
+        const { fixture, message } = await sendVolatileRoomMessage();
+        vi.setSystemTime(message.constraints!.expiresAtMs! + AL_RECEIPT_DEADLINE_GRACE_MS - 1);
+
+        expect((await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']))).left).toBeUndefined();
+
+        expect(fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement').at(-1)).toMatchObject({
+            msgId: 'room-message-1',
+            confirmedRecipientPeerIds: ['b'],
+            unconfirmedRecipientPeerIds: ['c'],
+            complete: false
+        });
+    });
+
+    it('settles nothing for an aggregate that arrives once the grace has passed', async () => {
+        const { fixture, message } = await sendVolatileRoomMessage();
+        const acknowledgements = () => fixture.settlements.filter((settlement) => settlement.kind === 'acknowledgement');
+        const admittedAcknowledgements = acknowledgements().length;
+        vi.setSystemTime(message.constraints!.expiresAtMs! + AL_RECEIPT_DEADLINE_GRACE_MS);
+
+        expect((await fixture.service.acceptIncomingMessage(receiptMessage('timed-out', ['b']))).left).toBeUndefined();
+
+        expect(acknowledgements()).toHaveLength(admittedAcknowledgements);
     });
 });
 
@@ -414,8 +452,14 @@ describe('WS client receipt admission edges', () => {
     });
 });
 
+interface ReceiptTrackingFixtureInput {
+    readonly serverPeerId: string | undefined;
+    /** The memory pair a volatile send is admitted to; absent, every send uses the one pair. */
+    readonly outboundVolatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
+}
+
 async function createReceiptTrackingFixture(
-    input: Readonly<{ serverPeerId: string | undefined; }> = { serverPeerId: 'server' }
+    input: ReceiptTrackingFixtureInput = { serverPeerId: 'server' }
 ): Promise<ReceiptTrackingFixture> {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const client = new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort());
@@ -432,6 +476,7 @@ async function createReceiptTrackingFixture(
         sessionId: 'self',
         serverPeerId: input.serverPeerId,
         outboundStores,
+        outboundVolatileStores: input.outboundVolatileStores,
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundDiagnostics: (event) => diagnostics.push(event)
     });
@@ -489,4 +534,28 @@ function serverAck(ackedMsgId: string): ALMessage {
             observedAtEpochMs: Date.now()
         }
     );
+}
+
+interface VolatileRoomSend {
+    readonly fixture: ReceiptTrackingFixture;
+    readonly message: ALMessage;
+}
+
+/** A volatile receiver room send on the WS client, whose server has stated the admitted audience. */
+async function sendVolatileRoomMessage(): Promise<VolatileRoomSend> {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    const fixture = await createReceiptTrackingFixture({
+        serverPeerId: 'server',
+        outboundVolatileStores: createVolatileALOutboundRuntimeStores(
+            { decodePrepared: decodeALOutboundTransportMessage },
+            undefined
+        )
+    });
+    const message: ALMessage = { ...roomMessage(), qos: { durability: { algo: 'volatile' } } };
+    expect((await fixture.service.enqueueOutboxIfAbsent(message)).verdict.kind).toBe('admitted');
+    await fixture.service.acceptIncomingMessage(receiptMessage('admitted', []));
+    // The receipt row lives in the memory pair, never in the durable one.
+    expect(await readReceipt(fixture)).toBeUndefined();
+    return { fixture, message };
 }

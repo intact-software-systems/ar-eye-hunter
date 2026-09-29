@@ -10,14 +10,14 @@ import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-b
 import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 
 describe('hosted ALM reload composition', () => {
-    it('keeps three contiguous reload checkpoints before ordinary work and preserves the receiver subscription', () => {
+    it('keeps the ws reload checkpoint before ordinary work and preserves the receiver subscription', () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
         const sender = manifest.recipes.find((selection) => selection.role === 'sender')!.recipe!;
         const receiver = manifest.recipes.find((selection) => selection.role === 'receiver')!.recipe!;
         const checkpoints = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints);
-        expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(3);
+        expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(1);
         expect(receiver.metadata?.almReloadCheckpoints).toEqual(checkpoints);
-        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(300);
+        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
         expect(
             bindAlmReloadPair({
                 sender: {
@@ -26,7 +26,7 @@ describe('hosted ALM reload composition', () => {
                     runId: manifest.controlRunId,
                     agentId: 'controller-01',
                     commandId: 'sender-root',
-                    command: { kind: 'recipe.run', recipe: sender, timeoutMs: 300_000 }
+                    command: { kind: 'recipe.run', recipe: sender, timeoutMs: 1_800_000 }
                 },
                 receiver: {
                     kind: 'command',
@@ -34,7 +34,7 @@ describe('hosted ALM reload composition', () => {
                     runId: manifest.controlRunId,
                     agentId: 'controller-02',
                     commandId: 'receiver-root',
-                    command: { kind: 'recipe.run', recipe: receiver, timeoutMs: 300_000 }
+                    command: { kind: 'recipe.run', recipe: receiver, timeoutMs: 1_800_000 }
                 }
             }).left
         ).toBeUndefined();
@@ -53,11 +53,12 @@ describe('hosted ALM reload composition', () => {
 
         let senderStart = 0;
         let receiverStart = 0;
-        for (const [index, checkpoint] of checkpoints!.entries()) {
+        // Hosted manifest 18 withholds the reload over rtc and rtc-with-ws-fallback until issue #594 is fixed.
+        const carrier = 'ws';
+        for (const checkpoint of checkpoints!) {
             const prefixEnd = sender.commands.findIndex((command) => command.commandId === checkpoint.senderPrefixEnd);
             const reloadIndex = sender.commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = sender.commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
-            const carrier = ['ws', 'rtc', 'rtc-with-ws-fallback'][index];
             const prefix = sender.commands.slice(senderStart, prefixEnd + 1);
             expect(prefix.filter(isRallarBlackBoxTestMessagesSendCommand).map((command) => command.payload))
                 .toEqual([{ marker: 'delivery-reload', carrier }]);
@@ -96,7 +97,15 @@ describe('hosted ALM reload composition', () => {
             receiverStart = recoveryEnd + 1;
         }
         expect(sender.commands.slice(senderStart).some((command) => command.kind === 'messages.send')).toBe(true);
-        expect(sender.commands.slice(senderStart).some((command) => command.kind === 'rtc.connect')).toBe(false);
+        // After the reload checkpoints only the capacity sender reconnects, to lower its volatile bound and restore it.
+        expect(
+            sender.commands.slice(senderStart).flatMap((command) => command.kind === 'rtc.connect' ? [command.commandId] : [])
+        ).toEqual(
+            ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
+                `alm-${carrier}-capacity-sender-connect-lowered`,
+                `alm-${carrier}-capacity-sender-connect-restored`
+            ])
+        );
         expect(receiver.commands.slice(receiverStart).some((command) => command.kind === 'messages.received')).toBe(true);
     });
 });

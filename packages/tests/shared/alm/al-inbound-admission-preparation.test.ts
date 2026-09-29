@@ -142,7 +142,8 @@ describe('inbound admission preparation boundary', () => {
             pendingAck: prepared.read.pendingAck,
             acks: prepared.read.acks,
             controlOwners: prepared.read.controlOwners,
-            retention: prepared.read.retention
+            retention: prepared.read.retention,
+            durability: prepared.read.durability
         };
         vi.spyOn(Date, 'now').mockReturnValue(100);
         vi.spyOn(Temporal.Now, 'plainDateTimeISO').mockImplementation(() => {
@@ -155,6 +156,35 @@ describe('inbound admission preparation boundary', () => {
 
         expect(second).toEqual(first);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
+    });
+
+    it.each(
+        [
+            { durability: 'volatile', keptForMs: 10_000 + 30_000 },
+            { durability: 'durable', keptForMs: 60 * 60_000 }
+        ] as const
+    )('keeps a buffered release owner row $keptForMs ms on the $durability pair', async ({ durability, keptForMs }) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_800_000_000_000);
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = newALMulticastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'buffered-owner', contextId: 'room' },
+            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            'chat.message.v1',
+            { text: 'buffered owner' },
+            { seq: 1, ack: 'receiver', reliability: 'at-least-once', ttlMs: 10_000, qos: { durability: { algo: 'volatile' } } }
+        );
+        const prepared = await readAdmission({ store: stores.admissionStore, message });
+
+        const release = computeALInboundBufferedRelease({
+            read: toBufferedReleaseRead(prepared, message, durability),
+            plan: prepared.plan,
+            facts: prepared.facts
+        });
+
+        expect(release.mutations.find((mutation) => mutation.kind === 'set-msg-owner')?.expireAtTimestamp)
+            .toBe(1_800_000_000_000 + keptForMs);
     });
 
     it.each(
@@ -549,4 +579,33 @@ function planIncomingMessage(
         overlayNeighborPeerIds: [],
         ...observations
     });
+}
+
+function toBufferedReleaseRead(
+    prepared: PreparedAdmission,
+    message: ALMessage,
+    durability: 'volatile' | 'durable'
+): Parameters<typeof computeALInboundBufferedRelease>[0]['read'] {
+    return {
+        kind: 'buffered-release',
+        orderingTrackTtlMs: prepared.read.orderingTrackTtlMs,
+        namespace: prepared.read.namespace,
+        nowMs: prepared.read.nowMs,
+        source: prepared.read.source,
+        observations: prepared.read.observations,
+        snapshot: {
+            trackKey: 'sender:chat',
+            seq: 1,
+            msg: message,
+            plan: prepared.plan,
+            carrier: 'ws',
+            ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
+        },
+        supersedence: {},
+        supersedenceTrackTtlMs: prepared.read.supersedenceTrackTtlMs,
+        pendingAck: prepared.read.pendingAck,
+        controlOwners: prepared.read.controlOwners,
+        retention: prepared.read.retention,
+        durability
+    };
 }

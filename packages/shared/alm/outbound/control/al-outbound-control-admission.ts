@@ -10,9 +10,11 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../../al-admission-work-backend.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
+import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -81,6 +83,7 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly reads: ALOutboundAdmissionReads<TPrepared>;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    readonly durability: ALStoreDurability;
     readonly port: ALWorkQueuePort;
     readonly settlements: ALOutboundSettlementEmitter;
     /** The carrier controls reach this owner on; every acknowledgement it records is stamped with it. */
@@ -95,6 +98,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly reads: ALOutboundAdmissionReads<TPrepared>;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly durability: ALStoreDurability;
     private readonly port: ALWorkQueuePort;
     private readonly settlements: ALOutboundSettlementEmitter;
     private readonly carrier: ALDeliveryCarrier;
@@ -106,6 +110,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.reads = input.reads;
         this.namespace = input.namespace;
         this.retention = input.retention;
+        this.durability = input.durability;
         this.port = input.port;
         this.settlements = input.settlements;
         this.carrier = input.carrier;
@@ -368,7 +373,11 @@ export class ALOutboundControlAdmission<TPrepared> {
         await tx.set(
             toALOutboundControlHistoryKey(this.namespace, candidate.history.kind, read.targetMsgId),
             candidate.history,
-            candidate.controlExpireAtTimestamp
+            computeALVolatileControlRowExpiryMs(
+                candidate.controlExpireAtTimestamp,
+                this.durability,
+                read.sent?.reference.expiresAtMs
+            )
         );
         const pendingAckKey = toALOutboundPendingAckKey({
             namespace: this.namespace,
@@ -379,7 +388,15 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.remove(pendingAckKey);
         }
         else if (candidate.pending.kind === 'set') {
-            await tx.set(pendingAckKey, candidate.pending.value, candidate.receiptExpireAtTimestamp);
+            await tx.set(
+                pendingAckKey,
+                candidate.pending.value,
+                computeALVolatileControlRowExpiryMs(
+                    candidate.receiptExpireAtTimestamp,
+                    this.durability,
+                    read.sent?.reference.expiresAtMs
+                )
+            );
         }
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));

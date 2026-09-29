@@ -16,6 +16,11 @@ import {
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -23,6 +28,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -63,7 +69,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -114,7 +124,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -153,7 +167,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -206,7 +224,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                createDefaultVolatileSessionBudget()
+            ),
+            volatileBudget: createDefaultVolatileSessionBudget(),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -225,6 +247,81 @@ describe('createBrowserWebSocketQueueBox', () => {
 
         expect(service.sessionId).toBe('session-1');
         expect(service.readHealth()).toMatchObject({ isOpen: true, reconnectEnabled: true });
+    });
+});
+
+describe('the session volatile bound on the WS client (C3)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
+        });
+        configureBrowserALRuntimeStores(clientData.sessionId, { diagnosticsPorts });
+    });
+
+    it('counts a received and a sent volatile message against the one budget both of its memory pairs carry', async () => {
+        const budget = new ALVolatileSessionBudget({
+            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+        });
+        const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
+        onTestFinished(() => socket.close(1000, 'test-finished'));
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const initialized = createBrowserWebSocketQueueBox({
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
+            qboxEngine,
+            socket,
+            clientData,
+            serverPeerId: 'server',
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                budget
+            ),
+            volatileBudget: budget,
+            connectTimeoutMs: 0
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        const native = readCreatedSocket();
+        native.open();
+        const service = await initialized;
+        onTestFinished(() => service.close(1000, 'test-finished'));
+        const received: string[] = [];
+        service.onInboxMessageDo('chat.message.v1', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
+            }
+        });
+        const arrival = newALUnicastMessage(
+            'server',
+            { topicId: 'chat', resourceId: 'received', contextId: 'conversation' },
+            'session-1',
+            'chat.message.v1',
+            { text: 'received' },
+            { ttlMs: 30_000 }
+        );
+
+        native.receive(JSON.stringify(arrival));
+        await vi.waitFor(() => expect(received).toEqual([arrival.id.msgId]));
+        const sent = await service.enqueueOutboxIfAbsent(newALUnicastMessage(
+            'session-1',
+            { topicId: 'chat', resourceId: 'sent', contextId: 'conversation' },
+            'peer',
+            'chat.message.v1',
+            { text: 'sent' },
+            { ttlMs: 30_000 }
+        ));
+
+        expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(budget.readUsage(Date.now()).admissions).toBe(2);
     });
 });
 

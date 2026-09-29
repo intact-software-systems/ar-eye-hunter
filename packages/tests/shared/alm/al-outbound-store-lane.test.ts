@@ -4,8 +4,15 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { createInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '@shared/alm/ALStoreRetention.ts';
+import {
+    AL_VOLATILE_STORE_EVICTION_INTERVAL_MS,
+    normalizeALRuntimeStoreRetention
+} from '@shared/alm/ALStoreRetention.ts';
+import {
+    toALOutboundMessageOwnerKey,
+    toALOutboundSentMessageKey
+} from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import { createVolatileALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundDispatchPlan,
     ALVolatileOutboundRuntimeStores
@@ -105,7 +112,13 @@ describe('outbound store lanes (S3a, D54)', () => {
             planOutgoingMessage: planVolatileSend,
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
-        await enqueueOutboundOrThrow(runtime, createOutboundMessage('expiring', { ttlMs: 1_000 }));
+        const message = createOutboundMessage('expiring', { ttlMs: 1_000 });
+        await enqueueOutboundOrThrow(runtime, message);
+        const rowKeys = [
+            toALOutboundMessageOwnerKey('lane-eviction', message.id.msgId),
+            toALOutboundSentMessageKey('lane-eviction', message.id.msgId)
+        ];
+        expect(rowKeys.map((key) => lane.state.data.has(key))).toEqual([true, true]);
         // The bootstrap round sweeps first; the admission's own round falls inside the interval.
         expect(lane.evictExpired).toHaveBeenCalledTimes(1);
         const rowsAfterSend = lane.state.data.size;
@@ -119,11 +132,12 @@ describe('outbound store lanes (S3a, D54)', () => {
         await runOutboundWorkTask(runtime);
         expect(lane.evictExpired, 'one sweep once the interval elapsed').toHaveBeenCalledTimes(2);
 
-        // The sent and owner rows keep the repository retention (one hour), well past the message deadline.
-        vi.setSystemTime(startedAtMs + 2 * 60 * 60_000);
+        // The sent and owner rows keep the 1 s deadline plus the receipt grace (D74), gone well before this round.
+        vi.setSystemTime(startedAtMs + 2 * AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
         await runOutboundWorkTask(runtime);
         expect(lane.evictExpired).toHaveBeenCalledTimes(3);
         expect(lane.state.data.size).toBeLessThan(rowsAfterSend);
+        expect(rowKeys.map((key) => lane.state.data.has(key))).toEqual([false, false]);
     });
 });
 
@@ -135,16 +149,18 @@ function createObservedVolatileStores() {
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const evictExpired = vi.fn(() => backend.evictExpired());
     const stores: ALVolatileOutboundRuntimeStores<OutboundTestPayload> = {
-        ...createInMemoryALOutboundRuntimeStores({
+        admissionStore: createVolatileALOutboundAdmissionStore({
             nowMs: Date.now,
             namespace: 'lane-eviction',
-            outboundBackend: backend,
-            orderingTrackTtlMs: 60_000,
+            canonicalScope: 'lane-eviction',
+            backend,
             supersedenceTrackTtlMs: 60_000,
-            retention: undefined,
+            retention: normalizeALRuntimeStoreRetention(),
             decodePrepared: decodeOutboundTestPayload
         }),
-        evictExpired
+        workQueue: backend.workQueue,
+        evictExpired,
+        budget: undefined
     };
     return { state, evictExpired, stores };
 }

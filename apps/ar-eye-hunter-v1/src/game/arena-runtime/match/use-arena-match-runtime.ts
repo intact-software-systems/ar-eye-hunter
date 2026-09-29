@@ -114,7 +114,10 @@ async function startAndSyncArenaMatch(
         return;
     }
     session.input.setGameDiagnostics(session.match.diagnostics());
-    await session.match.requestSync({ reason: 'arena-join' });
+    session.input.runBestEffortNetworkTask(
+        () => session.match.requestSync({ reason: 'arena-join' }),
+        session.generation
+    );
     session.input.runBestEffortNetworkTask(() => syncReadyArenaPeers(session), session.generation);
 }
 

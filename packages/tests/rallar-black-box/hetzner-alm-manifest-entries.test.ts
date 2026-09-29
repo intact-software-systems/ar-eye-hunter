@@ -4,15 +4,19 @@ import {
     it
 } from 'vitest';
 
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
+    isThreeAgentScenario,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { AL_VOLATILE_SESSION_MAX_ADMISSIONS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import {
     ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
@@ -59,13 +63,18 @@ describe('ALM conformance combined recipe', () => {
     it('lists every scenario type of every carrier on each combined connect, since RTC subscribes per type', () => {
         const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
         const families = [
-            { entry: createAlmConformance2AgentEntry(), scenarioKeys: ['delivery-baseline', 'delivery-reload'] },
+            {
+                entry: createAlmConformance2AgentEntry(),
+                scenarioKeys: ['delivery-baseline', 'ws-unicast-receipt', 'capacity'],
+                wsOnlyScenarioKeys: ['delivery-reload']
+            },
             {
                 entry: createAlmConformance3AgentEntry(),
-                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership']
+                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership'],
+                wsOnlyScenarioKeys: []
             }
         ];
-        for (const { entry, scenarioKeys } of families) {
+        for (const { entry, scenarioKeys, wsOnlyScenarioKeys } of families) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe as RallarBlackBoxTestRecipe;
                 const connects = recipe.commands.filter((command) => command.kind === 'rtc.connect');
@@ -86,12 +95,66 @@ describe('ALM conformance combined recipe', () => {
                             expect(listed).toContain(`alm.conformance.${carrier}.${scenarioKey}`);
                         }
                     }
+                    for (const scenarioKey of wsOnlyScenarioKeys) {
+                        expect(listed).toContain(`alm.conformance.ws.${scenarioKey}`);
+                        expect(listed).not.toContain(`alm.conformance.rtc.${scenarioKey}`);
+                    }
                     // A protocol control type is owned by the ALM runtime's own RTC callback, never by the harness.
                     expect(listed?.some((typeId) => typeId.startsWith('al.control.'))).toBe(false);
                     expect(connect.rallar?.messageSelector).toEqual({ topicId: 'room.alm-conformance' });
                 }
             }
         }
+    });
+
+    it('keeps the capacity sender\'s lowered volatile limits through the combined connect, then restores them', () => {
+        const sender = createAlmConformance2AgentEntry().manifest.recipes
+            .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
+        const connects = sender.commands.filter((
+            command
+        ): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.commandId?.includes('-capacity-sender-') === true);
+
+        expect(connects.map((command) => [command.commandId, command.rallar?.almVolatileLimits]))
+            .toEqual(
+                ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
+                    [`alm-${carrier}-capacity-sender-connect-lowered`, {
+                        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+                        maxBytes: 36_000
+                    }],
+                    [`alm-${carrier}-capacity-sender-connect-restored`, undefined]
+                ])
+            );
+        expect(connects.every((command) => command.readiness?.minReadyPeers === 1)).toBe(true);
+    });
+});
+
+describe('ALM conformance 2-agent hosted withholdings', () => {
+    it('withholds exactly the named cells: the reload over rtc and rtc-with-ws-fallback, and the refresh variant', () => {
+        const defined = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000
+            }).filter((scenario) => !isThreeAgentScenario(scenario)).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
+        );
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: issue #594 for the reload over RTC,
+        // and no plain-member write advancing the snapshot version for the refresh variant.
+        const withheld = [
+            'alm-rtc-delivery-reload',
+            'alm-rtc-with-ws-fallback-delivery-reload',
+            'alm-rtc-not-yet-in-sync-delivered-after-refresh',
+            'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh'
+        ];
+        const sender = createAlmConformance2AgentEntry().manifest.recipes
+            .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
+        const cells = toBarrierIds(sender).filter((id) => id.endsWith('-start')).map((id) => id.replace(/-start$/, ''));
+
+        expect(defined).toEqual(expect.arrayContaining(withheld));
+        expect(new Set(cells)).toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
+        expect(cells.filter((cell) => cell.endsWith('-delivery-reload'))).toEqual(['alm-ws-delivery-reload']);
     });
 });
 

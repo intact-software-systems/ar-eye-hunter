@@ -70,11 +70,7 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
     readonly exceptPeerIds?: readonly string[];
-    /**
-     * The one session or server a WS send addresses; absent, the send reaches its scope. A peer send names the room it
-     * resolves, so the room admits it and asks the peer's receipt under a `command` purpose (D53). WS only until the RTC
-     * unicast lands; carries no exclusions, no ordering, no snapshot floor and no hop limit, which a unicast cannot honour.
-     */
+    /** The one session or server a send addresses; absent, the send reaches its scope. */
     readonly peerId?: string;
     /** Stated together with `orderingKey` or not at all; absent, the broadcast is unordered. */
     readonly seq?: number;

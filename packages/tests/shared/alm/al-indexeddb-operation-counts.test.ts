@@ -20,6 +20,11 @@ import {
     readALOutboundWorkReadyAt,
     type ALOutboundDequeueDeferral
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type {
@@ -231,13 +236,14 @@ describe('outbound default send IndexedDB volume', () => {
 
 describe('outbound volatile send IndexedDB volume', () => {
     it('sends one volatile message beside a durable pair in 0 al-admission and 0 non-probe al-work operations', async () => {
+        const budget = createDefaultSessionBudget();
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundCountStores(observer, 'outbound-volatile-send'),
             volatileStores: createVolatileALOutboundRuntimeStores({
                 decodePrepared: decodeOutboundTestPayload
-            }),
+            }, budget),
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
@@ -266,6 +272,8 @@ describe('outbound volatile send IndexedDB volume', () => {
             0
         );
         expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
+        // S3c-ii (D74): the session budget counts the send in memory and moves no IndexedDB counter.
+        expect(budget.readUsage(Date.now()).admissions, 'the bounded send is counted once').toBe(1);
         runtime.dispose();
     });
 });
@@ -279,7 +287,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundCountStores(observer, 'outbound-cold-durable-owner'),
-            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }),
+            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined),
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
@@ -316,7 +324,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundCountStores(observer, 'outbound-idle-durable-owner'),
-            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }),
+            volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined),
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
@@ -412,6 +420,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
         // S3a (D55): the volatile default admits to the memory pair.
         expect(admitted.admissionOperations).toBe(0);
         expect(admitted.nonProbeWorkOperations).toBe(0);
+        expect(admitted.budgetAdmissions, 'the bounded arrival is counted in memory').toBe(1);
     });
 
     it('still admits a local-inbox message beside a volatile pair in 8 admission operations', async () => {
@@ -628,6 +637,8 @@ interface AdmittedInboundDelivery {
     readonly admissionOperations: number;
     /** Every `al-work` operation but the idle owners' probes (`work-page`, `work-probe`). */
     readonly nonProbeWorkOperations: number;
+    /** What the session budget over the memory pair counted: zero when no memory pair admitted it. */
+    readonly budgetAdmissions: number;
 }
 
 /** The whole path one unordered message walks: its ingress admission, then the drain that dispatches it. */
@@ -635,8 +646,9 @@ async function readAdmittedInboundDelivery(
     input: Readonly<{ volatile: boolean; durability: ALDurabilityAlgo | undefined; }>
 ): Promise<AdmittedInboundDelivery> {
     const observer = createCountingIndexedDbOperationObserver();
+    const budget = createDefaultSessionBudget();
     const volatileStores = input.volatile
-        ? createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` })
+        ? createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` }, budget)
         : undefined;
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
@@ -666,7 +678,8 @@ async function readAdmittedInboundDelivery(
         acceptance: admitted.right,
         delivered: fixture.delivered,
         admissionOperations: counts.byOwner['al-admission'],
-        nonProbeWorkOperations: computeNonProbeWorkOperations(counts)
+        nonProbeWorkOperations: computeNonProbeWorkOperations(counts),
+        budgetAdmissions: budget.readUsage(Date.now()).admissions
     };
 }
 
@@ -692,6 +705,14 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
     const keys = await workQueue.getAllKeys();
     const rows = await Promise.all(keys.map(async (key) => await workQueue.getItem(key)));
     return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
+}
+
+/** The production bound over one session's memory pairs (D74). */
+function createDefaultSessionBudget(): ALVolatileSessionBudget {
+    return new ALVolatileSessionBudget({
+        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+        maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+    });
 }
 
 /** D55: the durable owners' idle probes (`work-page`, `work-probe`) are reported beside the zero, never in it. */

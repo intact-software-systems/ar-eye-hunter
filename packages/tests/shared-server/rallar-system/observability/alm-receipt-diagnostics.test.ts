@@ -47,6 +47,7 @@ describe('the WS server settlement recorder (D58, D61, C10)', () => {
             mode: 'receiver',
             confirmedPeerIds: ['a'],
             unconfirmedPeerIds: ['b'],
+            cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.'
         });
         recorder.settlements(attemptSettled('snapshot-1'));

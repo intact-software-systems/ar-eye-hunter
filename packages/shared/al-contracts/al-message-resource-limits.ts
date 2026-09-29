@@ -82,7 +82,7 @@ export function validateALMessageResourceLimits(
         return [{ code: 'malformed', message: 'AL envelope byte policy is invalid' }];
     }
     try {
-        const measured = computeALMessageEnvelopeSize(value, byteLimits);
+        const measured = computeALMessageEnvelopeBytes(value, byteLimits);
         return measured.left ? [measured.left] : [];
     }
     catch {
@@ -90,9 +90,14 @@ export function validateALMessageResourceLimits(
     }
 }
 
-function computeALMessageEnvelopeSize(
+/**
+ * The envelope's JSON bytes in UTF-8, walked without invoking getters or `toJSON`; past a limit, the issue.
+ * A value it cannot inspect as plain data (a revoked proxy) throws, which `validateALMessageResourceLimits`
+ * states as `malformed`; a caller measuring an envelope a decoder already accepted never meets it.
+ */
+export function computeALMessageEnvelopeBytes(
     value: unknown,
-    byteLimits: ALMessageByteLimits
+    byteLimits: ALMessageByteLimits = AL_MESSAGE_RESOURCE_LIMITS
 ): Either<ALMessageResourceIssue, number> {
     const pending: ALMessageMeasurement[] = [{ kind: 'value', entry: { value, location: 'envelope' } }];
     const ancestors = new Set<object>();

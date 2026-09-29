@@ -11,7 +11,8 @@ export function isRtcEnqueueBreakerSuccess(result: ALOutboundEnqueueResult): boo
         case 'failed':
             return false;
         case 'refused':
-            return verdict.reason === 'unauthorized' || verdict.reason === 'unsupported';
+            return verdict.reason === 'unauthorized' || verdict.reason === 'unsupported' ||
+                verdict.reason === 'capacity';
         case 'unroutable':
             return verdict.reason !== 'rate-limited' && verdict.reason !== 'circuit-open';
         default:

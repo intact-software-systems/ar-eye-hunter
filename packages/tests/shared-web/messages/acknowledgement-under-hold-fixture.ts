@@ -42,6 +42,7 @@ import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-t
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
@@ -269,6 +270,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
         qosProvider: undefined,
+        volatileBudget: createDefaultVolatileSessionBudget(),
         outboundSettlements: (event) => runtime.registry.record(event),
         webRtcConnectionService: service,
         qboxEngine: runtime.engine
@@ -278,7 +280,10 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId('self')),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId('self'),
+            createDefaultVolatileSessionBudget()
+        ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -351,7 +356,11 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: WS_SERVER_PEER_ID,
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        ),
+        volatileBudget: createDefaultVolatileSessionBudget(),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

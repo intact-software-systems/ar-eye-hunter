@@ -33,6 +33,7 @@ export const notYetInSync: readonly AlmConformanceScenarioDefinition[] = NOT_YET
     tags: FULL_TAGS,
     carriers: RTC_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: (sender: AlmConformanceStepInput) => toNotYetInSyncSenderCommands(sender, variant),
     toRecipientCommands: (receiver: AlmConformanceStepInput) => toNotYetInSyncReceiverCommands(receiver, variant)
 }));

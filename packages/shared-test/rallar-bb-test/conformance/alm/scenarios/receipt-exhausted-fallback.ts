@@ -43,6 +43,7 @@ export const receiptExhaustedFallback: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toReceiptExhaustedFallbackSenderCommands,
     toRecipientCommands: toReceiptExhaustedFallbackReceiverCommands
 };

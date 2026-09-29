@@ -115,7 +115,7 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "summary": "A volatile outbound lane sweeps its memory pair from its own work round, at most once per AL_VOLATILE_STORE_EVICTION_INTERVAL_MS of its clock, and never from a timer of its own (S3a ruling 5). Executable assertion: “sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map”.",
       "semanticCoverage": "packages/tests/shared/alm/al-outbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map",
-      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the owner's work rounds at the bootstrap, one millisecond before the interval, at the interval and past the one-hour row retention, counts the evictExpired port, and reads the admission map it clears.",
+      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the owner's work rounds at the bootstrap, one millisecond before the interval, at the interval and past the message deadline plus the receipt grace its rows keep (D74), counts the evictExpired port, and reads the admission map it clears.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "ALVolatileOutboundRuntimeStores.evictExpired called by ALOutboundStoreLane.evictWhenDue",
@@ -175,7 +175,7 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "summary": "A volatile inbound lane sweeps the session's memory pair from its own rotation round, at most once per AL_VOLATILE_STORE_EVICTION_INTERVAL_MS of its clock, and never from a timer of its own (S3a ruling 5). Executable assertion: “sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map”.",
       "semanticCoverage": "packages/tests/shared/alm/al-inbound-store-lane.test.ts#sweeps its memory pair on its own round once per eviction interval, and the sweep shrinks the admission map",
-      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the rotation's rounds at the bootstrap, one millisecond before the interval, at the interval and past the one-hour row retention, counts the evictExpired port, and reads the admission map it clears.",
+      "coverageRelation": "The test gives the lane an observable memory pair and a fake clock, runs the rotation's rounds at the bootstrap, one millisecond before the interval, at the interval and past the message deadline plus the receipt grace its rows keep (D74), counts the evictExpired port, and reads the admission map it clears.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "ALVolatileInboundRuntimeStores.evictExpired called by ALInboundStoreLane.evictWhenDue",
