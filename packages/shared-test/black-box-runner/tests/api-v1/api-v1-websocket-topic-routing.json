@@ -245,6 +245,18 @@
             "urlEncode": {
               "path": "outputs.wsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "variables.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "variables.workspaceId"
+            }
           }
         ]
       }

@@ -166,7 +166,11 @@
           "/api/ws/",
           { "path": "outputs.aliceSessionId" },
           "?ticket=",
-          { "urlEncode": { "path": "outputs.aliceWsTicket" } }
+          { "urlEncode": { "path": "outputs.aliceWsTicket" } },
+          "&applicationId=",
+          { "urlEncode": { "path": "variables.applicationId" } },
+          "&workspaceId=",
+          { "urlEncode": { "path": "variables.workspaceId" } }
         ]
       }
     },
@@ -200,7 +204,11 @@
           "/api/ws/",
           { "path": "outputs.bobSessionId" },
           "?ticket=",
-          { "urlEncode": { "path": "outputs.bobWsTicket" } }
+          { "urlEncode": { "path": "outputs.bobWsTicket" } },
+          "&applicationId=",
+          { "urlEncode": { "path": "variables.applicationId" } },
+          "&workspaceId=",
+          { "urlEncode": { "path": "variables.workspaceId" } }
         ]
       }
     },
