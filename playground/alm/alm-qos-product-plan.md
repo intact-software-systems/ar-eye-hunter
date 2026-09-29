@@ -1,7 +1,8 @@
 # ALM persistence and performance QoS plan
 
 Prepared: 2026-09-28\
-Reviewed source: `bdb3ecd8b` (`main` after S3b) and `bf03c965b` (the S3c-i branch, PR #605)\
+Reviewed source: `bdb3ecd8b` (`main` after S3b) and `bf03c965b` (the S3c-i branch, PR #605); S3c-ii (this PR)
+delivers the volatile bound its section 6 and hypothesis H4 name\
 Decisions: D83 to D89 in the [roadmap's decision record](alm-improvement-plan.md#decision-record)
 
 The [complete product description](alm-complete-product-description.md) owns the product contract
@@ -155,8 +156,8 @@ different content, and never retracts a delivery (D85). For ALM that means four 
 
 The session-store settings belong to the browser composition root, next to the application's QoS
 provider. One checkpoint and one commit path serve every channel of the session. Existing settings
-keep their owners: the volatile bound (D74), the deadline, and the dedup window, which the
-deadline now floors (section 5).
+keep their owners: the volatile bound (D74) (delivered by S3c-ii as `ALVolatileSessionLimits`, D92),
+the deadline, and the dedup window, which the deadline now floors (section 5).
 
 ## 7. Performance model and budgets
 
@@ -445,8 +446,8 @@ lane's slow regime, still exceeds 100 ms, the interactive response budget (D89).
 - **This plan**, with its roadmap and product-description changes, which are docs only.
 - **The measurement spike** (section 7.4), on a throwaway branch.
 - **No ALM code**, for three reasons:
-  - S3c-ii rewrites the layer these slices change: the per-runtime memory and IndexedDB pairs and
-    the per-session bound (D74).
+  - S3c-ii rewrote the layer these slices change, the per-runtime memory and IndexedDB pairs and
+    the per-session bound (D74, D92); P1 and I2a start from `main` after it.
   - The lane cannot attribute storage-cost changes to two concurrent slices.
   - The roadmap allows one active slice at a time from merged `main`.
 

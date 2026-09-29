@@ -235,6 +235,10 @@ envelope bump, D76); the WS `hop` receipt tracks the server; the snapshot sender
 per-process recorder; the typed-channel `peerId` target landed WS-only for the Relic cutover (Q11's RTC half is
 S3c-ii's).
 
+**As applied (S3c-ii, PR #606):** the RTC unicast is a sender path over the existing direct plan; the fallback leg
+re-admits the same room-naming envelope; `capacity` ends `rejected`; the director accepts intents out of order. The
+decisions, choices and rulings are in §11.
+
 ## 3. Recommendation
 
 **S3a, then S3b, then S3c, as three medium PRs.** S3a first because fallback and both proofs consume
@@ -586,3 +590,171 @@ answer, Q1–Q13** (roadmap: D57 "As applied", D70–D78); the S3c-i plan is wri
 **Delivered** by PR #605 (`claude/alm-s3c-consumer-proofs-volatile-bound`); the rulings recorded during execution,
 R-S3c-i-0 through R-S3c-i-33, live in the plan's "Rulings during execution"
 (`plans/alm-s3c-i-addressed-sends-and-server-receipts-implementation-plan.md`).
+
+## 11. S3c-ii execution choices and rulings (2026-09-28)
+
+Written after S3c-i merged (`322c50854`, #605), on the branch of PR #606, from the post-S3c-i code survey. The
+decisions are the maintainer's of 2026-09-28 (D60, D70, D74, D75, D78; §10 Q9–Q13). The survey found fourteen
+corrections to §10 and eleven questions those decisions leave open; the plan answered them as choices C1–C17, each
+the survey's recommended option (R-S3c-ii-0). The maintainer reviews them with the PR and may overturn any of them.
+The texts below are the plan's, kept here because the pull request that finishes the plan deletes it
+(`plans/active/alm-s3c-ii-director-command-and-volatile-bound.md`); roadmap D91–D94 record the outcome.
+
+### 11.1 The survey's corrections to §10
+
+1. The rows the volatile pair keeps for an hour are the sent-message and message-owner rows (reference, captured
+   policy, ids), not the envelope, which expires at the message deadline. A count bound over the raw pair measures
+   retention; a byte bound mostly does not. The budget therefore counts admissions by their own envelope bytes and
+   releases them at their own deadline (C4), and the retention rule is fixed first (C5, Task 2).
+2. An RTC room unicast is also checked at dispatch against the server topology edge. An addressee that is
+   RTC-connected but not the origin's overlay next hop settles `not-ready` on every attempt and falls back after
+   `AL_FALLBACK_NOT_READY_ATTEMPTS` (3); it does not read `no-route` at admission.
+3. An RTC unicast on a `room.*` topic without `groupRef` is refused `unauthorized` at admission, which is no fallback
+   trigger. The RTC unicast names its room.
+4. `carrier-refused` is never an end settlement. It is evidence of a hand-over. A refusal outside the fallback list is
+   an `admission` settlement that ends `rejected`, and its typed reason is dropped today (C1, C2).
+5. The director does not dedup by message id. The game layer refuses a lower sequence as `stale-sequence` across all
+   intents of one sender, so a retried or fallback-reordered intent is dropped while its receipt reads `acknowledged`
+   (C10).
+6. Under default QoS `overloaded` drops only best-effort messages, the WS outbound path never consults it, and the
+   product facade installs no provider (C13 states the limits).
+7. The "relay row" is the RTC relay peer's inbound pending-ACK row in the browser, kept until the message deadline; no
+   figure for it is recorded anywhere (C14).
+8. "One `command` channel" needs two typed channels, because a channel fixes one `typeId` (C12). The
+   `GAME_DIRECTOR_*_TYPE_ID` constants are unused.
+9. The public API snapshots pin export names only, so `peerId` on an existing input moves no snapshot.
+10. The medium-scale gate runs in CI on any `packages/shared/**` change; the `ws-queue-box-server/**` rule of Q13 is
+    plan policy for the local run.
+11. The director relay's WS fallback is refused by authorization (it names no room), and the relay still reports
+    `sent` (C15).
+12. Without a subscription for the intent type ids on the ALM RTC inbox, an RTC command is acknowledged and then
+    parked until it expires (Task 5).
+13. The lane cannot name a peer, and no connect field lowers a setting (C11).
+14. N1, "refuse a peer send whose `contextId` differs from its room at the sender", was parked in the S3c-i re-review
+    and is recorded nowhere in the repository (C8).
+
+### 11.2 Choices the plan made inside those answers
+
+| Choice | What it decides                                                                                                                                                                                                                                       |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1     | `capacity` joins `ALDeliveryRefusalReason` and `ALOutboundDropReasonCode`; a refused admission ends `rejected`; `capacity` stays out of the fallback lists; D78's "as `carrier-refused`" is recorded as applied "`rejected` with `evidence.failure`". |
+| C2     | `evidence.failure` is the discriminated union `ALDeliveryFailure`, set by the reducer; `receipt-exhausted` states a typed cause at its two producers.                                                                                                 |
+| C3     | The budget is created per session in `initialise-browser-middleware.ts`, handed to the three volatile pairs, and read by a per-session QoS provider that wraps the application's.                                                                     |
+| C4     | The budget counts data admissions the session originates or receives; controls, receipts, ACKs, NACKs, repairs, retransmissions and relay forwards are exempt; each is released at its own message deadline.                                          |
+| C5     | Volatile retention is a rule in the row writers: deadline plus `AL_RECEIPT_DEADLINE_GRACE_MS`. Durable rows keep today's rule.                                                                                                                        |
+| C6     | Only the sender's outbound admission refuses over the bound; an inbound admission is counted, never refused.                                                                                                                                          |
+| C7     | `RallarRtcSendInput` is unchanged; `peerId` is accepted on the typed `send` for `ws`, `rtc`, `rtc-with-ws-fallback`; `ws-then-rtc` with a `peerId` stays refused (V1).                                                                                |
+| C8     | A peer send whose `contextId` differs from its room is refused at the sender, for every strategy (N1).                                                                                                                                                |
+| C9     | A peer send to the server id is refused `unsupported` on `rtc` and `rtc-with-ws-fallback`; the server-unknown refusal also covers `rtc-with-ws-fallback`.                                                                                             |
+| C10    | The director accepts client intents out of order: an equal sequence is a duplicate, a lower one is accepted. Director outputs keep the stale rule.                                                                                                    |
+| C11    | The lane names a peer by role (`toPeer`: `server` or `receiver`, as amended by R-S3c-ii-2); a lane-only connect field lowers the volatile bound, never a public connect option.                                                                       |
+| C12    | Intents and sync requests use two typed `command` channels on the existing derived type ids.                                                                                                                                                          |
+| C13    | `overloaded` is true while the budget is at or over either limit; its stated limits are correction 6.                                                                                                                                                 |
+| C14    | The relay-row retention figure is measured by a test and recorded in the inbound README and the roadmap.                                                                                                                                              |
+| C15    | `sendWsUnicast` and the realtime targeted leg for intents are deleted; the S3a pin is replaced.                                                                                                                                                       |
+| C16    | No persisted shape changes; the schema id stays.                                                                                                                                                                                                      |
+| C17    | Envelope bytes come from the existing walk, exported as `computeALMessageEnvelopeBytes`.                                                                                                                                                              |
+
+### 11.3 Alignment with the QoS plan (PR #606, D83–D90)
+
+- **One vocabulary.** `capacity` is a refusal reason read through `evidence.failure`. I2a's `storage-unavailable`
+  becomes one more reason on the same union; no second failure surface is added.
+- **One retention rule.** `resolveALReceiptRetentionExpiryMs`
+  (`packages/shared/alm/delivery/resolve-al-receipt-retention-expiry-ms.ts`) is the rule "deadline plus the receipt
+  grace". I2a's dedup retention (QoS plan §5) reuses it.
+- **The bound is the checkpoint basis.** `AL_VOLATILE_SESSION_MAX_ADMISSIONS` and `AL_VOLATILE_SESSION_MAX_BYTES` are
+  the figures the QoS plan's H4 measured a checkpoint at. They stay named constants behind `ALVolatileSessionLimits`,
+  so I2b can extend the budget to `local-checkpoint` admissions without a second counter.
+- **`onStorageUnavailable: 'volatile'`** (I2a) admits into the volatile pair, so such a send counts against the budget.
+- **Storage budgets.** The volatile zero pin (D55, D87) is extended to the director intents (Task 5) and the
+  empty-audience send (Task 2).
+- **Sequencing.** The QoS plan's §10.3 holds: it lands no ALM code beside S3c. S3c-ii is the one active slice; P1 and
+  I2a start from `main` after it merges.
+
+### 11.4 Rulings during execution
+
+- **R-S3c-ii-0 (pre-execution, 2026-09-28).** D60, D70, D74, D75 and D78 stand as decided. The eleven questions the
+  post-S3c-i survey found open are answered by C1–C17, each the survey's recommended option, without a question round:
+  the maintainer asked for the plan to be written and executed on PR #606, and had taken the recommended option on all
+  twenty-five earlier S3b and S3c questions. Cost if wrong: the maintainer overturns a choice in review and the task
+  that applied it is reworked; C10 (the director accepts intents out of order) and C1 (D78 as applied) are the two
+  that change stated behaviour, and the PR body leads with them.
+
+- **R-S3c-ii-1 (plan writing, 2026-09-29).** D74's retention covers every row of the volatile pair that carries a
+  message deadline: the owner and sent-message rows, the inbound owner row, the outbound control-history rows, a
+  completed receipt row and the relay's inbound ACK-history row. Two rows keep their lifetime, and Task 2 says why: the
+  per-origin version row (one row per origin, it fences every commit of that origin, shortening it allows ABA) and the
+  ACK-history row of a relay row whose message named no deadline. Cost if wrong: a late control inside the old window
+  and outside the new one is dropped as unknown instead of answered.
+- **R-S3c-ii-2 (plan writing, 2026-09-29).** C11 is amended: `toPeer` is `'server' | 'receiver'`. The room roster
+  carries no role, the three-agent lane starts both recipients in parallel and hosted agents may share one user, so
+  nothing in the page tells the two recipients apart; the four scenarios run on two agents and manifest 22 does not
+  change. Manifest 18's `recommendedTerminalTimeoutSeconds` rises from 300 to 1 200: its absence windows alone take
+  513 s, so 300 s never held (the concern PR #604 carried). Cost if wrong: a hosted run that hangs is cut off later.
+- **R-S3c-ii-3 (plan writing, 2026-09-29).** Inbound data counts toward the same session limit as outbound data (C4,
+  C6), so a busy receiver can have its own volatile sends refused `capacity`: at the 30 s default deadline that starts
+  above about 33 messages a second, in and out combined. A counted send whose commit admits nothing stays counted until
+  its deadline (the ledger has no release call). A message without a deadline (RTC signalling) is not counted. The RTC
+  circuit breaker does not count a `capacity` refusal as a failure, or repeated refusals would open it and leak
+  over-bound sends to WS as `circuit-open`. Cost if wrong: the limits are named constants behind
+  `ALVolatileSessionLimits`; raising them is one line.
+- **R-S3c-ii-4 (plan writing, 2026-09-29).** The director relay reports `sent` only when the director's receipt
+  arrives (it waits for `acknowledged`, at most 30 s); that is the only reading under which a refused command stops
+  reading `sent`. The arena-join sync request, the one awaited caller, becomes a best-effort task so a slow receipt
+  does not hold the join. Call signalling, the second caller of `sendWsUnicast`, moves to
+  `messages.ws.send({ scope: 'all', peerId, contextId: callId, reliability: 'best-effort' })`. AL dedup is per carrier
+  lane, so a relay command can arrive twice after a fallback: relay commands are at-least-once and the game's sequence
+  tracker refuses the duplicate. Cost if wrong: intents report later than today; the wait bound is one constant.
+- **R-S3c-ii-5 (pre-flight scan, 2026-09-29).** The four addressed scenarios run as their own two-agent family in the
+  Playwright lane, one test per carrier under the fixed `CARRIER_TEST_TIMEOUT_MS`. Added to the baseline family they
+  bring the `rtc-with-ws-fallback` cell to about 465 s of 480 s, which leaves no margin on a slow page. Cost if wrong:
+  the full scope runs three more tests, and the hosted observation job, whose 30-minute timeout already does not fit
+  the full scope on slow runners, takes longer still.
+- **R-S3c-ii-6 (Task 3 review, 2026-09-29).** An inbound admission is counted until the earlier of its deadline and
+  30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`); an outbound admission keeps its own
+  deadline. The inbound deadline is the sender's clock and the sender's choice, so a peer whose clock runs ahead, or who
+  names a far deadline, must not keep this session's own sends refused `capacity`; the envelope is delivered at once
+  and only small rows stay. Cost if wrong: long-lived inbound messages are undercounted, and they are never refused
+  anyway (C6).
+- **R-S3c-ii-7 (Task 6 review, 2026-09-29).** The session's volatile bound is shared with the platform's own traffic.
+  State sync the WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`,
+  `client-state.event`) is a data admission the session receives (C4), so it counts, for at most 30 s (R-S3c-ii-6). A
+  lane agent that leaves and rejoins a room holds about 26 KB of it. At the production limits that is under one per
+  cent, so it is a stated limit and the code stays. Exempting platform topics from the application's bound is the
+  maintainer's decision; the PR body names it. Cost if wrong: an application close to its bound is refused slightly
+  earlier than its own traffic alone would cause.
+
+### 11.5 What was built and measured
+
+- **Retention (R-S3c-ii-1).** On the volatile pair the owner row, the sent-message row, the inbound owner row, the
+  outbound control-history rows, a completed receipt row and the relay's inbound ACK-history row expire at the
+  message deadline plus the receipt grace. The per-origin version row keeps its hour (one row per origin; it fences
+  every commit of that origin), and the ACK-history row of a relay row whose message named no deadline keeps its 30
+  min (`controlHistoryTtlMs`). An RTC relay holds 5 rows for one relayed volatile message after admission and 6 once
+  its child's ACK adds the ACK-history row (C14; the inbound README).
+- **The bound (R-S3c-ii-3, -6, -7).** An outbound admission counts until its own deadline, an inbound one until the
+  earlier of its deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`). Inbound
+  data counts toward the same limit, so a receiver above about 33 volatile messages a second, in and out combined,
+  has its own sends refused `capacity` at the 30 s default deadline. A message without a named deadline is not
+  counted; a counted send whose commit admits nothing stays counted until its deadline; the RTC circuit breaker does
+  not count a `capacity` refusal as a failure. The platform's state sync received on the volatile pair
+  (`group-state.event`, `client-state.snapshot`, `client-state.event`) shares the bound: about 26 KB for a lane
+  agent that leaves and rejoins a room, under one per cent of the production limits. Exempting platform topics is
+  open for the maintainer.
+- **`overloaded`.** Under the default policy it drops best-effort RTC sends at the origin and best-effort arrivals
+  on both carriers, NACKed `overloaded`; it never drops an at-least-once message, and the WS outbound path does not
+  consult it (V1).
+- **The director command (R-S3c-ii-4).** The relay reports `sent` only when the director's receipt arrives, waiting
+  at most 30 s; a command the typed send refuses (`RallarValidationError`) is a `failed` result, not a throw. After a
+  fallback a relay command can reach the relay's `onIntent` twice (at-least-once) and the game's handler once,
+  because the game's sequence tracker refuses the duplicate. The game accepts client intents out of order inside a window of 1 024 sequences per key.
+  Call signalling travels `messages.ws.send` with `scope: 'all'` and needs a server that names its peer id.
+- **The lane (R-S3c-ii-2, -5).** `toPeer` is `server` or `receiver`, and `toPeer: 'server'` is a WS-only target. The
+  four addressed scenarios run as their own two-agent family; manifest 18's terminal timeout is 1 200 s and manifest
+  22 is unchanged. The director orchestration spec (`npm run test:rallar:full-stack:memory:director`) was stale on
+  `main` (it used retired group routes and is in no CI lane); S3c-ii revived it and it passes, which is the
+  end-to-end proof of the receipt-gated `sent`.
+- **Figures.** Bundle ceilings after S3c-ii: facade 226 KiB (225.015625 measured), headless 289 KiB (288.3349609375
+  measured); before the slice 224 and 286. Every volatile send, the director intents and the empty-audience send
+  included, spends 0 `al-admission` and 0 non-probe `al-work` operations; no durable pin moved.
+  `AL_ADMISSION_SCHEMA_ID` stays `rallar-alm-2026-09-s3c-i` (C16).

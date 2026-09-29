@@ -411,6 +411,44 @@ heartbeat costs nothing because the next one, latest-value telemetry, simply rep
 never delays an RTT heartbeat; that is acceptable only because the heartbeat is latest-value
 telemetry that no conformance scenario holds or asserts on.
 
+### Addressed sends on RTC
+
+Since S3c-ii a typed send names one peer on every strategy but `ws-then-rtc`: `send(payload, { peerId })`. The
+envelope is one unicast that names its room (`targets.groupRef`, `route.contextId` the room id), built by
+[`createBrowserUnicastMessage`](../../../shared-web/browser/messages/create-browser-unicast-message.ts). The RTC
+carrier plans it to the addressee directly and never relays it. Its receipt is the addressee's own ACK. On
+`rtc-with-ws-fallback` the same envelope is re-admitted on WS when the RTC leg states a retryable outcome inside the
+deadline (D63): the addressee is not in the ready set (`no-route`), the addressee is connected but is not the
+origin's overlay next hop (three `not-ready` attempts), or the receipt ran out. On WS the room's router delivers it
+and the server aggregates the one-member receipt (D71). A peer send to the server id is refused `unsupported` on an
+RTC strategy: the server is addressed over WS (D76). A peer send whose `contextId` names another room than its own is
+refused at the sender.
+
+### The volatile bound
+
+The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
+([`resolveALReceiptRetentionExpiryMs`](../delivery/resolve-al-receipt-retention-expiry-ms.ts)), not for an hour. One
+budget per session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data
+admissions the session originates and receives on its volatile pairs, by message and by envelope bytes. An outbound
+admission is released at its own deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
+(`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6), because the inbound deadline is the sender's clock
+and choice. Controls, receipts, acknowledgements, repairs, retransmissions and relay forwards are not counted, and
+neither is a message whose sender named no deadline (RTC signalling). Over `AL_VOLATILE_SESSION_MAX_ADMISSIONS`
+(1 000) or `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) an outbound data admission is refused `capacity`: the handle ends
+`rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`, and no fallback is tried, because the
+other carrier shares the budget. The RTC circuit breaker does not count a `capacity` refusal as a failure. A counted
+send whose commit then admits nothing stays counted until its deadline: the ledger has no release call.
+
+An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
+(R-S3c-ii-3): a session whose volatile traffic in and out stays above about 33 messages a second (at the 30 s default
+deadline) has its own volatile sends refused. The bound is also shared with the platform's own state sync that the
+WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
+R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
+production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
+While the budget is at or over a limit the session's QoS provider reports `overloaded`; under the default policy that
+drops best-effort RTC sends at the origin and best-effort arrivals on both carriers (each answered with a NACK
+`overloaded`), never an at-least-once message, and the WS outbound path does not consult it (V1).
+
 ### Grouped control sends
 
 `enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`

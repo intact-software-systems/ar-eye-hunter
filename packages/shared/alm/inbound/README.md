@@ -105,7 +105,15 @@ standard four-session relay): its pending-ACK row (the relay row), its control-o
 envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
 the dedup row for the 60 s dedup window. Once its child's ACK arrives it adds an acknowledgement-history row, kept
 until the deadline plus the grace as well. Before S3c-ii the owner row stayed for an hour and the history row
-30 min.
+30 min. The acknowledgement-history row of a relay row whose message named no deadline keeps its 30 min
+(`controlHistoryTtlMs`), since it has no deadline to be cut to (R-S3c-ii-1).
+
+An inbound data admission on the volatile pair is recorded in the session's volatile budget
+([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
+message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
+never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
+the usage `overloaded` reads (R-S3c-ii-3). A duplicate, a rejected arrival and a message whose sender named no
+deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7).
 
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused

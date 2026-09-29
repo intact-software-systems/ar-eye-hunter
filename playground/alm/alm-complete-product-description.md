@@ -199,11 +199,14 @@ audience (S2c-ii).
 One logical recipient. A transport may route through an authorized next hop,
 but only the addressed recipient delivers locally.
 
-**CURRENT** for basic RTC and WS routing. **CURRENT — S3c-i, addressed WS sends:** a unicast may name its room;
-the room's authority admits it and the room's router delivers it, and a `receiver` unicast's receipt is its addressee's
+**CURRENT** for basic RTC and WS routing. **CURRENT — S3c-i, addressed WS sends:** a unicast may name its room; the
+room's authority admits it and the room's router delivers it, and a `receiver` unicast's receipt is its addressee's
 own ACK, aggregated by the server over one member (D53, D71). A client addresses the server itself with a unicast to
-the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the message,
-not that the application applied it (D76). The RTC unicast and the unicast fallback are S3c-ii's.
+the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the
+message, not that the application applied it (D76). **CURRENT — S3c-ii, addressed sends on every carrier:** a typed
+send names one peer with `{ peerId }`; on RTC the unicast travels directly to its addressee and is never relayed,
+and on `rtc-with-ws-fallback` it is handed to WS inside the deadline (D75). A send to the server peer id travels WS
+only. `ws-then-rtc` does not take a peer (V1).
 
 ### Multicast
 
@@ -332,10 +335,12 @@ the default set plus `receiver`), and its composition root installs it under the
 application's QoS provider, whose own capabilities override the carrier's. The
 `unsupported` ack refusal reads the carrier's own declaration.
 
-**PLANNED — S3c and V1, live providers:** Browser composition installs no
-transport-aware authorization or live-congestion provider. S3c's volatile bound
-is the first `overloaded` producer (D59); the other budgets and fairness are
-V1's.
+**PARTIAL — S3c-ii, the first live provider:** the browser installs a
+per-session QoS provider that reports `overloaded` while the session's volatile
+budget is at or over a limit (D78). Under the default policy that drops
+best-effort RTC sends and best-effort arrivals on both carriers, never an
+at-least-once message; the WS outbound path does not consult it. Transport-aware
+authorization, the other budgets and fairness are V1's.
 
 ## Reliability and acknowledgement
 
@@ -372,12 +377,17 @@ recipients; on `rtc-with-ws-fallback` inside the deadline it hands the message t
 
 The default is receipted. An explicit at-least-once request with `ack: 'none'`
 retries without a receipt: S3a removed the default of that shape and adds no
-validation, because the director relay's WS unicast fallback and the
-receipt-less RTC carry rely on explicit shapes (S3a ruling 6). A per-send
+validation, because the receipt-less RTC carry relies on an explicit shape (S3a
+ruling 6; the director relay's WS unicast is gone since S3c-ii). A per-send
 `reliability: 'best-effort'` that names no `ack` resolves `ack: 'none'`, since a
 receipted best-effort send is a contradiction; with an explicit `ack` the
 caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
+A director command can reach the director twice after a fallback, because AL
+dedup is per carrier lane: relay commands are at-least-once, and the game's
+sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay reports a
+command `sent` only when the director's receipt arrives, waiting at most 30 s,
+and a refused command is a `failed` result.
 
 ### Acknowledgement modes
 
@@ -502,10 +512,9 @@ alternate route without violating audience/epoch constraints.
 **PARTIAL:** `QRtcDataChannel` has bounded flow control and counters; AL QoS has
 congestion/fanout/supersedence concepts.
 
-**PLANNED — S3, integration:** The data-channel settlement now reaches the
-outbound runtime as a queued-then-settled result, but production AL QoS still
-receives no live backpressure signal and the caller sees no lifecycle. S1
-exposes the lifecycle; S3 feeds channel backpressure into policy.
+**PARTIAL — S3c-ii:** the caller sees the lifecycle (S1) and the session's
+volatile budget is the first `overloaded` producer (D78). Channel backpressure
+as a policy input is V1's.
 
 ## Durability and browser-local storage
 
@@ -659,7 +668,9 @@ without polling internal stores.
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
 Full RTC envelopes are no longer logged by the receive service. The WS server records, per process and for its 256
 most recently updated receipted messages, who confirmed each receipt and whether it ran out, on
-`/api/admin/operations/realtime` (S3c-i, D61, D73).
+`/api/admin/operations/realtime` (S3c-i, D61, D73). A failed delivery states a typed `evidence.failure` beside its prose
+reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
+(S3c-ii, D75).
 
 **PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared
 lifecycle event stream, IndexedDB cost telemetry, trace propagation, or
@@ -698,6 +709,16 @@ shared boundary will reuse them and add ceilings of 128 KiB per envelope, 256
 elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
 repair window, and 256 messages and 1 MiB per ordering track. The additional
 ceilings are planned requirements, not current guarantees.
+
+**CURRENT — S3c-ii, the volatile bound:** one session holds at most 1 000
+volatile messages and 4 MiB of envelopes at a time, sent and received together.
+A sent message is counted until its deadline, a received one until the earlier
+of its deadline and 30 s after its arrival; a message whose sender named no
+deadline is not counted. Over the bound the next send is refused `capacity`, and
+a received message is counted, never refused (D74, D78). The bound is shared
+with the platform's own state sync received on the volatile pair: a lane agent
+that leaves and rejoins a room holds about 26 KB of it, under one per cent of
+the production limits (R-S3c-ii-6, R-S3c-ii-7).
 
 These are work limits, not a 256-session room limit. Large audiences and system
 snapshots use bounded producer/consumer pages without truncation; incomplete
