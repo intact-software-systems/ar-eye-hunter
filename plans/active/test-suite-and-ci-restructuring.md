@@ -7,7 +7,8 @@
 
 **Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. The maintainer took
 all eleven rulings on 2026-09-29 (section 8). Slices 1–4 have merged and cut the gate from about 57
-minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slices 5–8 stay outcome-shaped under
+minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slice 5 was skipped
+by ruling; Slices 6 and 7 were cut to the parts with a demonstrated cost (#622, #623). Slices 5–8 stay outcome-shaped under
 `adaptive-plan-execution`: each becomes concrete when it starts, from the evidence in sections 2–5.
 
 **Goal:** Cut the Branch Release Gate and the main deploy from about 55 minutes to about 18 minutes
@@ -1243,15 +1244,17 @@ lines are reported.
 All figures are from real runs on 2026-09-29. "Gate" means the blocking lanes; "verdict" means the
 `Branch Release Gate result` check.
 
-| PR   | Merged as   | What it did                                                                                                                                                                                                         | Measured                                                                                                              |
-| ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| #613 | `91a09eec3` | `!cancelled()` on three gate jobs, concurrency on the API-v1 gates, the topology replay proof runs once, three build-only Cloudflare deploy jobs removed                                                            | No Cloudflare build jobs on the next `main` deploy                                                                    |
-| #614 | `61f9783a7` | Eight parallel lanes, a shared setup action, Vitest projects `tooling` and `unit`, the lane contract test                                                                                                           | Gate 14.6 min (was 52–57); `main` deploy 16.6 min (was about 55); every suite's counts identical to the serial run    |
-| #615 | `82697e470` | Black-box lane as three runners, Recipe Console as two Playwright shards, runner flags `--shard` and `--standard-only`                                                                                              | Blocking lanes about 9.3 min; 60 + 11 recipes and 199 + 12 specs, identical to before                                 |
-| #617 | `0d5902bc6` | The ALM observation moves into its own reusable workflow that both callers start beside the gates                                                                                                                   | Verdict 9.7 min after the run was created, with ALM still running                                                     |
-| #619 | `c87d941fe` | The remove-dynamics scenarios that never ran, stale task and script references, a task-reference test, the vacuous RTC guard                                                                                        | See its description; `main` gate green                                                                                |
-| #616 | `94f1f3d84` | The group-admission limiter keeps its keys unique past 160 characters (a separate task the plan spawned)                                                                                                            | The black-box run-id constraint below no longer needs a margin                                                        |
-| #620 | `3978a908d` | `check-test-reachability` in the `checks` lane and `tests/manual-suites.json`; the Relic Hunters app tests, the AppInbox concurrency test and the `test-support` tests now run; the ws-smoke test joins `test:deno` | 1,629 test files, 1,624 run by CI, 5 manual, 0 unowned; `main` gate 12 min after the lanes started, all deploys green |
+| PR   | Merged as   | What it did                                                                                                                                                                                                               | Measured                                                                                                              |
+| ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| #613 | `91a09eec3` | `!cancelled()` on three gate jobs, concurrency on the API-v1 gates, the topology replay proof runs once, three build-only Cloudflare deploy jobs removed                                                                  | No Cloudflare build jobs on the next `main` deploy                                                                    |
+| #614 | `61f9783a7` | Eight parallel lanes, a shared setup action, Vitest projects `tooling` and `unit`, the lane contract test                                                                                                                 | Gate 14.6 min (was 52–57); `main` deploy 16.6 min (was about 55); every suite's counts identical to the serial run    |
+| #615 | `82697e470` | Black-box lane as three runners, Recipe Console as two Playwright shards, runner flags `--shard` and `--standard-only`                                                                                                    | Blocking lanes about 9.3 min; 60 + 11 recipes and 199 + 12 specs, identical to before                                 |
+| #617 | `0d5902bc6` | The ALM observation moves into its own reusable workflow that both callers start beside the gates                                                                                                                         | Verdict 9.7 min after the run was created, with ALM still running                                                     |
+| #619 | `c87d941fe` | The remove-dynamics scenarios that never ran, stale task and script references, a task-reference test, the vacuous RTC guard                                                                                              | See its description; `main` gate green                                                                                |
+| #616 | `94f1f3d84` | The group-admission limiter keeps its keys unique past 160 characters (a separate task the plan spawned)                                                                                                                  | The black-box run-id constraint below no longer needs a margin                                                        |
+| #620 | `3978a908d` | `check-test-reachability` in the `checks` lane and `tests/manual-suites.json`; the Relic Hunters app tests, the AppInbox concurrency test and the `test-support` tests now run; the ws-smoke test joins `test:deno`       | 1,629 test files, 1,624 run by CI, 5 manual, 0 unowned; `main` gate 12 min after the lanes started, all deploys green |
+| #622 | `4dacc8169` | The two hand-kept 60-id lists in `recipe-matrix.test.ts` become derived invariants (every API-v1 recipe is in the standard or a named standalone profile; recipes-only is the standard profile minus two named entries)   | Test 152 lines shorter, mutation-probed; adding a recipe no longer edits it                                           |
+| #623 | open        | Bundle budgets move into `packages/shared-web/bundle-budgets.json` and `headless-bundle-budget.json`; the measure script and the boundary test read one file; a failure names the whole-KiB figure to raise the budget to | Values unchanged; the gate is green                                                                                   |
 
 Push to verdict fell from a median of 58 minutes to about 10, and the verdict now arrives in one
 cycle instead of stopping at the first failing serial step.
@@ -1287,6 +1290,15 @@ cycle instead of stopping at the first failing serial step.
   workflow only completes when all its jobs do, so the verdict and every deployment waited for it:
   12.5 min on a passing run and 21 min on a failing one, after the blocking lanes had finished in
   about 9. #617 fixed it.
+
+- **Slice 6 was cut to the parts with a demonstrated cost.** The recipe-matrix pins were the one group
+  that every recipe PR touched (18 commits since 2026-08-15), so #622 fixed them. The rest measured
+  smaller than section 3 estimated: D3 is ten twin pairs and about 230 duplicated lines, each pair with
+  its own setup, and D4's copies are about five lines each. Neither changes CI time, so both were left.
+  D1 (unrolled formation recipes) edits recipes the gate depends on and was left for the same reason.
+- **Slice 7 started with the failure source, not the mock counts.** The headless bundle ceiling was the
+  top CI failure, and its budgets were also duplicated in `measure-browser-bundles.mjs`, so a bump had to
+  land in two places. #623 keeps them in data files.
 
 ### What the work taught
 
