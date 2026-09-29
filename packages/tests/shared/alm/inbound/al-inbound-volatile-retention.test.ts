@@ -188,7 +188,7 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
         const tracked = createInboundTestMessage({ msgId: 'relayed-volatile' });
-        await seedRelayRow(pairs.volatileStore, tracked);
+        await seedRelayRow(pairs.volatileStore, tracked, readDeadlineMs(tracked));
 
         expect(
             (await pairs.fixture.runtime.admitIncomingMessage(
@@ -203,6 +203,30 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
         );
     });
 
+    it('keeps it for the 30 minute control-history TTL when the relayed message named no deadline', async () => {
+        useFakeDate();
+        const pairs = await createReadyObservedPairs();
+        const tracked = newALUnicastMessage(
+            INBOUND_TEST_SENDER_PEER_ID,
+            { topicId: 'chat', resourceId: 'relayed-no-deadline', contextId: 'room' },
+            INBOUND_TEST_SELF_PEER_ID,
+            'chat.private-text.v1',
+            { text: 'relayed-no-deadline' }
+        );
+        await seedRelayRow(pairs.volatileStore, tracked, undefined);
+        const acknowledgedAtMs = Date.now();
+
+        expect(
+            (await pairs.fixture.runtime.admitIncomingMessage(
+                toSenderAck(tracked),
+                INBOUND_TEST_SOURCE
+            )).right
+        )
+            .toEqual({ kind: 'control', handled: true });
+
+        expect(readAcksExpiry(pairs.volatile, tracked)).toBe(acknowledgedAtMs + 30 * 60_000);
+    });
+
     it('keeps it for the control-history TTL on the durable pair, as before', async () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
@@ -210,7 +234,7 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
             msgId: 'relayed-durable',
             durability: 'local-inbox'
         });
-        await seedRelayRow(pairs.durableStore, tracked);
+        await seedRelayRow(pairs.durableStore, tracked, readDeadlineMs(tracked));
         const acknowledgedAtMs = Date.now();
 
         expect(
@@ -227,9 +251,13 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
     });
 });
 
-/** The relay row this peer keeps for the tracked message: the fixture's sender owes one ACK before the deadline. */
-async function seedRelayRow(store: ALInboundAdmissionStore, message: ALMessage): Promise<void> {
-    const deadlineAtMs = readDeadlineMs(message);
+/** The relay row this peer keeps for the tracked message: the fixture sender owes one ACK, before any deadline. */
+async function seedRelayRow(
+    store: ALInboundAdmissionStore,
+    message: ALMessage,
+    deadlineAtMs: number | undefined
+): Promise<void> {
+    const rowExpiresAtMs = deadlineAtMs ?? Date.now() + 60_000;
     const { msgId, senderId } = message.id;
     const committed = await store.commitBundle({
         admissionExpiresAtMs: null,
@@ -238,7 +266,7 @@ async function seedRelayRow(store: ALInboundAdmissionStore, message: ALMessage):
         mutations: [{
             kind: 'set-msg-owner',
             value: { msgId, senderId, source: INBOUND_TEST_SOURCE, supersedenceKey: null },
-            expireAtTimestamp: deadlineAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
+            expireAtTimestamp: rowExpiresAtMs + AL_RECEIPT_DEADLINE_GRACE_MS
         }, {
             kind: 'set-control-pending',
             msgId,
@@ -251,11 +279,11 @@ async function seedRelayRow(store: ALInboundAdmissionStore, message: ALMessage):
                     localReady: true,
                     expectedFromPeerIds: [INBOUND_TEST_SENDER_PEER_ID],
                     ackedFromPeerIds: [],
-                    expireAtTimestamp: deadlineAtMs,
+                    ...(deadlineAtMs === undefined ? {} : { expireAtTimestamp: deadlineAtMs }),
                     carrier: 'ws'
                 }
             },
-            expireAtTimestamp: deadlineAtMs
+            expireAtTimestamp: rowExpiresAtMs
         }, {
             kind: 'set-control-owners',
             msgId,
@@ -263,7 +291,7 @@ async function seedRelayRow(store: ALInboundAdmissionStore, message: ALMessage):
                 ambiguous: false,
                 values: [{ peerId: INBOUND_TEST_SENDER_PEER_ID, senderId }]
             },
-            expireAtTimestamp: deadlineAtMs
+            expireAtTimestamp: rowExpiresAtMs
         }],
         durableEffects: []
     });

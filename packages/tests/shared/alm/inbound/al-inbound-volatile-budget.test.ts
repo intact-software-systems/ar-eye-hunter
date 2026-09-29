@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
@@ -16,7 +17,8 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SELF_PEER_ID,
     INBOUND_TEST_SENDER_PEER_ID,
-    INBOUND_TEST_SOURCE
+    INBOUND_TEST_SOURCE,
+    setNextInboundCommitConflicted
 } from '../inbound-runtime-test-fixture.ts';
 
 function withDeadline(msg: ALMessage, expiresAtMs: number): ALMessage {
@@ -25,6 +27,9 @@ function withDeadline(msg: ALMessage, expiresAtMs: number): ALMessage {
 
 function createBudgetedInboundRuntime(limits: ALVolatileSessionLimits) {
     const budget = new ALVolatileSessionBudget(limits);
+    const volatileStores = createVolatileALInboundRuntimeStores({
+        namespace: 'inbound-budget-volatile'
+    }, budget);
     const fixture = createInboundTestRuntime({
         carrier: 'ws',
         stores: createInboundTestStores({
@@ -32,12 +37,10 @@ function createBudgetedInboundRuntime(limits: ALVolatileSessionLimits) {
             storage: 'memory',
             observer: createCountingIndexedDbOperationObserver()
         }),
-        volatileStores: createVolatileALInboundRuntimeStores({
-            namespace: 'inbound-budget-volatile'
-        }, budget),
+        volatileStores,
         effectWorkerId: 'al-inbound:budget'
     });
-    return { budget, runtime: fixture.runtime };
+    return { budget, runtime: fixture.runtime, volatileStores };
 }
 
 describe('the session volatile bound at the inbound admission (D74, C6)', () => {
@@ -151,4 +154,59 @@ describe('the session volatile bound at the inbound admission (D74, C6)', () => 
         expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(budget.readUsage(Date.now()).admissions).toBe(0);
     });
+
+    it.each([
+        ['an ACK', toReceivedAck()],
+        ['a NACK', toReceivedNack()]
+    ])('never counts %s that arrives with a deadline', async (_, control) => {
+        const { budget, runtime } = createBudgetedInboundRuntime({ maxAdmissions: 10, maxBytes: 1_000_000 });
+
+        await runtime.admitIncomingMessage(withDeadline(control, Date.now() + 30_000), INBOUND_TEST_SOURCE);
+
+        expect(budget.readUsage(Date.now()).admissions).toBe(0);
+    });
+
+    it('counts an arrival whose commit is replayed, as it answers pending-admission', async () => {
+        const { budget, runtime, volatileStores } = createBudgetedInboundRuntime({ maxAdmissions: 10, maxBytes: 1_000_000 });
+        await runtime.ready();
+        setNextInboundCommitConflicted(volatileStores.admissionStore);
+
+        const admitted = await runtime.admitIncomingMessage(
+            createInboundTestMessage({ msgId: 'replayed' }),
+            INBOUND_TEST_SOURCE
+        );
+
+        expect(admitted.right).toEqual({ kind: 'pending-admission' });
+        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+    });
 });
+
+/** An ACK the sender states for a message this session sent: a control, whatever its deadline. */
+function toReceivedAck(): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: 'received-ack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+        {
+            ackedMsgId: 'sent-message',
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            originPeerId: INBOUND_TEST_SELF_PEER_ID,
+            logicalRecipientPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+function toReceivedNack(): ALMessage {
+    return newALNackControlMessage(
+        { v: 2, msgId: 'received-nack', senderId: INBOUND_TEST_SENDER_PEER_ID, ts: Date.now() },
+        {
+            fromPeerId: INBOUND_TEST_SENDER_PEER_ID,
+            toPeerId: INBOUND_TEST_SELF_PEER_ID,
+            msgId: 'sent-message',
+            reason: 'gap',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}

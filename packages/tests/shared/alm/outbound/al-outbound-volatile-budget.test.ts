@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    newALReceiptControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import { normalizeALQosPolicy, type ALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -158,6 +162,47 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
         }]);
 
         expect(acked?.verdict.kind).toBe('admitted');
+        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+    });
+
+    it.each([
+        [
+            'a NACK',
+            newALNackControlMessage(
+                { v: 2, msgId: 'nack-at-the-bound', senderId: 'self', ts: Date.now() },
+                {
+                    fromPeerId: 'self',
+                    toPeerId: 'peer-1',
+                    msgId: 'received-message',
+                    reason: 'gap',
+                    observedAtEpochMs: Date.now()
+                }
+            )
+        ],
+        [
+            'a receipt',
+            newALReceiptControlMessage(
+                { v: 2, msgId: 'receipt-at-the-bound', senderId: 'self', ts: Date.now() },
+                {
+                    msgId: 'received-message',
+                    originPeerId: 'peer-1',
+                    expectedRecipientPeerIds: ['self'],
+                    confirmedRecipientPeerIds: ['self'],
+                    snapshotVersion: 1,
+                    phase: 'complete',
+                    observedAtEpochMs: Date.now()
+                }
+            )
+        ]
+    ])('never counts %s this session sends at a full bound, even one that carries a deadline', async (_, control) => {
+        const { budget, runtime } = await createFullRuntime();
+
+        const [sent] = await runtime.enqueueAllIfAbsent([{
+            ...control,
+            constraints: { expiresAtMs: Date.now() + 30_000 }
+        }]);
+
+        expect(sent?.verdict.kind).toBe('admitted');
         expect(budget.readUsage(Date.now()).admissions).toBe(1);
     });
 

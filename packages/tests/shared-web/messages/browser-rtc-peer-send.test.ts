@@ -132,6 +132,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
         'refuses a contextId naming another room at the sender on %s (N1, C8)',
         async (strategy) => {
             const fixture = createBrowserMessageSenderFixture();
+            const admitted = captureCarrierAdmissions(fixture);
 
             await expect(fixture.sender.sendTyped({
                 ...INTENT,
@@ -146,6 +147,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                     message: CONTEXT_NAMES_ANOTHER_ROOM
                 }]
             });
+            expect(admitted).toEqual([]);
         }
     );
 
@@ -171,6 +173,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
         'refuses a send to the server on %s: the server is addressed over WS (C9)',
         async (strategy) => {
             const fixture = createBrowserMessageSenderFixture();
+            const admitted = captureCarrierAdmissions(fixture);
 
             await expect(
                 fixture.sender.sendTyped(
@@ -181,6 +184,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                 .rejects.toMatchObject({
                     issues: [{ path: '$.peerId', code: 'unsupported', message: SERVER_OVER_WS }]
                 });
+            expect(admitted).toEqual([]);
         }
     );
 
@@ -232,6 +236,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
         'refuses a peer send over RTC that carries %s, which a unicast cannot honour',
         async (_name, extra) => {
             const fixture = createBrowserMessageSenderFixture();
+            const admitted = captureCarrierAdmissions(fixture);
 
             const sending = fixture.sender.sendTyped({
                 ...INTENT,
@@ -246,11 +251,13 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
                     expect.objectContaining({ path: '$.peerId', code: 'unsupported' })
                 ])
             });
+            expect(admitted).toEqual([]);
         }
     );
 
     it('refuses a peer send over RTC whose scope is not its room', async () => {
         const fixture = createBrowserMessageSenderFixture();
+        const admitted = captureCarrierAdmissions(fixture);
 
         await expect(
             fixture.sender.sendTyped({
@@ -262,6 +269,7 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
             }, COMMAND_CHANNEL)
         )
             .rejects.toMatchObject({ issues: [{ path: '$.scope', code: 'unsupported' }] });
+        expect(admitted).toEqual([]);
     });
 });
 
@@ -548,4 +556,23 @@ function toReceipt(msgId: string, carrier: ALDeliveryCarrier): ALDeliverySettlem
         unconfirmedRecipientPeerIds: [],
         complete: true
     };
+}
+
+/** Every message either carrier of the fixture is handed, in order: a refused send must leave it empty. */
+function captureCarrierAdmissions(
+    fixture: ReturnType<typeof createBrowserMessageSenderFixture>
+): readonly PeerAdmission[] {
+    const admitted: PeerAdmission[] = [];
+    const capture = (carrier: ALDeliveryCarrier) => async (message: ALMessage): Promise<ALOutboundEnqueueResult> => {
+        admitted.push({ carrier, message });
+        return {
+            verdict: ADMITTED,
+            message,
+            entries: [],
+            trackedReceiptAlgo: resolveALDeliveryReceiptAlgo(message)
+        };
+    };
+    fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = capture('rtc');
+    fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = capture('ws');
+    return admitted;
 }
