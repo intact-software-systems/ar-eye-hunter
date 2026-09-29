@@ -103,6 +103,7 @@ describe('WS server inbound delivery and relay', () => {
         }
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
             authorize: async () => {
                 authorityReads += 1;
                 if (authorityReads > 1) {
@@ -155,6 +156,7 @@ describe('WS server inbound delivery and relay', () => {
         fixture.server.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
             authorize: async () => {
                 authorityReads += 1;
                 await Promise.resolve();
@@ -179,6 +181,7 @@ describe('WS server inbound delivery and relay', () => {
         const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let authorized = true;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
             authorize: async () =>
                 authorized
                     ? { authorized: true }
@@ -203,6 +206,7 @@ describe('WS server inbound delivery and relay', () => {
         const claim = vi.spyOn(fixture.admission.workQueue, 'reserveEntries').mockResolvedValue(new Map());
         let catchingUp = false;
         fixture.service.authorizeInboundMessagesWith({
+            sendNacks: false,
             authorize: async () =>
                 catchingUp
                     ? { authorized: false, reason: 'not-yet-in-sync', logMessage: 'Waiting for room snapshot', sendNack: false }

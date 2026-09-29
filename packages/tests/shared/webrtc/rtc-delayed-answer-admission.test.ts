@@ -1,5 +1,4 @@
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
-import { DeterministicRtcOfferIds } from './deterministic-rtc-offer-ids.ts';
 
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -16,6 +15,7 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 import { setNextInboundCommitConflicted } from '../alm/inbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
+import { DeterministicRtcOfferIds } from './deterministic-rtc-offer-ids.ts';
 
 afterEach(() => {
     TestWebSocket.instances.length = 0;
@@ -39,6 +39,7 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         socket: socketClient,
         outbox: new InMemoryQueueBox(),
         sessionId: 'receiver',
+        serverPeerId: undefined,
         inboundStores,
         outboundStores,
         inboundDiagnostics: (event) => diagnostics.push(event)

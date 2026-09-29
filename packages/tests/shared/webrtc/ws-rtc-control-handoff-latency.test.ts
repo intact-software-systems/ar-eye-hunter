@@ -1,3 +1,11 @@
+import {
+    afterEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import {
     newALEventRoute,
@@ -48,13 +56,6 @@ import {
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
-import {
-    afterEach,
-    expect,
-    it,
-    onTestFinished,
-    vi
-} from 'vitest';
 
 import '../../setup-browser-indexeddb.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
@@ -391,6 +392,7 @@ async function connectWsQueueBoxService(
         socket: client,
         outbox: new InMemoryQueueBox(),
         sessionId: 'self',
+        serverPeerId: undefined,
         inboundStores: input.inbound,
         outboundStores: input.outbound,
         queueEngine: input.queueEngine
