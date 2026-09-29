@@ -8,16 +8,23 @@ import type {
 } from '@shared/api/client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
 
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
-import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
+import { readStableStateSnapshot, StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
 import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';
 import { clientStatePrincipalStorageKey } from './client-state-principal-storage-key.ts';
 import { ClientStateRepositoryReads } from './client-state-repository-reads.ts';
+import {
+    CLIENT_STATE_INSTANCES_NAMESPACE,
+    CLIENT_STATE_PRINCIPALS_NAMESPACE,
+    CLIENT_STATE_SESSIONS_NAMESPACE
+} from './client-state-runtime-namespaces.ts';
 import { clientStateScopeStorageKeyPrefix } from './client-state-scope-storage-key.ts';
 
 export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
@@ -55,6 +62,80 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
             })
         );
         return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
+    }
+
+    async readSnapshotsForPrincipals(
+        refs: readonly ClientPrincipalRef[]
+    ): Promise<readonly ClientSnapshot[]> {
+        const uniqueRefs = [...new Map(refs.map((ref) => [clientStatePrincipalStorageKey(ref), ref])).values()];
+        if (uniqueRefs.length === 0) {
+            return [];
+        }
+        const principalSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.map((ref, index) => ({
+            selectorId: `principal:${index}`,
+            kind: 'key',
+            namespace: CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            key: clientStatePrincipalStorageKey(ref)
+        }));
+        const childSelectors: RuntimeStateReadBatchSelector[] = uniqueRefs.flatMap((ref, index) => {
+            const keyPrefix = this.childKeyPrefix(clientStatePrincipalStorageKey(ref));
+            return [
+                {
+                    selectorId: `instances:${index}`,
+                    kind: 'prefix',
+                    namespace: CLIENT_STATE_INSTANCES_NAMESPACE,
+                    keyPrefix
+                },
+                {
+                    selectorId: `sessions:${index}`,
+                    kind: 'prefix',
+                    namespace: CLIENT_STATE_SESSIONS_NAMESPACE,
+                    keyPrefix
+                }
+            ];
+        });
+        const beforeSelections = await this.readLiveAudienceSelections([...principalSelectors, ...childSelectors]);
+        const afterSelections = await this.readLiveAudienceSelections(principalSelectors);
+        const snapshots = await Promise.all(uniqueRefs.map(async (ref, index) => {
+            const after = afterSelections[index][0];
+            if (!after) {
+                return undefined;
+            }
+            const principal = this.findPrincipalEntryValue(after, ref);
+            const before = beforeSelections[index][0];
+            if (!before || before.entry.revision !== after.entry.revision) {
+                return await this.readSnapshot(ref);
+            }
+            const instances = beforeSelections[uniqueRefs.length + index * 2]
+                .map((entry) => this.toInstanceEntry(entry, ref).value);
+            const activeSessions = toActiveClientSessions(
+                beforeSelections[uniqueRefs.length + index * 2 + 1]
+                    .map((entry) => this.toSessionEntry(entry, ref).value)
+            );
+            return assembleClientStateSnapshot({
+                principal: principal.value,
+                instances,
+                activeSessions,
+                stateRevision: principal.entry.revision + 1
+            });
+        }));
+        return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
+    }
+
+    private async readLiveAudienceSelections(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly (readonly RuntimeStateEntryValue<JsonWireValue>[])[]> {
+        const resolved = await resolveRuntimeStateReadBatchLiveValues(
+            selectors,
+            await this.repository.readRuntimeStateBatch(selectors),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        );
+        if (resolved.status === 'changed') {
+            throw new StateSnapshotReadConflictError(
+                selectors[0].kind === 'key' ? selectors[0].key : selectors[0].keyPrefix
+            );
+        }
+        return resolved.selections.map((selection) => selection.entries);
     }
 
     async readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined> {

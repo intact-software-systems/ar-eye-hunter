@@ -54,17 +54,34 @@ export async function readClientMutation(
     };
     const audienceGroupSnapshots = idempotency
         ? []
-        : await groupRepository.listSnapshots(scope);
-    const hasCoGroupAudience = audienceGroupSnapshots.some((snapshot) =>
-        readGroupVisibility({
-            snapshot,
-            actor: { principalId: command.aggregateRef.principalId },
-            nowEpochMs: audienceObservedAtEpochMs
-        }) === 'full'
+        : await groupRepository.listSnapshotsForPrincipal(scope, command.aggregateRef.principalId);
+    const coGroupPrincipalIds = new Set<string>();
+    for (const snapshot of audienceGroupSnapshots) {
+        if (
+            readGroupVisibility({
+                snapshot,
+                actor: { principalId: command.aggregateRef.principalId },
+                nowEpochMs: audienceObservedAtEpochMs
+            }) !== 'full'
+        ) {
+            continue;
+        }
+        for (const member of snapshot.members) {
+            if (
+                member.principalId !== command.aggregateRef.principalId &&
+                readGroupVisibility({
+                        snapshot,
+                        actor: { principalId: member.principalId },
+                        nowEpochMs: audienceObservedAtEpochMs
+                    }) === 'full'
+            ) {
+                coGroupPrincipalIds.add(member.principalId);
+            }
+        }
+    }
+    const audienceClientSnapshots = await repository.readSnapshotsForPrincipals(
+        [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
     );
-    const audienceClientSnapshots = hasCoGroupAudience
-        ? await repository.listSnapshots(scope)
-        : [];
 
     return {
         authoritySession: authoritySession ?? null,
