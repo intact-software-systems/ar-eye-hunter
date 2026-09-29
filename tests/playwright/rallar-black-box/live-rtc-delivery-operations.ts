@@ -11,6 +11,7 @@ import {
     type LiveRtcControlPort
 } from './create-group-formation-lifecycle-driver.ts';
 import { openTab } from './full-stack-helpers.ts';
+import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 import type {
@@ -216,8 +217,8 @@ export function createLiveRtcDeliveryOperations(
     };
 }
 
-function apiWebSocketUrl(apiBaseUrl: string | undefined): string {
-    const url = new URL(apiBaseUrl ?? 'http://localhost:8080');
+function apiWebSocketUrl(apiBaseUrl: string): string {
+    const url = new URL(apiBaseUrl);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.pathname = '/api/ws/{auth.sessionId}';
     url.search = 'ticket={auth.wsTicket}';
@@ -276,6 +277,7 @@ async function configureAgentForServerCommands(
     input: ConfigureAgentForServerCommandsInput
 ): Promise<string> {
     const commandId = `configure-server-${input.agent.prefix.toLowerCase()}-${input.suffix}`;
+    const apiBaseUrl = readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[input.agent.prefix];
     await input.control.executeOk({
         runId: input.runId,
         agentId: input.agent.agentId,
@@ -285,7 +287,7 @@ async function configureAgentForServerCommands(
             config: {
                 runId: input.runId,
                 agentId: input.agent.agentId,
-                apiBaseUrl: runtime.apiBaseUrl,
+                apiBaseUrl,
                 actor: input.agent.actor,
                 sessionId: input.agent.agentId,
                 roomId: input.groupId,
@@ -298,7 +300,7 @@ async function configureAgentForServerCommands(
                     providerMode: 'browser-rallar'
                 },
                 rallar: {
-                    apiBaseUrl: runtime.apiBaseUrl,
+                    apiBaseUrl,
                     restoreSession: true,
                     leaveRoomOnClose: false
                 }
@@ -329,7 +331,7 @@ async function runWebSocketOpenSendCloseMatrix(
             command: {
                 kind: 'ws.open',
                 connection,
-                url: apiWebSocketUrl(runtime.apiBaseUrl),
+                url: apiWebSocketUrl(readLiveRtcAgentApiUrls(runtime.apiBaseUrl)[agent.prefix]),
                 timeoutMs: 15_000
             },
             timeoutMs: 30_000

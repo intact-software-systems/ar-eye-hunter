@@ -20,6 +20,46 @@ const config = {
 };
 
 describe('live RTC delivery owner', () => {
+    it('keeps each cluster agent on its own API URL for connect, configure, and raw WebSocket', async () => {
+        vi.stubEnv('RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER', '1');
+        vi.stubEnv('VITE_RALLAR_API_BASE_URL_B', 'http://localhost:18081');
+        vi.stubEnv('VITE_RALLAR_API_BASE_URL_C', 'http://localhost:18082');
+        try {
+            const recording = new RecordingLiveRtcControl();
+            const operations = createLiveRtcDeliveryOperations(config);
+            await operations.runGroupFormation({
+                control: recording,
+                runId: 'cluster-run',
+                agents: recording.agents,
+                transport: 'messages.rtc',
+                groupId: 'cluster-room',
+                suffix: 'cluster',
+                readinessScope: 'all'
+            });
+            await operations.runWebSocketOpenSendCloseMatrix({
+                control: recording,
+                runId: 'cluster-run',
+                agents: recording.agents,
+                groupId: 'cluster-room',
+                suffix: 'cluster'
+            });
+
+            const urls = { A: 'http://localhost:18080', B: 'http://localhost:18081', C: 'http://localhost:18082' };
+            for (const agent of recording.agents) {
+                const commands = recording.commands.filter(({ agentId }) => agentId === agent.agentId);
+                expect(commands.find(({ command }) => command.kind === 'rtc.connect')?.command)
+                    .toMatchObject({ rallar: { apiBaseUrl: urls[agent.prefix] } });
+                expect(commands.find(({ command }) => command.kind === 'configure')?.command)
+                    .toMatchObject({ config: { apiBaseUrl: urls[agent.prefix], rallar: { apiBaseUrl: urls[agent.prefix] } } });
+                expect(commands.find(({ command }) => command.kind === 'ws.open')?.command)
+                    .toMatchObject({ url: urls[agent.prefix].replace('http:', 'ws:') + '/api/ws/%7Bauth.sessionId%7D?ticket={auth.wsTicket}' });
+            }
+        }
+        finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it('creates the managed room and joins each non-owner with scoped request identities', async () => {
         const recording = new RecordingLiveRtcControl();
         const ids = await createLiveRtcDeliveryOperations(
