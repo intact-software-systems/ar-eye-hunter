@@ -954,6 +954,25 @@ path. Before a schema change, capture a controlled, order-balanced comparison
 on fresh equivalent databases, with query-level attribution for the scope
 read and full correctness evidence. Preserve existing development data.
 
+**2026-09-29 hosted order-balanced checkpoint:** The opt-in PR workflow
+[run 36540665768](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/36540665768)
+completed all four A-B-B-A captures on one pinned runner/image with matching
+environment records. Post-processing exhausted Node's default heap while
+deep-cloning four approximately 476 MiB artifacts, so the hosted comparator did
+not finish. The allocation fix pooled those retained exact captures locally
+under the original heap limit; the unchanged comparator then failed thirteen
+performance gates. Uncontended p95 was 187.98→466.29 ms, shared throughput was
+87.42→76.77/s, and uncontended median serialized SQL result bytes were
+25.75→98.14 MB. This is controlled regression evidence, **not** a hosted green
+comparison or branch acceptance. The `profile-instance` operation bears most
+of the observed latency increase, while the aggregate wrapper cannot assign
+that increase to one SQL statement. A bounded read-only SQL probe showed the
+new full-scope group payload is fetched twice; the existing composite index
+was selected naturally. Do not add an index from this evidence alone. A
+principal-filtered read could avoid unrelated group payloads, but would also
+stop an unrelated corrupt group from blocking this principal's publication;
+the human decision on that validation boundary precedes implementation.
+
 **2026-09-28 browser fixture checkpoint:** The native ALM timing fixture also
 used an unscoped synthetic WS-client source, so the new fail-closed unicast
 reader correctly withheld every delivery. The fixture now supplies a matching
