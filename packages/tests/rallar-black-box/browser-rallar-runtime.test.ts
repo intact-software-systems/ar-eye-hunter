@@ -10,6 +10,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 
 import {
     createSpaBrowserRallarRuntime,
@@ -55,6 +56,7 @@ async function withBrowserRuntimeTiming(
     };
     const nativeRuntime = createBlackBoxRallarRuntime({
         facade: facade.rallar,
+        volatileLimits: new BlackBoxRallarVolatileLimits(),
         targetWindow,
         clock: { now: timing.now },
         readDocument: () => ({ timeOrigin: 1_700_000_000_000.5, origin: 'https://spa.example.test' }),

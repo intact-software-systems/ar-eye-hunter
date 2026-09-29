@@ -327,6 +327,11 @@ export type RallarBlackBoxTestMessagesSendCommand =
         orderingKey?: string;
         seq?: number;
         handleId?: string;
+        /**
+         * One peer by its lane role (C11): `receiver` is the one other live session of the room, resolved by the page at
+         * send time. Absent, the send addresses its scope.
+         */
+        toPeer?: 'server' | 'receiver';
         /** A harness floor, resolved to an absolute one at send time; absent, the product stamps the sender's version. */
         minSnapshotVersion?: Readonly<{ absolute: number; }> | Readonly<{ aboveCurrentBy: number; }>;
         qos?: Readonly<{ ack: Readonly<{ algo: ALAckAlgo; }>; }>;

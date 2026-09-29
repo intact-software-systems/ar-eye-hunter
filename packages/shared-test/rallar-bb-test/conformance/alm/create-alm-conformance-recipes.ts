@@ -28,6 +28,7 @@ import {
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
 import { boundedRejection } from './scenarios/bounded-rejection.ts';
+import { capacity } from './scenarios/capacity.ts';
 import { crossCarrierDuplicate } from './scenarios/cross-carrier-duplicate.ts';
 import { deadlineExpiry } from './scenarios/deadline-expiry.ts';
 import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
@@ -40,7 +41,10 @@ import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
 import { orderingResync } from './scenarios/ordering-resync.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
+import { serverCommand } from './scenarios/server-command.ts';
+import { unicastFallback } from './scenarios/unicast-fallback.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
+import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
 
 export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -86,6 +90,10 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     fallbackWithinDeadline,
     receiptExhaustedFallback,
     noFallbackAfterDeadline,
+    wsUnicastReceipt,
+    unicastFallback,
+    serverCommand,
+    capacity,
     ...receiptedAudience
 ];
 

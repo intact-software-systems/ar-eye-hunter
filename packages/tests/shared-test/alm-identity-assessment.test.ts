@@ -698,6 +698,8 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
             handleId: command.handleId,
             confirmedHopPeerIds: ['receiver-session'],
             unconfirmedHopPeerIds: [],
+            // The addressed family pins its receipt to the receiver, which reads the expected list too.
+            expectedRecipientPeerIds: ['receiver-session'],
             confirmedRecipientPeerIds: ['receiver-session'],
             unconfirmedRecipientPeerIds: []
         };

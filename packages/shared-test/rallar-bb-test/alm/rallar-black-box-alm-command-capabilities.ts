@@ -13,7 +13,11 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
             'the product as given. durability (volatile, local-outbox, local-inbox) declares the typed channel\'s ' +
-            'durability; absent, the send is volatile. A replay names only replayOnCarrier (and connection): a ' +
+            'durability; absent, the send is volatile. ' +
+            'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
+            'the WS server\'s peer id or to the one other live session of the room; a role it cannot resolve fails ' +
+            'the send and opens no handle. ' +
+            'A replay names only replayOnCarrier (and connection): a ' +
             'harness capability the product never exercises, it re-admits the envelope an earlier handle\'s first ' +
             'carrier captured on the other carrier, opens no handle, and returns that admission verdict.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
@@ -37,7 +41,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Observe ALM Send',
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
-            'The in-page handle projects admission, carrier attempts with their attemptOutcomes and attemptCarriers, a relayRejection, ' +
+            'The in-page handle projects admission, carrier attempts with their attemptOutcomes and attemptCarriers, a relayRejection, a carrierFallback, ' +
             'the typed failure of a send that ended rejected, failed or expired, and the ' +
             'latest receipt: its receiptMode, the hop lists, and expectedRecipientPeerIds, confirmedRecipientPeerIds and ' +
             'unconfirmedRecipientPeerIds beside them; a lost handle is unobservable.',
@@ -91,7 +95,7 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Read ALM Receipts',
         description: 'Reads the in-page lifecycle observation for a messages.send handle, including receiptMode, ' +
             'confirmedHopPeerIds, unconfirmedHopPeerIds, expectedRecipientPeerIds, confirmedRecipientPeerIds, ' +
-            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, relayRejection, failure, submission facts and reason. ' +
+            'unconfirmedRecipientPeerIds, attempts, attemptOutcomes, attemptCarriers, relayRejection, carrierFallback, failure, submission facts and reason. ' +
             'Unknown handles are unobservable.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],

@@ -31,6 +31,11 @@ interface PortMessage {
     submitted: boolean;
     attemptCarriers: readonly ('rtc' | 'ws')[];
     attemptOutcomes: readonly ('not-ready' | 'sent')[];
+    /** The volatile bound's refusal (D78); undefined for every send it admits. */
+    readonly failure: Readonly<{ kind: 'refused'; reason: 'capacity'; }> | undefined;
+    carrierFallback:
+        | Readonly<{ from: 'rtc'; to: 'ws'; reason: HandedOverOutcome['fallbackReason']; }>
+        | undefined;
 }
 
 interface HandedOverOutcome {
@@ -38,16 +43,33 @@ interface HandedOverOutcome {
     readonly reason: 'admitted' | 'duplicate';
     /** The last outcome of each carrier's attempt row: a `not-ready` run ends the RTC leg of a dropped send. */
     readonly attemptOutcomes: readonly ('not-ready' | 'sent')[];
+    readonly fallbackReason: 'not-ready' | 'receipt-exhausted';
 }
 
 /**
  * D56: the first RTC leg of these sends never completes (its frames are dropped, or the receiver withholds its ACK until
  * the receipt runs out), so each hands over to WS. The receiver admits the WS copy, or refuses it as a duplicate of the
- * RTC copy it already delivered.
+ * RTC copy it already delivered. An addressed `unicast-fallback` hands over the same way.
  */
 const HANDED_OVER_WS_OUTCOMES: Readonly<Record<string, HandedOverOutcome>> = {
-    'fallback-within-deadline': { outcome: 'committed', reason: 'admitted', attemptOutcomes: ['not-ready', 'sent'] },
-    'receipt-exhausted-fallback': { outcome: 'not-handled', reason: 'duplicate', attemptOutcomes: ['sent', 'sent'] }
+    'fallback-within-deadline': {
+        outcome: 'committed',
+        reason: 'admitted',
+        attemptOutcomes: ['not-ready', 'sent'],
+        fallbackReason: 'not-ready'
+    },
+    'receipt-exhausted-fallback': {
+        outcome: 'not-handled',
+        reason: 'duplicate',
+        attemptOutcomes: ['sent', 'sent'],
+        fallbackReason: 'receipt-exhausted'
+    },
+    'unicast-fallback': {
+        outcome: 'committed',
+        reason: 'admitted',
+        attemptOutcomes: ['not-ready', 'sent'],
+        fallbackReason: 'not-ready'
+    }
 };
 
 /** Controlled external facts prove recipe/control composition, never native storage or transport behavior. */
@@ -146,8 +168,14 @@ class GeneratedAlmPorts {
                         state: message?.state ?? 'unobservable',
                         enqueued,
                         submitted: message?.submitted ?? false,
+                        attempts: message?.attemptCarriers.length ?? 0,
                         attemptCarriers: message?.attemptCarriers ?? [],
-                        attemptOutcomes: message?.attemptOutcomes ?? []
+                        attemptOutcomes: message?.attemptOutcomes ?? [],
+                        failure: message?.failure,
+                        carrierFallback: message?.carrierFallback,
+                        ...(message?.command.toPeer !== undefined && message.state === 'acknowledged'
+                            ? toAddresseeReceipt(message.command.toPeer)
+                            : {})
                     }
                 };
             }
@@ -162,6 +190,9 @@ class GeneratedAlmPorts {
             case 'messages.receipts': {
                 const message = this.handles.get(command.handleId);
                 assert(message);
+                if (message.command.toPeer !== undefined) {
+                    return { status: 'ok', value: toAddresseeReceipt(message.command.toPeer) };
+                }
                 // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
                 const isWs = message.command.carrier === 'ws';
                 const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
@@ -176,12 +207,18 @@ class GeneratedAlmPorts {
                 };
             }
             case 'messages.received': {
-                const arrived = this.messages.filter((message) => message.command.typeId === command.typeId && message.submitted);
+                // A command addressed to the server reaches no member of the room.
+                const arrived = this.messages.filter((message) =>
+                    message.command.typeId === command.typeId && message.submitted &&
+                    message.command.toPeer !== 'server'
+                );
                 this.admitReceiverInbox(arrived);
                 const count = arrived.length;
                 const passed = command.absent ? count < command.count : count >= command.count;
                 return { status: passed ? 'ok' : 'failed', value: { count } };
             }
+            case 'close':
+                return { status: 'ok', value: { status: 'closed' } };
             case 'barrier':
                 // The replay dispatches paired segments one at a time, so the barrier is a controlled fact here;
                 // control-recipe-barrier.test.ts proves its control path.
@@ -250,7 +287,9 @@ class GeneratedAlmPorts {
 
     private send(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
         assert(isJsonRecordValue(command.payload));
-        const rejected = command.payload.marker === 'bounded-rejection';
+        // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
+        const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
+        const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused;
         const handedOver = HANDED_OVER_WS_OUTCOMES[String(command.payload.marker)];
         const message: PortMessage = {
             command,
@@ -258,7 +297,9 @@ class GeneratedAlmPorts {
             state: rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
             attemptCarriers: [],
-            attemptOutcomes: []
+            attemptOutcomes: [],
+            failure: capacityRefused ? { kind: 'refused', reason: 'capacity' } : undefined,
+            carrierFallback: undefined
         };
         this.messages.push(message);
         assert(command.handleId);
@@ -282,6 +323,9 @@ class GeneratedAlmPorts {
         else if (handedOver !== undefined) {
             this.handOver(message, handedOver);
         }
+        else if (command.toPeer === 'server') {
+            this.acknowledgeByServer(message);
+        }
         else if (!rejected && !this.isHeld(command.typeId)) {
             this.deliver(message);
         }
@@ -292,7 +336,11 @@ class GeneratedAlmPorts {
                 handleId: command.handleId,
                 carrier: command.carrier,
                 status: rejected ? 'rejected' : 'accepted',
-                reason: rejected ? 'Payload exceeds fixture carrier limit' : undefined
+                reason: capacityRefused
+                    ? 'The volatile session bound refused the admission.'
+                    : rejected
+                    ? 'Payload exceeds fixture carrier limit'
+                    : undefined
             }
         };
     }
@@ -302,6 +350,7 @@ class GeneratedAlmPorts {
         this.deliver(message);
         message.attemptCarriers = ['rtc', 'ws'];
         message.attemptOutcomes = handedOver.attemptOutcomes;
+        message.carrierFallback = { from: 'rtc', to: 'ws', reason: handedOver.fallbackReason };
         this.receiver.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.browser.alm.inbound_diagnostics',
@@ -317,6 +366,12 @@ class GeneratedAlmPorts {
                 }
             }
         });
+    }
+
+    /** The server keeps a command addressed to itself and answers it with its own ACK; no member receives it. */
+    private acknowledgeByServer(message: PortMessage): void {
+        message.submitted = true;
+        message.state = 'acknowledged';
     }
 
     /** The receiver's snapshot is below the send's floor: it refuses the copy over RTC and writes nothing. */
@@ -470,6 +525,19 @@ class GeneratedAlmPorts {
             }
         });
     }
+}
+
+/** An addressed send's receipt names its one addressee: the server itself, or the receiver's stored session. */
+function toAddresseeReceipt(toPeer: 'server' | 'receiver') {
+    const addressee = toPeer === 'server' ? 'server-peer' : 'receiver-stored-session';
+    return {
+        receiptMode: 'receiver',
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: [addressee],
+        confirmedRecipientPeerIds: [addressee],
+        unconfirmedRecipientPeerIds: []
+    };
 }
 
 for (const replacesDocument of [true, false]) {

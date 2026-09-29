@@ -124,7 +124,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-lifecycle',
         'durable-opt-in',
         'delivery-reload',
-        'ordering-resync'
+        'ordering-resync',
+        'ws-unicast-receipt',
+        'server-command',
+        'capacity'
     ],
     rtc: [
         'volatile-default',
@@ -136,7 +139,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync-delivered-after-refresh',
-        'not-yet-in-sync-expires'
+        'not-yet-in-sync-expires',
+        'ws-unicast-receipt',
+        'capacity'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -153,7 +158,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
-        'no-fallback-after-deadline'
+        'no-fallback-after-deadline',
+        'ws-unicast-receipt',
+        'unicast-fallback',
+        'capacity'
     ]
 } as const;
 
@@ -256,7 +264,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                if (durableOptInReceived1) {
+                // The capacity sender reconnects before it sends; that wait is pinned in alm-conformance-addressed-scenarios.
+                const capacityReceived1 = command.commandId?.endsWith('capacity-receiver-received-1') === true;
+                if (durableOptInReceived1 || capacityReceived1) {
                     continue;
                 }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
@@ -349,6 +359,9 @@ describe('alm-conformance recipe family', () => {
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
             'no-fallback-after-deadline',
+            'ws-unicast-receipt',
+            'unicast-fallback',
+            'capacity',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
@@ -363,6 +376,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

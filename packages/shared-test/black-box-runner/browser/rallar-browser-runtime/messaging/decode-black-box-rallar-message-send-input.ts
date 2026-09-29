@@ -37,6 +37,10 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
 ];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['toPeer']>[] = [
+    'server',
+    'receiver'
+];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
     'carrier',
@@ -53,7 +57,8 @@ const REPLAY_REFUSED_FIELDS = [
     'seq',
     'handleId',
     'minSnapshotVersion',
-    'qos'
+    'qos',
+    'toPeer'
 ] as const;
 
 type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
@@ -96,6 +101,10 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
+    const toPeer = decodeMessagePeerRole(value.toPeer);
+    if (toPeer !== undefined && typeof toPeer !== 'string') {
+        return Either.ofLeft(toPeer);
+    }
     return decodeMessageSendIdentity(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (identity) =>
@@ -103,12 +112,23 @@ function decodeOrdinarySend(
                 ...identity,
                 ...options,
                 payload,
+                toPeer,
                 topicId: decodeBlackBoxCommandString(value.topicId),
                 ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
                 orderingKey: decodeBlackBoxCommandString(value.orderingKey),
                 seq: decodeBlackBoxCommandNumber(value.seq)
             }))
     );
+}
+
+function decodeMessagePeerRole(
+    value: unknown
+): NonNullable<BlackBoxRallarMessageSendInput['toPeer']> | BlackBoxRallarInputIssue | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    return MESSAGE_PEER_ROLES.find((role) => role === value) ??
+        { message: 'messages.send.toPeer must be server or receiver.' };
 }
 
 function decodeMessageSendIdentity(

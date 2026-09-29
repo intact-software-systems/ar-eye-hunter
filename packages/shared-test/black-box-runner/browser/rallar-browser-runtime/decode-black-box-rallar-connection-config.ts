@@ -1,4 +1,5 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import type { BlackBoxRallarConfig, BlackBoxRallarConnectionConfig } from './black-box-rallar-operation-contracts.ts';
@@ -122,6 +123,27 @@ function dataChannelLanes(value: unknown): readonly RtcDataChannelLaneConfig[] |
     });
 }
 
+function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const record = configRecord(value);
+    const { maxAdmissions, maxBytes } = record;
+    if (
+        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) ||
+        Object.keys(record).length !== 2
+    ) {
+        throw new TypeError(
+            'rallar.almVolatileLimits must name maxAdmissions and maxBytes, each a positive integer.'
+        );
+    }
+    return { maxAdmissions, maxBytes };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
 /** Shared sparse wire configuration; local CRDT documents need no API endpoint. */
 export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackBoxRallarConfig> {
     const record = configRecord(value);
@@ -165,7 +187,8 @@ export function decodeBlackBoxRallarConfigFields(value: unknown): Partial<BlackB
         dataChannelLanes: dataChannelLanes(record.dataChannelLanes),
         expectedSessionId: optionalString(record.expectedSessionId),
         leaveRoomOnClose: optionalBoolean(record.leaveRoomOnClose),
-        logoutOnClose: optionalBoolean(record.logoutOnClose)
+        logoutOnClose: optionalBoolean(record.logoutOnClose),
+        almVolatileLimits: decodeAlmVolatileLimits(record.almVolatileLimits)
     };
 }
 

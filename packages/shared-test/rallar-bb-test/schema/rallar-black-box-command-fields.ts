@@ -110,6 +110,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'handleId',
             'minSnapshotVersion',
             'qos',
+            'toPeer',
             'replayOnCarrier'
         ]
     },
@@ -291,6 +292,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesDurability: AL_DURABILITY_ALGOS,
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
+    /** Roles, not session ids: no session exists when a recipe is written (C11). */
+    messagesToPeer: ['server', 'receiver'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc'],

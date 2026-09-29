@@ -1176,11 +1176,15 @@ describe('Hetzner distributed manifest catalog', () => {
                 'delivery-lifecycle',
                 'durable-opt-in',
                 'ordering-resync',
+                'ws-unicast-receipt',
+                'server-command',
+                'capacity',
                 'not-yet-in-sync',
                 'cross-carrier-duplicate',
                 'fallback-within-deadline',
                 'receipt-exhausted-fallback',
-                'no-fallback-after-deadline'
+                'no-fallback-after-deadline',
+                'unicast-fallback'
             ]
         });
 
@@ -1194,10 +1198,17 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
             expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
         }
+        // The server is no RTC peer (C9), so only the ws block addresses it.
+        expect(commandIds).toContain('alm-ws-server-command-sender-send-1');
+        expect(
+            commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))
+        ).toBe(false);
+        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_200);
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        expect(rtcConnects).toHaveLength(5);
+        // Two prologues, three reload reconnects, and the capacity sender's lowered and restored connect per carrier.
+        expect(rtcConnects).toHaveLength(11);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 

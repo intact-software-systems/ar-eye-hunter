@@ -664,3 +664,37 @@ npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --c
 npx tsx apps/rallar-black-box/scripts/write-world-fleet-distributed-manifests.ts --check
 cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```
+
+```text
+Title: messages.send names one peer by its lane role
+Date: 2026-09-29
+Owner: ALM S3c-ii Task 6
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- Other: RALLAR_BLACK_BOX_COMMAND_FIELDS['messages.send'] and the control validator
+
+Old shape:
+messages.send addressed its scope only; toPeerId was refused.
+
+New shape:
+messages.send may name toPeer: 'server' | 'receiver'. The page resolves the role at send time to the WS server's
+peer id or to the room's one other live session; an unresolvable role fails with
+RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED. A replay refuses toPeer. toPeerId stays refused.
+
+Migration:
+None: a recipe without toPeer is unchanged.
+
+Golden corpus updates:
+golden-all-primitive-commands-v1 gained messages-send-to-peer-v1; new invalid messages-send-unknown-peer-role case.
+
+Prompt/documentation updates:
+schema-and-capabilities.md "ALM Commands" describes toPeer and its failure.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```

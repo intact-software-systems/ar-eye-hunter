@@ -17,6 +17,7 @@ export interface CreateAlmConformanceRecipesInput {
 
 export type AlmConformanceScenarioId =
     | 'bounded-rejection'
+    | 'capacity'
     | 'cross-carrier-duplicate'
     | 'deadline-expiry'
     | 'delivery-baseline'
@@ -29,7 +30,10 @@ export type AlmConformanceScenarioId =
     | 'ordering-resync'
     | 'receipt-exhausted-fallback'
     | 'receipted-audience'
-    | 'volatile-default';
+    | 'server-command'
+    | 'unicast-fallback'
+    | 'volatile-default'
+    | 'ws-unicast-receipt';
 
 export type AlmConformanceTag = 'smoke' | 'full';
 

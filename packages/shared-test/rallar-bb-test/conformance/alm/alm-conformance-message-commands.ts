@@ -33,6 +33,8 @@ interface AlmConformanceSendDelivery {
     readonly orderingKey?: string;
     readonly seq?: number;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
+    /** Absent, the send addresses its room. */
+    readonly toPeer?: RallarBlackBoxTestMessagesSendCommand['toPeer'];
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -243,6 +245,32 @@ export function toHandedOverAssertions(
             })
         )
     ];
+}
+
+/**
+ * An addressed send's receipt names one recipient, its addressee (Q11). Which session that is, the identity
+ * assessment joins after the run.
+ */
+export function toAddresseeReceiptAssertions(
+    sender: AlmConformanceStepInput,
+    resultName: string
+): readonly RallarBlackBoxTestCommand[] {
+    const facts = [
+        ['state', 'acknowledged'],
+        ['receiptMode', 'receiver'],
+        ['expectedRecipientPeerIds.length', 1],
+        ['confirmedRecipientPeerIds.length', 1]
+    ] as const;
+    return facts.map(([field, expected]) =>
+        toResultAssertion({
+            step: sender,
+            name: `assert-addressee-${field.replace('.length', '-count')}-1`,
+            resultName,
+            field,
+            operator: 'equals',
+            expected
+        })
+    );
 }
 
 export function toStorageCountersCommand(

@@ -9,6 +9,7 @@ import type { BlackBoxRallarLifecycleOperationContext } from '../lifecycle-contr
 import type { BlackBoxRallarAuthentication } from './black-box-rallar-authentication.ts';
 import { toBlackBoxRallarSessionDiagnostic, toConnectedTargetRejection } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
 
 export namespace BlackBoxRallarCrdtLiveConnection {
@@ -19,6 +20,7 @@ export namespace BlackBoxRallarCrdtLiveConnection {
         readonly lifecycle: BlackBoxRallarConnectionState.Lifecycle;
         readonly connectionState: BlackBoxRallarConnectionState;
         readonly authentication: BlackBoxRallarAuthentication;
+        readonly volatileLimits: BlackBoxRallarVolatileLimits;
     }
 }
 
@@ -63,6 +65,7 @@ export class BlackBoxRallarCrdtLiveConnection {
         const defaults = configureBlackBoxRallarConnection({
             rallar,
             diagnosticsPorts: this.#input.diagnosticsPorts,
+            volatileLimits: this.#input.volatileLimits,
             config
         });
         diagnostics.emitDiagnostic(config, 'rallar.browser.crdt.configure_completed', { defaults });

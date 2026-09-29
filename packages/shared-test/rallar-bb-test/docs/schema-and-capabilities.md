@@ -153,13 +153,25 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
 `reliability`, `ack`, `durability`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion` and `qos`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
 `durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile.
 `handleId` defaults to the command's own `commandId`, and every later delivery
-command addresses the send through that handle. Supersedence (`key`) and unicast
-targeting (`toPeerId`) are not part of this release; naming either one fails
-recipe validation.
+command addresses the send through that handle. Supersedence (`key`) is not part of
+this release, and neither is a literal peer id (`toPeerId`), which no recipe knows
+when it is written; naming either one fails recipe validation. `toPeer` addresses
+one peer by its lane role instead: `server` is the id the WS server answers as
+(`serverPeerId()`, learned from `/api/config`), and `receiver` is the one other
+live session of the connection's room, read from the page's cached roster with the
+page's own session left out. The page resolves the role at send time and hands the
+product's typed send `{ peerId }` on a channel opened with purpose `command`, the
+purpose a product addresses one peer with; the recipe's own `ack` still wins. A role
+the page cannot resolve (no server id, or a roster without exactly one other live
+session) fails the command with `RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED` and opens no
+handle. The roster names no role, so a room with two recipients has no resolvable
+`receiver`, and the three-agent family addresses no peer. The server is no RTC
+peer: `toPeer: 'server'` on `rtc` or `rtc-with-ws-fallback` is refused before
+admission.
 
 `minSnapshotVersion` is a harness floor on the room snapshot a receiver must hold
 before it admits the send: `{ absolute: n }`, or `{ aboveCurrentBy: n }`, which
@@ -187,7 +199,7 @@ A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
 `scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
-`minSnapshotVersion` and `qos` are each refused beside it, by the control validator and by
+`minSnapshotVersion`, `qos` and `toPeer` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
 after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
@@ -335,12 +347,28 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
+The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (C11,
+R-S3c-ii-5). `ws-unicast-receipt` runs over every carrier: the sender sends a `command` to
+`toPeer: 'receiver'` and observes `acknowledged` under the `receiver` mode with one expected and one
+confirmed recipient; its recipe metadata `almReceiptRoles` pins the receipt to the `receiver` role, which the
+identity assessment joins to the receiver's session after the run. `unicast-fallback`
+(`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the third `not-ready` attempt
+hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and `carrierFallback`
+`{ from: 'rtc', to: 'ws', reason: 'not-ready' }`, and the receiver receives the copy and reads its
+`admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to
+`toPeer: 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole
+window that nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with
+`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 131072 }`, sends two ≈45 KB messages that are
+admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }`
+and `attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. Its
+receiver waits for the two arrivals with one more readiness budget, since the sender reconnects before it sends.
+
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `failure`,
+`submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
 `backpressured`, and `enqueued`. `attempts` counts every attempt row,
@@ -373,6 +401,11 @@ the send over), `relay-rejected` with its `rejection`, `admission-failed`, `skip
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
 with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
 `reason` keeps the prose; a receipt-less send refused late keeps `transport-accepted` and no failure.
+
+`carrierFallback` is present once the strategy handed an admitted message to its second carrier (D56):
+`{ from, to, reason, atMs, detail }`, with `reason` one of `not-ready`, `not-yet-in-sync-exhausted` and
+`receipt-exhausted`. A refusal at admission, such as the volatile bound's `capacity`, is no hand-over, so it
+leaves `carrierFallback` absent and `attempts` at 0.
 
 `backpressured` is true when a carrier
 refused admission for its own rate limit or open circuit, never when it simply
@@ -448,6 +481,15 @@ re-register, and the coordinator continues from the next command. On the
 `messages.rtc`. It subscribes the typed inbound channel over the WebSocket and
 opens no RTC lane, which is what lets the `ws` carrier run without a peer. It is
 a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
+
+### The lane-only `rallar.almVolatileLimits` connect field
+
+`rtc.connect.rallar.almVolatileLimits` is `{ maxAdmissions, maxBytes }`, each a positive integer, and nothing else;
+any other shape fails the connect. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
+page holds it and hands the browser session a read port that the session reads once, when it initialises. It is a
+harness capability, never a `rallar.connect` option. A facade that is already connected keeps the bound its session
+read, so a recipe closes the connection before a connect that names the field, and closes and reconnects without it
+to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
 
 ## RTC Connect Readiness
 

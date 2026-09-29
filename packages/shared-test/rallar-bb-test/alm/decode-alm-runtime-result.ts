@@ -5,6 +5,8 @@ import {
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttemptOutcome,
     type ALDeliveryCarrier,
+    type ALDeliveryCarrierFallback,
+    type ALDeliveryFallbackReason,
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -67,6 +69,13 @@ const ALM_ATTEMPT_OUTCOMES: Readonly<Record<ALDeliveryAttemptOutcome, true>> = {
     superseded: true,
     unroutable: true,
     refused: true
+};
+
+/** Keyed by every fallback reason, so a new reason fails to compile here instead of decoding as an invalid result. */
+const ALM_FALLBACK_REASONS: Readonly<Record<ALDeliveryFallbackReason, true>> = {
+    'not-ready': true,
+    'not-yet-in-sync-exhausted': true,
+    'receipt-exhausted': true
 };
 
 export function decodeAlmMessagesSendResultValue(
@@ -139,6 +148,7 @@ export function decodeAlmDeliveryResultValue(
         receiptMode: readAlmReceiptModeField(record, path),
         relayRejection: readAlmRelayRejectionField(record, path),
         failure: readAlmFailureField(record, path),
+        carrierFallback: readAlmCarrierFallbackField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
         expectedRecipientPeerIds: requireAlmStringListField(
@@ -276,6 +286,33 @@ function readAlmFailureField(
         throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
     }
     return decoded.right;
+}
+
+/** Absent unless the strategy handed the admitted message to its second carrier (D56). */
+function readAlmCarrierFallbackField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryCarrierFallback | undefined {
+    const value = record.carrierFallback;
+    if (value === undefined) {
+        return undefined;
+    }
+    const fallback = decodeAlmRuntimeRecord(value);
+    const legs = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg;
+    const from = legs.find((carrier) => carrier === fallback.from);
+    const to = legs.find((carrier) => carrier === fallback.to);
+    const { reason, atMs, detail } = fallback;
+    if (
+        from === undefined || to === undefined || !isAlmFallbackReason(reason) ||
+        typeof atMs !== 'number' || typeof detail !== 'string'
+    ) {
+        throw toAlmInvalidRuntimeResultError(`${path}.carrierFallback`);
+    }
+    return { from, to, reason, atMs, detail };
+}
+
+function isAlmFallbackReason(value: unknown): value is ALDeliveryFallbackReason {
+    return typeof value === 'string' && Object.hasOwn(ALM_FALLBACK_REASONS, value);
 }
 
 function requireAlmAttemptOutcomesField(

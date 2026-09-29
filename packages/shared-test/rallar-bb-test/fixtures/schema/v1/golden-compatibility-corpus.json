@@ -151,6 +151,24 @@
           "handleId": "messages-send-v1-handle"
         },
         {
+          "kind": "messages.send",
+          "commandId": "messages-send-to-peer-v1",
+          "connection": "goldenRtc",
+          "carrier": "rtc-with-ws-fallback",
+          "typeId": "room.golden.compatibility.alm.command",
+          "payload": {
+            "text": "golden addressed payload"
+          },
+          "roomRef": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "golden-room"
+          },
+          "ack": "receiver",
+          "toPeer": "receiver",
+          "handleId": "messages-send-to-peer-v1-handle"
+        },
+        {
           "kind": "messages.observe",
           "commandId": "messages-observe-v1",
           "connection": "goldenWs",
@@ -1015,6 +1033,28 @@
                 "commandId": "loop-until-bad-child"
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "messages-send-unknown-peer-role",
+      "expectedErrors": [
+        "$.commands[0].toPeer: Expected one of \"server\", \"receiver\"."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "messages-send-unknown-peer-role",
+        "commands": [
+          {
+            "kind": "messages.send",
+            "commandId": "messages-send-recipient-b",
+            "carrier": "ws",
+            "typeId": "room.golden.compatibility.alm",
+            "payload": {
+              "n": 1
+            },
+            "toPeer": "recipient-b"
           }
         ]
       }

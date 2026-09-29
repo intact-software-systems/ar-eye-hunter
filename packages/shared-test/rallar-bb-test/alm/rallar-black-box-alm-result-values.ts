@@ -38,7 +38,7 @@ export interface RallarBlackBoxTestMessagesControlResultValue {
 }
 
 export interface RallarBlackBoxTestMessagesObserveResultValue
-    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection' | 'failure'> {
+    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection' | 'failure' | 'carrierFallback'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;

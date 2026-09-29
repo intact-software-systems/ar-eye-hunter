@@ -36,6 +36,9 @@ const ALM_CONFORMANCE_TYPE_ID = 'alm.conformance';
 
 const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 
+/** Also each combined root's execution budget (distributed-run-commands.ts), so it bounds the whole hosted run. */
+const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_200;
+
 const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
 
 const ALM_CONFORMANCE_RECEIVER_CONNECTION = 'almConformanceReceiver';
@@ -58,8 +61,10 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery ' +
             'baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, ' +
-            'not-yet-in-sync, and fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no ' +
-            'fallback after the deadline) across ws, rtc, and rtc-with-ws-fallback carriers.',
+            'not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no ' +
+            'fallback after the deadline, and the addressed sends: a command to the receiver, its unicast ' +
+            'fallback, a command to the server, and the volatile session bound) across ws, rtc, and ' +
+            'rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender', 'two-agent'),
@@ -79,7 +84,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         groupAssertions: [],
         metadata: {
             family: 'alm-conformance',
-            recommendedTerminalTimeoutSeconds: 300,
+            recommendedTerminalTimeoutSeconds: ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS,
             carriers: [...ALM_CONFORMANCE_CARRIERS],
             scenarios: toAlmConformanceScenarioIds(scenarios)
         }

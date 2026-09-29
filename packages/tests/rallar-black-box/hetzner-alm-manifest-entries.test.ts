@@ -11,8 +11,10 @@ import {
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRtcConnectCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { AL_VOLATILE_SESSION_MAX_ADMISSIONS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import {
     ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
@@ -59,7 +61,10 @@ describe('ALM conformance combined recipe', () => {
     it('lists every scenario type of every carrier on each combined connect, since RTC subscribes per type', () => {
         const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
         const families = [
-            { entry: createAlmConformance2AgentEntry(), scenarioKeys: ['delivery-baseline', 'delivery-reload'] },
+            {
+                entry: createAlmConformance2AgentEntry(),
+                scenarioKeys: ['delivery-baseline', 'delivery-reload', 'ws-unicast-receipt', 'capacity']
+            },
             {
                 entry: createAlmConformance3AgentEntry(),
                 scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership']
@@ -92,6 +97,26 @@ describe('ALM conformance combined recipe', () => {
                 }
             }
         }
+    });
+
+    it('keeps the capacity sender\'s lowered volatile limits through the combined connect, then restores them', () => {
+        const sender = createAlmConformance2AgentEntry().manifest.recipes
+            .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
+        const connects = sender.commands.filter((
+            command
+        ): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect' && command.commandId?.includes('-capacity-sender-') === true);
+
+        expect(connects.map((command) => [command.commandId, command.rallar?.almVolatileLimits]))
+            .toEqual(
+                ['ws', 'rtc', 'rtc-with-ws-fallback'].flatMap((carrier) => [
+                    [`alm-${carrier}-capacity-sender-connect-lowered`, {
+                        maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+                        maxBytes: 131_072
+                    }],
+                    [`alm-${carrier}-capacity-sender-connect-restored`, undefined]
+                ])
+            );
+        expect(connects.every((command) => command.readiness?.minReadyPeers === 1)).toBe(true);
     });
 });
 

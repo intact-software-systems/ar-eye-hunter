@@ -5,6 +5,7 @@ import {
     type BlackBoxBrowserDiagnosticsDependency,
     type BlackBoxBrowserDirectorDependency,
     type BlackBoxBrowserMessagesDependency,
+    type BlackBoxBrowserPeersDependency,
     type BlackBoxBrowserRallarRuntimeDependency,
     type BlackBoxBrowserRealtimeDependency,
     type BlackBoxBrowserRoomsDependency,
@@ -33,7 +34,7 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtOperationBatch } from '@shared/crdt/mod.ts';
 import {
     createCountingIndexedDbOperationObserver,
@@ -195,7 +196,9 @@ export const facadeBehavior = {
     directorCreateRelay: vi.fn<BlackBoxBrowserDirectorDependency['createRelay']>(),
     replayCapturedMessage: vi.fn<BlackBoxBrowserDeliveriesDependency['replayCapturedMessage']>(),
     submitRawControl: vi.fn<BlackBoxBrowserDeliveriesDependency['submitRawControl']>(),
-    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>()
+    resolveRoomMinSnapshotVersion: vi.fn<BlackBoxBrowserDeliveriesDependency['resolveRoomMinSnapshotVersion']>(),
+    serverPeerId: vi.fn<BlackBoxBrowserPeersDependency['serverPeerId']>(),
+    readRoomSessions: vi.fn<BlackBoxBrowserPeersDependency['readRoomSessions']>()
 };
 
 const auth: BlackBoxBrowserAuthDependency = {
@@ -354,6 +357,12 @@ const deliveries: BlackBoxBrowserDeliveriesDependency = {
     resolveRoomMinSnapshotVersion: (roomRef) => facadeBehavior.resolveRoomMinSnapshotVersion(roomRef)
 };
 
+const peers: BlackBoxBrowserPeersDependency = {
+    serverPeerId: () => facadeBehavior.serverPeerId(),
+    session: () => facadeSession,
+    readRoomSessions: (roomRef) => facadeBehavior.readRoomSessions(roomRef)
+};
+
 /** The one session registry the facade's senders open handles in and the harness reads them back from. */
 export function getFacadeDeliveryRegistry(): BrowserRallarDeliveryRegistry {
     return deliveryRegistry;
@@ -402,7 +411,8 @@ export const rallarFacadeTestDouble: BlackBoxBrowserRallarRuntimeDependency = {
     crdt,
     director,
     diagnostics,
-    deliveries
+    deliveries,
+    peers
 };
 
 export function resetBrowserRuntimeFacadeTestDouble(): void {
@@ -477,6 +487,35 @@ export function openFacadeDelivery(
         });
     }
     return handle;
+}
+
+/** A presence entry of room-1 whose lease runs a minute past now, unless the case states its own. */
+export function toRoomRosterSession(
+    sessionId: string,
+    lease: Readonly<{ status?: 'active' | 'disconnected'; expiresAtEpochMs?: number; }> = {}
+): GroupPresenceSession {
+    const nowMs = Date.now();
+    const entry = {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        sessionId,
+        // Hosted agents may all log in as one user, so the principal never tells two sessions apart.
+        principalId: 'client-1',
+        generationId: `${sessionId}-generation`,
+        generationVersion: 1,
+        connectedAtEpochMs: nowMs - 5_000,
+        lastHeartbeatAtEpochMs: nowMs - 1_000,
+        expiresAtEpochMs: lease.expiresAtEpochMs ?? nowMs + 60_000
+    };
+    return lease.status === 'disconnected'
+        ? {
+            ...entry,
+            status: 'disconnected',
+            disconnectedAtEpochMs: nowMs - 500,
+            disconnectReason: 'closed'
+        }
+        : { ...entry, status: 'active', disconnectedAtEpochMs: null, disconnectReason: null };
 }
 
 /** The session registry's own bounds, driven by the faked clock. */

@@ -21,6 +21,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
  * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
  * The fallback family (D56) needs the fallback cell.
+ * The addressed family (C11) runs on two agents: server-command over ws only, unicast-fallback on the fallback cell.
  */
 const CARRIER_SCENARIO_IDS = {
     ws: [
@@ -32,6 +33,9 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'ordering-resync',
+        'ws-unicast-receipt',
+        'server-command',
+        'capacity',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const)
     ],
     rtc: [
@@ -45,6 +49,8 @@ const CARRIER_SCENARIO_IDS = {
         'ordering-resync',
         'not-yet-in-sync',
         'not-yet-in-sync',
+        'ws-unicast-receipt',
+        'capacity',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ],
     'rtc-with-ws-fallback': [
@@ -63,6 +69,9 @@ const CARRIER_SCENARIO_IDS = {
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
         'no-fallback-after-deadline',
+        'ws-unicast-receipt',
+        'unicast-fallback',
+        'capacity',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
     ]
 } as const;

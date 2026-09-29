@@ -84,8 +84,8 @@ for (const scheduled of [false, true]) {
         assertEquals(pair.runId, runId);
         assertEquals(pair.sender, { agentId: agents[0], commandId: sender.commandId });
         assertEquals(pair.receiver, { agentId: agents[1], commandId: receiver.commandId });
-        assertEquals(sender.command.timeoutMs, 300_000);
-        assertEquals(receiver.command.timeoutMs, 300_000);
+        assertEquals(sender.command.timeoutMs, 1_200_000);
+        assertEquals(receiver.command.timeoutMs, 1_200_000);
         assertEquals(pair.checkpoints.length, 3, 'one full reload specimen per supported carrier');
         assertEquals(sender.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(receiver.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
@@ -117,14 +117,14 @@ for (const scheduled of [false, true]) {
             prefixStart = suffixEnd + 1;
         }
         assertEquals(service.takeDispatchableCommands(runId, agents[0]), [], 'no reload while the initial prefix is incomplete');
-        now = queuedAt + 299_999;
+        now = queuedAt + 1_199_999;
         service.takeDispatchableCommands(runId, agents[0]);
         assertEquals(
             service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId),
             undefined,
             'the actual root remains pending within its original execution budget'
         );
-        now = queuedAt + 300_000;
+        now = queuedAt + 1_200_000;
         service.takeDispatchableCommands(runId, agents[0]);
         const expired = service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId);
         assertEquals(expired?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT', 'dispatch does not reset or extend the original queued budget');
@@ -406,6 +406,7 @@ function toReceiptsFabricatedValue(
         attemptOutcomes: ['sent'],
         attemptCarriers: [send?.carrier === 'ws' ? 'ws' : 'rtc'],
         relayRejection: undefined,
+        carrierFallback: undefined,
         failure: undefined,
         reason: undefined
     };
