@@ -675,6 +675,25 @@ describe('Rallar Game match', () => {
         expect(received).toEqual([5, 3, 4]);
     });
 
+    it('routes an intent relayed on both lanes once, refusing the fallback copy as a duplicate (C10)', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true
+        });
+        const received: number[] = [];
+        const match = createMatch(fake, {
+            onIntent: (intent) => {
+                received.push(intent.seq);
+            }
+        });
+        await match.start();
+
+        await emitRelayIntent(fake, 7, 'rtc');
+        await emitRelayIntent(fake, 7, 'ws');
+
+        expect(received).toEqual([7]);
+    });
+
     it('delegates sync request to Director Relay and exposes readSnapshot for relay sync responses', async () => {
         const fake = createFakeRallar({
             directorPeerId: 'peer-b',
@@ -864,12 +883,12 @@ async function emitRelaySnapshot(
     });
 }
 
-async function emitRelayIntent(fake: FakeRallar, seq: number): Promise<void> {
+async function emitRelayIntent(fake: FakeRallar, seq: number, transport: 'rtc' | 'ws' = 'rtc'): Promise<void> {
     const intent = toTestJsonValue(
         envelope({ kind: 'intent', senderId: 'peer-b', payload: { action: `move-${seq}` }, seq })
     ) ?? null;
     await fake.relayConfig?.onIntent?.({
-        transport: 'rtc',
+        transport,
         senderId: 'peer-b',
         data: intent,
         envelope: {

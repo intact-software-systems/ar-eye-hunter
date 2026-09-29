@@ -5,6 +5,7 @@ import type {
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
 import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
@@ -14,6 +15,7 @@ import {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
 
@@ -61,28 +63,26 @@ export class BrowserDirectorRelayTransport {
         if (!appointment || !roomRef) {
             throw new Error('Validated director command target is missing.');
         }
-        const receipt = await this.input.messages
-            .room<RallarDirectorRelayEnvelope<T>>({
-                topicId: input.topicId,
-                typeId: input.typeId,
-                roomRef,
-                purpose: 'command'
-            })
-            .send(createEnvelope(input), {
-                peerId: appointment.sessionId,
-                strategy: 'rtc-with-ws-fallback'
-            });
-        const outcome = await receipt.wait({
-            until: ['acknowledged'],
-            timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
-        });
-        return outcome.lifecycle.state === 'acknowledged'
-            ? { status: 'sent', receipt }
-            : {
-                status: 'failed',
-                receipt,
-                reason: outcome.lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
-            };
+        try {
+            const receipt = await this.input.messages
+                .room<RallarDirectorRelayEnvelope<T>>({
+                    topicId: input.topicId,
+                    typeId: input.typeId,
+                    roomRef,
+                    purpose: 'command'
+                })
+                .send(createEnvelope(input), {
+                    peerId: appointment.sessionId,
+                    strategy: 'rtc-with-ws-fallback'
+                });
+            return await readDirectorReceipt(receipt);
+        }
+        catch (error) {
+            if (!isRallarValidationError(error)) {
+                throw error;
+            }
+            return { status: 'failed', reason: error.message };
+        }
     }
 
     public async sendRoomEnvelope<T>(
@@ -197,6 +197,20 @@ export class BrowserDirectorRelayTransport {
                 reason: 'Only the appointed local director can send director output.'
             };
     }
+}
+
+async function readDirectorReceipt(receipt: RallarMessageHandle): Promise<RallarDirectorRelaySendResult> {
+    const outcome = await receipt.wait({
+        until: ['acknowledged'],
+        timeoutMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
+    });
+    return outcome.lifecycle.state === 'acknowledged'
+        ? { status: 'sent', receipt }
+        : {
+            status: 'failed',
+            receipt,
+            reason: outcome.lifecycle.evidence.reason ?? DIRECTOR_COMMAND_UNCONFIRMED_REASON
+        };
 }
 
 function createEnvelope<T>(

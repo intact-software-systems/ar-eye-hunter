@@ -5,6 +5,7 @@ import type {
     RallarTypedMessageChannel
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { createMessageDelivery, type MessageDeliveryFixture } from '../messages/test-message-delivery.ts';
 
@@ -198,6 +199,44 @@ describe('director command', () => {
             kind: 'refused',
             reason: 'unsupported'
         });
+    });
+
+    it('reports a command the typed send refuses before admission as failed with the refusal, not a throw', async () => {
+        const refusal = new RallarValidationError('A peer-addressed send needs a server that names its peer id.', [{
+            path: '$.peerId',
+            code: 'unsupported',
+            message: 'A peer-addressed send needs a server that names its peer id.'
+        }]);
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            {
+                room: toRoomOperation(createRoomChannel(async () => {
+                    throw refusal;
+                })),
+                rtcSend: rejectCarrierSend
+            }
+        );
+
+        expect(await transport.sendCommand(commandInput)).toEqual({
+            status: 'failed',
+            reason: refusal.message
+        });
+    });
+
+    it('keeps an unexpected send error a thrown error', async () => {
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            {
+                room: toRoomOperation(createRoomChannel(async () => {
+                    throw new Error('Storage unavailable');
+                })),
+                rtcSend: rejectCarrierSend
+            }
+        );
+
+        await expect(transport.sendCommand(commandInput)).rejects.toThrow('Storage unavailable');
     });
 
     it('reports an admitted command the director never confirms as failed at its deadline', async () => {
