@@ -46,7 +46,6 @@ import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-ser
 import {
     validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
-import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,

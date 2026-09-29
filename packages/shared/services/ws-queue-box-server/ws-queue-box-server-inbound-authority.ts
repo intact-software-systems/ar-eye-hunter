@@ -6,6 +6,7 @@ import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
+import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import type {
     WsServerInboundAuthorization,
     WsServerInboundAuthorizer,
@@ -126,23 +127,28 @@ export class WsQueueBoxServerInboundAuthority {
                 })
             };
         }
-        const authorization = await this.#authorizer?.authorize(message) ?? { authorized: true };
+        const authorization = toWsQueueBoxServerAddresseeAuthorization({
+            message,
+            serverPeerId: this.#serverPeerId,
+            sendNack: this.#authorizer?.sendNacks ?? false,
+            authorization: await this.#authorizer?.authorize(message) ?? { authorized: true }
+        });
         if (this.#disposed) {
             return { kind: 'finished', result: Either.ofRight({ kind: 'disposed' }) };
         }
+        if (
+            this.#socket.connections.get(connectionId) !== origin.right!.connection ||
+            !origin.right!.connection.isOpen
+        ) {
+            return {
+                kind: 'finished',
+                result: Either.ofLeft({
+                    code: 'unauthorized',
+                    message: 'WS connection changed during authorization'
+                })
+            };
+        }
         if (!authorization.authorized) {
-            if (
-                this.#socket.connections.get(connectionId) !== origin.right!.connection ||
-                !origin.right!.connection.isOpen
-            ) {
-                return {
-                    kind: 'finished',
-                    result: Either.ofLeft({
-                        code: 'unauthorized',
-                        message: 'WS connection changed during authorization'
-                    })
-                };
-            }
             return { kind: 'finished', result: await this.rejectIncomingMessage(message, authorization) };
         }
         return { kind: 'candidate', value: { origin: origin.right!, authorization } };

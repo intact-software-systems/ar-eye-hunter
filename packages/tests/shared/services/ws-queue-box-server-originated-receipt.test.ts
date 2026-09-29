@@ -38,7 +38,8 @@ import {
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const SERVER_ID = 'server';
-const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** Long enough that the receipt budget (four 2 s windows) ends first. */
 const NOTIFICATION_TTL_MS = 60_000;
 const CLOCK_STEP_MS = 1_000;
@@ -49,7 +50,7 @@ interface ServerInstance {
     readonly sockets: Readonly<Record<string, SimulatedWebSocket>>;
 }
 
-describe('receipts of the server\'s own room notifications (D58, D61)', () => {
+describe('receipts of the server\'s own room notifications', () => {
     it('sends only to the audience frozen at publish and records who confirmed, then that the rest never did', async () => {
         const clock = mockClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
@@ -101,7 +102,7 @@ describe('receipts of the server\'s own room notifications (D58, D61)', () => {
         });
     });
 
-    it('keeps a session that left in the receipt, where it reads unconfirmed, while the retries reach the rest (D43)', async () => {
+    it('keeps a session that left in the receipt, where it reads unconfirmed, while the retries reach the rest', async () => {
         const clock = mockClock();
         const recorder = createRallarAlmReceiptDiagnosticsRecorder({
             nowEpochMs: () => clock.nowMs,
@@ -137,7 +138,7 @@ describe('receipts of the server\'s own room notifications (D58, D61)', () => {
     });
 
     it.each(['hop', 'subtree'] as const)(
-        'keeps the hop that confirmed a %s receipt across the retries to the rest, which never re-route (R-S3c-i-31)',
+        'keeps the hop that confirmed a %s receipt across the retries to the rest, which never re-route',
         async (ack) => {
             const clock = mockClock();
             const recorder = createRallarAlmReceiptDiagnosticsRecorder({
@@ -223,7 +224,7 @@ describe('receipts of the server\'s own room notifications (D58, D61)', () => {
         }).toEqual([1, 1, 1, 1]);
     });
 
-    it('sends the frozen audience only, on the publishing instance and on every other one (C9)', async () => {
+    it('sends the frozen audience only, on the publishing instance and on every other one', async () => {
         const clock = mockClock();
         const outbox = createOutbox(clock);
         const state = createInMemoryALAdmissionState(outbox);
@@ -284,6 +285,10 @@ async function createInstance(input: CreateInstanceInput): Promise<ServerInstanc
         name: SERVER_ID,
         queueEngine: engine,
         forwardsRoomScopedMessages: false,
+        readAuthenticatedConnectionScope: (connection) =>
+            socketServer.connections.get(connection.id) === connection
+                ? { scope: SCOPE, expiresAtEpochMs: input.nowMs() + 60_000 }
+                : undefined,
         outboundStores: createDefaultInMemoryALOutboundRuntimeStores({
             nowMs: input.nowMs,
             decodePrepared: decodeWsQueueBoxServerPreparedMessage,
