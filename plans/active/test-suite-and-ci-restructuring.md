@@ -6,9 +6,8 @@
 > `rallar-testing`, `rallar-code-writing`, `publishing-plan-progress`.
 
 **Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. The maintainer took
-all eleven rulings on 2026-09-29 (section 8). Slices 1–3 have merged and cut the gate from about 57
-minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slice 4 is
-split: 4a is open as #619 and 4b comes next. Slices 5–8 stay outcome-shaped under
+all eleven rulings on 2026-09-29 (section 8). Slices 1–4 have merged and cut the gate from about 57
+minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slices 5–8 stay outcome-shaped under
 `adaptive-plan-execution`: each becomes concrete when it starts, from the evidence in sections 2–5.
 
 **Goal:** Cut the Branch Release Gate and the main deploy from about 55 minutes to about 18 minutes
@@ -1103,8 +1102,9 @@ rules below are binding.
 
 ### Slice 4 — Every test file runs somewhere (section 4.1)
 
-**Split in two.** 4a, in #619, removes the references and guards that ran nothing (section 12). 4b
-keeps the rest of this outline: run the tests that no lane runs, and add the reachability check.
+**Split in two, both merged.** 4a (#619) removed the references and guards that ran nothing. 4b
+(#620) ran the tests no lane ran and added the reachability check. Section 12 records what each
+found, including the three suites that stayed manual because they fail when run.
 
 **Work:**
 
@@ -1243,18 +1243,28 @@ lines are reported.
 All figures are from real runs on 2026-09-29. "Gate" means the blocking lanes; "verdict" means the
 `Branch Release Gate result` check.
 
-| PR   | Merged as   | What it did                                                                                                                                              | Measured                                                                                                           |
-| ---- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| #613 | `91a09eec3` | `!cancelled()` on three gate jobs, concurrency on the API-v1 gates, the topology replay proof runs once, three build-only Cloudflare deploy jobs removed | No Cloudflare build jobs on the next `main` deploy                                                                 |
-| #614 | `61f9783a7` | Eight parallel lanes, a shared setup action, Vitest projects `tooling` and `unit`, the lane contract test                                                | Gate 14.6 min (was 52–57); `main` deploy 16.6 min (was about 55); every suite's counts identical to the serial run |
-| #615 | `82697e470` | Black-box lane as three runners, Recipe Console as two Playwright shards, runner flags `--shard` and `--standard-only`                                   | Blocking lanes about 9.3 min; 60 + 11 recipes and 199 + 12 specs, identical to before                              |
-| #617 | `0d5902bc6` | The ALM observation moves into its own reusable workflow that both callers start beside the gates                                                        | Verdict 9.7 min after the run was created, with ALM still running                                                  |
-| #619 | open        | The remove-dynamics scenarios that never ran, stale task and script references, a task-reference test, the vacuous RTC guard                             | See its description                                                                                                |
+| PR   | Merged as   | What it did                                                                                                                                                                                                         | Measured                                                                                                              |
+| ---- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| #613 | `91a09eec3` | `!cancelled()` on three gate jobs, concurrency on the API-v1 gates, the topology replay proof runs once, three build-only Cloudflare deploy jobs removed                                                            | No Cloudflare build jobs on the next `main` deploy                                                                    |
+| #614 | `61f9783a7` | Eight parallel lanes, a shared setup action, Vitest projects `tooling` and `unit`, the lane contract test                                                                                                           | Gate 14.6 min (was 52–57); `main` deploy 16.6 min (was about 55); every suite's counts identical to the serial run    |
+| #615 | `82697e470` | Black-box lane as three runners, Recipe Console as two Playwright shards, runner flags `--shard` and `--standard-only`                                                                                              | Blocking lanes about 9.3 min; 60 + 11 recipes and 199 + 12 specs, identical to before                                 |
+| #617 | `0d5902bc6` | The ALM observation moves into its own reusable workflow that both callers start beside the gates                                                                                                                   | Verdict 9.7 min after the run was created, with ALM still running                                                     |
+| #619 | `c87d941fe` | The remove-dynamics scenarios that never ran, stale task and script references, a task-reference test, the vacuous RTC guard                                                                                        | See its description; `main` gate green                                                                                |
+| #616 | `94f1f3d84` | The group-admission limiter keeps its keys unique past 160 characters (a separate task the plan spawned)                                                                                                            | The black-box run-id constraint below no longer needs a margin                                                        |
+| #620 | `3978a908d` | `check-test-reachability` in the `checks` lane and `tests/manual-suites.json`; the Relic Hunters app tests, the AppInbox concurrency test and the `test-support` tests now run; the ws-smoke test joins `test:deno` | 1,629 test files, 1,624 run by CI, 5 manual, 0 unowned; `main` gate 12 min after the lanes started, all deploys green |
 
 Push to verdict fell from a median of 58 minutes to about 10, and the verdict now arrives in one
 cycle instead of stopping at the first failing serial step.
 
 ### Differences from the outline above
+
+- **Slice 4 ended with three suites left manual, not wired.** Trying to run them showed why they were
+  dark. The Relic Hunters Playwright suite fails on a camera-mode assertion locally (24 passed, 1
+  failed, 1 skipped). The AR Eye Hunter Playwright suite passes locally but three specs time out on the
+  Linux runner waiting for canvas effects, which turned the first #620 gate red. Both are in
+  `tests/manual-suites.json` with the failure recorded, and the Relic Hunters full-stack spec needs a
+  game-server stack no lane starts. The Postgres integration files must also run serially, on a
+  database of their own: a parallel Node run of the same config failed six tests.
 
 - **Slice 3 split the black-box lane differently.** The runner's `--standard-only` and `--cluster-only`
   flags plus `--shard=<index>/<count>` gave three runners: two balanced shares of the standard
@@ -1278,7 +1288,7 @@ cycle instead of stopping at the first failing serial step.
   group ids from it, and the group-admission limiter cuts its keys at 160 characters. Adding a lane id
   made one recipe's principal key 188 characters, which merged every principal of a group into one
   limiter and produced an HTTP 429. With the original run id the same key is 155 characters, so the
-  margin is 5. The limiter itself is a separate task: keys must stay unique instead of being truncated.
+  margin is 5. The limiter now keeps its keys unique (#616), but the run id is still pinned by a contract test.
 - Two pull requests merged back to back make the first `main` deploy fail its stale-main guard. That is
   the guard working, not a regression.
 - A test moved out of the place its runner looks can go dark without anyone noticing. The
