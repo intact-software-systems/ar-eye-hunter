@@ -11752,6 +11752,12 @@ director: messages.rtc.onMessage(intent | sync-request type id) + messages.ws.on
   bring the `rtc-with-ws-fallback` cell to about 465 s of 480 s, which leaves no margin on a slow page. Cost if wrong:
   the full scope runs three more tests, and the hosted observation job, whose 30-minute timeout already does not fit
   the full scope on slow runners, takes longer still.
+- **R-S3c-ii-6 (Task 3 review, 2026-09-29).** An inbound admission is counted until the earlier of its deadline and
+  30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`); an outbound admission keeps its own
+  deadline. The inbound deadline is the sender's clock and the sender's choice, so a peer whose clock runs ahead, or who
+  names a far deadline, must not keep this session's own sends refused `capacity`; the envelope is delivered at once
+  and only small rows stay. Cost if wrong: long-lived inbound messages are undercounted, and they are never refused
+  anyway (C6).
 
 ## Self-review
 
