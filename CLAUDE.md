@@ -294,6 +294,10 @@ Together `unit`, `unit-tooling`, `deno`, `e2e-app` and `e2e-recipe-console` run 
 `npm run test:ci` runs;
 `packages/tests/repo/release-gate-lanes.test.ts` fails if a lane drops a suite or a Vitest project.
 
+The non-blocking ALM conformance observation is not a lane of `release-gate.yml`. It lives in
+`alm-conformance-observation.yml`, which `branch-release-gate.yml` and `deploy.yml` start beside the
+gate; neither `Branch Release Gate result` nor any deployment waits for it.
+
 The two changed-range checks — `check-changed-repo-style.mjs` and `check-test-structure-coupling.mjs
 --changed` — run only when `release-gate.yml` receives a non-empty `changed_repo_style_base`. The
 main-push deploy path already omits it. On a pull request, the `skip-changed-gates` label passes the
