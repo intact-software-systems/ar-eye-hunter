@@ -218,6 +218,19 @@ because it retains fixed-ID outbox evidence that can affect later global
 outbox workers. The Release Gate's Postgres integration lane follows this same
 order.
 
+`test:postgres:integration` runs with `--no-file-parallelism`. The files share one
+database and delete each other's rows when run in parallel, so do not probe them
+with a plain `vitest run --config` on the shared `appdb`; create a throwaway
+database, migrate it, and point `DATABASE_URL` at it.
+
+## Test Reachability
+
+`npm run check:test-reachability` resolves every tracked test file against the
+commands the workflows run. A file no workflow runs must be owned by an entry
+(owner, command, reason) in `tests/manual-suites.json`; an entry whose file a
+workflow does run is reported as stale. The check runs in the Release Gate
+`checks` lane.
+
 ## Working-Plan Validation Routing
 
 `adaptive-plan-execution` owns working-plan validation scope. Use this catalog for
