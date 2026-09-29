@@ -384,9 +384,12 @@ The heartbeat cache-TTL change from `a50ea8044` was replayed into this branch
 as `46f68a42f`, with a red-before/green-after regression, 41 focused tests,
 and independent review. Subsequent review identified a remaining case: a
 same-tuple snapshot can remove a session while renewing a survivor's lease,
-yet the browser lifecycle classifies it as a renewal and skips RTC
-reconciliation. That case still needs a focused correction and does not
-replace the pending cross-process proof, E3 evidence, or exact-head gate.
+yet the browser lifecycle classified it as a renewal and skipped RTC
+reconciliation. A red-before/green-after regression now covers that case;
+the lifecycle suppresses only renewals that keep the active-session set
+unchanged. The focused state-cache suite passes 93/93 tests. This correction
+does not replace the pending cross-process proof, E3 evidence, or exact-head
+gate.
 
 ## Scope-contract sequence and current status
 
@@ -1134,14 +1137,16 @@ passed 13,157 tests and skipped 12 apart from those bundle tests:
 agent measured 287.8095703125 KiB against `<287`. The maintainer has since
 approved the next whole-KiB strict ceilings, `<226` and `<288`, for this goal.
 The two focused tests were rerun RED at the old ceilings before changing them;
-retain the exact bundle entry points, compressor, and dependency exclusions.
+the approved ceilings are now committed and both focused bundle tests pass
+6/6. The unchanged browser measurement command passes with the full facade at
+225.4 KiB under strict `<226`. Retain the exact bundle entry points,
+compressor, and dependency exclusions.
 The one-millisecond timing failure seen in an earlier whole-suite run did not recur locally, but it did
 recur at the later plan-only branch head. That later head also failed the
 remote ALM WS replacement observation despite a focused local pass. Treat
-both as unresolved until classified with independent evidence. Apply only the
-approved budget changes; do not hide inputs or omit required runtime behavior.
-Recheck focused correctness, both bundle harnesses, test typing, and the whole
-suite. In the same slice, investigate the state-write diagnostic regression above before
+both as unresolved until classified with independent evidence. Do not hide
+inputs or omit required runtime behavior. Recheck the whole suite on the
+current head. In the same slice, investigate the state-write diagnostic regression above before
 accepting the principal scope-wide read; compare complete read alternatives
 and the measured query plan, then rerun the identical state-write workload.
 

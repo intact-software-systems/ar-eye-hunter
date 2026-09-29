@@ -271,6 +271,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                 (
                     change.previous !== undefined &&
                     change.snapshot !== undefined &&
+                    change.previous.activeSessions.length === change.snapshot.activeSessions.length &&
                     isGroupHeartbeatSnapshotRenewal(change.previous, change.snapshot)
                 ) ||
                 change.manager !== undefined ||
