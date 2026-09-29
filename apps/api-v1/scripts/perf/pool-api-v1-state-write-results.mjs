@@ -241,21 +241,21 @@ function poolRoleArtifacts({ sources, expectedCommit, role, environmentSha256 })
     const workloads = first.workloads.map((workload) => {
         const counterpart = second.workloads.find((candidate) => candidate.name === workload.name);
         const samples = [...workload.samples, ...counterpart.samples].map((sample, runIndex) => ({
-            ...structuredClone(sample),
+            ...sample,
             runIndex
         }));
         return {
-            ...structuredClone(workload),
+            ...workload,
             measuredRuns: 18,
             samples,
             summary: summarizeSamples(samples)
         };
     });
     const pooled = {
-        ...structuredClone(first),
+        ...first,
         gitCommit: expectedCommit,
         generatedAt: second.generatedAt,
-        measurement: { ...structuredClone(first.measurement), measuredRuns: 18 },
+        measurement: { ...first.measurement, measuredRuns: 18 },
         workloads,
         aggregation: {
             protocol: ORDER_BALANCED_STATE_WRITE_PROTOCOL,

@@ -1,8 +1,10 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
 import {
@@ -238,7 +240,7 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         );
     });
 
-    it('writes both validated pooled artifacts and their exact output hashes', async () => {
+    it('writes complete pooled artifacts and exact hashes within a 768 MiB CLI heap', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'rallar-state-write-pooling-'));
         try {
             const input = createPoolingInput();
@@ -247,9 +249,11 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
             const approvedBaseOut = join(directory, 'approved-base-pooled.json');
             const candidateOut = join(directory, 'candidate-pooled.json');
             const manifestOut = join(directory, 'manifest.json');
-            await writeApiV1StateWritePooledResults(
-                toWriterArguments(paths, { approvedBaseOut, candidateOut, manifestOut })
-            );
+            await promisify(execFile)(process.execPath, [
+                '--max-old-space-size=768',
+                'apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs',
+                ...toWriterArguments(paths, { approvedBaseOut, candidateOut, manifestOut })
+            ]);
 
             const approvedBaseText = await readFile(approvedBaseOut, 'utf8');
             const candidateText = await readFile(candidateOut, 'utf8');
