@@ -52,6 +52,14 @@ jobs:
     with:
       candidate_ref: ${{ github.sha }}
 
+  # Observation beside the gate: no deployment waits for it, so it never delays a release.
+  alm-conformance-observation:
+    name: ALM conformance observation
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
+    uses: ./.github/workflows/alm-conformance-observation.yml
+    with:
+      candidate_ref: ${{ github.sha }}
+
   deno-deploy-preflight:
     name: Verify Deno Deploy access
     needs: release-gate

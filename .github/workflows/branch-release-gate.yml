@@ -111,6 +111,17 @@ jobs:
       # changed-range checks cannot pass on that one commit. The label passes an empty base,
       # which is the same configuration the main-push deploy path already uses.
       changed_repo_style_base: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changed-gates') && '' || github.event.pull_request.base.sha }}
+
+  # Observation beside the gate: nothing below waits for it, so it never lengthens the required result.
+  alm-conformance-observation:
+    name: ALM conformance observation
+    needs:
+      - governance-gate
+      - validation-evidence
+    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    uses: ./.github/workflows/alm-conformance-observation.yml
+    with:
+      candidate_ref: ${{ github.event.pull_request.head.sha }}
       alm_scope: ${{ vars.RALLAR_BLACK_BOX_ALM_SCOPE || 'smoke' }}
 
   publish-validation-evidence:

@@ -47,10 +47,15 @@ const scripts = (JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'u
 const releaseGate = load(
     readFileSync(path.join(repoRoot, '.github/workflows/release-gate.yml'), 'utf8')
 ) as WorkflowDocument;
-const blockingLanes = Object.values(releaseGate.jobs).filter((job) => job['continue-on-error'] !== true);
+const blockingLanes = Object.values(releaseGate.jobs);
 const laneScripts = blockingLanes.flatMap((job) => job.steps.flatMap(toNpmScripts));
 
 describe('Release Gate lanes', () => {
+    it('has only blocking lanes, so a caller waits for exactly what it depends on', () => {
+        expect(blockingLanes.length).toBeGreaterThan(0);
+        expect(blockingLanes.filter((job) => job['continue-on-error'] === true)).toEqual([]);
+    });
+
     it('runs every suite that npm run test:ci composes', () => {
         const invoked = new Set(laneScripts.flatMap(toLeafScripts));
         // test:unit runs as one Vitest project per lane; the next test proves that split is complete.
