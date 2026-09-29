@@ -36,14 +36,15 @@ describe('ALM conformance deadline expiry', () => {
         expect(() => createAlmConformanceRecipes(conformanceInput('rtc'))).not.toThrow();
     });
 
-    it('keeps admission live while fitting expiry inside every receiver window', () => {
+    it('keeps admission live while fitting the pre-send faults and expiry inside every receiver window', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(conformanceInput(carrier));
             const deadline = scenarios
                 .find((scenario) => scenario.scenarioId === 'deadline-expiry');
             const senderCommands = deadline?.sender.commands ?? [];
-            const send = senderCommands.find((command) => command.kind === 'messages.send');
-            const faultBudgetMs = senderCommands.reduce(
+            const sendAt = senderCommands.findIndex((command) => command.kind === 'messages.send');
+            const send = senderCommands[sendAt];
+            const faultBudgetMs = senderCommands.slice(0, sendAt).reduce(
                 (total, command) =>
                     command.kind === 'fault.inject'
                         ? total + (command.timeoutMs ?? 0)
@@ -81,6 +82,26 @@ describe('ALM conformance deadline expiry', () => {
             expect(baselineReceived).toMatchObject({ windowMs: 27_000, timeoutMs: 28_000 });
             expect(rejectionCommands.find((command) => command.kind === 'messages.cancel'))
                 .toMatchObject({ timeoutMs: 5_000 });
+        }
+    });
+
+    it('holds the sender faults until the handle expired, then releases each one', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const deadline = createAlmConformanceRecipes(conformanceInput(carrier))
+                .find((scenario) => scenario.scenarioId === 'deadline-expiry');
+            const commands = deadline?.sender.commands ?? [];
+            const expiredAt = commands.findIndex((command) => command.kind === 'assert' && command.commandId?.endsWith('assert-expired-1') === true);
+            const faultsOf = (from: number, to: number) =>
+                commands.slice(from, to).flatMap((command) => command.kind === 'fault.inject' ? [`${command.faultId}:${String(command.remaining)}`] : []);
+            const faultIds = carrier === 'rtc-with-ws-fallback'
+                ? ['drop-rtc', 'drop-ws']
+                : [`drop-${carrier}`];
+            const typeId = `alm.conformance.${carrier}.deadline-expiry`;
+
+            expect(faultsOf(0, expiredAt), carrier)
+                .toEqual(faultIds.map((faultId) => `${faultId}-${typeId}:until-cleared`));
+            expect(faultsOf(expiredAt + 1, commands.length), carrier)
+                .toEqual(faultIds.map((faultId) => `${faultId}-${typeId}:0`));
         }
     });
 });

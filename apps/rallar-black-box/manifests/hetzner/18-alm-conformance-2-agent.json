@@ -1136,7 +1136,7 @@
               "typeId": "alm.conformance.ws.deadline-expiry"
             },
             "action": "drop",
-            "remaining": 100,
+            "remaining": "until-cleared",
             "timeoutMs": 3000
           },
           {
@@ -1200,6 +1200,18 @@
             "operator": "equals",
             "expected": "expired",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-ws-deadline-expiry-sender-release-ws",
+            "faultId": "drop-ws-alm.conformance.ws.deadline-expiry",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.ws.deadline-expiry"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
           },
           {
             "kind": "stats",
@@ -2328,7 +2340,7 @@
               "typeId": "alm.conformance.rtc.deadline-expiry"
             },
             "action": "drop",
-            "remaining": 100,
+            "remaining": "until-cleared",
             "timeoutMs": 3000
           },
           {
@@ -2397,6 +2409,18 @@
             "operator": "equals",
             "expected": "expired",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-deadline-expiry-sender-release-rtc",
+            "faultId": "drop-rtc-alm.conformance.rtc.deadline-expiry",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc.deadline-expiry"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
           },
           {
             "kind": "stats",
@@ -3543,7 +3567,7 @@
               "typeId": "alm.conformance.rtc-with-ws-fallback.deadline-expiry"
             },
             "action": "drop",
-            "remaining": 100,
+            "remaining": "until-cleared",
             "timeoutMs": 3000
           },
           {
@@ -3555,7 +3579,7 @@
               "typeId": "alm.conformance.rtc-with-ws-fallback.deadline-expiry"
             },
             "action": "drop",
-            "remaining": 100,
+            "remaining": "until-cleared",
             "timeoutMs": 3000
           },
           {
@@ -3624,6 +3648,30 @@
             "operator": "equals",
             "expected": "expired",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-release-rtc",
+            "faultId": "drop-rtc-alm.conformance.rtc-with-ws-fallback.deadline-expiry",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.deadline-expiry"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-release-ws",
+            "faultId": "drop-ws-alm.conformance.rtc-with-ws-fallback.deadline-expiry",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.deadline-expiry"
+            },
+            "action": "drop",
+            "remaining": 0,
+            "timeoutMs": 3000
           },
           {
             "kind": "stats",

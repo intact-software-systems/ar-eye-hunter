@@ -6,7 +6,10 @@ import {
 
 import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceTag,
+    CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -93,6 +96,36 @@ function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly Ralla
     return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver]);
 }
 
+const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
+
+/**
+ * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
+ * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
+ */
+const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = ['-frozen-audience-membership-recipient-b'];
+
+/**
+ * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before
+ * the window the scenario means it to cover. So every fault holds until a later command of its own recipe
+ * releases it with `0` or reloads the page, which replaces the page's fault port.
+ */
+function toUnreleasedFaults(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    return recipe.commands.flatMap((command, index) => {
+        if (command.kind !== 'fault.inject' || command.remaining === 0) {
+            return [];
+        }
+        if (command.remaining !== 'until-cleared') {
+            return [`${recipe.recipeId} ${command.faultId} counts ${command.remaining} frames`];
+        }
+        const released = recipe.commands.slice(index + 1).some((later) =>
+            later.kind === 'agent.reload' ||
+            (later.kind === 'fault.inject' && later.faultId === command.faultId && later.remaining === 0)
+        );
+        const heldUntilPageEnds = HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES.some((suffix) => recipe.recipeId.endsWith(suffix));
+        return released || heldUntilPageEnds ? [] : [`${recipe.recipeId} ${command.faultId} is never released`];
+    });
+}
+
 describe('ALM conformance recipe validation', () => {
     it('produces carrier-scoped scenarios with distinct command ids and valid schemas', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
@@ -148,5 +181,19 @@ describe('ALM conformance recipe validation', () => {
                 }
             }
         }
+    });
+
+    it('holds every fault until a later command of its own recipe releases it, on every carrier and scope', () => {
+        const unreleased = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            ALM_CONFORMANCE_SCOPES.flatMap((scope) =>
+                createAlmConformanceRecipes(toConformanceInput(carrier))
+                    .filter((scenario) => scenario.tags.includes(scope))
+                    .flatMap((scenario) => [scenario.sender, scenario.receiver, scenario.recipientB])
+                    .flatMap((recipe) => recipe === undefined ? [] : toUnreleasedFaults(recipe))
+                    .map((finding) => `${scope}: ${finding}`)
+            )
+        );
+
+        expect(unreleased).toEqual([]);
     });
 });
