@@ -1,4 +1,7 @@
-import type { BlackBoxRallarHealthInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarHealthInput
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
@@ -66,10 +69,10 @@ describe('browser Rallar runtime bridge', () => {
     });
 
     it('decodes the lane-only volatile limits of a connect and refuses a partial or non-positive pair', async () => {
-        const forwarded: unknown[] = [];
+        const forwarded: BlackBoxRallarConnectionConfig[] = [];
         vi.stubGlobal('window', {
             __blackBoxRallar: {
-                connect: async (config: unknown) => {
+                connect: async (config: BlackBoxRallarConnectionConfig) => {
                     forwarded.push(config);
                     return config;
                 }
