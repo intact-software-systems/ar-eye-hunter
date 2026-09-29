@@ -198,6 +198,19 @@ describe('pull-request release workflow', () => {
         });
     });
 
+    it('lets a superseded run cancel every job except the fail-closed result', () => {
+        const workflow = readWorkflow('.github/workflows/branch-release-gate.yml');
+
+        for (const jobId of ['release-gate', 'publish-validation-evidence', 'rtc-observation-integrity']) {
+            const condition: string = workflow.jobs[jobId].if;
+            expect(condition.startsWith('${{ !cancelled() && ')).toBe(true);
+            expect(condition).not.toContain('always()');
+        }
+        // GitHub never cancels a job whose condition is still true, and a skipped required job reports
+        // success, so only the result job keeps always() and concludes a cancelled run as a failure.
+        expect(workflow.jobs['branch-release-result'].if).toBe('${{ always() }}');
+    });
+
     it('keeps ordinary PR validation read-only and independent of apps or tracked evidence', () => {
         const sources = [
             '.github/workflows/branch-release-gate.yml',
