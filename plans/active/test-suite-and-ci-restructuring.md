@@ -5,9 +5,10 @@
 > checkbox (`- [ ]`) syntax for tracking. Repo skills: `adaptive-plan-execution`,
 > `rallar-testing`, `rallar-code-writing`, `publishing-plan-progress`.
 
-**Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. Slices 1 and 2 are
-concrete. Slices 3–8 are outcome-shaped under `adaptive-plan-execution`: each becomes concrete
-when it starts, from the evidence in sections 2–5. Maintainer rulings still open are in section 8.
+**Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. The maintainer took
+all eleven rulings on 2026-09-29 (section 8). Slices 1 and 2 are concrete; Slice 1 is next, as its
+own pull request. Slices 3–8 are outcome-shaped under `adaptive-plan-execution`: each becomes
+concrete when it starts, from the evidence in sections 2–5.
 
 **Goal:** Cut the Branch Release Gate and the main deploy from about 55 minutes to about 18 minutes
 (Slice 2), then about 10 minutes (Slice 3). Remove the duplicated, obsolete and badly written test
@@ -421,7 +422,8 @@ These are **not duplicates** and must stay:
 - A superseded PR run stops within a minute.
 - The next push's run starts immediately.
 - An early failure shows one red step, not two.
-- The duplicated topology-replay run disappears, subject to ruling R1.
+- The duplicated topology-replay run disappears (ruling R1).
+- The main deploy stops rebuilding the three web apps that the gate already built (ruling R11).
 
 **Expected saving:**
 
@@ -434,9 +436,12 @@ These are **not duplicates** and must stay:
 - Modify: `.github/workflows/branch-release-gate.yml` (lines 106, 122, 159)
 - Modify: `.github/workflows/release-gate.yml` (lines 165–182)
 - Modify: `.github/workflows/api-v1-medium-scale-gate.yml`, `api-v1-formation-gate.yml`
-- Modify or delete: `.github/workflows/api-v1-topology-replay-gate.yml` (ruling R1)
+- Delete: `.github/workflows/api-v1-topology-replay-gate.yml` (ruling R1)
+- Modify: `.github/workflows/deploy.yml`, removing `deploy-eye-hunter`, `deploy-relic-web` and
+  `deploy-rallar-kit` (ruling R11)
 - Test: `packages/tests/repo/pull-request-delivery/pull-request-workflow.test.ts`
 - Test: `packages/tests/repo/api-v1-black-box-workflow.test.ts`
+- Test: `packages/tests/hetzner/deploy-release-gate.test.ts`
 
 ### Task 1.1: Cancellable Branch Release Gate jobs
 
@@ -497,8 +502,7 @@ npx vitest run packages/tests/repo/pull-request-delivery packages/tests/repo/val
 ```ts
 it.each([
     '.github/workflows/api-v1-medium-scale-gate.yml',
-    '.github/workflows/api-v1-formation-gate.yml',
-    '.github/workflows/api-v1-topology-replay-gate.yml'
+    '.github/workflows/api-v1-formation-gate.yml'
 ])('cancels a superseded %s run of the same pull request', async (workflowPath) => {
     const workflow = await readYaml<WorkflowDocument>(workflowPath);
 
@@ -509,7 +513,7 @@ it.each([
 });
 ```
 
-Drop the topology-replay row if ruling R1 retires that workflow.
+There is no topology-replay row, because Task 1.3 deletes that workflow (ruling R1).
 
 - [ ] **Step 2: Run it and confirm it fails** (`concurrency` is undefined).
 - [ ] **Step 3: Add the block** after `permissions:` in each workflow. Manual
@@ -539,15 +543,20 @@ if: ${{ !cancelled() && steps.topology_replay.outcome != 'skipped' }}
 It still errors when the proof ran and left no files, so the `if-no-files-found: error`
 contract is kept.
 
-- [ ] **Step 3: Apply ruling R1** (recommended: retire the duplicate).
+- [ ] **Step 3: Retire the duplicate workflow (ruling R1).**
   - Move "Record exact checkout SHA" (`validated-sha.txt`, `validated-tree.txt`) from
-    `api-v1-topology-replay-gate.yml` into the Release Gate replay step's artifact directory.
-  - Add the four server logs and the proof files to its upload `path`.
+    `api-v1-topology-replay-gate.yml` into the Release Gate, just before the replay step, so the
+    files land in its artifact directory.
+  - Upload the same files the retired workflow uploaded: the two records,
+    `rtc-topology-replay-proof.json`, `rtc-topology-replay-proof-failure.json` and the four
+    server logs. The artifact name stays `api-v1-topology-replay-${{ github.sha }}`.
   - Delete `api-v1-topology-replay-gate.yml`.
-  - Retarget the test "publishes an exact-SHA topology replay gate with the proof and all four
-    logs" (`api-v1-black-box-workflow.test.ts:138`) to the Release Gate job. Remove the workflow
+  - In `api-v1-black-box-workflow.test.ts`, retarget "publishes an exact-SHA topology replay gate
+    with the proof and all four logs" (line 138) to the Release Gate job, and remove the workflow
     from the `workflowJobs` table (line 59).
-  - If the ruling is to keep both, skip this step.
+  - Rephrase `CLAUDE.md` and `.agents/skills/rallar-testing/SKILL.md` wherever they name the
+    dedicated topology-replay gate. The npm script `test:api-v1:black-box:postgres:topology-replay`
+    stays for local runs.
 - [ ] **Step 4: Run the focused tests.**
 
 ```bash
@@ -558,6 +567,26 @@ Expected: PASS.
 
 - [ ] **Step 5: Run the per-slice validation** (Global Constraints), then commit: "Report one
       failure per early gate failure".
+
+### Task 1.4: Stop rebuilding the web apps in the main deploy (ruling R11)
+
+- [ ] **Step 1: Delete the three build-only jobs** `deploy-eye-hunter`, `deploy-relic-web` and
+      `deploy-rallar-kit` from `deploy.yml` (lines 194–270). Cloudflare builds `main` from git
+      itself (`docs/production-deployment.md`), and the Release Gate's "Build deployable apps"
+      step builds the same three workspaces.
+- [ ] **Step 2: Update `deploy-release-gate.test.ts`.**
+  - Remove the `deployJobs` loop (lines 61–71) and the `deployAfterReleaseGateCondition` constant
+    it alone uses.
+  - Add a parsed-YAML check that no `deploy.yml` job runs `npm run build` outside the reusable
+    Release Gate.
+  - Keep the Deno deploy assertions unchanged.
+- [ ] **Step 3: Run the focused tests.** Expected: PASS.
+
+```bash
+npx vitest run packages/tests/hetzner/deploy-release-gate.test.ts packages/tests/repo/governance-decisions/governance-decision-workflow.test.ts
+```
+
+- [ ] **Step 4: Commit.** "Stop rebuilding the web apps after the Release Gate".
 
 **Acceptance (first CI runs on the PR):**
 
@@ -604,14 +633,14 @@ running the gate to completion. This is intended: the result is fail-closed.
 **Why eight lanes, not five and not twelve.** GitHub Free allows 20 concurrent jobs account-wide.
 A mutation-path PR push already starts:
 
-| Source                                    | Jobs |
-| ----------------------------------------- | ---- |
-| Governance                                | 1    |
-| ALM observation                           | 1    |
-| Path-filtered API-v1 gates (two after R1) | 2–3  |
-| CodeQL                                    | 2    |
+| Source                                            | Jobs |
+| ------------------------------------------------- | ---- |
+| Governance                                        | 1    |
+| ALM observation                                   | 1    |
+| Path-filtered API-v1 gates (R1 retired the third) | 2    |
+| CodeQL                                            | 2    |
 
-With eight lanes, one push peaks at about 14 concurrent jobs, and two simultaneous pushes queue a
+With eight lanes, one push peaks at about 13 concurrent jobs, and two simultaneous pushes queue a
 few jobs briefly. Five coarse lanes would leave the gate at about 25 minutes (unit + deno + e2e in
 one lane). More lanes would not shorten the critical path, because the 831 s black-box lane
 dominates until Slice 3 shards it.
@@ -984,54 +1013,45 @@ test changes revert together.
 
 ---
 
-## 8. Maintainer rulings needed
+## 8. Maintainer rulings (taken 2026-09-29)
 
-Each ruling lists the recommended answer first.
+The maintainer took the recommended answer on every ruling. Each entry names the slice that
+carries it out.
 
-- **R1. Retire `api-v1-topology-replay-gate.yml`?**
-  - Recommended: yes. The Release Gate runs the identical proof on every PR and main push; move
-    the exact-SHA records into it (Task 1.3).
-  - Alternative: keep both.
-- **R2. The formation-burst recipes in the required gate** (`burst-small` 84 s and `burst-medium`
-  87 s, each holding about 60 s of fixed steady-state windows).
-  - Recommended: keep both in the gate until Slice 3 shards the recipes, then revisit with
-    measurements.
-  - Alternative: move `burst-medium` to the formation gate now.
-- **R3. `apps/relic-hunters-v1/tests` (20 files, never run).**
-  - Recommended: add them to the root Vitest `unit` project after they pass there.
-  - Alternative: delete them.
-- **R4. `packages/tests/repo/governance-decisions/**`.**
-  - Recommended: keep the tests of what `deploy.yml` still runs (receipt replay and
-    `verify-commit`, push classification, admission verification). Delete the tests of retired
-    plan and exception operations, together with the `scripts/plan-adaptation/**` imports they
-    alone keep alive.
-  - Alternative: keep all 15.
-- **R5. Agent-guidance prose pins** (about 440 phrases in 10 files).
-  - Recommended: replace them with one routing contract (every `SKILL.md` has valid frontmatter,
-    every referenced file exists, `.codex-plugin/plugin.json` lists every skill) and rely on the
-    fresh-agent evaluations for behaviour, as `AGENTS.md:25-29` already says.
-  - Alternative: keep them.
-- **R6. Tombstone assertions** (12 files).
-  - Recommended: delete the ones that guard files and scripts; a deleted file cannot come back
-    unnoticed in review. Keep checker-level bans that encode a live rule, such as `skipLibCheck`.
-- **R7. Darwin-only pixel baselines.**
-  - Recommended: regenerate Linux baselines in the `e2e-recipe-console` lane (one PR with
-    `--update-snapshots`), so they actually gate.
-  - Alternative: delete the two visual specs.
-- **R8. Exhaustive Playwright specs** (9, never run).
-  - Recommended: a weekly scheduled workflow with Postgres and an owner.
-  - Alternative: delete them.
-- **R9. Bundle-budget ratchets.**
-  - Recommended: keep the 2026-09-05 rule (raise to the next whole KiB with the measured figure
-    recorded). Move the figure and its history out of the test body into one committed
-    `bundle-budgets.json`, read by the tests and printed to the job summary.
-- **R10. Performance-evidence tooling tests (755 s).**
-  - Recommended: keep one governed-scale case per validator. Run every other case on a
-    minimum-valid artifact (1 workload, 2 runs, 7 commands), after confirming which validator
-    rules require governed scale.
-- **R11. The three `deploy.yml` build-only Cloudflare jobs.**
-  - Recommended: remove them; the Release Gate `checks` lane builds the same apps.
-  - Alternative: keep them as smoke builds with production env values.
+- **R1. Retire `api-v1-topology-replay-gate.yml`: yes.** The Release Gate runs the identical proof
+  on every PR and main push. Move the exact-SHA records and the four server logs into the gate's
+  replay upload, then delete the workflow. Slice 1, Task 1.3.
+- **R2. The formation-burst recipes stay in the required gate.** `burst-small` (84 s) and
+  `burst-medium` (87 s) both stay until Slice 3 splits the recipes across jobs. Revisit them then,
+  with measurements.
+- **R3. `apps/relic-hunters-v1/tests` join the root Vitest `unit` project** once they pass there,
+  including the 21 unreviewed mock call-count candidates in `relic-hunters-runtime.test.ts`.
+  Slice 4.
+- **R4. `packages/tests/repo/governance-decisions/**` keeps only live paths.**
+  - Keep: the tests of what `deploy.yml` still runs (receipt replay and `verify-commit`, push
+    classification, admission verification).
+  - Delete: the tests of retired plan and exception operations, together with the
+    `scripts/plan-adaptation/**` imports that only they keep alive.
+  - Slice 8.
+- **R5. Agent-guidance prose pins become one routing contract.** Every `SKILL.md` has valid
+  frontmatter, every file it references exists, and `.codex-plugin/plugin.json` lists every skill.
+  The fresh-agent evaluations carry behaviour, as `AGENTS.md:25-29` already says. Slice 8.
+- **R6. Tombstones: delete the ones that guard deleted files and scripts.** Keep checker-level bans
+  that encode a live rule, such as `skipLibCheck` or no `fmt` block while dprint owns formatting.
+  Slice 8.
+- **R7. Darwin-only pixel baselines get Linux baselines.** Generate them once with
+  `--update-snapshots` in a dedicated PR, so the `e2e-recipe-console` lane gates them in CI. Keep
+  the darwin baselines for local runs. After Slice 2.
+- **R8. The exhaustive Playwright specs run weekly.** They get a scheduled workflow with a Postgres
+  service and a named owner. A failure opens an issue and never blocks a PR. Slice 4.
+- **R9. Bundle budgets move into one committed `bundle-budgets.json`.** Both bundle tests read it,
+  and each run prints the measured figures to the job summary. The 2026-09-05 rule stays: raise
+  the ceiling to the next whole KiB and record the measured figure in the same commit. Slice 7.
+- **R10. The performance-evidence tooling tests keep one governed-scale case per validator.** Every
+  other case runs on a minimum-valid artifact, after confirming which validator rules need
+  governed scale. Target: under 60 s. Slice 5.
+- **R11. Remove the three `deploy.yml` build-only Cloudflare jobs.** The Release Gate already builds
+  the same three apps. Slice 1, Task 1.4.
 
 ---
 
