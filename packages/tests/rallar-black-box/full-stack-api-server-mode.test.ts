@@ -65,6 +65,17 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(server.command).not.toContain('--env-file=');
     });
 
+    it('captures only the ALM lane server timing when explicitly requested', () => {
+        const normal = createFullStackApiV1WebServer({ mode: 'memory' });
+        const observed = createFullStackApiV1WebServer({ mode: 'memory', almTimingCapture: true });
+
+        expect(normal.command).not.toContain('filter-alm-server-timing.mjs');
+        expect(observed.command).toContain('RALLAR_TIMING_LOGS=true');
+        expect(observed.command).toContain('filter-alm-server-timing.mjs');
+        expect(observed.command).toContain('pipefail');
+        expect(observed.command).not.toContain('2>&1');
+    });
+
     it('allows CI configs to disable existing web server reuse', () => {
         const server = createFullStackApiV1WebServer({
             mode: 'postgres',
@@ -159,7 +170,7 @@ describe('rallar-black-box full-stack API server mode', () => {
 
     it('validates each reachable probe before classifying an absent peer as unavailable', async () => {
         const unavailable = { kind: 'unavailable' as const };
-        const reachable = (value: unknown) => ({
+        const reachable = <T>(value: T) => ({
             kind: 'reachable' as const,
             ok: true,
             status: 200,

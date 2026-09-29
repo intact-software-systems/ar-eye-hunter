@@ -43,7 +43,8 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
-                requireFreshPostgres: requireFreshPostgresApi
+                requireFreshPostgres: requireFreshPostgresApi,
+                almTimingCapture: process.env.RALLAR_BLACK_BOX_ALM_TIMING_CAPTURE === '1'
             }),
             ...(liveRtcClusterEnabled
                 ? clusterApiBaseUrls.map((apiBaseUrl) =>

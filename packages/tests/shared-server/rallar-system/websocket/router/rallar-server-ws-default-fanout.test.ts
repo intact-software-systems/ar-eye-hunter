@@ -1,5 +1,6 @@
 import { expect, it, onTestFinished } from 'vitest';
 
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -17,6 +18,7 @@ const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', gro
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
 it('delivers a durable admitted room send with omitted fanout and completes its receiver receipt', async () => {
+    const timingEvents: RallarTimingEvent[] = [];
     const socketServer = new JsonWebSocketServer();
     const origin = new TestWebSocket('ws://origin');
     const receiver = new TestWebSocket('ws://receiver');
@@ -48,6 +50,7 @@ it('delivers a durable admitted room send with omitted fanout and completes its 
     });
     onTestFinished(() => service.dispose());
     const router = new RallarServerWsRouter(service, {
+        timing: (event) => timingEvents.push(event),
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
                 authorized: true,
@@ -78,6 +81,18 @@ it('delivers a durable admitted room send with omitted fanout and completes its 
     ).toBe(1);
     expect(await outboundStores.admissionStore.readReceiptState({ originPeerId: 'origin', msgId: message.id.msgId }))
         .toMatchObject({ mode: 'receiver', expectedPeerIds: ['receiver'] });
+    expect(timingEvents).toContainEqual(expect.objectContaining({
+        component: 'rallar-ws-publication',
+        operation: 'route-publish',
+        details: expect.objectContaining({
+            msgId: 'default-durable',
+            fanout: 'outbox',
+            verdict: 'admitted',
+            keyTopicId: 'AL_OUTBOUND_MESSAGE',
+            keyResourceId: expect.stringMatching(/^scope-[a-z0-9]+$/),
+            keyContextId: expect.stringMatching(/^message-[a-z0-9]+$/)
+        })
+    }));
 
     await service.acceptIncomingMessage(
         newALAckControlMessage(

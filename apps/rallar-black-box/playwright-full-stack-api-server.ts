@@ -53,6 +53,7 @@ export function createFullStackApiV1WebServer(
         spaBaseUrl?: string;
         reuseExistingServer?: boolean;
         requireFreshPostgres?: boolean;
+        almTimingCapture?: boolean;
     }> = {}
 ): FullStackApiV1WebServer {
     const mode = input.mode ?? readFullStackApiServerMode();
@@ -67,7 +68,13 @@ export function createFullStackApiV1WebServer(
     );
 
     return {
-        command: mode === 'memory'
+        command: input.almTimingCapture === true
+            ? toAlmTimingCaptureCommand(
+                mode === 'memory'
+                    ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl, true)
+                    : createPostgresApiCommand(apiBaseUrl, spaBaseUrl, true)
+            )
+            : mode === 'memory'
             ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl)
             : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
         url: `${apiBaseUrl}/api/config`,
@@ -226,18 +233,24 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
     return url.protocol === 'https:' ? 443 : 80;
 }
 
-function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string, timingCapture: boolean = false): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackApiProfileEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${createFullStackApiProfileEnvBlock()} ${
+        timingCapture ? 'RALLAR_TIMING_LOGS=true ' : ''
+    }deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
-function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
+function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, timingCapture: boolean = false): string {
     return `cd ../.. && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
         createFullStackSpaCorsOrigins(spaBaseUrl)
-    } PORT=${portFromBaseUrl(apiBaseUrl)} ${
-        createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } PORT=${portFromBaseUrl(apiBaseUrl)} ${createFullStackApiUrlEnvBlock(apiBaseUrl)} ${
+        timingCapture ? 'RALLAR_TIMING_LOGS=true ' : ''
+    }deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+}
+
+function toAlmTimingCaptureCommand(apiCommand: string): string {
+    return `bash -o pipefail -c '${apiCommand} | node apps/rallar-black-box/scripts/filter-alm-server-timing.mjs apps/rallar-black-box/test-results/alm-observation/server-timing.jsonl'`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

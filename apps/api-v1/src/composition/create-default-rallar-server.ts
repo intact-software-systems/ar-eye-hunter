@@ -94,7 +94,7 @@ function constructDefaultRallarServer(
         crdtLogRepository
     });
 
-    const wsOptions = createDefaultRallarServerWsOptions(input, runtime, nowEpochMs);
+    const wsOptions = createDefaultRallarServerWsOptions({ input, runtime, nowEpochMs, timing });
     const systemInstallers = createApiV1SystemInstallers({
         database,
         serviceId: myServerId,
@@ -125,12 +125,18 @@ function constructDefaultRallarServer(
     });
 }
 
+interface DefaultRallarServerWsOptionsInput {
+    readonly input: CreateDefaultRallarServerInput;
+    readonly runtime: ApiV1Runtime;
+    readonly nowEpochMs: () => number;
+    readonly timing: RallarTimingSink;
+}
+
 function createDefaultRallarServerWsOptions(
-    input: CreateDefaultRallarServerInput,
-    runtime: ApiV1Runtime,
-    nowEpochMs: () => number
+    { input, runtime, nowEpochMs, timing }: DefaultRallarServerWsOptionsInput
 ): RallarServerWsRouterOptions {
     return {
+        timing,
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
             readLifecyclePolicy: (ref) => runtime.topologyServices.groupStateRepository.readLifecyclePolicy(ref)
         }),

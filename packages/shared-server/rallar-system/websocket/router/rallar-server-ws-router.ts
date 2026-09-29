@@ -18,6 +18,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
@@ -101,6 +102,7 @@ export class RallarServerWsRouter {
     private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly livePublication: RallarServerWsRouterOptions['livePublication'];
+    private readonly timing: RallarTimingSink | undefined;
     private readonly service: WsQueueBoxServerService;
     private readonly nowEpochMs: () => number;
     /** The peer id the WS server answers as: the id clients address it by and its own publishes carry (D57, D58). */
@@ -122,6 +124,7 @@ export class RallarServerWsRouter {
         this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
         this.livePublication = options.livePublication;
+        this.timing = options.timing;
         this.nowEpochMs = options.nowEpochMs ?? Date.now;
     }
 
@@ -361,6 +364,7 @@ export class RallarServerWsRouter {
         const { message, fanout, audience, inboundScope } = input;
         return await publishRallarServerWsMessage({
             service: this.service,
+            timing: this.timing,
             message,
             fanout,
             audience: audience?.current,
