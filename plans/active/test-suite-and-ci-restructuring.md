@@ -1032,7 +1032,10 @@ carries it out.
     classification, admission verification).
   - Delete: the tests of retired plan and exception operations, together with the
     `scripts/plan-adaptation/**` imports that only they keep alive.
-  - Slice 8.
+  - Superseded on `main` by `7f61e51b3` ("Doc updates and obsolete governance."). That commit
+    removed the whole governance-decision mechanism: the suite, its scripts,
+    `governance-decision.yml` and the governance jobs in `deploy.yml`. Nothing is left for
+    Slice 8 to do here.
 - **R5. Agent-guidance prose pins become one routing contract.** Every `SKILL.md` has valid
   frontmatter, every file it references exists, and `.codex-plugin/plugin.json` lists every skill.
   The fresh-agent evaluations carry behaviour, as `AGENTS.md:25-29` already says. Slice 8.
