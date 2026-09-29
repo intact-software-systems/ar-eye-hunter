@@ -917,6 +917,18 @@ introduced. A separate Release Gate PGlite RTT fixture lacked the newly
 required current-connection authenticated scope; its focused test is repaired
 and reviewed on this branch, awaiting the next exact-head gate.
 
+**2026-09-29 state-write checkpoint:** A sequential main-versus-PR diagnostic
+used the same PostgreSQL development container, separate freshly migrated
+databases, and the same `perf:api-v1:state-write` workload. The comparator
+failed: uncontended p95 rose from 102.87 to 331.82 ms, shared throughput fell
+from 170.32 to 143.39/s, and uncontended serialized SQL result bytes rose
+from 25.74 to 132.15 MB. This is not the pinned governed environment, and it
+does not identify the causal query by itself. Trace the complete principal
+scope-read path and query plan, compare existing scoped membership plus exact
+batched client reads against the current scope-wide assembly, and repeat the
+same workload. Add an index only if that evidence demonstrates need; neither
+the earlier raw-prefix probe nor this aggregate result alone proves one does.
+
 **2026-09-28 browser fixture checkpoint:** The native ALM timing fixture also
 used an unscoped synthetic WS-client source, so the new fail-closed unicast
 reader correctly withheld every delivery. The fixture now supplies a matching
@@ -1104,7 +1116,10 @@ the mapping. `typecheck:tests` passes. No public overload, production contract
 loosening, or retained affected legacy was added. These fixes are not remote
 acceptance evidence until checked on the exact PR head.
 
-**Next slice — close the measured bundle budgets.** The local whole suite
+**Next slice — resolve the two measured release and performance regressions.**
+The exact-head Release Gate passed style, structure, typecheck, ALM
+conformance, and 13,157 tests (12 skipped); it failed only the two unchanged
+strict bundle tests. The local whole suite likewise
 passes 13,157 tests and skips 12; only the two strict bundle tests fail:
 `browser/rallar.ts` measures 225.419921875 KiB against `<225` and the headless
 agent measures 287.8095703125 KiB against `<287`. The one-millisecond timing
@@ -1113,14 +1128,18 @@ entry-point bundles and their inputs against an environment-matched baseline,
 identify avoidable shipped code on the changed path, and make the smallest
 behavior-preserving reduction. Keep both approved ceilings strict; do not
 raise them, hide inputs, or omit required runtime behavior. Recheck focused
-correctness, both bundle harnesses, test typing, and the whole suite.
+correctness, both bundle harnesses, test typing, and the whole suite. In the
+same slice, investigate the state-write diagnostic regression above before
+accepting the principal scope-wide read; compare complete read alternatives
+and the measured query plan, then rerun the identical state-write workload.
 
 **Following slice — exact-head distributed and browser evidence.** Once the
 local gate is green, run the branch Release Gate and reconcile remaining raw
 WS-outbox producers against the approved authority policy. Existing exact-head
-three-process group-delta and auth-logout proofs pass, but they do not prove
-CRDT replies, topology first-dequeue, or E3 browser acceptance. Run the
-remaining required cluster and unchanged E3 diagnostics, obtain a controlled
+three-process group-delta, auth-logout, and CRDT proofs pass; they do not prove
+topology first-dequeue or E3 browser acceptance. The branch E3 diagnostic is
+running at `c39dcb388`, not yet acceptance evidence. Run the remaining
+required cluster and unchanged E3 diagnostics, obtain a governed
 environment-matched state-write comparison without disrupting existing
 PostgreSQL data, then perform whole-branch standards/legacy review and update
 the draft PR evidence map. Keep the PR draft until the exact-head gate and
