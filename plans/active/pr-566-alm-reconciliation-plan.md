@@ -35,29 +35,39 @@ that add and correct this plan sit on top of `83a66d906` and change only files u
 
 ## Tasks, in the order they run
 
-| #  | Task                              | Written against                  | Commits                                                                                              |
-| -- | --------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 0  | Handover tag                      | #566's head                      | none (a tag)                                                                                         |
-| 1  | Merge main into the branch        | both sides                       | the merge commit                                                                                     |
-| 2  | Remove the experiments            | the merged tree                  | 1                                                                                                    |
-| 3  | Inbound scan head read            | the merged tree                  | 1                                                                                                    |
-| 4  | RTC authority gap                 | the merged tree                  | 1                                                                                                    |
-| 5  | RTC redial (#594)                 | the merged tree                  | 1                                                                                                    |
-| 6  | Live-only fanout                  | the tree after Task 2            | 1                                                                                                    |
-| 6b | Acknowledgements across processes | the tree after Tasks 2 and 6     | 1                                                                                                    |
-| 7  | Scope, statuses, schema           | the tree after Tasks 2, 6 and 6b | 2: parts A-C (steps 1-13), then parts D-E (steps 14-29); each runs the gates and gets its own review |
-| 8  | Duplicates                        | the tree after Tasks 2 and 4     | 1                                                                                                    |
-| 9  | Initial control two-tab proof     | the merged tree                  | 1                                                                                                    |
-| 10 | State-write                       | the merged tree                  | 2: part A before the measurement runs, part C after                                                  |
-| 11 | CI reds                           | the pushed branch                | only if a fix is found                                                                               |
-| 12 | ALM documents                     | the tree after Tasks 2-10        | 1                                                                                                    |
-| 13 | Gates and final review            | the final branch                 | the ceilings commit, then the last commit that deletes both plan files                               |
+| #  | Task                              | Written against                  | Commits                                                                                               |
+| -- | --------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 0  | Handover tag                      | #566's head                      | none (a tag)                                                                                          |
+| 1  | Merge main into the branch        | both sides                       | the merge commit                                                                                      |
+| 2  | Remove the experiments            | the merged tree                  | 1                                                                                                     |
+| 3  | Inbound scan head read            | the merged tree                  | 1                                                                                                     |
+| 4  | RTC authority gap                 | the merged tree                  | 1                                                                                                     |
+| 5  | RTC redial (#594)                 | the merged tree                  | 1                                                                                                     |
+| 6  | Live-only fanout                  | the tree after Task 2            | 1                                                                                                     |
+| 6b | Acknowledgements across processes | the tree after Tasks 2 and 6     | 1                                                                                                     |
+| 7  | Scope, statuses, schema           | the tree after Tasks 2, 6 and 6b | 2: parts A-C (steps 1-13b), then parts D-E (steps 14-36); each runs the gates and gets its own review |
+| 8  | Duplicates                        | the tree after Tasks 2 and 4     | 1                                                                                                     |
+| 9  | Initial control two-tab proof     | the merged tree                  | 1                                                                                                     |
+| 10 | State-write                       | the merged tree                  | 2: part A before the measurement runs, part C after                                                   |
+| 11 | CI reds                           | the pushed branch                | only if a fix is found                                                                                |
+| 12 | ALM documents                     | the tree after Tasks 2-10        | 1                                                                                                     |
+| 13 | Gates and final review            | the final branch                 | the ceilings commit, then the last commit that deletes both plan files                                |
 
 A section quotes the code it replaces by content where an earlier task moves lines. An implementer who finds the
 quoted code changed by an earlier task applies the same change to the code as it stands and says so in the report.
 
 `scripts/task-brief PLAN 6` also captures Task 6b, because its pattern matches the prefix. The controller extracts
 Task 6 with `awk` up to the `### Task 6b` heading, and Task 6b with `task-brief PLAN 6b`.
+
+## Pre-flight scan (2026-09-29)
+
+Three scans checked the tasks against each other before the first code task. They found 9 blocking defects, in
+Tasks 7, 12 and 13, and 31 notes. All are corrected in the task sections below; each corrected section ends with a
+block "Pre-flight corrections applied". Three rulings changed what the plan says:
+
+- The redial of Task 5 keeps the attempt budget. It is not reset, so the redial counts as an attempt.
+- A peer unicast in an RTC gap keeps main's own admission. Only its dispatch sees the gap.
+- Tasks 3, 4 and 5 each measure both bundles on the branch as it stands and raise a ceiling they cross.
 
 ## Rulings made while the plan was written (2026-09-29)
 
@@ -1533,7 +1543,7 @@ Run every command from `/Users/knuthelge/ProjectLocker/github/ar-eye-hunter/.cla
 
 - [ ] **Step 8: Remove L's entry from `reviewed-dispositions.mjs`**
 
-  In `scripts/repo-style-check/reviewed-dispositions.mjs` (about lines 731-743), replace
+  In `scripts/repo-style-check/reviewed-dispositions.mjs` (about lines 731-743; the entries sit at the file's 4-space indent, as quoted), replace
 
   ```text
   // Promise rejection reasons are untrusted exception-boundary values. Both
@@ -1881,6 +1891,12 @@ Decided by the maintainer (2026-09-29); this task implements them as written abo
 
 ---
 
+#### Pre-flight corrections applied
+
+- Step 8: re-indented both quoted `reviewed-dispositions.mjs` blocks to the file's 4-space indent so they match as an exact anchor (scan N8).
+
+---
+
 ### Task 3: Inbound scan head read
 
 **Goal.** P5 / D95: a commit asks the inbound rotation for one read from the head of NEW instead of F2b's rewind
@@ -1947,9 +1963,10 @@ the repository):
   `lane/al-inbound-rotation-page.ts` 14; `al-inbound-work-selection.test.ts` 40 -> 42. `repo-style-check` findings
   for `packages/shared/alm`, `packages/tests/shared/alm`, `packages/tests/shared-web/websocket` are identical before
   and after (line numbers aside).
-- bundles (esbuild + Brotli 11, same machine, before -> after): facade `browser/rallar.ts` 226.887 -> 227.312 KiB
-  (+0.42), headless 290.369 -> 290.848 KiB (+0.48). With task 1's ceilings (228 / 291) both stay under, headless by
-  0.15 KiB; Step 11 checks it and raises per the frame rule if tasks 1-2 moved the base.
+- bundles (esbuild + Brotli 11, same machine, this task alone on the merged tree, before -> after): facade
+  `browser/rallar.ts` 226.887 -> 227.312 KiB (+0.42), headless 290.369 -> 290.848 KiB (+0.48). These deltas are not
+  a prediction for the branch: task 2 leaves headless at 290.541 KiB, and this task's +0.48 reaches about 291.02, at
+  the current 291 ceiling. Step 12 measures both bundles on the branch as it stands and raises a crossed ceiling.
 
 **Files**
 
@@ -1960,7 +1977,7 @@ the repository):
 - Modify: `packages/shared/alm/inbound/README.md:335-340,424-428,465-466,487,497-500`
 - Modify: `docs/test-structure-coupling-exceptions.md` (contract `alm-ingress-wake-reaches-followup-batch`, merged
   lines 188-201, and candidates `test-structure-coupling-0942a87639fec715` / `-425d655aa28cc0d0`, merged lines
-  6418-6436; anchor on the ids, task 2 shifts the lines)
+  6418-6436; anchor on the ids, not the line numbers)
 - Test: `packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts`,
   `packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts`,
   `packages/tests/shared/alm/al-inbound-pending-admission.test.ts`,
@@ -1971,6 +1988,9 @@ the repository):
   `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`,
   `packages/tests/shared-web/websocket/create-browser-web-socket-queue-box.test.ts` (touched only outside the C3
   describe; the C3 test "the session volatile bound on the WS client (C3)" is not edited)
+- Modify, only if Step 12 finds a ceiling crossed: `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`,
+  `packages/shared-web/scripts/measure-browser-bundles.mjs` (facade),
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` (headless)
 - Fixtures used (unchanged): `packages/tests/shared/alm/inbound-runtime-test-fixture.ts`
   (`createInboundTestRuntime`, `createInboundTestStores`, `readInboundTestAdmission`, `INBOUND_TEST_SOURCE`),
   `packages/tests/shared/alm/create-inbound-test-dispatch.ts`,
@@ -2029,6 +2049,8 @@ the `});` that closes `describe('ALInboundWorkSelector readiness', ...)` right a
 
 describe('ALInboundWorkSelector head read', () => {
     it('reads the head of NEW for a commit and resumes the rotation where it stood', async () => {
+        // The order of page reads is the contract here: a head read reads NEW and stores no position, so
+        // the rotation read after it continues at RETRY. No other boundary exposes the rotation position.
         const fixture = createSelectorFixture();
         const scanned = recordScannedStatuses(fixture.port);
         // An empty NEW page moves the rotation on to RETRY.
@@ -2047,18 +2069,20 @@ describe('ALInboundWorkSelector head read', () => {
         await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
         fixture.selector.requestHeadRead();
-        const scanned = recordScannedStatuses(fixture.port);
 
         expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        // A due row written after the probe, with no commit asking for a head read: a batch that read
+        // NEW again would claim it too, so claiming only the probe's row shows the batch took its page.
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'after-probe'));
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
 
-        // One page read between them: the batch claimed from the page the probe read.
         expect(selection.claims).toHaveLength(1);
-        expect(scanned).toEqual([EntityStatus.NEW]);
         expect(fixture.selector.isHeadReadPending()).toBe(false);
     });
 
     it('runs at most one head read between two rotation reads', async () => {
+        // The order of page reads is the contract here: under back-to-back commits, head reads (NEW) and
+        // rotation reads (NEW, RETRY, RESERVED) alternate. No other boundary exposes which read ran.
         const fixture = createSelectorFixture();
         const scanned = recordScannedStatuses(fixture.port);
 
@@ -2285,6 +2309,8 @@ it('takes a row committed to an idle owner in the batch its commit starts, and k
         }),
         effectWorkerId: 'idle-head-read'
     });
+    // The delivery is the owned boundary for the first half; the order of page reads is the contract for
+    // the second: the head read leaves no position behind, so the rotation resumes at RETRY.
     const scanned: EntityStatus[] = [];
     const readPage = fixture.stores.workQueue.readWorkPage.bind(fixture.stores.workQueue);
     vi.spyOn(fixture.stores.workQueue, 'readWorkPage').mockImplementation(async (request) => {
@@ -2345,18 +2371,11 @@ it('takes a row committed during a rotation batch in the follow-up batch that ba
             await readInboundTestAdmission(admissionStore, unannounced)
         )
     ).toBe('committed');
-    const scanned: EntityStatus[] = [];
-    const readPage = fixture.stores.workQueue.readWorkPage.bind(fixture.stores.workQueue);
-    vi.spyOn(fixture.stores.workQueue, 'readWorkPage').mockImplementation(async (request) => {
-        scanned.push(request.status);
-        return await readPage(request);
-    });
     for (let round = 0; round < 8 && !heldEntered; round += 1) {
         await fixture.queueEngine.executeOnce();
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(heldEntered).toBe(true);
-    const readsBeforeCommit = scanned.length;
 
     expect(
         (await fixture.runtime.admitIncomingMessage(
@@ -2367,10 +2386,10 @@ it('takes a row committed during a rotation batch in the follow-up batch that ba
         .toEqual({ kind: 'admitted' });
     held.resolve();
 
-    // No engine round runs after the commit: the follow-up batch the running batch's end starts
-    // read one page, the head of NEW, and took the row.
+    // No engine round runs after the commit, so only a batch the handler runs itself can deliver
+    // `follow-up`: the rotation-held batch had already moved the rotation past NEW, and the follow-up
+    // batch its end starts takes the row through the head read the commit asked for.
     await expect.poll(() => dispatchedIds).toEqual(['rotation-held', 'follow-up']);
-    expect(scanned.slice(readsBeforeCommit)).toEqual([EntityStatus.NEW]);
 });
 ```
 
@@ -2478,8 +2497,8 @@ await runtime.ready();
 - [ ] **Step 5: Restore the other engine-free delivery pins (red).** Each edit undoes a #566 test change whose only
       purpose was to let delivery wait for engine rounds.
 
-  (a) `packages/tests/shared/alm/inbound-admission-diagnostics.test.ts` (this returns the file to `origin/main`'s
-  text; `git diff origin/main -- <file>` must be empty afterwards). First line becomes
+  (a) `packages/tests/shared/alm/inbound-admission-diagnostics.test.ts` (this returns the file to main's text at
+  `0d5902bc6`; `git diff 0d5902bc6 -- <file>` must be empty afterwards). First line becomes
   `import { afterEach, expect, it, vi } from 'vitest';`. In `createRuntime`, replace `const fixture =
   createInboundTestRuntime({` with `return createInboundTestRuntime({` and delete the five lines after its `});`:
 
@@ -2597,7 +2616,6 @@ selector tests fail with `fixture.selector.requestHeadRead is not a function`; t
 import type { ResourceInboxWorkPage } from '../../../queuebox/queue-box-types.ts';
 import type { ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 
-/** Where the rotation stands: the status it scans, the cursor inside it, and the earliest readiness it passed. */
 export interface ALInboundWorkScan {
     readonly cursor: ResourceInboxWorkPage.Cursor | null;
     readonly statusIndex: number;
@@ -2610,12 +2628,10 @@ const AL_INBOUND_SCAN_START: ALInboundWorkScan = {
     nextReadyAtMs: undefined
 };
 
-/** What the page needs from one read: where the rotation stands after it. */
 export interface ALInboundRotationRead {
     readonly scan: ALInboundWorkScan;
 }
 
-/** One read the page holds between the readiness probe and the batch that takes it. */
 interface ALInboundHeldRead<TRead extends ALInboundRotationRead> {
     readonly selection: Promise<TRead>;
     readonly head: boolean;
@@ -2650,12 +2666,10 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         this.dependencies = dependencies;
     }
 
-    /** The held read, or a fresh one the page then holds. */
     readSelection(port: ALWorkQueuePort, pageSize: number): Promise<TRead> {
         return this.readHeld(port, pageSize).selection;
     }
 
-    /** Hands the held read, or a fresh one, to the batch that claims from it; the next round reads a fresh page. */
     async takeSelection(port: ALWorkQueuePort, pageSize: number): Promise<TRead> {
         const read = this.readHeld(port, pageSize);
         this.held = undefined;
@@ -2673,7 +2687,6 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         }
     }
 
-    /** The probe answered from the held read and no batch follows it: the rotation moves past that page. */
     passSelection(pending: Promise<TRead>, selection: TRead): void {
         const read = this.held;
         if (read?.selection !== pending) {
@@ -2688,7 +2701,6 @@ export class ALInboundRotationPage<TRead extends ALInboundRotationRead> {
         }
     }
 
-    /** Drops the held read and leaves the rotation where it stood, so the page is read again. */
     dropSelection(pending: Promise<TRead>): void {
         if (this.held?.selection === pending) {
             this.held = undefined;
@@ -2768,9 +2780,7 @@ function isALInboundScanStart(scan: ALInboundWorkScan): boolean {
   ALInboundClaimedControlSend[];` add:
 
 ```text
-/** A commit wrote work behind the rotation: the next page read starts at the head of NEW. */
 requestHeadRead(): void;
-/** A commit's head read is owed and no batch has taken it yet. */
 isHeadReadPending(): boolean;
 ```
 
@@ -2831,7 +2841,6 @@ with `const selection = await page.takeSelection(port, pageSize);`.
       replace `commitWork` and `selectInboundWork` (lines 185-193) with:
 
 ```text
-    /** A commit lands behind the running rotation; the next page read starts at the head of NEW. */
     private commitWork(): void {
         this.workSelector.requestHeadRead();
         this.work.committed();
@@ -2863,7 +2872,7 @@ and replace the doc comment of `runInboundEffect` (lines 341-345) with:
 
 Run `npx tsc -p packages/shared/tsconfig.json --noEmit`; expected: exit 0, no output.
 
-- [ ] **Step 11: Run the tests green, then the pins and the bundles.** Re-run the Step 7 command. Expected:
+- [ ] **Step 11: Run the tests green, then the pins.** Re-run the Step 7 command. Expected:
       `Test Files 9 passed (9)`, `Tests 142 passed (142)`. Then
 
 ```sh
@@ -2872,20 +2881,64 @@ npx vitest run packages/tests/shared/alm packages/tests/shared-web/websocket pac
 
 Expected (measured): `Test Files 94 passed (94)`, `Tests 1188 passed (1188)` (the count may differ by what tasks
 1-2 changed; no failure is expected). `al-indexeddb-operation-counts.test.ts` passes with every pinned figure
-unchanged. Then the browser checks:
+unchanged.
+
+- [ ] **Step 12: Measure both bundles on the branch and raise a crossed ceiling.** This task's growth
+      (+0.42 KiB facade, +0.48 KiB headless) was measured with this task alone on the merged tree; the branch as it
+      stands carries the tasks before this one, so measure it now, with the exact esbuild and Brotli settings of the two boundary tests (it
+      writes only to `$TMPDIR`):
+
+```sh
+node --input-type=module -e "
+import { buildSync } from 'esbuild';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { brotliCompressSync, constants } from 'node:zlib';
+const brotliKiB = (file) => brotliCompressSync(readFileSync(file), { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length / 1024;
+const facade = process.env.TMPDIR + '/rallar-browser-facade.measure.min.js';
+execFileSync('node_modules/.bin/esbuild', ['packages/shared-web/browser/rallar.ts', '--bundle', '--minify', '--format=esm',
+    '--platform=browser', '--target=es2022', '--tsconfig=packages/shared-web/tsconfig.json', '--log-level=error',
+    '--outfile=' + facade], { stdio: ['ignore', 'ignore', 'inherit'] });
+const headless = process.env.TMPDIR + '/headless-agent.measure.min.js';
+buildSync({ absWorkingDir: process.cwd(), entryPoints: ['apps/rallar-black-box-headless/src/main.ts'], bundle: true,
+    minify: true, format: 'esm', platform: 'browser', target: 'es2023',
+    tsconfig: 'apps/rallar-black-box-headless/tsconfig.json', outfile: headless, logLevel: 'error' });
+console.log('facade ' + brotliKiB(facade));
+console.log('headless ' + brotliKiB(headless));
+"
+grep -n 'brotliBudgetKiB: 2[0-9][0-9]' packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs
+grep -n 'toBeLessThan(2[0-9][0-9])' packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+```
+
+Expected: two lines `facade <KiB>` and `headless <KiB>` (on the merged tree alone this command prints
+`facade 227.001953125` and `headless 290.369140625`), then the current ceilings: the `browser/rallar.ts` entry's
+`brotliBudgetKiB` in the facade test and in the script (they are equal), and the headless test's
+`toBeLessThan(...)`. A figure at or above its ceiling crosses it. For each crossed ceiling, set the new ceiling
+to the next whole KiB above the figure (`Math.floor(figure) + 1`) in every file that holds it:
+
+- facade crossed: the `brotliBudgetKiB` of the `browser/rallar.ts` entry in both
+  `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` and
+  `packages/shared-web/scripts/measure-browser-bundles.mjs`, and append to the comment directly above that entry,
+  in both files, the sentence `The inbound head read measures <figure> KiB. The next whole-KiB ceiling is <new>.`
+  (wrap at 120 columns like the lines above it);
+- headless crossed: `expect(result.brotliKiB).toBeLessThan(<new>);` in
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`, and the same sentence appended to
+  the comment above it, before its last line `// All operator dependency exclusions above remain enforced.`
+
+Leave a ceiling that is not crossed as it is, and change nothing else in those files. Then run the browser
+checks:
 
 ```sh
 npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
 npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
+npx dprint check packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
 ```
 
-Expected: all pass against task 1's ceilings (facade < 228, headless < 291); measured growth from this task is
-+0.42 KiB facade and +0.48 KiB headless. If a ceiling is crossed, raise it to the next whole KiB above the
-measured figure and record the figure in the test comment, in
-`packages/shared-web/scripts/measure-browser-bundles.mjs`
-(facade) and in the commit message, as the frame's "Bundles" rule says.
+Expected: `Test Files  3 passed (3)`; `check:browser-bundles` ends `Bundle budget check passed.`; dprint prints
+nothing. Keep both measured figures for the commit message; the commit adds the ceiling files only if a ceiling
+was crossed.
 
-- [ ] **Step 12: Update the inbound README.** In `packages/shared/alm/inbound/README.md`:
+- [ ] **Step 13: Update the inbound README.** In `packages/shared/alm/inbound/README.md`:
 
   (a) Replace (lines 335-340)
 
@@ -2958,14 +3011,14 @@ again only what cannot be decided as early
 Run `npx dprint check packages/shared/alm/inbound/README.md`; expected: exit 0 (run `npx dprint fmt
   packages/shared/alm/inbound/README.md` first if it reports a diff).
 
-- [ ] **Step 13: Run the per-task gates.** Commit first (Step 15) if a checker reads committed trees, then run:
+- [ ] **Step 14: Run the per-task gates.** Commit first (Step 16) if a checker reads committed trees, then run:
 
 ```sh
 npm run test:unit
 npm run typecheck
 npm run check:repo-style:changed -- origin/main HEAD
 node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD
-npx dprint check packages/shared/alm/inbound/lane/al-inbound-rotation-page.ts packages/shared/alm/inbound/read-al-inbound-work-selection.ts packages/shared/alm/inbound/lane/al-inbound-store-lane.ts packages/shared/alm/inbound/README.md docs/test-structure-coupling-exceptions.md packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts packages/tests/shared/alm/inbound-admission-diagnostics.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-queue-work.test.ts packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared-web/websocket/create-browser-web-socket-queue-box.test.ts
+npx dprint check packages/shared/alm/inbound/lane/al-inbound-rotation-page.ts packages/shared/alm/inbound/read-al-inbound-work-selection.ts packages/shared/alm/inbound/lane/al-inbound-store-lane.ts packages/shared/alm/inbound/README.md docs/test-structure-coupling-exceptions.md packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts packages/tests/shared/alm/inbound-admission-diagnostics.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-queue-work.test.ts packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared-web/websocket/create-browser-web-socket-queue-box.test.ts  # plus the ceiling files if Step 12 changed them
 (cd apps/api-v1 && deno task check) && (cd apps/rallar-black-box-control-server && deno task check) && (cd apps/relic-hunter-server-v1 && deno task check)
 npm run test:deno
 npm run test:repo-governance
@@ -2979,19 +3032,21 @@ changed-style reports no new or worsened finding (measured: identical findings f
 `al-inbound-store-lane.test.ts` and the two wake counts of Step 6); dprint prints nothing; the three
 `deno task check` runs exit 0; `test:deno` summary has 0 failed; governance passes (the registry doc changed).
 
-- [ ] **Step 14: Run the ALM smoke lane** (unsandboxed, one lane at a time on 18080/5180, no edits while it runs):
+- [ ] **Step 15: Run the ALM smoke lane** (unsandboxed, one lane at a time on 18080/5180, no edits while it runs):
       `RALLAR_BLACK_BOX_ALM_SCOPE=smoke npm run -s test:rallar:full-stack:memory:alm`. Expected: every smoke cell
       passes, including `durable-opt-in` over WS. If `durable-opt-in` over WS still fails, keep the artifact directory
       and hand it to task 11; do not change the scan to chase it.
 
-- [ ] **Step 15: Commit.**
+- [ ] **Step 16: Commit.**
 
 ```sh
 git add packages/shared/alm/inbound/lane/al-inbound-rotation-page.ts packages/shared/alm/inbound/read-al-inbound-work-selection.ts packages/shared/alm/inbound/lane/al-inbound-store-lane.ts packages/shared/alm/inbound/README.md docs/test-structure-coupling-exceptions.md packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts packages/tests/shared/alm/inbound/al-inbound-committed-work-progress.test.ts packages/tests/shared/alm/al-inbound-pending-admission.test.ts packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts packages/tests/shared/alm/inbound-admission-diagnostics.test.ts packages/tests/shared/alm/al-inbound-store-lane.test.ts packages/tests/shared/alm/al-inbound-queue-work.test.ts packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared-web/websocket/create-browser-web-socket-queue-box.test.ts
-git commit -m "ALM inbound scan: a commit asks for one head read instead of rewinding the rotation"
+git add packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts  # only if Step 12 crossed a ceiling
+git commit -m "ALM inbound scan: a commit asks for one head read instead of rewinding the rotation" -m "Bundles: facade <figure> KiB (ceiling <old> -> <new>, or unchanged), headless <figure> KiB (ceiling <old> -> <new>, or unchanged)."
 ```
 
-(plus any bundle-ceiling files from Step 11, with the measured figures in the message body).
+Run the second `git add` line only if Step 12 raised a ceiling. The message body carries both figures Step 12
+measured and names each ceiling it raised.
 
 #### D95 wording for task 12
 
@@ -3022,6 +3077,21 @@ the running batch's delivery observations or its control round.
 #### Rulings
 
 None. No IndexedDB pin moves (measured).
+
+---
+
+#### Pre-flight corrections applied
+
+- Design "bundles" bullet: the figures are this task alone on the merged tree; removed the promise that both stay under the ceilings (headless reaches about 291.02 on the branch) (scan N1).
+- New Step 12 measures both bundles on the branch with exact commands and raises a crossed ceiling in the facade test, `measure-browser-bundles.mjs` and the headless test, figure in comment and commit message; steps 12-15 renumbered 13-16 (scan N1).
+- Files list and Step 16 commit name the three ceiling files "only if a ceiling is crossed"; the commit message carries both figures; the Step 14 dprint list notes them (scan N1).
+- Selector test "hands the head read a probe took...": the spied page-read order is replaced by an owned-boundary check (a row written after the probe is not claimed); not run, the red/green steps confirm it (scan N10).
+- Selector tests "reads the head of NEW..." and "runs at most one head read...", and runtime test "takes a row committed to an idle owner...": page-read order kept, with a test-intent comment saying why the order is the contract (scan N10).
+- Runtime test "takes a row committed during a rotation batch...": the `readWorkPage` spy and its order assertion removed; the delivered messages with no engine round are the boundary (scan N10).
+- Step 5(a): "must be empty" diff pinned to `0d5902bc6` instead of `origin/main` (scan N12).
+- Steps 8, 9(d) and 10: member-narration doc comments removed from the new source; the class, `requestHeadRead`, `headSinceRotation`, `readPage` contract and `isALInboundScanStart` invariant comments stay (scan N9).
+- Steps 1(d), 1(e), 3, 5(a), 5(b), 5(d), 9(d), 9(e), 9(g) and 10: anchor and replacement blocks re-indented to the file's indentation (checked against the merged tree) (scan N8, ruling 10).
+- Files list: dropped the false "task 2 shifts the lines" (task 2 leaves the coupling registry unchanged; scan pair 2-3).
 
 ---
 
@@ -3075,7 +3145,9 @@ answers `no-route` for a gap before the planner runs. The fallback controller, i
     `packages/tests/shared/alm/outbound/read-al-outbound-dequeue-wait.test.ts`,
     `packages/tests/shared/multicast/rtc-carrier-gap-delivery.test.ts`,
     `packages/tests/shared-web/messages/browser-message-carrier-gap-hand-over.test.ts`,
-    `packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts`
+    `packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts`, and the fixture
+    `packages/tests/shared/alm/create-indexed-db-origin-stores.ts` (moved out of the empty-audience counts test)
+  - Modify (the store helper now imported from that fixture): `packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts:4-25,32,72-96`
   - Modify (#566's overlay-gap verdicts): `packages/tests/shared/multicast/rtc-outbound-overlay-readiness.test.ts`,
     `packages/tests/shared/multicast/rtc-outbound-transport-results.test.ts:311,326`,
     `packages/tests/shared/webrtc-overlay-services.test.ts:366,401`,
@@ -3096,6 +3168,9 @@ answers `no-route` for a gap before the planner runs. The fallback controller, i
     `packages/tests/shared/multicast/rtc-room-unicast-dispatch.test.ts`,
     `packages/tests/shared-web/director/browser-director-relay-runtime.test.ts`,
     `packages/tests/shared-web/director/browser-director-relay-transport.test.ts`.
+- Modify, only if Step 15 finds a ceiling crossed: `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`,
+  `packages/shared-web/scripts/measure-browser-bundles.mjs` (facade),
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` (headless).
 
 **Interfaces**
 
@@ -3148,7 +3223,7 @@ dequeue-wait file lives in `alm/outbound/lane/` because a 22nd direct file in `a
 `WebRtcRxStreamerService.enqueueOutboxIfAbsent`, `CarrierOutboxLeg`, `toAcceptedOverlayContext` (now in
 `compute-rtc-outbound-carrier-availability.ts`), `readALOutboundDequeueWait` / `AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS`,
 and `admitDequeuedMessage` returning `ALWorkAttemptResult`. Measured bundle figures in every section are against the
-merged tree alone; the executor re-measures cumulatively and sets each ceiling from its own measurement.
+merged tree alone; Step 15 re-measures the branch as it stands and raises a crossed ceiling from its own measurement.
 
 - [ ] **Step 1: Write the failing classification and observation tests**
 
@@ -3484,7 +3559,6 @@ import { isSameGroupRef, toScopedOverlayId } from '../api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 
-/** What an RTC origin observes of a message's room and the overlay it selects for it. */
 export interface RtcOutboundObservation {
     readonly overlayId: OverlayId | undefined;
     readonly room: GroupSnapshot | undefined;
@@ -3501,7 +3575,6 @@ export interface ReadRtcOutboundObservationInput {
     readonly nowMs: number;
 }
 
-/** An explicit overlay wins, then the scoped room overlay, then a legacy group-keyed one. */
 export function readRtcOutboundObservation(
     input: ReadRtcOutboundObservationInput
 ): RtcOutboundObservation {
@@ -3587,7 +3660,6 @@ import {
 } from './rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience } from './web-rtc-overlay-frozen-audience.ts';
 
-/** What an RTC admission does while no RTC carrier is available: answer `no-route` so a fallback takes it, or hold it. */
 export type RtcCarrierGapAdmission = 'hand-over' | 'hold';
 
 export interface ComputeRtcOutboundCarrierAvailabilityInput {
@@ -3647,7 +3719,6 @@ export function computeRtcOutboundCarrierAvailability(
     return admission.kind === 'pending' ? admission : { kind: 'available', admission, context };
 }
 
-/** The exact accepted server layout of the room, or nothing to send over. */
 export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
@@ -3664,7 +3735,6 @@ export function toAcceptedOverlayContext(
     return { overlayId, room, overlay, nowMs };
 }
 
-/** A held origin multicast freezes its audience from the room authority it was admitted under. */
 export function toRtcCarrierGapFrozenMessage(
     message: ALMessage,
     availability: RtcOutboundCarrierAvailability,
@@ -3691,7 +3761,6 @@ export interface IsRtcCarrierGapHeldInput {
     readonly selfPeerId: string;
 }
 
-/** Only the origin's own durable room fanout with somewhere to go waits out a carrier gap. */
 export function isRtcCarrierGapHeld(input: IsRtcCarrierGapHeldInput): boolean {
     const { message, handling } = input;
     const recipientsKnown = input.admission.kind === 'authorized';
@@ -3703,7 +3772,6 @@ export function isRtcCarrierGapHeld(input: IsRtcCarrierGapHeldInput): boolean {
         (!recipientsKnown || handling.forwarding.nextHopPeerIds.length > 0);
 }
 
-/** Only an origin room fanout on a leg that can still fall back hands a carrier gap over. */
 export function isRtcCarrierGapHandedOver(
     message: ALMessage,
     carrierGap: RtcCarrierGapAdmission
@@ -3719,7 +3787,6 @@ export interface ToRtcHeldMessageAuthorityInput {
     readonly admissions: readonly RtcRoomSnapshotAdmission[];
 }
 
-/** A held message waits on the first wait or refusal among its copies; one with an empty frozen audience never waits. */
 export function toRtcHeldMessageAuthority(
     input: ToRtcHeldMessageAuthorityInput
 ): ALOutboundMessageRuntime.PendingAdmissionAuthority {
@@ -3987,7 +4054,6 @@ import type {
     ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
 
-/** How often a held claim re-reads its carrier's authority, in memory, while a gap lasts. */
 export const AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS = 50;
 
 type ALOutboundAuthorityReader<TPrepared> = NonNullable<
@@ -4002,7 +4068,6 @@ export interface ReadALOutboundDequeueWaitInput<TPrepared> {
     >['readPendingAdmissionAuthority'];
     readonly settlements: ALOutboundSettlementEmitter;
     readonly clock: ALOutboundMessageRuntime.Clock;
-    /** Aborts with the owner: a held claim is then released at once. */
     readonly signal: AbortSignal;
 }
 
@@ -4061,7 +4126,6 @@ async function holdALOutboundDequeueClaim<TPrepared>(
     };
 }
 
-/** One re-check interval, cut short when the owner goes away. */
 function waitForALOutboundRecheck(signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
         const timer = setTimeout(done, AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
@@ -4160,9 +4224,116 @@ Run: `npx vitest run packages/tests/shared/alm/outbound/read-al-outbound-dequeue
 Expected: all green (`read-al-outbound-dequeue-wait` 7 tests, `multicast-policy-integration` 16). The WS client and
 WS server outbound runtimes define no `readPendingAdmissionAuthority`, so their dequeue path is unchanged.
 `rtc-outbound-overlay-readiness.test.ts` now has failures on its gap tests (a held row reads `RESERVED` with 1
-attempt); step 8 updates them.
+attempt); step 9 updates them.
 
-- [ ] **Step 6: Write the failing carrier-gap delivery tests**
+- [ ] **Step 6: Move the IndexedDB origin store helper into a shared test fixture**
+
+`packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts:72-96` builds an RTC origin's durable pair on a
+counted IndexedDB database, and the counts test Step 7 creates needs the same pair. Move it into one fixture both
+tests import, with the namespace as a parameter (the two tests use different namespaces).
+
+(a) Create `packages/tests/shared/alm/create-indexed-db-origin-stores.ts`:
+
+```ts
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+
+/** An RTC origin's durable outbound pair on a fresh IndexedDB database whose operations `observer` counts. */
+export function createIndexedDbOriginStores(
+    observer: IndexedDbOperationObserver,
+    namespace: string
+): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `${namespace}-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer
+    });
+    return {
+        admissionStore: createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: namespace,
+            decodePrepared: decodeALOutboundTransportMessage,
+            namespace,
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue: backend.workQueue
+    };
+}
+```
+
+The file is a fixture, not a test (`vitest.config.ts` includes only `*.test.ts`), and it needs no
+`fake-indexeddb/auto` import: both tests import that first, before any store is built.
+
+(b) In `packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts` replace the import lines 4-25
+
+```text
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type IndexedDbOperationCounts,
+    type IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+
+import {
+    createOriginReceiverMulticast,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    toOriginFrozenTargets
+} from '../multicast/rtc-origin-overlay-fixture.ts';
+```
+
+with
+
+```text
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type IndexedDbOperationCounts
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+
+import {
+    createOriginReceiverMulticast,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    toOriginFrozenTargets
+} from '../multicast/rtc-origin-overlay-fixture.ts';
+import { createIndexedDbOriginStores } from './create-indexed-db-origin-stores.ts';
+```
+
+then replace `const durableStores = createIndexedDbOriginStores(observer);` (line 32) with
+`const durableStores = createIndexedDbOriginStores(observer, NAMESPACE);`, and delete the local
+`function createIndexedDbOriginStores(...)` (lines 72-96) together with the blank line after it, so
+`/** Probes (...) */ function computeNonProbeWorkOperations` follows the `describe` block after one blank line.
+
+Run: `npx vitest run packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts` then
+`npx dprint check packages/tests/shared/alm/create-indexed-db-origin-stores.ts packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts`
+Expected: `Tests  1 passed (1)`, the same figures as before the move; dprint prints nothing.
+
+- [ ] **Step 7: Write the failing carrier-gap delivery tests**
 
 These drive the real manager through `rtc-origin-overlay-fixture.ts` (which captures the owner's settlements) and fold
 the admission plus every settlement into the handle a browser sender reads. The spec's "ends `timed out`" is the
@@ -4404,28 +4575,16 @@ function toLifecycle(
 
 Create `packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts`. It holds a send for 40 re-check
 intervals over the IndexedDB durable pair with the counting observer, and pins one attempt and zero IndexedDB
-operations across the hold (real timers, as `al-indexeddb-empty-audience-counts.test.ts`, whose store helper it
-repeats; about 2 s):
+operations across the hold (real timers, as `al-indexeddb-empty-audience-counts.test.ts`, and the same
+`createIndexedDbOriginStores` fixture Step 6 moved; about 2 s):
 
 ```ts
 import 'fake-indexeddb/auto';
 import { describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    decodeALOutboundTransportMessage,
-    type ALOutboundTransportMessage
-} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS } from '@shared/alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
-import {
-    createCountingIndexedDbOperationObserver,
-    type IndexedDbOperationObserver
-} from '@shared/persistence/indexed-db-operation-observer.ts';
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
     createOriginOverlay,
@@ -4434,6 +4593,7 @@ import {
     ORIGIN_ROOM,
     type RtcOriginOverlayFixture
 } from '../multicast/rtc-origin-overlay-fixture.ts';
+import { createIndexedDbOriginStores } from './create-indexed-db-origin-stores.ts';
 
 const NAMESPACE = 'rtc-carrier-gap';
 const HELD_RECHECKS = 40;
@@ -4446,7 +4606,7 @@ describe('an RTC origin holding a durable send through a carrier gap', () => {
             const fixture = createRtcOriginOverlayFixture({
                 snapshot: createOriginSnapshot(['a', 'b'], 4),
                 nextHopPeerIds: ['b'],
-                stores: createIndexedDbOriginStores(observer)
+                stores: createIndexedDbOriginStores(observer, NAMESPACE)
             });
             fixture.overlays.delete('room');
             const message = createDurableRoomMulticast();
@@ -4506,38 +4666,12 @@ function readAttemptOutcomes(
             : []
     );
 }
-
-function createIndexedDbOriginStores(
-    observer: IndexedDbOperationObserver
-): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName: `${NAMESPACE}-${crypto.randomUUID()}`,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer
-    });
-    return {
-        admissionStore: createALOutboundAdmissionStore({
-            nowMs: Date.now,
-            canonicalScope: NAMESPACE,
-            decodePrepared: decodeALOutboundTransportMessage,
-            namespace: NAMESPACE,
-            backend,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
-    };
-}
 ```
 
 Run: `npx vitest run packages/tests/shared/multicast/rtc-carrier-gap-delivery.test.ts packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts`
 Expected: every test fails with `TypeError: fixture.manager.enqueueLegIfAbsent is not a function` (8 failed).
 
-- [ ] **Step 7: Rewire the manager to the classification (call lines only)**
+- [ ] **Step 8: Rewire the manager to the classification (call lines only)**
 
 All edits are in `packages/shared/multicast/web-rtc-overlay-multicast-manager.ts` (merged-tree line numbers).
 
@@ -4849,7 +4983,6 @@ async enqueueLegIfAbsent(msg: ALMessage, carrierGap: RtcCarrierGapAdmission): Pr
 after three (report BRK-2).
 
 ```text
-    /** A held message without prepared copies waits on the carrier of the message itself. */
     private readPendingAdmissionAuthority(
         message: ALMessage,
         preparedMessages: readonly ALOutboundTransportMessage[]
@@ -4863,7 +4996,6 @@ after three (report BRK-2).
         return toRtcHeldMessageAuthority({ message, heldWithoutCopies, admissions });
     }
 
-    /** A carrier gap is a wait at dispatch (`not-ready`); only an explicit refusal ends the attempt. */
     private readRtcDispatchAuthority(
         message: ALMessage,
         ingressPeerId: string | null,
@@ -4906,10 +5038,10 @@ Run: `npx tsc -p packages/shared/tsconfig.json --noEmit` — expected: no output
 Run: `npx vitest run packages/tests/shared/multicast/rtc-carrier-gap-delivery.test.ts packages/tests/shared/multicast/rtc-room-unicast-dispatch.test.ts packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts`
 Expected: `Tests  11 passed (11)`. The verdicts #566's tests pinned now move on purpose: at this point
 `rtc-outbound-overlay-readiness.test.ts` reports 29 failed tests, and `rtc-outbound-transport-results.test.ts`,
-`webrtc-overlay-services.test.ts` and `rtc-snapshot-floor-admission.test.ts` one each. Steps 8 and 9 update exactly
+`webrtc-overlay-services.test.ts` and `rtc-snapshot-floor-admission.test.ts` one each. Steps 9 and 10 update exactly
 those.
 
-- [ ] **Step 8: Give #566's overlay-gap tests the new verdicts**
+- [ ] **Step 9: Give #566's overlay-gap tests the new verdicts**
 
 `packages/tests/shared/multicast/rtc-outbound-overlay-readiness.test.ts` (merged-tree lines). Every test not listed
 keeps its code and passes unchanged. Each changed test, with its new expectation:
@@ -5231,7 +5363,7 @@ function toExplicitOverlay(kind: 'removed' | 'foreign' | 'planned' | 'wrong-vers
 Run: `npx vitest run packages/tests/shared/multicast/rtc-outbound-overlay-readiness.test.ts`
 Expected: `Tests  66 passed (66)`.
 
-- [ ] **Step 9: Return three #566-edited tests to main's `no-route`**
+- [ ] **Step 10: Return three #566-edited tests to main's `no-route`**
 
 #566 turned a missing room snapshot at admission into `deferred`; main answered `no-route`, and the spec keeps main.
 These three messages are volatile, so the gap reads `no-route` on a `hold` leg too.
@@ -5262,7 +5394,7 @@ verdict: { kind: 'unroutable', reason: 'no-route' },
 Run: `npx vitest run packages/tests/shared/multicast/rtc-outbound-transport-results.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/rtc-snapshot-floor-admission.test.ts packages/tests/shared/multicast-policy-integration.test.ts`
 Expected: all four files pass.
 
-- [ ] **Step 10: Write the failing browser hand-over test**
+- [ ] **Step 11: Write the failing browser hand-over test**
 
 The production dispatch, registry and session owner (as in `browser-message-fallback-controller.test.ts`), with a WS
 double and the real RTC manager of `rtc-origin-overlay-fixture.ts` behind `rtcRxStreamer.enqueueOutboxIfAbsent`.
@@ -5453,7 +5585,7 @@ Expected: `Tests  3 failed | 6 passed (9)`. The dispatch does not pass a leg yet
 cases fail on `wsAdmissions` being empty. The volatile cases pass already (the planner answers `no-route` for a
 volatile send in a gap, as on main), and so do the three `keeps an rtc-only durable send on RTC` cases.
 
-- [ ] **Step 11: Pass the leg through the streamer and the dispatch**
+- [ ] **Step 12: Pass the leg through the streamer and the dispatch**
 
 `packages/shared/services/web-rtc-rx-streamer-service.ts`: insert directly above `:23`
 (`import type { WebRtcOverlayMulticastManager } ...`):
@@ -5479,7 +5611,6 @@ async enqueueOutboxIfAbsent(
 `writeCarrierOutboxAdmission`) with:
 
 ```ts
-/** One carrier leg of a send; an RTC leg that can still fall back hands a carrier gap over instead of holding it. */
 export interface CarrierOutboxLeg {
     readonly carrier: ALDeliveryCarrier;
     readonly canFallback: boolean;
@@ -5526,16 +5657,15 @@ Two test call sites follow the new signature:
 Run: `npx vitest run packages/tests/shared-web/messages/browser-message-carrier-gap-hand-over.test.ts packages/tests/shared-web/messages packages/tests/shared-test/rallar-browser-runtime`
 Expected: all green; the new file reports `Tests  9 passed (9)`.
 
-- [ ] **Step 12: Update the outbound README**
+- [ ] **Step 13: Update the outbound README**
 
 `packages/shared/alm/outbound/README.md` (merged-tree lines). #566 added no README text about the gap; these are
 main's paragraphs, amended.
 
-(1) Replace the `dequeue-message` row (`:197`) with the row below; `npx dprint fmt` re-pads it (both cells fit the
-existing column widths, so no other row moves):
+(1) Replace the `dequeue-message` row (`:197`) with the row below; `npx dprint fmt` re-pads the table:
 
 ```text
-| `dequeue-message` work | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's pending admission authority with no prepared copies, then rereads the message, drops it when superseded, and commits a dispatch plan. | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete. |
+| `dequeue-message` work | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's pending admission authority with no prepared copies, then rereads the message, drops it when superseded, and commits a dispatch plan. | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and runs the configured `afterDequeueAdmission` port. |
 ```
 
 (2) Insert after the paragraph that ends `alone in its room is the empty frozen audience above, not this case.`
@@ -5582,11 +5712,11 @@ hands the send to the fallback carrier at once; an RTC room fanout in a carrier 
 Run: `npx dprint fmt packages/shared/alm/outbound/README.md` then `npx dprint check packages/shared/alm/outbound/README.md`
 Expected: the check prints nothing.
 
-- [ ] **Step 13: Validate**
+- [ ] **Step 14: Validate**
 
 Run each, reading the summary line, not the exit code:
 
-1. `npx vitest run packages/tests/shared/multicast packages/tests/shared/alm packages/tests/shared-web/messages packages/tests/shared-web/rtc packages/tests/shared-web/state-read packages/tests/shared-web/director packages/tests/shared-web/connection packages/tests/shared-test/rallar-browser-runtime packages/tests/shared-test/alm-conformance-fallback-scenarios.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/rtc-snapshot-floor-admission.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared/rtc-snapshot-durable-replay.test.ts packages/tests/shared/services`
+1. `npx vitest run packages/tests/shared/multicast packages/tests/shared/alm packages/tests/shared-web/messages packages/tests/shared-web/rtc packages/tests/shared-web/state-read packages/tests/shared-web/director packages/tests/shared-web/connection packages/tests/shared-test/rallar-browser-runtime packages/tests/shared-test/alm-conformance-fallback-scenarios.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/rtc-snapshot-floor-admission.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared/services`
    plus `packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts` — expected: no failed file (on the
    merged tree plus this task: 189 files, 2338 tests passed; the counts move with tasks 1-3).
 2. The unchanged S3b and S3c-ii suites listed under **Files → Test** must pass with no edit to them.
@@ -5604,16 +5734,69 @@ Run each, reading the summary line, not the exit code:
 8. `cd apps/api-v1 && deno task check`, `cd apps/rallar-black-box-control-server && deno task check`,
    `cd apps/relic-hunter-server-v1 && deno task check`, then `npm run test:deno` — expected: clean (the WS server's
    outbound runtime defines no `readPendingAdmissionAuthority`, so its dequeue path is unchanged).
-9. `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
-   and `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`. Measured on the merged tree alone, this
-   task adds +0.66 KiB to `browser/rallar.ts` (227.00 → 227.66) and +0.78 KiB to headless (290.37 → 291.15), so
-   headless crosses task 1's 291 ceiling: raise it to the next whole KiB above the cumulative measurement (292 if the
-   executor's measurement stays below 292) in this task, as the frame says (test comment,
-   `measure-browser-bundles.mjs`, commit message with both figures). The facade stays under 228.
-10. Smoke lane, unsandboxed, alone on ports 18080/5180, no edits while it runs:
-    `RALLAR_BLACK_BOX_ALM_SCOPE=smoke npm run -s test:rallar:full-stack:memory:alm` — expected: every smoke cell green.
+9. Smoke lane, unsandboxed, alone on ports 18080/5180, no edits while it runs:
+   `RALLAR_BLACK_BOX_ALM_SCOPE=smoke npm run -s test:rallar:full-stack:memory:alm` — expected: every smoke cell green.
 
-- [ ] **Step 14: Commit**
+The browser surfaces and bundles are Step 15.
+
+- [ ] **Step 15: Measure both bundles on the branch and raise a crossed ceiling**
+
+This task's growth (+0.66 KiB facade, 227.00 -> 227.66; +0.78 KiB headless, 290.37 -> 291.15) was measured with this
+task alone on the merged tree; the branch as it stands carries tasks 1-3 (task 3 alone brings headless to about
+291.02), so the figures are no prediction. Measure the branch now, with the exact esbuild and Brotli settings of the
+two boundary tests (it writes only to `$TMPDIR`):
+
+```sh
+node --input-type=module -e "
+import { buildSync } from 'esbuild';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { brotliCompressSync, constants } from 'node:zlib';
+const brotliKiB = (file) => brotliCompressSync(readFileSync(file), { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length / 1024;
+const facade = process.env.TMPDIR + '/rallar-browser-facade.measure.min.js';
+execFileSync('node_modules/.bin/esbuild', ['packages/shared-web/browser/rallar.ts', '--bundle', '--minify', '--format=esm',
+    '--platform=browser', '--target=es2022', '--tsconfig=packages/shared-web/tsconfig.json', '--log-level=error',
+    '--outfile=' + facade], { stdio: ['ignore', 'ignore', 'inherit'] });
+const headless = process.env.TMPDIR + '/headless-agent.measure.min.js';
+buildSync({ absWorkingDir: process.cwd(), entryPoints: ['apps/rallar-black-box-headless/src/main.ts'], bundle: true,
+    minify: true, format: 'esm', platform: 'browser', target: 'es2023',
+    tsconfig: 'apps/rallar-black-box-headless/tsconfig.json', outfile: headless, logLevel: 'error' });
+console.log('facade ' + brotliKiB(facade));
+console.log('headless ' + brotliKiB(headless));
+"
+grep -n 'brotliBudgetKiB: 2[0-9][0-9]' packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs
+grep -n 'toBeLessThan(2[0-9][0-9])' packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+```
+
+Expected: two lines `facade <KiB>` and `headless <KiB>` (on the merged tree alone this command prints
+`facade 227.001953125` and `headless 290.369140625`), then the current ceilings: the `browser/rallar.ts` entry's
+`brotliBudgetKiB` in the facade test and in the script (they are equal), and the headless test's
+`toBeLessThan(...)`. A figure at or above its ceiling crosses it. For each crossed ceiling, set the new ceiling
+to the next whole KiB above the figure (`Math.floor(figure) + 1`) in every file that holds it:
+
+- facade crossed: the `brotliBudgetKiB` of the `browser/rallar.ts` entry in both
+  `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` and
+  `packages/shared-web/scripts/measure-browser-bundles.mjs`, and append to the comment directly above that entry,
+  in both files, the sentence `The RTC carrier gap measures <figure> KiB. The next whole-KiB ceiling is <new>.`
+  (wrap at 120 columns like the lines above it);
+- headless crossed: `expect(result.brotliKiB).toBeLessThan(<new>);` in
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`, and the same sentence appended to
+  the comment above it, before its last line `// All operator dependency exclusions above remain enforced.`
+
+Leave a ceiling that is not crossed as it is, and change nothing else in those files. Then run the browser
+checks:
+
+```sh
+npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
+npx dprint check packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+```
+
+Expected: `Test Files  3 passed (3)`; `check:browser-bundles` ends `Bundle budget check passed.`; dprint prints
+nothing. Keep both measured figures for the commit message; the commit adds the ceiling files only if a ceiling
+was crossed.
+
+- [ ] **Step 16: Commit**
 
 ```bash
 git add packages/shared/multicast/read-rtc-outbound-observation.ts \
@@ -5637,13 +5820,21 @@ git add packages/shared/multicast/read-rtc-outbound-observation.ts \
   packages/tests/shared/webrtc-overlay-services.test.ts \
   packages/tests/shared/rtc-snapshot-floor-admission.test.ts \
   packages/tests/shared/multicast/rtc-relay-overlay-fixture.ts \
-  packages/tests/shared-web/messages/browser-message-handle-admission.test.ts
-git commit -m "RTC room authority gap decides the carrier; unauthorized only for a foreign or inactive overlay"
+  packages/tests/shared-web/messages/browser-message-handle-admission.test.ts \
+  packages/tests/shared/alm/create-indexed-db-origin-stores.ts \
+  packages/tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts \
+  packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts \
+  packages/tests/shared/multicast-policy-integration.test.ts
+# only if Step 15 crossed a ceiling:
+git add packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts \
+  packages/shared-web/scripts/measure-browser-bundles.mjs \
+  packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+git commit -m "RTC room authority gap decides the carrier; unauthorized only for a foreign or inactive overlay" \
+  -m "Bundles: facade <figure> KiB (ceiling <old> -> <new>, or unchanged), headless <figure> KiB (ceiling <old> -> <new>, or unchanged)."
 ```
 
-Also add `packages/tests/shared/alm/al-indexeddb-rtc-carrier-gap-counts.test.ts` and
-`packages/tests/shared/multicast-policy-integration.test.ts` to the `git add` list, and the bundle ceiling files
-changed in step 13.9 (headless test comment and `measure-browser-bundles.mjs`), with both figures in the message.
+Run the second `git add` only if Step 15 raised a ceiling. The message body carries both figures Step 15 measured
+and names each ceiling it raised.
 
 #### Inbound (relay and ingress) side
 
@@ -5684,9 +5875,11 @@ Not changed by this task. Checked against main:
 - Report BRK-3: main never created RTC `dequeue-message` work except for an empty frozen audience under `receiver`,
   so the new dequeue wait changes no main path; `toRtcHeldMessageAuthority` exempts the empty-audience case.
 - Report BRK-2 is fixed as described there: #566's "prepared recipient is no longer active" refusal is removed.
-- The spec lists the S3c-ii unicast fallback under "Admission: `no-route`". A peer unicast keeps main's own admission
-  (`planDirectDispatch`: a missing snapshot is `deferred`, an unready addressee `no-route`); only its dispatch sees
-  the gap, as `not-ready`. That is main's behaviour, which the spec asks to keep.
+- The spec lists the S3c-ii unicast fallback under "Admission: `no-route`". This task does not follow that line: a
+  peer unicast in a gap keeps main's own admission (`planDirectDispatch`: `deferred` for a missing snapshot,
+  `no-route` for an unready addressee); only its dispatch sees the gap, as `not-ready`. That is main's behaviour,
+  which the spec asks to keep for unicasts. The controller confirmed this (2026-09-29): the brief stands, and task
+  12's D96 records it.
 - A `bootstrap` overlay is no longer refused (#566 refused any non-server overlay); it is not the exact accepted
   layout, so it is a gap, as the spec's list says.
 - Three #566-edited tests outside the overlay-readiness file (`rtc-outbound-transport-results`,
@@ -5706,6 +5899,19 @@ Not changed by this task. Checked against main:
    durable send there now waits out a gap where main answered `no-route` and ended `attempts-exhausted`. Confirm this
    follows "`rtc` only, durable"; the alternative is `'hand-over'` for those legs, which keeps main's terminal
    `no-route`.
+
+---
+
+#### Pre-flight corrections applied
+
+- New Step 6 moves `createIndexedDbOriginStores(observer, namespace)` into the fixture `packages/tests/shared/alm/create-indexed-db-origin-stores.ts` (complete file) and edits the empty-audience counts test to import it; the new counts test (Step 7) imports it instead of repeating it; old steps 6-14 renumbered 7-15, cross-references updated (scan N3, ruling 5).
+- Validate item 9 (bundles) removed; new Step 15 measures both bundles on the branch with exact commands and raises a crossed ceiling in the facade test, `measure-browser-bundles.mjs` and the headless test, figure in comment and commit message; "The facade stays under 228" and the stale "task 1's 291 ceiling" wording are gone; commit is Step 16 (scan N1, ruling 1).
+- Files list and the Step 16 commit name the fixture, the empty-audience test, the counts test, `multicast-policy-integration.test.ts` and, only if a ceiling is crossed, the three ceiling files; the message carries both figures (scan N1).
+- README `dequeue-message` row keeps "an admitted plan completes and runs the configured `afterDequeueAdmission` port"; the claim that no other row moves is removed, dprint re-pads the table (scan N2, ruling 4).
+- Validate item 1: removed the nonexistent `packages/tests/shared/rtc-snapshot-durable-replay.test.ts` (the real file is under `packages/tests/shared/multicast`, already selected) (scan N5).
+- Corrections block: the peer-unicast-in-a-gap line now says plainly that main's admission (`deferred` for a missing snapshot) is kept and the controller confirmed it (scan N7, ruling 3).
+- Steps 2, 3, 5, 8 and 12: member-narration doc comments removed from new source (observation, classification, dequeue wait, manager `readPendingAdmissionAuthority`/`readRtcDispatchAuthority`, `CarrierOutboxLeg`); the invariant comments on `RtcOutboundCarrierAvailability`, `readALOutboundDequeueWait` and `planCarrierGap` stay (scan N9, ruling 7).
+- Step 10 (old 9): the three one-line replacements re-indented to the file's indentation (8, 12 and 20 spaces) (ruling 10).
 
 ---
 
@@ -5732,6 +5938,9 @@ drop the unanswered dial and redial it, and then stops withholding `delivery-rel
   withholding), `:73-78` (description).
 - Regenerate `apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json` (no other manifest changes).
 - Modify `packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md:376-377` (delete the ws-only paragraph).
+- Modify, only if Step 12 finds a ceiling crossed: `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`,
+  `packages/shared-web/scripts/measure-browser-bundles.mjs` (facade),
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` (headless).
 - Test, create: `packages/tests/shared/webrtc-retained-peer-redial.test.ts` (fixtures:
   `packages/tests/shared/native-rtc-connection-fixture.ts`,
   `packages/tests/shared/web-rtc-group-manager-test-fixture.ts`).
@@ -5794,7 +6003,7 @@ dial's offer landed on the new connection. In the merged tree:
    ICE reached `connected` with the second (hosted diagnosis, section "Local readiness timeouts after the redial fix",
    table 1). DTLS could not complete there because the offerer had applied the stale answer, which `offerId` now
    prevents; DTLS completing after a fingerprint change is therefore not yet observed, and the lane's `capacity` cells
-   in Step 12 are its proof.
+   in Step 13 are its proof.
 3. **Late ICE candidates are not correlated by the protocol.** `IceCandidate` carries no `offerId`; the decoder
    rejects one (`decode-rtc-signaling-message.ts:90-99`). The browser correlates them by `usernameFragment`, which the
    decoder keeps (`:133-160`): after the ICE restart of point 2 a candidate from the old negotiation names a stale
@@ -6053,6 +6262,7 @@ describe('WebRtcGroupManager retained peer redial', () => {
         expect(lostDial.connectionState).toBe('closed');
         expect(redial.channels.map((channel) => channel.label)).toEqual(['reliable', 'realtime']);
         expect(runtime.createdConnections).toHaveLength(3);
+        // The redial keeps the attempt budget: it is not reset, so the redial counts as the second attempt.
         expect(offerer.connection.service.peerConnectionAttemptDiagnostics('a-peer')?.attempts)
             .toBe(2);
 
@@ -6202,7 +6412,8 @@ export interface UnansweredRetainedDialsInput {
  * A dial kept through the overlay grace while its remote side was gone offered to a session that could not take it.
  * Only the offering side negotiates, and only its unanswered offer can be the lost one; an answer to it that still
  * arrives is discarded by its offer id once the redial owns the peer. The caller ends the retention in the same
- * pass, so each reappearance redials at most once, and the attempt budget still counts the redial.
+ * pass, so each reappearance redials at most once. The redial keeps the attempt budget: it is not reset, so the
+ * redial counts as an attempt.
  */
 export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
     for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {
@@ -6305,7 +6516,7 @@ private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>): void {
 
 - [ ] **Step 6: Move the manifest 18 pins in the Vitest suites back to three reload cells.**
       Each edit restores the form the pin had before S3c-ii withheld the cells (commit `6732867c3`). Use the Edit tool
-      with these exact anchors.
+      with these exact anchors (quoted at the file's own indentation).
 
   `packages/tests/rallar-black-box/alm-reload-manifest.test.ts`:
   - line 13: replace `it('keeps the ws reload checkpoint before ordinary work and preserves the receiver subscription', () => {`
@@ -6643,14 +6854,64 @@ counts), and `ok | 11 passed | 0 failed` for the two Deno files.
      `cd apps/api-v1 && deno task check`, `cd apps/rallar-black-box-control-server && deno task check`,
      `cd apps/relic-hunter-server-v1 && deno task check`, then `npm run test:deno` (sandbox disabled). Expected: every
      check exits 0; `test:deno` prints `ok | ... | 0 failed` for each of its four suites.
-  7. The change reaches the browser:
-     `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
-     and `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`. Expected: `Test Files  3 passed (3)`
-     and `Bundle budget check passed.` The reverted attempt measured +0.1 KiB (facade) and +0.27 KiB (headless). If
-     either ceiling task 1 set is crossed, raise it to the next whole KiB in this task and record both figures in the
-     test comment, `measure-browser-bundles.mjs` and the commit message.
+  7. The change reaches the browser: the browser surfaces and bundles are Step 12.
 
-- [ ] **Step 12: Run the lanes (unsandboxed, one runner at a time, no edits while it runs).**
+- [ ] **Step 12: Measure both bundles on the branch and raise a crossed ceiling.** The only growth figure for this
+      change is the reverted attempt's (+0.1 KiB facade, +0.27 KiB headless, on its own tree); the branch as it
+      stands carries tasks 1-4, so measure it now, with the exact esbuild and Brotli settings of the two boundary tests (it
+      writes only to `$TMPDIR`):
+
+```sh
+node --input-type=module -e "
+import { buildSync } from 'esbuild';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { brotliCompressSync, constants } from 'node:zlib';
+const brotliKiB = (file) => brotliCompressSync(readFileSync(file), { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }).length / 1024;
+const facade = process.env.TMPDIR + '/rallar-browser-facade.measure.min.js';
+execFileSync('node_modules/.bin/esbuild', ['packages/shared-web/browser/rallar.ts', '--bundle', '--minify', '--format=esm',
+    '--platform=browser', '--target=es2022', '--tsconfig=packages/shared-web/tsconfig.json', '--log-level=error',
+    '--outfile=' + facade], { stdio: ['ignore', 'ignore', 'inherit'] });
+const headless = process.env.TMPDIR + '/headless-agent.measure.min.js';
+buildSync({ absWorkingDir: process.cwd(), entryPoints: ['apps/rallar-black-box-headless/src/main.ts'], bundle: true,
+    minify: true, format: 'esm', platform: 'browser', target: 'es2023',
+    tsconfig: 'apps/rallar-black-box-headless/tsconfig.json', outfile: headless, logLevel: 'error' });
+console.log('facade ' + brotliKiB(facade));
+console.log('headless ' + brotliKiB(headless));
+"
+grep -n 'brotliBudgetKiB: 2[0-9][0-9]' packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs
+grep -n 'toBeLessThan(2[0-9][0-9])' packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+```
+
+Expected: two lines `facade <KiB>` and `headless <KiB>` (on the merged tree alone this command prints
+`facade 227.001953125` and `headless 290.369140625`), then the current ceilings: the `browser/rallar.ts` entry's
+`brotliBudgetKiB` in the facade test and in the script (they are equal), and the headless test's
+`toBeLessThan(...)`. A figure at or above its ceiling crosses it. For each crossed ceiling, set the new ceiling
+to the next whole KiB above the figure (`Math.floor(figure) + 1`) in every file that holds it:
+
+- facade crossed: the `brotliBudgetKiB` of the `browser/rallar.ts` entry in both
+  `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` and
+  `packages/shared-web/scripts/measure-browser-bundles.mjs`, and append to the comment directly above that entry,
+  in both files, the sentence `The retained-peer redial measures <figure> KiB. The next whole-KiB ceiling is <new>.`
+  (wrap at 120 columns like the lines above it);
+- headless crossed: `expect(result.brotliKiB).toBeLessThan(<new>);` in
+  `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`, and the same sentence appended to
+  the comment above it, before its last line `// All operator dependency exclusions above remain enforced.`
+
+Leave a ceiling that is not crossed as it is, and change nothing else in those files. Then run the browser
+checks:
+
+```sh
+npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
+npx dprint check packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
+```
+
+Expected: `Test Files  3 passed (3)`; `check:browser-bundles` ends `Bundle budget check passed.`; dprint prints
+nothing. Keep both measured figures for the commit message; the commit adds the ceiling files only if a ceiling
+was crossed.
+
+- [ ] **Step 13: Run the lanes (unsandboxed, one runner at a time, no edits while it runs).**
       First check the ports: `lsof -nP -iTCP:18080 -iTCP:5180 -iTCP:5177 -sTCP:LISTEN`. Expected: no output.
   1. The smoke lane: `RALLAR_BLACK_BOX_ALM_SCOPE=smoke npm run -s test:rallar:full-stack:memory:alm`.
      Expected: every test passes, or the result task 4 recorded for the smoke lane, unchanged.
@@ -6670,13 +6931,17 @@ counts), and `ok | 11 passed | 0 failed` for the two Deno files.
      `peer-created` pair right after its layout re-accept is the redial).
      The hosted proof (manifest 18 from the branch) is task 13's.
 
-- [ ] **Step 13: Commit.**
+- [ ] **Step 14: Commit.**
       `git add packages/shared/services/webrtc-outbound-dialing.ts packages/shared/services/web-rtc-group-manager.ts packages/tests/shared/webrtc-retained-peer-redial.test.ts apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json packages/shared-test/rallar-bb-test/docs/schema-and-capabilities.md packages/tests/rallar-black-box/alm-reload-manifest.test.ts packages/tests/rallar-black-box/hetzner-alm-manifest-entries.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/shared-test/alm-identity-assessment.test.ts apps/rallar-black-box-control-server/test/control-alm-evidence.test.ts apps/rallar-black-box-control-server/test/control-generated-alm-reload.test.ts`
+      and, only if Step 12 crossed a ceiling,
+      `git add packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/shared-web/scripts/measure-browser-bundles.mjs packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`.
       `git commit` with subject `fix(rtc): redial a retained dial whose offer went unanswered when its peer returns` and a
       body that says: the offering side drops a never-established dial retained through the overlay grace, whose offer
       is still unanswered, when the pass re-desires the peer, and redials in that pass; a late answer to the dropped
       offer is discarded by its offer id; established peers and the polite side are untouched; hosted manifest 18 runs
-      `delivery-reload` on every carrier again (the Step 10 figures); the gates and lane results of Steps 11-12.
+      `delivery-reload` on every carrier again (the Step 10 figures); both bundle figures Step 12 measured and each
+      ceiling it raised; the gates and lane
+      results of Steps 11-13.
       Do not push.
 
 #### Corrections found while writing
@@ -6694,6 +6959,10 @@ counts), and `ok | 11 passed | 0 failed` for the two Deno files.
   retention. See ruling R5-1.
 - **The pass must read `peerIdsWithNoReconnectableLanes()` after the disconnect** (point 7 above); the spec does not
   say so.
+- **The attempt budget is kept, not spared.** The spec's "RTC redial" section says the peer is disconnected "without
+  spending the attempt budget". The rule calls `disconnectPeer(peerId, { resetAttemptBudget: false })`: the redial
+  keeps the attempt budget; it is not reset, so the redial counts as an attempt, and the test pins 2 attempts. The
+  controller ruled this stands (2026-09-29); D98 and the spec say "keeps".
 - **`isPeerConnectedOrInProgress` is private** (`web-rtc-connection-service.ts:791`); the rule uses the public
   `inFlightPeerIds()`, which also excludes established peers.
 - **"A sends a new offer in that pass" cannot be observed in the native fixture**, which never fires
@@ -6761,14 +7030,24 @@ Take it only if a lane shows the reverse order.
 - `disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void` and `UnansweredRetainedDialsInput`
   in `packages/shared/services/webrtc-outbound-dialing.ts`.
 - Test file `packages/tests/shared/webrtc-retained-peer-redial.test.ts` (four tests).
-- Task 12 (D98): the rule (offering side, unanswered offer, `overlay-transition` retention, same pass, attempt budget
-  kept), R5-2's residual, and manifest 18 running `delivery-reload` on all three carriers again (656 426 bytes, 39
+- Task 12 (D98): the rule (offering side, unanswered offer, `overlay-transition` retention, same pass; the redial
+  keeps the attempt budget: it is not reset, so the redial counts as an attempt, and the test pins 2 attempts),
+  R5-2's residual, and manifest 18 running `delivery-reload` on all three carriers again (656 426 bytes, 39
   blocks per role, 3 reload checkpoints, 11 `messages.rtc` connects, receiver absence windows 530 s, terminal timeout
   1 800 s). `playground/alm/alm-s3-design-proposal.md:695`, `:750-757` and `:792-795` describe the withholding as
   S3c-ii history; D98 supersedes R-S3c-ii-14.
 - Task 13: the hosted manifest 18 run from the branch must show `alm-rtc-delivery-reload` and
-  `alm-rtc-with-ws-fallback-delivery-reload` green; the bundle deltas of this task are about +0.1 KiB (facade) and
-  +0.27 KiB (headless).
+  `alm-rtc-with-ws-fallback-delivery-reload` green; Step 12 records this task's bundle figures on the branch (the
+  reverted attempt alone measured about +0.1 KiB facade and +0.27 KiB headless).
+
+---
+
+#### Pre-flight corrections applied
+
+- Step 11 item 7 (bundles against "the ceiling task 1 set") replaced by new Step 12, which measures both bundles on the branch with exact commands and raises a crossed ceiling in the facade test, `measure-browser-bundles.mjs` and the headless test, figure in comment and commit message; lanes and commit renumbered 13 and 14, cross-references updated (scan N1, ruling 1).
+- Files list and the Step 14 commit name the three ceiling files "only if a ceiling is crossed"; the commit body carries both figures; "Names other tasks must know" no longer states fixed bundle deltas (scan N1).
+- Attempt budget: the rule's doc comment, a test-intent comment on the `attempts` assertion, "Names other tasks must know" and a new Corrections entry say the redial keeps the attempt budget; it is not reset, so the redial counts as an attempt; the test pins 2 attempts (scan N6, ruling 2).
+- Steps 4, 6 and 7: every multi-line anchor and its replacement re-indented to the file's indentation (4, 8, 12 or 20 spaces, checked against the merged tree), including the identity-assessment replacement test that was quoted at column 0 (scan N8, ruling 10).
 
 ---
 
@@ -9706,7 +9985,10 @@ function readReceipts(socket: SimulatedWebSocket): readonly Readonly<{
 
 Run: `npx vitest run packages/tests/shared/services/ws-queue-box-server-ack-relay.test.ts`
 Expected (red): `Tests  6 failed | 4 passed (10)`. The four that already pass pin behaviour the relay must keep:
-the owner never relays, both pre-relay refusals, the refusal without a relay port, and no relay to the server.
+the owner never relays, the refusal of an ACK that speaks for another recipient, the refusal without a relay port,
+and no relay to the server. The "is not addressed to the origin it names" case fails before the relay exists: on an
+instance that holds no aggregate the aggregation answers "AL acknowledgement names no receipt this server
+aggregates"; the relay's `validateRelayableAck` gives it its own message.
 
 - [ ] **Step 3: Write the middleware wiring test.** Create
       `packages/tests/shared-server/rallar-system/middleware/relayed-ack-notice-delivery.test.ts`. Two
@@ -10636,7 +10918,10 @@ another process. Postgres pub/sub only; best effort.
 4. api-v1 has two notice transports on the same channel name: the router's `livePublication`
    (`create-api-v1-ws-live-publication.ts`, publisher `myPublisherId`) and the middleware subscriber's
    (`queuePubSubChannel`, `queuePubSubPublisherId`). The relay uses the subscriber side's channel and publisher id,
-   so a process recognises and skips its own relayed notices.
+   so a process recognises and skips its own relayed notices. The queue-box pub/sub bridge listens on the same
+   channel and drops a `relayed-ack` notice as malformed (`decodeQueueBoxPubSubMessage` returns `undefined`, and
+   `receiveQueueBoxPubSubMessage` records a `drop-malformed` timing event), as it already drops live notices: this
+   adds diagnostic noise and changes no behaviour, so no code change is needed for it.
 
 **Rulings**
 
@@ -10646,12 +10931,21 @@ Decided (controller, 2026-09-29): R3 accepted, the relay carries ACKs only. The 
   which is new receipt behaviour no D-row describes. Cost of ACKs only: none today; a NACK stays refused at the
   recipient's process, as on main.
 
+#### Pre-flight corrections applied
+
+- Server N2: Step 2's list of the four cases that pass before the relay names the "speaks for another recipient" refusal, not both pre-relay refusals, and says why the other one fails.
+- Server N4: correction 4 says the queue-box bridge on the same channel drops a `relayed-ack` notice as malformed (a `drop-malformed` timing event, no behaviour change).
+
 ---
 
 ### Task 7: Scope, statuses, schema
 
 Decisions carried out: P7 (D100), P12 (D103), P9 (D102), P13's scope-authority part (D101), P8 (D101's schema bump).
 The D-row ids appear in README text only, never in source comments. Task 12 writes the D-rows themselves.
+
+**Commits:** two commits: after step 13b and after the last step; the controller reviews each. Step 13b commits
+parts A-C (ingress scope NACK, typed unicast scope failure, publish statuses) after the gates of steps 30-35 pass
+for them; Step 36 commits parts D-E (the `groupRef` scope authority and the schema bump).
 
 Written against the tree after tasks 2 and 6: task 2 reverts `0765761ad` and `c82698c50`, so
 `publish-rallar-server-ws-fanout.ts` no longer exists and `publishRallarServerWsFanout` is again a private function
@@ -11124,62 +11418,15 @@ In `ws-queue-box-server-inbound-authority.ts`:
 1. Line 1 becomes `import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';` and
    after the import of `toWsQueueBoxServerAddresseeAuthorization` (line 9) add
    `import { toWsQueueBoxServerScopeAuthorization } from './to-ws-queue-box-server-scope-authorization.ts';`.
-2. Replace the namespace `WsQueueBoxServerInboundAuthority` (`:20-65`) with this declaration; only
-   `AdmissionDecision` changes (it gains the `refused` variant):
+2. In the namespace `WsQueueBoxServerInboundAuthority` add this variant to `AdmissionDecision`, between the
+   `authorized` and the `finished` variants; leave `Dependencies` (task 6b's `readonly ackRelay:
+   WsQueueBoxServerAckRelay;`) and every other member as task 6b left them:
 
-```ts
-export namespace WsQueueBoxServerInboundAuthority {
-    export interface Dependencies {
-        readonly socket: JsonWebSocketServer;
-        readonly serverPeerId: string;
-        readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly newControlId: () => string;
-        readonly targetResolution: WsQueueBoxServerTargetResolution;
-        readonly liveDelivery: WsQueueBoxServerLiveDelivery;
-        readonly receipts: WsQueueBoxServerReceiptAggregation;
-        readonly validateInboundMessage: (
-            message: ALMessage
-        ) => Either<ALMessageRejection, ALMessage>;
-        readonly readAuthenticatedConnectionScope:
-            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
-    }
-
-    export interface AuthorizedMessage {
-        readonly message: ALMessage;
-        readonly fromPeerId: string;
-        readonly authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>;
-        readonly proof: WsServerInboundConnectionScopeProof;
-    }
-
-    export interface SocketOrigin {
-        readonly message: ALMessage;
-        readonly connection: ConnectionContext;
-        readonly fromPeerId: string;
-    }
-
-    export interface AuthorizedCandidate {
-        readonly origin: SocketOrigin;
-        readonly authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>;
-    }
-
-    export type SocketAdmissionDecision =
-        | { readonly kind: 'candidate'; readonly value: AuthorizedCandidate; }
-        | {
-            readonly kind: 'finished';
-            readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
-        };
-
-    export type AdmissionDecision =
-        | { readonly kind: 'authorized'; readonly value: AuthorizedMessage; }
-        | {
-            readonly kind: 'refused';
-            readonly message: ALMessage;
-            readonly refusal: Extract<WsServerInboundAuthorization, { authorized: false; }>;
-        }
-        | {
-            readonly kind: 'finished';
-            readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
-        };
+```text
+| {
+    readonly kind: 'refused';
+    readonly message: ALMessage;
+    readonly refusal: Extract<WsServerInboundAuthorization, { authorized: false; }>;
 }
 ```
 
@@ -11534,7 +11781,8 @@ Callers of a unicast publish, checked against the merged tree:
 - [ ] **Step 10: Write the failing router tests**
 
 In `packages/tests/shared-server/rallar-system/public-ws-unicast-scope.test.ts` replace the test at `:33-49` and add
-two tests after it (inside the same `describe`):
+one test after it (inside the same `describe`). The room unicast without a DTO scope is tested in Step 18: it stays
+red until part D, and parts A-C are committed on their own at Step 13b.
 
 ```text
     it.each([undefined, null, {}, { applicationId: 'app' }, { applicationId: 'app', workspaceId: '' }])(
@@ -11568,17 +11816,6 @@ two tests after it (inside the same `describe`):
         expect(result).toMatchObject({ status: 'failed', reason: 'A group-addressed publication takes its scope from targets.groupRef' });
         expect(await outbox.getAllKeys()).toEqual([]);
     });
-    it('queues a room unicast without a DTO scope: its groupRef scopes it', async () => {
-        const outbox = new InMemoryQueueBox();
-        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
-        onTestFinished(() => service.dispose());
-        const router = new RallarServerWsRouter(service);
-
-        const result = await router.publish({ message: createRoomUnicast(), fanout: 'outbox' });
-
-        expect(result.status).toBe('queued-outbox');
-        expect((await outbox.getAllKeys()).length).toBeGreaterThan(0);
-    });
 ```
 
 At the end of the file add:
@@ -11610,7 +11847,7 @@ npx vitest run packages/tests/shared-server/rallar-system/public-ws-unicast-scop
 ```
 
 Expected red: the five `fails a unicast ...` cases read `status: 'skipped'`; the group-addressed-with-scope case reads
-`queued-outbox`; the room unicast without scope reads `skipped`.
+`queued-outbox`.
 
 - [ ] **Step 11: Implement the publish scope rule**
 
@@ -11643,8 +11880,17 @@ In `publish-rallar-server-ws-message.ts` (state after tasks 2 and 6):
 2. At the top of `publishAuthorizedRallarServerWsMessage`, replace
 
 ```text
-if (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(input.inboundScope).length > 0) {
-    return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
+if (
+    input.message.targets?.mode === 'unicast' &&
+    validateALOutboundRecipientScope(input.inboundScope).length > 0
+) {
+    return {
+        fanout: input.fanout,
+        status: 'skipped',
+        message: input.message,
+        sentCount: 0,
+        entries: []
+    };
 }
 ```
 
@@ -11657,23 +11903,6 @@ if (scopeIssues.length > 0) {
 }
 ```
 
-3. In the `outbox` case of the private `publishRallarServerWsFanout`, replace the third argument of
-   `enqueueOutboxIfAbsent`
-
-```text
-input.message.targets?.mode === 'unicast' ? input.inboundScope ?? undefined : undefined
-```
-
-with
-
-```text
-input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
-    ? input.inboundScope ?? undefined
-    : undefined
-```
-
-so a room unicast no longer stores the sender's scope beside its `groupRef` (part D).
-
 In `rallar-server-ws-router-contracts.ts:21` replace the `scope` comment with
 `/** Required for a unicast that names no group; refused beside targets that name one, which scope themselves. */`.
 
@@ -11681,10 +11910,10 @@ In `rallar-server-ws-router-contracts.ts:21` replace the `scope` comment with
 npx vitest run packages/tests/shared-server/rallar-system/public-ws-unicast-scope.test.ts
 ```
 
-Expected: all cases pass except `queues a room unicast without a DTO scope`, which still reads `skipped` because the
-WS planner requires a stored scope for every unicast; it turns green with part D (Step 27). Task 6's real-router game
-authority test also fails from here until Step 13, because the game server still passes a scope beside its room
-broadcast's `groupRef`.
+Expected: all cases pass. Task 6's real-router game authority test fails from here until Step 13, because the game
+server still passes a scope beside its room broadcast's `groupRef`; Step 13 turns it green before the Step 13b
+commit. The router `outbox` case keeps storing the sender's scope for a room unicast until Step 21 (part D), because
+until then the WS planner requires a stored scope for every non-control unicast.
 
 #### C. Publish statuses (P9, D102)
 
@@ -11786,6 +12015,29 @@ cd apps/relic-hunter-server-v1 && deno test --allow-env --allow-read test/relic-
 ```
 
 Expected: `Test Files  1 passed (1)`; Deno `ok | ... passed | 0 failed`.
+
+- [ ] **Step 13b: Gates and commit for parts A-C**
+
+Parts A-C are the first of this task's two commits; the controller reviews it before part D starts. Run the gates of
+Steps 30-35 as written there, with these scopes: Step 31's dprint list is the files Steps 1-13 created or changed
+(`to-ws-queue-box-server-scope-authorization.ts`, `validate-rallar-server-ws-publish-scope.ts`, their tests
+`to-ws-queue-box-server-scope-authorization.test.ts` and `ws-queue-box-server-scope-nack.test.ts`,
+`ws-queue-box-server-inbound-authority.ts`, `ws-queue-box-server-service.ts`, `publish-rallar-server-ws-message.ts`,
+`rallar-server-ws-router-contracts.ts`, `install-rallar-game-authority-server.ts`, `relic-game-service.ts`, the
+recipe `api-v1-websocket-addressed-sends.json`, `recipe-matrix.json`, `public-ws-unicast-scope.test.ts`,
+`install-rallar-game-authority-server.test.ts`, `relic-server-service.test.ts`, and any real-router game test Step 12
+changed; `git status --short` must list nothing else). The expected results are those of Steps 30-35; Step 35's addressed-sends recipe already carries
+`roomSendFromAnotherScopeIsRefusedWithANack` and `assertScopeNackShape` (Step 9).
+
+```sh
+git add <the files listed above>
+git commit -m "Scope and statuses: ingress scope NACK, typed unicast scope failure, publish statuses"
+```
+
+The commit body lists: the ingress scope refusal now answers with the wrapped authorizer's NACK (D100); a unicast
+publish that names no group and carries no scope fails typed, and a server publish that names a group and also passes
+a `scope` is refused (D103); `sent-live`, `cluster-published` and `queued-outbox` all map to game `sent` (D102); any
+bundle ceiling raised, with the measured figure; and which commands passed, failed or were skipped.
 
 #### D. The wire `groupRef` is the scope authority (P13, D101)
 
@@ -12280,19 +12532,40 @@ it('refuses a raw group-addressed unicast even with producer provenance', async 
 });
 ```
 
+4. In `packages/tests/shared-server/rallar-system/public-ws-unicast-scope.test.ts`, after the test
+   `fails a group-addressed publication that also carries a scope` (Step 10), add (it uses Step 10's `SCOPE` and
+   `createRoomUnicast`):
+
+```text
+    it('queues a room unicast without a DTO scope: its groupRef scopes it', async () => {
+        const outbox = new InMemoryQueueBox();
+        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service);
+
+        const result = await router.publish({ message: createRoomUnicast(), fanout: 'outbox' });
+
+        expect(result.status).toBe('queued-outbox');
+        expect((await outbox.getAllKeys()).length).toBeGreaterThan(0);
+    });
+```
+
 Run:
 
 ```sh
 npx vitest run packages/tests/shared/services/ws-queue-box-server-room-scope-authority.test.ts \
   packages/tests/shared/services/ws-room-provenance-planning.test.ts \
-  packages/tests/shared/services/ws-dequeue-authority.test.ts
+  packages/tests/shared/services/ws-dequeue-authority.test.ts \
+  packages/tests/shared-server/rallar-system/public-ws-unicast-scope.test.ts
 ```
 
 Expected red: in the new file four of the five cases fail (a room unicast with a second scope is admitted; one
 without a scope is refused; the live send without a proven scope sends nothing even in scope); the live send to a
 connection in another workspace sends nothing before and after. In the planning file the
 `room-recipient` cases fail (`scoped-recipient` or `recipient` is planned, the kind is unknown to the decoder); the
-new dequeue test fails (the row completes and one frame is sent).
+new dequeue test fails (the row completes and one frame is sent). In the router file only
+`queues a room unicast without a DTO scope` fails: it reads `skipped`, because the WS planner still requires a stored
+scope for every unicast; it turns green in part D (Steps 19-21) and is confirmed in Step 27.
 
 - [ ] **Step 19: Rewrite the WS recipient authority rules on the resolver**
 
@@ -12715,6 +12988,26 @@ preparedMessages: this.toRecipientPreparedMessages(
   replace its call with `toWsQueueBoxServerUnscopedPreparedMessages(message, recipients)`;
 - remove the `toALOutboundTransportMessage` import only if nothing else in the file uses it
   (`toClusterPreparedMessages` still does: keep it).
+
+4. In `publish-rallar-server-ws-message.ts` (moved here from part B so that parts A-C commit green), in the `outbox`
+   case of the private `publishRallarServerWsFanout`, replace the third argument of `enqueueOutboxIfAbsent`
+
+```text
+input.message.targets?.mode === 'unicast'
+    ? input.inboundScope ?? undefined
+    : undefined
+```
+
+with
+
+```text
+input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
+    ? input.inboundScope ?? undefined
+    : undefined
+```
+
+so a room unicast no longer stores the sender's scope beside its `groupRef` (an admitted or proxy room unicast
+carries the sender's scope in `inboundScope`).
 
 - [ ] **Step 22: Decode the `room-recipient` kind and refuse a second scope**
 
@@ -13316,10 +13609,14 @@ Web and API deploy together.
 ```
 
 3. In `packages/shared/alm/outbound/README.md` (section "Server receipts on WS"), in the sentence listing the
-   pre-admission `unauthorized` refusals answered with a NACK (`:335-341`), after
-   `a room unicast whose \`route.contextId\` names another room than its \`groupRef\` (R-S3c-i-33),`insert`a message whose room or principal names another application or workspace than its connection authenticated
-   (D100, [``toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-scope-authorization.ts)),``
-   and after that paragraph (it ends "reads unconfirmed (D73).") add
+   pre-admission `unauthorized` refusals answered with a NACK (`:335-341`), after the clause that ends
+   ``names another room than its `groupRef` (R-S3c-i-33),`` insert this clause (a space before it, as in the list):
+
+```text
+a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-scope-authorization.ts)),
+```
+
+and after that paragraph (it ends "reads unconfirmed (D73).") add
 
 ```text
 The wire `targets.groupRef` scopes every row that names a group (D101): its captured policy stores no
@@ -13340,6 +13637,8 @@ npx vitest run packages/tests/shared/alm/al-storage-snapshot.test.ts packages/te
 Expected: `no product pin of the old id`; `Test Files  4 passed (4)`.
 
 #### Validation and commit
+
+Steps 30-35 run twice: at Step 13b for parts A-C, and here for the whole task before the parts D-E commit.
 
 - [ ] **Step 30: Unit suite and typecheck**
 
@@ -13416,18 +13715,21 @@ Expected: `api-v1-websocket-addressed-sends` passes in memory and Postgres, incl
 `roomSendFromAnotherScopeIsRefusedWithANack` and `assertScopeNackShape`; every other recipe passes; medium-scale
 passes with its constants, operation matrix and assertions unchanged.
 
-- [ ] **Step 36: Commit**
+- [ ] **Step 36: Commit parts D-E**
+
+This is the second of the task's two commits; parts A-C were committed at Step 13b.
 
 ```sh
-git add <every file listed under Files and Test>
-git commit -m "Scope, statuses, schema: ingress scope NACK, typed unicast scope failure, publish statuses, groupRef scope authority, schema rallar-alm-2026-09-scoped-delivery"
+git add <every file listed under Files and Test that Steps 14-29 created or changed>
+git commit -m "Scope authority and schema: groupRef scope authority, schema rallar-alm-2026-09-scoped-delivery"
 ```
 
-The commit body lists: the ingress scope refusal now answers with the wrapped authorizer's NACK (D100); a unicast
-publish without scope fails typed and a group row carries no second scope (D101, D103); `sent-live`, `cluster-published`
-and `queued-outbox` all map to game `sent` (D102); the schema id bump and what a deploy discards (every browser's ALM IndexedDB resets once; server
-rows of the other build are undecodable for their TTL; web and API deploy together); any bundle ceiling raised, with
-the measured figure; and which commands passed, failed or were skipped.
+The commit body lists: a row whose targets name a group carries no second scope, its wire `groupRef` scopes it, and a
+room unicast from the router `outbox` no longer stores the sender's scope (D101); a raw `WS_OUTBOX` row without
+producer provenance fails closed (D103); the README text of D100, D101 and D103; the schema id bump and what a deploy
+discards (every browser's ALM IndexedDB resets once; server rows of the other build are undecodable for their TTL;
+web and API deploy together); any bundle ceiling raised, with the measured figure; and which commands passed, failed
+or were skipped.
 
 #### Corrections found while writing
 
@@ -13460,6 +13762,18 @@ Decided by the maintainer (2026-09-29); built as described above.
 The `relayed-ack` notice kind (P20, D106) adds a wire shape on the cluster notice channel only. Notices are not
 stored (the NOTIFY payload lives in no table or IndexedDB store), so part E's schema bump does not cover it and
 needs no change for it; the web and API deploy together, as for the other notice kinds.
+
+#### Pre-flight corrections applied
+
+- Server B1: Step 7 item 2 adds only the `refused` variant to `AdmissionDecision`; `Dependencies` keeps task 6b's `ackRelay`.
+- Server B2: the header states the two commits (after Step 13b and after the last step), each reviewed by the controller.
+- Server B2: Step 10 no longer adds `queues a room unicast without a DTO scope`; that test moved to Step 18 item 4 (red until part D).
+- Server B2: Step 11 item 3 (no sender scope stored for a room unicast in the `outbox` case) moved to Step 21 item 4.
+- Server B2: Step 11 now expects all cases to pass.
+- Server B2: new Step 13b runs the gates of Steps 30-35 for parts A-C and commits `Scope and statuses: ingress scope NACK, typed unicast scope failure, publish statuses`.
+- Server B2: Steps 30-35 note that they run twice; Step 36 commits parts D-E only, with its own subject and body.
+- Server N1: the unicast scope check quoted in Step 11 and the `outbox` third argument quoted in Step 21 use task 6's multi-line layout.
+- Server N3: Step 29 item 3 gives the README anchor and the inserted D100 clause as clean Markdown, the clause in a fenced block.
 
 ---
 
@@ -14706,14 +15020,15 @@ Confirm:
 git grep -n "provenance !== 'server'\|provenance === 'server'\|isOverlayIdentity(" -- packages/shared/multicast
 ```
 
-Expected: `compute-rtc-outbound-carrier-availability.ts` (inside `toAcceptedOverlayContext`), and
-`rtc-room-snapshot-admission.ts` twice (merged tree `:102` and `:242`). Nothing in
+Expected: `compute-rtc-outbound-carrier-availability.ts` twice, both inside `toAcceptedOverlayContext` (task 4 splits
+its condition over lines: the `overlay.provenance !== 'server' ||` line and the `!isOverlayIdentity(overlay, identity)`
+line), and `rtc-room-snapshot-admission.ts` twice (merged tree `:102` and `:242`). Nothing in
 `web-rtc-overlay-multicast-manager.ts`.
 
-1. In `packages/shared/multicast/compute-rtc-outbound-carrier-availability.ts`, task 4's function
+1. In `packages/shared/multicast/compute-rtc-outbound-carrier-availability.ts`, task 4's function (it carries no
+   doc comment)
 
 ```ts
-/** The exact accepted server layout of the room, or nothing to send over. */
 export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
@@ -14734,7 +15049,6 @@ export function toAcceptedOverlayContext(
 becomes
 
 ```ts
-/** The exact accepted server layout of the room, or nothing to send over. */
 export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
@@ -14801,9 +15115,10 @@ npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
 Expected: `tsc` prints nothing; every RTC and room test passes; the public API snapshot is unchanged (neither
 predicate is exported from any shared-web surface); `packages/shared` imports nothing from `packages/shared-web`.
 These figures are measured against the merged tree alone, without tasks 2-7: with all four parts applied, facade
-`browser/rallar.ts` 227.00 → 226.84 KiB, headless 290.37 → 290.62 KiB. Both stay below the ceilings task 1 set
-(next whole KiB above 227.00 and 290.37); if another task has moved a measurement across its ceiling, raise it the
-frame's way and record the figures.
+`browser/rallar.ts` 227.00 → 226.84 KiB, headless 290.37 → 290.62 KiB. They are no prediction for the branch, whose
+ceilings tasks 3-7 may have raised: the two boundary tests and `check:browser-bundles` check the current ceilings, and
+if a measurement crosses one, raise it the frame's way (next whole KiB above the figure, in the test comment,
+`measure-browser-bundles.mjs` and the commit message).
 
 #### Part D: one `created_by` clamp
 
@@ -15107,6 +15422,15 @@ the modified files); the commit succeeds. Do not push.
 
 ---
 
+#### Pre-flight corrections applied
+
+- Part C, Step C4: the quoted `toAcceptedOverlayContext` anchor and its replacement drop the doc comment, matching task 4's corrected code (task 4's narration comment was removed by the same pre-flight pass).
+- Part C, Step C4: the first grep's expectation says `compute-rtc-outbound-carrier-availability.ts` prints two lines (task 4 splits the condition), not one (browser scan, per-task table 8C).
+- Part C, Step C4 item 2: the `rtc-room-snapshot-admission.ts:102-105` anchor and its replacement re-indented to the file's 4 spaces (ruling 10).
+- Part C, Step C5: removed the promise that both bundles stay below the ceilings task 1 set; the figures are this task alone, and a crossed current ceiling is raised the frame's way (ruling 1).
+
+---
+
 ### Task 9: Initial control two-tab proof
 
 **Goal.** P11 / D105: #566 lets canonical initial AL controls commit without the sender commit queue and the Web
@@ -15149,17 +15473,20 @@ server, `ws-queue-box-server-service.ts:581-586`, which has no Web Lock; a WS cl
 `outboundVolatileStores`). The two-tab test therefore uses the durable IndexedDB lane with a real exclusive Web Lock:
 the one place where tabs share storage and the lock.
 
-**The proof, measured on a scratch copy of the merged tree (nothing written to the repository).** The test file
-below passes 10/10 with #566's bypass, on four separate runs. The concurrent case exercises the bypass's conflict
+**The proof, measured on a scratch copy of the merged tree (nothing written to the repository).** The test file was
+measured with its concurrent case written as eight identical copies (10 tests); it passed 10/10 with #566's bypass on
+four separate runs. The file below has that case once (3 tests), and Step 2 repeats the whole file through the runner
+instead. The concurrent case exercises the bypass's conflict
 path: in every run one tab's hand-off of `control-d`, `control-b` and `control-a` ends `pending` (a real optimistic
 commit conflict, then retention) while the other tab's ends `admitted`. With the bypass reverted (the REVERT branch
-below applied to the scratch copy) the same file also passes 10/10 and every second hand-off ends `duplicate`
+below applied to the scratch copy) the same file also passed 10/10 and every second hand-off ends `duplicate`
 (serialized by the lock). **Expected decision: KEEP.**
 
 **Files**
 
 - Create: `packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts` (in the `outbound/` test
-  subdirectory: `packages/tests/shared/alm/` holds 50 files, and a 51st is a worsened directory-density finding).
+  subdirectory: `packages/tests/shared/alm/` holds 50 direct files on the merged tree and 53 once tasks 4 and 7 have
+  added theirs, and one more there adds to its directory-density finding; `outbound/` holds 12, 14 after tasks 4 and 8).
 - KEEP: Modify `packages/shared/alm/outbound/README.md:167-181`.
 - REVERT: Modify `packages/shared/alm/outbound/al-outbound-dispatch-admission.ts:2,110,139-140,154-161,192-194,256,
   283-287,370-396,408-412`; Modify `packages/shared/alm/outbound/README.md:167-181,468-471`; Modify
@@ -15218,31 +15545,28 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-it.each([1, 2, 3, 4, 5, 6, 7, 8])(
-    'sends each control two tabs hand off for one admission once, in hand-off order (run %i)',
-    async () => {
-        const session = createTwoTabSession();
-        const admittedBy: string[] = [];
+it('sends each control two tabs hand off for one admission once, in hand-off order', async () => {
+    const session = createTwoTabSession();
+    const admittedBy: string[] = [];
 
-        // Both tabs run the admission's send-control rows at once, as two owners whose leases overlap do.
-        await Promise.all(session.tabs.map(async (tab) => {
-            for (const msgId of CONTROL_SEQUENCE) {
-                const [result] = await tab.runtime.enqueueAllIfAbsent([
-                    createControlMessage(msgId, session.nowMs())
-                ]);
-                expect(['admitted', 'pending', 'duplicate']).toContain(result!.verdict.kind);
-                if (result!.verdict.kind === 'admitted') {
-                    admittedBy.push(msgId);
-                }
+    // Both tabs run the admission's send-control rows at once, as two owners whose leases overlap do.
+    await Promise.all(session.tabs.map(async (tab) => {
+        for (const msgId of CONTROL_SEQUENCE) {
+            const [result] = await tab.runtime.enqueueAllIfAbsent([
+                createControlMessage(msgId, session.nowMs())
+            ]);
+            expect(['admitted', 'pending', 'duplicate']).toContain(result!.verdict.kind);
+            if (result!.verdict.kind === 'admitted') {
+                admittedBy.push(msgId);
             }
-        }));
-        await drainTabs(session.tabs);
+        }
+    }));
+    await drainTabs(session.tabs);
 
-        expect(admittedBy.toSorted()).toEqual([...CONTROL_SEQUENCE].toSorted());
-        expect(session.sent.map((send) => send.msgId)).toEqual([...CONTROL_SEQUENCE]);
-        expect(await readOwnerRows(session.tabs[0]!.stores)).toEqual({ canonical: 4, identity: 4 });
-    }
-);
+    expect(admittedBy.toSorted()).toEqual([...CONTROL_SEQUENCE].toSorted());
+    expect(session.sent.map((send) => send.msgId)).toEqual([...CONTROL_SEQUENCE]);
+    expect(await readOwnerRows(session.tabs[0]!.stores)).toEqual({ canonical: 4, identity: 4 });
+});
 
 it('sends each control once, in hand-off order, when the tab that committed the first closes before sending it', async () => {
     const session = createTwoTabSession();
@@ -15450,17 +15774,18 @@ async function readOwnerRows(
 - [ ] **Step 2: Run the proof and pick the branch.**
 
 ```sh
-npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts
-npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts
-npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts
+npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts --retry=0
+for run in 1 2 3 4 5 6 7 8; do npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts --retry=0 2>&1 | grep -E '^ *(Test Files|Tests) ' | sed "s/^/run $run: /"; done
 ```
 
-Expected (measured): each run `Test Files 1 passed (1)`, `Tests 10 passed (10)`. All three runs pass: take the
+The first command is one run of the file; the loop runs the same file eight more times (the interleaving of the
+concurrent case varies from run to run) and prints each run's two summary lines. Expected: every run
+`Test Files  1 passed (1)`, `Tests  3 passed (3)`, and the loop prints 16 lines. All nine runs pass: take the
 KEEP branch (Steps K1-K3) and skip R1-R7. Any failure in any run (a duplicate send, a send order other than
 `control-d, control-c, control-b, control-a`, a second canonical row, or a lost send): take the REVERT branch
 (Steps R1-R7) and skip K1-K3. A failure that is not about sends (for example a fixture error) is fixed in the
-test, never by weakening an assertion, and the three runs are repeated. Record the three summary lines and the
-branch taken in the commit message.
+test, never by weakening an assertion, and both commands are repeated. Record the nine runs' summary lines and
+the branch taken in the commit message.
 
 Why the assertions are the P11 properties: `sent` records every frame the two tabs' transports put on the wire, in
 wire order, so "each msgId once" is no duplicate and "the hand-off sequence, whose work keys sort the other way" is
@@ -15504,12 +15829,13 @@ npx dprint check packages/tests/shared/alm/outbound/al-outbound-control-handoff-
 npm run test:repo-governance
 ```
 
-Expected: the focused run ends `Test Files 4 passed (4)`, `Tests 32 passed (32)` (measured: two-tab 10, #566's
+Expected: the focused run ends `Test Files 4 passed (4)`, `Tests 25 passed (25)` (two-tab 3; measured: #566's
 `outbound-control-handoff.test.ts` 10, recovery 11, latency 1); `test:unit` summary has no failed test (rerun
 sandboxed `listen EPERM` failures unsandboxed); `typecheck` ends `(0 errors)`; dprint prints nothing; governance
 passes. After the commit (Step K3):
 `npm run check:repo-style:changed -- origin/main HEAD` reports no new or worsened finding (measured: the new file
-adds none; the test directory count stays at 50) and
+adds none; it goes into `outbound/`, so `packages/tests/shared/alm/` keeps the 53 direct files it holds by then: 50
+on the merged tree, task 4's counts test and store fixture, task 7's scope-authority test) and
 `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD` ends `PASS` (the new file asserts on
 recorded sends and rows, no mock call counts). Then the ALM smoke lane (unsandboxed, alone on 18080/5180):
 `RALLAR_BLACK_BOX_ALM_SCOPE=smoke npm run -s test:rallar:full-stack:memory:alm`; expected: every smoke cell passes.
@@ -15521,7 +15847,7 @@ git add packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.
 git commit -m "ALM outbound: two-tab proof for the initial control hand-off (kept)"
 ```
 
-with the three Step 2 summary lines in the message body.
+with the nine Step 2 runs' summary lines in the message body.
 
 **D105 text for task 12 (KEEP):** Initial control hand-off (P11), kept. A canonical initial AL control (`enqueue`,
 origin `send`, an envelope that decodes as a control) commits through the optimistic sender-version fence without the
@@ -15534,11 +15860,12 @@ before. In a browser, controls are volatile and take the memory lane, which neve
 change removes only the in-tab queue wait. A data commit of the same sender that races a control can now conflict
 and retain a pending admission; the two-tab test does not cover that interaction.
 
-**REVERT branch (the test failed).** Each edit below restores `origin/main`'s code in
+**REVERT branch (the test failed).** Each edit below restores main's code (at `0d5902bc6`) in
 `al-outbound-dispatch-admission.ts` except the three `dequeueAuthority` hunks, which belong to P12 and stay.
 
 - [ ] **Step R1: Remove the bypass from the dispatch admission.** In
-      `packages/shared/alm/outbound/al-outbound-dispatch-admission.ts`:
+      `packages/shared/alm/outbound/al-outbound-dispatch-admission.ts` (the blocks below are quoted at the file's
+      own indentation; a one-line replacement given inline keeps the indentation of the text it replaces):
 
   (a) Delete `import { decodeALControlMessage } from '../../al-contracts/al-control.ts';` (line 2).
 
@@ -15648,7 +15975,7 @@ private isInitialControlHandoff(dispatch: ALOutboundDispatchAdmission.Input<TPre
 ```
 
 and the blank line after it. `RetryableConflictError` stays imported (the pending-admission conflict still throws
-it). Check: `git diff origin/main -- packages/shared/alm/outbound/al-outbound-dispatch-admission.ts` now shows only
+it). Check: `git diff 0d5902bc6 -- packages/shared/alm/outbound/al-outbound-dispatch-admission.ts` now shows only
 the three `dequeueAuthority` hunks plus whatever tasks 4-8 changed in this file on purpose; `npx tsc -p
   packages/shared/tsconfig.json --noEmit` exits 0 (measured on the scratch copy; cognitive load 59 -> 49).
 
@@ -15681,7 +16008,7 @@ takes one sender-queue slot and one browser lock for the group and reads, comput
 member with the single-message decision. `commitBundles` then fences the sender version once, runs every
 ```
 
-Then `git diff origin/main -- packages/shared/alm/outbound/README.md` must show no hunk about initial controls.
+Then `git diff 0d5902bc6 -- packages/shared/alm/outbound/README.md` must show no hunk about initial controls.
 
 - [ ] **Step R3: Remove the bypass tests from `packages/tests/shared/alm/outbound-control-handoff.test.ts`.**
       (a) Delete the tests `'commits initial control ownership without waiting for outbound serialization'`,
@@ -15717,8 +16044,8 @@ Keep `'keeps $case on the serialized admission path'` and `'settles every contro
 npx vitest run packages/tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts packages/tests/shared/alm/outbound-control-handoff.test.ts packages/tests/shared/webrtc/rtc-control-handoff-recovery.test.ts packages/tests/shared/alm packages/tests/shared/webrtc
 ```
 
-Expected: no failed test; the first three files report 10, 7 and 11 passing tests (measured on the scratch copy
-with R1-R4 applied).
+Expected: no failed test; the first three files report 3, 7 and 11 passing tests (measured on the scratch copy
+with R1-R4 applied, where the two-tab file then had 10 because of its eight copies).
 
 - [ ] **Step R6: Run the gates.** `npm run test:unit`, `npm run typecheck`, `npx dprint check
   packages/shared/alm/outbound/al-outbound-dispatch-admission.ts packages/shared/alm/outbound/README.md
@@ -15773,6 +16100,17 @@ the test stays as the regression proof that two tabs send each control once and 
 None for the test or either branch. If the maintainer wants the data-commit interaction above covered before
 keeping the bypass, that is a new test outside P11 (one tab, a data send and a control hand-off racing on one
 sender, asserting the data send is not delayed behind a pending replay).
+
+---
+
+#### Pre-flight corrections applied
+
+- Step 1: the eight identical `it.each([1..8])` copies of the concurrent case are one `it(...)`; the file now has 3 tests (scan N11, ruling 9).
+- Step 2: the three identical runs are replaced by one `npx vitest run <file> --retry=0` and one loop that runs the file 8 more times and prints each run's summary lines; expected `Tests  3 passed (3)` per run, nine runs recorded in the commit (scan N11, ruling 9).
+- Counts that followed from the copies: the measured-proof paragraph says the 10/10 figures were taken with the eight copies; K2 expects `Tests 25 passed (25)`; R5 expects 3, 7 and 11 (scan N11).
+- Files and K2: the "stays at 50" / "a 51st file" sentences now say what is true when task 9 runs: `packages/tests/shared/alm/` holds 53 direct files (50, plus task 4's counts test and store fixture, plus task 7's test) and the new test goes into `outbound/` (scan N4, ruling 9).
+- REVERT branch: "restores `origin/main`'s code" and the two "must show" diffs (R1 check, R2 check) are pinned to `0d5902bc6`; the gate commands keep `origin/main` (scan N12, ruling 6).
+- R1 (c)-(i) and R3: anchors and replacement blocks re-indented to the file's indentation (5, 12, 4 and 8 spaces), with a note that inline one-line replacements keep the replaced text's indentation (scan N8, ruling 10).
 
 ---
 
@@ -19178,7 +19516,8 @@ fix must not change. Two reds are known:
 
 - Consumes: the Branch Release Gate runs on branch `codex/rtc-b06-overlay-gap-plan` after tasks 3-10 were pushed;
   main's workflows `release-gate.yml`, `alm-conformance-observation.yml` and `branch-release-gate.yml` (named below
-  from `origin/main` = `0d5902bc6`).
+  from `origin/main` at `0d5902bc6` or later; `3978a908d` only added a static-check step, and every name used here is
+  unchanged).
 - Produces: a findings block for the PR body (step 11) with run ids, the named cause of each red or "not reproduced",
   and, only when a fix was found, one TDD commit per fix.
 
@@ -19275,9 +19614,9 @@ Do not push while a re-run is in flight (the push cancels it). Do not re-run the
 select `reuse` and skip both jobs. Check `gh variable list -R $R` shows no `RALLAR_BLACK_BOX_ALM_SCOPE` before a
 re-run, so the ALM job runs the smoke scope. Record every observation as `run id / attempt / job id / result`.
 
-If red (a) is absent in all three: close (a) as not reproduced and skip steps 5-6 for fresh runs (still do step 5's
-historical read, which names the pre-reconcile cause). Same for (b) with steps 7-8. If a red shows in any
-observation, diagnose that observation with the steps below before any other re-run.
+If red (a) is absent in all three: close (a) as not reproduced; skip step 6, and still do steps 5 and 7 for the
+pre-reconcile cause. Same for (b): skip step 9, still do step 8. If a red shows in any observation, diagnose that
+observation with the steps below before any other re-run.
 
 - [ ] **Step 5: Red (a), the historical pair: name the pre-reconcile cause**
 
@@ -19496,17 +19835,25 @@ was needed.
 
 #### Rulings (task 11)
 
-- **F14** (maintainer, 2026-09-29). First read
-  `/private/tmp/claude-501/-Users-knuthelge-ProjectLocker-github-ar-eye-hunter/dbbbec19-0da0-4f14-a05d-3a007089fcf4/scratchpad/pr566-plan/task-6b.md`
-  if it exists: task 6b relays a
-  control acknowledgement that finds no receipt aggregate on its process over the cluster notice (`relayed-ack`,
-  D106). If its relay also covers a `send-control` ACK claimed by a process that holds neither the socket nor the
-  aggregate, that relay is the fix for F14: confirm with step 8's warning absent in three observations after task 6b,
-  and record "fixed by task 6b (D106)". Otherwise the default is option (1): record F14 as a main defect in a GitHub
+- **F14** (maintainer, 2026-09-29). Task 6b's brief
+  (`$WT/.superpowers/sdd/pr-566-alm-reconciliation-plan/task-6b-brief.md`) already decides the question: task 6b
+  relays a recipient's ACK at WS ingress that finds no receipt aggregate on its process over the cluster notice
+  (`relayed-ack`, D106), and an ACK addressed to the server itself is never relayed. F14's lost frame is the
+  server's own outbound `send-control` ACK to Alice, claimed by a process that holds neither the socket nor the
+  aggregate, which 6b does not touch. So 6b is not the fix for F14, and the default applies: option (1), record F14
+  as a main defect in a GitHub
   issue (`gh issue create -R $R --title "WS server: a send-control ACK claimed by a process without the socket is
   lost" --body-file $E/red-b.md`) and name the issue in the findings; the controller asks the maintainer before creating the issue. Option (2), handing an unresolved control to
   the cluster notice, is built (step 10, with the counter-case that a resolvable control sends once and publishes no
-  notice) only if the warning recurs in an observation after tasks 3-10.
+  notice) only if the warning recurs in an observation after tasks 3-10. For the record, the pre-flight scan read
+  one `Cannot resolve WS server control target` line in run `36574540972`'s `api-v1-server-secondary.log`.
+
+#### Pre-flight corrections applied
+
+- Procedure N10: Interfaces name the workflows from `origin/main` at `0d5902bc6` or later (`3978a908d` changed no name used here).
+- Procedure N8: step 4's skip rule names the right steps: for (a) skip step 6 and still do steps 5 and 7; for (b) skip step 9 and still do step 8.
+- Procedure N9: the F14 ruling reads task 6b's brief at its real path and states the decided outcome: 6b does not relay the server's own `send-control` ACK, so the default (a GitHub issue after the maintainer's consent) applies.
+- Procedure N9: the F14 ruling records the one `Cannot resolve WS server control target` line in run `36574540972`'s secondary log.
 
 ---
 
@@ -19584,21 +19931,21 @@ if VARIANT not in ('kept', 'reverted'):
 
 ROWS = {
     'D95': "#566: a commit asks the inbound rotation for one head read (`ALInboundRotationPage.requestHeadRead`) in place of F2b's rewind. The head read stores no scan position; a page saves it only when a batch or the probe uses it. Idle, a committed row is taken in the commit's own batch; busy, in the follow-up batch or, under back-to-back commits, the batch after; the rotation advances at least every other batch. A commit no longer resets the running batch's reads or control round (2026-09-29).",
-    'D96': '#566: an RTC room-authority gap (no snapshot, a room not `flowing`, no or a `bootstrap` layout, presence drift, an overlay other than the accepted one) picks the carrier, never authorization. The strategy leg reaches the manager as `hand-over` (`no-route` at admission, `not-ready` at dispatch; D56, D65) or `hold` (`rtc`, and the RTC leg of `ws-then-rtc`): a held durable send reads `accepted`, states `not-ready` and ends `expired`. Only a foreign or inactive overlay is `unauthorized` (2026-09-29).',
+    'D96': "#566: an RTC room-authority gap (no snapshot, room not `flowing`, no exact accepted overlay) picks the carrier: `rtc-with-ws-fallback` reads `no-route` (D56); `rtc` and `ws-then-rtc`'s RTC leg hold durable sends: `accepted`, one `not-ready` attempt per claim, no receipt row until copies are planned, `expired` if the gap outlasts the deadline; volatile sends read `no-route`. A peer unicast keeps main's admission. Only a foreign or inactive overlay or main's room refusal is `unauthorized` (2026-09-29).",
     'D97': "#566: RTC signaling correlates an Offer and its Answer by a required `offerId`; an Answer is applied only when it names the connection's outstanding offer, so a late Answer to a replaced offer is discarded, and ICE carries none. The decoders are strict with no mixed-version negotiation: a signaling wire change, not an AL envelope change, so web and API deploy together (D3, D8) (2026-09-29).",
-    'D98': "#566, the reload case of issue #594: on the offering side, a retained peer desired again whose offer is unanswered (an `overlay-transition` retention) is disconnected without spending its attempt budget and redialled in the same reconcile pass; an established peer is never touched, and `offerId` (D97) discards the replaced offer's Answer. An old offer applied after the new one still waits 30 s. Manifest 18 runs `delivery-reload` on all three carriers; supersedes R-S3c-ii-14 (2026-09-29).",
+    'D98': "#566, the reload case of #594: on the offering side, a re-desired retained peer whose offer is unanswered (an `overlay-transition` retention) is disconnected and redialled in the same reconcile pass, keeping its attempt budget (the redial counts as an attempt); an established peer is never touched, and `offerId` (D97) discards the replaced offer's Answer. An old offer applied after the new one still waits 30 s. Manifest 18 runs `delivery-reload` on all carriers; supersedes R-S3c-ii-14 (2026-09-29).",
     'D99': "#566: the carrier follows the topic's declared fanout alone, never the QoS (D71): `outbox` writes a `WS_OUTBOX` row even for a best-effort message; `live-only` sends once at any QoS, to local sockets and across processes by one best-effort Postgres NOTIFY notice, and an at-least-once receipt ends `timed-out` naming whom it did not confirm. No refusal, no silent upgrade; an undeclared topic keeps `live-only`. An oversized notice with no canonical inbound row is refused typed. Amends D37 (2026-09-29).",
-    'D100': "#566: WS ingress binds a message's scope to the connection's authenticated scope, the `applicationId` and `workspaceId` of the socket URL (the default scope when absent). A `targets.groupRef` or principal scope naming another scope is refused before routing with a NACK, wire reason `unauthorized` with its own message, through the wrapped authorizer's NACK policy (D71). The browser, the Relic server, the black-box runner and the headless agent name their scope in the URL (2026-09-29).",
+    'D100': "#566: WS ingress binds a message's scope to the connection's authenticated scope, the socket URL's `applicationId` and `workspaceId` (the default scope if absent). A `targets.groupRef` or principal scope naming another scope is refused before routing with a NACK, wire reason `unauthorized`, through the wrapped authorizer's NACK policy (D71). The browser SDK, the headless agent and black-box recipes sending scoped frames name it; the Relic server is no WS client, its app uses the default (2026-09-29).",
     'D101': "#566: for a room or unicast message the wire `targets.groupRef` is the scope authority; the captured policy keeps no copy, the sender's `authenticatedScope` stays as proof of the connection, and `recipientScope` and `principalTargetId` are stored only for rows naming no `groupRef`; a new prepared kind `room-recipient` is persisted. Schema id `rallar-alm-2026-09-scoped-delivery`: browsers reset IndexedDB; older server rows fail strict decoding until their TTL (D3, D46) (2026-09-29).",
     'D102': '#566: the Rallar Game authority maps every router status that sent or queued a publication to its own `sent`: `sent-live`, `queued-outbox` (as on main) and the new `cluster-published`. A best-effort NOTIFY notice is never read as `accepted`, which keeps its ALM meaning, admitted under policy (2026-09-29).',
-    'D103': '#566: a raw `WS_OUTBOX` row, one no ALM admission wrote, is dequeued only with producer provenance naming its kind and scope; a row without it, or of a kind other than a unicast or a room, principal or world broadcast, fails closed as corruption. A unicast `router.publish` or `proxy.toPeer` without a scope returns a typed `failed`, never a silent `skipped` (2026-09-29).',
+    'D103': "#566: a raw `WS_OUTBOX` row, one no ALM admission wrote, is dequeued only with producer provenance naming its kind and scope; a row without it, or of a kind other than a unicast or a room, principal or world broadcast, fails closed as corruption. A unicast `router.publish` or `proxy.toPeer` that names no group and carries no scope returns a typed `failed`, never a silent `skipped`. A server publish that names a group and also passes a `scope` is refused (2026-09-29).",
     'D104': '#566, widening D58: the router freezes the audience at publish for every server or proxy publish that carries a `groupRef` (a room broadcast or a multicast, any sender, any fanout but `none`). One audience path serves the router; the cluster publisher reads the captured policy once per row and fails closed locally as remotely. One accepted-layout predicate (`@shared/repository/is-accepted-room-layout-overlay.ts`) serves the browser and the RTC manager (2026-09-29).',
 }
 D105 = {
     'kept': '#566: a canonical initial AL control commits through the optimistic sender-version fence without the per-sender commit queue or the Web Lock; a real conflict retains it for a replay through both. In a browser controls are volatile and the memory lane never took the lock, so only the in-tab queue wait goes. A two-tab test proved each control sent once, in hand-off order. A racing data commit of the same sender can now conflict and be retained (2026-09-29).',
     'reverted': '#566: initial AL controls keep the per-sender commit queue and the Web Lock, as every outbound commit does. The bypass that skipped both is reverted because the two-tab test (`al-outbound-control-handoff-two-tabs.test.ts`) failed on it; the test stays as the proof that two tabs send each control once and in hand-off order (2026-09-29).',
 }
-D106 = '#566: a control acknowledgement that finds no receipt aggregate on its API process is relayed once over the cluster notice, kind `relayed-ack`, to the process that owns the aggregate, best effort with no retry, so receipts complete across processes; a lost notice leaves that recipient unconfirmed and the receipt ends `timed-out`. Amends D37 with a second notice kind (2026-09-29).'
+D106 = "#566: an ACK that finds no receipt aggregate on its API process is relayed once over the cluster notice, kind `relayed-ack`, to the process that owns the aggregate, best effort with no retry and Postgres pub/sub only; a lost notice leaves that recipient unconfirmed and the receipt ends `timed-out`. Only ACKs are relayed: a recipient's NACK stays refused where it arrives, and an ACK addressed to the server is never relayed. Amends D37 with a second notice kind (2026-09-29)."
 ANNOTATIONS = {
     'D37': ' **Amended by D99 and D106:** live-only publications and relayed acknowledgements also cross processes, each by one best-effort Postgres NOTIFY notice.',
     'D46': ' **Extended by D101.**',
@@ -19699,7 +20046,8 @@ batch. A commit no longer resets the running batch's reads or its control round.
 
 - [ ] **Step 6: Add #566 to the delivered slices**
 
-Edit the same file. Old text (the end of the S3 bullet, before `### Releases 4 to 8`):
+Edit the same file. Old text (the end of the S3 bullet, before `### Releases 4 to 8`; both lines are list
+continuation lines indented by two spaces, and the match must include them):
 
 ```text
 its child's ACK adds the acknowledgement-history row, each gone by the deadline plus the receipt grace
@@ -19725,7 +20073,8 @@ New text for `VARIANT=kept`:
   receipt aggregate (D106). Web and API deploy together.
 ```
 
-For `VARIANT=reverted`, the same text with its last three lines replaced by:
+For `VARIANT=reverted`, the same text with its last three lines replaced by (each indented by two spaces, as the
+lines it replaces):
 
 ```text
 widened to every server or proxy publish with a `groupRef` (D104); initial controls kept on the sender
@@ -19749,9 +20098,12 @@ New text (`<DATE>` from step 1, `<VARIANT>` from step 1):
   rows F1, F4, F5 moved.
 - <DATE>: PR #566 reconciled with ALM: D95–D106 recorded (D105 <VARIANT>); D37 amended by D99 and
   D106, D46 extended by D101, D58 widened by D104; the F2b section notes the head read; the product
-  description's topic fanout, connection scope, live-only and cross-process receipt, RTC authority-gap
-  and cutover paragraphs updated.
+  description's topic fanout, connection scope, live-only and cross-process receipt, RTC authority-gap,
+  cluster delivery and cutover paragraphs updated<INITIAL>.
 ```
+
+`<INITIAL>` is `, and its initial-control sentence (D105)` for `VARIANT=kept` (step 14 edits that sentence) and empty
+for `VARIANT=reverted`.
 
 The file ends with a newline before and after (`tail -c 1 playground/alm/alm-improvement-plan.md | od -c` shows
 `\n`).
@@ -19796,8 +20148,9 @@ another scope is refused before routing, with a NACK the origin can read, as the
 S3c-i addressee refusal is (D100). For a room or unicast message the wire
 `targets.groupRef` is the scope authority; only a row that names no room keeps a
 stored recipient scope (D101). A raw server outbox row that no ALM admission wrote
-is delivered only with producer provenance, and a unicast server publish without a
-scope fails typed (D103).
+is delivered only with producer provenance; a unicast server publish that names no
+room and carries no scope fails typed, and a server publish that names a room and
+also passes a scope is refused (D103).
 ```
 
 - [ ] **Step 10: Product description, RTC authority gaps and redial (after `:297`)**
@@ -19819,13 +20172,18 @@ and never hands over (D64).
 snapshot, a room that is not `flowing`, no accepted layout or a `bootstrap` one, presence that moved while
 there is no overlay, an overlay other than the accepted layout) means RTC cannot carry the send now, never
 that the send is unauthorized. The send's strategy decides what the gap does: `rtc-with-ws-fallback` hands
-it to WS at admission (`no-route`) or after three `not-ready` attempts; `rtc`, and the RTC leg of
-`ws-then-rtc`, hold it: a held durable send reads `accepted`, states a `not-ready` attempt, has no receipt
-row until copies are planned, and ends `expired` at its deadline. Relays forward only over the exact
-accepted overlay. Only an overlay that is explicitly foreign or inactive for the message's room is refused
-`unauthorized` (D96). Offer and Answer are correlated by `offerId` (D97), and a peer that reloads inside
-the overlay grace is redialled by the offering side in the same reconcile pass instead of waiting for the
-30 s establishment timeout (D98); an old offer applied after the new one still waits for that timeout.
+it to WS at admission (`no-route`) or, for a copy already prepared, after three `not-ready` attempts; `rtc`,
+and the RTC leg of `ws-then-rtc`, hold a durable send (a volatile one reads `no-route`, as before): it reads
+`accepted`, states one `not-ready` attempt per claim, has no receipt row until copies are planned, and ends
+`expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps main's own
+admission; only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
+overlay. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
+that is explicitly foreign or inactive for the message's room, or the room authority's own refusal as on
+main (an inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
+are correlated by `offerId` (D97), and a peer that reloads inside the overlay grace is redialled by the
+offering side in the same reconcile pass instead of waiting for the 30 s establishment timeout; the redial
+keeps the peer's attempt budget, which is not reset, so it counts as an attempt (D98). An old offer applied
+after the new one still waits for that timeout.
 ```
 
 - [ ] **Step 11: Product description, live-only receipts (`:417-419`)**
@@ -19908,7 +20266,7 @@ D95 changes no paragraph here. D102 (game statuses) is the game guide's and the 
 - [ ] **Step 15: Cross-check the inbound README (tasks 3 and 7)**
 
 ```sh
-grep -n -E "natural rotation|without rewinding|does not promise that the next batch|preserve natural rotation|New commits preserve|replaced by the next claimed selection|A concurrent commit preserves" packages/shared/alm/inbound/README.md
+grep -n -E "natural rotation|without rewinding|does not promise that the next batch|preserve natural rotation|New commits preserve|A concurrent commit preserves" packages/shared/alm/inbound/README.md
 git grep -n -E "without rewinding|next natural rotation" -- packages apps docs examples
 grep -c "head read" packages/shared/alm/inbound/README.md
 python3 - <<'PY_EOF'
@@ -19926,11 +20284,16 @@ grep -n "D101" packages/shared/alm/inbound/README.md
 
 Expected: the first two commands print nothing; `head read` count at least 1; `PASS schema id`; a D101 line in the
 schema paragraph. For each expectation that fails, task 3 or task 7 missed its paragraph; write it now from the text
-below (anchors are #566's wording in the merged tree).
+below (anchors are #566's wording in the merged tree). Task 3 keeps the clause "it is replaced by the next claimed
+selection" on purpose and says a commit leaves the carried observations and the claimed array in place; the check
+does not flag that clause, and nothing here rewrites it. The task 3 texts below are task 3's README step (a)-(d)
+verbatim; if they differ from what task 3 wrote, task 3's README wording is the truth and stays.
 
 Task 3, commit paragraph. Old:
 
 ```text
+A commit announces the work it wrote, and only that. A data or control replay whose own
+commit persisted work, and an inline control admission whose commit wrote a row, announce
 it through `commitWork()`: the handler invalidates readiness and schedules its existing
 batch or follow-up batch. The selector preserves its cursor and cached page, so rows behind
 the cursor are reached on the next natural rotation. A retained
@@ -19939,11 +20302,18 @@ the cursor are reached on the next natural rotation. A retained
 New:
 
 ```text
-it through `commitWork()`: the handler invalidates readiness and arms one head read, so the row
-reaches the batch the commit starts when the worker is idle, or the follow-up batch when a batch
-is running; under back-to-back commits it is taken at the latest in the batch after (D95). The
-head read reads NEW from the start without moving the rotation's saved cursor, and the held page
-is dropped when it becomes pending. A retained
+A commit announces the work it wrote, and only that. A data or control replay whose own
+commit persisted work, and an inline control admission whose commit wrote a row, announce
+it through `commitWork()`: it asks the rotation page for a head read
+([`ALInboundRotationPage`](./lane/al-inbound-rotation-page.ts)) and then tells the handler.
+The next page read starts at the head of NEW and stores no position, so the rotation resumes
+where it stood; a page a probe held is dropped without moving the rotation. The row reaches the
+batch the commit starts when the owner is idle, or the follow-up batch the running batch's end
+runs. At most one head read runs between two rotation reads: a commit that lands during a head
+batch waits for the read after the next rotation read, and the lane announces it again at that
+rotation read, so the handler's own follow-up batch runs it. The rotation therefore advances at
+least every other batch while commits keep arriving, and later NEW pages, RETRY rows and expired
+reservations keep their turn. A retained
 ```
 
 Task 3, pending replay. Old:
@@ -19961,8 +20331,8 @@ New:
 ```text
 carry before and the stored schema identity did not move. The replay runs in the batch the
 owner's own commit starts when the worker is idle, or in the follow-up batch `commitPending`
-schedules when a batch is already running, whose head read selects it; it never waits for the
-rotation to come round to it (D95).
+schedules when a batch is already running (one batch later when that running batch was itself a
+head read); it never waits for the rotation to come round to it.
 ```
 
 Task 3, carried observations. Old:
@@ -19975,8 +20345,10 @@ A concurrent commit preserves these observations. The delivery then decides agai
 New:
 
 ```text
-only for a row the port went on to reserve, and it is dropped when a head read becomes pending or
-the next page replaces it. The delivery then decides again only what cannot be decided as early
+only for a row the port went on to reserve, and it is replaced by the next claimed selection. A
+commit leaves it in place: it describes a row the running batch holds, and a commit changes neither
+that reservation nor the stored message, source and plan it carries. The delivery then decides
+again only what cannot be decided as early
 ```
 
 Task 3, grouped control round. Old:
@@ -19988,8 +20360,8 @@ batch never joins a finished round. New commits preserve both the rotation and i
 New:
 
 ```text
-batch never joins a finished round. A head read that drops the held page empties the array, and a
-claim it left out sends alone.
+batch never joins a finished round. A commit leaves the claimed array in place, so a running batch's control claims
+still send as one round.
 ```
 
 Task 7, schema paragraph. In `The schema identity is`AL_ADMISSION_SCHEMA_ID = '...'`.` put the id from the code, and
@@ -20019,6 +20391,24 @@ grep -n -i "notify\|notice\|relayed-ack" packages/shared/alm/outbound/README.md 
 Expected: every id at least 1; the two `readRallarServerWsPublishAudience|readAdmittedAudience` greps print nothing
 (task 8 deleted both); at least one NOTIFY/notice line and one `relayed-ack` line. For each miss, write the paragraph below.
 
+Always, before the fallbacks (task 8's C8 ruling, R-566-14, which no behaviour task wrote into a document): in
+`packages/shared/alm/outbound/README.md`, after the sentence ending ``and `rtc` alone retries it to the deadline.``
+(the end of task 4's "The RTC carrier gap (D96)" paragraph) add one space and then this sentence, in the same
+paragraph:
+
+```text
+A re-plan that states no `ackTracking` keeps the captured `receiver` set, so a durable RTC send whose provider defaults change during a gap keeps its receipt (D96).
+```
+
+Check it:
+
+```sh
+grep -c 'keeps the captured `receiver` set' packages/shared/alm/outbound/README.md
+```
+
+Expected: `1`. If task 4 left no such sentence (its paragraph is missing), the D96 fallback below carries the same
+sentence instead.
+
 Task 4 (D96) is missing. Old text (the end of "Addressed sends on RTC"):
 
 ```text
@@ -20032,17 +20422,20 @@ New text:
 ```text
 refused at the sender.
 
-**Room-authority gaps (D96).** `computeOutboundAuthority` in
-[`web-rtc-overlay-multicast-manager.ts`](../../multicast/web-rtc-overlay-multicast-manager.ts) tells a gap from a
-refusal. No room snapshot, a room that is not `flowing`, no accepted layout or a `bootstrap` one, presence that
-moved while there is no overlay, or an overlay that is not the exact accepted layout means RTC cannot carry the send
-now. The strategy leg reaches the manager from `canFallback` as `'hand-over'` or `'hold'`. A handed-over send reads
-`no-route` at admission and goes to the fallback carrier at once, or `not-ready` at dispatch and goes after three. A
-held send (`rtc`, and the RTC leg of `ws-then-rtc`) that is durable reads `accepted`, states a `not-ready` attempt
-when the gap begins, has no receipt row until copies are planned, and ends `expired` at its deadline. Relays forward
-only over the exact accepted overlay, and a re-plan that states no `ackTracking` keeps the captured `receiver` set.
-Only an overlay that is explicitly foreign or inactive for the message's `groupRef` is refused `unauthorized`, on
-every strategy.
+**Room-authority gaps (D96).** `computeRtcOutboundCarrierAvailability` in
+[`compute-rtc-outbound-carrier-availability.ts`](../../multicast/compute-rtc-outbound-carrier-availability.ts) tells
+a gap from a refusal. No room snapshot, a room that is not `flowing`, no accepted layout or a `bootstrap` one,
+presence that moved while there is no overlay, or an overlay that is not the exact accepted layout means RTC cannot
+carry the send now. The strategy leg reaches the manager from `canFallback` as `'hand-over'` or `'hold'`. A
+handed-over send reads `no-route` at admission and goes to the fallback carrier at once, or `not-ready` at dispatch
+and goes after three. A held send (`rtc`, and the RTC leg of `ws-then-rtc`) that is volatile reads `no-route`, as
+before; a durable one reads `accepted`, states one `not-ready` attempt per claim (again at each 10 s lease end, on
+the same attempt row), has no receipt row until copies are planned, and ends `expired` at its deadline unless the
+accepted overlay returns first. A peer unicast keeps its own admission, as on main. Relays forward only over the
+exact accepted overlay, and a re-plan that states no `ackTracking` keeps the captured `receiver` set, so a durable
+RTC send whose provider defaults change during a gap keeps its receipt. Only an overlay that is explicitly foreign or
+inactive for the message's room, or the room authority's own refusal as on main (an inactive or expired room,
+session or member), is refused `unauthorized` (D96).
 
 ### The volatile bound
 ```
@@ -20099,8 +20492,9 @@ audience verbatim, so a session that left since reads unconfirmed (D73).
 Before routing, ingress also refuses a message whose `targets.groupRef` or principal scope names another application
 or workspace than the connection's authenticated scope, with the same NACK under its own reason (D100). For a room or
 unicast message the wire `targets.groupRef` is the scope authority; only a row that names no room stores a recipient
-scope (D101). A raw `WS_OUTBOX` row that no ALM admission wrote is dequeued only with producer provenance, and a
-unicast `router.publish` without a scope returns a typed `failed` (D103).
+scope (D101). A raw `WS_OUTBOX` row that no ALM admission wrote is dequeued only with producer provenance, a
+unicast `router.publish` that names no group and carries no scope returns a typed `failed`, and a server publish that
+names a group and also passes a `scope` is refused (D103).
 ```
 
 Task 8 (D104) is missing, or the old function names remain. Old text:
@@ -20300,7 +20694,7 @@ Line `:1637` still documents the router publish before #566. Old text:
 New text:
 
 ```text
-- `ws.publish({ message, scope?, fanout? })` (a unicast needs `scope`; without it the publish fails typed)
+- `ws.publish({ message, scope?, fanout? })` (a unicast that names no group needs `scope` and fails typed without it; a message that names a group is scoped by its `targets.groupRef`, and a `scope` beside it is refused)
 ```
 
 Confirm the signature at `HEAD` first:
@@ -20347,8 +20741,10 @@ Expected: only the eight listed files (fewer if a README needed no change) in th
   every row (header, separator, D1-D106) becomes 517 characters. The check is "every row as wide as D94" after
   `dprint fmt`, and the diff shows a one-space change on D1-D94. Every new row text is at most 506 characters, so
   the decision column keeps its width; the fuller wording other tasks proposed for D95, D96, D98 and D105 is
-  condensed into the rows, and its remaining detail (relays over the exact overlay, C8's kept receiver set, the
-  data-commit race) lives in the product description and the READMEs.
+  condensed into the rows. The remaining detail lands in named places: relays over the exact overlay in step 10's
+  product paragraph; C8's kept receiver set (R-566-14, which no behaviour task wrote into a document) in step 10's
+  product paragraph and, unconditionally, in the outbound README by step 16 (D96's row, at 505 characters, has no
+  room for it); the data-commit race in the D105 `kept` row itself.
 - ALM has no `timed out` handle state: a held durable RTC send ends `expired` (D96); only a WS receipt ends
   `timed-out` (D99, D106).
 - The product description has no inbound-scheduling paragraph; D95 lands in the roadmap's F2b section and the inbound
@@ -20363,6 +20759,22 @@ Expected: only the eight listed files (fewer if a README needed no change) in th
 - P9 as changed: `sent-live`, `cluster-published` and `queued-outbox` all read the game's `sent` (D102).
 - P20: relayed acknowledgements are D106, a second notice kind amending D37 (task 6b implements it).
 - Task 9's outcome is read from its commit subject; "kept" is the expected outcome, and both D105 texts are ready.
+
+#### Pre-flight corrections applied
+
+- Procedure B3: D96 row rewritten to what task 4 builds (505 chars): gap cases, `hand-over` reads `no-route`, a held durable send reads `accepted` with one `not-ready` attempt per claim, no receipt row until copies are planned, `expired` past the deadline; a volatile send reads `no-route`; a peer unicast keeps main's admission; main's room refusal stays `unauthorized`.
+- Procedure B3: step 10's product paragraph says the same, including the volatile exception, the peer unicast and main's room-authority refusal.
+- Procedure B3 and N12: step 16's D96 fallback names `computeRtcOutboundCarrierAvailability` in `compute-rtc-outbound-carrier-availability.ts` and states the same behaviour and refusals.
+- Procedure B4: D100 row (505 chars) says the Relic server is no WS client and the Relic app uses the default scope; the browser SDK, headless agent and scoped-frame recipes name their scope.
+- Procedure B5: step 16 always adds the R-566-14 sentence (a re-plan with no `ackTracking` keeps the captured `receiver` set) to the outbound README after task 4's D96 paragraph, with a grep check.
+- Procedure B5: step 10's product paragraph carries R-566-14 (D96's row has no room for it); the correction block names where each condensed detail lands.
+- Procedure B2: step 15's grep no longer flags "replaced by the next claimed selection"; the four task 3 fallbacks are task 3's README texts (a)-(d) verbatim, and the text says task 3's wording is the truth.
+- Procedure B6: step 6's old text and the three `reverted` replacement lines carry the file's two-space list indentation.
+- Ruling 9: D98 row (503 chars) and step 10 say the redial keeps the attempt budget, not reset, so the redial counts as an attempt.
+- Procedure N11: D106 row (477 chars) states ACKs only, Postgres pub/sub only, and that an ACK addressed to the server is never relayed.
+- Procedure N13: step 7's revision-history line names the cluster delivery paragraph and, for `kept`, the initial-control sentence.
+- Procedure N14: D103 row (471 chars) adds that a server publish naming a group and also passing a `scope` is refused; step 9's product text, step 16's task 7 fallback and step 22's API reference line say the same.
+- Procedure N15: every changed D-row stays ASCII, without `|`, at most 506 characters; the width check (every row as wide as D94 after `dprint fmt`) is unchanged.
 
 ---
 
@@ -20404,11 +20816,12 @@ Throughout: `WT=/Users/knuthelge/ProjectLocker/github/ar-eye-hunter/.claude/work
 test:unit` need the sandbox disabled. Use `gh run list` and `gh run view`, never `gh pr checks`.
 
 **Lane rule.** One lane at a time on this machine: the ALM lane, the director spec, `test:e2e`,
-`test:full-stack:memory` and the black-box runners share ports 18080-18082, 5177 and 5180, and Playwright attaches to
-whatever already listens there (`reuseExistingServer` is on outside CI). Before every lane:
+`test:full-stack:memory` and the black-box runners share ports 18080-18082, 5177, 5178 (the SPA of
+`test:rallar:full-stack:postgres:live-rtc-3`, step 9b) and 5180, and Playwright attaches to whatever already listens
+there (`reuseExistingServer` is on outside CI). Before every lane:
 
 ```sh
-lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(18080|18081|18082|5177|5180) ' ; ps aux | grep -E 'black-box-run.mts|playwright test' | grep -v grep
+lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(18080|18081|18082|5177|5178|5180) ' ; ps aux | grep -E 'black-box-run.mts|playwright test' | grep -v grep
 ```
 
 Expected: no output. Nothing in the worktree is edited while a lane runs (the SPA hot-reloads and voids the run).
@@ -20424,9 +20837,13 @@ git -C $WT rev-parse HEAD origin/$B
 gh variable list -R $R | grep -c RALLAR_BLACK_BOX_ALM_SCOPE
 test -f $WT/tmp/pr566-task11/findings.md && echo TASK11-FINDINGS
 git -C $WT log --oneline origin/main..HEAD | grep -c "docs(alm): record #566's decisions as D95-D106"
+gh pr view 566 -R $R --json body --jq .body > $T/pr-body-before.md
+grep -c "State-write attribution" $T/pr-body-before.md
 ```
 
-Expected: no status output; the two hashes equal; `0` variables; `TASK11-FINDINGS`; `1`.
+Expected: no status output; the two hashes equal; `0` variables; `TASK11-FINDINGS`; `1`; then at least `1` (task 10's
+`State-write attribution` block, which step 14 reads and step 20 carries over, because step 20's `--body-file`
+replaces the whole body).
 
 - [ ] **Step 2: Merge main again**
 
@@ -20446,8 +20863,11 @@ If `package-lock.json` changed: `cd $WT && npm ci` (then, if a Playwright discov
 Hetzner entries changed on either side, regenerate the manifests and commit any difference:
 
 ```sh
-cd $WT && npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts && git status --short apps/rallar-black-box/manifests
+cd $WT && node --import tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts && git status --short apps/rallar-black-box/manifests
+node --import tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check
 ```
+
+(`npx tsx` fails sandboxed with `listen EPERM`; `node --import tsx` does not.)
 
 Expected: no manifest change, or a change committed as `chore(hetzner): regenerate manifests after merging main`.
 
@@ -20492,8 +20912,11 @@ ceilings. Set the ceilings, lower or higher than now:
 2. `shared-web-browser-bundle-boundaries.test.ts`: the `browser/rallar.ts` entry's `brotliBudgetKiB` to the same.
 3. `headless-bundle-boundary.test.ts`: `expect(result.brotliKiB).toBeLessThan(<headless ceiling>);`.
 
-In each file, find the history lines this branch added (`grep -n "566\|reconcil\|merged tree" <file>`) and replace
-them with one sentence in the file's style, naming no PR or task, for example:
+In each file, find the history lines this branch added with `git -C $WT diff origin/main -- <file>`: every `+` comment
+line in the budget entry's block (the `browser/rallar.ts` entry, or the headless `toBeLessThan` block) is a branch
+history line, whatever its wording (task 1 wrote "The RTC delivery and cluster WS work alone measured ... Merged with
+main at 0d5902bc6 ...", and tasks 3, 4, 5 and 7 may have added their own). Replace them all with one sentence in the
+file's style, naming no PR or task, for example:
 
 ```text
 // The RTC recovery and cluster WS delivery, reconciled, measure <figure> KiB here. The next whole-KiB ceiling is <N>.
@@ -20523,12 +20946,14 @@ npm run typecheck 2>&1 | tail -3
 npm run build 2>&1 | tail -15
 npm run check:repo-style:changed -- origin/main HEAD
 node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD
+npm run check:test-reachability
 (cd apps/api-v1 && deno task check) && (cd apps/rallar-black-box-control-server && deno task check) && (cd apps/relic-hunter-server-v1 && deno task check)
 ```
 
 Expected: typecheck as in step 3; build exits 0 with no `error` line; `PASS: no new repository style findings
 (<merge-base> -> HEAD).`; the coupling check prints `PASS:` and no `FAIL:` (a registry fix is its own commit first);
-the three Deno checks exit 0.
+`check:test-reachability` exits 0 (main `3978a908d`, #620, added it to the Release Gate's static checks, so after
+step 2's merge the branch gate runs it); the three Deno checks exit 0.
 
 - [ ] **Step 6: Local merge bar, `test:ci`**
 
@@ -20598,8 +21023,9 @@ cd $WT && RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER=1 VITE_RALLAR_API_BASE_URL=http://lo
   -g 'proves direct, multicast, broadcast, NACK, stale-send, and artifact evidence with real data' 2>&1 | tee $T/live-rtc-cluster.log | grep -E "passed|failed|flaky|skipped"
 ```
 
-Expected: `N passed`, no `failed`; its assertion is task 2's simplified one (formation readiness across the three
-API origins). Postgres-backed if task 2's command says so: check the container first as in step 7.
+Expected: `1 passed` (the `-g` filter leaves one test), no `failed`; its assertion is task 2's simplified one: all
+three browsers reach RTC readiness to both peers, and one direct realtime message arrives each way between every
+pair. It is Postgres-backed (the config refuses memory mode): check the container first as in step 7.
 
 - [ ] **Step 10: Final whole-branch review, three seats**
 
@@ -20609,7 +21035,7 @@ Commit everything first (review agents share the worktree and can restore uncomm
 
 ```text
 Review PR #566 as it will merge: `git -C /Users/knuthelge/ProjectLocker/github/ar-eye-hunter/.claude/worktrees/pr566-probe-head diff origin/main...HEAD`
-(and `git log --oneline origin/main..HEAD`). Binding decisions: plans/active/pr-566-alm-reconciliation.md (P1-P19; P9 as changed, P20, P21 below) and
+(and `git log --oneline origin/main..HEAD`). Binding decisions: plans/active/pr-566-alm-reconciliation.md (P1-P22; P9 as changed by R-566-1) and
 rows D95-D106 in playground/alm/alm-improvement-plan.md. Code standard: .agents/skills/rallar-code-writing/references/repo-code-style.md.
 Do not edit files, do not commit, do not run lanes, Playwright, Docker, black-box runners or anything that binds
 ports 18080-18082, 5177 or 5180. You may run `npx vitest run <file>` on a single test file. Report each finding as
@@ -20621,8 +21047,11 @@ Seat 1, product (append to the shared block):
 
 ```text
 Seat: product behaviour. Check that every ALM behaviour on main still holds or is changed by a D-row; that each
-of D95-D106 is implemented as written (head read and its two-batch bound; carrier-not-available versus
-unauthorized in computeOutboundAuthority for every strategy; offerId correlation; the #594 redial and its
+of D95-D106 is implemented as written (head read and its two-batch bound; carrier gap versus unauthorized in
+computeRtcOutboundCarrierAvailability for every strategy, main's room-authority refusal still unauthorized, a held
+durable send stating one not-ready attempt per claim, a volatile send in a gap reading no-route, a peer unicast
+keeping main's admission, and a re-plan with no ackTracking keeping the captured receiver set; offerId correlation;
+the #594 redial, which keeps the attempt budget (not reset, the redial counts as an attempt), and its
 never-touch-an-established-peer rule; fanout from the topic declaration, live-only sent once at any QoS with the
 NOTIFY notice and a timed-out receipt; the ingress scope NACK; groupRef as scope authority and the schema bump;
 the game status mapping (all three statuses read `sent`); raw rows failing closed and the typed unicast failure;
@@ -20682,7 +21111,11 @@ git -C $WT rev-parse HEAD
 ```
 
 Expected: clean tree; the push succeeds (never to `main`, never forced). Record the hash as `H1`. From here on, do
-not push again until step 17, because a push cancels the running gate and its observation job.
+not push again until step 19, because a push or a label change cancels the running gate and its observation job
+(`branch-release-gate.yml` also triggers on `labeled` and `unlabeled`, with `cancel-in-progress: true` per PR). Any
+fix after this step (step 15's TDD fix of a hosted red, for example) is pushed as a new code head `H1'`; steps 5-9
+for its scope and steps 13-15 repeat on `H1'`, and the review (step 10) is not repeated. `H1` below then means the
+latest code head.
 
 - [ ] **Step 13: Branch Release Gate, formation and medium-scale gates on H1**
 
@@ -20715,11 +21148,15 @@ gh run view <RUN> -R $R --json jobs --jq '.jobs[].steps[] | select(.name | test(
 git -C $WT log --format='%h %s' origin/main..HEAD | grep -n "Read only the principal's memberships"
 ```
 
+Only after step 13's `H1` gate has completed: the two label events start two Branch Release Gate runs on `H1`
+(normally `reuse`). Never touch labels while a gate or an ALM re-run is in flight.
+
 The first grep shows `name: API v1 State-Write PR Measurement` and the label `measure-state-write` (the maintainer
 consented to the label). Remove the label only if the PR already carries it; the workflow runs on `labeled`. The last
 grep shows whether task 10 built the principal-relevant read (one line: built; none: not built, because run 1's
 `uncontended` bytes ratio was below 1.01, not above its `hot` ratio, or run 2's was not lower); record which, with
-task 10's measured ratios, for the PR body. Expected: a run on `H1` whose compare
+task 10's measured ratios, for the PR body: read the ratios and run ids from the `State-write attribution` block of
+`$T/pr-body-before.md` (step 1). Expected: a run on `H1` whose compare
 step is `success`: the unchanged A-B-B-A comparator passed (P15). A compare step `failure` is not accepted as
 noise: download the run's artifact (`gh run download <RUN> -R $R -D $T/state-write`), list the failed gates, and stop
 for the maintainer (P15 accepts the principal read only when the unchanged comparator passes).
@@ -20873,15 +21310,20 @@ git rev-parse HEAD
 ```
 
 Expected: the diff against `H1` lists exactly the two deleted plan files and the baseline plan; governance
-`Test Files  N passed (N)`; the push succeeds. Record the hash as `H2`. Neither the formation nor the medium-scale
-gate watches these paths, so their `H1` runs stand; the Branch Release Gate runs on `H2` (it may select `reuse`,
-which concludes from `H1`'s evidence). Read it as in step 13: expected `Branch Release Gate result` `success` on `H2`.
+`Test Files  N passed (N)`; the push succeeds. Record the hash as `H2`. The `H2` push starts `API v1 Formation Gate`
+and `API v1 Medium-Scale Gate` again: their `paths:` filters read the whole pull request diff against its base, not
+the last push, and the push cancels an `H1` run still in flight. Read both as in step 13 (same commands, the runs
+whose `headSha` is `H2`): expected `success` on `H2`, with the same intermittent handling. The Branch Release Gate
+also runs on `H2` (it may select `reuse`, which concludes from `H1`'s evidence): expected `Branch Release Gate result`
+`success` on `H2`. The final evidence for all three gates is the `H2` runs.
 
 - [ ] **Step 20: The PR title and body**
 
 Write `$T/pr-body.md` with the repository template's headings (Goal, Changes, Acceptance, Validation, Risk and
 rollback, Follow-up), filled from the files this task and task 11 wrote. Every figure and run id comes from a log
-or a `gh` output recorded above; nothing is written from memory. Outline:
+or a `gh` output recorded above; nothing is written from memory. The `--body-file` below replaces the whole body, so
+carry the `State-write attribution` block of `$T/pr-body-before.md` (task 10's run ids and ratios, step 1) into
+Validation verbatim, below the table. Outline:
 
 ```text
 ## Goal
@@ -20919,12 +21361,12 @@ playground/alm/alm-improvement-plan.md, one line each, and the annotations on D3
 ## Validation
 | Where | Command or run | Result |
 | --- | --- | --- |
-| Local | npm run typecheck / build / check:repo-style:changed / coupling | <summary lines> |
+| Local | npm run typecheck / build / check:repo-style:changed / coupling / check:test-reachability | <summary lines> |
 | Local | npm run test:ci | <Vitest files and tests, Deno blocks, e2e, full-stack summaries> |
 | Local | black-box memory / postgres / medium-scale | <Matrix profile lines> |
 | Local | full ALM lane (RALLAR_BLACK_BOX_ALM_SCOPE=full), director spec, live RTC matrix three-process mode | <passed counts> |
 | Branch CI | Branch Release Gate on H1 <run>, on H2 <run> | <conclusions> |
-| Branch CI | API v1 Formation Gate <run>, API v1 Medium-Scale Gate <run> | <conclusions> |
+| Branch CI | API v1 Formation Gate <H1 run>, <H2 run>, API v1 Medium-Scale Gate <H1 run>, <H2 run> | <conclusions> |
 | Branch CI | State-write comparator <run> | <compare step conclusion> |
 | Branch CI | Principal-relevant read | <built / not built (measured): run 1 and run 2 `uncontended` and `hot` bytes ratios> |
 | Hosted | manifests 01, 02, 03, 04, 05a, 18, 22 from the branch | <run id and conclusion each; 18 includes delivery-reload on rtc and rtc-with-ws-fallback> |
@@ -20983,9 +21425,9 @@ maintainer. Nothing is pushed to `main`.
 
 #### Corrections found while writing (task 13)
 
-- Formation and medium-scale gates run only on path changes (`apps/api-v1/**`, `packages/shared/**`, ...); the
-  docs-only last commit does not trigger them, so their evidence is the `H1` runs, and `H2` differs from `H1` only in
-  the deleted plan files and one baseline-plan sentence.
+- Formation and medium-scale gates filter on the whole pull request diff (`paths:` on a `pull_request` event is
+  evaluated against the base, not the last push), so every push, including the docs-only `H2`, runs them; their
+  evidence is the `H2` runs. `H2` differs from `H1` only in the deleted plan files and one baseline-plan sentence.
 - The Branch Release Gate on `H2` may select `reuse` and skip its jobs; that is a green gate on the final head built
   from `H1`'s evidence.
 - From the branch, `RTC-B06 Performance Observation` accepts only `diagnostic` mode (`publish` requires
@@ -21006,3 +21448,16 @@ maintainer. Nothing is pushed to `main`.
   "built" or "not built (measured)".
 - **P9 as changed and P20:** the PR body cites D102 (all three statuses read `sent`) and D106 (relayed
   acknowledgements).
+
+#### Pre-flight corrections applied
+
+- Procedure B1: step 19 reads the formation and medium-scale gates again on `H2` (path filters read the whole PR diff); the correction bullet says the same; the step 20 row cites the `H1` and `H2` runs of both.
+- Procedure B7: step 4 finds the branch's bundle history lines with `git diff origin/main -- <file>` (every `+` comment line in the budget block), not a grep that misses task 1's wording.
+- Procedure N1: step 12 says a push or a label change cancels the running gate; step 14 touches labels only after step 13's gate completed and never while a gate or ALM re-run is in flight.
+- Procedure N2: step 1 saves the PR body to `$T/pr-body-before.md`; step 14 reads task 10's ratios from its `State-write attribution` block; step 20 carries that block over verbatim.
+- Procedure N3: the lane rule's port list and `lsof` pattern include 5178; step 9b states task 2's assertion and expects `1 passed`.
+- Procedure N4: step 2 regenerates and checks the manifests with `node --import tsx` (sandbox-safe) and `--check`.
+- Procedure N5: step 5 runs `npm run check:test-reachability` (expected exit 0); step 20's table names it.
+- Procedure N6: step 12 says a fix after it is pushed as `H1'`, repeats steps 5-9 for its scope and steps 13-15, not the review; "do not push again until step 17" now reads step 19, where the next push is.
+- Procedure N7: the review's shared block cites P1-P22, P9 as changed by R-566-1.
+- Ruling 9 and procedure B3: review seat 1 names `computeRtcOutboundCarrierAvailability` (task 4 deletes `computeOutboundAuthority`), task 4's gap behaviour, R-566-14, and the redial that keeps the attempt budget.

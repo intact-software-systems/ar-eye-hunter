@@ -134,11 +134,14 @@ checks but gives two kinds of outcome.
 - **Authority refused:** the selected overlay is explicitly foreign or inactive for the message's `groupRef`. It
   stays `unauthorized` for every strategy.
 
-| Case                                                                  | Admission                                | Dispatch                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Fallback strategies (`rtc-with-ws-fallback`, S3c-ii unicast fallback) | `no-route`: WS at once, as on main (D56) | `not-ready`: WS after 3, as on main (S3 §11.1(2))                                                                                                                                                                                                                                                                        |
-| `rtc` only, durable                                                   | Admitted                                 | Held as dequeue work with no prepared copy. The handle reads `accepted`. One `not-ready` attempt is stated when the gap begins. When the accepted overlay returns inside the deadline, the copies are planned to the audience frozen at admission and the receipt starts. Otherwise the deadline ends the send `expired` |
-| `rtc` only, volatile                                                  | `no-route`, as on main                   | —                                                                                                                                                                                                                                                                                                                        |
+| Case                                         | Admission                                | Dispatch                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fallback strategies (`rtc-with-ws-fallback`) | `no-route`: WS at once, as on main (D56) | `not-ready`: WS after 3, as on main (S3 §11.1(2))                                                                                                                                                                                                                                                                        |
+| `rtc` only, durable                          | Admitted                                 | Held as dequeue work with no prepared copy. The handle reads `accepted`. One `not-ready` attempt is stated when the gap begins. When the accepted overlay returns inside the deadline, the copies are planned to the audience frozen at admission and the receipt starts. Otherwise the deadline ends the send `expired` |
+| `rtc` only, volatile                         | `no-route`, as on main                   | —                                                                                                                                                                                                                                                                                                                        |
+
+A peer unicast keeps main's own admission: a missing snapshot defers it, and an unready addressee is `no-route`.
+Only its dispatch sees the gap, as `not-ready`.
 
 The message carries no strategy, so the leg tells the manager what a gap means: `hand-over` for a leg with a
 fallback carrier, `hold` for a leg without one (`rtc`, and the RTC leg of `ws-then-rtc`). A copy already prepared
@@ -174,8 +177,8 @@ the same session id. The late answer to the old offer then landed on the new con
 correlation settles this: an answer is accepted only when its `offerId` is the pc's outstanding offer
 (`qrtc-peer-connection.ts`), so a late answer to a replaced offer is discarded.
 
-**The design.** In `runReconcilePass`, a retained peer that becomes desired again is disconnected, without
-spending the attempt budget, before `computeOutboundDialPlan`. The same pass then redials, now to a live socket.
+**The design.** In `runReconcilePass`, a retained peer that becomes desired again is disconnected before
+`computeOutboundDialPlan`. Its attempt budget is kept, not reset, so the redial counts as an attempt. The same pass then redials, now to a live socket.
 The rule applies only when all of these hold:
 
 - this side offers (it is the impolite side);
