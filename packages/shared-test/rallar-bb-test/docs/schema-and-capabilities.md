@@ -351,9 +351,11 @@ shows the last outcome per row, not a count of retries, so `fallback-within-dead
 `not-ready` RTC attempts settle inside one attempt entry (`attemptOutcomes` reads `[not-ready, sent]`, not
 three `not-ready` entries).
 
-The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (C11,
-R-S3c-ii-5). `ws-unicast-receipt` runs over every carrier: the sender sends a `command` to
-`toPeer: 'receiver'` and observes `acknowledged` under the `receiver` mode with one expected and one
+The addressed family runs on two agents, in the full scope, as its own Playwright test per carrier (R-S3c-ii-2,
+R-S3c-ii-5); each scenario declares it as its `laneFamily`. The lane proves the addressee's receipt, not the
+addressing: on two agents a room send yields the same receipt, so the addressing is pinned by unit tests.
+`ws-unicast-receipt` (a historical id: it runs over every carrier: the sender sends a `command` to
+`toPeer: 'receiver'`) and observes `acknowledged` under the `receiver` mode with one expected and one
 confirmed recipient; its recipe metadata `almReceiptRoles` pins the receipt to the `receiver` role, which the
 identity assessment joins to the receiver's session after the run. `unicast-fallback`
 (`rtc-with-ws-fallback`) drops the sender's own RTC frames of the unicast until the third `not-ready` attempt
@@ -362,13 +364,15 @@ hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and
 `admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to
 `toPeer: 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole
 window that nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with
-`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 163840 }`, sends two ≈55.7 KB messages that are
-admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }`
-and `attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. Its
-receiver waits for the two arrivals with one more readiness budget, since the sender reconnects before it sends.
-The close leaves the room and the reconnect rejoins it, so the lowered session also counts the platform's own state
-sync it admits inbound (about 26 KB in 6 entries in the local lane); the bound leaves the second send about 25 KB
-beyond that, and the two counted sends alone refuse the third.
+`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 163840 }`, waits 31 s, sends two ≈55.7 KB messages
+that are admitted and acknowledged, and a third that ends `rejected` with
+`failure: { kind: 'refused', reason: 'capacity' }` and `attempts` 0, so no fallback; then it closes and reconnects
+without the field, restoring the constants. The close keeps the membership, and the reconnect joins the room again,
+so the lowered session counts the platform's own state sync it admits inbound (about 26 KB in 6 entries in the local
+lane, larger in a long-lived hosted room) for at most 30 s; the 31 s wait lets it leave the budget before the first
+send (R-S3c-ii-9). The two counted sends alone refuse the third, and the second keeps about 52 KB of headroom. Its
+receiver's window adds one readiness budget and the 31 s wait, since the sender reconnects and waits before it
+sends. In manifest 18 the three `capacity` blocks run after every other block.
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
@@ -492,10 +496,12 @@ a connect-only transport: `rtc.send` accepts `realtime` and `messages.rtc` only.
 ### The lane-only `rallar.almVolatileLimits` connect field
 
 `rtc.connect.rallar.almVolatileLimits` is `{ maxAdmissions, maxBytes }`, each a positive integer, and nothing else;
-any other shape fails the connect. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
+any other shape fails the connect. It is validated in the page only: the recipe schema and the control validator treat
+`rallar` as a free record, so a malformed value fails its `rtc.connect` rather than the recipe. It lowers the ALM volatile bound (D74) of the session this connect initialises: the
 page holds it and hands the browser session a read port that the session reads once, when it initialises. It is a
 harness capability, never a `rallar.connect` option. A facade that is already connected keeps the bound its session
-read, so a recipe closes the connection before a connect that names the field, and closes and reconnects without it
+read, and a connect that names the field on a live facade has no effect until its next session, so a recipe closes
+the connection before a connect that names the field, and closes and reconnects without it
 to restore the constants (`AL_VOLATILE_SESSION_MAX_ADMISSIONS`, `AL_VOLATILE_SESSION_MAX_BYTES`).
 
 ## RTC Connect Readiness

@@ -337,10 +337,14 @@ application's QoS provider, whose own capabilities override the carrier's. The
 
 **PARTIAL — S3c-ii, the first live provider:** the browser installs a
 per-session QoS provider that reports `overloaded` while the session's volatile
-budget is at or over a limit (D78). Under the default policy that drops
-best-effort RTC sends and best-effort arrivals on both carriers, never an
-at-least-once message; the WS outbound path does not consult it. Transport-aware
-authorization, the other budgets and fairness are V1's.
+budget is at or over a limit (D78), for the session's own outbound data
+originations only: a control, a receipt, an acknowledgement, a repair, a relay
+forward and an inbound plan never read it, so a session at its bound still
+acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
+bound every send, best-effort or not, on either carrier, reads `capacity`: it
+ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
+handed to a fallback. Transport-aware authorization, the other budgets and
+fairness are V1's.
 
 ## Reliability and acknowledgement
 
@@ -386,8 +390,9 @@ RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
 A director command can reach the director twice after a fallback, because AL
 dedup is per carrier lane: relay commands are at-least-once, and the game's
 sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay reports a
-command `sent` only when the director's receipt arrives, waiting at most 30 s,
-and a refused command is a `failed` result.
+command `sent` only when the director's receipt arrives, waiting at most 30 s.
+A command the typed send refuses at validation becomes a `failed` result with
+the refusal as its reason; any other error from the send still propagates.
 
 ### Acknowledgement modes
 
@@ -513,8 +518,10 @@ alternate route without violating audience/epoch constraints.
 congestion/fanout/supersedence concepts.
 
 **PARTIAL — S3c-ii:** the caller sees the lifecycle (S1) and the session's
-volatile budget is the first `overloaded` producer (D78). Channel backpressure
-as a policy input is V1's.
+volatile budget is the first `overloaded` producer (D78), reported for the
+session's own outbound data originations only, so at the bound every send
+reads `capacity` and controls, forwards and arrivals flow on (R-S3c-ii-8).
+Channel backpressure as a policy input is V1's.
 
 ## Durability and browser-local storage
 

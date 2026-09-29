@@ -101,8 +101,8 @@ which nothing calls), and is not imported by AR Eye Hunter. Its match commands a
 intents whose first leg is the **non-ALM** `rallar.realtime` targeted lane
 (`browser-director-relay-transport.ts:73-78`); only the fallback is ALM, a best-effort WS unicast
 (`:150-172`, `browser-rallar-message-sender.ts:104-129`), and the UI discards the result
-(`use-arena-world-actions.ts:62-95`). The browser has no ALM RTC unicast (every RTC typed send is a
-room multicast, `:310-340`), `receiver` on a WS unicast is refused (D42, kept by R-S2c-ii-0), and the
+(`use-arena-world-actions.ts:62-95`; fixed by S3c-ii, §11). The browser has no ALM RTC unicast (every RTC typed send is a
+room multicast, `:310-340`; fixed by S3c-ii, §11), `receiver` on a WS unicast is refused (D42, kept by R-S2c-ii-0), and the
 fallback strategy accepts room targets only (`validateRoomFallbackInput`, `:343-362`). A `command`
 channel "with a real director receipt" over `rtc-with-ws-fallback` therefore needs three things the
 code lacks: an RTC unicast, a unicast fallback, and a receipt for a WS unicast.
@@ -649,7 +649,7 @@ The texts below are the plan's, kept here because the pull request that finishes
 | C10    | The director accepts client intents out of order: an equal sequence is a duplicate, a lower one is accepted. Director outputs keep the stale rule.                                                                                                    |
 | C11    | The lane names a peer by role (`toPeer`: `server` or `receiver`, as amended by R-S3c-ii-2); a lane-only connect field lowers the volatile bound, never a public connect option.                                                                       |
 | C12    | Intents and sync requests use two typed `command` channels on the existing derived type ids.                                                                                                                                                          |
-| C13    | `overloaded` is true while the budget is at or over either limit; its stated limits are correction 6.                                                                                                                                                 |
+| C13    | `overloaded` is true while the budget is at or over either limit; its stated limits are correction 6. R-S3c-ii-8 narrows it to the session's own outbound data.                                                                                       |
 | C14    | The relay-row retention figure is measured by a test and recorded in the inbound README and the roadmap.                                                                                                                                              |
 | C15    | `sendWsUnicast` and the realtime targeted leg for intents are deleted; the S3a pin is replaced.                                                                                                                                                       |
 | C16    | No persisted shape changes; the schema id stays.                                                                                                                                                                                                      |
@@ -689,8 +689,10 @@ The texts below are the plan's, kept here because the pull request that finishes
 - **R-S3c-ii-2 (plan writing, 2026-09-29).** C11 is amended: `toPeer` is `'server' | 'receiver'`. The room roster
   carries no role, the three-agent lane starts both recipients in parallel and hosted agents may share one user, so
   nothing in the page tells the two recipients apart; the four scenarios run on two agents and manifest 22 does not
-  change. Manifest 18's `recommendedTerminalTimeoutSeconds` rises from 300 to 1 200: its absence windows alone take
-  513 s, so 300 s never held (the concern PR #604 carried). Cost if wrong: a hosted run that hangs is cut off later.
+  change. Manifest 18's `recommendedTerminalTimeoutSeconds` rises from 300 to 1 200: the receiver's absence windows
+  alone take 530 s in the generated manifest (360 s of `messages.received` windows and 170 s of absent `wait`s; the
+  plan stated 513 s), so 300 s never held (the concern PR #604 carried). R-S3c-ii-9 raises it to 1 800 s.
+  Cost if wrong: a hosted run that hangs is cut off later.
 - **R-S3c-ii-3 (plan writing, 2026-09-29).** Inbound data counts toward the same session limit as outbound data (C4,
   C6), so a busy receiver can have its own volatile sends refused `capacity`: at the 30 s default deadline that starts
   above about 33 messages a second, in and out combined. A counted send whose commit admits nothing stays counted until
@@ -723,6 +725,21 @@ The texts below are the plan's, kept here because the pull request that finishes
   cent, so it is a stated limit and the code stays. Exempting platform topics from the application's bound is the
   maintainer's decision; the PR body names it. Cost if wrong: an application close to its bound is refused slightly
   earlier than its own traffic alone would cause.
+- **R-S3c-ii-8 (final review, 2026-09-29; amends C13).** `overloaded` is reported only for the session's own outbound
+  data originations: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound plan.
+  At the RTC origin the handling-plan drop `overloaded` maps to the drop code `capacity`, so every send over the bound,
+  best-effort or not, on either carrier, ends `rejected` with `failure` `{ kind: 'refused', reason: 'capacity' }` and is
+  never handed to a fallback. As first built, the signal reached every planner: a session at its bound stopped
+  acknowledging over RTC, a relay dropped other sessions' best-effort forwards, and best-effort arrivals were held back.
+  Cost if wrong: none for delivery; the congestion aspect's other policies are V1's.
+- **R-S3c-ii-9 (final review, 2026-09-29; amends R-S3c-ii-2).** In manifest 18 the `capacity` blocks run last on each
+  carrier. The scenario waits 31 s after its lowered-limit reconnect, so the platform's state sync admitted at the
+  rejoin has left the budget before the first send. The manifest's terminal timeout is 1 800 s. Hosted agents keep
+  their pages and share a long-lived room, which the local lane does not reproduce. Cost if wrong: a hosted run that
+  hangs is cut off later.
+- **R-S3c-ii-10 (final review, 2026-09-29).** Source comments state a non-obvious invariant, an external constraint or
+  a deliberate tradeoff, and nothing else. They name no plan, choice or ruling id, because the plan file is deleted
+  before the merge; a roadmap decision id may stay where it names the reason for an invariant.
 
 ### 11.5 What was built and measured
 
@@ -741,20 +758,28 @@ The texts below are the plan's, kept here because the pull request that finishes
   (`group-state.event`, `client-state.snapshot`, `client-state.event`) shares the bound: about 26 KB for a lane
   agent that leaves and rejoins a room, under one per cent of the production limits. Exempting platform topics is
   open for the maintainer.
-- **`overloaded`.** Under the default policy it drops best-effort RTC sends at the origin and best-effort arrivals
-  on both carriers, NACKed `overloaded`; it never drops an at-least-once message, and the WS outbound path does not
-  consult it (V1).
+- **`overloaded` (R-S3c-ii-8).** It is reported for the session's own outbound data originations only; a control, a
+  receipt, an acknowledgement, a repair, a relay forward and an inbound plan never read it, so a session at its bound
+  still acknowledges, forwards and delivers. At the bound every send, best-effort or not, on either carrier, reads
+  `capacity`: it ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. The
+  RTC rate limiter spends its token before the plan, so a burst of refused sends can hand a later send inside the bound
+  to WS as `rate-limited`; the shared budget admits it there.
 - **The director command (R-S3c-ii-4).** The relay reports `sent` only when the director's receipt arrives, waiting
-  at most 30 s; a command the typed send refuses (`RallarValidationError`) is a `failed` result, not a throw. After a
+  at most 30 s; a command the typed send refuses (`RallarValidationError`) is a `failed` result, not a throw, and any
+  other error from the send still propagates. After a
   fallback a relay command can reach the relay's `onIntent` twice (at-least-once) and the game's handler once,
-  because the game's sequence tracker refuses the duplicate. The game accepts client intents out of order inside a window of 1 024 sequences per key.
+  because the game's sequence tracker refuses the duplicate. The game accepts client intents out of order: per key, a
+  sequence it has seen is a duplicate, and one 1 024 or more below the highest it accepted is stale.
   Call signalling travels `messages.ws.send` with `scope: 'all'` and needs a server that names its peer id.
 - **The lane (R-S3c-ii-2, -5).** `toPeer` is `server` or `receiver`, and `toPeer: 'server'` is a WS-only target. The
-  four addressed scenarios run as their own two-agent family; manifest 18's terminal timeout is 1 200 s and manifest
-  22 is unchanged. The director orchestration spec (`npm run test:rallar:full-stack:memory:director`) was stale on
+  four addressed scenarios run as their own two-agent family, and manifest 22 is unchanged. Manifest 18 runs the three
+  `capacity` blocks after every other block, and the scenario waits 31 s after its lowered reconnect before it sends
+  (R-S3c-ii-9). The generated manifest's receiver absence windows sum to 530 s and the sender's three waits to 93 s;
+  summed over its 39 blocks, the larger role's command budgets come to about 7 680 s, so the 1 800 s terminal timeout
+  is a typical-case budget, not a worst case. The director orchestration spec (`npm run test:rallar:full-stack:memory:director`) was stale on
   `main` (it used retired group routes and is in no CI lane); S3c-ii revived it and it passes, which is the
   end-to-end proof of the receipt-gated `sent`.
-- **Figures.** Bundle ceilings after S3c-ii: facade 226 KiB (225.015625 measured), headless 289 KiB (288.3349609375
+- **Figures.** Bundle ceilings after S3c-ii: facade 226 KiB (225.2333984375 measured), headless 289 KiB (288.51171875
   measured); before the slice 224 and 286. Every volatile send, the director intents and the empty-audience send
   included, spends 0 `al-admission` and 0 non-probe `al-work` operations; no durable pin moved.
   `AL_ADMISSION_SCHEMA_ID` stays `rallar-alm-2026-09-s3c-i` (C16).

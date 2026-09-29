@@ -445,9 +445,15 @@ deadline) has its own volatile sends refused. The bound is also shared with the 
 WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
 R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
 production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
-While the budget is at or over a limit the session's QoS provider reports `overloaded`; under the default policy that
-drops best-effort RTC sends at the origin and best-effort arrivals on both carriers (each answered with a NACK
-`overloaded`), never an at-least-once message, and the WS outbound path does not consult it (V1).
+While the budget is at or over a limit the session's QoS provider reports `overloaded` for the session's own outbound
+data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound
+plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under the
+default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
+admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
+`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. The WS outbound path does not consult
+`overloaded`; its admission bound refuses the same sends. The RTC rate limiter spends its token before the plan, so a
+refused send still spends one: a burst of refused sends can push a later send inside the bound to `rate-limited`,
+which hands it to WS, where the shared budget admits it.
 
 ### Grouped control sends
 

@@ -47,7 +47,8 @@ const entries = [
         // the overloaded provider) measures 224.8525390625 KiB, and its review fix (the 30 s inbound counted
         // lifetime and the named-deadline rule) 225.056640625 KiB. The next whole-KiB ceiling is 226. The S3c-ii
         // director command (the typed command channels, the intent sequence window, sendWsUnicast deleted) measures
-        // 225.072265625 KiB.
+        // 225.072265625 KiB, and its final review fix wave (overloaded for the session's own sends only, the budget's
+        // release heap and the intent window below the highest sequence) 225.2333984375 KiB.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',

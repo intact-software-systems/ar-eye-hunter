@@ -84,6 +84,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // its outbound refusal and inbound count, and the overloaded provider) measures 287.4267578125 KiB here. The
         // next whole-KiB ceiling is 288. The S3c-ii director command measures 287.6357421875 KiB here. The S3c-ii lane
         // peer role and volatile-limits read port measure 288.3349609375 KiB here. The next whole-KiB ceiling is 289.
+        // The S3c-ii final review fix wave measures 288.51171875 KiB here.
         // All operator dependency exclusions above remain enforced.
         expect(result.brotliKiB).toBeLessThan(289);
     });

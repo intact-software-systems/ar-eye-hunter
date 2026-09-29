@@ -11765,6 +11765,21 @@ director: messages.rtc.onMessage(intent | sync-request type id) + messages.ws.on
   cent, so it is a stated limit and the code stays. Exempting platform topics from the application's bound is the
   maintainer's decision; the PR body names it. Cost if wrong: an application close to its bound is refused slightly
   earlier than its own traffic alone would cause.
+- **R-S3c-ii-8 (final review, 2026-09-29; amends C13).** `overloaded` is reported only for the session's own outbound
+  data originations: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound plan.
+  At the RTC origin the handling-plan drop `overloaded` maps to the drop code `capacity`, so every send over the bound,
+  best-effort or not, on either carrier, ends `rejected` with `failure` `{ kind: 'refused', reason: 'capacity' }` and is
+  never handed to a fallback. As first built, the signal reached every planner: a session at its bound stopped
+  acknowledging over RTC, a relay dropped other sessions' best-effort forwards, and best-effort arrivals were held back.
+  Cost if wrong: none for delivery; the congestion aspect's other policies are V1's.
+- **R-S3c-ii-9 (final review, 2026-09-29; amends R-S3c-ii-2).** In manifest 18 the `capacity` blocks run last on each
+  carrier. The scenario waits 31 s after its lowered-limit reconnect, so the platform's state sync admitted at the
+  rejoin has left the budget before the first send. The manifest's terminal timeout is 1 800 s. Hosted agents keep
+  their pages and share a long-lived room, which the local lane does not reproduce. Cost if wrong: a hosted run that
+  hangs is cut off later.
+- **R-S3c-ii-10 (final review, 2026-09-29).** Source comments state a non-obvious invariant, an external constraint or
+  a deliberate tradeoff, and nothing else. They name no plan, choice or ruling id, because the plan file is deleted
+  before the merge; a roadmap decision id may stay where it names the reason for an invariant.
 
 ## Self-review
 
