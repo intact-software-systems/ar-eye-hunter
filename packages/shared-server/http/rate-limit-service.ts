@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
 const UNKNOWN_CLIENT_KEY = 'unknown';
+const MAX_LIMITER_KEY_LENGTH = 160;
+const HASHED_KEY_READABLE_PREFIX_LENGTH = 64;
 
 type HeaderReader = Readonly<{
     header(name: string): string | undefined;
@@ -29,11 +33,11 @@ export function readRateLimiter(
     return limiter;
 }
 
-export function readRequestClientKey(req: HeaderReader): string {
-    return readForwardedHeader(req, 'cf-connecting-ip') ??
-        readForwardedHeader(req, 'x-real-ip') ??
-        readForwardedHeader(req, 'x-forwarded-for') ??
-        readForwardedHeader(req, 'forwarded') ??
+export function readRequestClientKey(request: HeaderReader): string {
+    return readForwardedHeader(request, 'cf-connecting-ip') ??
+        readForwardedHeader(request, 'x-real-ip') ??
+        readForwardedHeader(request, 'x-forwarded-for') ??
+        readForwardedHeader(request, 'forwarded') ??
         UNKNOWN_CLIENT_KEY;
 }
 
@@ -53,18 +57,18 @@ function toLimiterKey(
     policy: RateLimiterPolicy
 ): string {
     return [
-        normaliseKey(namespace),
+        toNormalisedKey(namespace),
         policy.timebasedFilterMs,
         policy.maxNumberToAllow,
-        normaliseKey(key)
+        toNormalisedKey(key)
     ].join(':');
 }
 
 function readForwardedHeader(
-    req: HeaderReader,
+    request: HeaderReader,
     headerName: string
 ): string | undefined {
-    const raw = req.header(headerName);
+    const raw = request.header(headerName);
     if (!raw) {
         return undefined;
     }
@@ -73,7 +77,15 @@ function readForwardedHeader(
     return value && value.length > 0 ? value : undefined;
 }
 
-function normaliseKey(key: string): string {
+function toNormalisedKey(key: string): string {
     const trimmed = key.trim().toLowerCase();
-    return trimmed.length > 0 ? trimmed.slice(0, 160) : UNKNOWN_CLIENT_KEY;
+    if (trimmed.length === 0) {
+        return UNKNOWN_CLIENT_KEY;
+    }
+    if (trimmed.length <= MAX_LIMITER_KEY_LENGTH) {
+        return trimmed;
+    }
+
+    const digest = createHash('sha256').update(trimmed).digest('hex');
+    return `${trimmed.slice(0, HASHED_KEY_READABLE_PREFIX_LENGTH)}~${digest}`;
 }
