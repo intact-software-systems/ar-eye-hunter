@@ -326,6 +326,14 @@ expires, until the origin has a session there or the row expires, so an origin t
 instance up to a second before the row expires receives it; one that reconnects in that last second
 does not.
 
+The server's other controls (its ACKs, NACKs and repair requests) come from its inbound work, which any
+instance may claim. The claiming instance sends one to a socket it holds; when it holds none for the
+target and a cluster publisher is registered,
+[`WsQueueBoxServerControlDelivery`](../../services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts)
+admits the control here as one durable `WS_OUTBOX` row that expires 30 s after the hand-off. Unlike a
+receipt, its first dequeue publishes it once and completes, so a target connected to no instance
+costs one publication and no retry.
+
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
 A unicast addressed to the server, and every `hop` or `subtree` send, expects the server's own ACK: the server is the

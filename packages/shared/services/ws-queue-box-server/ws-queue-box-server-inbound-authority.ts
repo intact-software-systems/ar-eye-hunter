@@ -13,7 +13,7 @@ import type {
     WsServerInboundConnectionScopeProof,
     WsServerInboundConnectionScopeReader
 } from './ws-queue-box-server-contracts.ts';
-import type { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
+import type { WsQueueBoxServerControlDelivery } from './ws-queue-box-server-control-delivery.ts';
 import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
@@ -24,7 +24,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly newControlId: () => string;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
-        readonly liveDelivery: WsQueueBoxServerLiveDelivery;
+        readonly controlDelivery: WsQueueBoxServerControlDelivery;
         readonly receipts: WsQueueBoxServerReceiptAggregation;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
@@ -72,7 +72,7 @@ export class WsQueueBoxServerInboundAuthority {
     readonly #clock: ALOutboundMessageRuntime.Clock;
     readonly #newControlId: () => string;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
-    readonly #liveDelivery: WsQueueBoxServerLiveDelivery;
+    readonly #controlDelivery: WsQueueBoxServerControlDelivery;
     readonly #receipts: WsQueueBoxServerReceiptAggregation;
     readonly #validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     readonly #readAuthenticatedConnectionScope:
@@ -86,7 +86,7 @@ export class WsQueueBoxServerInboundAuthority {
         this.#clock = dependencies.clock;
         this.#newControlId = dependencies.newControlId;
         this.#targetResolution = dependencies.targetResolution;
-        this.#liveDelivery = dependencies.liveDelivery;
+        this.#controlDelivery = dependencies.controlDelivery;
         this.#receipts = dependencies.receipts;
         this.#validateInboundMessage = dependencies.validateInboundMessage;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
@@ -258,12 +258,6 @@ export class WsQueueBoxServerInboundAuthority {
         return authorization.reason === 'not-yet-in-sync' ? 'retry' : 'completed';
     }
 
-    async sendControlMessages(messages: readonly ALMessage[]): Promise<void> {
-        for (const message of messages) {
-            await this.sendControlMessage(message);
-        }
-    }
-
     private async rejectIncomingMessage(
         message: ALMessage,
         authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
@@ -301,21 +295,8 @@ export class WsQueueBoxServerInboundAuthority {
             payload
         );
         if (prepared.right) {
-            await this.sendControlMessage(prepared.right);
+            await this.#controlDelivery.sendControlMessage(prepared.right);
         }
-    }
-
-    private sendControlMessage(message: ALMessage): Promise<void> {
-        const toPeerId = message.targets?.mode === 'unicast' ? message.targets.toPeerId : undefined;
-        if (!toPeerId) {
-            console.warn(`Cannot send WS server control message without unicast target: ${message.payload.typeId}`);
-            return Promise.resolve();
-        }
-        const sent = this.#liveDelivery.sendToResolvedPeer({ peerId: toPeerId, message });
-        if (sent === 0) {
-            console.warn(`Cannot resolve WS server control target ${toPeerId} for ${message.payload.typeId}`);
-        }
-        return Promise.resolve();
     }
 }
 

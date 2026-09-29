@@ -491,16 +491,23 @@ the port reserved, with the envelope its eligibility read decoded
 selection. The first of those claims to run hands the whole array to `sendControlMessages`, and
 every other claim of that batch awaits the same send. The browser carriers commit that array as one
 outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
-order. The round is keyed by that array's identity, never by time, so a row retried in a later
+order
+([`WsQueueBoxServerControlDelivery`](../../services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts)).
+The round is keyed by that array's identity, never by time, so a row retried in a later
 batch never joins a finished round. A commit leaves the claimed array in place, so a running batch's control claims still send as one round.
 When the round's send throws, each of its claims sends its own message alone, so each
 claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
 a member's storage throw once every member ran: a message the round already admitted then answers
 `duplicate`, and only the claim whose message throws again carries that failure. On RTC the round
 does not throw, because the multicast manager's circuit breaker answers a throw as `failed` values,
-as it answered a single send's throw before grouping. The WS server makes no admission; a
-synchronous throw there would send the messages before it a second time, which receivers drop by
-message id.
+as it answered a single send's throw before grouping. The WS server writes to the sockets it holds
+and admits nothing, except a control whose target has no socket on the instance that claimed its
+row. Any instance of a deployment may claim that row, so with a cluster publisher registered the
+control is admitted as one durable `WS_OUTBOX` row, idempotent by message id, whose first dequeue
+publishes it to every instance once; the instance holding the target's socket sends it, and the row
+completes whether or not one does. Without a cluster publisher the control is dropped with a
+warning. A throw in the WS server's round sends the messages before it a second time, which
+receivers drop by message id.
 
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather

@@ -55,6 +55,7 @@ import {
     type WsServerLiveSendResult,
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
+import { WsQueueBoxServerControlDelivery } from './ws-queue-box-server-control-delivery.ts';
 import { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import {
     WsQueueBoxServerDequeueAuthority,
@@ -140,6 +141,7 @@ export class WsQueueBoxServerService {
     private readonly outboundPlanning: WsQueueBoxServerOutboundPlanning;
     /** Counts relayed receiver ACKs and routes every other control to the server's own outbound owner. */
     private readonly receipts: WsQueueBoxServerReceiptAggregation;
+    private readonly controlDelivery: WsQueueBoxServerControlDelivery;
     private readonly inboundAuthority: WsQueueBoxServerInboundAuthority;
     private readonly inboundDelivery: WsQueueBoxServerInboundDelivery;
     private readonly readAuthenticatedConnectionScope:
@@ -198,6 +200,12 @@ export class WsQueueBoxServerService {
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
             acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
         });
+        this.controlDelivery = new WsQueueBoxServerControlDelivery({
+            clock: this.clock,
+            liveDelivery: this.liveDelivery,
+            clusterPublication: this.clusterPublication,
+            outbound: this.outboundRuntime
+        });
         this.inboundAuthority = this.createInboundAuthority(dependencies);
         this.inboundDelivery = this.createInboundDelivery(dependencies);
         this.inboundRuntime = this.createInboundRuntime(dependencies);
@@ -213,7 +221,7 @@ export class WsQueueBoxServerService {
             clock: this.clock,
             newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
             targetResolution: this.targetResolution,
-            liveDelivery: this.liveDelivery,
+            controlDelivery: this.controlDelivery,
             receipts: this.receipts,
             validateInboundMessage: dependencies.validateInboundMessage,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
@@ -299,7 +307,7 @@ export class WsQueueBoxServerService {
                 this.inboundDelivery.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.inboundDelivery.hasInboxConsumer(message),
             dispatchInboxEntry: (entry, plan, source) => this.inboundDelivery.dispatchInboxEntry(entry, plan, source),
-            sendControlMessages: (messages) => this.inboundAuthority.sendControlMessages(messages),
+            sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
