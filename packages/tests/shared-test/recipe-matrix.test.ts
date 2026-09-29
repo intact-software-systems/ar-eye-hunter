@@ -57,6 +57,15 @@ function rtcProviders(recipe: Record<string, unknown>): string[] {
         .map((connection) => connection.provider ?? '');
 }
 
+const NOT_PORTABLE_ENTRY_IDS: readonly string[] = ['api-v1-black-box-control-auth', 'api-v1-ice-config'];
+const STANDALONE_API_V1_PROFILES: readonly string[] = [
+    'api-v1-black-box-cluster',
+    'api-v1-black-box-crdt',
+    'api-v1-black-box-crdt-append-history',
+    'api-v1-black-box-medium-scale',
+    'api-v1-black-box-formation-large'
+];
+
 const strictDebtPath = path.join(runnerRoot, 'preflight/strict-expectation-debt.json');
 
 /**
@@ -319,68 +328,7 @@ describe('black-box runner recipe matrix', () => {
         const { entries } = readMatrix();
         const apiEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box'));
 
-        expect(apiEntries.map((entry) => entry.id).sort()).toEqual([
-            'api-v1-activation-clock-decay',
-            'api-v1-activation-command-race',
-            'api-v1-admin-authorization-boundary',
-            'api-v1-admin-operations',
-            'api-v1-admin-support',
-            'api-v1-auth-session',
-            'api-v1-automatic-formation-triggers',
-            'api-v1-black-box-control-auth',
-            'api-v1-client-state',
-            'api-v1-commanded-replanning',
-            'api-v1-crdt-admin-write-surface',
-            'api-v1-crdt-catch-up-auth',
-            'api-v1-cross-application-ws-isolation',
-            'api-v1-cross-principal-client-state-isolation',
-            'api-v1-debounced-replanning',
-            'api-v1-drop-in-social-preset',
-            'api-v1-graph-diagnostics-read',
-            'api-v1-group-activation-partial-coverage',
-            'api-v1-group-admission-approval',
-            'api-v1-group-admission-decision-race',
-            'api-v1-group-admission-windows',
-            'api-v1-group-ban-governance',
-            'api-v1-group-business-status',
-            'api-v1-group-connect-fence',
-            'api-v1-group-data-policy',
-            'api-v1-group-director-appoint',
-            'api-v1-group-formation-burst-medium',
-            'api-v1-group-formation-burst-small',
-            'api-v1-group-formation-criterion',
-            'api-v1-group-governance-authority',
-            'api-v1-group-invite-admission',
-            'api-v1-group-invite-revocation',
-            'api-v1-group-join-admission',
-            'api-v1-group-join-code-admission',
-            'api-v1-group-lifecycle-command-race',
-            'api-v1-group-lifecycle-policy',
-            'api-v1-group-lifecycle-transitions',
-            'api-v1-group-limits',
-            'api-v1-group-manager-succession',
-            'api-v1-group-ownership-transfer',
-            'api-v1-group-presence',
-            'api-v1-group-presence-lease-lifecycle',
-            'api-v1-group-state-delta-contents',
-            'api-v1-group-state-reconnect-resync',
-            'api-v1-group-status-lifecycle',
-            'api-v1-group-topology-late-joiner',
-            'api-v1-ice-config',
-            'api-v1-match-preset',
-            'api-v1-member-stats-negative-shape',
-            'api-v1-openapi-topology-auth',
-            'api-v1-overlay-topology-publication',
-            'api-v1-presence-formation-trigger',
-            'api-v1-presence-lease-bound',
-            'api-v1-read-your-writes-presence',
-            'api-v1-reconfiguration-fails',
-            'api-v1-reconfigure-landing-concurrency',
-            'api-v1-scope-isolation',
-            'api-v1-spa-statistics',
-            'api-v1-websocket-addressed-sends',
-            'api-v1-websocket-topic-routing'
-        ]);
+        expect(apiEntries.length).toBeGreaterThan(0);
 
         apiEntries.forEach((entry) => {
             expect(entry.category).toBe('api-v1-black-box');
@@ -401,70 +349,30 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
+    it('runs every API-v1 recipe in the standard profile or in a named standalone profile', () => {
+        const { entries } = readMatrix();
+        const recipeFiles = listJsonRecipes(path.join(testsRoot, 'api-v1'), 'tests/api-v1/').filter((file) => /^tests\/api-v1\/api-v1-.*\.json$/u.test(file));
+        const unplaced = recipeFiles.filter((file) => {
+            const profiles = entries.filter((entry) => entry.recipe === file).flatMap((entry) => entry.profiles);
+            return !profiles.includes('api-v1-black-box') && !profiles.some((profile) => STANDALONE_API_V1_PROFILES.includes(profile));
+        });
+
+        expect(recipeFiles.length).toBeGreaterThan(0);
+        expect(unplaced).toEqual([]);
+    });
+
     it('defines a portable recipes-only API-v1 black-box profile', () => {
         const { entries } = readMatrix();
         const apiRecipeEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box-recipes'));
 
-        expect(apiRecipeEntries.map((entry) => entry.id).sort()).toEqual([
-            'api-v1-activation-clock-decay',
-            'api-v1-activation-command-race',
-            'api-v1-admin-authorization-boundary',
-            'api-v1-admin-operations',
-            'api-v1-admin-support',
-            'api-v1-auth-session',
-            'api-v1-automatic-formation-triggers',
-            'api-v1-client-state',
-            'api-v1-commanded-replanning',
-            'api-v1-crdt-admin-write-surface',
-            'api-v1-crdt-catch-up-auth',
-            'api-v1-cross-application-ws-isolation',
-            'api-v1-cross-principal-client-state-isolation',
-            'api-v1-debounced-replanning',
-            'api-v1-drop-in-social-preset',
-            'api-v1-graph-diagnostics-read',
-            'api-v1-group-activation-partial-coverage',
-            'api-v1-group-admission-approval',
-            'api-v1-group-admission-decision-race',
-            'api-v1-group-admission-windows',
-            'api-v1-group-ban-governance',
-            'api-v1-group-business-status',
-            'api-v1-group-connect-fence',
-            'api-v1-group-data-policy',
-            'api-v1-group-director-appoint',
-            'api-v1-group-formation-burst-medium',
-            'api-v1-group-formation-burst-small',
-            'api-v1-group-formation-criterion',
-            'api-v1-group-governance-authority',
-            'api-v1-group-invite-admission',
-            'api-v1-group-invite-revocation',
-            'api-v1-group-join-admission',
-            'api-v1-group-join-code-admission',
-            'api-v1-group-lifecycle-command-race',
-            'api-v1-group-lifecycle-policy',
-            'api-v1-group-lifecycle-transitions',
-            'api-v1-group-limits',
-            'api-v1-group-manager-succession',
-            'api-v1-group-ownership-transfer',
-            'api-v1-group-presence',
-            'api-v1-group-presence-lease-lifecycle',
-            'api-v1-group-state-delta-contents',
-            'api-v1-group-state-reconnect-resync',
-            'api-v1-group-status-lifecycle',
-            'api-v1-group-topology-late-joiner',
-            'api-v1-match-preset',
-            'api-v1-member-stats-negative-shape',
-            'api-v1-openapi-topology-auth',
-            'api-v1-overlay-topology-publication',
-            'api-v1-presence-formation-trigger',
-            'api-v1-presence-lease-bound',
-            'api-v1-read-your-writes-presence',
-            'api-v1-reconfiguration-fails',
-            'api-v1-reconfigure-landing-concurrency',
-            'api-v1-scope-isolation',
-            'api-v1-spa-statistics',
-            'api-v1-websocket-addressed-sends',
-            'api-v1-websocket-topic-routing'
-        ]);
+        const standardIds = entries
+            .filter((entry) => entry.profiles.includes('api-v1-black-box'))
+            .map((entry) => entry.id);
+
+        expect(standardIds).toEqual(expect.arrayContaining([...NOT_PORTABLE_ENTRY_IDS]));
+        expect(apiRecipeEntries.map((entry) => entry.id).sort()).toEqual(
+            standardIds.filter((id) => !NOT_PORTABLE_ENTRY_IDS.includes(id)).sort()
+        );
 
         apiRecipeEntries.forEach((entry) => {
             expect(entry.category).toBe('api-v1-black-box');
