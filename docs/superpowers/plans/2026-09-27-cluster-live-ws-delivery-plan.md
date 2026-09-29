@@ -48,6 +48,11 @@ Vitest, Deno API-v1, and Rallar black-box recipes; no new dependencies.
   The approved browser bundle ceilings are `<225` KiB for the shared-web facade
   and `<287` KiB for the headless agent, measured as Brotli bundles. This does
   not approve a CRDT command-format change or a generic payload-type bypass.
+- On 2026-09-29, after exact-head measurements of 225.419921875 and
+  287.8095703125 KiB, the maintainer approved increasing those two strict
+  whole-KiB ceilings through this goal. The current ceilings are `<226` KiB
+  for the full shared-web facade and `<288` KiB for the headless agent. Keep
+  both measurement harnesses and all unrelated entry/dependency checks intact.
 - For principal state-sync audiences, first use the existing durable scope-wide
   group read and preserve own plus authorized co-group sessions. Measure the
   representative read cost before changing storage. The existing
@@ -375,8 +380,12 @@ evidence gate; the [committed-work plan](2026-09-12-alm-committed-work-progress-
 and [RTC baseline plan](2026-08-06-rallar-rtc-performance-baseline-plan.md)
 continue to own those other outcomes.
 
-The heartbeat cache-TTL edge is addressed in `a50ea8044`, with a red-before/
-green-after regression, 41 focused tests and independent review. It does not
+The heartbeat cache-TTL change from `a50ea8044` was replayed into this branch
+as `46f68a42f`, with a red-before/green-after regression, 41 focused tests,
+and independent review. Subsequent review identified a remaining case: a
+same-tuple snapshot can remove a session while renewing a survivor's lease,
+yet the browser lifecycle classifies it as a renewal and skips RTC
+reconciliation. That case still needs a focused correction and does not
 replace the pending cross-process proof, E3 evidence, or exact-head gate.
 
 ## Scope-contract sequence and current status
@@ -1119,20 +1128,20 @@ acceptance evidence until checked on the exact PR head.
 **Next slice — resolve the measured release, ALM, and performance regressions.**
 At the implementation head, the Release Gate passed style, structure,
 typecheck, ALM conformance, and 13,157 tests (12 skipped); it failed only the
-two unchanged strict bundle tests. The local whole suite likewise
-passes 13,157 tests and skips 12; only the two strict bundle tests fail:
-`browser/rallar.ts` measures 225.419921875 KiB against `<225` and the headless
-agent measures 287.8095703125 KiB against `<287`. The one-millisecond timing
-failure seen in an earlier whole-suite run did not recur locally, but it did
+two then-current strict bundle tests. The local whole suite likewise
+passed 13,157 tests and skipped 12 apart from those bundle tests:
+`browser/rallar.ts` measured 225.419921875 KiB against `<225` and the headless
+agent measured 287.8095703125 KiB against `<287`. The maintainer has since
+approved the next whole-KiB strict ceilings, `<226` and `<288`, for this goal.
+The two focused tests were rerun RED at the old ceilings before changing them;
+retain the exact bundle entry points, compressor, and dependency exclusions.
+The one-millisecond timing failure seen in an earlier whole-suite run did not recur locally, but it did
 recur at the later plan-only branch head. That later head also failed the
 remote ALM WS replacement observation despite a focused local pass. Treat
-both as unresolved until classified with independent evidence. Compare the
-exact entry-point bundles and their inputs against a matched baseline,
-identify avoidable shipped code on the changed path, and make the smallest
-behavior-preserving reduction. Keep both approved ceilings strict; do not
-raise them, hide inputs, or omit required runtime behavior. Recheck focused
-correctness, both bundle harnesses, test typing, and the whole suite. In the
-same slice, investigate the state-write diagnostic regression above before
+both as unresolved until classified with independent evidence. Apply only the
+approved budget changes; do not hide inputs or omit required runtime behavior.
+Recheck focused correctness, both bundle harnesses, test typing, and the whole
+suite. In the same slice, investigate the state-write diagnostic regression above before
 accepting the principal scope-wide read; compare complete read alternatives
 and the measured query plan, then rerun the identical state-write workload.
 
@@ -1149,6 +1158,13 @@ not reached an ICE-connected state. The offerer differed between runs, and the
 bounded causal tails cannot identify why the peers were replaced or whether
 candidate data belonged to the same native generation. Do not infer a
 stale-offer root cause from one run or relax readiness and attempt limits.
+The server's existing inbound plan can forward a best-effort RTC signaling
+unicast without a local recipient, then treat a zero-recipient send as completed.
+Because the PostgreSQL inbound work is shared across API processes, this is a
+code-derived loss path when a process without the target socket claims the
+row. It predates this branch refactor; the earlier A/C logs are consistent
+with it but lack message-ID correlation. Prove the cross-process boundary and
+correct it without a new queue, retry layer, lock, or weakened E3 workload.
 Gather generation-linked, payload-safe signaling and ICE-state evidence,
 identify the failure boundary, then rerun the unchanged E3 case. Run the
 remaining required cluster proofs,
