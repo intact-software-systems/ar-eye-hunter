@@ -131,11 +131,6 @@ writeFileSync(artifact, '', 'utf8');
 
 let retained = 0;
 for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
-    // Structured stdout can contain timing identities or application data; only plain startup text is echoed.
-    const trimmed = line.trimStart();
-    if (!trimmed.startsWith('{') && !trimmed.startsWith('[') && trimmed !== 'null') {
-        process.stdout.write(`${line}\n`);
-    }
     if (retained >= MAX_EVENTS) {
         continue;
     }

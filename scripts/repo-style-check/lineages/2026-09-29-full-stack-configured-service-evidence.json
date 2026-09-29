@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "91a09eec3cfbc2fbaaad74193eb6c3628e586c9a",
+      "source": {
+        "path": "apps/rallar-black-box/playwright-full-stack-api-server.ts",
+        "blob": "8f8a8e15d88a5231e63d6a5e893a037200525477"
+      },
+      "targets": [
+        "apps/rallar-black-box/playwright-full-stack-configured-service-evidence.ts"
+      ]
+    }
+  ]
+}

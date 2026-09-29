@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
     assertFullStackApiConfigEvidence,
-    assertFullStackControlHealthEvidence,
-    assertFullStackReadinessHttpEvidence,
     createFullStackApiProfileEnvBlock,
     createFullStackApiUrlEnvBlock,
     createFullStackApiV1WebServer,
     createFullStackSpaCorsOrigins,
-    evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
+import {
+    assertFullStackControlHealthEvidence,
+    assertFullStackReadinessHttpEvidence,
+    evaluateFullStackConfiguredServiceEvidence
+} from '../../../apps/rallar-black-box/playwright-full-stack-configured-service-evidence.ts';
 
 describe('rallar-black-box full-stack API server mode', () => {
     it('defaults to the existing Postgres-backed full-stack API server mode', () => {

@@ -43,14 +43,15 @@ it('retains only bounded ALM server timing fields without echoing raw structured
         JSON.stringify(unsafeKey),
         JSON.stringify(unsafeVerdict),
         'null',
-        'plain API log'
+        'plain API log',
+        '  "sessionId": "private-session"'
     ]
         .join('\n') + '\n';
 
     const result = spawnSync(process.execPath, [script, artifact], { input: lines, encoding: 'utf8' });
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toBe('plain API log\n');
+    expect(result.stdout).toBe('');
     expect(readFileSync(artifact, 'utf8')).toBe(
         JSON.stringify({
             atEpochMs: 123,
@@ -80,7 +81,7 @@ it('preserves the API failure exit status and stderr through the timing pipe', (
     const result = spawnSync('bash', ['-o', 'pipefail', '-c', command], { encoding: 'utf8' });
 
     expect(result.status).toBe(7);
-    expect(result.stdout).toBe('ready\n');
+    expect(result.stdout).toBe('');
     expect(result.stderr).toBe('startup failed\n');
     expect(readFileSync(artifact, 'utf8')).toBe('');
 });
