@@ -28,6 +28,11 @@ decisions P1-P22. Where this plan and the spec disagree, the spec wins, and the 
 | A finished merge of main and #566, for comparison | `.claude/worktrees/pr566-merge-probe` (uncommitted; read-only)                                       |
 | Line numbers in this plan                         | the merged tree (main `29d25734f` plus #566 `4005e09ea`); after Task 1 they can shift by a few lines |
 
+Tasks 0, 1 and 2 name `83a66d906` as the branch head. Read that as "the branch head when Task 0 starts". The commits
+that add and correct this plan sit on top of `83a66d906` and change only files under `plans/active/`. Task 0 checks it:
+`git diff --stat 83a66d906 origin/codex/rtc-b06-overlay-gap-plan` lists only `plans/active/` paths, and the local
+`HEAD` equals the remote head. The merge commit's first parent is that head.
+
 ## Tasks, in the order they run
 
 | #  | Task                              | Written against                  | Commits                                                                                              |
