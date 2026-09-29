@@ -1219,16 +1219,26 @@ generic inbound plan skipped the reserved RTC callback. The corrected plan
 dispatches that admitted callback once and suppresses only RTC's separate
 generic forwarding; the callback uses the existing live notice carrier, while
 each receiving process attempts a direct scoped local send. Two subsequent
-three-process browser runs passed with A/B/C on distinct API origins and real
-addressed Offer, Answer, and IceCandidate observations. Focused 60/60 tests,
+three-process browser runs passed with A/B/C on distinct *bootstrap* API origins
+and real addressed Offer, Answer, and IceCandidate observations. Focused 60/60 tests,
 affected checks, independent review, and a scoped clock-injection fix review
 passed. The oversized canonical RTC key path now requires matching persisted
 authenticated source scope, canonical sender/message/target, expiry, and the
-current recipient scope; old unproven sources fail closed. This is a focused
-cross-process proof, not the unchanged E3-memory 100-cycle acceptance result.
+current recipient scope; old unproven sources fail closed. These browser runs
+were preliminary signaling evidence, not the unchanged E3-memory 100-cycle
+acceptance result.
 The browser still emits pre-existing-looking malformed-RTC warnings; heartbeat
 frames entering AL admission are a code-derived explanation, but individual
 warning payloads were not captured, so do not dismiss them as harmless.
+
+**2026-09-29 browser-proof review correction:** The `rtc.connect` command
+still supplied A's global API URL to B/C, potentially moving their actual RTC
+sockets back to A after bootstrap. The assertion also pooled signal kinds
+across agents, so it did not prove every peer pair. Retract the focused
+cross-process proof claim above. Keep PR #566 draft until each agent's connect
+and raw-WS commands use its selected API URL, received signaling is tied to
+that agent's observed socket origin, Offer/Answer are correlated by peer pair
+and offer ID, and the unchanged three-process browser matrix passes again.
 
 The exact prior-head Release Gate passed medium-scale, formation-large, ALM,
 and earlier stages but failed one Relic storage test. Read-only reproduction
