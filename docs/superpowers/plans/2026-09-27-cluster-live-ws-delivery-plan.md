@@ -1240,6 +1240,21 @@ and raw-WS commands use its selected API URL, received signaling is tied to
 that agent's observed socket origin, Offer/Answer are correlated by peer pair
 and offer ID, and the unchanged three-process browser matrix passes again.
 
+**2026-09-29 corrected local browser proof:** The branch now selects one
+canonical A/B/C URL per agent for bootstrap, `rtc.connect`, configuration, and
+raw WebSocket commands. The existing browser observer records the native socket
+origin and a bounded socket-generation identity without retaining payloads;
+the matrix checks Offer/Answer per peer pair and offer ID, plus received ICE
+and recipient socket identity. Against three separate API processes and a
+fresh task-owned PostgreSQL database, the focused existing Playwright matrix
+passed once (`1 passed`, 1.3 minutes, retry disabled). This establishes a
+corrected **local working-tree** cross-process RTC signaling proof, not an
+exact published PR-head result: the observer/matrix edits are still under
+review and the remote PR head remains older. The browser logged malformed-RTC
+warnings without an attributed payload; those are not silently classified as
+harmless. Publish and rerun the corrected test on an exact branch head before
+using it for readiness.
+
 The exact prior-head Release Gate passed medium-scale, formation-large, ALM,
 and earlier stages but failed one Relic storage test. Read-only reproduction
 found its handler fixture omitted the room context required by the branch's
@@ -1247,16 +1262,22 @@ intended scope guard. A fixture-only correction passed focused and full Relic
 tests and independent review; no production guard was weakened. It has not yet
 passed a new exact-head Release Gate.
 
-**Next two slices:** (1) On an isolated host, obtain query-level attribution
-and an order-balanced, governed state-write comparison against fresh equivalent
-databases before changing principal reads or adding an index. The existing
-development PostgreSQL container must remain untouched. (2) Correlate E3
-signaling, peer generation, and ICE state, then run the unchanged default,
-all-scenarios, and 100-cycle retention cases and the required same-SHA
-diagnostic cohort. After those, reconcile any remaining raw outbox producer,
-complete whole-branch standards/legacy review, and require a green exact-head
-Release Gate before marking the draft PR ready. No diagnostic artifact is a
-valid B06 primary or a substitute for its later main-stream publication.
+**Next two slices:** (1) Complete the corrected browser observer/matrix review,
+publish that proof on the PR branch, and rerun the existing three-process
+matrix on the exact head. The fresh local pass is not the remote gate. (2)
+Resolve the measured state-write regression using query-level attribution,
+the unchanged full authorized audience, and an order-balanced comparison;
+decide the unrelated-corrupt-group validation boundary before changing the
+candidate-discovery read. The existing development PostgreSQL container must
+remain untouched. Following those slices, correlate E3 signaling, peer
+generation, and ICE state without weakening the workload; run unchanged
+default, all-scenarios, and retention-100 plus the required same-SHA diagnostic
+cohort. The most recent retention run reached cycle 40 but exhausted the
+30-minute test deadline, so it is not acceptance. Reconcile any remaining raw
+outbox producer, complete whole-branch standards/legacy review, and require a
+green exact-head Release Gate before marking the draft PR ready. No diagnostic
+artifact is a valid B06 primary or a substitute for later main-stream
+publication.
 
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
