@@ -6,9 +6,10 @@
 > `rallar-testing`, `rallar-code-writing`, `publishing-plan-progress`.
 
 **Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. The maintainer took
-all eleven rulings on 2026-09-29 (section 8). Slices 1 and 2 are concrete; Slice 1 is next, as its
-own pull request. Slices 3–8 are outcome-shaped under `adaptive-plan-execution`: each becomes
-concrete when it starts, from the evidence in sections 2–5.
+all eleven rulings on 2026-09-29 (section 8). Slices 1–3 have merged and cut the gate from about 57
+minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slice 4 is
+split: 4a is open as #619 and 4b comes next. Slices 5–8 stay outcome-shaped under
+`adaptive-plan-execution`: each becomes concrete when it starts, from the evidence in sections 2–5.
 
 **Goal:** Cut the Branch Release Gate and the main deploy from about 55 minutes to about 18 minutes
 (Slice 2), then about 10 minutes (Slice 3). Remove the duplicated, obsolete and badly written test
@@ -1065,6 +1066,8 @@ rules below are binding.
 
 ### Slice 3 — Shorten the critical path (target: gate 10 minutes or less)
 
+**Delivered in #615 and #617.** See section 12 for what changed against this outline.
+
 **Work:**
 
 - **Split the black-box lane.** Add a standard-only mode to `api-v1-black-box-run.mts`. Today a
@@ -1099,6 +1102,9 @@ rules below are binding.
 - Peak concurrent jobs per push stays at 16 or less; otherwise merge small lanes.
 
 ### Slice 4 — Every test file runs somewhere (section 4.1)
+
+**Split in two.** 4a, in #619, removes the references and guards that ran nothing (section 12). 4b
+keeps the rest of this outline: run the tests that no lane runs, and add the reachability check.
 
 **Work:**
 
@@ -1231,3 +1237,50 @@ lines are reported.
 5. **Touching coupled test files trips the changed-range gate and grows scope.** Mitigation: plan
    each slice's touched files up front, and keep new tests in new files only where the repo rules
    allow it.
+
+## 12. What shipped, and what it measured
+
+All figures are from real runs on 2026-09-29. "Gate" means the blocking lanes; "verdict" means the
+`Branch Release Gate result` check.
+
+| PR   | Merged as   | What it did                                                                                                                                              | Measured                                                                                                           |
+| ---- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| #613 | `91a09eec3` | `!cancelled()` on three gate jobs, concurrency on the API-v1 gates, the topology replay proof runs once, three build-only Cloudflare deploy jobs removed | No Cloudflare build jobs on the next `main` deploy                                                                 |
+| #614 | `61f9783a7` | Eight parallel lanes, a shared setup action, Vitest projects `tooling` and `unit`, the lane contract test                                                | Gate 14.6 min (was 52–57); `main` deploy 16.6 min (was about 55); every suite's counts identical to the serial run |
+| #615 | `82697e470` | Black-box lane as three runners, Recipe Console as two Playwright shards, runner flags `--shard` and `--standard-only`                                   | Blocking lanes about 9.3 min; 60 + 11 recipes and 199 + 12 specs, identical to before                              |
+| #617 | `0d5902bc6` | The ALM observation moves into its own reusable workflow that both callers start beside the gates                                                        | Verdict 9.7 min after the run was created, with ALM still running                                                  |
+| #619 | open        | The remove-dynamics scenarios that never ran, stale task and script references, a task-reference test, the vacuous RTC guard                             | See its description                                                                                                |
+
+Push to verdict fell from a median of 58 minutes to about 10, and the verdict now arrives in one
+cycle instead of stopping at the first failing serial step.
+
+### Differences from the outline above
+
+- **Slice 3 split the black-box lane differently.** The runner's `--standard-only` and `--cluster-only`
+  flags plus `--shard=<index>/<count>` gave three runners: two balanced shares of the standard
+  profile, and the cluster profile beside them. Every lane keeps all three API servers, because the
+  two formation-burst recipes use the secondary and tertiary ones. The shard resolver and its weights
+  live in `packages/shared-test/black-box-runner/recipe-matrix/`.
+- **`deno test --parallel` was not done.** Deno stopped being on the critical path, and the change
+  needs repeated green runs first.
+- **The ALM observation was not in the outline.** It is non-blocking, but the reusable Release Gate
+  workflow only completes when all its jobs do, so the verdict and every deployment waited for it:
+  12.5 min on a passing run and 21 min on a failing one, after the blocking lanes had finished in
+  about 9. #617 fixed it.
+
+### What the work taught
+
+- A job whose `if` is still true is never cancelled, so `always()` on the gate jobs kept superseded
+  runs alive. `!cancelled()` is the fix, and only the result job keeps `always()`.
+- A `vitest run <path>` argument is a filter. A deleted test file silently leaves a script, which is how
+  two scripts lost tests unnoticed. `task-file-references.test.ts` now guards this.
+- **The black-box run id must stay identical in every lane.** Recipes build their app, workspace and
+  group ids from it, and the group-admission limiter cuts its keys at 160 characters. Adding a lane id
+  made one recipe's principal key 188 characters, which merged every principal of a group into one
+  limiter and produced an HTTP 429. With the original run id the same key is 155 characters, so the
+  margin is 5. The limiter itself is a separate task: keys must stay unique instead of being truncated.
+- Two pull requests merged back to back make the first `main` deploy fail its stale-main guard. That is
+  the guard working, not a regression.
+- A test moved out of the place its runner looks can go dark without anyone noticing. The
+  remove-dynamics scenarios registered no Deno test for as long as they existed. When they finally
+  ran, one was broken and its assertion could never fail.
