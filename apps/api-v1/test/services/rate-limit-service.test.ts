@@ -111,3 +111,14 @@ Deno.test('readRequestClientKey prefers proxy client headers', () => {
 
     assert.equal(readRequestClientKey(req), '203.0.113.10');
 });
+
+Deno.test('readRequestClientKey bounds an untrusted forwarded value to 256 characters', () => {
+    const forwarded = `for=${'a'.repeat(1_000)}`;
+    const req = {
+        header(name: string): string | undefined {
+            return name === 'forwarded' ? forwarded : undefined;
+        }
+    };
+
+    assert.equal(readRequestClientKey(req), forwarded.slice(0, 256));
+});

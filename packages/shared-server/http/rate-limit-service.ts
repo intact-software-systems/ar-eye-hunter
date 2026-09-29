@@ -1,13 +1,10 @@
-import { createHash } from 'node:crypto';
-
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter } from '@shared/resilience/Resilience.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
 const UNKNOWN_CLIENT_KEY = 'unknown';
-const MAX_LIMITER_KEY_LENGTH = 160;
-const HASHED_KEY_READABLE_PREFIX_LENGTH = 64;
+const MAX_FORWARDED_CLIENT_KEY_LENGTH = 256;
 
 type HeaderReader = Readonly<{
     header(name: string): string | undefined;
@@ -74,18 +71,10 @@ function readForwardedHeader(
     }
 
     const value = raw.split(',')[0]?.trim();
-    return value && value.length > 0 ? value : undefined;
+    return value && value.length > 0 ? value.slice(0, MAX_FORWARDED_CLIENT_KEY_LENGTH) : undefined;
 }
 
 function toNormalisedKey(key: string): string {
     const trimmed = key.trim().toLowerCase();
-    if (trimmed.length === 0) {
-        return UNKNOWN_CLIENT_KEY;
-    }
-    if (trimmed.length <= MAX_LIMITER_KEY_LENGTH) {
-        return trimmed;
-    }
-
-    const digest = createHash('sha256').update(trimmed).digest('hex');
-    return `${trimmed.slice(0, HASHED_KEY_READABLE_PREFIX_LENGTH)}~${digest}`;
+    return trimmed.length > 0 ? trimmed : UNKNOWN_CLIENT_KEY;
 }
