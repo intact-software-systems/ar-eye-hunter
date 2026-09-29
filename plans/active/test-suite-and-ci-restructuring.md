@@ -1258,6 +1258,16 @@ cycle instead of stopping at the first failing serial step.
 
 ### Differences from the outline above
 
+- **Slice 5 was not executed, by ruling.** Its performance-evidence fixture diet (R10) assumed the
+  validators accept a smaller artifact. They do not: `STATE_WRITE_COMMANDS_PER_RUN = 700` and
+  `measuredRuns !== 9` (18 for the group-state policy) are constants in the production validators, so
+  every case needs a governed-scale artifact. A CPU profile of one pooling call (9.5 s for four
+  sources) shows no hotspot: `structuredClone` 1.8 s, and the rest spread across the durable-evidence
+  and outbox validators. The three files cost about 450 s of the tooling project's 853 s locally, and
+  in CI the `unit` lane's Vitest wall is 325 s and the `unit-tooling` lane's is 412 s. What remains
+  would be sharding both lanes and splitting the three heavy files (verdict about 7 to 5 minutes), or
+  parameterising the validators. The maintainer chose to move on to Slice 6 on 2026-09-29.
+
 - **Slice 4 ended with three suites left manual, not wired.** Trying to run them showed why they were
   dark. The Relic Hunters Playwright suite fails on a camera-mode assertion locally (24 passed, 1
   failed, 1 skipped). The AR Eye Hunter Playwright suite passes locally but three specs time out on the
