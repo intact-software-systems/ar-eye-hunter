@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALQosInputProvider, ALQosMessageContext } from '@shared/al-contracts/al-policy.ts';
 import { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionQosProvider } from '@shared/alm/volatile-budget/to-al-volatile-session-qos-provider.ts';
@@ -28,7 +29,21 @@ function createFullBudget(): ALVolatileSessionBudget {
     return budget;
 }
 
-describe('the session QoS provider over the volatile budget (D78, C13)', () => {
+const ACK = newALAckControlMessage(
+    { v: 2, msgId: 'ack-planned', senderId: 'self', ts: NOW_MS },
+    {
+        ackedMsgId: 'planned',
+        fromPeerId: 'self',
+        toPeerId: 'peer',
+        originPeerId: 'peer',
+        logicalRecipientPeerId: 'self',
+        carrier: 'rtc',
+        status: 'delivered',
+        observedAtEpochMs: NOW_MS
+    }
+);
+
+describe('the session QoS provider over the volatile budget (D78)', () => {
     it('answers the application\'s live fields while the session is under its bound', () => {
         const budget = new ALVolatileSessionBudget({ maxAdmissions: 1, maxBytes: 1_000 });
         const provider = toALVolatileSessionQosProvider(APPLICATION, budget, () => NOW_MS);
@@ -75,5 +90,21 @@ describe('the session QoS provider over the volatile budget (D78, C13)', () => {
         expect(provider.authorizationForMessage?.(MESSAGE, CONTEXT)).toEqual({
             maxDurability: 'volatile'
         });
+    });
+
+    it.each(
+        [
+            ['an inbound plan', MESSAGE, { direction: 'inbound' }],
+            ['a relay forward of another session\'s message', MESSAGE, { direction: 'outbound', fromPeerId: 'peer' }],
+            ['a control this session sends', ACK, { direction: 'outbound' }]
+        ] as const
+    )('states no overload for %s at the bound: only the session\'s own data originations read it', (_, msg, context) => {
+        const provider = toALVolatileSessionQosProvider(
+            APPLICATION,
+            createFullBudget(),
+            () => NOW_MS
+        );
+
+        expect(provider.liveForMessage?.(msg, context)).toEqual({ connectedNeighborCount: 3 });
     });
 });

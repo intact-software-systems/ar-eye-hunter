@@ -908,10 +908,11 @@ function toALOutboundDropReasonCodeFromHandlingPlan(
         case 'not-yet-in-sync':
         case 'unauthorized':
             return code;
+        case 'overloaded':
+            return 'capacity';
         case 'unmet-requirements':
         case 'ordering-rejected':
         case 'resync-required':
-        case 'overloaded':
         case undefined:
             return 'planner-drop';
     }

@@ -63,10 +63,10 @@ describe('the session volatile bound the middleware builds (C3, C13)', () => {
             nowMs: () => NOW_MS
         });
 
-        expect(bound.qosProvider.liveForMessage?.(MESSAGE, { direction: 'inbound' }))
+        expect(bound.qosProvider.liveForMessage?.(MESSAGE, { direction: 'outbound' }))
             .toEqual({ hasAlternateRoute: true });
         bound.budget.record(toAdmission('received'));
-        expect(bound.qosProvider.liveForMessage?.(MESSAGE, { direction: 'inbound' }))
+        expect(bound.qosProvider.liveForMessage?.(MESSAGE, { direction: 'outbound' }))
             .toEqual({ hasAlternateRoute: true, overloaded: true });
     });
 });
