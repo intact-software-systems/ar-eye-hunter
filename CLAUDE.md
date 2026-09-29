@@ -279,16 +279,16 @@ Branch CI (`branch-release-gate.yml` → `release-gate.yml`) runs on pull reques
 `synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`), not on bare branch pushes. The
 main-push deploy calls the same `release-gate.yml`. Its blocking lanes run in parallel:
 
-| Lane                   | Runs                                                                                                     |
-| ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| `checks`               | navigation report, changed style and coupling (PR only), `typecheck`, app builds, Deno checks            |
-| `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                 |
-| `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                           |
-| `deno`                 | `test:deno`                                                                                              |
-| `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                  |
-| `e2e-recipe-console`   | `test:rallar:recipe-console`                                                                             |
-| `black-box`            | API-v1 black-box recipes on Postgres                                                                     |
-| `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last |
+| Lane                   | Runs                                                                                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks`               | navigation report, changed style and coupling (PR only), `typecheck`, app builds, Deno checks                                                              |
+| `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
+| `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
+| `deno`                 | `test:deno`                                                                                                                                                |
+| `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
+| `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
+| `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
+| `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
 
 Together `unit`, `unit-tooling`, `deno`, `e2e-app` and `e2e-recipe-console` run exactly what
 `npm run test:ci` runs;
