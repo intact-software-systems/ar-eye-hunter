@@ -1191,6 +1191,44 @@ disrupting existing PostgreSQL data, then perform whole-branch standards/legacy
 review and update the draft PR evidence map. Keep the PR draft until the
 exact-head gate and required acceptance evidence are green.
 
+**2026-09-29 RTC cross-process and gate checkpoint.** The existing Playwright
+three-browser matrix now has an opt-in three-API-process PostgreSQL mode; its
+ordinary E4 observation topology remains unchanged. On fresh task-owned
+databases, the unchanged formation readiness failed before the correction with
+socketless forward logs. A callback-only attempt also failed because the
+generic inbound plan skipped the reserved RTC callback. The corrected plan
+dispatches that admitted callback once and suppresses only RTC's separate
+generic forwarding; the callback uses the existing live notice carrier, while
+each receiving process attempts a direct scoped local send. Two subsequent
+three-process browser runs passed with A/B/C on distinct API origins and real
+addressed Offer, Answer, and IceCandidate observations. Focused 60/60 tests,
+affected checks, independent review, and a scoped clock-injection fix review
+passed. The oversized canonical RTC key path now requires matching persisted
+authenticated source scope, canonical sender/message/target, expiry, and the
+current recipient scope; old unproven sources fail closed. This is a focused
+cross-process proof, not the unchanged E3-memory 100-cycle acceptance result.
+The browser still emits pre-existing-looking malformed-RTC warnings; heartbeat
+frames entering AL admission are a code-derived explanation, but individual
+warning payloads were not captured, so do not dismiss them as harmless.
+
+The exact prior-head Release Gate passed medium-scale, formation-large, ALM,
+and earlier stages but failed one Relic storage test. Read-only reproduction
+found its handler fixture omitted the room context required by the branch's
+intended scope guard. A fixture-only correction passed focused and full Relic
+tests and independent review; no production guard was weakened. It has not yet
+passed a new exact-head Release Gate.
+
+**Next two slices:** (1) On an isolated host, obtain query-level attribution
+and an order-balanced, governed state-write comparison against fresh equivalent
+databases before changing principal reads or adding an index. The existing
+development PostgreSQL container must remain untouched. (2) Correlate E3
+signaling, peer generation, and ICE state, then run the unchanged default,
+all-scenarios, and 100-cycle retention cases and the required same-SHA
+diagnostic cohort. After those, reconcile any remaining raw outbox producer,
+complete whole-branch standards/legacy review, and require a green exact-head
+Release Gate before marking the draft PR ready. No diagnostic artifact is a
+valid B06 primary or a substitute for its later main-stream publication.
+
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
 the existing service clock through live delivery and recipient selection. The
