@@ -207,34 +207,41 @@ function malformedAuthoritativeCommands(): readonly unknown[] {
         [],
         malformedPrincipalCommand(),
         malformedInstanceCommand(),
-        invalidSessionCommand(malformedCommandBase, malformedCommandActor, 'connectSession', {
-            generationId: { forged: true }
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'connectSession',
+            override: { generationId: { forged: true } }
         }),
-        invalidSessionCommand(
-            malformedCommandBase,
-            malformedCommandActor,
-            'connectAuthorisedWsSession',
-            {
-                transport: 'carrier-pigeon'
-            }
-        ),
-        invalidSessionCommand(malformedCommandBase, malformedCommandActor, 'heartbeatSession', {
-            lastHeartbeatAtEpochMs: -1
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'connectAuthorisedWsSession',
+            override: { transport: 'carrier-pigeon' }
         }),
-        invalidSessionCommand(malformedCommandBase, malformedCommandActor, 'disconnectSession', {
-            actorPrincipalId: 42
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'heartbeatSession',
+            override: { lastHeartbeatAtEpochMs: -1 }
         }),
-        invalidSessionCommand(
-            malformedCommandBase,
-            malformedCommandActor,
-            'disconnectAuthorisedWsSession',
-            {
-                reason: { nested: 'not-a-string' }
-            }
-        ),
-        invalidSessionCommand(malformedCommandBase, malformedCommandActor, 'expireSession', {
-            generationVersion: 0,
-            observedExpiresAtEpochMs: Number.NaN
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'disconnectSession',
+            override: { actorPrincipalId: 42 }
+        }),
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'disconnectAuthorisedWsSession',
+            override: { reason: { nested: 'not-a-string' } }
+        }),
+        invalidSessionCommand({
+            base: malformedCommandBase,
+            actor: malformedCommandActor,
+            operation: 'expireSession',
+            override: { generationVersion: 0, observedExpiresAtEpochMs: Number.NaN }
         })
     ];
 }

@@ -51,9 +51,9 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup(groups, 'room-one', 'alice', ['bob'], ['carol']);
-        await seedGroup(groups, 'room-two', 'alice', ['dave'], []);
-        await seedGroup(groups, 'unrelated', 'mallory', ['erin'], []);
+        await seedGroup({ repository: groups, groupId: 'room-one', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: ['carol'] });
+        await seedGroup({ repository: groups, groupId: 'room-two', ownerPrincipalId: 'alice', activePrincipalIds: ['dave'], leftPrincipalIds: [] });
+        await seedGroup({ repository: groups, groupId: 'unrelated', ownerPrincipalId: 'mallory', activePrincipalIds: ['erin'], leftPrincipalIds: [] });
         for (const principalId of ['alice', 'bob', 'carol', 'dave', 'erin', 'mallory']) {
             await seedClient(clients, principalId);
         }
@@ -90,7 +90,7 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup(groups, 'joined-room', 'mallory', ['bob'], []);
+        await seedGroup({ repository: groups, groupId: 'joined-room', ownerPrincipalId: 'mallory', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
         for (const principalId of ['alice', 'bob', 'mallory']) {
             await seedClient(clients, principalId);
         }
@@ -99,7 +99,7 @@ describe('client mutation principal audience read', () => {
             if (!previous) {
                 throw new Error('Expected group before concurrent membership write');
             }
-            await groups.putMember(member('joined-room', 'alice', 'member', 'active'));
+            await groups.putMember(member({ groupId: 'joined-room', principalId: 'alice', role: 'member', status: 'active' }));
             await groups.putGroup({
                 ...previous,
                 activeMemberCount: 3,
@@ -132,13 +132,13 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup(groups, 'corrupt-room', 'alice', ['bob'], []);
+        await seedGroup({ repository: groups, groupId: 'corrupt-room', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
         await seedClient(clients, 'alice');
         const actorKey = groupStateMemberStorageKey({ ...TEST_SCOPE, groupId: 'corrupt-room', principalId: 'alice' });
         await runtime.upsert(
             'group-state:members',
             actorKey,
-            JSON.stringify(member('corrupt-room', 'mallory', 'owner', 'active')),
+            JSON.stringify(member({ groupId: 'corrupt-room', principalId: 'mallory', role: 'owner', status: 'active' })),
             Number.MAX_SAFE_INTEGER
         );
 
@@ -158,7 +158,7 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup(groups, 'corrupt-client-room', 'alice', ['bob'], []);
+        await seedGroup({ repository: groups, groupId: 'corrupt-client-room', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
         await seedClient(clients, 'alice');
         await seedClient(clients, 'bob');
         const bobRef = { ...TEST_SCOPE, principalId: 'bob' };
@@ -187,13 +187,15 @@ describe('client mutation principal audience read', () => {
     });
 });
 
-async function seedGroup(
-    repository: ReturnType<typeof createTestGroupStateRepository>,
-    groupId: string,
-    ownerPrincipalId: string,
-    activePrincipalIds: readonly string[],
-    leftPrincipalIds: readonly string[]
-): Promise<void> {
+interface SeedGroupInput {
+    readonly repository: ReturnType<typeof createTestGroupStateRepository>;
+    readonly groupId: string;
+    readonly ownerPrincipalId: string;
+    readonly activePrincipalIds: readonly string[];
+    readonly leftPrincipalIds: readonly string[];
+}
+
+async function seedGroup({ repository, groupId, ownerPrincipalId, activePrincipalIds, leftPrincipalIds }: SeedGroupInput): Promise<void> {
     const group: Group = createTestGroup({
         ...TEST_SCOPE,
         groupId,
@@ -205,21 +207,23 @@ async function seedGroup(
     await repository.putGroup(group);
     for (const principalId of [ownerPrincipalId, ...activePrincipalIds, ...leftPrincipalIds]) {
         const active = principalId === ownerPrincipalId || activePrincipalIds.includes(principalId);
-        await repository.putMember(member(
+        await repository.putMember(member({
             groupId,
             principalId,
-            principalId === ownerPrincipalId ? 'owner' : 'member',
-            active ? 'active' : 'left'
-        ));
+            role: principalId === ownerPrincipalId ? 'owner' : 'member',
+            status: active ? 'active' : 'left'
+        }));
     }
 }
 
-function member(
-    groupId: string,
-    principalId: string,
-    role: GroupMember['role'],
-    status: 'active' | 'left'
-): GroupMember {
+interface MemberInput {
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly role: GroupMember['role'];
+    readonly status: 'active' | 'left';
+}
+
+function member({ groupId, principalId, role, status }: MemberInput): GroupMember {
     const common = {
         ...TEST_SCOPE,
         groupId,
