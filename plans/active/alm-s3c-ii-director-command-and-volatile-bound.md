@@ -11780,6 +11780,20 @@ director: messages.rtc.onMessage(intent | sync-request type id) + messages.ws.on
 - **R-S3c-ii-10 (final review, 2026-09-29).** Source comments state a non-obvious invariant, an external constraint or
   a deliberate tradeoff, and nothing else. They name no plan, choice or ruling id, because the plan file is deleted
   before the merge; a roadmap decision id may stay where it names the reason for an invariant.
+- **R-S3c-ii-12 (hosted read, 2026-09-29).** The first hosted run of the regenerated manifest 18 failed in its reload
+  block because the control server fell behind the agents: on every incoming diagnostic it re-segmented the full
+  recipes, and the `capacity` filler had doubled the manifest. The filler shrinks to 12 000 bytes against a limit of
+  36 000, and the control server recomputes dispatchable commands only on register, result, heartbeat and barrier
+  events and keeps each root's reload segments. A timeout is therefore noticed at the next heartbeat, at most 10 s
+  late. Cost if wrong: a failure is reported later, never a success.
+- **R-S3c-ii-14 (hosted read, 2026-09-29).** Manifest 18 withholds `delivery-reload` on `rtc` and
+  `rtc-with-ws-fallback`. With the control server no longer lagging, the RTC redial gap of issue #594 shows on every
+  hosted run: recovery after a reload takes the 30 s establishment timeout, longer than the scenario's 27 s wait. A
+  redial of the kept peer was tried and reverted, because a peer that returns under the same session id still receives
+  the old offer late, and its answer then lands on the new connection. The complete fix is an offer and answer
+  correlation on the wire, which is the maintainer's decision. `deadline-expiry` held its message back with a fault
+  counted in frames, which a fast agent used up inside the lifetime; its faults now hold until released. Cost if
+  wrong: hosted runs do not cover a reload over RTC until issue #594 is fixed; the local lane still does.
 
 ## Self-review
 
