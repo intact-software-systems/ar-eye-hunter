@@ -11758,6 +11758,13 @@ director: messages.rtc.onMessage(intent | sync-request type id) + messages.ws.on
   names a far deadline, must not keep this session's own sends refused `capacity`; the envelope is delivered at once
   and only small rows stay. Cost if wrong: long-lived inbound messages are undercounted, and they are never refused
   anyway (C6).
+- **R-S3c-ii-7 (Task 6 review, 2026-09-29).** The session's volatile bound is shared with the platform's own traffic.
+  State sync the WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`,
+  `client-state.event`) is a data admission the session receives (C4), so it counts, for at most 30 s (R-S3c-ii-6). A
+  lane agent that leaves and rejoins a room holds about 26 KB of it. At the production limits that is under one per
+  cent, so it is a stated limit and the code stays. Exempting platform topics from the application's bound is the
+  maintainer's decision; the PR body names it. Cost if wrong: an application close to its bound is refused slightly
+  earlier than its own traffic alone would cause.
 
 ## Self-review
 
