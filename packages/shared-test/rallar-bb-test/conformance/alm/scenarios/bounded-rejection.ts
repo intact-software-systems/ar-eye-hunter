@@ -32,6 +32,7 @@ export const boundedRejection: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toBoundedRejectionSenderCommands,
     toRecipientCommands: toBoundedRejectionReceiverCommands
 };

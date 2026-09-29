@@ -1,9 +1,12 @@
 import type { ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
+import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import {
     AL_DELIVERY_STATES,
     type ALDeliveryAdmissionVerdict,
     type ALDeliveryAttemptOutcome,
     type ALDeliveryCarrier,
+    type ALDeliveryCarrierFallback,
+    type ALDeliveryFallbackReason,
     type ALDeliveryRelayRejection,
     type ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -13,6 +16,8 @@ import type {
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
+import { decodeAlmDeliveryFailure, decodeAlmRelayRejection } from './decode-alm-delivery-failure.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
     RallarBlackBoxTestMessagesControlResultValue,
     RallarBlackBoxTestMessagesObserveResultValue,
@@ -64,6 +69,13 @@ const ALM_ATTEMPT_OUTCOMES: Readonly<Record<ALDeliveryAttemptOutcome, true>> = {
     superseded: true,
     unroutable: true,
     refused: true
+};
+
+/** Keyed by every fallback reason, so a new reason fails to compile here instead of decoding as an invalid result. */
+const ALM_FALLBACK_REASONS: Readonly<Record<ALDeliveryFallbackReason, true>> = {
+    'not-ready': true,
+    'not-yet-in-sync-exhausted': true,
+    'receipt-exhausted': true
 };
 
 export function decodeAlmMessagesSendResultValue(
@@ -135,6 +147,8 @@ export function decodeAlmDeliveryResultValue(
         enqueued: requireAlmBooleanField(record, path, 'enqueued'),
         receiptMode: readAlmReceiptModeField(record, path),
         relayRejection: readAlmRelayRejectionField(record, path),
+        failure: readAlmFailureField(record, path),
+        carrierFallback: readAlmCarrierFallbackField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
         expectedRecipientPeerIds: requireAlmStringListField(
@@ -180,12 +194,6 @@ export function decodeAlmStorageCountersResultValue(
         workNonProbeCount: work - workProbeCount,
         reset
     };
-}
-
-export function decodeAlmRuntimeRecord(value: unknown): RallarBlackBoxTestRecord {
-    return typeof value === 'object' && value !== null
-        ? value as RallarBlackBoxTestRecord
-        : {};
 }
 
 function requireAlmCountsByKind(
@@ -250,25 +258,61 @@ function readAlmReceiptModeField(record: RallarBlackBoxTestRecord, path: string)
     return record.receiptMode as ALReceiptMode | undefined;
 }
 
-/** Absent unless a hop refused the message; a trusted server relay is never named, so an id on one is refused. */
+/** Absent unless a hop refused the message. */
 function readAlmRelayRejectionField(
     record: RallarBlackBoxTestRecord,
     path: string
 ): ALDeliveryRelayRejection | undefined {
-    const value = record.relayRejection;
+    if (record.relayRejection === undefined) {
+        return undefined;
+    }
+    const decoded = decodeAlmRelayRejection(record.relayRejection, 'relayRejection');
+    if (decoded.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
+    }
+    return decoded.right;
+}
+
+/** Absent until the send ended `rejected`, `failed` or `expired`. */
+function readAlmFailureField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryFailure | undefined {
+    if (record.failure === undefined) {
+        return undefined;
+    }
+    const decoded = decodeAlmDeliveryFailure(record.failure);
+    if (decoded.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
+    }
+    return decoded.right;
+}
+
+/** Absent unless the strategy handed the admitted message to its second carrier (D56). */
+function readAlmCarrierFallbackField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryCarrierFallback | undefined {
+    const value = record.carrierFallback;
     if (value === undefined) {
         return undefined;
     }
-    const rejection = decodeAlmRuntimeRecord(value);
+    const fallback = decodeAlmRuntimeRecord(value);
+    const legs = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrierLeg;
+    const from = legs.find((carrier) => carrier === fallback.from);
+    const to = legs.find((carrier) => carrier === fallback.to);
+    const { reason, atMs, detail } = fallback;
     if (
-        rejection.reason === 'resync-required' && rejection.relay === 'trusted-server' && rejection.peerId === undefined
+        from === undefined || to === undefined || !isAlmFallbackReason(reason) ||
+        typeof atMs !== 'number' || typeof detail !== 'string'
     ) {
-        return { relay: 'trusted-server', reason: 'resync-required' };
+        throw toAlmInvalidRuntimeResultError(`${path}.carrierFallback`);
     }
-    if (rejection.reason === 'resync-required' && rejection.relay === 'peer' && typeof rejection.peerId === 'string') {
-        return { relay: 'peer', peerId: rejection.peerId, reason: 'resync-required' };
-    }
-    throw toAlmInvalidRuntimeResultError(`${path}.relayRejection`);
+    return { from, to, reason, atMs, detail };
+}
+
+function isAlmFallbackReason(value: unknown): value is ALDeliveryFallbackReason {
+    return typeof value === 'string' && Object.hasOwn(ALM_FALLBACK_REASONS, value);
 }
 
 function requireAlmAttemptOutcomesField(

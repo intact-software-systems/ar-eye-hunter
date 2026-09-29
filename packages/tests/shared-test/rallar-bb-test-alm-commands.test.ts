@@ -221,7 +221,7 @@ describe('ALM recipe commands', () => {
         }
     });
 
-    it('rejects the supersedence and unicast fields F1 does not carry', () => {
+    it('rejects the supersedence key and a literal peer id, which no recipe knows when it is written', () => {
         for (const field of ['key', 'toPeerId']) {
             const schemaResult = validateJsonSchema(
                 RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
@@ -250,6 +250,53 @@ describe('ALM recipe commands', () => {
             if (!controlResult.ok) {
                 expect(controlResult.error).toBe(`messages.send has unsupported field: ${field}.`);
             }
+        }
+    });
+
+    it('accepts a lane role on messages.send, and refuses an unknown role and a role beside a replay (C11)', () => {
+        const send = {
+            kind: 'messages.send',
+            commandId: 'send-to-peer',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 }
+        };
+        for (const toPeer of ['server', 'receiver']) {
+            const schemaResult = validateJsonSchema(
+                RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+                recipeWithCommand(`send-${toPeer}`, { ...send, toPeer })
+            );
+            expect(schemaResult.ok, toPeer).toBe(true);
+            expect(validateRallarBlackBoxTestCommand({ ...send, toPeer }).ok, toPeer).toBe(true);
+        }
+
+        const unknownRole = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-recipient-b', { ...send, toPeer: 'recipient-b' })
+        );
+        expect(unknownRole.ok).toBe(false);
+        if (!unknownRole.ok) {
+            expect(formatJsonSchemaValidationErrors(unknownRole.errors))
+                .toContain('toPeer: Expected one of "server", "receiver".');
+        }
+        const refusedRole = validateRallarBlackBoxTestCommand({ ...send, toPeer: 'recipient-b' });
+        expect(refusedRole.ok).toBe(false);
+        if (!refusedRole.ok) {
+            expect(refusedRole.messages).toEqual([
+                'messages.send.toPeer must be one of server, receiver.'
+            ]);
+        }
+        const replay = validateRallarBlackBoxTestCommand({
+            kind: 'messages.send',
+            commandId: 'send-replay-to-peer',
+            replayOnCarrier: { handleId: 'h-1', carrier: 'ws' },
+            toPeer: 'receiver'
+        });
+        expect(replay.ok).toBe(false);
+        if (!replay.ok) {
+            expect(replay.messages).toEqual([
+                'messages.send.toPeer is not allowed on a replay; a replay names only connection and replayOnCarrier.'
+            ]);
         }
     });
 
@@ -503,6 +550,58 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toEqual(
             expect.arrayContaining(['rallar.bb.messages.sent', 'rallar.bb.messages.observed'])
         );
+    });
+
+    it('reads a trusted server\'s refusal before admission from a delivery observation (S3c-i C3)', async () => {
+        const rejection = { relay: 'trusted-server', reason: 'unauthorized' } as const;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({
+                    ...DELIVERY_OBSERVATION,
+                    state: 'rejected',
+                    relayRejection: rejection
+                })
+            }
+        });
+
+        const observed = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-server-refusal',
+            handleId: 'handle-1',
+            state: ['rejected'],
+            timeoutMs: 2_500
+        });
+
+        expect(observed.ok, observed.error?.message).toBe(true);
+        expect(observed.value).toMatchObject({ state: 'rejected', relayRejection: rejection });
+    });
+
+    it('reads the hand-over to the fallback carrier from a delivery observation (D56)', async () => {
+        const carrierFallback = {
+            from: 'rtc',
+            to: 'ws',
+            reason: 'not-ready',
+            atMs: 5,
+            detail: 'three not-ready'
+        } as const;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                observeDelivery: async () => ({ ...DELIVERY_OBSERVATION, carrierFallback })
+            }
+        });
+
+        const observed = await runtime.execute({
+            kind: 'messages.observe',
+            commandId: 'alm-observe-hand-over',
+            handleId: 'handle-1',
+            state: ['acknowledged'],
+            timeoutMs: 2_500
+        });
+
+        expect(observed.ok, observed.error?.message).toBe(true);
+        expect(observed.value).toMatchObject({ carrierFallback });
     });
 
     it('reads a replay send as the replayed handle and its carrier verdict, and refuses an unknown verdict', async () => {
@@ -900,7 +999,11 @@ describe('ALM browser adapter execution', () => {
         { field: 'attemptCarriers', value: ['ws'] },
         { field: 'relayRejection', value: { relay: 'trusted-server' } },
         { field: 'relayRejection', value: { relay: 'trusted-server', peerId: 'server-1', reason: 'resync-required' } },
-        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } }
+        { field: 'relayRejection', value: { relay: 'peer', reason: 'resync-required' } },
+        { field: 'relayRejection', value: { relay: 'peer', peerId: 'relay-session', reason: 'unauthorized' } },
+        { field: 'carrierFallback', value: { from: 'rtc', to: 'ws', reason: 'deadline', atMs: 5, detail: 'x' } },
+        { field: 'carrierFallback', value: { from: 'server', to: 'ws', reason: 'not-ready', atMs: 5, detail: 'x' } },
+        { field: 'carrierFallback', value: { from: 'rtc', to: 'ws', reason: 'not-ready' } }
     ])('fails an observation whose page-runtime result carries an unusable $field', async ({ field, value }) => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -967,6 +1070,12 @@ describe('ALM browser adapter execution', () => {
                 commandId: 'alm-receipts-replay-unavailable',
                 message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replayUnavailable}: no connected session.`,
                 code: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE'
+            },
+            {
+                commandId: 'alm-receipts-peer-unresolved',
+                message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved}: messages.send.toPeer ` +
+                    'receiver names no peer: the room holds 2 other live sessions, not exactly one.',
+                code: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED'
             },
             {
                 commandId: 'alm-receipts-bad-input',

@@ -1,0 +1,25 @@
+{
+  "description": "Estimated seconds per recipe-matrix entry, read only to balance --shard splits. Measured from CI run 36425412819 (Postgres, three servers). A stale or missing weight changes balance, never which recipes run.",
+  "defaultSeconds": 5,
+  "secondsByEntryId": {
+    "api-v1-group-formation-burst-medium": 87,
+    "api-v1-group-formation-burst-small": 84,
+    "api-v1-state-write-convergence": 78,
+    "api-v1-match-preset": 52,
+    "api-v1-activation-clock-decay": 50,
+    "api-v1-group-presence-lease-lifecycle": 40,
+    "api-v1-group-formation-criterion": 32,
+    "api-v1-cross-principal-client-state-isolation": 24,
+    "api-v1-debounced-replanning": 23,
+    "api-v1-state-topology-churn": 19,
+    "api-v1-group-data-policy": 18,
+    "api-v1-group-admission-windows": 18,
+    "api-v1-group-join-admission": 17,
+    "api-v1-reconfiguration-fails": 13,
+    "api-v1-cross-application-ws-isolation": 12,
+    "api-v1-idempotency-contract": 12,
+    "api-v1-group-admission-approval": 12,
+    "api-v1-group-activation-partial-coverage": 10,
+    "api-v1-group-manager-succession": 10
+  }
+}

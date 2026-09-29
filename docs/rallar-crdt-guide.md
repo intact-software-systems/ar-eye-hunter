@@ -20,7 +20,7 @@ transaction. Only `compute` and `validate` are pure, and they produce computed
 persistence data, not a plan. The service `write(transaction, computed)` applies
 it: service write receives the transaction and never opens or retries one. It
 writes CRDT state, receipt, result, and final `APP_OUTBOX`/`WS_OUTBOX` entries
-directly through `ResourceInboxRepository` in the same transaction. There is no
+directly through `PSqlResourceInboxRepository` in the same transaction. There is no
 intermediate mutation outbox.
 
 Resource inbox allows 20 total processing attempts, staged from 1, 2, 4, 8,
@@ -76,13 +76,15 @@ Do not use CRDT documents for:
 ## Browser API
 
 ```ts
+import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
+
+const roomSession = await rallar.rooms.enter('lobby');
+const roomRef = toCanonicalGroupRef(roomSession.roomRef);
+
 const doc = await rallar.crdt.open('room-checklist', {
     documentType: 'checklist',
-    documentId: room.group.groupId,
-    scope: {
-        kind: 'room',
-        roomRef: room.group
-    },
+    documentId: roomRef.groupId,
+    scope: { kind: 'room', roomRef },
     transport: 'ws-then-rtc'
 });
 
@@ -102,6 +104,9 @@ await doc.applyLocal({
 });
 ```
 
+The server accepts only the three `GroupRef` fields in `scope.roomRef`, so pass
+a canonical ref, never a snapshot's `group`.
+
 `applyLocal(...)` returns an update envelope. The local document reads the edit
 immediately. The update remains pending until the server durable append path
 accepts it, or until the document stays local-only.
@@ -116,7 +121,8 @@ Room-scoped documents support user-selected live transport strategies:
 - `ws-then-rtc`: send over WS and RTC
 - `rtc-with-ws-fallback`: try RTC first, then WS if RTC is unavailable
 
-WS is the safest default. RTC can reduce live latency, but it is not a
+`open()` defaults to `local-only`; state a strategy to sync. WS is the safest
+choice. RTC can reduce live latency, but it is not a
 durability boundary. Late join, reconnect with no peer online, and pending
 clearance require the durable server append log.
 
@@ -126,13 +132,15 @@ clearance require the durable server append log.
 server WS topic router:
 
 - `room.crdt` for room documents
-- `app.crdt` is defined so unsupported principal/custom live fanout is rejected
+- `app.crdt` for app and principal documents, which API-v1 enables
 - `rallar.crdt.update.v1`
 - `rallar.crdt.sync-request.v1`
 - `rallar.crdt.sync-response.v1`
-- `rallar.crdt.append-response.v1`
 - `rallar.crdt.catch-up-request.v1`
 - `rallar.crdt.catch-up-response.v1`
+
+The committed mutation emits `rallar.crdt.append-response.v1` as final outbox
+work; the topic installer does not define it.
 
 The bridge validates document refs, operation paths, payload shape, payload
 size, room target `groupRef`, and document type/version policy. Room messages
@@ -192,12 +200,14 @@ CRDT hardening controls now include:
   durable/peer catch-up behavior
 - opt-in strict path ownership validation for registers, maps, OR-sets,
   ordered sequences, counters, and numeric min/max paths
-- repository admin listing, debug bundle export, backup bundle export/restore,
-  integrity verification, projection rebuild hooks, non-destructive compaction,
-  archive, destroy, and quarantine lifecycle
+- admin listing, debug bundle export, backup bundle export, integrity
+  verification, projection rebuild, non-destructive compaction, erase, and the
+  archive, destroy, and quarantine lifecycle; backup restore exists only in the
+  in-memory repository
 - append rejection taxonomy for validation, authorization, quota, feature,
   rate-limit, lifecycle, and storage failures
-- metrics sink events for append latency and append rejections
+- metrics sink events for browser apply, replay, pending, and sync size; the
+  in-memory repository also records append latency and append rejections
 - repository audit sink events for append, reject, export, backup, restore,
   archive, quarantine, destroy, rebuild, and compact
 - local corruption quarantine during browser hydration
@@ -222,8 +232,8 @@ Implemented now:
 - local IndexedDB persistence through internal `rallar.data` stores
 - same-origin tab sync
 - room WS/RTC live sync
-- principal durable-append fanout when the server bridge is configured with a
-  durable log and principal session resolver
+- principal durable-append fanout to the principal's live sessions, through the
+  WS target resolver's `findClientSnapshotByRef`
 - server topic validation/authorization/fanout
 - durable append log contracts and Postgres/PGlite repository
 - durable WS and HTTP catch-up from snapshot plus append-log pages
@@ -234,9 +244,10 @@ Implemented now:
 - counter add/increment/decrement helpers and numeric min/max operations
 - graph CRDT authoring helpers for nodes, edges, and node/edge properties
 - actor-owned undo/redo helpers
-- admin debug/backup/integrity/rebuild/compact/archive/quarantine/destroy APIs
+- admin list, integrity, debug-export, and backup-export reads, plus
+  rebuild-projection, compact, lifecycle, and erase mutations through AppInbox
 - Black Box CRDT Health tab for operator inspection
-- backup restore preserving append sequences
+- backup restore preserving append sequences, in the in-memory repository only
 - local corruption quarantine during hydration
 - AES-GCM encrypted update payloads and snapshot bodies for authorized clients
   opened with an encryption keyring

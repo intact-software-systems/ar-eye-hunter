@@ -22,6 +22,7 @@ import type {
     ALDeliveryReceiptEvidence,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -111,6 +112,8 @@ export interface BlackBoxRallarConfig {
     readonly expectedSessionId?: string;
     readonly leaveRoomOnClose?: boolean;
     readonly logoutOnClose?: boolean;
+    /** Harness-only: lowers the volatile bound of the session this connect initialises. */
+    readonly almVolatileLimits?: ALVolatileSessionLimits;
 }
 
 export interface BlackBoxRallarConnectionConfig {
@@ -295,6 +298,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
     readonly handleId: string;
+    /** Absent, the send addresses its scope. */
+    readonly toPeer: 'server' | 'receiver' | undefined;
     /** Absent, the product stamps the sender's own room version. */
     readonly minSnapshotVersion: BlackBoxRallarMessageSnapshotFloor | undefined;
     /** Absent, the product normalizes the QoS the delivery options imply. */
@@ -359,7 +364,7 @@ export interface BlackBoxRallarMessageSendDiagnostics {
 }
 
 export interface BlackBoxRallarDeliveryObservation
-    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection'> {
+    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection' | 'failure' | 'carrierFallback'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
@@ -582,7 +587,6 @@ export interface BlackBoxRallarDirectorStatusInput extends BlackBoxRallarDirecto
 
 export interface BlackBoxRallarDirectorRelayStartInput extends BlackBoxRallarDirectorRoomInput {
     readonly handle: string;
-    readonly laneId?: string;
     readonly topicId?: string;
     readonly intentTypeId: string;
     readonly outputTypeId: string;

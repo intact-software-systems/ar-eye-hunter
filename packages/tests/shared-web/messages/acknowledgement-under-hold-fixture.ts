@@ -42,6 +42,7 @@ import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-t
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
@@ -52,6 +53,9 @@ export const ACK_UNDER_HOLD_MESSAGE_TTL_MS = 30_000;
 
 /** A deadline that ends inside that retry schedule. */
 const SHORT_MESSAGE_TTL_MS = 3_000;
+
+/** The peer id the WS hold sender's server answers as. */
+const WS_SERVER_PEER_ID = 'server';
 
 /** One sender page's carrier as the lane composes it, over memory stores, with a scripted hold. */
 export interface HoldSender {
@@ -266,6 +270,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
         qosProvider: undefined,
+        volatileBudget: createDefaultVolatileSessionBudget(),
         outboundSettlements: (event) => runtime.registry.record(event),
         webRtcConnectionService: service,
         qboxEngine: runtime.engine
@@ -275,7 +280,10 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId('self')),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId('self'),
+            createDefaultVolatileSessionBudget()
+        ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -330,8 +338,8 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
             ttlMs
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' },
-        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The scenario reads
-        // its receipt row back from the carrier's durable store, so the send opts into `local-outbox`.
+        // A roomless WS unicast refuses `receiver` (D42): the server's own ACK counts as the hop's (R-S3a-4). The
+        // scenario reads its receipt row back from the carrier's durable store, so the send opts into `local-outbox`.
         qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
     };
 }
@@ -346,8 +354,13 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         qboxEngine: runtime.engine,
         socket: new JsonWebSocketClient('ws://test', runtime.faults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        serverPeerId: WS_SERVER_PEER_ID,
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        ),
+        volatileBudget: createDefaultVolatileSessionBudget(),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -444,14 +457,16 @@ function readSettledCall<TFirst, TValue>(
     return index < 0 ? undefined : settledResults[index];
 }
 
+/** The hop's ACK: the RTC receiver's own, and on WS the server's, the one hop a WS origin has (R-S3a-4). */
 export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 'selfPeerId' | 'carrier'>): ALMessage {
+    const hopPeerId = sender.carrier === 'ws' ? WS_SERVER_PEER_ID : 'receiver';
     return newALAckControlMessage(
-        { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: 'receiver', ts: Date.now() },
+        { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: hopPeerId, ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
             originPeerId: sender.selfPeerId,
-            logicalRecipientPeerId: 'receiver',
-            fromPeerId: 'receiver',
+            logicalRecipientPeerId: hopPeerId,
+            fromPeerId: hopPeerId,
             toPeerId: sender.selfPeerId,
             status: 'accepted',
             observedAtEpochMs: Date.now(),

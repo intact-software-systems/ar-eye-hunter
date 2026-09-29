@@ -24,6 +24,7 @@ export const orderingResync: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toOrderingResyncSenderCommands,
     toRecipientCommands: toOrderingResyncReceiverCommands
 };

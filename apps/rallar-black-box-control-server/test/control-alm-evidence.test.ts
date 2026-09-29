@@ -84,24 +84,23 @@ for (const scheduled of [false, true]) {
         assertEquals(pair.runId, runId);
         assertEquals(pair.sender, { agentId: agents[0], commandId: sender.commandId });
         assertEquals(pair.receiver, { agentId: agents[1], commandId: receiver.commandId });
-        assertEquals(sender.command.timeoutMs, 300_000);
-        assertEquals(receiver.command.timeoutMs, 300_000);
-        assertEquals(pair.checkpoints.length, 3, 'one full reload specimen per supported carrier');
+        assertEquals(sender.command.timeoutMs, 1_800_000);
+        assertEquals(receiver.command.timeoutMs, 1_800_000);
+        assertEquals(pair.checkpoints.length, 1, 'hosted manifest 18 withholds the reload over rtc and rtc-with-ws-fallback (issue #594)');
         assertEquals(sender.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(receiver.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(senderPrefix.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].senderPrefixEnd);
         assertEquals(receiverReady.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].receiverReadyEnd);
 
         let prefixStart = 0;
-        const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
         const commands: RallarBlackBoxTestRecipe['commands'] = sender.command.recipe.commands;
-        for (const [index, checkpoint] of pair.checkpoints.entries()) {
+        for (const checkpoint of pair.checkpoints) {
             const prefixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderPrefixEnd);
             const reloadIndex = commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const prefix = commands.slice(prefixStart, prefixEnd + 1);
             const originals = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
-            assertEquals(originals.map((command) => command.carrier), [carriers[index]], 'reload precedes ordinary scenario work');
+            assertEquals(originals.map((command) => command.carrier), ['ws'], 'reload precedes ordinary scenario work');
             assertEquals(reloadIndex, prefixEnd + 1);
             assertEquals(commands[reloadIndex]?.kind, 'agent.reload');
             const suffix = commands.slice(reloadIndex + 1, suffixEnd + 1);
@@ -117,14 +116,14 @@ for (const scheduled of [false, true]) {
             prefixStart = suffixEnd + 1;
         }
         assertEquals(service.takeDispatchableCommands(runId, agents[0]), [], 'no reload while the initial prefix is incomplete');
-        now = queuedAt + 299_999;
+        now = queuedAt + 1_799_999;
         service.takeDispatchableCommands(runId, agents[0]);
         assertEquals(
             service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId),
             undefined,
             'the actual root remains pending within its original execution budget'
         );
-        now = queuedAt + 300_000;
+        now = queuedAt + 1_800_000;
         service.takeDispatchableCommands(runId, agents[0]);
         const expired = service.snapshotRun(runId)!.results.find((result) => result.commandId === sender.commandId);
         assertEquals(expired?.result?.error?.code, 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT', 'dispatch does not reset or extend the original queued budget');
@@ -406,6 +405,8 @@ function toReceiptsFabricatedValue(
         attemptOutcomes: ['sent'],
         attemptCarriers: [send?.carrier === 'ws' ? 'ws' : 'rtc'],
         relayRejection: undefined,
+        carrierFallback: undefined,
+        failure: undefined,
         reason: undefined
     };
 }

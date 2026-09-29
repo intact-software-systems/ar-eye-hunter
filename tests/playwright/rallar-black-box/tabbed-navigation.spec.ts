@@ -366,7 +366,8 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
                 wsBaseUrl: 'ws://localhost:8080',
                 endpoints: {
                     createWs: '/api/ws/{auth.sessionId}'
-                }
+                },
+                serverPeerId: 'server'
             })
         });
     });
@@ -609,7 +610,8 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
                 wsBaseUrl: 'ws://localhost:8080',
                 endpoints: {
                     createWs: '/api/ws/:id'
-                }
+                },
+                serverPeerId: 'server'
             })
         });
     });
@@ -1189,6 +1191,7 @@ test('sends a Rallar Server REST request from the server tab', async ({ page }) 
                 endpoints: {
                     createWs: '/api/auth/ws-ticket'
                 },
+                serverPeerId: 'server',
                 groupId: 'server-group',
                 clientId: 'server-client',
                 sessionId: 'server-session'
@@ -1259,7 +1262,8 @@ test('runs a Rallar Server REST collection with assertions and extraction', asyn
             headers: { 'x-config-version': '7' },
             body: JSON.stringify({
                 apiBaseUrl: 'http://localhost:8080',
-                wsBaseUrl: 'ws://localhost:8080'
+                wsBaseUrl: 'ws://localhost:8080',
+                serverPeerId: 'server'
             })
         });
     });

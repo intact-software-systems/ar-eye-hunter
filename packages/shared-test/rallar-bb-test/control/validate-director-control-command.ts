@@ -23,7 +23,6 @@ export type DirectorControlCommandKind =
 
 const RELAY_STRING_FIELDS = [
     'handle',
-    'laneId',
     'topicId',
     'intentTypeId',
     'outputTypeId',

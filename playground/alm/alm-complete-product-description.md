@@ -6,7 +6,8 @@ Reviewed source: `a28e61b61` (`main` after PR #521; markers refreshed 2026-09-08
 written against `02d65ac4a`)
 
 Related documents: [current implementation audit](./alm-static-audit.md),
-[delivery roadmap](./alm-improvement-plan.md), and
+[delivery roadmap](./alm-improvement-plan.md),
+[persistence and performance QoS plan](./alm-qos-product-plan.md), and
 [PR #521 code assessment](./pr-521-code-assessment.md).
 
 Status markers in this document describe the current implementation:
@@ -113,10 +114,11 @@ A lost receipt does not establish non-delivery. Cancellation stops remaining
 owned attempts; it does not retract remote delivery or undo application work.
 An expired or cancelled room notification can still have confirmed recipients.
 
-**PLANNED — S1, result stages:** Transport settlement is truthful since the
-first release, but the public send result is still an admission snapshot with
-statuses such as `enqueued` and `sent-immediate`, and no observable delivery
-lifecycle or cancellation exists. S1 replaces it with the delivery handle.
+**CURRENT — S1, result stages:** `send()` returns a delivery handle before
+admission resolves. Its states are `submitted`, `rejected`, `pending-authority`,
+`accepted`, `queued`, `transport-accepted`, `acknowledged`, `expired`,
+`superseded`, `failed`, `cancelled` and `unobservable`. `cancel()` stops the
+remaining owned attempts. The admission-snapshot send result is deleted (D14).
 
 ## Envelope and compatibility
 
@@ -197,7 +199,14 @@ audience (S2c-ii).
 One logical recipient. A transport may route through an authorized next hop,
 but only the addressed recipient delivers locally.
 
-**CURRENT** for basic RTC and WS routing.
+**CURRENT** for basic RTC and WS routing. **CURRENT — S3c-i, addressed WS sends:** a unicast may name its room; the
+room's authority admits it and the room's router delivers it, and a `receiver` unicast's receipt is its addressee's
+own ACK, aggregated by the server over one member (D53, D71). A client addresses the server itself with a unicast to
+the server peer id `/api/config` names; the server's own ACK is that receipt, meaning the server admitted the
+message, not that the application applied it (D76). **CURRENT — S3c-ii, addressed sends on every carrier:** a typed
+send names one peer with `{ peerId }`; on RTC the unicast travels directly to its addressee and is never relayed,
+and on `rtc-with-ws-fallback` it is handed to WS inside the deadline (D75). A send to the server peer id travels WS
+only. `ws-then-rtc` does not take a peer (V1).
 
 ### Multicast
 
@@ -326,10 +335,16 @@ the default set plus `receiver`), and its composition root installs it under the
 application's QoS provider, whose own capabilities override the carrier's. The
 `unsupported` ack refusal reads the carrier's own declaration.
 
-**PLANNED — S3c and V1, live providers:** Browser composition installs no
-transport-aware authorization or live-congestion provider. S3c's volatile bound
-is the first `overloaded` producer (D59); the other budgets and fairness are
-V1's.
+**PARTIAL — S3c-ii, the first live provider:** the browser installs a
+per-session QoS provider that reports `overloaded` while the session's volatile
+budget is at or over a limit (D78), for the session's own outbound data
+originations only: a control, a receipt, an acknowledgement, a repair, a relay
+forward and an inbound plan never read it, so a session at its bound still
+acknowledges, forwards and delivers for other sessions (R-S3c-ii-8). At the
+bound every send, best-effort or not, on either carrier, reads `capacity`: it
+ends `rejected` with `{ kind: 'refused', reason: 'capacity' }` and is never
+handed to a fallback. Transport-aware authorization, the other budgets and
+fairness are V1's.
 
 ## Reliability and acknowledgement
 
@@ -366,12 +381,18 @@ recipients; on `rtc-with-ws-fallback` inside the deadline it hands the message t
 
 The default is receipted. An explicit at-least-once request with `ack: 'none'`
 retries without a receipt: S3a removed the default of that shape and adds no
-validation, because the director relay's WS unicast fallback and the
-receipt-less RTC carry rely on explicit shapes (S3a ruling 6). A per-send
+validation, because the receipt-less RTC carry relies on an explicit shape (S3a
+ruling 6; the director relay's WS unicast is gone since S3c-ii). A per-send
 `reliability: 'best-effort'` that names no `ack` resolves `ack: 'none'`, since a
 receipted best-effort send is a contradiction; with an explicit `ack` the
 caller's ack wins (R-S3a-2). A WebSocket frame accepted by the browser API or an
 RTC payload accepted by `RTCDataChannel.send` is not a logical delivery receipt.
+A director command can reach the director twice after a fallback, because AL
+dedup is per carrier lane: relay commands are at-least-once, and the game's
+sequence tracker refuses the copy (S3c-ii, R-S3c-ii-4). The relay reports a
+command `sent` only when the director's receipt arrives, waiting at most 30 s.
+A command the typed send refuses at validation becomes a `failed` result with
+the refusal as its reason; any other error from the send still propagates.
 
 ### Acknowledgement modes
 
@@ -411,6 +432,12 @@ evidence (R-S3a-4); the WS server's hop ACK as a real receipt is S3b's (D56).
 Durability is decoupled from reliability, so a lane send (`messages.rtc.send`,
 `messages.ws.send`) that names no durability is volatile too; CRDT sync keeps its
 own HTTP/WS catch-up.
+
+**CURRENT — S3c-i, the WS hop receipt:** when the server names its peer id, a WS `hop` or `subtree` send tracks the
+server as its one hop, so it is receipted by the server's own ACK and no longer ends at `transport-accepted` with a
+downgrade (R-S3a-4 closed). The
+server's own room notifications carry `receiver` receipts over the room's live sessions frozen at publish, and cluster
+delivery honours that audience (D58, D77).
 
 **PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
 behavior; all-recipient is the frozen logical audience since S2. A2 defines the
@@ -458,6 +485,11 @@ reporting the replaced message as delivered.
 
 **PARTIAL:** Dedup and latest-wins behavior are implemented and persisted.
 
+**PLANNED — I2a, dedup retention:** The default dedup window is a fixed 60 s
+that ignores the message deadline. A replay of a longer-lived message that
+arrives after 60 s is therefore admitted again. I2a makes the retention at least
+the deadline plus the receipt grace for every durability tier (D85).
+
 **PLANNED — R1, shared arbitration proof:** Since the first release both
 admission stores re-read the dedup and supersedence observations inside the
 write transaction and return `conflict` when they changed, so two stale
@@ -485,16 +517,21 @@ alternate route without violating audience/epoch constraints.
 **PARTIAL:** `QRtcDataChannel` has bounded flow control and counters; AL QoS has
 congestion/fanout/supersedence concepts.
 
-**PLANNED — S3, integration:** The data-channel settlement now reaches the
-outbound runtime as a queued-then-settled result, but production AL QoS still
-receives no live backpressure signal and the caller sees no lifecycle. S1
-exposes the lifecycle; S3 feeds channel backpressure into policy.
+**PARTIAL — S3c-ii:** the caller sees the lifecycle (S1) and the session's
+volatile budget is the first `overloaded` producer (D78), reported for the
+session's own outbound data originations only, so at the bound every send
+reads `capacity` and controls, forwards and arrivals flow on (R-S3c-ii-8).
+Channel backpressure as a policy input is V1's.
 
 ## Durability and browser-local storage
 
 Durability has observable meaning:
 
 - `volatile`: bounded memory only; lost on process/tab termination;
+- `local-checkpoint`: the sender admits and dispatches from memory and
+  checkpoints its recoverable state; after a restart it resumes from the last
+  checkpoint, may lose admissions made after it and repeats work finished after
+  it;
 - `local-outbox`: the sender persists work until its required receipt or terminal
   outcome;
 - `local-inbox`: the receiver persists accepted work until local consumption or
@@ -543,15 +580,29 @@ operations, and the storage snapshot's durable figures are unchanged while the
 volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
 awaited volatile sends yields no task turn until it ends and should yield or
-batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2's; the
+batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2a's; the
 volatile store's per-session count and byte bound is S3c's (D59).
 
-**PLANNED — F2 and I2, bounded IndexedDB and one durable owner:** Seven
-`getAll()` call sites remain in the IndexedDB queue box, browser cleanup scans
-the whole AL work range before filtering by session, inbound effects still copy
-envelopes, and the server still runs two consumers on one work queue (F2). No
-reset mechanism, multi-tab claim, quota, or blocked-upgrade outcome exists (F2,
-I2).
+The tiers are ordered by strength: `volatile` < `local-checkpoint` <
+`local-outbox` < `local-inbox`. When a store cannot honour a channel's tier, the
+send is refused typed `storage-unavailable` or, where the channel allows it,
+degraded to `volatile` with a note on the handle. It is never weakened silently.
+
+**PLANNED — P1, I2a, and I2b, the storage tiers:**
+
+- P1 lowers the durable tiers' pinned storage cost without weakening them. Today
+  a durable send spends 10 `al-admission` and 15 `al-work` operations, and a
+  durable inbound admission spends 8. The first levers are taking the Temporal
+  polyfill off the storage hot path and cutting a durable send's 14 sequential
+  transactions (D90).
+- I2a gives every durable tier one owner per session store across tabs. It
+  replaces today's silent memory fallback when IndexedDB is missing with the
+  typed outcome, and adds typed recovery outcomes and one storage-health
+  vocabulary.
+- I2b adds `local-checkpoint` behind the D89 gate.
+
+The [persistence and performance QoS plan](./alm-qos-product-plan.md) holds the
+contract and its evidence.
 
 ## Correlation and actions
 
@@ -622,13 +673,26 @@ payloads. Applications can subscribe to lifecycle events and aggregate metrics
 without polling internal stores.
 
 **PARTIAL:** Outbound queue/lock/effect-drain diagnostics and RTC counters exist.
-Full RTC envelopes are no longer logged by the receive service.
+Full RTC envelopes are no longer logged by the receive service. The WS server records, per process and for its 256
+most recently updated receipted messages, who confirmed each receipt and whether it ran out, on
+`/api/admin/operations/realtime` (S3c-i, D61, D73). A failed delivery states a typed `evidence.failure` beside its prose
+reason: the refusal reason, the unroutable reason, or whether a receipt ran out of budget or was refused by a hop
+(S3c-ii, D75).
 
 **PLANNED — F1, S1, and I1, end-to-end observability:** There is no shared
 lifecycle event stream, IndexedDB cost telemetry, trace propagation, or
 payload-safe logging contract. F1 adds the AL-owned IndexedDB counter and ALM
 metrics in the lanes, S1 the lifecycle events, I1 trace propagation and the
 payload-free diagnostics contract.
+
+**PLANNED — I2a, storage health:** In production the storage-reset sink does
+nothing, and no storage-health or recovery event exists. I2a puts the following
+on the public diagnostics sink:
+
+- storage health: `healthy`, `delayed` or `failing`;
+- the age of the oldest unsaved change;
+- the last saved recovery point;
+- the typed recovery outcomes.
 
 ## Resource and abuse limits
 
@@ -653,6 +717,16 @@ elements per protocol collection/page, 64 visited peers or hops, a 256-sequence
 repair window, and 256 messages and 1 MiB per ordering track. The additional
 ceilings are planned requirements, not current guarantees.
 
+**CURRENT — S3c-ii, the volatile bound:** one session holds at most 1 000
+volatile messages and 4 MiB of envelopes at a time, sent and received together.
+A sent message is counted until its deadline, a received one until the earlier
+of its deadline and 30 s after its arrival; a message whose sender named no
+deadline is not counted. Over the bound the next send is refused `capacity`, and
+a received message is counted, never refused (D74, D78). The bound is shared
+with the platform's own state sync received on the volatile pair: a lane agent
+that leaves and rejoins a room holds about 26 KB of it, under one per cent of
+the production limits (R-S3c-ii-6, R-S3c-ii-7).
+
 These are work limits, not a 256-session room limit. Large audiences and system
 snapshots use bounded producer/consumer pages without truncation; incomplete
 snapshot assembly cannot authorize traffic. Retention also has per-peer/session
@@ -668,6 +742,14 @@ contract and apply to live and persisted envelopes and to control payloads.
 Aggregate per-session budgets (count, bytes, age, active tracks) land in S3 and
 V1.
 
+**PLANNED — P1 and I2b, storage budgets:** Each durability tier has a recorded
+storage budget (D87):
+
+- no storage operation on the send path for `volatile` and `local-checkpoint`;
+- at most one readwrite transaction per checkpoint, and none while the lane is
+  clean;
+- durable pins that may only fall.
+
 ## Lifecycle and multi-context behavior
 
 AL runtimes have explicit `start`, `ready`, `drain`, and `dispose` semantics.
@@ -680,10 +762,16 @@ definition.
 owner have disposal fences. Tests cover disposal during commit/read and retry
 cancellation. Web Locks, versioned commits, and effect leases also exist.
 
-**PLANNED — S1 and I2, complete lifecycle outcomes:** Disposal fences do not
-provide the staged caller-visible result model described above (S1), and
-multi-tab claims, quota, eviction, blocked upgrades, and restart have no typed
-outcomes (I2).
+**PLANNED — I2a, complete lifecycle outcomes:** Multi-tab claims, quota,
+eviction, blocked upgrades, and restart have no typed outcomes:
+
+- a browser without IndexedDB silently gets memory stores for its durable pairs;
+- login over an existing session leaves the old session's rows until they
+  expire.
+
+I2a adds one durable owner per session store, the typed `storage-unavailable`
+outcome, the recovery outcomes, and one purge across memory, storage, and
+checkpoint.
 
 ## Public product surface
 
@@ -696,7 +784,9 @@ The public ALM surface provides:
 - send with staged lifecycle observation/cancellation;
 - receive subscription with ownership scope;
 - transport/effective-policy diagnostics;
-- explicit volatile/durable storage policy;
+- an explicit durability tier per channel and send (`volatile`,
+  `local-checkpoint`, `local-outbox`, `local-inbox`), the channel's
+  storage-unavailable policy, and per-store persistence settings;
 - explicit protocol/capability descriptions and typed unsupported results; no migration framework.
 
 **PARTIAL:** Basic builders, policy/runtime types, services, and canonical
@@ -706,10 +796,15 @@ paths; legacy exports/classes remain. The current outbound owner map is
 documented in
 [`alm/outbound/README.md`](../../packages/shared/alm/outbound/README.md).
 
-**PLANNED — S1, A1, and I1, complete safe surface:** The delivery handle and
-channel purpose (S1, S3), principal and fixed-recipient builders (A1), and
-correlation and trace builders (I1) are absent. F1 adds
-`browser/rallar-messages.ts` as the narrow entry point that carries them.
+**PLANNED — A1, I1, I2a, and I2b, complete safe surface:** The delivery handle
+(S1) and the channel purpose (S3a) exist. They are exported by
+`browser/rallar-messages.ts`, the narrow entry point F1 added. Four parts are
+absent:
+
+- principal and fixed-recipient builders (A1);
+- correlation and trace builders (I1);
+- the channel's storage-unavailable policy (I2a);
+- `local-checkpoint` with its per-store settings (I2b).
 
 ## Delivery and compatibility posture
 
@@ -751,10 +846,11 @@ in scope by roadmap decision D5.
    data-channel drops cannot be reported as successful sends. Partial progress
    and non-delivery uncertainty remain visible, including after cancellation.
 4. Volatile ALM send/receive/retry performs zero AL-owned IndexedDB work on the
-   common path, including reliable volatile policy when selected.
+   common path, including reliable volatile policy when selected, and a
+   `local-checkpoint` send performs none on its send path.
 5. Durable messages have one existing QueueBox/ResourceInbox work owner and bounded indexed queries;
    transaction/row/byte budgets do not grow with unrelated messages or old
-   sessions.
+   sessions, and each durability tier meets its recorded storage budget.
 6. Room multicast requires matching server-provided room authority, preserves
    bounded evidence catch-up/bootstrap and optimistic room progress, enforces
    authoritative membership fencing when requested and supported, respects required
@@ -770,7 +866,9 @@ in scope by roadmap decision D5.
    tracing, staged outcomes, and payload-safe observability work across retry,
    repair, restart, and every carrier attempt.
 10. Runtime disposal, multi-tab claims, quota/eviction, blocked upgrades, and
-    restart are deterministic and externally observable.
+    restart are deterministic and externally observable. Recovery reports its
+    outcome and freshness, and no tier degrades without a typed outcome or a
+    note on the handle.
 
 ## Complete-product summary
 
@@ -778,7 +876,9 @@ The complete ALM product is one semantic protocol with two first-class carrier
 adapters. RTC remains fast because volatile traffic is not forced through
 IndexedDB and because data-channel backpressure is a protocol outcome. WS remains
 authoritative and durable where required. Durable RTC and WS share bounded,
-indexed QueueBox/ResourceInbox execution and ALM policy/validation. Every supported
+indexed QueueBox/ResourceInbox execution and ALM policy/validation. Each
+durability tier has a recorded, falling storage budget. A channel chooses its
+tier by the loss and replay it can accept. Every supported
 contract field has a runtime owner, every promised receipt has observable evidence,
 and preferred capabilities can negotiate without silently downgrading required
 guarantees. Normal uncertainty leads to bounded recovery and useful progress.

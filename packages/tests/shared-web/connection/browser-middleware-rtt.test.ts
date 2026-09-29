@@ -118,6 +118,7 @@ async function createRttEgressFixture(): Promise<RttEgressFixture> {
         outbox: new InMemoryQueueBox(),
         socket: client,
         sessionId: RTT_EGRESS_SESSION_ID,
+        serverPeerId: 'server',
         outboundStores,
         queueEngine
     });

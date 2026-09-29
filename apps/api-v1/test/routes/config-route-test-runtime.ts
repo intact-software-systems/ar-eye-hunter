@@ -44,7 +44,8 @@ export function createConfigRouteTestDependencies(
         publicConfiguration: {
             apiBaseUrl: 'http://localhost:8080',
             wsBaseUrl: 'ws://localhost:8080',
-            endpoints: { createWs: '/api/ws/:id' }
+            endpoints: { createWs: '/api/ws/:id' },
+            serverPeerId: 'default-qbox-server'
         },
         ...dependencies
     };

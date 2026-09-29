@@ -77,9 +77,14 @@ every server message keeps its one backend.
   and a storage reset never reach it, and it dies with its runtime. The volatile lane (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most once per
   `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s, the IndexedDB eviction's cadence) of its clock; no
-  timer runs for it. The rows it sweeps carry the repository's 1 h retention, not the message's
-  deadline (`toDefaultInMemoryInput`), so heap growth is send rate × 1 h until S3c's deadline-scale
-  bound.
+  timer runs for it. Its message-owner and sent-message rows live for the message deadline plus the 30 s
+  receipt grace ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts), D74), the
+  window in which a receipt or a late control about the message is still answered; the durable pair keeps
+  them for `max(deadline, now + 1 h)`. A control that arrives after them finds no lane owning its message,
+  goes to the durable lane and is refused there as a control about an unknown message. The control-history
+  rows and a completed receipt row stop at the same deadline plus the grace on the volatile pair and keep 30 min
+  (`controlHistoryTtlMs`, `durableEffectTtlMs`) on the durable pair; the per-origin version row keeps
+  `versionTtlMs` (1 h) on both, since it fences every commit of its origin rather than one message.
 - **Duplicate detection is per lane.** A msgId the memory lane admitted is invisible to the IndexedDB
   lane, and the reverse. That is sound because a message's durability is fixed by its policy, so one
   msgId always resolves to one lane. A caller that re-sent one msgId under another durability would get
@@ -102,7 +107,10 @@ idle durable owner's probes (`work-page`, `work-probe`) are reported beside that
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
 empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,
 times out or finalizes nothing counts as `work-probe`; one that writes counts as the work it did
-(R-S3a-11, R-S3a-13).
+(R-S3a-11, R-S3a-13). An RTC origin alone in its room spends 0 `al-admission` and 0 non-probe `al-work`
+operations on a volatile `receiver` send and states its complete acknowledgement at the commit
+([`al-indexeddb-empty-audience-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-empty-audience-counts.test.ts),
+D75).
 
 ## The admission directory
 
@@ -297,7 +305,7 @@ the WS server freezes the audience and answers for it. Each recipient's ACK stay
 origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
 relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map per server instance. No client learns a server id. The server answers the origin with
+an in-memory map per server instance. The server answers the origin with
 `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
 socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
 frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
@@ -308,9 +316,24 @@ session on the instance that dequeues it is not settled by its first cluster pub
 publishes it again, each wait as long as the receipt has waited and the last one a second before the row
 expires, until the origin has a session there or the row expires, so an origin that reconnects on any
 instance up to a second before the row expires receives it; one that reconnects in that last second
-does not. A `receiver` message addressed
-to the server itself keeps the server's own ACK; `receiver` on a WS unicast is refused `unsupported`
-(D42) until a slice aggregates unicasts.
+does not.
+
+Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
+([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
+A unicast addressed to the server, and every `hop` or `subtree` send, expects the server's own ACK: the server is the
+one hop a WS origin has (R-S3a-4). A `receiver` unicast that names its room (`targets.groupRef`) is aggregated like a
+room send over one member: the router delivers it to its addressee
+([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)), the
+`admitted` receipt names the addressee, and the addressee's own ACK completes it. Any pre-admission `unauthorized`
+refusal by the trusted server is answered with a NACK, which the origin states as a trusted-server `relay-rejected`
+`unauthorized`, so a receipted send reads `rejected` at once rather than at its deadline: a unicast to a session outside
+the room's admitted audience
+([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
+a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), and any room send the room
+authorizer refuses — a sender that is not an active member, a halted transport, a scope mismatch, data before
+activation. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
+aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
+audience verbatim, so a session that left since reads unconfirmed (D73).
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id
@@ -323,9 +346,20 @@ message, never on the wire, where a room larger than the collection limit would 
 carries it as `admittedAudience`, the captured policy keeps it with the sent row, and every later plan of
 the message receives it. The server sends to that audience only and a `receiver` row expects exactly it,
 never a session that joined after admission (D24, D43); a `hop` or `subtree` row expects the hops this
-instance sent to. A multicast frozen by its origin and sent without a router keeps planning against its
+instance sent to. WS never re-routes, so a retry or a repair of any receipt mode keeps every peer the row expects and
+every one that confirmed, and resends only to a failed peer the message was admitted to (R-S3c-i-31). A multicast frozen by its origin and sent without a router keeps planning against its
 own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
 naming the message and its origin.
+
+The server's own room notifications carry receipts too (D58, D77). The router freezes an `outbox` room broadcast whose
+sender is the server peer id to the room's live sessions at publish
+([`readRallarServerWsPublishAudience`](../../../shared-server/rallar-system/websocket/router/read-rallar-server-ws-publish-audience.ts));
+the server's pending row expects them, and both cluster sends — the publishing instance's and every other instance's —
+narrow to the audience captured in the shared admission store (`readAdmittedAudience`). Every settlement of the
+server's outbound owner feeds one bounded in-memory recorder per process
+([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
+256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
+sessions, the last settlement kind and whether the receipt ran out (D61, D73).
 
 Known limitations:
 
@@ -337,6 +371,9 @@ Known limitations:
   one, about 67 at the 30 min aggregate cap, each one an idempotent no-write refusal at the origin.
 - On a rolling deploy an older instance cannot decode `cluster-receipt` work and releases it
   non-retryable, so a receipt row it claims stops being published.
+- A multicast or a room broadcast that carries a `groupRef` is authorized in the room it names, but its
+  `route.contextId` is not bound to that room, so an application keying on `route.contextId` can misattribute it
+  (known debt, D82; it predates S3c-i). Only a room unicast is refused when the two differ (R-S3c-i-33).
 - With the cluster publisher registered (the pub/sub bridge), a dequeued room message is planned as one
   `cluster-local-complete` publication, and every instance then delivers it to the room's current
   sessions: the audience the outbox carried is ignored there, so a session that joined after admission
@@ -373,6 +410,50 @@ heartbeat costs nothing because the next one, latest-value telemetry, simply rep
 `sendLive` also bypasses the WS submission-readiness fault port, so a harness `not-ready` hold
 never delays an RTT heartbeat; that is acceptable only because the heartbeat is latest-value
 telemetry that no conformance scenario holds or asserts on.
+
+### Addressed sends on RTC
+
+Since S3c-ii a typed send names one peer on every strategy but `ws-then-rtc`: `send(payload, { peerId })`. The
+envelope is one unicast that names its room (`targets.groupRef`, `route.contextId` the room id), built by
+[`createBrowserUnicastMessage`](../../../shared-web/browser/messages/create-browser-unicast-message.ts). The RTC
+carrier plans it to the addressee directly and never relays it. Its receipt is the addressee's own ACK. On
+`rtc-with-ws-fallback` the same envelope is re-admitted on WS when the RTC leg states a retryable outcome inside the
+deadline (D63): the addressee is not in the ready set (`no-route`), the addressee is connected but is not the
+origin's overlay next hop (three `not-ready` attempts), or the receipt ran out. On WS the room's router delivers it
+and the server aggregates the one-member receipt (D71). A peer send to the server id is refused `unsupported` on an
+RTC strategy: the server is addressed over WS (D76). A peer send whose `contextId` names another room than its own is
+refused at the sender.
+
+### The volatile bound
+
+The volatile pairs keep their owner and sent-message rows until the message deadline plus the receipt grace
+([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts)), not for an hour. One
+budget per session ([`ALVolatileSessionBudget`](../volatile-budget/al-volatile-session-budget.ts)) counts the data
+admissions the session originates and receives on its volatile pairs, by message and by envelope bytes. An outbound
+admission is released at its own deadline; an inbound one at the earlier of its deadline and 30 s after its arrival
+(`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6), because the inbound deadline is the sender's clock
+and choice. Controls, receipts, acknowledgements, repairs, retransmissions and relay forwards are not counted, and
+neither is a message whose sender named no deadline (RTC signalling). Over `AL_VOLATILE_SESSION_MAX_ADMISSIONS`
+(1 000) or `AL_VOLATILE_SESSION_MAX_BYTES` (4 MiB) an outbound data admission is refused `capacity`: the handle ends
+`rejected` with `evidence.failure` `{ kind: 'refused', reason: 'capacity' }`, and no fallback is tried, because the
+other carrier shares the budget. The RTC circuit breaker does not count a `capacity` refusal as a failure. A counted
+send whose commit then admits nothing stays counted until its deadline: the ledger has no release call.
+
+An inbound admission is counted and never refused, and it counts toward the same limits as the session's own sends
+(R-S3c-ii-3): a session whose volatile traffic in and out stays above about 33 messages a second (at the 30 s default
+deadline) has its own volatile sends refused. The bound is also shared with the platform's own state sync that the
+WS inbound runtime admits on the volatile pair (`group-state.event`, `client-state.snapshot`, `client-state.event`,
+R-S3c-ii-7): a lane agent that leaves and rejoins a room holds about 26 KB of it, under one per cent of the
+production limits. Whether platform topics leave the application's bound is an open decision for the maintainer.
+While the budget is at or over a limit the session's QoS provider reports `overloaded` for the session's own outbound
+data originations only: never for a control, a receipt, an acknowledgement, a repair, a relay forward or an inbound
+plan (R-S3c-ii-8), so a session at its bound still acknowledges, forwards and delivers for other sessions. Under the
+default policy the RTC origin drops a best-effort room send that reads it, and that drop reads `capacity` as the
+admission bound's refusal does: at the bound every send, best-effort or not, on either carrier, ends `rejected` with
+`{ kind: 'refused', reason: 'capacity' }` and is never handed to a fallback. The WS outbound path does not consult
+`overloaded`; its admission bound refuses the same sends. The RTC rate limiter spends its token before the plan, so a
+refused send still spends one: a burst of refused sends can push a later send inside the bound to `rate-limited`,
+which hands it to WS, where the shared budget admits it.
 
 ### Grouped control sends
 

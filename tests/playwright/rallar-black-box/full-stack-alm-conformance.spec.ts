@@ -12,13 +12,17 @@ import {
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type { CreateAlmConformanceRecipesInput } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceLaneFamily,
+    CreateAlmConformanceRecipesInput
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     decodeALMObservationPageDiagnosticsFile,
     type ALMObservationPageDiagnosticsFile
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
+import { readAlmReceiptRolesEntries } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
@@ -28,7 +32,6 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -52,12 +55,11 @@ import {
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-/** A three-role scenario runs on its own three agents (D45), so each family records its own cell. */
-type ScenarioFamily = 'two-agent' | 'three-agent';
+type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent'>;
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
-    readonly family: ScenarioFamily;
+    readonly family: AlmConformanceLaneFamily;
     /** Every page of the run, whose captured page diagnostics the cell records. */
     readonly participants: readonly TwoAgentRunParticipant[];
     readonly testInfo: TestInfo;
@@ -112,36 +114,45 @@ test.describe('ALM conformance lane', () => {
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
 
     for (const carrier of carriers) {
-        test(`baseline family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+        for (const family of ['two-agent', 'addressed'] as const) {
+            const title = family === 'two-agent' ? 'baseline' : family;
+            test(`${title} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+                test.skip(
+                    family === 'addressed' && selectScenarios(toPlanningSelection(), carrier, family).length === 0,
+                    `no ${scope} addressed ALM scenario runs over ${carrier}`
+                );
+                test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
 
-            const run = await createTwoAgentRun({
-                browser,
-                request,
-                testInfo,
-                runId: `alm-${carrier}-${uniqueSuffix()}`
-            });
-
-            let scenarioFailed = false;
-            try {
-                await runAlmConformanceScenarios(run, carrier);
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    family: 'two-agent',
-                    participants: [run.sender, run.receiver],
+                const run = await createTwoAgentRun({
+                    browser,
+                    request,
                     testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    runId: family === 'two-agent'
+                        ? `alm-${carrier}-${uniqueSuffix()}`
+                        : `alm-${carrier}-${family}-${uniqueSuffix()}`
                 });
-                await run.close();
-            }
-        });
+
+                let scenarioFailed = false;
+                try {
+                    await runAlmConformanceScenarios(run, carrier, family);
+                }
+                catch (scenarioError) {
+                    scenarioFailed = true;
+                    throw scenarioError;
+                }
+                finally {
+                    await recordObservation({
+                        run,
+                        family,
+                        participants: [run.sender, run.receiver],
+                        testInfo,
+                        carrier,
+                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                    });
+                    await run.close();
+                }
+            });
+        }
 
         test(`three-agent family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
             test.skip(
@@ -182,9 +193,10 @@ test.describe('ALM conformance lane', () => {
 /** Soft assertions so one run exercises every in-scope scenario and reports all of them. */
 async function runAlmConformanceScenarios(
     run: TwoAgentRun,
-    carrier: AlmConformanceCarrier
+    carrier: AlmConformanceCarrier,
+    family: TwoAgentScenarioFamily
 ): Promise<void> {
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'two-agent')) {
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, family)) {
         let senderNavigations = 0;
         let receiverNavigations = 0;
         const onSenderNavigation = (frame: Frame): void => {
@@ -251,9 +263,11 @@ async function runThreeAgentScenarios(
     }
 }
 
+/** Lifecycle and reload join message identities; a scenario that pins its receipt's roles joins recipient sessions. */
 function hasIdentityEvidence(scenario: AlmConformanceScenario): boolean {
-    return scenario.scenarioId === 'delivery-lifecycle' || scenario.scenarioId === 'delivery-reload' ||
-        scenario.scenarioId === 'receipted-audience';
+    return scenario.scenarioId === 'delivery-lifecycle' ||
+        scenario.scenarioId === 'delivery-reload' ||
+        readAlmReceiptRolesEntries(scenario.sender).length > 0;
 }
 
 async function assertScenarioIdentity(
@@ -301,11 +315,10 @@ function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier 
     return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
 }
 
-/** A scenario runs on the two-agent run unless it declares three roles (D45). */
 function selectScenarios(
     selection: ScenarioSelectionInput,
     carrier: AlmConformanceCarrier,
-    family: ScenarioFamily
+    family: AlmConformanceLaneFamily
 ): readonly AlmConformanceScenario[] {
     return createAlmConformanceRecipes({
         ...selection,
@@ -313,7 +326,7 @@ function selectScenarios(
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS
     }).filter((scenario) =>
-        isThreeAgentScenario(scenario) === (family === 'three-agent') &&
+        scenario.laneFamily === family &&
         (scope === 'full' || scenario.tags.includes('smoke')) &&
         !skippedScenarioIds.includes(scenario.scenarioId)
     );
@@ -454,7 +467,11 @@ async function writeObservationFiles(
  * An unsuffixed name would let a retried cell overwrite the regime and snapshot of the first attempt, or the
  * three-agent cell overwrite the two-agent one.
  */
-function toObservationFileName(carrier: AlmConformanceCarrier, family: ScenarioFamily, retry: number): string {
+function toObservationFileName(
+    carrier: AlmConformanceCarrier,
+    family: AlmConformanceLaneFamily,
+    retry: number
+): string {
     const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
     return retry === 0 ? cell : `${cell}-retry${retry}`;
 }

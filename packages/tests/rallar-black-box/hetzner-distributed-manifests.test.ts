@@ -1176,11 +1176,15 @@ describe('Hetzner distributed manifest catalog', () => {
                 'delivery-lifecycle',
                 'durable-opt-in',
                 'ordering-resync',
+                'ws-unicast-receipt',
+                'server-command',
                 'not-yet-in-sync',
                 'cross-carrier-duplicate',
                 'fallback-within-deadline',
                 'receipt-exhausted-fallback',
-                'no-fallback-after-deadline'
+                'no-fallback-after-deadline',
+                'unicast-fallback',
+                'capacity'
             ]
         });
 
@@ -1194,10 +1198,26 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {
             expect(commandIds).toContain(`alm-${carrier}-not-yet-in-sync-expires-receiver-not-yet-in-sync-outcome`);
         }
+        // The server is no RTC peer, so only the ws block addresses it.
+        expect(commandIds).toContain('alm-ws-server-command-sender-send-1');
+        expect(
+            commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))
+        ).toBe(false);
+        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
+        // A capacity block closes and reconnects its sender, so only the other carriers' capacity blocks follow it.
+        for (const selection of entry?.manifest.recipes ?? []) {
+            const roleCommandIds = ((selection.recipe?.commands ?? []) as readonly ManifestCommand[])
+                .map((command) => command.commandId ?? '');
+            const firstCapacity = roleCommandIds.findIndex((commandId) => /^alm-[a-z-]+-capacity-/.test(commandId));
+            expect(firstCapacity, selection.role).toBeGreaterThan(0);
+            expect(roleCommandIds.slice(firstCapacity).filter((commandId) => !commandId.includes('-capacity-')), selection.role)
+                .toEqual([]);
+        }
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        expect(rtcConnects).toHaveLength(5);
+        // Two prologues, the ws reload reconnect, and the capacity sender's lowered and restored connect per carrier.
+        expect(rtcConnects).toHaveLength(9);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 

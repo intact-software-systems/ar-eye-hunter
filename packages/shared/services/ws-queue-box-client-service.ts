@@ -131,6 +131,11 @@ export namespace WsQueueBoxClientService {
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
+        /**
+         * The peer id the WS server answers as, learned from `/api/config` (D57 as applied, Q3); undefined when the server
+         * names none (it predates S3c-i, R-S3c-i-6), so the client tracks no server hop.
+         */
+        readonly serverPeerId: string | undefined;
         readonly qosProvider?: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
@@ -149,6 +154,7 @@ export namespace WsQueueBoxClientService {
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
+        readonly serverPeerId: string | undefined;
         readonly qosProvider: ALQosInputProvider;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
@@ -187,12 +193,14 @@ export class WsQueueBoxClientService {
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketClient;
     public readonly sessionId: string;
+    public readonly serverPeerId: string | undefined;
     private readonly dependencies: WsQueueBoxClientService.Dependencies;
 
     constructor(dependencies: WsQueueBoxClientService.Dependencies) {
         this.outbox = dependencies.outboundRuntime.workQueue;
         this.socket = dependencies.socket;
         this.sessionId = dependencies.sessionId;
+        this.serverPeerId = dependencies.serverPeerId;
         this.dependencies = dependencies;
         this.reconnectOwner = new WsClientReconnect(dependencies);
         this.outboundRuntime = this.createOutboundRuntime(dependencies.outboundRuntime);
@@ -279,7 +287,7 @@ export class WsQueueBoxClientService {
             dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective),
             preparedMessages: [toALOutboundTransportMessage(message)],
-            ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg),
+            ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg, this.serverPeerId),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
             repairTracking: {
                 enabled: normalized.effective.repair.algo !== 'none',
@@ -647,6 +655,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
         socket: input.socket,
         sessionId: input.sessionId,
+        serverPeerId: input.serverPeerId,
         qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, input.qosProvider),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,

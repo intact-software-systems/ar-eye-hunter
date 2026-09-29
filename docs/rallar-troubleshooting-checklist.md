@@ -120,11 +120,13 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Repeated initial setup stalls are bounded: browser RTC defaults to six
   attempts, 180 seconds total, then a 30 second cooldown. Facade waits report
   this as `status: 'failed'` with reason
-  `rtc-connect-attempt-budget-exhausted`.
-- Inbound RTC offers from peers missing from the local group cache can be
-  admitted tentatively because group ownership is eventually consistent. Hard
-  rejects still apply to malformed/self/wrong-target signals and exhausted or
-  cap-blocked peers.
+  `rtc-connect-attempt-budget-exhausted`; `waitForRoomLane(...)` carries the
+  reason on each `notReady[]` entry, not on the room-level result.
+- Inbound RTC offers from peers the local group cache does not yet allow are
+  not dropped: the admission policy answers `retry` with reason
+  `stage-layout-mismatch`, and the signal is retried until the local group
+  snapshot catches up. Hard rejects still apply to malformed/self/wrong-target
+  signals, answers for unknown peers, and exhausted or cap-blocked peers.
 
 ## Realtime Data Channels
 
@@ -139,7 +141,7 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 ## Rallar Motion
 
 - Use a dedicated motion lane for high-rate pose updates instead of sharing the lane used by shots, commands, or director relay traffic.
-- Configure custom data-channel lanes before the first `connect()` or `start()` call.
+- Declare custom data-channel lanes in `rtc.dataChannelLanes` of `rallar.setup(...)`, before the first `connect()` or `start()` call, and include `DEFAULT_REALTIME_DATA_CHANNEL_LANE` because a declared list replaces the default.
 - Drive `RallarMotionBuffer` with receiver-local `observedAtEpochMs`; do not interpolate from sender `sentAtEpochMs` unless the app has clock sync.
 - If remote avatars trail too far behind, lower `interpolationDelayMs`; if they snap during jitter, raise it slightly.
 - Keep `maxExtrapolationMs` short so lost motion packets hold the latest observed pose instead of drifting.
@@ -165,7 +167,7 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - `ttlMs` and `expireAtFor` are not expiring values earlier than expected.
 - `sync: true` only syncs open tabs through `BroadcastChannel`; it is not server sync.
 - `compareAndSet` is not used as a cross-process transactional lock.
-- `schemaVersion` changes include a `migrate` function when old data exists.
+- Stored-shape changes are handled by the app: Rallar Data has no `schemaVersion` or `migrate`, so guard old values with `isValid` or move the store to a new `name` or `keyPrefix`.
 
 ## Rallar CRDT
 
@@ -185,7 +187,8 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Repository admin exports pass `verifyIntegrity(...)` before backup restore or
   projection rebuild.
 - Quarantined documents reject writes until an operator changes lifecycle state.
-- Server `room.crdt` topics are installed and room authorization can resolve the
+- Server `room.crdt` (room documents) and `app.crdt` (app and principal
+  documents) topics are installed, and room authorization can resolve the
   current group snapshot.
 - API-v1 has the `crdt_documents`, `crdt_updates`, and `crdt_snapshots` tables
   from the latest migration or in-memory schema.
@@ -237,7 +240,6 @@ rallar.people.onEvent((event) => console.log('client event', event));
 Server:
 
 ```ts
-console.log(runtime.wsQBoxServerService.status?.());
 console.log(server.ws.status());
 ```
 

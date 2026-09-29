@@ -130,26 +130,35 @@ export class WsQueueBoxServerOutboundPlanning {
         );
     }
 
+    /**
+     * A repair or retry resends to the failed recipients connected here that the message was admitted to, and its
+     * receipt keeps every peer it expects and every one that confirmed: a session that left or sits on another instance
+     * still reads unconfirmed, and one that joined after admission is never added (D24, D43). WS never re-routes, so no
+     * receipt mode replaces its expected set.
+     */
     planRepairMessage(
         message: ALMessage,
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> | undefined {
-        const recipients = request.requestedByPeerId
-            ? this.#targetResolution.resolveRepairRecipients(message, [request.requestedByPeerId])
-            : this.#targetResolution.resolveRepairRecipients(message, request.failedPeerIds);
+        const requestedPeerIds = request.requestedByPeerId ? [request.requestedByPeerId] : request.failedPeerIds;
+        const recipients = this.#targetResolution.resolveRepairRecipients(
+            message,
+            toAdmittedPeerIds(requestedPeerIds, request.admittedAudience)
+        );
         if (recipients.length === 0) {
             return undefined;
         }
 
+        const effective = this.normalizePolicy(message).effective;
         return {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
             preparedMessages: toRecipientPreparedMessages(message, recipients),
             ackTracking: toAckTrackingPlan(
-                this.normalizePolicy(message).effective,
+                effective,
                 recipients.map((recipient) => recipient.peerId),
-                'replace'
+                'merge'
             ),
             repairTracking: request.repair
         };
@@ -291,6 +300,13 @@ function toAckTrackingPlan(
         nextHopPeerIds,
         mode: effective.ack.algo
     };
+}
+
+function toAdmittedPeerIds(
+    peerIds: readonly string[],
+    admittedAudience: readonly string[] | undefined
+): readonly string[] {
+    return admittedAudience === undefined ? peerIds : peerIds.filter((peerId) => admittedAudience.includes(peerId));
 }
 
 function toRepairTrackingPlan(

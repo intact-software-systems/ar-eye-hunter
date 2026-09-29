@@ -3,8 +3,12 @@
 Rallar Motion smooths received snapshots for presentation. It does not own
 simulation, collision, scoring, or authority.
 
+RTC data-channel lanes are fixed when the facade connects, so declare the
+`game-snapshot` lane in `rallar.setup(...)` before any connection. A declared
+list replaces the default, so keep `DEFAULT_REALTIME_DATA_CHANNEL_LANE`.
+
 ```ts
-import { rallar } from '@shared-web/browser/rallar.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE, rallar } from '@shared-web/browser/rallar.ts';
 import {
     createRallarMotionAdaptiveDelay,
     createRallarMotionBuffer,
@@ -17,6 +21,22 @@ type Pose = {
     position: readonly [number, number, number];
     velocity?: readonly [number, number, number];
 };
+
+await rallar.setup({
+    apiBaseUrl: 'http://localhost:8080',
+    applicationId: 'game',
+    workspaceId: 'default',
+    rtc: {
+        dataChannelLanes: [
+            DEFAULT_REALTIME_DATA_CHANNEL_LANE,
+            {
+                id: 'game-snapshot',
+                label: 'rtc-game-snapshot',
+                init: { ordered: false, maxRetransmits: 0 }
+            }
+        ]
+    }
+});
 
 const delay = createRallarMotionAdaptiveDelay({
     defaultDelayMs: 100,

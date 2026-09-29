@@ -24,7 +24,12 @@ describe('WsQueueBoxClientService.sendLive', () => {
     it('reports the closed socket and writes nothing', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient('ws://send-live-test', createPassThroughTransportFaultPort());
-        const service = createDefaultWsQueueBoxClientService({ socket, sessionId: 'self', outbox: new InMemoryQueueBox() });
+        const service = createDefaultWsQueueBoxClientService({
+            socket,
+            sessionId: 'self',
+            serverPeerId: 'server',
+            outbox: new InMemoryQueueBox()
+        });
         onTestFinished(() => service.close());
         const connected = socket.connect();
         await Promise.resolve();
@@ -42,7 +47,12 @@ describe('WsQueueBoxClientService.sendLive', () => {
     it('writes the exact outbox resource string to an open socket', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient('ws://send-live-test', createPassThroughTransportFaultPort());
-        const service = createDefaultWsQueueBoxClientService({ socket, sessionId: 'self', outbox: new InMemoryQueueBox() });
+        const service = createDefaultWsQueueBoxClientService({
+            socket,
+            sessionId: 'self',
+            serverPeerId: 'server',
+            outbox: new InMemoryQueueBox()
+        });
         onTestFinished(() => service.close());
         const connected = socket.connect();
         await Promise.resolve();

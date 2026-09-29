@@ -11,30 +11,41 @@ Workflow file:
 .github/workflows/hetzner-distributed-recipe.yml
 ```
 
-Typical inputs:
+Inputs and their defaults:
 
 ```text
 ref: main
 rollout_before_run: true
-agent_count: 2
-run_id: <blank for GitHub-derived id>
-room_id: hetzner-headless-room
+agent_source: hetzner              # hetzner | external | mixed
+operator_phase: full               # full | prepare | run
+agent_count: <blank derives targetPolicy.expectedParticipantCount>
+run_id: <blank derives gh-<run id>-<attempt>>
+room_id: <blank isolates each spawned Hetzner run>
 agent_prefix: controller
+control_url: wss://control.rallar.intactss.com/control
+control_http_url: https://control.rallar.intactss.com
 manifest_path: path/to/distributed-manifest.json
 application_id: rallar-server
 workspace_id: default
 register_before_login: false
+browser_log_level: warning         # warning | info | debug
+headless_entry: headless           # operator-spa keeps the rollback route
+browser_engine: chromium           # chromium | firefox | webkit
 install_playwright: true
+npm_ci: false
 wait_for_agents: true
 ready_timeout_seconds: 120
-terminal_timeout_seconds: 300
+terminal_timeout_seconds: <blank uses metadata.recommendedTerminalTimeoutSeconds, else 300>
 stop_after_run: true
 ```
 
 ## Checked-In Manifests
 
 Use these repo manifests with `manifest_path`. Green manifests are ordered from
-cheapest confidence check to the low-risk RTC stability baseline:
+cheapest confidence check to the low-risk RTC stability baseline. They are
+exactly the set `.github/workflows/hetzner-supported-distributed-manifests.yml`
+runs on every push to `main`: one `prepare` rollout, then each manifest
+serially with `operator_phase=run`.
 
 | Order | Manifest                                                                             | Agents | Purpose                                                                                                |
 | ----- | ------------------------------------------------------------------------------------ | -----: | ------------------------------------------------------------------------------------------------------ |
@@ -47,22 +58,36 @@ cheapest confidence check to the low-risk RTC stability baseline:
 Extended manifests keep heavier or longer realtime baselines out of the default
 green order:
 
-| Manifest                                                                                   | Agents | Purpose                                                     |
-| ------------------------------------------------------------------------------------------ | -----: | ----------------------------------------------------------- |
-| `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json`                  |      2 | Short 10 Hz RTC realtime `rtc.stream` performance baseline. |
-| `apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json`      |      2 | Longer 30 second, 5 Hz RTC realtime stability stream.       |
-| `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json` |      2 | Longer 30 second, 10 Hz RTC realtime stability stream.      |
-| `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json`                 |      3 | Heavier three-agent realtime/load `rtc.stream` baseline.    |
+| Manifest                                                                                                                                                      |   Agents | Purpose                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------------------------------------------- |
+| `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json`                                                                                     |        2 | Short 10 Hz RTC realtime `rtc.stream` performance baseline.                                    |
+| `apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json`                                                                         |        2 | Longer 30 second, 5 Hz RTC realtime stability stream.                                          |
+| `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json`                                                                    |        2 | Longer 30 second, 10 Hz RTC realtime stability stream.                                         |
+| `apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json`                                                                    |        2 | Longer 30 second, 15 Hz RTC realtime stability stream.                                         |
+| `apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json`                                                                    |        2 | Longer 30 second, 20 Hz RTC realtime stability stream.                                         |
+| `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json`                                                                                    |        3 | Heavier three-agent realtime/load `rtc.stream` baseline.                                       |
+| `apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json`                                                               |       50 | One sender multicasts RTC messages at 20 Hz to 49 receivers over a forced tree. Needs rollout. |
+| `apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json`                                                               |       50 | Same traffic over the mesh topology. Needs rollout.                                            |
+| `apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json`                                                                 |       50 | All 50 peers multicast at 5 Hz over a forced tree. Needs rollout.                              |
+| `apps/rallar-black-box/manifests/hetzner/10-rtc-messages-principal-15-agent-30s-20hz-tree.json` through `15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json` |    15/30 | The same principal tree/mesh and all-peer tree runs at 15 and 30 agents. Need rollout.         |
+| `apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json`                                                                                    |        2 | Positive delivery followed by absence waits (no leak frame, no silent send failure).           |
+| `apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json`                                                                                    |        2 | Coordinator group assertions: `allEqual` convergence and `noneMatch` isolation.                |
+| `apps/rallar-black-box/manifests/hetzner/18-alm-conformance-2-agent.json`                                                                                     |        2 | ALM conformance family (two peers).                                                            |
+| `apps/rallar-black-box/manifests/hetzner/22-alm-conformance-3-agent.json`                                                                                     |        3 | ALM conformance three-peer family.                                                             |
+| `apps/rallar-black-box/manifests/hetzner/19-alm-conformance-15-agent-30s.json` through `21-alm-conformance-50-agent-30s.json`                                 | 15/30/50 | ALM storage counters over a principal RTC multicast tree. Need rollout.                        |
 
 Diagnostic manifests live under
 `apps/rallar-black-box/manifests/hetzner/diagnostic/` and are not part of the
 green run order:
 
-| Manifest                                           | Agents | Purpose                                                                     |
-| -------------------------------------------------- | -----: | --------------------------------------------------------------------------- |
-| `diagnostic/barrier-health-2-agent.json`           |      2 | Validates synchronized barrier orchestration before start.                  |
-| `diagnostic/expected-failure-1-agent.json`         |      1 | Intentionally fails to verify analyzer fix proposals and artifact capture.  |
-| `diagnostic/rtc-realtime-2-agent-20hz-stress.json` |      2 | Strict 20 Hz realtime stress run for stream pacing and backlog diagnostics. |
+| Manifest                                                                | Agents | Purpose                                                                               |
+| ----------------------------------------------------------------------- | -----: | ------------------------------------------------------------------------------------- |
+| `diagnostic/barrier-health-2-agent.json`                                |      2 | Validates synchronized barrier orchestration before start.                            |
+| `diagnostic/expected-failure-1-agent.json`                              |      1 | Intentionally fails to verify analyzer fix proposals and artifact capture.            |
+| `diagnostic/rtc-realtime-2-agent-20hz-stress.json`                      |      2 | Strict 20 Hz realtime stress run for stream pacing and backlog diagnostics.           |
+| `diagnostic/rtc-messages-all-peer-50-agent-30s-20hz-tree.json`          |     50 | 20 Hz all-peer multicast over a forced tree.                                          |
+| `diagnostic/rtc-messages-{all-peer,principal}-50-agent-60m-*-tree.json` |     50 | 60-minute tree soaks at 5, 10, or 20 Hz.                                              |
+| `diagnostic/matrix/*.json`                                              |  10–30 | Principal and all-peer tree matrix at 10/15/20/30 agents, 30 s or 5 min, 10 or 20 Hz. |
 
 Regenerate or verify the checked-in JSON from the TypeScript catalog:
 
@@ -72,9 +97,14 @@ npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --c
 ```
 
 The manifests use inline recipes so the control server can load them during
-staging without relying on SPA state. They default to
+staging without relying on SPA state. Every checked-in manifest declares
 `applicationId=rallar-server`, `workspaceId=default`, and
-`groupId=hetzner-headless-room`, matching the workflow defaults.
+`groupId=hetzner-headless-room`. That `groupId` is a template: with a blank
+`room_id` (the workflow default) and `agent_source=hetzner`, the runner
+materializes a copy whose group is a deterministic `hetzner-run-<sha256>` id
+unique to the workflow run attempt, so spawned runs never share a room. A
+non-empty `room_id` pins an explicit stable group; `external` and `mixed` runs
+and the `prepare` phase keep the manifest group.
 
 The checked-in Hetzner manifests are generated from shared-test recipe builders
 and shared distributed-run manifest contracts, and write every author setting
@@ -125,13 +155,21 @@ scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   --register-before-login true
 ```
 
-The remote installer writes Chromium into the `rallar` user cache and removes a
-stale Playwright `__dirlock` only when no active installer process is running
-and the lock is older than `RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds
-(`600` by default). After that repair succeeds, use `--fast` again.
+The remote installer stages the selected browser under
+`/var/lib/rallar-playwright/versions/<playwright-version>-<browser>-<lockfile-sha>`
+(root `RALLAR_PLAYWRIGHT_ROOT`), verifies it, and switches the
+`/var/lib/rallar-playwright/active` link that headless workers read through
+`PLAYWRIGHT_BROWSERS_PATH`. It removes a stale Playwright `__dirlock` only when
+no active installer process is running and the lock is older than
+`RALLAR_PLAYWRIGHT_LOCK_STALE_SECONDS` seconds (`600` by default). After that
+repair succeeds, use `--fast` again.
 
-The helper derives `agent_count`, `room_id`, `application_id`, and
-`workspace_id` from the manifest, creates a sanitized run id, and calls
+The helper derives `agent_count`, `application_id`, and `workspace_id` from the
+manifest and sends `room_id` only when `--room-id <id>` is supplied, so each
+spawned run is isolated by default. It creates a sanitized run id from the
+manifest file name plus a UTC timestamp (or `--run-id`), uses the manifest's
+`metadata.recommendedTerminalTimeoutSeconds` unless
+`--terminal-timeout-seconds` or `--fast` is given, and calls
 `gh workflow run`. It preflights the required repository or `production`
 environment secrets and refuses diagnostic manifests unless `--allow-diagnostic`
 is supplied. The `--fast` flag maps to `rollout_before_run=false`,
@@ -142,8 +180,10 @@ defaults `register_before_login=true` and `stop_after_run=true`. Passing only
 `install_playwright=false` is also supplied. Pass `--keep-headless` only when
 you intentionally want to leave browser processes running after artifact capture
 for live debugging or back-to-back warm experiments.
-The distributed recipe runner uses `https://control.rallar.intactss.com` for
-control-server admin API calls because distributed-run creation requires TLS.
+The distributed recipe runner sends control-server admin API calls to the
+`control_http_url` input (default `https://control.rallar.intactss.com`)
+because distributed-run creation requires TLS; `control_url` (default
+`wss://control.rallar.intactss.com/control`) is the agents' control WebSocket.
 
 Manual full-rollout equivalent:
 
@@ -152,7 +192,6 @@ gh workflow run hetzner-distributed-recipe.yml \
   --ref main \
   -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
   -f agent_count=2 \
-  -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
   -f register_before_login=true \
@@ -168,7 +207,6 @@ gh workflow run hetzner-distributed-recipe.yml \
   --ref main \
   -f manifest_path=apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
   -f agent_count=2 \
-  -f room_id=hetzner-headless-room \
   -f application_id=rallar-server \
   -f workspace_id=default \
   -f register_before_login=true \
@@ -182,10 +220,11 @@ gh workflow run hetzner-distributed-recipe.yml \
   -f stop_after_run=true
 ```
 
-Longer term, rollout can become faster by recording VM stamp files for deployed
-git SHA, `package-lock.json` hash, Playwright browser version, SPA build hash,
-and service config hash. That would let the rollout path verify and repair only
-missing or stale runtime pieces instead of always doing a full deploy.
+The rollout records `/var/lib/rallar-black-box-control/deployment-readiness.json`
+(deployed commit, `package-lock.json` sha256, Playwright version, browser
+engine and path, operating system, and service health), and `run`-phase jobs
+reject a stale record. Rollout itself still redeploys fully; recording an SPA
+build hash and a service config hash would let it repair only stale pieces.
 
 Required production secrets:
 
@@ -201,19 +240,32 @@ RALLAR_BLACK_BOX_PASSWORD
 Optional:
 
 ```text
-RALLAR_BLACK_BOX_CONTROL_TOKEN
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN   # admin/operator token for protected control reads
+RALLAR_BLACK_BOX_CONTROL_TOKEN        # legacy fallback for the read token
 ```
 
 ## Remote Execution
 
-The workflow copies `scripts/hosted-rallar/controller` and the manifest to the VM,
-then runs:
+The workflow materializes the manifest on the runner
+(`scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs`), copies
+`scripts/hosted-rallar/controller` and the materialized manifest to the VM, then
+runs:
 
 ```text
-08-rollout-controller.sh       # optional
-09-start-headless-workers.sh   # starts N browser agents
+10-stop-headless-workers.sh    # before rollout and before starting hetzner/mixed agents
+08-rollout-controller.sh       # rollout_before_run=true and operator_phase is not run
+09-start-headless-workers.sh   # agent_source=hetzner or mixed: starts N browser agents
+16-wait-for-control-agents.sh  # agent_source=external or mixed, when wait_for_agents=true
 14-run-distributed-recipe.sh   # creates, stages, starts, polls, exports
 ```
+
+`operator_phase=prepare` stops after the rollout and writes the marker
+`/tmp/rallar-distributed-prepare-<distributedRunId>.json`; it runs no recipe and
+uploads no distributed artifacts. `operator_phase=run` skips rollout, checks
+`/var/lib/rallar-black-box-control/deployment-readiness.json` against the ref
+for non-external agents, and checks the prepare marker when the manifest sets
+`metadata.rtcTopologyEnv`. Outside the `run` phase such a manifest requires
+`rollout_before_run=true`.
 
 The workflow sets `RALLAR_DISTRIBUTED_CONTROL_RUN_ID` to the same value as
 `RALLAR_BLACK_BOX_RUN_ID` so the distributed run targets the control run where
@@ -227,15 +279,23 @@ The remote runner writes:
 /tmp/rallar-distributed-runs/<distributedRunId>/
 ```
 
-The GitHub workflow uploads that directory and then writes analyzer output under
-`analysis/`. The same summary is appended to the GitHub Actions step summary
-when artifacts were copied.
+The GitHub workflow uploads that directory as
+`hetzner-distributed-<distributedRunId>`, then writes analyzer output under
+`analysis/` and uploads it separately as
+`hetzner-distributed-analysis-<distributedRunId>`. The summary, fix proposal,
+and performance report are appended to the GitHub Actions step summary when
+artifacts were copied. Every run, including `prepare` and runs that fail before
+a recipe starts, also uploads `hetzner-operation-<distributedRunId>` with
+`operation-report.json`, `summary.md`, and a sanitized `evidence.log`. Read it
+first: when its `recipeStarted` is `false`, a missing distributed artifact is
+expected.
 
 Important files:
 
 ```text
 runner-summary.json
 distributed-run.json
+distributed-artifact-bundle.json
 manifest.json
 control-run.json
 report.json
@@ -243,11 +303,12 @@ results.jsonl
 events.jsonl
 failures.json
 fleet-report.json
+fleet-report-artifact-bundle.json
 fleet-report-summary.md
 analysis/analysis.json
 analysis/summary.md
 analysis/fix-proposal.md      # failed runs
-analysis/performance.md       # passed runs
+analysis/performance.md       # whenever control-run.json was analyzed, passed or failed
 ```
 
 When the control server rejects the create request, the runner never gets a

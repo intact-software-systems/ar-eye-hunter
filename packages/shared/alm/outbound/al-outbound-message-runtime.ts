@@ -12,6 +12,7 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -22,6 +23,7 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -95,12 +97,14 @@ export interface ALOutboundRepairRequest {
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingSeqs: readonly number[];
+    readonly admittedAudience: readonly string[] | undefined;
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
 export type ALOutboundDropReasonCode =
     | 'unauthorized'
     | 'unsupported'
+    | 'capacity'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'
@@ -135,6 +139,7 @@ export interface ALOutboundRuntimeStores<TPrepared> {
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
 export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
     evictExpired(): void;
+    readonly budget: ALVolatileSessionBudget | undefined;
 }
 
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
@@ -533,13 +538,22 @@ export class ALOutboundMessageRuntime<TPrepared> {
      */
     private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
+        let plan: ALOutboundDispatchPlan<TPrepared>;
         try {
-            const plan = planOutgoingMessage(msg);
-            return { lane: this.resolveLaneForPlan(plan), planner: toPlannedOnce(msg, plan, planOutgoingMessage) };
+            plan = planOutgoingMessage(msg);
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
         }
+        const lane = this.resolveLaneForPlan(plan);
+        const bounded = lane === this.volatile
+            ? admitALOutboundVolatileBudget({
+                plan,
+                budget: this.dependencies.volatileStores?.budget,
+                nowMs: this.dependencies.clock.nowMs()
+            })
+            : plan;
+        return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
     /** The lane a durable plan names, or the only lane of a runtime with one backend. */

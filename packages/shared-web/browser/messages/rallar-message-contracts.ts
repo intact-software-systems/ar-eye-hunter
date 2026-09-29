@@ -70,6 +70,8 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
     readonly exceptPeerIds?: readonly string[];
+    /** The one session or server a send addresses; absent, the send reaches its scope. */
+    readonly peerId?: string;
     /** Stated together with `orderingKey` or not at all; absent, the broadcast is unordered. */
     readonly seq?: number;
     readonly orderingKey?: string;

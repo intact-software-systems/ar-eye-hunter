@@ -72,18 +72,20 @@ previous current room too.
 
 ```ts
 const created = await rallar.rooms.createAndSwitch({
+    groupId: 'private-lobby',
     displayName: 'Private Lobby',
     joinMode: 'invite-only',
     maxMembers: 8
 });
 
-await rallar.rooms.invite(created.group, 'bob', {
+await rallar.rooms.invite(created.group, bobPrincipalId, {
     invitationExpiresAtEpochMs: Date.now() + 10 * 60 * 1000
 });
 ```
 
-The invited browser should use the safe accept workflow instead of writing its
-own membership record:
+`bobPrincipalId` is the invitee's `AuthSession.clientId`, not its username. The
+invited browser should use the safe accept workflow instead of writing its own
+membership record:
 
 ```ts
 await rallar.rooms.acceptInvite('private-lobby');
@@ -121,12 +123,13 @@ const rotated = await rotateStateGroupJoinCode({
 await rallar.rooms.join(created.group, { joinCode: rotated.joinCode });
 ```
 
+The final `join` runs on the joining browser; the creator is already a member.
 Codes are reusable until expiry. Rotate again to invalidate the previous code.
 
 ## Room Switch Recovery
 
-`rooms.join(...)` and `rooms.createAndSwitch(...)` first join or create the new
-room, then best-effort leave the old room. If the leave step fails, the new room
+`rooms.join(...)`, `rooms.enter(...)`, and `rooms.createAndSwitch(...)` first
+join or create the new room, then best-effort leave the old room. If the leave step fails, the new room
 is already current and the error is named
 `RallarRoomSwitchPartialFailureError`.
 
@@ -165,7 +168,7 @@ if (presence.status === 'ready') {
     renderReadyPlayers(presence.activeSessionIds);
 }
 else {
-    renderWaitingState(presence.status, presence.missingSessionIds);
+    renderWaitingState(presence.status, presence.observedCount, presence.expectedCount);
 }
 ```
 
@@ -301,24 +304,28 @@ type PlayerUpdate = {
 
 const room = await rallar.rooms.enter('lobby');
 const playerUpdates = room.realtime<PlayerUpdate>({
-    laneId: 'player',
+    laneId: 'realtime',
     waitTimeoutMs: 1000
 });
+const playerFallback = room.message<PlayerUpdate>('player');
 
 playerUpdates.on((message) => {
     updateRemotePlayer(message.peerId, message.data);
+});
+playerFallback.onWs((payload, message) => {
+    updateRemotePlayer(message.senderId, payload);
 });
 
 const result = await playerUpdates.send({ x: 10, y: 20, heading: 90 });
 
 if (result.status === 'not-ready' || result.status === 'no-targets') {
-    await room
-        .message<PlayerUpdate>('player')
-        .sendWs({ x: 10, y: 20, heading: 90 });
+    await playerFallback.sendWs({ x: 10, y: 20, heading: 90 });
 }
 ```
 
-Use `rallar.rtc.waitForRoomLane(...)` and `rallar.realtime.sendJson(...)`
+A lane other than `reliable` or `realtime` must be declared in
+`rtc.dataChannelLanes` before the first connection; the Motion setup below
+shows how. Use `rallar.rtc.waitForRoomLane(...)` and `rallar.realtime.sendJson(...)`
 directly only when you need custom peer selection or low-level readiness
 diagnostics.
 
@@ -341,9 +348,11 @@ if (readiness.readyPeerIds.length > 0) {
 ## Rallar Motion Smoothing
 
 This is a standalone initial setup for Motion. Run it instead of the browser
-quickstart above, not after another recipe has connected. The shared start
-options configure the dedicated lane before the first possible connection and
-are reused by post-login `start(...)`.
+quickstart above, not after another recipe has connected. The setup declares
+the dedicated lane in `rtc.dataChannelLanes`, so every connection this facade
+opens carries it; list `DEFAULT_REALTIME_DATA_CHANNEL_LANE` too, because a
+declared list replaces the default. The shared start options are reused by
+post-login `start(...)`.
 
 ```ts
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime.ts';
@@ -372,14 +381,16 @@ const motionLaneConfig = {
 
 const motionStartOptions = {
     connect: true,
-    refreshRooms: true,
-    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig]
+    refreshRooms: true
 } satisfies RallarStartOptions;
 
 const motionSetup = {
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'game',
     workspaceId: 'default',
+    rtc: {
+        dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig]
+    },
     start: motionStartOptions
 } as const;
 
@@ -428,7 +439,8 @@ for (const [peerId, estimate] of estimates) {
 ### Adaptive Delay
 
 Use adaptive delay when packet spacing jitters. Keep the timestamps
-receiver-local.
+receiver-local. One tracker measures one arrival stream, so feed it from a
+single remote peer's updates rather than from every peer.
 
 ```ts
 import {
@@ -467,6 +479,7 @@ Use the send gate when pose traffic should be capped by cadence and by
 meaningful movement.
 
 ```ts
+import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
 import { createRallarMotionSendGate } from '@shared/rallar-motion/mod.ts';
 
 const poseGate = createRallarMotionSendGate({
@@ -598,12 +611,15 @@ await drafts.whenIdle();
 ## Room CRDT Document
 
 ```ts
+import { toCanonicalGroupRef } from '@shared/api/group-types.ts';
+
+const room = await rallar.rooms.enter('lobby');
 const doc = await rallar.crdt.open('room-checklist', {
     documentType: 'checklist',
-    documentId: room.group.groupId,
+    documentId: room.roomId,
     scope: {
         kind: 'room',
-        roomRef: room.group
+        roomRef: toCanonicalGroupRef(room.roomRef)
     },
     transport: 'ws-then-rtc'
 });
@@ -702,12 +718,12 @@ server.start();
 ```ts
 server.ws.defineTopic<{ text: string; }>({
     topicId: 'room.chat',
-    typeId: 'chat.message.v1',
+    typeId: 'room.chat.v1',
     scope: 'room',
-    validate: (message) =>
-        typeof message.payload === 'object' &&
-        message.payload !== null &&
-        typeof (message.payload as { text?: unknown; }).text === 'string',
+    validate: (payload) =>
+        typeof payload === 'object' &&
+        payload !== null &&
+        typeof (payload as { text?: unknown; }).text === 'string',
     fanout: 'outbox'
 });
 ```

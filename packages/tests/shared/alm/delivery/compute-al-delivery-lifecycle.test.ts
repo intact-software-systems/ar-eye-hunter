@@ -195,11 +195,13 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                 msgId: previous.msgId,
                 carrier: 'ws',
                 atMs: AT_MS,
+                reason: 'no-route',
                 detail: 'no carrier left to try'
             });
 
             expect(next.state).toBe('failed');
             expect(next.evidence.reason).toBe('no carrier left to try');
+            expect(next.evidence.failure).toEqual({ kind: 'unroutable', reason: 'no-route' });
         });
     });
 

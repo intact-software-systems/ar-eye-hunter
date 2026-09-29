@@ -107,15 +107,6 @@ describe('general agent guidance routing', () => {
             'UI Workflow Testing'
         ]);
     });
-
-    it('keeps authenticated exception authority separate from pull request completion', () => {
-        const agents = normalize(readRepo('AGENTS.md'));
-
-        expect(agents).toContain(
-            'Authenticated governance exceptions are separate from ordinary pull request delivery'
-        );
-        expect(agents).toContain('cannot be used as pull request completion evidence');
-    });
 });
 
 function readRepo(repositoryPath: string): string {

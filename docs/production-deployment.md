@@ -10,16 +10,17 @@ drift, not an additional application release gate.
 `.github/workflows/deploy.yml` accepts pushes to `main` and explicit manual
 dispatches. It never listens to `pull_request` or non-main push events. Every
 deployment job also checks that its ref is `refs/heads/main`, so dispatching the
-workflow from another ref cannot publish. Deno deployments and the repository's
-Cloudflare build checks wait for the shared release gate unless an operator
-explicitly uses the manual `skip_release_gate` break-glass input from `main`.
+workflow from another ref cannot publish. Deno deployments wait for the shared
+release gate unless an operator explicitly uses the manual `skip_release_gate`
+break-glass input from `main`.
 
-The three Cloudflare-named jobs in this workflow are repository build checks;
-they do not publish to Cloudflare. Until a separate authenticated Actions
-cutover is implemented, Cloudflare's Git integration publishes `main`
-independently and therefore does not wait for this workflow's release gate.
-The provider branch controls below enforce branch scope, not release-gate
-ordering.
+This workflow has no Cloudflare job. The release gate's "Build deployable apps"
+step builds the three Cloudflare web apps as the repository build check.
+Cloudflare's Git integration publishes them when `main` moves: Pages for
+`ar-eye-hunter`, Workers Builds for `rallar-kit` and `relic-hunters-v1`. Until a
+separate authenticated Actions cutover is implemented, those publishes do not
+wait for the release gate. The provider branch controls below enforce branch
+scope, not release-gate ordering.
 
 Deno deployment through GitHub Actions is staged behind the repository variable
 `DENO_DEPLOY_ACTIONS_ENABLED=true`. Leaving the variable unset or false keeps
@@ -31,18 +32,20 @@ Deno job refuses to proceed when its checked-out commit is no longer the remote
 
 ## Cloudflare branch controls
 
-The main-only `cloudflare-branch-controls` job applies and verifies these
-settings on every **Deploy Web + API** workflow run. It uses the repository's
-`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets without printing
-their values. The token must be user-scoped and have **Workers Builds
-Configuration: Edit**, **Workers Scripts: Read**, and the Pages project edit
-permission.
+The `cloudflare-branch-controls` job in **Deploy Web + API** is disabled
+(`if: ${{ false }}`) while Cloudflare is configured by hand for `main` only.
+Apply and verify the settings below in the Cloudflare dashboard. The job and
+`scripts/deploy/configure-cloudflare-main-only.mjs --apply` remain the automated
+path once the job is re-enabled. The script reads `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN` without printing their values. The token must be
+user-scoped and have **Workers Builds Configuration: Edit**, **Workers Scripts:
+Read**, and the Pages project edit permission.
 
-The job reads every expected project before its first mutation. It then removes
-the non-production trigger from the `rallar-kit` and `relic-hunters-v1`
+The script reads every expected project before its first mutation. It then
+removes the non-production trigger from the `rallar-kit` and `relic-hunters-v1`
 Workers, preserves one production trigger restricted to `main`, and configures
 the `ar-eye-hunter` Pages project with preview deployments disabled. A missing,
-renamed, ambiguous, or unverifiable project fails the job instead of partially
+renamed, ambiguous, or unverifiable project fails the run instead of partially
 applying a guessed configuration.
 
 The resulting settings for both Workers projects are:
@@ -57,7 +60,7 @@ Verify the next feature-branch push has no `Workers Builds:*` or `Cloudflare
 Pages` check. Do not use commit-message skip directives as a permanent branch
 policy.
 
-If the enforcement job reports an authorization failure, replace
+If the script reports an authorization failure, replace
 `CLOUDFLARE_API_TOKEN` with a user-scoped token carrying the permissions above;
 do not broaden the workflow or expose the token in diagnostic output.
 

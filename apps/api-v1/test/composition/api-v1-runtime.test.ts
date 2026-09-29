@@ -4,6 +4,11 @@ import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/pe
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
+import {
+    createRallarAlmReceiptDiagnosticsRecorder,
+    RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY,
+    type RallarAlmReceiptDiagnosticsRecorder
+} from '@shared-server/rallar-system/observability/alm-receipt-diagnostics.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-background-task-lifecycle.ts';
@@ -39,6 +44,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
         additions.groupRestSnapshotReadSelector
     );
     assert.equal(complete.groupFormationMetrics, additions.groupFormationMetrics);
+    assert.equal(complete.almReceiptDiagnostics, additions.almReceiptDiagnostics);
     assert.equal(complete.backgroundTasks, additions.backgroundTasks);
     assert.equal(complete.topologyServices, additions.topologyServices);
 });
@@ -106,6 +112,7 @@ interface RuntimeAdditions {
     readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+    readonly almReceiptDiagnostics: RallarAlmReceiptDiagnosticsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
     readonly topologyServices: ApiV1TopologyServices;
 }
@@ -133,6 +140,10 @@ function createRuntimeAdditions(): RuntimeAdditions {
         clientRestSnapshotReadSelector: {} as ClientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: {} as GroupRestSnapshotReadSelector,
         groupFormationMetrics: {} as RallarGroupFormationMetricsRecorder,
+        almReceiptDiagnostics: createRallarAlmReceiptDiagnosticsRecorder({
+            nowEpochMs: Date.now,
+            capacity: RALLAR_ALM_RECEIPT_DIAGNOSTICS_CAPACITY
+        }),
         backgroundTasks: {} as ApiV1BackgroundTaskLifecycle,
         topologyServices: {} as ApiV1TopologyServices
     };

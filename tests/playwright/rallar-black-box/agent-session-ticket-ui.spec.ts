@@ -43,7 +43,8 @@ test.describe('rallar-black-box agent tab session tickets', () => {
                         wsBaseUrl: 'wss://api.agent-session-ticket.test',
                         endpoints: {
                             createWs: `${API_BASE_URL}/api/ws`
-                        }
+                        },
+                        serverPeerId: 'server'
                     }
                 });
                 return;

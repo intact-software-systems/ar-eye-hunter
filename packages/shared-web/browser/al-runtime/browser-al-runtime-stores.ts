@@ -29,6 +29,7 @@ import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
@@ -125,12 +126,13 @@ export function createBrowserALOutboundRuntimeStores(
 
 /** Always memory, whatever the browser supports: the pair a carrier routes volatile admissions to. */
 export function createBrowserALVolatileOutboundRuntimeStores(
-    name: string
+    name: string,
+    budget: ALVolatileSessionBudget
 ): ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage> {
-    return createVolatileALOutboundRuntimeStores({
-        namespace: `browser:${name}:volatile`,
-        decodePrepared: decodeALOutboundTransportMessage
-    });
+    return createVolatileALOutboundRuntimeStores(
+        { namespace: `browser:${name}:volatile`, decodePrepared: decodeALOutboundTransportMessage },
+        budget
+    );
 }
 
 /**
@@ -138,8 +140,11 @@ export function createBrowserALVolatileOutboundRuntimeStores(
  * shared by both carriers (D20). Session cleanup and a storage reset never reach it; it dies with the
  * middleware.
  */
-export function createBrowserALVolatileInboundRuntimeStores(name: string): ALVolatileInboundRuntimeStores {
-    return createVolatileALInboundRuntimeStores({ namespace: `browser:${name}:volatile` });
+export function createBrowserALVolatileInboundRuntimeStores(
+    name: string,
+    budget: ALVolatileSessionBudget
+): ALVolatileInboundRuntimeStores {
+    return createVolatileALInboundRuntimeStores({ namespace: `browser:${name}:volatile` }, budget);
 }
 
 export function configureBrowserALRuntimeStores(

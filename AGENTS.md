@@ -149,12 +149,7 @@ limit.
   Each default-branch push requires a new permission request and approval.
   Commit and push permissions are independent; approval for one never grants
   approval for the other.
-- Authenticated governance exceptions are separate from ordinary pull request delivery and
-  cannot be used as pull request completion evidence. For a supported exception, an AI may use
-  `npm run governance:decide -- apply` after showing the exact canonical request
-  and expected main head and receiving one just-in-time approval for that exact
-  atomic mutation. A changed request or head invalidates approval and requires
-  a new one. Never fabricate completion or review evidence.
+- Never fabricate completion or review evidence.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;
     then use the authority, realtime, and testing specialists for the selected

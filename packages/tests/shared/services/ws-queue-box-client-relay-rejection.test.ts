@@ -10,10 +10,18 @@ import {
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    decodeALOutboundTransportMessage,
+    type ALOutboundTransportMessage
+} from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import type {
+    WsServerInboundAuthorization,
+    WsServerInboundAuthorizer
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
@@ -34,6 +42,7 @@ interface RelayFixture {
 
 interface OriginClient {
     readonly service: WsQueueBoxClientService;
+    readonly outboundStores: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     readonly settlements: ALDeliverySettlement[];
 }
 
@@ -97,9 +106,120 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
         expect(admitted.left).toBeDefined();
         expect(readSentNacks(fixture.sockets.a)).toEqual([]);
     });
+
+    it('states the server refusing a room unicast to a non-member before admission; the receipted handle reads rejected (C3)', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const unicast = roomUnicast('unicast-to-outsider', 'outsider');
+        expect((await origin.service.enqueueOutboxIfAbsent(unicast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(unicast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
+        await relayFrames(fixture.sockets.a, origin);
+        expect(origin.settlements.filter((settlement) => settlement.kind === 'relay-rejected')).toEqual(
+            [{
+                kind: 'relay-rejected',
+                msgId: 'unicast-to-outsider',
+                carrier: 'ws',
+                atMs: expect.any(Number),
+                relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
+                detail: 'The server refused the message: unauthorized.'
+            }]
+        );
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'unicast-to-outsider')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('unicast-to-outsider', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({
+            relay: 'trusted-server',
+            reason: 'unauthorized'
+        });
+    });
+
+    it('states the room authorizer refusing a room broadcast before admission; the receipted handle reads rejected at once (C3)', async () => {
+        const fixture = await createRelayFixture(async () => ({
+            authorized: false,
+            reason: 'unauthorized',
+            rejectionCode: 'unauthorized',
+            logMessage: 'Rejected room message for room-1: member-not-active.',
+            sendNack: true
+        }));
+        const origin = await createOriginClient();
+        const broadcast: ALMessage = {
+            ...roomUnicast('broadcast-refused', 'b'),
+            targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(broadcast)).verdict.kind).toBe('admitted');
+
+        const refused = await fixture.server.acceptIncomingMessage(broadcast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        await relayFrames(fixture.sockets.a, origin);
+        const lifecycle = origin.settlements
+            .filter((settlement) => settlement.msgId === 'broadcast-refused')
+            .reduce(computeALDeliveryLifecycle, toInitialLifecycle('broadcast-refused', 'receiver'));
+        expect(lifecycle.state).toBe('rejected');
+        expect(lifecycle.evidence.relayRejection).toEqual({ relay: 'trusted-server', reason: 'unauthorized' });
+    });
+
+    // R-S3c-i-28: the origin tracks the server as the hop of a `hop` room unicast (R-S3a-4), and a NACK from a peer the
+    // receipt expects is admitted, so the server's refusal ends that receipt as it ends a server-addressed one (R-S3c-i-21).
+    it('ends the server hop receipt of a hop room unicast to a non-member on the server refusal; the handle reads failed', async () => {
+        const fixture = await createRelayFixture();
+        const origin = await createOriginClient();
+        const unicast: ALMessage = {
+            ...roomUnicast('hop-to-outsider', 'outsider'),
+            delivery: { reliability: 'at-least-once', ack: 'none' },
+            qos: { ack: { algo: 'hop' } }
+        };
+        expect((await origin.service.enqueueOutboxIfAbsent(unicast)).trackedReceiptAlgo).toBe('hop');
+
+        const refused = await fixture.server.acceptIncomingMessage(unicast, 'a');
+
+        expect(refused.left?.code).toBe('unauthorized');
+        expect(readSentNacks(fixture.sockets.a)).toHaveLength(1);
+        await relayFrames(fixture.sockets.a, origin);
+        const settlements = origin.settlements.filter((settlement) => settlement.msgId === 'hop-to-outsider');
+        expect(settlements.filter((settlement) => settlement.kind === 'receipt-exhausted')).toEqual([{
+            kind: 'receipt-exhausted',
+            msgId: 'hop-to-outsider',
+            carrier: 'ws',
+            atMs: expect.any(Number),
+            mode: 'hop',
+            confirmedPeerIds: [],
+            unconfirmedPeerIds: ['server-1'],
+            cause: 'hop-refused',
+            hopPeerId: 'server-1',
+            nackReason: 'unauthorized',
+            detail: 'Hop server-1 refused the message: unauthorized.'
+        }]);
+        expect(
+            await origin.outboundStores.admissionStore.readReceiptState({
+                originPeerId: 'a',
+                msgId: 'hop-to-outsider'
+            })
+        ).toBeUndefined();
+        const lifecycle = settlements.reduce(
+            computeALDeliveryLifecycle,
+            createInitialALDeliveryLifecycle({
+                msgId: 'hop-to-outsider',
+                typeId: 'command.v1',
+                ackMode: 'none',
+                receiptAlgo: 'hop',
+                expiresAtMs: undefined,
+                submittedAtMs: 0
+            })
+        );
+        expect(lifecycle.state).toBe('failed');
+        expect(lifecycle.evidence.relayRejection).toBeUndefined();
+    });
 });
 
-async function createRelayFixture(): Promise<RelayFixture> {
+async function createRelayFixture(
+    authorize: WsServerInboundAuthorizer['authorize'] = authorizeEveryRoomMember
+): Promise<RelayFixture> {
     const socketServer = new JsonWebSocketServer();
     const sockets = { a: new SimulatedWebSocket('ws://a'), b: new SimulatedWebSocket('ws://b') };
     for (const [peerId, socket] of Object.entries(sockets)) {
@@ -119,14 +239,15 @@ async function createRelayFixture(): Promise<RelayFixture> {
             resolveBroadcastRecipients: recipients
         }
     });
-    server.authorizeInboundMessagesWith({
-        authorize: async (message) =>
-            isRoomScopedALMessage(message)
-                ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: 3 } }
-                : { authorized: true }
-    });
+    server.authorizeInboundMessagesWith({ sendNacks: true, authorize });
     onTestFinished(() => server.dispose());
     return { server, engine, sockets };
+}
+
+async function authorizeEveryRoomMember(message: ALMessage): Promise<WsServerInboundAuthorization> {
+    return isRoomScopedALMessage(message)
+        ? { authorized: true, roomAudience: { recipientPeerIds: ['a', 'b'], snapshotVersion: 3 } }
+        : { authorized: true };
 }
 
 /** The origin WS client: every frame it reads came from its server, the only source it has. */
@@ -138,15 +259,17 @@ async function createOriginClient(): Promise<OriginClient> {
     TestWebSocket.instances.at(-1)!.open();
     await connected;
     const settlements: ALDeliverySettlement[] = [];
+    const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
     const service = createDefaultWsQueueBoxClientService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'a',
-        outboundStores: createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage }),
+        serverPeerId: 'server-1',
+        outboundStores,
         outboundSettlements: (settlement) => settlements.push(settlement)
     });
     onTestFinished(() => service.close());
-    return { service, settlements };
+    return { service, outboundStores, settlements };
 }
 
 async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Promise<void> {
@@ -165,6 +288,18 @@ function orderedRoomMessage(msgId: string, seq: number, ack: 'none' | 'receiver'
         ordering: { orderingKey: 'resync', epoch: 0, seq },
         delivery: { reliability: 'at-least-once', ack },
         payload: { typeId: 'ordered.v1', contentType: 'application/json', resource: '{}' }
+    };
+}
+
+/** A receipted command to one session of the room, which names its room so the room's authority admits it. */
+function roomUnicast(msgId: string, toPeerId: string): ALMessage {
+    return {
+        id: { v: 2, msgId, ts: Date.now(), senderId: 'a' },
+        route: { topicId: 'room.command', resourceId: msgId, contextId: ROOM.groupId },
+        targets: { mode: 'unicast', toPeerId, groupRef: ROOM },
+        constraints: { expiresAtMs: Date.now() + 30_000 },
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        payload: { typeId: 'command.v1', contentType: 'application/json', resource: '{}' }
     };
 }
 

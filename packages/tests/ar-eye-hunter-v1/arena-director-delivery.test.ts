@@ -16,7 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
-import { createRallarGameEnvelope, type RallarGameMatchStatus, type RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
+import {
+    createRallarGameEnvelope,
+    type RallarGameMatchStatus,
+    type RallarGamePeerReadiness,
+    type RallarGameSendResult
+} from '@shared-web/game/mod.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import {
@@ -327,6 +332,22 @@ describe('arena director delivery and appointment', () => {
         await act(async () => {
             laneWait.resolve(emptyPeerReadiness());
             await laneWait.promise;
+        });
+    });
+
+    it('starts the peer-ready sync while the director has not yet confirmed the join sync (D60)', async () => {
+        const joinSync = Promise.withResolvers<RallarGameSendResult>();
+        mockMatch.requestSync.mockReturnValueOnce(joinSync.promise);
+        mockMatch.waitForReadyLanes.mockResolvedValueOnce({ ...emptyPeerReadiness(), readyPeerIds: ['peer-b'] });
+
+        await arena.render();
+
+        // One ready peer: its sync request goes out while the join sync still waits on the director.
+        await vi.waitFor(() => expect(mockMatch.requestSync).toHaveBeenCalledWith({ reason: 'arena-peer-ready' }));
+        expect(mockMatch.requestSync).toHaveBeenCalledWith({ reason: 'arena-join' });
+        await act(async () => {
+            joinSync.resolve({ status: 'sent', transport: 'director-relay' });
+            await joinSync.promise;
         });
     });
 

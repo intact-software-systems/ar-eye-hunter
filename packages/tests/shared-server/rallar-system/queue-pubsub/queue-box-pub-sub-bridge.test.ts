@@ -147,7 +147,7 @@ describe('QueueBoxPubSubBridge', () => {
         const entry = createWsOutboxEntry();
 
         const message = decodePersistedALMessage(entry.resource);
-        await outboxPublishers[0](message, entry);
+        await outboxPublishers[0](message, entry, undefined);
 
         expect(bridge.published).toEqual([
             {
@@ -334,6 +334,35 @@ describe('QueueBoxPubSubBridge', () => {
             expiresAtMs: decodePersistedALMessage(entry.resource).constraints?.expiresAtMs
         });
         expect(JSON.stringify(message)).not.toContain(entry.resource);
+    });
+
+    it('hands a row with no captured audience to the local and the remote send as absent, so each resolves its targets as before', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createWsOutboxEntry();
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const handedAudiences: (readonly string[] | undefined)[] = [];
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            outbox,
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            sendToTargetsWithResult: (message, _recipientSessionIds, admittedPeerIds) => {
+                handedAudiences.push(admittedPeerIds);
+                return sentLiveResult(message);
+            },
+            readAdmittedAudience: () => Promise.resolve(undefined)
+        });
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1'
+        });
+
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, undefined);
+        await bridge.subscriber?.(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry }));
+
+        expect(handedAudiences).toEqual([undefined, undefined]);
     });
 
     it('loads durable outbox work before sending subscribed messages', async () => {
@@ -611,9 +640,8 @@ function createBridge(): TestQueueBoxPubSubBridge {
 interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly outbox?: InMemoryQueueBox;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
-    readonly sendToTargetsWithResult?: (
-        message: ALMessage
-    ) => WsServerLiveSendResult;
+    readonly sendToTargetsWithResult?: QueueBoxPubSubWsService['sendToTargetsWithResult'];
+    readonly readAdmittedAudience?: (msgId: string) => Promise<readonly string[] | undefined>;
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -625,8 +653,12 @@ function createTestQueueBoxPubSubWsService(
             input.registerOutboxPublisher?.(publisher);
             return service;
         },
-        sendToTargetsWithResult(message) {
-            return input.sendToTargetsWithResult?.(message) ?? noRecipientLiveSendResult(message);
+        sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds) {
+            return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
+                noRecipientLiveSendResult(message);
+        },
+        readAdmittedAudience(msgId) {
+            return input.readAdmittedAudience?.(msgId) ?? Promise.resolve(undefined);
         }
     };
 

@@ -561,6 +561,16 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
                 throw new Error('This fixture never states a snapshot floor.');
             }
         },
+        peers: {
+            serverPeerId: () => {
+                throw new Error('This fixture never addresses a peer.');
+            },
+            session: () => undefined,
+            getRoomSessions: () => {
+                throw new Error('This fixture never addresses a peer.');
+            }
+        },
+        now: Date.now,
         typedChannels: new BlackBoxRallarTypedChannels({ messages: facade.messages, resources, diagnostics }),
         resources,
         diagnostics,

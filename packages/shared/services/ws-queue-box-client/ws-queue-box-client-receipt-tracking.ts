@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
+import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundMessageRuntime
@@ -8,16 +9,18 @@ import type {
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
 
 /**
- * The receipt a WS send tracks. A unicast expects its addressee as its hop (`receiver` on a WS
- * unicast is refused at admission); a `receiver` room send expects nobody yet, because the server's
- * `admitted` receipt names the frozen audience the row is created from. Any other room send tracks
- * no receipt on WS.
+ * The receipt a WS send tracks. The server is the one hop a WS origin has (R-S3a-4): a unicast addressed to the server
+ * and every `hop` or `subtree` send expect the server's own ACK. A `receiver` send to a session or a room expects
+ * nobody yet: the server's `admitted` receipt names the frozen audience the row is created from (D53). With no server
+ * id known (a server that predates S3c-i), a send tracks what it did before: a unicast its addressee, a room send
+ * nothing unless it asks `receiver`.
  */
 export function toWsQueueBoxClientAckTrackingPlan(
     effective: ALQosEffectivePolicy,
-    msg: ALMessage
+    msg: ALMessage,
+    serverPeerId: string | undefined
 ): ALOutboundAckTrackingPlan | undefined {
-    const receiptAudience = toReceiptAudience(effective, msg.targets);
+    const receiptAudience = toReceiptAudience(effective, msg, serverPeerId);
     if (effective.ack.algo === 'none' || receiptAudience === undefined) {
         return undefined;
     }
@@ -33,12 +36,29 @@ export function toWsQueueBoxClientAckTrackingPlan(
 
 function toReceiptAudience(
     effective: ALQosEffectivePolicy,
-    targets: ALMessage['targets']
+    msg: ALMessage,
+    serverPeerId: string | undefined
 ): readonly string[] | undefined {
-    if (targets?.mode === 'unicast') {
-        return [targets.toPeerId];
+    const targets = msg.targets;
+    if (targets === undefined) {
+        return undefined;
     }
-    return effective.ack.algo === 'receiver' && targets !== undefined ? [] : undefined;
+    if (serverPeerId === undefined) {
+        return toServerUnknownReceiptAudience(effective, targets);
+    }
+    return isALUnicastAddressedTo(msg, serverPeerId) || effective.ack.algo !== 'receiver'
+        ? [serverPeerId]
+        : [];
+}
+
+function toServerUnknownReceiptAudience(
+    effective: ALQosEffectivePolicy,
+    targets: NonNullable<ALMessage['targets']>
+): readonly string[] | undefined {
+    if (targets.mode === 'unicast') {
+        return effective.ack.algo === 'receiver' ? [] : [targets.toPeerId];
+    }
+    return effective.ack.algo === 'receiver' ? [] : undefined;
 }
 
 /**

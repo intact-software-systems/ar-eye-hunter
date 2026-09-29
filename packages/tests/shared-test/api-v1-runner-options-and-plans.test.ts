@@ -80,6 +80,7 @@ describe('API-v1 runner options and process plans', () => {
             secondaryPort: 18081,
             tertiaryPort: 18082,
             clusterOnly: true,
+            standardOnly: false,
             clusterProfile: 'api-v1-black-box-medium-scale'
         });
 
@@ -448,5 +449,57 @@ describe('API-v1 runner options and process plans', () => {
         expect(
             toRecipeMatrixCommands(options, '/tmp/api-v1-bb').map((command) => command.find((argument) => argument.startsWith('--profile=')))
         ).toEqual(['--profile=api-v1-black-box', '--profile=api-v1-black-box-cluster']);
+    });
+
+    it('runs only the ordinary profile with --standard-only and skips the appended cluster profile', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+            '--tertiary-port=18082',
+            '--standard-only'
+        ]);
+
+        expect(options.standardOnly).toBe(true);
+        expect(
+            toRecipeMatrixCommands(options, '/tmp/api-v1-bb').map((command) => command.find((argument) => argument.startsWith('--profile=')))
+        ).toEqual(['--profile=api-v1-black-box']);
+    });
+
+    it('rejects --standard-only together with --cluster-only', () => {
+        expect(() =>
+            parseApiV1BlackBoxArgs([
+                '--backend=postgres',
+                '--secondary-port=18081',
+                '--tertiary-port=18082',
+                '--standard-only',
+                '--cluster-only'
+            ])
+        ).toThrow(/cluster-only and --standard-only cannot be combined/);
+    });
+
+    it('passes one --shard share to every recipe matrix command it runs', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+            '--tertiary-port=18082',
+            '--shard=2/3'
+        ]);
+
+        expect(options.shard).toEqual({ index: 2, count: 3 });
+        expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb').map((command) => command.filter((argument) => argument.startsWith('--shard=')))).toEqual([
+            ['--shard=2/3'],
+            ['--shard=2/3']
+        ]);
+    });
+
+    it('leaves the commands without --shard when no share is requested', () => {
+        const options = parseApiV1BlackBoxArgs(['--backend=postgres', '--secondary-port=18081', '--tertiary-port=18082']);
+
+        expect(options.shard).toBeUndefined();
+        expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb').flat().filter((argument) => argument.startsWith('--shard'))).toEqual([]);
+    });
+
+    it.each(['0/2', '3/2', 'x'])('rejects the invalid --shard=%s', (shard) => {
+        expect(() => parseApiV1BlackBoxArgs(['--backend=pglite-memory', `--shard=${shard}`])).toThrow(/--shard/);
     });
 });

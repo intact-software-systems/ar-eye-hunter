@@ -89,6 +89,7 @@ function createWebSocketQueueBoxDouble(
     override: Partial<RallarBrowserMiddleware['webSocketQueueBox']> = {}
 ): RallarBrowserMiddleware['webSocketQueueBox'] {
     const queueBox: RallarBrowserMiddleware['webSocketQueueBox'] = toServiceTestDouble<RallarBrowserMiddleware['webSocketQueueBox']>({
+        serverPeerId: 'server',
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,

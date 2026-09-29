@@ -6,7 +6,7 @@ import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shar
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { ApiConfig } from '@shared/api/api-config.ts';
+import type { ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
 import { registerAdminOperationsRoutes } from '../admin-operations/register-admin-operations-routes.ts';
@@ -93,7 +93,7 @@ export interface CreateApiV1RouteInstallersInput<
     readonly authUserRepository: AuthUserRepository;
     readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
     readonly operatorToken: ApiV1OperatorTokenConfiguration;
-    readonly publicConfiguration: ApiConfig;
+    readonly publicConfiguration: ApiConfigResponse;
     readonly ice: ApiV1IceConfiguration;
     readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
     readonly strictReadAuthorization: boolean;

@@ -1,3 +1,4 @@
+import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -86,6 +87,8 @@ export interface CreateRallarMiddlewareOptions {
     readonly wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     readonly wsOutboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly wsInboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+    /** The WS server's settlement sink; absent, the server's own receipts are settled but observed by nobody. */
+    readonly wsOutboundSettlements?: ALDeliverySettlementSink;
     readonly createGroupStateInboxService: (
         input: RallarGroupStateInboxServiceFactoryInput
     ) => GroupStateInboxService;

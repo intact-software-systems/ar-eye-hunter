@@ -2,8 +2,8 @@
 
 This registry records approved persistent exceptions to the authoritative
 [repo TypeScript coding standard](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
-It starts empty. Do not register all existing legacy files above the size
-thresholds retroactively.
+Do not register existing legacy files above the size thresholds
+retroactively.
 
 Add an entry only when a materially touched TypeScript file remains at or above
 cognitive load 330, remains above the 1,200-line navigation backstop after the
@@ -29,6 +29,7 @@ Each entry records:
 - Exception category;
 - Why cohesion is clearer than the available separation;
 - Approval date and reviewer;
+- Owner;
 - Review or removal condition.
 
 Use one of the accepted categories from the canonical standard: declarative

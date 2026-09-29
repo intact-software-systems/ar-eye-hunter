@@ -2,9 +2,10 @@ import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-cont
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
-import type {
-    ALControlAdmissionCandidate,
-    ALControlAdmissionRead
+import {
+    isALServerRefusalBeforeReceipt,
+    type ALControlAdmissionCandidate,
+    type ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
 import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
 
@@ -108,21 +109,23 @@ function isDuplicateControl(read: ALControlAdmissionRead): boolean {
     }
 }
 
-/** The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer. */
+/**
+ * The trusted server speaks for the relay it is, so its `resync-required` NACK needs no expected peer, and
+ * neither does its `unauthorized` refusal of a message before any receipt row exists (S3c-i C3).
+ */
 function isTrustedRelayRejection(read: ALControlAdmissionRead): boolean {
-    return read.source === 'trusted-server' && read.parsed.type === 'nack' &&
+    const isResyncRequired = read.source === 'trusted-server' && read.parsed.type === 'nack' &&
         read.parsed.payload.reason === 'resync-required';
+    return isResyncRequired || isALServerRefusalBeforeReceipt(read);
 }
 
+/** A repair or NACK comes from a unicast's addressee or from any peer its receipt expects: on WS, the tracked server hop. */
 function isExpectedRepairPeer(
     sent: ALStoredOutboundMessage,
     pending: ALOutboundPendingAckSnapshot | undefined,
     peerId: string
 ): boolean {
-    if (sent.unicastPeerId !== null) {
-        return sent.unicastPeerId === peerId;
-    }
-    return pending?.expectedPeerIds.includes(peerId) === true;
+    return sent.unicastPeerId === peerId || pending?.expectedPeerIds.includes(peerId) === true;
 }
 
 function hasValidOrderingHints(

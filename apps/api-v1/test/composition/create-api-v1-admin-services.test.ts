@@ -117,6 +117,7 @@ function createInput(
         resetRtcTopologyMetrics: () => {},
         readGroupFormationMetrics: emptyGroupFormationMetrics,
         resetGroupFormationMetrics: () => {},
+        readAlmReceipts: () => ({ capacity: 256, messages: [] }),
         crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
             now: () => NOW_EPOCH_MS
         }),

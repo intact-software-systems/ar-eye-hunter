@@ -33,10 +33,6 @@ command entry and owns command dispatch plus caller-visible exit/output mapping.
 owns the accepted evidence-operation result boundary. Workload-specific entries and their
 production operations remain visible in the executable catalog below.
 
-Task 4A move provenance that Git cannot identify as a rename is recorded in
-`plans/repo-style-lineages/shared-rtc-bench-task-4a.json`; Git-detected renames
-remain direct diff evidence and are intentionally absent from that manifest.
-
 ## Continuous RTC observations
 
 RTC-B05 browser lifecycle performance is an observation stream over moving

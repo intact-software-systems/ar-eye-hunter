@@ -165,6 +165,31 @@
       }
     },
     {
+      "name": "readAdminRealtimeListsTheServerReceipts",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "serverId": "string",
+          "almReceipts": {
+            "processLocal": true,
+            "diagnostics": {
+              "capacity": 256
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "dryRunPruneExpired",
       "type": "http",
       "connection": "api",

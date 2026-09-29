@@ -16,7 +16,9 @@ and durable topology publications make retries and reordered delivery safe.
 - Prevent coalescing from changing work that a worker has already reserved.
 - Allow any API server to process topology work while delivering the result to
   browser sessions connected to other API servers.
-- Keep `APP_OUTBOX` terminal: topology work must not create another queue item.
+- Keep topology work bounded: an `APP_OUTBOX` topology item writes only its
+  final `WS_OUTBOX` pages and computed promotion/connect-trigger requests, in
+  its own transaction.
 - Avoid process locks and aggregate-wide transaction locks.
 
 ## Architecture Decision Rules
@@ -91,9 +93,9 @@ or unbounded fallback.
 A transaction supplies atomicity for a multi-row commit, but it does not by
 itself prevent lost updates. The transaction conditions the authoritative
 transition on the revision that the decision observed. Compact
-`MutationReceipt` records implement immutable first-writer-wins ledger replay.
+per-domain mutation receipts (`ClientMutationReceipt`, `GroupMutationReceipt`, `RtcRttMutationReceipt`, `GroupTopologyConfigMutationReceipt`) implement immutable first-writer-wins ledger replay.
 Final `APP_OUTBOX` and `WS_OUTBOX` rows are inserted directly through
-`ResourceInboxRepository` inside that transaction; a collision fails and rolls
+`PSqlResourceInboxRepository` inside that transaction; a collision fails and rolls
 back without loading a winner. There is no intermediate mutation outbox.
 Dynamic logical WebSocket audience resolution happens only after commit; queue
 workers are then woken or poll. If computed authoritative work already contains
@@ -118,9 +120,9 @@ replacement that another server refreshed after the read.
 ```mermaid
 flowchart LR
     C["APP_INBOX group command"] --> D["Durable group mutation"]
+    D --> W["Group snapshot and event to WS_OUTBOX (same transaction)"]
+    D --> A["Group-revision topology work to APP_OUTBOX (same transaction)"]
     D --> P["Process-owned cached group service observes committed snapshot"]
-    P --> W["Group snapshot and event to WS_OUTBOX"]
-    P --> A["Immutable group-revision work to APP_OUTBOX"]
     A --> T["Topology calculation from the exact snapshot"]
     T --> L["Monotonic durable latest topology"]
     T --> R["Immutable durable publication"]
@@ -156,8 +158,9 @@ repositories attach it to direct reads, lists, and pages.
 Group authority is the required `GroupStateCausalRevision` tuple
 `{ groupRevision, presenceRevision }`. Metadata and roster changes advance the
 group component. Presence connect, heartbeat, disconnect, and expiry use the
-session row as their guard, advance presence authority through summary
-convergence, and do not contend on the group row. Consumers compare the full
+session row as their guard and do not contend on the group row. Presence
+authority advances through summary convergence only when the canonical summary
+content changes; a pure lease renewal never advances `presenceRevision`. Consumers compare the full
 tuple rather than forcing both domains through one scalar write guard.
 
 ### Revisioned observation
@@ -176,8 +179,10 @@ regresses:
 | Present       | Group tuple is incomparable           | Explicit causal conflict |
 
 An equal causal revision with different content throws
-`StateSnapshotRevisionConflictError`. Silently choosing one would make a data
-integrity defect look like normal eventual consistency.
+`StateSnapshotRevisionConflictError`. For groups, the comparison ignores
+session lease fields and treats a read-time expiry reduction of the same tuple
+as a duplicate. Silently choosing one would make a data integrity defect look
+like normal eventual consistency.
 
 Authoritative snapshot collections that represent unordered sets use canonical
 storage-key order in both the computed mutation result and durable repository
@@ -194,8 +199,9 @@ then decorates the durable services with:
 - `createCachedClientStateService(...)`
 
 The decorators implement the existing state-service interfaces. A successful
-mutation is observed only after its durable promise resolves, and before the
-application inbox handler publishes WS or topology work. Client results carry
+mutation is observed only after its AppInbox transaction commits, through the
+decorator's `observeSnapshot`; its WS and topology outbox rows were already
+written in that transaction. Client results carry
 `stateRevision`; group results carry `GroupStateCausalRevision`.
 
 General reads use asynchronous read-through caching. Point-read convergence has
@@ -203,9 +209,9 @@ a narrower rule: reads without a revision floor use the durable current
 snapshot, while an eligible floor-bearing read may return a causally sufficient
 cache entry. Strict authorization and graph/topology authority reads use the
 same durable current snapshot used for the request decision; stale cached state
-is never authorization authority. Synchronous `peek` is restricted to
-best-effort local routing where a cache miss can safely produce no local
-recipients.
+is never authorization authority. Synchronous `peek` is used only by the REST point-read selectors: it supplies
+the eligible floor-bearing cache hit and the observed value for conditional
+eviction, and a miss falls back to the durable read.
 
 Client cache keys contain the complete principal identity:
 
@@ -220,17 +226,22 @@ WebSocket state callbacks observe the same process-owned services. The
 state-sync publisher is publication-only and does not independently mutate a
 cache.
 
-Direct snapshot reads use an optimistic aggregate/children/aggregate protocol
-with at most three attempts. A moved aggregate revision retries; deletion
-returns absent; continuous churn throws `StateSnapshotReadConflictError` with
-status 503. Full lists use aggregate set A, two parallel child-prefix reads,
-and aggregate set B. The unchanged path is four prefix reads regardless of
-snapshot count. Pages validate the scanned aggregate keys with one exact-key
-batch read and retain their scanned cursor when a deleted entry is omitted.
+Client direct snapshot reads use an optimistic aggregate/children/aggregate
+protocol with at most three attempts. A group direct read first issues one
+batched runtime-state read of the aggregate, members, presence summary, and
+sessions. It falls back to that three-attempt protocol only when an entry
+changes under the batch. A moved aggregate revision retries; deletion returns
+absent; continuous churn throws `StateSnapshotReadConflictError` with status
+503. Full lists use aggregate set A, then parallel child-prefix reads (two for
+clients: instances and sessions; three for groups: members, presence
+summaries, and sessions), then aggregate set B. The unchanged path is four
+prefix reads for clients and five for groups, regardless of snapshot count.
+Group pages validate the scanned aggregate keys with one exact-key batch read
+and retain their scanned cursor when a deleted entry is omitted.
 
 ### Example: a member changes during a read
 
-Suppose a reader loads aggregate revision 12, then reads members and sessions.
+Suppose a reader on the fallback protocol loads aggregate revision 12, then reads members and sessions.
 Another server commits a member change and advances the aggregate to revision
 13 before the reader's validation read. The reader discards the mixed
 candidate and retries from revision 13; it does not lock the group while
@@ -255,20 +266,28 @@ measurement:
 ```ts
 type RtcTopologyRttRefreshWork = {
     kind: 'rtt-refresh';
+    overlayId: string;
     groupSnapshot: GroupSnapshot;
     requestedGroupStateCausalRevision: GroupStateCausalRevision;
     requestedRttVersion: number;
-    overlayId: string;
+    rtt: RttMeasurementInfo;
+    refinementObservationId: string;
     requestedAtEpochMs: number;
+    requestOptions: CanonicalGroupTopologyConfigPatch;
+    publish: boolean;
 };
 ```
 
 RTT scheduling resolves the scoped group once and embeds that exact snapshot.
-It does not depend on an ambient full-cache scan at execution time.
+At execution the handler reads the current durable group and plans from it
+only when it causally dominates the embedded snapshot; it never scans the
+process cache.
 
-The in-memory RTT scheduler may debounce a burst before publication. Once an
-accepted measurement becomes durable work, its queue identity includes the
-measurement receipt and version. The persisted decoder requires that current
+Each accepted measurement becomes durable work whose queue identity includes
+the measurement receipt and version. At execution, `rtt-refresh` work first
+passes the process-local RTT refinement gate. If the group's accumulated
+Vivaldi movement or refinement interval is below threshold, the work completes
+as a skipped refinement without replanning. The persisted decoder requires that current
 identity and does not accept the group-revision coalescing metadata.
 
 ## Topology Calculation And Latest State
@@ -277,14 +296,17 @@ identity and does not accept the group-revision coalescing metadata.
 `RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, and weighted-path selection;
 `createRtcRoomGraph` owns weighted sparse/complete graph decisions; and
 `planRallarRtcTopologySnapshot(...)` owns the caller-visible changed/version/timestamp planning
-result. `RtcTopologySnapshotRegistry`, `RtcTopologyRttRebuildScheduler`, and `RtcTopologyMetrics`
-own accepted process observations, pending RTT work, and mutable counters respectively.
+result. `RtcTopologySnapshotRegistry` and `RtcTopologyMetrics` own accepted process observations
+and mutable counters respectively.
 Config query, config mutation, reconfiguration, planning, execution, and runtime owners are
 constructed directly; there is no broad topology-management facade.
 
-Every work item calculates from its embedded snapshot. It must not replace
-revision N with the current cache value N+1. Graph planning occurs outside the
-runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
+Every work item reads the current durable group snapshot and selects its
+planning input causally. `group-revision` work keeps its embedded snapshot
+even when the current snapshot dominates it, so revision N is never replaced
+by N+1. `rtt-refresh` work adopts a dominating current snapshot. A dominated
+current snapshot never replaces the embedded one, and an incomparable tuple
+fails. Graph planning occurs outside the runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
 `validateTopologyMutation`, and `writeTopologyMutation` implement the current
 commit path. The write transaction CAS-guards the snapshot first, then inserts
 the compact work claim and immutable publication. A conflict persists nothing
@@ -334,9 +356,10 @@ transaction. A publication contains:
 - the deterministic queue `workId`;
 - the scoped `groupRef`;
 - `sourceGroupStateCausalRevision` and overlay version;
-- the exact recipient session ids;
-- the exact AL topology message;
-- its creation time.
+- the exact recipient session ids and the target group `snapshotVersion`;
+- the accepted overlay topology snapshot, from which the final `WS_OUTBOX`
+  page messages are deterministically materialized;
+- its creation and expiry times.
 
 Publication and work-index records use the existing runtime-state store and a
 24-hour retention window. Exact-key validation uses the existing composite
@@ -346,7 +369,7 @@ tuple. `createdAtEpochMs` comes from the work's immutable request time.
 
 The work index makes retry behavior explicit. Once a work item has persisted a
 publication, a retry loads that record and writes the same final `WS_OUTBOX`
-entry before resolving group state or recalculating topology. A retry can
+page entries before resolving group state or recalculating topology. A retry can
 therefore never publish a different result for the same work identity.
 
 ## Multi-Server Fanout
@@ -377,7 +400,7 @@ sequenceDiagram
     C->>C: Intersect fixed audience with local connections
 ```
 
-The final topology `WS_OUTBOX` message copies the publication's mandatory
+Each final topology `WS_OUTBOX` page copies the publication's mandatory
 `recipientSessionIds` into its fixed logical audience. The cluster notification
 contains only the canonical durable queue key:
 
@@ -388,6 +411,7 @@ type QueueBoxPubSubMessage = {
     channel: string;
     typeId: 'WS_OUTBOX';
     key: { topicId: string; resourceId: string; contextId: string; };
+    expiresAtMs: number;
 };
 ```
 
@@ -453,11 +477,12 @@ acknowledgement.
 ### Example: authorization after a remote ban
 
 Server A may have cached group revision 31 when server B bans a member and
-commits revision 32. On the member's next room message, A probes the durable
-aggregate once. Because the cache is older, A performs a stable snapshot read,
-refreshes its cache, and rejects the message. Remote presence disconnects and
-group deletion follow the same path. A warm, unchanged authorization performs
-only the revision probe.
+commits revision 32. On the member's next room message, A's room authorizer
+reads the current durable group snapshot (`readCurrentSnapshot`) instead of its
+cache, sees the ban, and rejects the message. That read neither consults nor
+refreshes the process cache. Remote presence disconnects and group deletion
+follow the same path. Every room-message authorization performs one durable
+current-snapshot read; there is no revision probe.
 
 ## Browser Convergence
 
@@ -479,7 +504,8 @@ permission. Existing connected or in-progress native connections remain usable
 while later presence or admission observations change; the gate controls new
 allocation. A failed or reset peer record does not grant replacement permission.
 
-Browser startup installs deny policies before connecting the signaling inbox.
+Browser startup installs initializing policies (outbound dial `deny`, inbound
+peer creation `retry`) before connecting the signaling inbox.
 After group ownership is constructed, automatic reconciliation, direct lane
 requests, and incoming offers use the same cached group permission. Signaling
 is decoded before retry-budget consumption or native allocation. Reusable live
@@ -515,8 +541,11 @@ peer lanes.
 ## Failure And Retry Semantics
 
 - Cache observation is monotonic; late reads cannot regress a process cache.
-- Group-revision work is immutable and independently retryable.
-- Reserved RTT work is never rewritten; newer input creates a successor.
+- Coalesced group-revision replan work may be replaced only while it is still
+  `NEW` or `RETRY`; reserved work is never rewritten, and newer input writes a
+  successor generation.
+- RTT refresh work is immutable, with one queue identity per accepted
+  measurement, and is independently retryable.
 - Atomic execution rejects stale tuples and persists no partial output.
 - Durable publication insertion is idempotent by work and publication id.
 - Publication is persisted before the cluster signal is sent.
@@ -526,12 +555,18 @@ peer lanes.
   authorization check; a replacement socket generation cannot receive the
   prior generation's send.
 - Cursor advancement never crosses a failed send or corrupt reference.
-- `APP_OUTBOX` completes only after persistence and cluster publish succeed.
-- The topology handler does not enqueue `APP_INBOX`, `APP_OUTBOX`, or
-  `WS_OUTBOX` work.
+- A topology `APP_OUTBOX` item completes in the same transaction that persists
+  its topology, publication, work index, final `WS_OUTBOX` pages, and
+  delivery-log row. Cluster publish belongs to the later `WS_OUTBOX` worker.
+- Besides its final `WS_OUTBOX` pages, the topology handler writes only its
+  computed `TOPOLOGY_PROMOTION` and `GROUP_CONNECT_TRIGGER` `APP_OUTBOX`
+  requests in that transaction. After commit it may petition formation and
+  activation-status group commands, which re-authorize through `APP_INBOX`
+  with fresh state.
 
-An APP_OUTBOX storage or cluster-publish failure keeps the queue item retryable.
-A delivery failure after local delivery can repeat local delivery on retry;
+A topology storage failure rolls back and keeps the `APP_OUTBOX` item
+retryable. A cluster-publish or local-send failure keeps the `WS_OUTBOX` item
+retryable. A retry after partial local delivery can repeat local delivery;
 that is safe because the publication and browser observation are idempotent.
 
 ## Guarantees And Remaining Limits
@@ -559,12 +594,14 @@ snapshot deletion authority.
 
 ## Performance Bounds
 
-- Unchanged group/client full lists issue four prefix reads and zero point
-  reads, independent of snapshot count.
-- A group page of N performs one page scan, two child reads per selected group,
-  and one exact-key aggregate validation batch.
-- Warm room authorization performs one durable aggregate revision probe; the
-  stable snapshot reader runs only after revision movement.
+- Unchanged full lists issue zero point reads and a fixed number of prefix
+  reads independent of snapshot count: four for clients, five for groups.
+- A group page of N performs one page scan, three child reads per selected
+  group (members, presence summary, sessions), and one exact-key aggregate
+  validation batch.
+- Room-message authorization performs one durable current group snapshot read
+  per message (one batched runtime-state read on the stable path) and never
+  consults the process cache.
 - An eligible point-read cache hit performs zero durable snapshot reads.
   Tokenless reads, misses, floor fallback, and strict group point reads perform
   one full durable snapshot read for the selected feature.
@@ -580,7 +617,7 @@ snapshot deletion authority.
   reconnect and gap hydration scan durable topology in 100-row pages.
 
 The first three bullets are code/test-proven call-shape bounds, not retained
-runtime call counters. The retained Task 5 performance artifact directly
+runtime call counters. The `npm run perf:api-v1:state-write` artifact directly
 counts SQL statements and production transaction duration but does not count
 high-level repository-method calls; no measured repository-call total is
 claimed.
@@ -589,8 +626,8 @@ The unweakened Postgres medium-scale gate is
 `npm run test:api-v1:black-box:postgres:medium-scale`: 100 independently
 authenticated clients, five groups, three Postgres-backed API processes, 10
 client lanes plus 5 control lanes. Never reduce those constants or the
-operation matrix to make a change pass. The Task 8 retained run completed all
-fixed assertions and proved cross-process state/topology convergence.
+operation matrix to make a change pass. Its fixed assertions prove
+cross-process state/topology convergence.
 
 The API-v1 black-box runner keeps memory as a one-process mode. Its built-in
 Postgres cluster profiles instead manage three Deno API processes sharing one
@@ -649,8 +686,8 @@ deployment boundary described by this architecture.
   browser conversion.
 - `packages/shared/repository/group-state-snapshot-revision.ts` and
   `state-snapshot-revision.ts` own group-tuple and client-scalar observation.
-- `packages/shared-server/rallar-system/topology/{mutation,persistence,publication,replay,runtime}/`
-  own topology work through delivery.
+- `packages/shared-server/rallar-system/topology/{config,inbox,reconfigure,planning,mutation,persistence,publication,replay,runtime}/`
+  own topology configuration, commands, planning, work, and delivery.
 - `packages/shared-server/rallar-system/queue-pubsub/` owns durable queue wake-up.
 - `apps/api-v1/src/composition/` constructs the direct owners and installs the
   HTTP and WebSocket entry points.

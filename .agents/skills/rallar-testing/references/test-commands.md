@@ -141,6 +141,13 @@ classify startup, readiness, append, replay, transport, assertion, cleanup, or
 infrastructure from the bounded current-run failure artifact before changing
 code. Do not increase readiness limits or reduce page/workload constants.
 
+The runner also takes `--standard-only` (skip the appended cluster profile), `--cluster-only`
+and `--shard=<index>/<count>` (one balanced share of the selected recipes; every share together
+runs each recipe once, and the balance comes from
+`packages/shared-test/black-box-runner/recipe-matrix/recipe-shard-weights.json`). The Release Gate
+runs the standard profile as `--standard-only --shard=1/2` and `2/2`, and the cluster profile as
+`--cluster-only`, each on its own runner with all three API servers.
+
 Recipes-only mode is externally managed: it neither starts nor stops API
 processes. Standard/default, CRDT, and medium-scale Postgres recipes must make
 node C meaningful; inspect all three logs and the current-run fairness proof
@@ -208,7 +215,8 @@ npm run test:postgres:presence-expiry
 `test:postgres:integration` owns the reusable repository and true-overlap
 concurrency cases. Run `test:postgres:presence-expiry` separately and last
 because it retains fixed-ID outbox evidence that can affect later global
-outbox workers. Release Gate follows this same order.
+outbox workers. The Release Gate's Postgres integration lane follows this same
+order.
 
 ## Working-Plan Validation Routing
 

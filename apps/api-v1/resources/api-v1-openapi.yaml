@@ -3676,6 +3676,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/AdminOperationBaseResponse'
         - type: object
+          required: [almReceipts]
           properties:
             websocket:
               type: object
@@ -3686,6 +3687,65 @@ components:
             groupFormation:
               type: object
               additionalProperties: true
+            almReceipts:
+              type: object
+              required: [diagnostics, processLocal]
+              properties:
+                processLocal:
+                  type: boolean
+                diagnostics:
+                  $ref: '#/components/schemas/AdminOperationsAlmReceiptDiagnostics'
+
+    AdminOperationsAlmReceiptDiagnostics:
+      type: object
+      required: [capacity, messages]
+      properties:
+        capacity:
+          type: integer
+          description: The most messages this process lists; the least recently updated leaves first.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOperationsAlmReceiptEntry'
+
+    AdminOperationsAlmReceiptEntry:
+      type: object
+      required: [msgId, mode, confirmedPeerIds, unconfirmedPeerIds, lastSettlementKind, receiptExhausted, updatedAtEpochMs]
+      properties:
+        msgId:
+          type: string
+        mode:
+          type: string
+          enum: [hop, subtree, receiver]
+        confirmedPeerIds:
+          type: array
+          items:
+            type: string
+        unconfirmedPeerIds:
+          type: array
+          items:
+            type: string
+        lastSettlementKind:
+          type: string
+          description: The kind of the message's last settlement (`ALDeliverySettlement['kind']`).
+          enum:
+            - admission
+            - carrier-refused
+            - carrier-fallback
+            - attempts-exhausted
+            - attempt-started
+            - attempt-settled
+            - acknowledgement
+            - receipt-exhausted
+            - not-yet-in-sync-exhausted
+            - relay-rejected
+            - expired
+            - superseded
+            - cancelled
+        receiptExhausted:
+          type: boolean
+        updatedAtEpochMs:
+          type: integer
 
     AdminOperationsStateResponse:
       allOf:
@@ -3992,7 +4052,7 @@ components:
 
     ApiConfig:
       type: object
-      required: [apiBaseUrl, wsBaseUrl, endpoints]
+      required: [apiBaseUrl, wsBaseUrl, endpoints, serverPeerId]
       properties:
         apiBaseUrl:
           type: string
@@ -4002,6 +4062,14 @@ components:
           format: uri
         endpoints:
           $ref: '#/components/schemas/ApiEndpoints'
+        serverPeerId:
+          type: string
+          minLength: 1
+          description: >-
+            The peer id the WebSocket server answers as. A client addresses the server with a unicast to it and
+            tracks the server as its one hop by it. Every server since S3c-i serves it; a browser reads a body
+            without it as a server that predates the field and falls back (no hop receipt, app commands over REST).
+          example: default-qbox-server
       additionalProperties: true
 
     ApiEndpoints:

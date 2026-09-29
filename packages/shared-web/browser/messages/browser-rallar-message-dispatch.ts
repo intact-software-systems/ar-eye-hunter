@@ -237,7 +237,14 @@ function toCarrierAdmissionEndSettlement(
         return { kind: 'expired', msgId, carrier, atMs, detail: 'Message deadline elapsed before fallback.' };
     }
     return verdict.kind === 'unroutable'
-        ? { kind: 'attempts-exhausted', msgId, carrier, atMs, detail: verdict.detail }
+        ? {
+            kind: 'attempts-exhausted',
+            msgId,
+            carrier,
+            atMs,
+            reason: verdict.reason,
+            detail: verdict.detail
+        }
         : undefined;
 }
 

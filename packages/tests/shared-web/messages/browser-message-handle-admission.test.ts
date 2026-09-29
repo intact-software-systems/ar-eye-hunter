@@ -18,11 +18,16 @@ describe('message handle admission', () => {
         fixture.connect.mockReturnValue(connection.promise);
         const payload = { text: 'a' };
         const envelope = vi.spyOn(
-            fixture.middleware.middleware[path === 'rtc' || path === 'fallback' ? 'rtcRxStreamer' : 'webSocketQueueBox'],
+            fixture.middleware.middleware[path === 'ws' ? 'webSocketQueueBox' : 'rtcRxStreamer'],
             'enqueueOutboxIfAbsent'
         );
         const sending = path === 'unicast'
-            ? fixture.sender.sendWsUnicast({ peerId: 'peer', typeId: 'app.ready', payload, route: { topicId: 'app.ready', contextId: 'all' } })
+            ? fixture.sender.sendTyped({
+                typeId: 'app.ready',
+                payload,
+                peerId: 'peer',
+                strategy: 'rtc-with-ws-fallback'
+            }, undefined)
             : path === 'fallback'
             ? fixture.sender.sendTyped({ typeId: 'app.ready', payload }, undefined)
             : path === 'rtc'
@@ -151,20 +156,108 @@ describe('message handle admission', () => {
         expect((await handle.wait()).lifecycle).toMatchObject({ state: 'failed', evidence: { reason: 'Storage unavailable' } });
     });
 
-    it('keeps the director relay\'s WS unicast purpose-free and best-effort until S3c (D53, D60)', async () => {
+    it('sends a director command as one room-naming unicast that asks the director\'s receipt (D60, C15)', async () => {
         const fixture = createBrowserMessageSenderFixture();
-        const envelope = vi.spyOn(fixture.middleware.middleware.webSocketQueueBox, 'enqueueOutboxIfAbsent');
+        const envelope = vi.spyOn(fixture.middleware.middleware.rtcRxStreamer, 'enqueueOutboxIfAbsent');
 
-        await fixture.sender.sendWsUnicast({
-            peerId: 'director',
-            typeId: 'director.intent.v1',
-            payload: { intent: 'pickup' },
-            route: { topicId: 'director.intent', contextId: 'room' }
-        });
+        await fixture.sender.sendTyped(
+            {
+                topicId: 'room.director',
+                typeId: 'room.director.intent.v1',
+                payload: { kind: 'pickup-intent' },
+                peerId: 'director',
+                strategy: 'rtc-with-ws-fallback'
+            },
+            { purpose: 'command', durability: undefined }
+        );
 
         const message = envelope.mock.calls[0][0];
-        expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'director' });
-        expect(message.delivery).toBeUndefined();
-        expect(message.qos).toBeUndefined();
+        expect(message.targets).toEqual({
+            mode: 'unicast',
+            toPeerId: 'director',
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
+        });
+        expect(message.route).toMatchObject({ topicId: 'room.director', contextId: 'room' });
+        expect(message.delivery).toMatchObject({ reliability: 'at-least-once', ack: 'receiver' });
+        expect(message.qos?.durability).toEqual({ algo: 'volatile' });
+    });
+
+    it('keeps a call signal a room-free best-effort WS unicast under its call id (C15)', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware.webSocketQueueBox,
+            'enqueueOutboxIfAbsent'
+        );
+
+        await fixture.sender.sendWs(
+            {
+                scope: 'all',
+                peerId: 'callee',
+                topicId: 'app.rallar.calls',
+                typeId: 'app.rallar.calls.invite.v1',
+                contextId: 'call-1',
+                payload: { kind: 'invite' },
+                reliability: 'best-effort'
+            },
+            undefined
+        );
+
+        const message = envelope.mock.calls[0][0];
+        expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'callee' });
+        expect(message.route).toMatchObject({ topicId: 'app.rallar.calls', contextId: 'call-1' });
+        expect(message.delivery).toEqual({
+            ownership: 'shared',
+            reliability: 'best-effort',
+            ack: 'none'
+        });
+    });
+});
+
+describe('a send the session volatile bound refuses (D78)', () => {
+    function toCapacityRefusal(message: ALMessage): ALOutboundEnqueueResult {
+        const detail = 'The session\'s volatile bound is full (admissions): 1000 of 1000 admissions.';
+        return {
+            verdict: { kind: 'refused', reason: 'capacity', detail },
+            message,
+            entries: [],
+            reason: detail,
+            trackedReceiptAlgo: 'none'
+        };
+    }
+
+    it('ends a WS send rejected with the typed capacity failure', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => toCapacityRefusal(message);
+
+        const handle = await fixture.sender.sendWs(
+            { typeId: 'room.ready', payload: true },
+            undefined
+        );
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'capacity' } }
+        });
+    });
+
+    it('never hands an RTC capacity refusal to WS under rtc-with-ws-fallback', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) => toCapacityRefusal(message);
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback' },
+            undefined
+        );
+        const { lifecycle } = await handle.wait();
+
+        expect(lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: {
+                failure: { kind: 'refused', reason: 'capacity' },
+                carrierFallback: undefined
+            }
+        });
+        // A hand-over would have left the refused RTC leg as an attempt row before a WS leg.
+        expect(lifecycle.evidence.attempts).toEqual([]);
     });
 });

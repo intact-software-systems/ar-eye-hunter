@@ -278,7 +278,7 @@ export interface OutboundTestStores extends ALOutboundRuntimeStores<OutboundTest
 
 /** The memory pair a runtime routes its volatile admissions to. */
 export function createVolatileOutboundTestStores(): ALVolatileOutboundRuntimeStores<OutboundTestPayload> {
-    return createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload });
+    return createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined);
 }
 
 export function createDefaultOutboundTestStores(outbox?: InMemoryQueueBox): OutboundTestStores {

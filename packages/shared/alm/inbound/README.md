@@ -82,10 +82,13 @@ its own pair on the shared engine.
 - **Eviction on the owner's round.** Session cleanup and a storage reset never reach the
   memory pair; it dies with the middleware. Each lane over it (worker id
   `${effectWorkerId}/volatile`) sweeps its expired rows from its own work round, at most
-  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. The rows it sweeps
-  carry the repository's 1 h retention, not the message's deadline (`toDefaultInMemoryInput`),
-  so heap growth is send rate × 1 h until S3c's deadline-scale bound. Both inbound lanes sweep
-  the shared pair on their own 60 s schedule; this is idempotent.
+  once per `AL_VOLATILE_STORE_EVICTION_INTERVAL_MS` (60 s) of its clock. Its message-owner
+  row lives for the message deadline plus the 30 s receipt grace
+  ([`computeALReceiptRetentionExpiryMs`](../delivery/compute-al-receipt-retention-expiry-ms.ts), D74),
+  or longer when the work the message owns does; a message with no expiry of its own has
+  the deadline its admission implies (`durableEffectTtlMs`, 30 min). The durable pair keeps
+  the owner row for the repository's 1 h. Both inbound lanes sweep the shared pair on their
+  own 60 s schedule; this is idempotent.
 - **Diagnostics name the lane.** `effect-drain`, `claim-settled` and `rotation-alive`
   carry a required `lane: 'durable' | 'volatile'` (R-S3a-15).
 
@@ -95,6 +98,24 @@ admission operations, as before S3a, and so does a `local-inbox` message beside 
 volatile pair; a volatile message beside a durable pair spends 0 admission and 0
 non-probe work operations; the origin's own ACK reads no store. An idle IndexedDB
 rotation over an empty queue spends only probes (`work-page`, `work-probe`, R-S3a-11).
+
+An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile message
+([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
+standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
+envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
+the dedup row for the 60 s dedup window. Once its child's ACK arrives it adds an acknowledgement-history row, kept
+until the deadline plus the grace as well. Before S3c-ii the owner row stayed for an hour and the history row
+30 min. The acknowledgement-history row of a relay row whose message named no deadline keeps its 30 min
+(`controlHistoryTtlMs`), since it has no deadline to be cut to (R-S3c-ii-1).
+
+An inbound data admission on the volatile pair is recorded in the session's volatile budget
+([`admitALInboundVolatileBudget`](./lane/admit-al-inbound-volatile-budget.ts)) and released at the earlier of the
+message deadline and 30 s after its arrival (`AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS`, R-S3c-ii-6); it is
+never refused for capacity (D74, D78). It raises the usage the session's own volatile sends are refused against and
+the usage `overloaded` reads (R-S3c-ii-3). A duplicate, a rejected arrival and a message whose sender named no
+deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
+inbound plan never reads `overloaded` (R-S3c-ii-8): at its bound a session still delivers a best-effort arrival at
+once, still forwards it to the children it owns and still sends its ACKs and NACKs.
 
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused
@@ -155,10 +176,12 @@ word to an origin, addressed and routed to `originPeerId`.
 On the WS server the same inbound admission runs for every client message,
 with two receipt rules. A `receiver` room message the server aggregates
 withholds the server's own ACK
-([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)):
+([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-inbound-plan.ts)):
 the receipt speaks for the audience, and a relay row would re-originate the
 receivers' ACKs under the origin's name. A `receiver` message whose logical
-recipient is the server keeps its ACK. A receiver's ACK for a room message
+recipient is the server keeps its ACK. The server receives an authorized room unicast to another
+session itself (D71), so its router delivers it; a unicast to a session outside the room's admitted audience is
+refused before admission. A receiver's ACK for a room message
 is addressed to the origin, not to the server; the server admits it as the
 aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
 lives, the ACK speaks for its own sender, and it confirms an uncounted
@@ -259,10 +282,13 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c-ii'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s3c-i'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
+
+S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
+which older decoders refuse (C1).
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays

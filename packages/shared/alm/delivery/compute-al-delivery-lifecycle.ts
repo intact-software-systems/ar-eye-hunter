@@ -1,4 +1,5 @@
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
+import type { ALDeliveryFailure } from './al-delivery-failure.ts';
 import {
     isALDeliveryTerminal,
     type ALDeliveryAdmissionVerdict,
@@ -56,9 +57,9 @@ export function computeALDeliveryLifecycle(
         case 'not-yet-in-sync-exhausted':
             return { ...previous };
         case 'attempts-exhausted':
-            return toReasonedLifecycle(previous, 'failed', settlement.detail);
+            return toFailureLifecycle(previous, { kind: 'unroutable', reason: settlement.reason }, settlement.detail);
         case 'expired':
-            return toReasonedLifecycle(previous, 'expired', settlement.detail);
+            return toFailureLifecycle(previous, { kind: 'expired' }, settlement.detail);
         case 'superseded':
             return toReasonedLifecycle(previous, 'superseded', settlement.detail);
         case 'cancelled':
@@ -77,7 +78,11 @@ export function computeALDeliveryDeadline(
     if (isALDeliveryTerminal(lifecycle) || lifecycle.expiresAtMs === undefined || nowMs < lifecycle.expiresAtMs) {
         return lifecycle;
     }
-    return toReasonedLifecycle(lifecycle, 'expired', 'The deadline elapsed before a terminal settlement.');
+    return toFailureLifecycle(
+        lifecycle,
+        { kind: 'expired' },
+        'The deadline elapsed before a terminal settlement.'
+    );
 }
 
 /** The end an observer states for itself when it stops following a message that never settled. */
@@ -154,7 +159,7 @@ function toAdmissionLifecycle(
         case 'deferred':
             return { ...previous, state: 'pending-authority' };
         case 'refused':
-            return toReasonedLifecycle(previous, 'rejected', verdict.detail);
+            return toFailureLifecycle(previous, { kind: 'refused', reason: verdict.reason }, verdict.detail);
         case 'unroutable':
             return toAdmissionAttemptLifecycle(previous, {
                 outcome: 'unroutable',
@@ -164,11 +169,13 @@ function toAdmissionLifecycle(
                 reason: verdict.reason
             });
         case 'superseded':
+            return toReasonedLifecycle(previous, 'superseded', verdict.detail);
         case 'expired':
+            return toFailureLifecycle(previous, { kind: 'expired' }, verdict.detail);
         case 'failed':
-            return toReasonedLifecycle(previous, verdict.kind, verdict.detail);
+            return toFailureLifecycle(previous, { kind: 'admission-failed' }, verdict.detail);
         case 'skipped':
-            return toReasonedLifecycle(previous, 'failed', verdict.detail);
+            return toFailureLifecycle(previous, { kind: 'skipped', reason: verdict.reason }, verdict.detail);
     }
 }
 
@@ -200,8 +207,13 @@ function toRelayRejectedLifecycle(
     previous: ALDeliveryLifecycle,
     settlement: ALDeliveryRelayRejectedSettlement
 ): ALDeliveryLifecycle {
-    const rejected = toReasonedLifecycle(previous, 'rejected', settlement.detail);
-    return { ...rejected, evidence: { ...rejected.evidence, relayRejection: settlement.relayRejection } };
+    const rejection = settlement.relayRejection;
+    const rejected = toFailureLifecycle(
+        previous,
+        { kind: 'relay-rejected', rejection },
+        settlement.detail
+    );
+    return { ...rejected, evidence: { ...rejected.evidence, relayRejection: rejection } };
 }
 
 /** The receipt ended unconfirmed: terminal `failed`, and the peers it did confirm stay in evidence. */
@@ -209,7 +221,7 @@ function toReceiptExhaustedLifecycle(
     previous: ALDeliveryLifecycle,
     settlement: ALDeliveryReceiptExhaustedSettlement
 ): ALDeliveryLifecycle {
-    const failed = toReasonedLifecycle(previous, 'failed', settlement.detail);
+    const failed = toFailureLifecycle(previous, toReceiptExhaustedFailure(settlement), settlement.detail);
     const hopReceipt = settlement.mode !== 'receiver';
     return {
         ...failed,
@@ -253,12 +265,51 @@ function toCarrierFallbackLifecycle(
     };
 }
 
+const AL_DELIVERY_FAILURE_STATES: Readonly<Record<ALDeliveryFailure['kind'], ALDeliveryState>> = {
+    refused: 'rejected',
+    'relay-rejected': 'rejected',
+    'admission-failed': 'failed',
+    skipped: 'failed',
+    unroutable: 'failed',
+    'attempt-failed': 'failed',
+    'receipt-exhausted': 'failed',
+    expired: 'expired'
+};
+
+function toFailureLifecycle(
+    previous: ALDeliveryLifecycle,
+    failure: ALDeliveryFailure,
+    reason: string | undefined
+): ALDeliveryLifecycle {
+    return {
+        ...previous,
+        state: AL_DELIVERY_FAILURE_STATES[failure.kind],
+        evidence: { ...previous.evidence, failure, reason }
+    };
+}
+
+/** Narrowed so a `rejected`, `failed` or `expired` end cannot skip `failure`. */
+type ALDeliveryUnfailedEnd = Extract<ALDeliveryState, 'superseded' | 'cancelled' | 'unobservable'>;
+
 function toReasonedLifecycle(
     previous: ALDeliveryLifecycle,
-    state: ALDeliveryState,
+    state: ALDeliveryUnfailedEnd,
     reason: string | undefined
 ): ALDeliveryLifecycle {
     return { ...previous, state, evidence: { ...previous.evidence, reason } };
+}
+
+function toReceiptExhaustedFailure(
+    settlement: ALDeliveryReceiptExhaustedSettlement
+): ALDeliveryFailure {
+    return settlement.cause === 'budget'
+        ? { kind: 'receipt-exhausted', cause: 'budget' }
+        : {
+            kind: 'receipt-exhausted',
+            cause: 'hop-refused',
+            hopPeerId: settlement.hopPeerId,
+            nackReason: settlement.nackReason
+        };
 }
 
 interface AdmittedAdmission {
@@ -391,13 +442,21 @@ function toSettledAttemptLifecycle(
      * non-retrying failure only fails the send when no hop in evidence already carried it.
      */
     if (
-        (settlement.outcome === 'failed' || settlement.outcome === 'no-targets') && !settlement.willRetry &&
+        (settlement.outcome === 'failed' || settlement.outcome === 'no-targets') &&
+        !settlement.willRetry &&
         !hasSentAttempt(next.evidence)
     ) {
-        return toReasonedLifecycle(next, 'failed', settlement.detail);
+        return toFailureLifecycle(
+            next,
+            { kind: 'attempt-failed', outcome: settlement.outcome },
+            settlement.detail
+        );
     }
-    if (settlement.outcome === 'expired' || settlement.outcome === 'superseded') {
-        return toReasonedLifecycle(next, settlement.outcome, settlement.detail);
+    if (settlement.outcome === 'expired') {
+        return toFailureLifecycle(next, { kind: 'expired' }, settlement.detail);
+    }
+    if (settlement.outcome === 'superseded') {
+        return toReasonedLifecycle(next, 'superseded', settlement.detail);
     }
     return next;
 }

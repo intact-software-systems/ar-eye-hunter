@@ -5,6 +5,11 @@ import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    type ALVolatileSessionLimits
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
     afterEach,
     beforeEach,
     describe,
@@ -72,6 +77,9 @@ describe('browser runtime construction', () => {
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'
         );
         const { createRallarFacade } = await import('@shared-web/browser/composition/create-rallar-facade.ts');
+        const { BlackBoxRallarVolatileLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
+        );
         const message = newALMulticastMessage(
             'sender',
             { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'one' },
@@ -87,13 +95,52 @@ describe('browser runtime construction', () => {
             );
             return runtime.middleware.middleware;
         });
-        const blackBox = createBlackBoxBrowserRallarRuntimeDependency();
+        const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
+            readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get
+        });
         await blackBox.connect();
         await blackBox.disconnect();
         const ordinary = createRallarFacade();
         await ordinary.connect();
         await ordinary.disconnect();
         expect(selectedPolicies).toEqual(['latest-wins', 'none']);
+    });
+
+    it('hands the black-box session a volatile-limits read port that the connect sets before it initialises (C11)', async () => {
+        const { createBlackBoxBrowserRallarRuntimeDependency } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'
+        );
+        const { BlackBoxRallarVolatileLimits } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
+        );
+        const volatileLimits = new BlackBoxRallarVolatileLimits();
+        const read: (ALVolatileSessionLimits | undefined)[] = [];
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            read.push(options.readVolatileSessionLimits?.());
+            return runtime.middleware.middleware;
+        });
+        const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
+            readVolatileSessionLimits: volatileLimits.get
+        });
+        const config = { connection: 'sender', rallar: { apiBaseUrl: 'https://api.example.test' } };
+
+        volatileLimits.set({
+            ...config,
+            rallar: { ...config.rallar, almVolatileLimits: { maxAdmissions: 3, maxBytes: 4_096 } }
+        });
+        await blackBox.connect();
+        await blackBox.disconnect();
+        volatileLimits.set(config);
+        await blackBox.connect();
+        await blackBox.disconnect();
+
+        expect(read).toEqual([
+            { maxAdmissions: 3, maxBytes: 4_096 },
+            {
+                maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+                maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+            }
+        ]);
     });
 
     it('shares one bounded session observation owner across facades', async () => {

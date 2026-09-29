@@ -12,7 +12,7 @@ import {
     waitForState
 } from './arena-runtime-test-harness.ts';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { RallarRoomRealtimeJsonDefaults } from '@shared-web/browser/rallar-realtime.ts';
 
@@ -404,6 +404,91 @@ describe('arena game realtime acceptance and egress', () => {
         expect(arena.current?.pickupAcceptances).toEqual([]);
     });
 
+    it.each(['hit', 'pickup'] as const)(
+        'refuses a %s intent replayed 30 s after its acceptance (C10)',
+        async (kind) => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            onTestFinished(() => {
+                vi.useRealTimers();
+            });
+            await arena.render();
+            await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
+            const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+            const fixture = acceptedIntentFixture(kind, Date.now());
+            await act(async () => arena.current?.publishArenaSnapshot(fixture.snapshot));
+            const published: ArenaSnapshot[] = [];
+            onTestFinished(() => {
+                mockMatch.publishSnapshot.mockReset();
+            });
+            mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
+                published.push(snapshot);
+                return { status: 'sent' };
+            });
+            const intent = createRallarGameEnvelope({
+                protocol: 'ar-eye-hunter.v1',
+                kind: 'intent',
+                roomId: 'arena-1',
+                senderId: 'peer-1',
+                seq: 1,
+                directorEpoch: 1,
+                sentAtEpochMs: fixture.nowEpochMs,
+                payload: fixture.message
+            });
+
+            await act(async () => config?.onIntent?.(intent));
+            vi.setSystemTime(fixture.nowEpochMs + 30_000);
+            await act(async () => config?.onIntent?.(intent));
+
+            expect(published).toHaveLength(1);
+            expect(kind === 'hit' ? arena.current?.remotePlayerHits : arena.current?.pickupAcceptances)
+                .toHaveLength(1);
+        }
+    );
+
+    it('republishes a replayed accepted shot as its visual event only, leaving the arena state unchanged (C10)', async () => {
+        await arena.render();
+        await waitForState(() => arena.current?.directorAttempt.status === 'not-elected');
+        const config = vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0];
+        await act(async () => arena.current?.publishArenaSnapshot(arenaSnapshot(1)));
+        const before = arena.current?.arenaSnapshot;
+        const shot: GameRealtimeMessage = {
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'director-shot-accepted',
+            accepted: peerShotMessage(undefined).accepted
+        };
+        const intent = createRallarGameEnvelope({
+            protocol: 'ar-eye-hunter.v1',
+            kind: 'intent',
+            roomId: 'arena-1',
+            senderId: 'peer-1',
+            seq: 1,
+            directorEpoch: 1,
+            sentAtEpochMs: 1_000,
+            payload: shot
+        });
+        const events: GameRealtimeMessage[] = [];
+        const snapshots: ArenaSnapshot[] = [];
+        onTestFinished(() => {
+            mockMatch.publishEvent.mockReset();
+            mockMatch.publishSnapshot.mockReset();
+        });
+        mockMatch.publishEvent.mockImplementation(async (event) => {
+            events.push(event);
+            return { status: 'sent' };
+        });
+        mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
+            snapshots.push(snapshot);
+            return { status: 'sent' };
+        });
+
+        await act(async () => config?.onIntent?.(intent));
+        await act(async () => config?.onIntent?.(intent));
+
+        expect(events).toEqual([shot, shot]);
+        expect(snapshots).toEqual([]);
+        expect(arena.current?.arenaSnapshot).toEqual(before);
+    });
+
     it.each(
         [
             { kind: 'hit', end: 'replacement' },
@@ -420,6 +505,9 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const eventDone = Promise.withResolvers<void>();
         const publishedSnapshots: ArenaSnapshot[] = [];
+        onTestFinished(() => {
+            mockMatch.publishSnapshot.mockReset();
+        });
         mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
             await eventDone.promise;
@@ -456,7 +544,6 @@ describe('arena game realtime acceptance and egress', () => {
             await completion;
         });
         expect(publishedSnapshots.map((snapshot) => snapshot.roomId)).toEqual([]);
-        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(['hit', 'pickup'] as const)('fences accepted %s continuation when its network ends with its match still installed', async (kind) => {
@@ -465,6 +552,9 @@ describe('arena game realtime acceptance and egress', () => {
         const eventStarted = Promise.withResolvers<void>();
         const publishedSnapshots: string[] = [];
         let networkEnabled = true;
+        onTestFinished(() => {
+            mockMatch.publishSnapshot.mockReset();
+        });
         mockMatch.publishEvent.mockImplementationOnce(async () => {
             eventStarted.resolve();
             await eventDone.promise;
@@ -510,7 +600,6 @@ describe('arena game realtime acceptance and egress', () => {
         eventDone.resolve();
         await completion;
         expect(publishedSnapshots).toEqual([]);
-        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(['snapshot', 'hit', 'pickup'] as const)('keeps deferred %s publication out of a replacement runtime', async (kind) => {

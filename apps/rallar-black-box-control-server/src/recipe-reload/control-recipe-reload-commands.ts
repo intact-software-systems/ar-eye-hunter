@@ -44,7 +44,23 @@ export function validateControlRecipeReloadRoot(envelope: ControlRecipeReloadRoo
     return issues;
 }
 
+/**
+ * Segmenting a combined recipe costs about a millisecond and every dispatch scan reads it once per queued command. A
+ * queued root envelope is never changed, so its segments are kept per envelope; a loaded recipe is a new envelope.
+ */
+const reloadCommandsByRoot = new WeakMap<ControlRecipeReloadRoot, readonly ControlCommandEnvelope[]>();
+
 export function toControlRecipeReloadCommands(root: ControlRecipeReloadRoot): readonly ControlCommandEnvelope[] {
+    const known = reloadCommandsByRoot.get(root);
+    if (known !== undefined) {
+        return known;
+    }
+    const commands = computeControlRecipeReloadCommands(root);
+    reloadCommandsByRoot.set(root, commands);
+    return commands;
+}
+
+function computeControlRecipeReloadCommands(root: ControlRecipeReloadRoot): readonly ControlCommandEnvelope[] {
     if (hasAlmReloadPair(root.command) || hasAuthoredAlmReloadCheckpoints(root.command)) {
         return toPairedReloadCommands(root);
     }

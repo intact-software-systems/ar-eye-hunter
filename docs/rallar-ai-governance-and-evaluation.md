@@ -40,7 +40,8 @@ Production review should record:
 
 - Provider ID and adapter version.
 - Model ID plus version or digest when available.
-- Runtime target: browser, server, shared test provider, or sidecar.
+- Runtime target: `browser`, `server`, or `shared` (runs on either, like the
+  mock provider). A model sidecar behind Rallar Server is a `server` target.
 - License notes supplied by the application or deployment owner.
 - Whether structured JSON output is supported natively or through prompting.
 - Known context/output limits and recommended timeout.
@@ -105,13 +106,26 @@ quality check.
 
 ## Live Gates
 
-- `RALLAR_AI_LIVE_OLLAMA=1`: enables the live Ollama evaluation harness.
-- `RALLAR_AI_OLLAMA_BASE_URL`: optional Ollama base URL, default
-  `http://127.0.0.1:11434`.
-- `RALLAR_AI_OLLAMA_MODEL`: optional Ollama model ID for live evaluation.
-- `RALLAR_AI_LIVE_WEBLLM=1`: reserved for browser-run WebLLM live evaluation.
-  The repository keeps the provider adapter type-checkable, but real WebLLM
-  evaluation requires a browser model runtime supplied by the application.
+- `RALLAR_AI_LIVE_OLLAMA=1` (`true`, `yes`, and `on` also work): enables the
+  live Ollama harnesses, `packages/tests/shared-server/rallar-ai/rallar-ai-ollama-live-evaluation.test.ts`
+  and Relic Hunter Server's `runRelicExpeditionOllamaLiveEvaluationIfEnabled`
+  (which reads `RELIC_AI_EXPEDITION_OLLAMA_BASE_URL` and
+  `RELIC_AI_EXPEDITION_OLLAMA_MODEL`).
+- `RALLAR_AI_OLLAMA_BASE_URL`: optional base URL for the shared test, default
+  `http://127.0.0.1:11434`; the test adds it to the provider's
+  `allowedBaseUrls`.
+- `RALLAR_AI_OLLAMA_MODEL`: optional model ID for the shared test, default
+  `llama-test`.
+
+```sh
+RALLAR_AI_LIVE_OLLAMA=1 npx vitest run packages/tests/shared-server/rallar-ai/rallar-ai-ollama-live-evaluation.test.ts
+```
+
+- `RALLAR_AI_LIVE_WEBLLM=1`: enables browser-run WebLLM live evaluation. AR Eye
+  Hunter's `runArenaWebLlmLiveEvaluationIfEnabled`
+  (`apps/ar-eye-hunter-v1/src/game/browser-ai/arena-webllm-evaluation.ts`)
+  reads it and needs a WebGPU browser with the `@mlc-ai/web-llm` runtime; its
+  `runArenaWebLlmDeterministicEvaluation` mock suite is what normal CI runs.
 
 ## Quality Bar
 

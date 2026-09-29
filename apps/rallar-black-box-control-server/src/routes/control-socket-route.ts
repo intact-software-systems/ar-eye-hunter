@@ -106,6 +106,8 @@ function acceptControlClientEnvelope(
     if (received.kind === 'register') {
         agentSockets.register(socket, { runId: received.runId, agentId: received.agentId });
     }
-    agentSockets.sendDispatchableCommandsForRun(received.runId);
+    if (received.affectsDispatch) {
+        agentSockets.sendDispatchableCommandsForRun(received.runId);
+    }
     persistence.persist();
 }

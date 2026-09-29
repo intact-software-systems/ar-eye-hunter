@@ -128,7 +128,6 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     > {
         return new RallarGameDirectorRelayRuntime({
             config: this.config,
-            laneIds: this.laneIds,
             typeIds: this.typeIds,
             heartbeatTtlMs: this.config.heartbeatTtlMs ?? DEFAULT_RALLAR_GAME_HEARTBEAT_TTL_MS,
             isStopped: () => this.status.isStopped,

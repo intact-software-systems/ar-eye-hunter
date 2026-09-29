@@ -255,53 +255,6 @@ export class GroupTopologyPlanningService {
         this.dependencies.topologyService.observeCommittedTopologySnapshot(snapshot);
     }
 
-    async flushDueGroupTopology(
-        input: ReconfigureGroupTopologyInput
-    ): Promise<ReconfigureGroupTopologyResponse | undefined> {
-        if (this.dependencies.topologyMode === 'persistent') {
-            return undefined;
-        }
-        const group = await this.readReconfigureGroup(input);
-        const config = await this.dependencies.queryService.readConfig(input.groupRef);
-        const previous = this.dependencies.topologyService.readSnapshot(group);
-        // The automatic flush writes only when the stage says plan: freeze
-        // holds the candidate and a removal-disposition stage has nothing
-        // for an RTT refresh to improve.
-        if (await this.readLocalTopologyPlanAction(group, previous, 'automatic') !== 'plan') {
-            return undefined;
-        }
-        const result = this.dependencies.topologyService.flushDueRttTopologyUpdate(
-            group,
-            this.filterRttMeasurementsForGroup({
-                group,
-                rttMeasurements: await this.dependencies.readRttMeasurements(group),
-                topologyOptions: config.effective,
-                overlaySnapshot: previous
-            }),
-            { previous, topologyOptions: config.effective }
-        );
-        if (!result) {
-            return undefined;
-        }
-        this.validateComputedGroupTopology({
-            ...result,
-            action: 'planned',
-            planningObservation: null
-        });
-        const published = await this.publishIfRequested({
-            group,
-            result,
-            publisher: input.publisher,
-            publish: input.publish ?? true
-        });
-        return toReconfigureGroupTopologyResponse({
-            groupRef: input.groupRef,
-            result,
-            config,
-            published
-        });
-    }
-
     removeGroupTopology(group: GroupSnapshot): Promise<void> {
         if (this.dependencies.topologyMode === 'local') {
             this.dependencies.topologyService.removeGroupTopology(group);

@@ -34,6 +34,11 @@ import {
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
     newALUnicastMessage,
     type ALMessage,
     type ALOutboundAdmissionStore,
@@ -51,6 +56,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -525,18 +531,44 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
-        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1');
-        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1');
+        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
+        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
 
         expect(first.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(second.workQueue).not.toBe(first.workQueue);
         expect(await second.workQueue.getAllKeys()).toEqual([]);
     });
 
+    it('carries the one session budget it is handed on every memory pair (C3)', () => {
+        const budget = new ALVolatileSessionBudget({
+            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+        });
+        const outbound = createBrowserALVolatileOutboundRuntimeStores(
+            'browser-ws-client:session-budget',
+            budget
+        );
+        const overlay = createBrowserALVolatileOutboundRuntimeStores(
+            'browser-rtc-overlay:session-budget',
+            budget
+        );
+        const inbound = createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId('session-budget'),
+            budget
+        );
+
+        expect(outbound.budget).toBe(budget);
+        expect(overlay.budget).toBe(budget);
+        expect(inbound.budget).toBe(budget);
+    });
+
     it('keeps the session inbound memory pair out of IndexedDB, so session cleanup never reaches it', async () => {
         const sessionId = `inbound-memory-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-        const volatile = createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId));
+        const volatile = createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        );
         const message = createOutboundUnicastMessage('inbound-memory');
         await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'));
 

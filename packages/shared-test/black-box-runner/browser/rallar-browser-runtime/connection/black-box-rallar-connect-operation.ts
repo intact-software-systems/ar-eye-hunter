@@ -34,6 +34,7 @@ import {
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import type { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 import type { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
+import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 import { configureBlackBoxRallarConnection } from './configure-black-box-rallar-connection.ts';
 
 type LifecycleSubscriptions = Pick<
@@ -62,6 +63,7 @@ export namespace BlackBoxRallarConnectOperation {
         readonly formation: BlackBoxRallarFormationController;
         readonly typedChannels: BlackBoxRallarTypedChannels;
         readonly subscriptions: BlackBoxRallarConnectionSubscriptions;
+        readonly volatileLimits: BlackBoxRallarVolatileLimits;
     }
 }
 
@@ -168,6 +170,7 @@ export class BlackBoxRallarConnectOperation {
         const defaults = configureBlackBoxRallarConnection({
             rallar: this.#input.rallar,
             diagnosticsPorts: this.#input.diagnosticsPorts,
+            volatileLimits: this.#input.volatileLimits,
             config
         });
         diagnostics.emitConnectPhaseCompleted(config, attempt.phase, { defaults });

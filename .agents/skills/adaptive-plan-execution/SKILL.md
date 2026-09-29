@@ -108,9 +108,8 @@ A later agent may delete a plan only when all three are true:
 - No open pull request still modifies that path.
 - `plans/README.md` and `docs/README.md` do not name it as current work.
 
-If any check fails, leave the file. `plans/backlog.md`, `plans/policy.json`, `plans/*.closure.json`,
-and `plans/repo-style-lineages/` are not plans to delete. A filename that contains "plan" is not
-evidence that the file is obsolete.
+If any check fails, leave the file. `plans/backlog.md` is not a plan to delete. A filename that
+contains "plan" is not evidence that the file is obsolete.
 
 ## Pull-request state comes first
 

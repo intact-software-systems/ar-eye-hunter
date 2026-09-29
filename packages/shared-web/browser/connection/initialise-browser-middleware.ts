@@ -4,6 +4,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -42,6 +43,10 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import {
+    createBrowserSessionVolatileBound,
+    type BrowserSessionVolatileBound
+} from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -67,7 +72,10 @@ import {
     acceptAuthoritativeGroupStateSnapshot
 } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
-import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
+import {
+    createBrowserWebSocketQueueBox,
+    type CreateBrowserWebSocketQueueBox
+} from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
     browserStateCacheLifecycle,
     type StateCacheScopeOptions
@@ -75,6 +83,7 @@ import {
 
 export interface MiddlewareInitOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
+    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly signal?: AbortSignal;
@@ -153,6 +162,16 @@ interface BrowserWebSocketTransport {
     readonly webSocketQueueBox: WsQueueBoxClientService;
 }
 
+export type BrowserWebSocketCarrier = Pick<
+    CreateBrowserWebSocketQueueBox.Input,
+    'qboxEngine' | 'socket' | 'serverPeerId'
+>;
+
+export type BrowserRtcOverlayCarrier = Pick<
+    rtcEngine.InitialiseRtcOverlayMulticastManagerInput,
+    'webRtcConnectionService' | 'qboxEngine'
+>;
+
 interface BrowserRtcTransport {
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly rtcRxStreamer: WebRtcRxStreamerService;
@@ -160,17 +179,18 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
-interface BrowserMiddlewareCreation {
+export interface BrowserMiddlewareCreation {
     readonly createMessage: typeof newALUntargetedMessage;
     newConnectionRequestId(): string;
 }
 
-interface InitialiseBrowserTransportInput {
+export interface InitialiseBrowserTransportInput {
     readonly creation: BrowserMiddlewareCreation;
     readonly session: AuthSession;
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
+    readonly volatileBound: BrowserSessionVolatileBound;
     readonly options: MiddlewareInitOptions;
 }
 
@@ -190,28 +210,8 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
-    const clientData: ClientInfo = {
-        clientId: session.clientId,
-        sessionId: session.sessionId,
-        isOnline: true
-    };
-    initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
-    const inboundStores = resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId);
-    const inboundVolatileStores = createBrowserALVolatileInboundRuntimeStores(
-        toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)
-    );
-    const creation: BrowserMiddlewareCreation = {
-        createMessage: newALUntargetedMessage,
-        newConnectionRequestId: crypto.randomUUID.bind(crypto)
-    };
-    const transportInput: InitialiseBrowserTransportInput = {
-        session,
-        clientData,
-        inboundStores,
-        inboundVolatileStores,
-        options,
-        creation
-    };
+    initialiseBrowserRuntimeStores(session.sessionId, options.diagnosticsPorts);
+    const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
         ...transportInput,
@@ -228,7 +228,7 @@ export async function initialiseMiddleware(
         webRtcGroupManager: rtcTransport.webRtcGroupManager,
         bootstrapDegree
     });
-    const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
+    const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
         authSession: session,
         scope: options.scope,
         onAuthInvalid: options.onAuthInvalid
@@ -240,6 +240,37 @@ export async function initialiseMiddleware(
         ...webSocketTransport,
         ...rtcTransport,
         heartbeat: heartbeatHandle
+    };
+}
+
+export function createBrowserTransportInput(
+    session: AuthSession,
+    options: MiddlewareInitOptions
+): InitialiseBrowserTransportInput {
+    const clientData: ClientInfo = {
+        clientId: session.clientId,
+        sessionId: session.sessionId,
+        isOnline: true
+    };
+    const volatileBound = createBrowserSessionVolatileBound({
+        readVolatileSessionLimits: options.readVolatileSessionLimits,
+        qosProvider: options.qosProvider,
+        nowMs: Date.now
+    });
+    return {
+        session,
+        clientData,
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+            volatileBound.budget
+        ),
+        volatileBound,
+        options,
+        creation: {
+            createMessage: newALUntargetedMessage,
+            newConnectionRequestId: crypto.randomUUID.bind(crypto)
+        }
     };
 }
 
@@ -263,11 +294,25 @@ async function initialiseBrowserWebSocketTransport(
     );
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
-    const webSocketQueueBox = await createBrowserWebSocketQueueBox({
-        qosProvider: input.options.qosProvider,
+    const webSocketQueueBox = await createBrowserWebSocketQueueBox(
+        toBrowserWebSocketQueueBoxInput(input, { qboxEngine, socket, serverPeerId: apiConfig.serverPeerId })
+    ).catch((caught) => {
+        const error = toError(caught);
+        console.error('Failed to connect WebSocket client:', error);
+        throw error;
+    });
+    return { qboxEngine, webSocketQueueBox };
+}
+
+export function toBrowserWebSocketQueueBoxInput(
+    input: InitialiseBrowserTransportInput,
+    carrier: BrowserWebSocketCarrier
+): CreateBrowserWebSocketQueueBox.Input {
+    return {
+        ...carrier,
+        qosProvider: input.volatileBound.qosProvider,
+        volatileBudget: input.volatileBound.budget,
         submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
-        qboxEngine,
-        socket,
         clientData: input.clientData,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
@@ -278,12 +323,7 @@ async function initialiseBrowserWebSocketTransport(
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.ws,
         inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
-    }).catch((caught) => {
-        const error = toError(caught);
-        console.error('Failed to connect WebSocket client:', error);
-        throw error;
-    });
-    return { qboxEngine, webSocketQueueBox };
+    };
 }
 
 function createBrowserWebSocketClient(
@@ -331,13 +371,10 @@ async function initialiseBrowserRtcTransport(
         iceCandidates
     );
     const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
-        {
+        toRtcOverlayMulticastManagerInput(input, {
             webRtcConnectionService,
-            qosProvider: input.options.qosProvider,
-            qboxEngine: input.webSocketTransport.qboxEngine,
-            outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-            outboundSettlements: input.options.deliverySettlements.rtc
-        }
+            qboxEngine: input.webSocketTransport.qboxEngine
+        })
     );
     const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
         {
@@ -362,6 +399,19 @@ async function initialiseBrowserRtcTransport(
         rtcRxStreamer,
         webRtcGroupManager,
         webRtcOverlayMulticastManager
+    };
+}
+
+export function toRtcOverlayMulticastManagerInput(
+    input: InitialiseBrowserTransportInput,
+    carrier: BrowserRtcOverlayCarrier
+): rtcEngine.InitialiseRtcOverlayMulticastManagerInput {
+    return {
+        ...carrier,
+        qosProvider: input.volatileBound.qosProvider,
+        volatileBudget: input.volatileBound.budget,
+        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        outboundSettlements: input.options.deliverySettlements.rtc
     };
 }
 

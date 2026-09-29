@@ -92,6 +92,7 @@ describe('RTC outbound transport results', () => {
             outbox: backend.workQueue,
             socket,
             sessionId: 'self',
+            serverPeerId: 'server',
             outboundStores: storesFor('self:ws'),
             qosProvider: { capabilitiesForMessage: () => ({ supportedExpiry: ['ttl-only'] }) }
         });

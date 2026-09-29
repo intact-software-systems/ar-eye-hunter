@@ -9,6 +9,11 @@ export interface ApiConfig {
     };
 }
 
+/** What `/api/config` serves: the configuration and the peer id a client addresses the WS server by (D57 as applied). */
+export interface ApiConfigResponse extends ApiConfig {
+    readonly serverPeerId: string;
+}
+
 export interface AuthSession {
     readonly clientId: string;
     readonly accessToken: string;

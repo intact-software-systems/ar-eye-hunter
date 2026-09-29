@@ -130,7 +130,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
             missingSeqs: control.payload.missingSeqs ?? [],
             failedPeerIds: [],
             completedHopPeerIds: [],
-            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
+            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 },
+            admittedAudience: read.plan?.admittedAudience
         });
         return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;
     }
@@ -340,6 +341,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         if (status === 'committed') {
             this.dependencies.settlements(toALOutboundReceiptExhaustedFact(
                 pending,
+                { cause: 'budget' },
                 `The receipt ran out of retries after ${pending.attempts} of ${pending.maxAttempts}.`
             ));
         }

@@ -1,0 +1,192 @@
+import 'fake-indexeddb/auto';
+import { BrowserDirectorRelayTransport } from '@shared-web/browser/director/browser-director-relay-transport.ts';
+import type { RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
+import { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
+import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
+import type {
+    RallarRoomMessageChannelDefinition,
+    RallarTypedMessageChannelDefinition
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { shouldPersistOutbox } from '@shared/al-contracts/al-policy.ts';
+import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    type IndexedDbOperationCounts,
+    type IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+import { describe, expect, it, vi } from 'vitest';
+
+import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    decodeOutboundTestPayload,
+    type OutboundTestPayload
+} from '../../shared/alm/outbound-test-payload.ts';
+import { createBrowserMessageSenderFixture } from '../messages/browser-message-sender-fixture.ts';
+
+const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+const CLIENT_STATUS: RallarDirectorStatus = {
+    roomRef: ROOM_REF,
+    roomId: 'room',
+    role: 'client',
+    state: 'fresh',
+    isDirector: false,
+    isFresh: true,
+    active: true,
+    freshness: 'fresh',
+    nowEpochMs: 0,
+    appointment: {
+        version: 1,
+        mode: 'appointed-spa',
+        sessionId: 'director',
+        principalId: 'principal',
+        epoch: 1,
+        appointedAtEpochMs: 0,
+        heartbeatTtlMs: 5_000
+    }
+};
+
+describe('director command browser storage volume (D60, D87)', () => {
+    it('sends a director intent through the real sender in 0 al-admission and 0 non-probe al-work operations', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const sent: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createIndexedDbOutboundCountStores(observer, 'director-command-volume'),
+            volatileStores: createVolatileALOutboundRuntimeStores(
+                { decodePrepared: decodeOutboundTestPayload },
+                undefined
+            ),
+            carrier: 'rtc',
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: shouldPersistOutbox(normalizeALQosPolicy(msg).effective),
+                preparedMessages: [{ kind: 'send' }]
+            }),
+            sendPreparedMessage: async () => {
+                sent.push('send');
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+        await runtime.ready();
+        observer.reset();
+        const fixture = createBrowserMessageSenderFixture();
+        const admitted: ALMessage[] = [];
+        fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) => {
+            admitted.push(message);
+            return await runtime.enqueueIfAbsent(message);
+        };
+
+        const sending = createCommandTransport(fixture.sender).sendCommand({
+            current: CLIENT_STATUS,
+            topicId: 'room.director',
+            typeId: 'room.director.intent.v1',
+            payload: { kind: 'pickup-intent' }
+        });
+        await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
+        const counts = observer.getCounts();
+        recordDirectorReceipt(fixture.registry, admitted[0]);
+
+        expect(admitted).toHaveLength(1);
+        expect(admitted[0]).toMatchObject({
+            targets: { mode: 'unicast', toPeerId: 'director', groupRef: ROOM_REF },
+            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            qos: { durability: { algo: 'volatile' } }
+        });
+        expect(counts.byOwner['al-admission'], 'a director command commits nothing to IndexedDB')
+            .toBe(0);
+        expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
+        expect(await sending).toMatchObject({ status: 'sent' });
+        runtime.dispose();
+    });
+});
+
+function createCommandTransport(sender: BrowserRallarMessageSender): BrowserDirectorRelayTransport {
+    const channels = new BrowserTypedMessageChannels({
+        inputValidator: new BrowserMessageInputValidator({ readMaxPayloadBytes: () => 64 * 1024 }),
+        sender,
+        rtc: { onMessage: () => () => {} },
+        ws: { onMessage: () => () => {} }
+    });
+    return new BrowserDirectorRelayTransport({
+        messages: {
+            rtc: { send: rejectLaneSend, onMessage: () => () => {} },
+            ws: { send: rejectLaneSend, onMessage: () => () => {} },
+            channel: <T>(definition: RallarTypedMessageChannelDefinition) => channels.channel<T>(definition),
+            room: <T>(definition: RallarRoomMessageChannelDefinition) => channels.room<T>(definition)
+        },
+        readSession: () => ({
+            clientId: 'client',
+            sessionId: 'session',
+            username: 'user',
+            accessToken: 'test',
+            expiresAtEpochMs: 60_000
+        })
+    });
+}
+
+async function rejectLaneSend(): Promise<never> {
+    throw new Error('A director command travels its typed command channel, never a lane send.');
+}
+
+function recordDirectorReceipt(
+    registry: ReturnType<typeof createBrowserMessageSenderFixture>['registry'],
+    message: ALMessage | undefined
+): void {
+    if (!message) {
+        throw new Error('The director command reached no carrier.');
+    }
+    registry.record({
+        kind: 'acknowledgement',
+        carrier: 'rtc',
+        msgId: message.id.msgId,
+        atMs: Date.now(),
+        mode: 'receiver',
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: ['director'],
+        confirmedRecipientPeerIds: ['director'],
+        unconfirmedRecipientPeerIds: [],
+        complete: true
+    });
+}
+
+// The durable pair the count pins observe (al-indexeddb-operation-counts.test.ts), kept private there.
+function createIndexedDbOutboundCountStores(
+    observer: IndexedDbOperationObserver,
+    name: string
+): ALOutboundRuntimeStores<OutboundTestPayload> {
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `${name}-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer
+    });
+    return {
+        admissionStore: createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: name,
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: name,
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue: backend.workQueue
+    };
+}
+
+function computeNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {
+    return counts.byOwner['al-work'] - (counts.byKind['work-page'] ?? 0) - (counts.byKind['work-probe'] ?? 0);
+}

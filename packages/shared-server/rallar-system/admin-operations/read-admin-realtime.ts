@@ -1,4 +1,7 @@
-import type { AdminOperationsRealtimeResponse } from '@shared/api/admin-operations-types.ts';
+import type {
+    AdminOperationsAlmReceiptDiagnostics,
+    AdminOperationsRealtimeResponse
+} from '@shared/api/admin-operations-types.ts';
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -13,6 +16,7 @@ export namespace ReadAdminRealtime {
         readonly readWebSocketStatus: () => RallarServerWsStatus;
         readonly readRtcTopologyMetrics: () => object;
         readonly readGroupFormationMetrics: () => RallarGroupFormationMetrics;
+        readonly readAlmReceipts: () => AdminOperationsAlmReceiptDiagnostics;
     }
 }
 
@@ -53,6 +57,10 @@ export class ReadAdminRealtime {
             },
             groupFormation: {
                 metrics: this.options.readGroupFormationMetrics(),
+                processLocal: true
+            },
+            almReceipts: {
+                diagnostics: this.options.readAlmReceipts(),
                 processLocal: true
             }
         });

@@ -50,12 +50,36 @@ describe('validateALAckSupport', () => {
         }
     });
 
-    it('refuses receiver on a WS unicast, whose receiver ACK no relay carries back to the origin (D42)', () => {
-        const unicast: ALTargets = { mode: 'unicast', toPeerId: 'peer' };
+    it('admits receiver on a WS unicast that names its room and refuses one that names none (D53, C2)', () => {
+        const roomless: ALTargets = { mode: 'unicast', toPeerId: 'peer' };
+        const inRoom: ALTargets = { mode: 'unicast', toPeerId: 'peer', groupRef: room };
 
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'ws', targets: unicast, capabilities: wsCapabilities }))
+        expect(
+            validateALAckSupport({
+                algo: 'receiver',
+                carrier: 'ws',
+                targets: roomless,
+                capabilities: wsCapabilities
+            })
+        )
             .toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws unicast targets' }]);
-        expect(validateALAckSupport({ algo: 'receiver', carrier: 'rtc', targets: unicast, capabilities: rtcCapabilities }))
+        expect(
+            validateALAckSupport({
+                algo: 'receiver',
+                carrier: 'ws',
+                targets: inRoom,
+                capabilities: wsCapabilities
+            })
+        )
+            .toEqual([]);
+        expect(
+            validateALAckSupport({
+                algo: 'receiver',
+                carrier: 'rtc',
+                targets: roomless,
+                capabilities: rtcCapabilities
+            })
+        )
             .toEqual([]);
     });
 

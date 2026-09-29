@@ -5,13 +5,19 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { createInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '@shared/alm/ALStoreRetention.ts';
-import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import {
+    AL_VOLATILE_STORE_EVICTION_INTERVAL_MS,
+    normalizeALRuntimeStoreRetention
+} from '@shared/alm/ALStoreRetention.ts';
+import {
+    createVolatileALInboundAdmissionStore,
+    type ALInboundAdmissionStore
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { toALInboundMessageOwnerKey } from '@shared/alm/inbound/al-inbound-source-validation.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
@@ -179,6 +185,8 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         await vi.waitFor(() => expect(fixture.delivered).toEqual(['dispatched']));
         const rowsAfterDelivery = pairs.volatile.state.data.size;
         expect(rowsAfterDelivery).toBeGreaterThan(0);
+        const ownerKey = toALInboundMessageOwnerKey('lane-volatile', 'expiring', INBOUND_TEST_SENDER_PEER_ID);
+        expect(pairs.volatile.state.data.has(ownerKey)).toBe(true);
 
         vi.setSystemTime(startedAtMs + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS - 1);
         await runInboundRounds(fixture);
@@ -187,12 +195,14 @@ describe('inbound store lanes (S3a, D20, D54)', () => {
         vi.setSystemTime(startedAtMs + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
         await runInboundRounds(fixture);
         expect(pairs.volatile.evictExpired, 'one sweep once the interval elapsed').toHaveBeenCalledTimes(2);
+        expect(pairs.volatile.state.data.has(ownerKey), 'the owner row outlives the 60 s deadline').toBe(true);
 
-        // The owner rows keep the repository retention, well past the message deadline.
-        vi.setSystemTime(startedAtMs + 2 * 60 * 60_000);
+        // The owner row keeps the 60 s deadline plus the receipt grace (D74): gone 90 s after the send.
+        vi.setSystemTime(startedAtMs + 2 * AL_VOLATILE_STORE_EVICTION_INTERVAL_MS);
         await runInboundRounds(fixture);
         expect(pairs.volatile.evictExpired).toHaveBeenCalledTimes(3);
         expect(pairs.volatile.state.data.size).toBeLessThan(rowsAfterDelivery);
+        expect(pairs.volatile.state.data.has(ownerKey)).toBe(false);
     });
 });
 
@@ -219,15 +229,17 @@ function createObservedInboundPairs(): ObservedInboundPairs {
     const backend = new InMemoryAdmissionBackend(state, Date.now);
     const evictExpired = vi.fn(() => backend.evictExpired());
     const stores: ALVolatileInboundRuntimeStores = {
-        ...createInMemoryALInboundRuntimeStores({
+        admissionStore: createVolatileALInboundAdmissionStore({
             nowMs: Date.now,
             namespace: 'lane-volatile',
-            inboundBackend: backend,
+            backend,
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
-            retention: undefined
+            retention: normalizeALRuntimeStoreRetention()
         }),
-        evictExpired
+        workQueue: backend.workQueue,
+        evictExpired,
+        budget: undefined
     };
     return {
         durable: { backend: durable.backend as InMemoryAdmissionBackend, stores: durable.stores },

@@ -10,7 +10,6 @@ import type {
     RallarGameMatchConfig,
     RallarGameTypeIds
 } from '../match/rallar-game-match-contracts.ts';
-import type { RallarGameLaneIds } from '../transport/lanes.ts';
 import type { RallarGameSendResult } from '../transport/rallar-game-send-result.ts';
 import type { RallarGameFreshDirectorStatus } from './rallar-game-fresh-director-status.ts';
 
@@ -37,7 +36,6 @@ export namespace RallarGameDirectorRelayRuntime {
 
     export interface Input<TInput, TIntent, TSnapshot, TEvent, TPresence> {
         readonly config: RallarGameMatchConfig<TInput, TIntent, TSnapshot, TEvent, TPresence>;
-        readonly laneIds: RallarGameLaneIds;
         readonly typeIds: RallarGameTypeIds;
         readonly heartbeatTtlMs: number;
         isStopped(): boolean;
@@ -155,7 +153,7 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
     }
 
     private createRelay(): RallarGameRuntimeRelay<TIntent, TSnapshot, TEvent> {
-        const { config, laneIds, typeIds } = this.input;
+        const { config, typeIds } = this.input;
         return config.rallar.director.createRelay<
             RallarGameEnvelope<TIntent>,
             RallarGameEnvelope<TEvent>,
@@ -163,7 +161,6 @@ export class RallarGameDirectorRelayRuntime<TInput, TIntent, TSnapshot, TEvent, 
         >({
             roomId: config.roomRef ? undefined : config.roomId,
             roomRef: config.roomRef,
-            laneId: laneIds.intent,
             topicId: config.topicId,
             intentTypeId: typeIds.intent,
             outputTypeId: typeIds.event,

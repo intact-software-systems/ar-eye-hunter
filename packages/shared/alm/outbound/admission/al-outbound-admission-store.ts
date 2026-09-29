@@ -20,6 +20,7 @@ import type {
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../../al-runtime-state-stores.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type {
@@ -266,6 +267,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** The audience a server admitted the message to, captured with its policy; undefined for every other message (D58). */
+    readonly readAdmittedAudience: (msgId: string) => Promise<readonly string[] | undefined>;
+
     readonly readSentMessageByOrdering: (
         trackKey: string,
         seq: number
@@ -303,7 +307,17 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 export function createALOutboundAdmissionStore<TPrepared>(
     input: CreateALOutboundAdmissionStoreInput<TPrepared>
 ): ALOutboundAdmissionStore<TPrepared> {
-    return new ProviderBackedALOutboundAdmissionStore(input);
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'durable' });
+}
+
+export function createVolatileALOutboundAdmissionStore<TPrepared>(
+    input: CreateALOutboundAdmissionStoreInput<TPrepared>
+): ALOutboundAdmissionStore<TPrepared> {
+    return new ProviderBackedALOutboundAdmissionStore({ ...input, durability: 'volatile' });
+}
+
+interface ALOutboundPairAdmissionStoreInput<TPrepared> extends CreateALOutboundAdmissionStoreInput<TPrepared> {
+    readonly durability: ALStoreDurability;
 }
 
 class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdmissionStore<TPrepared> {
@@ -311,6 +325,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     readonly canonicalScope: string;
     private readonly supersedenceTrackTtlMs: number;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly durability: ALStoreDurability;
     private readonly backend: ALAdmissionWorkBackend;
     private readonly nowMs: () => number;
     private readonly effectStore: ALOutboundAdmissionEffectStore<TPrepared>;
@@ -318,11 +333,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     private readonly mutations: ALOutboundAdmissionMutations;
     private readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
 
-    constructor(input: CreateALOutboundAdmissionStoreInput<TPrepared>) {
+    constructor(input: ALOutboundPairAdmissionStoreInput<TPrepared>) {
         this.namespace = input.namespace;
         this.canonicalScope = input.canonicalScope;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
         this.retention = input.retention;
+        this.durability = input.durability;
         this.backend = input.backend;
         this.nowMs = input.nowMs;
         this.decodePrepared = input.decodePrepared;
@@ -345,7 +361,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             namespace: input.namespace,
             canonicalScope: input.canonicalScope,
             retention: input.retention,
-            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs
+            supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,
+            durability: input.durability
         });
     }
 
@@ -362,7 +379,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             effectStore: this.effectStore,
             reads: this.reads,
             namespace: this.namespace,
-            retention: this.retention
+            retention: this.retention,
+            durability: this.durability
         });
     }
 
@@ -393,6 +411,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
         return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
+    }
+
+    async readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
+        return await this.backend.readWithin(async (session) =>
+            (await this.reads.readStoredMessage(session, msgId))?.policy.admittedAudience
+        );
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {

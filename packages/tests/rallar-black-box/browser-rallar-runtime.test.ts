@@ -10,6 +10,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
 
 import {
     createSpaBrowserRallarRuntime,
@@ -55,6 +56,7 @@ async function withBrowserRuntimeTiming(
     };
     const nativeRuntime = createBlackBoxRallarRuntime({
         facade: facade.rallar,
+        volatileLimits: new BlackBoxRallarVolatileLimits(),
         targetWindow,
         clock: { now: timing.now },
         readDocument: () => ({ timeOrigin: 1_700_000_000_000.5, origin: 'https://spa.example.test' }),
@@ -1326,7 +1328,14 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             const detail = 'No outbound transport route for the room message.';
             facade.behavior.rtcMessageSend.mockImplementation(async () => {
                 const handle = openFacadeDelivery('rtc', { kind: 'unroutable', reason: 'no-route', detail });
-                facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'rtc', atMs: Date.now(), detail });
+                facade.deliveries.record({
+                    kind: 'attempts-exhausted',
+                    msgId: handle.msgId,
+                    carrier: 'rtc',
+                    atMs: Date.now(),
+                    reason: 'no-route',
+                    detail
+                });
                 return handle;
             });
             await nativeRuntime.connect({

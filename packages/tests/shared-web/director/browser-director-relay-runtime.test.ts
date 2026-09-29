@@ -1,6 +1,8 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
@@ -277,56 +279,192 @@ describe('Rallar director relay', () => {
         });
     });
 
-    it('sends director intents with WS unicast fallback when RTC is not ready', async () => {
+    it.each(
+        [
+            { command: 'intent', typeId: 'game.intent' },
+            { command: 'sync request', typeId: 'game.sync-request' }
+        ] as const
+    )(
+        'sends a director $command as one room-naming command unicast whose WS fallback keeps its msgId (D60)',
+        async ({ command, typeId }) => {
+            vi.useFakeTimers();
+            vi.setSystemTime(Date.now());
+            const { createRallarFacade } = await import(
+                '@shared-web/browser/rallar.ts'
+            );
+            mockGroupSnapshot(createDirectorGroupSnapshot({
+                sessionId: 'director-session',
+                principalId: 'director-principal',
+                epoch: 2,
+                appointedAtEpochMs: Date.now(),
+                heartbeatTtlMs: 60_000
+            }));
+            mockRtcNoRoute();
+            const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+                roomId: 'room-1',
+                topicId: 'app.game.director',
+                intentTypeId: 'game.intent',
+                outputTypeId: 'game.output',
+                syncRequestTypeId: 'game.sync-request',
+                heartbeatIntervalMs: 60_000
+            });
+
+            const sending = command === 'intent'
+                ? relay.sendIntent({ move: 'left' })
+                : relay.requestSync({ reason: 'late-join' });
+            await vi.advanceTimersByTimeAsync(30_000);
+            const result = await sending;
+            relay.stop();
+
+            const isCommand = (message: ALMessage) => message.payload.typeId === typeId;
+            const rtcCommands = mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isCommand);
+            const wsCommands = mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message).filter(isCommand);
+            expect(rtcCommands).toHaveLength(1);
+            expect(wsCommands.map((message) => message.id.msgId)).toEqual(
+                rtcCommands.map((message) => message.id.msgId)
+            );
+            expect(wsCommands[0]).toMatchObject({
+                id: { msgId: result.receipt?.msgId },
+                route: { topicId: 'app.game.director', contextId: 'room-1' },
+                targets: {
+                    mode: 'unicast',
+                    toPeerId: 'director-session',
+                    groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+                },
+                delivery: { reliability: 'at-least-once', ack: 'receiver' }
+            });
+            // The mocked carriers deliver no receipt, so the command must not read as sent (correction 11).
+            expect(result).toMatchObject({
+                status: 'failed',
+                receipt: expect.objectContaining({ typeId }),
+                reason: 'The director did not confirm the command before its deadline.'
+            });
+            expect(result.rtc).toBeUndefined();
+            expect(result.ws).toBeUndefined();
+        }
+    );
+
+    it('delivers RTC director commands to the director\'s handlers (correction 13)', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        mockGroupSnapshot(createDirectorGroupSnapshot({
-            sessionId: 'director-session',
-            principalId: 'director-principal',
-            epoch: 2,
-            appointedAtEpochMs: Date.now(),
-            heartbeatTtlMs: 5_000
-        }));
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
-            status: 'timeout',
-            peerId: 'director-session',
-            laneId: 'director',
-            error: new Error('not ready')
+        const rtcInbox = new Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]>();
+        mocks.rtcRxStreamer.onInboxMessageDo.mockImplementation((typeId, callback) => {
+            rtcInbox.set(typeId, callback);
+            return mocks.ctx.middleware.rtcRxStreamer;
         });
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
         const facade = createRallarFacade();
+        const intents: DirectorMove[] = [];
+        const syncRequests: RallarMessagePayload[] = [];
         const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output'
+            outputTypeId: 'game.output',
+            syncRequestTypeId: 'game.sync-request',
+            heartbeatIntervalMs: 60_000,
+            onIntent: (message) => {
+                intents.push(message.data);
+            },
+            onSyncRequest: (message) => {
+                syncRequests.push(message.data);
+            }
         });
+        await facade.connect();
 
-        const result = await relay.sendIntent({ move: 'left' });
+        await rtcInbox.get('game.intent')?.onMessage(
+            toDirectorCommand('game.intent', { move: 'left' }),
+            toResourceEntry('game.intent', {})
+        );
+        await rtcInbox.get('game.sync-request')?.onMessage(
+            toDirectorCommand('game.sync-request', { reason: 'late-join' }),
+            toResourceEntry('game.sync-request', {})
+        );
         relay.stop();
 
-        expect(result.status).toBe('sent');
-        expect(result.rtc).toMatchObject({
-            status: 'failed',
-            peerIds: ['director-session']
-        });
-        expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
-            .toHaveBeenCalledWith(
-                expect.objectContaining({
-                    targets: {
-                        mode: 'unicast',
-                        toPeerId: 'director-session'
-                    },
-                    payload: expect.objectContaining({
-                        typeId: 'game.intent',
-                        resource: expect.stringContaining('"move":"left"')
-                    })
-                })
-            );
+        expect(intents).toEqual([{ move: 'left' }]);
+        expect(syncRequests).toEqual([{ reason: 'late-join' }]);
     });
 
-    it('blocks director intents when the appointment is stale', async () => {
+    it('delivers a director command that arrives over the WS fallback leg to onIntent once (D60)', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const wsInbox = captureWsInbox();
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const facade = createRallarFacade();
+        const intents: DirectorMove[] = [];
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000,
+            onIntent: (message) => {
+                intents.push(message.data);
+            }
+        });
+        await facade.connect();
+
+        await wsInbox.deliver(toDirectorCommand('game.intent', { move: 'left' }));
+        relay.stop();
+
+        expect(intents).toEqual([{ move: 'left' }]);
+    });
+
+    it('hands a command that arrives on both lanes to the relay twice, leaving the duplicate to the application (at-least-once)', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const wsInbox = captureWsInbox();
+        const rtcInbox = new Map<string, Parameters<typeof mocks.rtcRxStreamer.onInboxMessageDo>[1]>();
+        mocks.rtcRxStreamer.onInboxMessageDo.mockImplementation((typeId, callback) => {
+            rtcInbox.set(typeId, callback);
+            return mocks.ctx.middleware.rtcRxStreamer;
+        });
+        mockGroupSnapshot(createDirectorGroupSnapshot({
+            sessionId: 'session-1',
+            principalId: 'principal-1',
+            epoch: 3,
+            appointedAtEpochMs: Date.now(),
+            heartbeatTtlMs: 60_000
+        }));
+        const facade = createRallarFacade();
+        const received: string[] = [];
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            roomId: 'room-1',
+            topicId: 'app.game.director',
+            intentTypeId: 'game.intent',
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000,
+            onIntent: (message) => {
+                received.push(`${message.transport}:${message.data.move}`);
+            }
+        });
+        await facade.connect();
+        const command = toDirectorCommand('game.intent', { move: 'left' });
+
+        await rtcInbox.get('game.intent')?.onMessage(command, toResourceEntry('game.intent', {}));
+        await wsInbox.deliver(command);
+        relay.stop();
+
+        expect(received).toEqual(['rtc:left', 'ws:left']);
+    });
+
+    it('refuses a director intent to a stale appointment without putting it on either carrier', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         const { createRallarFacade } = await import(
@@ -339,25 +477,29 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: 1,
             heartbeatTtlMs: 5
         }));
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async () => {
-                throw new Error('Stale director intents must not open an RTC lane.');
-            }
-        );
+        const carried: string[] = [];
+        const refuseCarrier = async (message: ALMessage): Promise<never> => {
+            carried.push(message.payload.typeId);
+            throw new Error('A stale director intent must not reach a carrier.');
+        };
+        mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(refuseCarrier);
+        mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(refuseCarrier);
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output'
+            outputTypeId: 'game.output',
+            heartbeatIntervalMs: 60_000
         });
 
         const result = await relay.sendIntent({ move: 'left' });
         relay.stop();
 
-        expect(result).toMatchObject({
-            status: 'stale-director'
+        expect(result).toEqual({
+            status: 'stale-director',
+            reason: 'The appointed director is stale or inactive.'
         });
+        expect(carried).not.toContain('game.intent');
     });
 
     it('can disable periodic director snapshots while keeping explicit sync snapshots', async () => {
@@ -389,7 +531,6 @@ describe('Rallar director relay', () => {
         );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
@@ -422,7 +563,6 @@ describe('Rallar director relay', () => {
         mockRtcNoRoute();
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output'
@@ -432,7 +572,7 @@ describe('Rallar director relay', () => {
         relay.stop();
 
         expect(result.status).toBe('sent');
-        expect(result.rtc && 'lifecycle' in result.rtc ? result.rtc.lifecycle().state : undefined).toBe('failed');
+        expect(result.rtc?.lifecycle().state).toBe('failed');
         expect(result.ws?.lifecycle().state).toBe('queued');
     });
 
@@ -461,7 +601,6 @@ describe('Rallar director relay', () => {
         });
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
@@ -498,7 +637,6 @@ describe('Rallar director relay', () => {
         const facade = createRallarFacade();
         facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
-            laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
@@ -555,7 +693,6 @@ describe('Rallar director relay', () => {
         const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>(
             {
                 roomId: 'room-1',
-                laneId: 'director',
                 topicId: 'app.game.director',
                 intentTypeId: 'game.intent',
                 outputTypeId: 'game.output',
@@ -681,6 +818,44 @@ function resetDirectorRtcDoubles(): void {
         mocks.ctx.middleware.rtcRxStreamer
     );
     mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
+}
+
+interface WsInboxDouble {
+    deliver(message: ALMessage): Promise<void>;
+}
+
+function captureWsInbox(): WsInboxDouble {
+    const callbacks: Array<Parameters<typeof mocks.webSocketQueueBox.onAnyInboxMessageDo>[1]> = [];
+    mocks.webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((_id, callback) => {
+        callbacks.push(callback);
+        return mocks.ctx.middleware.webSocketQueueBox;
+    });
+    return {
+        deliver: async (message) => {
+            for (const callback of callbacks) {
+                await callback.onMessage(message, toResourceEntry(message.payload.typeId, {}));
+            }
+        }
+    };
+}
+
+function toDirectorCommand(typeId: string, payload: object): ALMessage {
+    return newALUnicastMessage(
+        'session-2',
+        newALRoute('app.game.director', 'room-1', `${typeId}-1`),
+        'session-1',
+        typeId,
+        {
+            protocol: 'rallar.director.relay.v1',
+            topicId: 'app.game.director',
+            typeId,
+            roomId: 'room-1',
+            epoch: 3,
+            sentAtEpochMs: Date.now(),
+            payload
+        },
+        { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
+    );
 }
 
 function mockRtcNoRoute(): void {

@@ -9,7 +9,7 @@ import {
 import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
 import { createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds, createRtcTopologyRttMeasurement } from '../rtc-topology-test-fixtures.ts';
@@ -90,25 +90,6 @@ describe('RallarRtcTopologyService public facade', () => {
         expect(service.calls).toEqual(['observeTopologySnapshot']);
         expect(result).toBe(false);
     });
-
-    it('claims a due update before using the public update methods', () => {
-        const service = new RecordingRtcTopologyService();
-        const group = createGroup();
-        service.queueRttTopologyUpdate(group);
-        service.calls.length = 0;
-
-        const result = service.flushDueRttTopologyUpdate(group);
-
-        expect(service.calls).toEqual([
-            'claimDueRttTopologyUpdate',
-            'updateGroupTopology',
-            'planGroupTopology',
-            'planGroupTopologyAt',
-            'selectTopology',
-            'observeTopologySnapshot'
-        ]);
-        expect(result?.snapshot.topology).toBe('star');
-    });
 });
 
 interface RecordingRtcTopologyServiceOptions {
@@ -175,11 +156,6 @@ class RecordingRtcTopologyService extends RallarRtcTopologyService {
     override observeTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
         this.calls.push('observeTopologySnapshot');
         return this.recordingOptions.observeResult ?? super.observeTopologySnapshot(snapshot);
-    }
-
-    override claimDueRttTopologyUpdate(groupRef: GroupRef): boolean {
-        this.calls.push('claimDueRttTopologyUpdate');
-        return super.claimDueRttTopologyUpdate(groupRef);
     }
 }
 

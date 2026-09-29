@@ -45,6 +45,7 @@ import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
+import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
@@ -55,16 +56,14 @@ import {
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
 import { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
+import { toWsQueueBoxServerInboundPlan } from './ws-queue-box-server-inbound-plan.ts';
 import { resolveWsQueueBoxServerInboundRecipients } from './ws-queue-box-server-inbound-recipients.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
     WsQueueBoxServerOutboundPlanning,
     type WsQueueBoxServerPreparedMessage
 } from './ws-queue-box-server-outbound-planning.ts';
-import {
-    toWsQueueBoxServerInboundPlan,
-    WsQueueBoxServerReceiptAggregation
-} from './ws-queue-box-server-receipt-aggregation.ts';
+import { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerService {
@@ -133,6 +132,7 @@ export class WsQueueBoxServerService {
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
+    private readonly admissionStore: WsQueueBoxServerService.Dependencies['outboundRuntime']['admissionStore'];
     private readonly qosProvider: ALQosInputProvider;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
@@ -155,6 +155,7 @@ export class WsQueueBoxServerService {
         this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
         this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
         this.outbox = dependencies.outboundRuntime.workQueue;
+        this.admissionStore = dependencies.outboundRuntime.admissionStore;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
         this.qosProvider = dependencies.qosProvider;
@@ -164,8 +165,9 @@ export class WsQueueBoxServerService {
         });
         this.clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution: this.targetResolution,
-            canonicalScope: dependencies.outboundRuntime.admissionStore.canonicalScope,
-            clock: this.clock
+            canonicalScope: this.admissionStore.canonicalScope,
+            clock: this.clock,
+            readAdmittedAudience: (msgId) => this.admissionStore.readAdmittedAudience(msgId)
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
@@ -437,7 +439,12 @@ export class WsQueueBoxServerService {
         if (isRoomScopedALMessage(message) && !this.inboundAuthorizer) {
             return Either.ofLeft({ code: 'unsupported', message: 'Room messages require a server authority provider' });
         }
-        const authorization = await this.inboundAuthorizer?.authorize(message) ?? { authorized: true };
+        const authorization = toWsQueueBoxServerAddresseeAuthorization({
+            message,
+            serverPeerId: this.name,
+            sendNack: this.inboundAuthorizer?.sendNacks ?? false,
+            authorization: await this.inboundAuthorizer?.authorize(message) ?? { authorized: true }
+        });
         if (this.disposed) {
             return Either.ofRight({ kind: 'disposed' });
         }
@@ -528,8 +535,8 @@ export class WsQueueBoxServerService {
             resolvedPeerIds,
             serverPeerId: this.name
         });
-        return toWsQueueBoxServerInboundPlan(
-            planALMessageHandling(
+        return toWsQueueBoxServerInboundPlan({
+            plan: planALMessageHandling(
                 message,
                 {
                     ...observations,
@@ -545,8 +552,11 @@ export class WsQueueBoxServerService {
                     this.qosProvider
                 )
             ),
-            source
-        );
+            message,
+            source,
+            serverPeerId: this.name,
+            routerOwnsRoomFanout: !this.forwardsRoomScopedMessages
+        });
     }
 
     private hasInboxConsumer(message: ALMessage): boolean {
@@ -612,6 +622,10 @@ export class WsQueueBoxServerService {
         admittedPeerIds?: readonly string[]
     ): WsServerLiveSendResult {
         return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds);
+    }
+
+    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
+        return this.admissionStore.readAdmittedAudience(msgId);
     }
 
     private async sendPreparedMessage(
