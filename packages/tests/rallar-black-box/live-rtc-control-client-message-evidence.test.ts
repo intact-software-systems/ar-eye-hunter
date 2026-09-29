@@ -7,6 +7,7 @@ import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box
 import { normalizeJson, type LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import {
     createLiveRtcControlClientTestFixture,
+    type LiveRtcControlClientTestFixture,
     type LiveRtcControlClientTestState
 } from './live-rtc-control-client-test-fixture.ts';
 
@@ -23,7 +24,7 @@ function toDeliveryObservationFixture(
 }
 
 describe('live RTC control client message and NACK evidence', () => {
-    let fixture: Awaited<ReturnType<typeof createLiveRtcControlClientTestFixture>>;
+    let fixture: LiveRtcControlClientTestFixture;
     let state: LiveRtcControlClientTestState;
     let control: LiveRtcControlClient;
     let diagnosticsRoot: string;

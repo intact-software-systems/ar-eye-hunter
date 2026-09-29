@@ -21,7 +21,18 @@ export interface LiveRtcControlClientTestState {
     failureHealthCommandIds: string[];
 }
 
-export async function createLiveRtcControlClientTestFixture() {
+export interface LiveRtcControlClientTestFixture {
+    readonly state: LiveRtcControlClientTestState;
+    readonly diagnosticsRoot: string;
+    readonly api: APIRequestContext;
+    readonly baseUrl: string;
+    readonly control: LiveRtcControlClient;
+    readonly refreshRoom: ReturnType<typeof vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>>;
+    readonly agent: Pick<LiveRtcControlClient.FormationAgent, 'agentId' | 'prefix' | 'refreshRoom'>;
+    readonly close: () => Promise<void>;
+}
+
+export async function createLiveRtcControlClientTestFixture(): Promise<LiveRtcControlClientTestFixture> {
     const state: LiveRtcControlClientTestState = {
         nowMs: 100,
         readyPeerIds: ['session-b', 'session-c'],

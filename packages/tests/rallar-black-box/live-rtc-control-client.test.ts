@@ -6,11 +6,12 @@ import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import {
     createLiveRtcControlClientTestFixture,
+    type LiveRtcControlClientTestFixture,
     type LiveRtcControlClientTestState
 } from './live-rtc-control-client-test-fixture.ts';
 
 describe('live RTC control client readiness evidence', () => {
-    let fixture: Awaited<ReturnType<typeof createLiveRtcControlClientTestFixture>>;
+    let fixture: LiveRtcControlClientTestFixture;
     let state: LiveRtcControlClientTestState;
     let control: LiveRtcControlClient;
     let diagnosticsRoot: string;

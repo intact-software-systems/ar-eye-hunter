@@ -7,7 +7,7 @@ import {
     type AppInboxTestPendingWrites,
     type AppInboxTestResourceRepositories
 } from './app-inbox-test-database-contracts.ts';
-import { createAppInboxTestDatabaseSql } from './app-inbox-test-database-sql.ts';
+import { createAppInboxTestDatabaseSql } from './create-app-inbox-test-database-sql.ts';
 
 interface CreateAppInboxTestTransactionInput {
     readonly repositories: AppInboxTestResourceRepositories;
