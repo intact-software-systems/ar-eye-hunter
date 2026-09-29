@@ -212,7 +212,9 @@ jobs:
         run: npm run test:rallar:recipe-console -- --shard=${{ matrix.shard }}
 
   # The standard profile runs as two balanced shares and the cluster profile beside them, each on its own
-  # runner with its own Postgres and all three API servers, so every lane keeps the full topology.
+  # runner with its own Postgres and all three API servers, so every lane keeps the full topology. The run
+  # id stays the same in every lane: recipes build their app, workspace and group ids from it, and the group
+  # admission limiter cuts its keys at 160 characters, so a longer run id merges principals into one limiter.
   black-box:
     name: API black-box recipes (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -273,7 +275,7 @@ jobs:
           artifact-dir: .artifacts/api-v1-black-box/postgres-${{ matrix.id }}
           profile: api-v1-black-box
           run-migrations: 'true'
-          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres-${{ matrix.id }}'
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres'
           scope: ${{ matrix.scope }}
           shard: ${{ matrix.shard }}
 

@@ -122,11 +122,14 @@ describe('Release Gate lanes', () => {
         expect(includes.filter((share) => share.scope === 'cluster')).toHaveLength(1);
         expect(includes.filter((share) => share.scope === 'standard' && share.shard)).toHaveLength(includes.length - 1);
         expect(new Set(includes.map((share) => share.id)).size).toBe(includes.length);
-        // Each lane needs its own database, artifact directory and upload name.
+        // Each lane has its own runner and database, so only the artifact directory needs the lane id.
         expect(runStep.with?.scope).toBe('${{ matrix.scope }}');
         expect(runStep.with?.shard).toBe('${{ matrix.shard }}');
         expect(runStep.with?.['artifact-dir']).toContain('${{ matrix.id }}');
-        expect(runStep.with?.['run-id']).toContain('${{ matrix.id }}');
+        // Recipes build their app, workspace and group ids from the run id, and the group admission
+        // limiter cuts its keys at 160 characters. A longer run id merges every principal of a group into
+        // one limiter, so the shares must not add their lane id to it.
+        expect(runStep.with?.['run-id']).toBe('${{ github.run_id }}-${{ github.run_attempt }}-postgres');
     });
 
     it('keeps Postgres presence expiry last, and twice, in a lane with its own Postgres', () => {
