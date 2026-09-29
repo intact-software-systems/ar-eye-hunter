@@ -4,6 +4,7 @@ import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter } from '@shared/re
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
 const UNKNOWN_CLIENT_KEY = 'unknown';
+const MAX_FORWARDED_CLIENT_KEY_LENGTH = 256;
 
 type HeaderReader = Readonly<{
     header(name: string): string | undefined;
@@ -29,11 +30,11 @@ export function readRateLimiter(
     return limiter;
 }
 
-export function readRequestClientKey(req: HeaderReader): string {
-    return readForwardedHeader(req, 'cf-connecting-ip') ??
-        readForwardedHeader(req, 'x-real-ip') ??
-        readForwardedHeader(req, 'x-forwarded-for') ??
-        readForwardedHeader(req, 'forwarded') ??
+export function readRequestClientKey(request: HeaderReader): string {
+    return readForwardedHeader(request, 'cf-connecting-ip') ??
+        readForwardedHeader(request, 'x-real-ip') ??
+        readForwardedHeader(request, 'x-forwarded-for') ??
+        readForwardedHeader(request, 'forwarded') ??
         UNKNOWN_CLIENT_KEY;
 }
 
@@ -53,27 +54,27 @@ function toLimiterKey(
     policy: RateLimiterPolicy
 ): string {
     return [
-        normaliseKey(namespace),
+        toNormalisedKey(namespace),
         policy.timebasedFilterMs,
         policy.maxNumberToAllow,
-        normaliseKey(key)
+        toNormalisedKey(key)
     ].join(':');
 }
 
 function readForwardedHeader(
-    req: HeaderReader,
+    request: HeaderReader,
     headerName: string
 ): string | undefined {
-    const raw = req.header(headerName);
+    const raw = request.header(headerName);
     if (!raw) {
         return undefined;
     }
 
     const value = raw.split(',')[0]?.trim();
-    return value && value.length > 0 ? value : undefined;
+    return value && value.length > 0 ? value.slice(0, MAX_FORWARDED_CLIENT_KEY_LENGTH) : undefined;
 }
 
-function normaliseKey(key: string): string {
+function toNormalisedKey(key: string): string {
     const trimmed = key.trim().toLowerCase();
-    return trimmed.length > 0 ? trimmed.slice(0, 160) : UNKNOWN_CLIENT_KEY;
+    return trimmed.length > 0 ? trimmed : UNKNOWN_CLIENT_KEY;
 }

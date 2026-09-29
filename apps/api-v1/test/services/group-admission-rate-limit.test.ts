@@ -108,6 +108,22 @@ Deno.test('per-principal windows are independent per group and per principal', (
     );
 });
 
+Deno.test('principals of a group with a 160+ character group key keep separate budgets', () => {
+    const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
+    const groupRef = longGroupRef('long-group-key');
+    assert.ok(`${groupRef.applicationId}:${groupRef.workspaceId}:${groupRef.groupId}`.length >= 160);
+    for (let attempt = 1; attempt <= 60; attempt++) {
+        assert.equal(decideJoin(groupRef, 'principal-a', config), 'allowed', `attempt ${attempt}`);
+    }
+
+    assert.equal(decideJoin(groupRef, 'principal-a', config), 'over-limit');
+    assert.equal(
+        decideJoin(groupRef, 'principal-b', config),
+        'allowed',
+        'a spent principal budget does not spill onto another principal of the same group'
+    );
+});
+
 Deno.test('the per-group window sheds every principal once the group budget is spent', () => {
     const config = toTinyConfig({ joinPrincipal: 100, joinGroup: 2 });
     const groupRef = uniqueGroupRef('group-budget');
@@ -220,6 +236,14 @@ function uniqueGroupRef(label: string): GroupRef {
         applicationId: `admission-app-${label}`,
         workspaceId: 'workspace-1',
         groupId: `group-${label}-${crypto.randomUUID()}`
+    };
+}
+
+function longGroupRef(label: string): GroupRef {
+    return {
+        applicationId: `admission-app-${label}-${'a'.repeat(40)}`,
+        workspaceId: `workspace-${'w'.repeat(40)}`,
+        groupId: `group-${label}-${'g'.repeat(40)}-${crypto.randomUUID()}`
     };
 }
 
