@@ -276,6 +276,7 @@ describe('Rallar facade default scope behavior', () => {
             expect.any(String),
             {
                 qosProvider: undefined,
+                readVolatileSessionLimits: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
                     submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },

@@ -148,7 +148,8 @@ function createObservedVolatileStores() {
             decodePrepared: decodeOutboundTestPayload
         }),
         workQueue: backend.workQueue,
-        evictExpired
+        evictExpired,
+        budget: undefined
     };
     return { state, evictExpired, stores };
 }

@@ -90,7 +90,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            undefined
+        ),
+        volatileBudget: undefined,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -134,7 +138,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            undefined
+        ),
+        volatileBudget: undefined,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -456,7 +464,11 @@ async function openRecoveryOwner(
         clientData: { clientId: principalId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            undefined
+        ),
+        volatileBudget: undefined,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

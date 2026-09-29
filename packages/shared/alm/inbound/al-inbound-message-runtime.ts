@@ -8,6 +8,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
     toALInboundAdmissionDiagnostics,
@@ -16,6 +17,7 @@ import {
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import type { ALInboundControlAdmissionResult } from './control/al-inbound-control-admission.ts';
 import { isALOriginAcknowledgement } from './control/is-al-origin-acknowledgement.ts';
+import { admitALInboundVolatileBudget } from './lane/admit-al-inbound-volatile-budget.ts';
 import { ALInboundStoreLane } from './lane/al-inbound-store-lane.ts';
 import { resolveALInboundStoreDurability } from './lane/resolve-al-inbound-store-durability.ts';
 import {
@@ -35,6 +37,8 @@ export interface ALInboundRuntimeStores {
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
 export interface ALVolatileInboundRuntimeStores extends ALInboundRuntimeStores {
     evictExpired(): void;
+    /** The session's bound over what this pair holds; `undefined` leaves the pair unbounded (C3). */
+    readonly budget: ALVolatileSessionBudget | undefined;
 }
 
 export namespace ALInboundMessageRuntime {
@@ -124,6 +128,8 @@ export namespace ALInboundMessageRuntime {
  * - A data message goes to the lane `resolveALInboundStoreDurability(msg)` names: `durable` exactly
  *   when the envelope's normalized durability is `local-inbox`. The decision reads the envelope alone,
  *   so every copy and retry of one message resolves to the same lane.
+ * - A data message the volatile lane admits counts against the session's bound, which the memory pair
+ *   carries; an inbound admission is never refused for it (D74, C6).
  * - An acknowledgement of a message this peer originated is `not-handled` and reads no store: the
  *   origin keeps no inbound decision surface for its own message.
  * - Any other control goes to the volatile lane first, and to the durable lane when that lane answers
@@ -233,7 +239,17 @@ export class ALInboundMessageRuntime {
         if (isALControlTypeId(msg.payload.typeId)) {
             return Either.ofRight(await this.admitControlMessage(msg, source));
         }
-        return await this.resolveDataLane(msg).admitData(msg, source, planIncomingMessage);
+        const lane = this.resolveDataLane(msg);
+        const admitted = await lane.admitData(msg, source, planIncomingMessage);
+        if (lane === this.volatile) {
+            admitALInboundVolatileBudget({
+                msg,
+                acceptance: admitted.right,
+                budget: this.dependencies.volatileStores?.budget,
+                nowMs: this.dependencies.clock.nowMs()
+            });
+        }
+        return admitted;
     }
 
     /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */

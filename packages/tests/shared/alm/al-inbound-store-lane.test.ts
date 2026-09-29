@@ -233,7 +233,8 @@ function createObservedInboundPairs(): ObservedInboundPairs {
             retention: normalizeALRuntimeStoreRetention()
         }),
         workQueue: backend.workQueue,
-        evictExpired
+        evictExpired,
+        budget: undefined
     };
     return {
         durable: { backend: durable.backend as InMemoryAdmissionBackend, stores: durable.stores },

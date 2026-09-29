@@ -164,7 +164,8 @@ function createBrowserSessionMessaging(
         foundation,
         state,
         sessionDeliveries,
-        qosProvider: undefined
+        qosProvider: undefined,
+        readVolatileSessionLimits: undefined
     });
     const sessionPort = session.session;
     const stateEvents = createBrowserStateEventComposition({

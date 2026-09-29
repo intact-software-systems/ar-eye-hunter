@@ -131,7 +131,8 @@ function createObservedVolatileInboundPair(): ObservedVolatileInboundPair {
                 retention: normalizeALRuntimeStoreRetention()
             }),
             workQueue: backend.workQueue,
-            evictExpired: () => backend.evictExpired()
+            evictExpired: () => backend.evictExpired(),
+            budget: undefined
         }
     };
 }

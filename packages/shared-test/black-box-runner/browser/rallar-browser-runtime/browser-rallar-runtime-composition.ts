@@ -338,6 +338,7 @@ function createBlackBoxBrowserTransportComposition(): BlackBoxBrowserTransportCo
     });
     const session = createBrowserSessionCoreComposition({
         qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        readVolatileSessionLimits: undefined,
         foundation,
         state,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries

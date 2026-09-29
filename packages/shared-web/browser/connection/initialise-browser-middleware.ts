@@ -4,6 +4,7 @@ import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -42,6 +43,10 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { readApiConfig, readIceCandidates } from '@shared-web/browser/connection/connection-http-api.ts';
+import {
+    createBrowserSessionVolatileBound,
+    type BrowserSessionVolatileBound
+} from '@shared-web/browser/connection/create-browser-session-volatile-bound.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -75,6 +80,8 @@ import {
 
 export interface MiddlewareInitOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
+    /** The session's volatile limits, read once per initialisation; `undefined` keeps D74's two constants. */
+    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly signal?: AbortSignal;
@@ -171,6 +178,8 @@ interface InitialiseBrowserTransportInput {
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
+    /** The session's one volatile budget and its QoS provider, handed to both carriers (C3, C13). */
+    readonly volatileBound: BrowserSessionVolatileBound;
     readonly options: MiddlewareInitOptions;
 }
 
@@ -190,28 +199,7 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
-    const clientData: ClientInfo = {
-        clientId: session.clientId,
-        sessionId: session.sessionId,
-        isOnline: true
-    };
-    initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
-    const inboundStores = resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId);
-    const inboundVolatileStores = createBrowserALVolatileInboundRuntimeStores(
-        toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)
-    );
-    const creation: BrowserMiddlewareCreation = {
-        createMessage: newALUntargetedMessage,
-        newConnectionRequestId: crypto.randomUUID.bind(crypto)
-    };
-    const transportInput: InitialiseBrowserTransportInput = {
-        session,
-        clientData,
-        inboundStores,
-        inboundVolatileStores,
-        options,
-        creation
-    };
+    const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
         ...transportInput,
@@ -228,7 +216,7 @@ export async function initialiseMiddleware(
         webRtcGroupManager: rtcTransport.webRtcGroupManager,
         bootstrapDegree
     });
-    const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
+    const heartbeatHandle = await heartbeat.initHeartbeat(transportInput.clientData, {
         authSession: session,
         scope: options.scope,
         onAuthInvalid: options.onAuthInvalid
@@ -240,6 +228,39 @@ export async function initialiseMiddleware(
         ...webSocketTransport,
         ...rtcTransport,
         heartbeat: heartbeatHandle
+    };
+}
+
+/** One session's stores, its one volatile bound over the three memory pairs (C3) and its creation ports. */
+function createBrowserTransportInput(
+    session: AuthSession,
+    options: MiddlewareInitOptions
+): InitialiseBrowserTransportInput {
+    const clientData: ClientInfo = {
+        clientId: session.clientId,
+        sessionId: session.sessionId,
+        isOnline: true
+    };
+    initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
+    const volatileBound = createBrowserSessionVolatileBound({
+        readVolatileSessionLimits: options.readVolatileSessionLimits,
+        qosProvider: options.qosProvider,
+        nowMs: Date.now
+    });
+    return {
+        session,
+        clientData,
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+            volatileBound.budget
+        ),
+        volatileBound,
+        options,
+        creation: {
+            createMessage: newALUntargetedMessage,
+            newConnectionRequestId: crypto.randomUUID.bind(crypto)
+        }
     };
 }
 
@@ -264,7 +285,8 @@ async function initialiseBrowserWebSocketTransport(
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
     const webSocketQueueBox = await createBrowserWebSocketQueueBox({
-        qosProvider: input.options.qosProvider,
+        qosProvider: input.volatileBound.qosProvider,
+        volatileBudget: input.volatileBound.budget,
         submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
         qboxEngine,
         socket,
@@ -334,7 +356,8 @@ async function initialiseBrowserRtcTransport(
     const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
         {
             webRtcConnectionService,
-            qosProvider: input.options.qosProvider,
+            qosProvider: input.volatileBound.qosProvider,
+            volatileBudget: input.volatileBound.budget,
             qboxEngine: input.webSocketTransport.qboxEngine,
             outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
             outboundSettlements: input.options.deliverySettlements.rtc

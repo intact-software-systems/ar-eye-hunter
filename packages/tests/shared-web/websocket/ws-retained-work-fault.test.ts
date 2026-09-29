@@ -70,7 +70,11 @@ describe('WS retained-work faults', () => {
             clientData: { clientId: sessionId, sessionId, isOnline: true },
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -148,7 +152,11 @@ describe('WS retained-work faults', () => {
             clientData: { clientId: sessionId, sessionId, isOnline: true },
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);

@@ -164,7 +164,8 @@ function createObservedOutboundPair(durability: 'durable' | 'volatile'): Observe
                 ? createVolatileALOutboundAdmissionStore(input)
                 : createALOutboundAdmissionStore(input),
             workQueue: backend.workQueue,
-            evictExpired: () => backend.evictExpired()
+            evictExpired: () => backend.evictExpired(),
+            budget: undefined
         }
     };
 }

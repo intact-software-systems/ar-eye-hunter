@@ -179,6 +179,7 @@ describe('browser RTC runtime composition', () => {
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+            volatileBudget: undefined,
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -251,6 +252,7 @@ describe('browser RTC runtime composition', () => {
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: undefined,
+            volatileBudget: undefined,
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine

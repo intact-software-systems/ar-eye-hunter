@@ -127,9 +127,12 @@ describe('ALM browser storage snapshot', () => {
 
         // The same workload once more over the same IndexedDB pairs, taking the volatile default.
         await sendOutboundWorkload(
-            createVolatileALOutboundRuntimeStores<OutboundTestPayload>({ decodePrepared: decodeOutboundTestPayload })
+            createVolatileALOutboundRuntimeStores<OutboundTestPayload>(
+                { decodePrepared: decodeOutboundTestPayload },
+                undefined
+            )
         );
-        await admitInboundWorkload(createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` }));
+        await admitInboundWorkload(createVolatileALInboundRuntimeStores({ namespace: `${INBOUND_NAMESPACE}-volatile` }, undefined));
         const afterVolatile = await readALStorageSnapshot();
         expect(afterVolatile.rowsByStatus, 'the volatile outbound workload adds no IndexedDB row')
             .toEqual(durable.rowsByStatus);

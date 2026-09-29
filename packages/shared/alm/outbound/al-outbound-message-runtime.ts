@@ -12,6 +12,7 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -22,6 +23,7 @@ import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admissi
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -137,6 +139,8 @@ export interface ALOutboundRuntimeStores<TPrepared> {
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
 export interface ALVolatileOutboundRuntimeStores<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
     evictExpired(): void;
+    /** The session's bound over what this pair holds; `undefined` leaves the pair unbounded (C3). */
+    readonly budget: ALVolatileSessionBudget | undefined;
 }
 
 /** The call path that asked for a commit, so its wait and its hold are charged to the work behind it. */
@@ -342,6 +346,8 @@ export namespace ALOutboundMessageRuntime {
  *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
  *   is computed once and handed to that lane's admission of the same message, so the admission never
  *   plans the message twice. The lane over the memory pair states no admission durable.
+ * - An admission the owner plans itself that resolves to the volatile lane counts against the session's
+ *   bound, which the memory pair carries; past it, the plan drops with the code `capacity` (D74, D78).
  * - A group whose members differ in durability commits as one group per lane: there is no
  *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
  * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
@@ -535,13 +541,23 @@ export class ALOutboundMessageRuntime<TPrepared> {
      */
     private planAdmission(msg: ALMessage): ALOutboundPlannedAdmission<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
+        let plan: ALOutboundDispatchPlan<TPrepared>;
         try {
-            const plan = planOutgoingMessage(msg);
-            return { lane: this.resolveLaneForPlan(plan), planner: toPlannedOnce(msg, plan, planOutgoingMessage) };
+            plan = planOutgoingMessage(msg);
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
         }
+        const lane = this.resolveLaneForPlan(plan);
+        const bounded = lane === this.volatile
+            ? admitALOutboundVolatileBudget({
+                msg,
+                plan,
+                budget: this.dependencies.volatileStores?.budget,
+                nowMs: this.dependencies.clock.nowMs()
+            })
+            : plan;
+        return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
     /** The lane a durable plan names, or the only lane of a runtime with one backend. */

@@ -168,3 +168,52 @@ describe('message handle admission', () => {
         expect(message.qos).toBeUndefined();
     });
 });
+
+describe('a send the session volatile bound refuses (D78)', () => {
+    function toCapacityRefusal(message: ALMessage): ALOutboundEnqueueResult {
+        const detail = 'The session\'s volatile bound is full (admissions): 1000 of 1000 admissions.';
+        return {
+            verdict: { kind: 'refused', reason: 'capacity', detail },
+            message,
+            entries: [],
+            reason: detail,
+            trackedReceiptAlgo: 'none'
+        };
+    }
+
+    it('ends a WS send rejected with the typed capacity failure', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent = async (message) => toCapacityRefusal(message);
+
+        const handle = await fixture.sender.sendWs(
+            { typeId: 'room.ready', payload: true },
+            undefined
+        );
+
+        expect((await handle.wait()).lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: { failure: { kind: 'refused', reason: 'capacity' } }
+        });
+    });
+
+    it('never hands an RTC capacity refusal to WS under rtc-with-ws-fallback', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) => toCapacityRefusal(message);
+
+        const handle = await fixture.sender.sendTyped(
+            { typeId: 'room.ready', payload: true, strategy: 'rtc-with-ws-fallback' },
+            undefined
+        );
+        const { lifecycle } = await handle.wait();
+
+        expect(lifecycle).toMatchObject({
+            state: 'rejected',
+            evidence: {
+                failure: { kind: 'refused', reason: 'capacity' },
+                carrierFallback: undefined
+            }
+        });
+        // A hand-over would have left the refused RTC leg as an attempt row before a WS leg.
+        expect(lifecycle.evidence.attempts).toEqual([]);
+    });
+});

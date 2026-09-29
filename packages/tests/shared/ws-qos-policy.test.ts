@@ -718,7 +718,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
     it('sends a best-effort volatile message made on a closed socket from its memory lane once the socket opens', async () => {
         const socket = createFakeWsSocket();
-        const volatileStores = createVolatileALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
+        const volatileStores = createVolatileALOutboundRuntimeStores(
+            { decodePrepared: decodeALOutboundTransportMessage },
+            undefined
+        );
         const service = shared.createDefaultWsQueueBoxClientService({
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket.client,

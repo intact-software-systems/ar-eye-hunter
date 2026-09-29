@@ -16,6 +16,7 @@ import {
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 
@@ -41,6 +42,8 @@ export interface BrowserCrdtComposition {
 
 export interface CreateBrowserSessionCoreCompositionInput {
     readonly qosProvider: ALQosInputProvider | undefined;
+    /** Read once per session; the product passes `undefined`, the black-box lane a lowered bound (C11). */
+    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
@@ -68,6 +71,7 @@ export function createBrowserSessionCoreComposition(
     });
     const session = createRallarSessionController({
         qosProvider: input.qosProvider,
+        readVolatileSessionLimits: input.readVolatileSessionLimits,
         sessionDeliveries: input.sessionDeliveries,
         connectionRuntime: input.foundation.connectionRuntime,
         transportRuntime: input.foundation.transportRuntime,

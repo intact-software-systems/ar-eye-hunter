@@ -63,7 +63,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -114,7 +118,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -153,7 +161,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -206,7 +218,11 @@ describe('createBrowserWebSocketQueueBox', () => {
             clientData,
             serverPeerId: 'server',
             inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
-            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId)),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
+                undefined
+            ),
+            volatileBudget: undefined,
             connectTimeoutMs,
             signal: controller.signal
         });

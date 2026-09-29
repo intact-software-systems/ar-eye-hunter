@@ -55,6 +55,7 @@ describe('the RTC enqueue circuit breaker', () => {
         [
             { verdict: { kind: 'refused', reason: 'unauthorized', detail: 'policy' }, success: true },
             { verdict: { kind: 'refused', reason: 'unsupported', detail: 'policy' }, success: true },
+            { verdict: { kind: 'refused', reason: 'capacity', detail: 'bound' }, success: true },
             { verdict: { kind: 'refused', reason: 'malformed', detail: 'broken' }, success: false },
             { verdict: { kind: 'failed', detail: 'transport' }, success: false },
             { verdict: { kind: 'unroutable', reason: 'circuit-open', detail: 'open' }, success: false },

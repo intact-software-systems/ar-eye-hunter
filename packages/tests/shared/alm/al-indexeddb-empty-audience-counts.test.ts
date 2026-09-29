@@ -32,7 +32,7 @@ describe('an RTC origin alone in its room, sending volatile (D75)', () => {
         const durableStores = createIndexedDbOriginStores(observer);
         const volatileStores = createVolatileALOutboundRuntimeStores({
             decodePrepared: decodeALOutboundTransportMessage
-        });
+        }, undefined);
         const fixture = createRtcOriginOverlayFixture({
             snapshot: createOriginSnapshot(['a'], 4),
             nextHopPeerIds: [],

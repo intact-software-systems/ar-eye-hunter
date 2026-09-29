@@ -269,6 +269,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
         qosProvider: undefined,
+        volatileBudget: undefined,
         outboundSettlements: (event) => runtime.registry.record(event),
         webRtcConnectionService: service,
         qboxEngine: runtime.engine
@@ -278,7 +279,10 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
         inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId('self')),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId('self'),
+            undefined
+        ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -351,7 +355,11 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: WS_SERVER_PEER_ID,
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            undefined
+        ),
+        volatileBudget: undefined,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

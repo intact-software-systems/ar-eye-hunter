@@ -129,7 +129,8 @@ async function createReadyObservedPairs(): Promise<ObservedInboundPairs> {
         volatileStores: {
             admissionStore: volatileStore,
             workQueue: volatile.backend.workQueue,
-            evictExpired: () => volatile.backend.evictExpired()
+            evictExpired: () => volatile.backend.evictExpired(),
+            budget: undefined
         },
         effectWorkerId: 'al-inbound:retention'
     });

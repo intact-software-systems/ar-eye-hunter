@@ -38,6 +38,7 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
+import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
 
 /**
  * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`) or the session's memory
@@ -198,27 +199,31 @@ export function createDefaultInMemoryALOutboundRuntimeStores<TPrepared>(
 
 /** The memory pair a browser carrier routes volatile admissions to; it persists nothing. */
 export function createVolatileALOutboundRuntimeStores<TPrepared>(
-    options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>
+    options: CreateDefaultALOutboundRuntimeStoresInput<TPrepared>,
+    budget: ALVolatileSessionBudget | undefined
 ): ALVolatileOutboundRuntimeStores<TPrepared> {
     const input = { ...toDefaultInMemoryInput(options), decodePrepared: options.decodePrepared };
     const backend = createVolatileALAdmissionBackend(input.nowMs);
     return {
         admissionStore: createVolatileALOutboundAdmissionStore(toInMemoryALOutboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue,
-        evictExpired: () => backend.evictExpired()
+        evictExpired: () => backend.evictExpired(),
+        budget
     };
 }
 
 /** The session's inbound memory pair, shared by both carriers' volatile lanes; it persists nothing. */
 export function createVolatileALInboundRuntimeStores(
-    options: CreateDefaultALRuntimeStoresInput = {}
+    options: CreateDefaultALRuntimeStoresInput,
+    budget: ALVolatileSessionBudget | undefined
 ): ALVolatileInboundRuntimeStores {
     const input = toDefaultInMemoryInput(options);
     const backend = createVolatileALAdmissionBackend(input.nowMs);
     return {
         admissionStore: createVolatileALInboundAdmissionStore(toInMemoryALInboundAdmissionStoreInput(input, backend)),
         workQueue: backend.workQueue,
-        evictExpired: () => backend.evictExpired()
+        evictExpired: () => backend.evictExpired(),
+        budget
     };
 }
 
