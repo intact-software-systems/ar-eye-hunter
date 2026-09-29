@@ -60,7 +60,7 @@ describe('API-v1 black-box workflow', () => {
         const workflowJobs = [
             ['.github/workflows/api-v1-black-box.yml', ['postgres', 'topology-replay', 'memory']],
             ['.github/workflows/api-v1-medium-scale-gate.yml', ['medium-scale']],
-            ['.github/workflows/release-gate.yml', ['release-gate']]
+            ['.github/workflows/release-gate.yml', ['black-box', 'postgres-integration']]
         ] as const;
 
         for (const [workflowPath, jobNames] of workflowJobs) {
@@ -140,7 +140,7 @@ describe('API-v1 black-box workflow', () => {
 
     it('publishes the exact-SHA topology replay proof directory from the Release Gate', async () => {
         const workflow = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
-        const steps = workflow.jobs?.['release-gate']?.steps ?? [];
+        const steps = workflow.jobs?.['postgres-integration']?.steps ?? [];
         const proofIndex = steps.findIndex((step) => step.with?.profile === 'api-v1-black-box-topology-replay');
         const proofStep = steps[proofIndex];
         const artifactDir = proofStep?.with?.['artifact-dir'];

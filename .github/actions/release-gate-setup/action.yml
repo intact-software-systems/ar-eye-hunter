@@ -1,0 +1,61 @@
+name: Release Gate lane setup
+description: Install Node dependencies and the Deno and Playwright toolchains one Release Gate lane needs.
+inputs:
+  deno:
+    description: Install Deno and restore its cache.
+    required: false
+    default: 'false'
+  playwright:
+    description: Install Playwright Chromium and its system dependencies.
+    required: false
+    default: 'false'
+  save-deno-cache:
+    description: Save the Deno cache after the job. Only the push that validates its exact main commit passes true.
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: package-lock.json
+
+    - name: Setup Deno
+      if: ${{ inputs.deno == 'true' }}
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
+    - name: Restore Deno cache without save permission
+      if: ${{ inputs.deno == 'true' && inputs.save-deno-cache != 'true' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.cache/deno
+          ~/.deno
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deno-
+
+    - name: Cache Deno for trusted runs
+      if: ${{ inputs.deno == 'true' && inputs.save-deno-cache == 'true' }}
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/deno
+          ~/.deno
+        key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-deno-
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Install Playwright Chromium
+      if: ${{ inputs.playwright == 'true' }}
+      shell: bash
+      run: npx playwright install --with-deps chromium
