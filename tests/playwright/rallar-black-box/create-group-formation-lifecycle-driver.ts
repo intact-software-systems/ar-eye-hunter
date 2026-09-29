@@ -222,18 +222,38 @@ async function reconnectFormationAgent(
     input: ReconnectFormationAgentInput
 ): Promise<ReconnectedFormationAgent> {
     const startedAtMs = performance.now();
-    const connection = await connectFormationAgent(config, {
-        control: input.control,
-        runId: input.runId,
-        agent: input.reconnectingAgent,
-        transport: input.transport,
-        groupId: input.groupId,
-        suffix: input.suffix
-    });
     const participantAgents = [
         ...input.survivingAgents,
         input.reconnectingAgent
     ] as const;
+    let connection: FormationAgentConnection;
+    try {
+        connection = await connectFormationAgent(config, {
+            control: input.control,
+            runId: input.runId,
+            agent: input.reconnectingAgent,
+            transport: input.transport,
+            groupId: input.groupId,
+            suffix: input.suffix
+        });
+    }
+    catch (cause) {
+        try {
+            await input.control.recordReadinessFailure({
+                runId: input.runId,
+                agent: input.reconnectingAgent,
+                participantAgents,
+                expectedPeerIds: input.survivingSessionIds,
+                suffix: `${input.suffix}-connect-failure`,
+                startedAtMs,
+                attempt: 0
+            });
+        }
+        catch (diagnosticCause) {
+            console.error('Failed to record RTC connect-failure diagnostics', toError(diagnosticCause));
+        }
+        throw cause;
+    }
     const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
         [
             waitForCanonicalFormationReadiness(config, {

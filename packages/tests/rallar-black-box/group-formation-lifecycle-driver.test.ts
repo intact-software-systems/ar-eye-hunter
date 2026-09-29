@@ -620,4 +620,71 @@ describe('group formation lifecycle driver', () => {
             errorLog.mockRestore();
         }
     });
+
+    it.each([false, true])('captures reconnect connect failure before cleanup when diagnostics fail: %s', async (diagnosticsFail) => {
+        const connectFailure = new Error('rtc.connect timed out');
+        const diagnosticFailure = new Error('diagnostic capture failed');
+        const operationOrder: string[] = [];
+        const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const agents = [createAgent('A'), createAgent('B'), createAgent('C')] as const;
+        const recordReadinessFailure = vi.fn(async () => {
+            operationOrder.push('capture');
+            if (diagnosticsFail) {
+                throw diagnosticFailure;
+            }
+        });
+        const control: LiveRtcControlPort = {
+            executeOk: async (input) => {
+                if (input.command.kind === 'rtc.connect') {
+                    throw connectFailure;
+                }
+                return successfulResult(input, {});
+            },
+            executeResult: async (input) => successfulResult(input, {}),
+            resultValue: readResultValue,
+            requireSessionId: () => 'unexpected-session',
+            readyPeerIds: () => [],
+            waitForMessage: async () => 1,
+            waitForPeerAbsence: async () => undefined,
+            waitForPeerReadiness: async () => 1,
+            recordReadinessFailure
+        };
+        const driver = createGroupFormationLifecycleDriver({
+            apiBaseUrl: 'http://api.test',
+            applicationId: 'application',
+            workspaceId: 'workspace',
+            messagesRtcTypeId: 'type',
+            messagesRtcTopicId: 'topic',
+            formation: createLiveRtcFormationOperations()
+        });
+
+        try {
+            await expect(driver.reconnectAndWaitForPeerReadiness({
+                control,
+                runId: 'run-connect-failure',
+                reconnectingAgent: agents[2],
+                survivingAgents: [agents[0], agents[1]],
+                survivingSessionIds: ['session-a', 'session-b'],
+                transport: 'messages.rtc',
+                groupId: 'group',
+                suffix: 'retention-41'
+            })).rejects.toBe(connectFailure);
+            operationOrder.push('cleanup');
+
+            expect(recordReadinessFailure).toHaveBeenCalledOnce();
+            expect(recordReadinessFailure).toHaveBeenCalledWith(expect.objectContaining({
+                runId: 'run-connect-failure',
+                agent: agents[2],
+                participantAgents: agents,
+                expectedPeerIds: ['session-a', 'session-b'],
+                suffix: 'retention-41-connect-failure',
+                attempt: 0
+            }));
+            expect(operationOrder).toEqual(['capture', 'cleanup']);
+            expect(errorLog).toHaveBeenCalledTimes(diagnosticsFail ? 1 : 0);
+        }
+        finally {
+            errorLog.mockRestore();
+        }
+    });
 });
