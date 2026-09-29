@@ -917,15 +917,21 @@ function performanceMetrics(rawEvidence: LiveRtcPerformanceRawEvidence): RtcBase
     }));
     const retention = rawEvidence.retention;
     if (retention) {
-        const endpoints = retention.checkpoints.filter((_, index) =>
-            index === 0 || index === retention.checkpoints.length - 1
-        );
-        for (const checkpoint of endpoints) {
-            metrics.push({
-                metric: `post-gc-heap.cycle-${checkpoint.cycle}`,
-                unit: 'bytes',
-                value: checkpoint.postGcHeapBytes
-            });
+        const first = retention.checkpoints[0];
+        const last = retention.checkpoints.at(-1);
+        if (first && last) {
+            metrics.push(
+                {
+                    metric: 'post-gc-heap.cycle-0',
+                    unit: 'bytes',
+                    value: first.postGcHeapBytes
+                },
+                {
+                    metric: 'post-gc-heap.cycle-100',
+                    unit: 'bytes',
+                    value: last.postGcHeapBytes
+                }
+            );
         }
     }
     return metrics;

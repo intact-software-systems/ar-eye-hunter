@@ -2,7 +2,6 @@ import { expect } from '@playwright/test';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -75,7 +74,6 @@ export interface LiveRtcControlPort extends
         | 'executeResult'
         | 'resultValue'
         | 'requireSessionId'
-        | 'recordReadinessFailure'
         | 'waitForPeerReadiness'
         | 'waitForPeerAbsence'
         | 'waitForMessage'
@@ -201,7 +199,6 @@ interface WaitForCanonicalFormationReadinessInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
     readonly agent: LiveRtcControlClient.FormationAgent;
-    readonly participantAgents: readonly Pick<LiveRtcControlClient.FormationAgent, 'agentId'>[];
     readonly roomRef: GroupRef;
     readonly expectedPeerIds: readonly string[];
     readonly suffix: string;
@@ -223,45 +220,20 @@ async function reconnectFormationAgent(
     input: ReconnectFormationAgentInput
 ): Promise<ReconnectedFormationAgent> {
     const startedAtMs = performance.now();
-    const participantAgents = [
-        ...input.survivingAgents,
-        input.reconnectingAgent
-    ] as const;
-    let connection: FormationAgentConnection;
-    try {
-        connection = await connectFormationAgent(config, {
-            control: input.control,
-            runId: input.runId,
-            agent: input.reconnectingAgent,
-            transport: input.transport,
-            groupId: input.groupId,
-            suffix: input.suffix
-        });
-    }
-    catch (cause) {
-        try {
-            await input.control.recordReadinessFailure({
-                runId: input.runId,
-                agent: input.reconnectingAgent,
-                participantAgents,
-                expectedPeerIds: input.survivingSessionIds,
-                suffix: `${input.suffix}-connect-failure`,
-                startedAtMs,
-                attempt: 0
-            });
-        }
-        catch (diagnosticCause) {
-            console.error('Failed to record RTC connect-failure diagnostics', toError(diagnosticCause));
-        }
-        throw cause;
-    }
+    const connection = await connectFormationAgent(config, {
+        control: input.control,
+        runId: input.runId,
+        agent: input.reconnectingAgent,
+        transport: input.transport,
+        groupId: input.groupId,
+        suffix: input.suffix
+    });
     const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all(
         [
             waitForCanonicalFormationReadiness(config, {
                 control: input.control,
                 runId: input.runId,
                 agent: input.survivingAgents[0],
-                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: [input.survivingSessionIds[1], connection.sessionId],
                 suffix: input.suffix,
@@ -271,7 +243,6 @@ async function reconnectFormationAgent(
                 control: input.control,
                 runId: input.runId,
                 agent: input.survivingAgents[1],
-                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: [input.survivingSessionIds[0], connection.sessionId],
                 suffix: input.suffix,
@@ -281,7 +252,6 @@ async function reconnectFormationAgent(
                 control: input.control,
                 runId: input.runId,
                 agent: input.reconnectingAgent,
-                participantAgents,
                 roomRef: toGroupRef(config, input.groupId),
                 expectedPeerIds: input.survivingSessionIds,
                 suffix: `${input.suffix}-settled`,
@@ -441,9 +411,10 @@ async function connectInitialPair(
     input: RunGroupFormationLifecycleInput,
     connections: readonly [FormationAgentConnection, FormationAgentConnection]
 ): Promise<readonly string[]> {
-    const agents = [input.agents[0], input.agents[1]] as const;
+    const owner = input.agents[0];
+    const agents = [owner, input.agents[1]] as const;
     const suffix = `${input.transport.replace('.', '-')}-${input.suffix}-initial-pair`;
-    const lifecycle = { ...input, owner: agents[0], suffix };
+    const lifecycle = { ...input, owner, suffix };
     const topologyCommandId = await configureMeshTopology(config, lifecycle);
     const stageReceipt = await enterGroupConnectionCycle(config, lifecycle);
     const plannedLayout = await waitForPlannedLayout(config, {
@@ -460,26 +431,27 @@ async function connectInitialPair(
     const startedAtMs = performance.now();
     await Promise.all(
         agents.map(
-            (agent, index) =>
-                input.control.waitForPeerReadiness({
+            async (agent, index) =>
+                await input.control.waitForPeerReadiness({
                     runId: input.runId,
                     agent,
-                    participantAgents: agents,
                     expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
                     suffix,
                     startedAtMs
                 })
         )
     );
-    const activateCommandId = await activateGroup(config, lifecycle);
+    const activateCommandId = await activateGroup(config, {
+        ...lifecycle,
+        transport: input.transport
+    });
     await Promise.all(
         agents.map(
-            (agent, index) =>
-                waitForCanonicalFormationReadiness(config, {
+            async (agent, index) =>
+                await waitForCanonicalFormationReadiness(config, {
                     control: input.control,
                     runId: input.runId,
                     agent,
-                    participantAgents: agents,
                     roomRef: toGroupRef(config, input.groupId),
                     expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
                     suffix: `${suffix}-activated`,
@@ -552,7 +524,7 @@ async function configureMeshTopology(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `topology/config/requests/${encodeURIComponent(`topology-mesh-${input.suffix}`)}`
+                    `topology/config/requests/${pathSegment(`topology-mesh-${input.suffix}`)}`
                 ),
                 method: 'PUT',
                 body: {
@@ -599,7 +571,7 @@ async function enterGroupConnectionCycle(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/${operation}/requests/${encodeURIComponent(`${operation}-${input.suffix}`)}`
+                    `lifecycle/${operation}/requests/${pathSegment(`${operation}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: operation === 'reconfigure' ? { landing: 'hold' } : {}
@@ -636,7 +608,7 @@ async function connectPublishedLayout(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/connect/requests/${encodeURIComponent(`connect-${input.suffix}`)}`
+                    `lifecycle/connect/requests/${pathSegment(`connect-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {
@@ -669,7 +641,7 @@ async function activateGroup(
                 path: groupRequestPath(
                     config,
                     input.groupId,
-                    `lifecycle/activate/requests/${encodeURIComponent(`activate-${transport}-${input.suffix}`)}`
+                    `lifecycle/activate/requests/${pathSegment(`activate-${transport}-${input.suffix}`)}`
                 ),
                 method: 'POST',
                 body: {}
@@ -785,7 +757,6 @@ async function waitForFormationReadiness(
                 control: input.run.control,
                 runId: input.run.runId,
                 agent,
-                participantAgents: input.run.agents,
                 roomRef: toGroupRef(config, input.run.groupId),
                 expectedPeerIds: input.run.agents
                     .filter((candidate) => candidate.agentId !== agent.agentId)
@@ -802,19 +773,6 @@ async function waitForFormationReadiness(
 }
 
 async function waitForCanonicalFormationReadiness(
-    config: CreateGroupFormationLifecycleDriverConfig,
-    input: WaitForCanonicalFormationReadinessInput
-): Promise<number> {
-    try {
-        return await readCanonicalFormationReadiness(config, input);
-    }
-    catch (cause) {
-        await recordCanonicalReadinessFailure(input);
-        throw cause;
-    }
-}
-
-async function readCanonicalFormationReadiness(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: WaitForCanonicalFormationReadinessInput
 ): Promise<number> {
@@ -846,28 +804,6 @@ async function readCanonicalFormationReadiness(
     ).toEqual(expectedPeerIds);
 
     return performance.now() - input.startedAtMs;
-}
-
-async function recordCanonicalReadinessFailure(
-    input: WaitForCanonicalFormationReadinessInput
-): Promise<void> {
-    try {
-        await input.control.recordReadinessFailure({
-            runId: input.runId,
-            agent: input.agent,
-            participantAgents: input.participantAgents,
-            expectedPeerIds: input.expectedPeerIds,
-            suffix: input.suffix,
-            startedAtMs: input.startedAtMs,
-            attempt: 0
-        });
-    }
-    catch (diagnosticCause) {
-        console.error(
-            'Failed to record RTC readiness diagnostics',
-            toError(diagnosticCause)
-        );
-    }
 }
 
 function topologyReadCommand(
@@ -909,11 +845,11 @@ function groupRequestPath(
     groupId: string,
     suffix?: string
 ): string {
-    const groupPath = `/api/state/apps/${encodeURIComponent(config.applicationId)}/workspaces/${
-        encodeURIComponent(
+    const groupPath = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
+        pathSegment(
             config.workspaceId
         )
-    }/groups/${encodeURIComponent(groupId)}`;
+    }/groups/${pathSegment(groupId)}`;
     return suffix ? `${groupPath}/${suffix}` : groupPath;
 }
 
@@ -1017,6 +953,10 @@ function numberValue(value: RtcBaselineJson | undefined): number | undefined {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
+}
+
+function pathSegment(value: string): string {
+    return encodeURIComponent(value);
 }
 
 async function setupGroupMembership(

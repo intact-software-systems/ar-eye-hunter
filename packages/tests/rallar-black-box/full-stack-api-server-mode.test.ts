@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
     assertFullStackApiConfigEvidence,
+    assertFullStackControlHealthEvidence,
+    assertFullStackReadinessHttpEvidence,
     createFullStackApiProfileEnvBlock,
     createFullStackApiUrlEnvBlock,
     createFullStackApiV1WebServer,
     createFullStackSpaCorsOrigins,
+    evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
     readFullStackSpaBaseUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
-import {
-    assertFullStackControlHealthEvidence,
-    assertFullStackReadinessHttpEvidence,
-    evaluateFullStackConfiguredServiceEvidence
-} from '../../../apps/rallar-black-box/playwright-full-stack-configured-service-evidence.ts';
 
 describe('rallar-black-box full-stack API server mode', () => {
     it('defaults to the existing Postgres-backed full-stack API server mode', () => {
@@ -65,17 +63,6 @@ describe('rallar-black-box full-stack API server mode', () => {
         );
         expect(server.command).not.toContain('DATABASE_URL');
         expect(server.command).not.toContain('--env-file=');
-    });
-
-    it('captures only the ALM lane server timing when explicitly requested', () => {
-        const normal = createFullStackApiV1WebServer({ mode: 'memory' });
-        const observed = createFullStackApiV1WebServer({ mode: 'memory', almTimingCapture: true });
-
-        expect(normal.command).not.toContain('filter-alm-server-timing.mjs');
-        expect(observed.command).toContain('RALLAR_TIMING_LOGS=true');
-        expect(observed.command).toContain('filter-alm-server-timing.mjs');
-        expect(observed.command).toContain('pipefail');
-        expect(observed.command).not.toContain('2>&1');
     });
 
     it('allows CI configs to disable existing web server reuse', () => {
@@ -172,7 +159,7 @@ describe('rallar-black-box full-stack API server mode', () => {
 
     it('validates each reachable probe before classifying an absent peer as unavailable', async () => {
         const unavailable = { kind: 'unavailable' as const };
-        const reachable = <T>(value: T) => ({
+        const reachable = (value: unknown) => ({
             kind: 'reachable' as const,
             ok: true,
             status: 200,

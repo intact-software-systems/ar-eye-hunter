@@ -38,7 +38,6 @@ import {
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     createTwoAgentRun,
-    FULL_STACK_SPA_ORIGIN,
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     uniqueSuffix,
@@ -294,20 +293,6 @@ async function assertScenarioIdentity(
         })
     });
     expect.soft(issues, 'ALM actual identity evidence for every declared role').toEqual([]);
-}
-
-interface RecordAlmObservationInput {
-    readonly run: TwoAgentRun;
-    readonly testInfo: TestInfo;
-    readonly carrier: AlmConformanceCarrier;
-    readonly cellOutcome: ALMObservationCellOutcome;
-}
-
-interface WriteAlmObservationFilesInput {
-    readonly testInfo: TestInfo;
-    readonly carrier: AlmConformanceCarrier;
-    readonly regime: ALMObservationRegime;
-    readonly snapshot: ControlRunSnapshot;
 }
 
 /** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */

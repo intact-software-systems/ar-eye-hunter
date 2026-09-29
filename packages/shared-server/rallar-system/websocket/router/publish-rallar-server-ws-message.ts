@@ -1,16 +1,20 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { shouldAwaitALRoute, type ALQosNormalizationResult } from '@shared/al-contracts/al-policy.ts';
+import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { recordRallarTiming, type RallarTimingSink } from '../../observability/timing.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
-import { publishRallarServerWsFanout } from './publish-rallar-server-ws-fanout.ts';
 import {
     isAuthorizedRoomAudience,
-    readRallarServerWsPublicationAudience
+    readRallarServerWsPublicationAudience,
+    resolveAuthorizedRoomSessionIds
 } from './rallar-server-ws-publication-audience.ts';
+import {
+    toRallarServerWsLivePublishResult,
+    toRallarServerWsOutboxPublishResult
+} from './rallar-server-ws-publish-result.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsPublishInputDto,
@@ -21,7 +25,6 @@ import type {
 
 export interface PublishRallarServerWsMessageInput {
     readonly service: WsQueueBoxServerService;
-    readonly timing?: RallarTimingSink;
     readonly message: ALMessage;
     readonly fanout: RallarServerWsFanout | undefined;
     readonly wakeOutbox?: () => void;
@@ -56,54 +59,6 @@ export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInp
 }
 
 export async function publishRallarServerWsMessage(
-    input: PublishRallarServerWsMessageInput
-): Promise<RallarServerWsPublishResult> {
-    try {
-        const result = await publishRallarServerWsMessageWithResult(input);
-        recordRallarTiming({
-            sink: input.timing,
-            event: {
-                component: 'rallar-ws-publication',
-                operation: 'route-publish',
-                details: {
-                    msgId: input.message.id.msgId,
-                    messageTopicId: input.message.route.topicId,
-                    fanout: result.fanout,
-                    verdict: result.verdict?.kind ?? result.status,
-                    verdictReason: result.verdict && 'reason' in result.verdict ? result.verdict.reason : undefined,
-                    keyTopicId: result.entry?.key.topicId,
-                    keyResourceId: result.entry?.key.resourceId,
-                    keyContextId: result.entry?.key.contextId,
-                    recipientCount: result.recipientCount,
-                    sentCount: result.sentCount,
-                    failedCount: result.failedCount
-                }
-            },
-            status: result.status === 'failed' ? 'error' : 'ok',
-            durationMs: 0
-        });
-        return result;
-    }
-    catch (error) {
-        recordRallarTiming({
-            sink: input.timing,
-            event: {
-                component: 'rallar-ws-publication',
-                operation: 'route-publish',
-                details: {
-                    msgId: input.message.id.msgId,
-                    messageTopicId: input.message.route.topicId,
-                    verdict: 'threw'
-                }
-            },
-            status: 'error',
-            durationMs: 0
-        });
-        throw error;
-    }
-}
-
-async function publishRallarServerWsMessageWithResult(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
     const normalized = input.fanout === 'none' ? undefined : input.service.resolveOutboundPolicy(input.message);
@@ -170,6 +125,60 @@ async function publishAuthorizedRallarServerWsMessage(
     return await publishRallarServerWsFanout(input);
 }
 
+async function publishRallarServerWsFanout(
+    input: ResolvedRallarServerWsPublication
+): Promise<RallarServerWsPublishResult> {
+    switch (input.fanout) {
+        case 'none':
+            return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
+        case 'outbox': {
+            const result = await input.service.enqueueOutboxIfAbsent(
+                input.message,
+                toAdmittedAudience(input),
+                input.message.targets?.mode === 'unicast' ? input.inboundScope ?? undefined : undefined
+            );
+            if (hasALDeliveryDurableWork(result.verdict)) {
+                input.wakeOutbox?.();
+            }
+            return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
+        }
+        case 'live-only': {
+            const groupRef = readALTargetGroupRef(input.message);
+            const result = input.service.sendToTargetsWithResult({
+                message: input.message,
+                recipientSessionIds: input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
+                    message: input.message,
+                    audience: input.audience,
+                    admittedPeerIds: input.admittedPeerIds,
+                    nowEpochMs: input.nowEpochMs
+                }),
+                admittedPeerIds: input.admittedPeerIds,
+                inboundScope: input.inboundScope,
+                recipientScope: input.audience && groupRef
+                    ? { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId }
+                    : undefined
+            });
+            if (result.status === 'no-recipients') {
+                console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
+            }
+            return toRallarServerWsLivePublishResult(input.message, input.fanout, result);
+        }
+    }
+}
+
 function toFailedPublishResult(input: ResolvedRallarServerWsPublication, reason: string): RallarServerWsPublishResult {
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
+}
+
+/**
+ * The sessions the live branch would address, handed to the outbox beside the message: the server's own
+ * outbound owner sends to that audience and its pending row expects it, never the sessions that happen to
+ * be connected to the instance that dequeues it (D24, D43). The wire message stays as the origin sent it,
+ * so a room larger than the collection limit still fans out.
+ */
+function toAdmittedAudience(input: ResolvedRallarServerWsPublication): readonly string[] | undefined {
+    const { message, audience, admittedPeerIds } = input;
+    return audience === undefined
+        ? undefined
+        : resolveAuthorizedRoomSessionIds({ message, audience, admittedPeerIds, nowEpochMs: input.nowEpochMs });
 }

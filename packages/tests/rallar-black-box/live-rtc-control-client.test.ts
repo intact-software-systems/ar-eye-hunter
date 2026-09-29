@@ -1,29 +1,135 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { request, type APIRequestContext } from '@playwright/test';
+import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
-import {
-    createLiveRtcControlClientTestFixture,
-    type LiveRtcControlClientTestFixture,
-    type LiveRtcControlClientTestState
-} from './live-rtc-control-client-test-fixture.ts';
+import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
-describe('live RTC control client readiness evidence', () => {
-    let fixture: LiveRtcControlClientTestFixture;
-    let state: LiveRtcControlClientTestState;
+/**
+ * Spreads a real delivery observation, then explicitly named contamination the producer never emits.
+ * An undefined field is dropped, as the JSON from the page drops it (a send with no receipt has no receiptMode).
+ */
+function toDeliveryObservationFixture(
+    observation: BlackBoxRallarDeliveryObservation,
+    contamination: Readonly<LiveRtcJsonRecord> = {}
+) {
+    const fields = Object.entries({ ...observation, ...contamination }).filter(([, value]) => value !== undefined);
+    return normalizeJson(Object.fromEntries(fields));
+}
+
+describe('live RTC control client', () => {
+    let server: Server;
+    let api: APIRequestContext;
     let control: LiveRtcControlClient;
+    let nowMs: number;
+    let readyPeerIds: string[];
     let diagnosticsRoot: string;
-    let refreshRoom: typeof fixture.refreshRoom;
-    let agent: typeof fixture.agent;
+    let results: LiveRtcControlClient.Result[];
+    let events: LiveRtcControlClient.Event[];
+    let healthCommandFailure: { agentId: string; body: string; } | undefined;
+    let holdHealthCommand: ((agentId: string) => Promise<void>) | undefined;
+    const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
+    const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
     beforeEach(async () => {
-        fixture = await createLiveRtcControlClientTestFixture();
-        ({ state, control, diagnosticsRoot, refreshRoom, agent } = fixture);
+        nowMs = 100;
+        readyPeerIds = ['session-b', 'session-c'];
+        diagnosticsRoot = mkdtempSync(
+            path.join(tmpdir(), 'live-rtc-control-client-')
+        );
+        results = [];
+        events = [];
+        healthCommandFailure = undefined;
+        holdHealthCommand = undefined;
+        server = createServer(async (incoming, response) => {
+            if (incoming.method === 'POST') {
+                const chunks: Buffer[] = [];
+                for await (const chunk of incoming) {
+                    chunks.push(Buffer.from(chunk));
+                }
+                const command = normalizeJson(
+                    JSON.parse(Buffer.concat(chunks).toString())
+                );
+                if (
+                    !command ||
+                    typeof command !== 'object' ||
+                    !('commandId' in command) ||
+                    typeof command.commandId !== 'string'
+                ) {
+                    response.writeHead(400).end();
+                    return;
+                }
+                const agentId = incoming.url?.split('/')[4];
+                if (
+                    healthCommandFailure &&
+                    agentId === healthCommandFailure.agentId &&
+                    command.commandId.startsWith('health-message-failure-')
+                ) {
+                    response.writeHead(500).end(healthCommandFailure.body);
+                    return;
+                }
+                if (holdHealthCommand && command.commandId.startsWith('health-message-failure-')) {
+                    await holdHealthCommand(agentId ?? 'missing-agent');
+                }
+                results.push({
+                    agentId,
+                    commandId: command.commandId,
+                    ok: true,
+                    result: {
+                        value: {
+                            rallar: {
+                                rtcStatus: {
+                                    activePeerIds: readyPeerIds,
+                                    readyPeerIds
+                                },
+                                rtcDiagnostics: {
+                                    sessionId: 'health-session',
+                                    generatedAtEpochMs: 0,
+                                    peerCount: 0,
+                                    connectedPeerCount: 0,
+                                    relayPeerCount: 0,
+                                    peers: []
+                                }
+                            }
+                        }
+                    }
+                });
+                response.writeHead(202).end('{}');
+                return;
+            }
+            response
+                .writeHead(200, { 'content-type': 'application/json' })
+                .end(JSON.stringify({ results, events }));
+        });
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+            throw new Error('Expected a local control HTTP port.');
+        }
+        api = await request.newContext();
+        control = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${address.port}`,
+            diagnosticsOutDir: diagnosticsRoot,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+        refreshRoom.mockResolvedValue(undefined);
     });
 
-    afterEach(async () => await fixture.close());
+    afterEach(async () => {
+        await api.dispose();
+        await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        refreshRoom.mockReset();
+        rmSync(diagnosticsRoot, { recursive: true, force: true });
+    });
 
     it('waits for refreshed room membership and includes refresh time in readiness', async () => {
         const refresh = Promise.withResolvers<void>();
@@ -34,14 +140,13 @@ describe('live RTC control client readiness evidence', () => {
             refreshStarted = true;
             await refresh.promise;
             roomMembers = ['session-a', 'session-b', 'session-c'];
-            state.nowMs = 350;
+            nowMs = 350;
         });
 
         const readiness = control
             .waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
-                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -66,21 +171,78 @@ describe('live RTC control client readiness evidence', () => {
         let refreshCount = 0;
         refreshRoom.mockImplementation(async () => {
             refreshCount += 1;
-            state.nowMs += 100;
-            state.readyPeerIds = refreshCount === 1 ? ['session-b'] : ['session-b', 'session-c'];
+            nowMs += 100;
+            readyPeerIds = refreshCount === 1 ? ['session-b'] : ['session-b', 'session-c'];
         });
 
         await expect(
             control.waitForPeerReadiness({
                 runId: 'run-refresh-retry',
                 agent,
-                participantAgents: [agent],
                 expectedPeerIds: ['session-b', 'session-c'],
                 suffix: 'delayed-topology',
                 startedAtMs: 100
             })
         ).resolves.toBe(200);
-        expect(readdirSync(diagnosticsRoot)).toEqual([]);
+    });
+
+    it('captures bounded failed command facts without retaining payloads or credentials', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast',
+            ok: false,
+            result: {
+                value: {
+                    credential: 'must-not-be-retained',
+                    message: toDeliveryObservationFixture(
+                        {
+                            handleId: 'message-broadcast',
+                            state: 'failed',
+                            reason: 'Skipping RTC outbound message without overlay context',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
+                            attempts: 1,
+                            attemptOutcomes: [],
+                            attemptCarriers: [],
+                            relayRejection: undefined,
+                            carrierFallback: undefined,
+                            failure: undefined,
+                            backpressured: false,
+                            enqueued: false
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    )
+                }
+            }
+        });
+
+        expect(
+            await control.captureAttemptFailure({ runId: 'run-failed-send' })
+        ).toEqual({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            messageFailures: [],
+            failedResults: [
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-broadcast',
+                    ok: false,
+                    state: 'failed',
+                    reason: 'Skipping RTC outbound message without overlay context',
+                    submitted: false,
+                    enqueued: false,
+                    backpressured: false,
+                    attempts: 1,
+                    confirmedHopCount: 0,
+                    unconfirmedHopCount: 0
+                }
+            ]
+        });
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {
@@ -92,7 +254,6 @@ describe('live RTC control client readiness evidence', () => {
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
-                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -101,16 +262,15 @@ describe('live RTC control client readiness evidence', () => {
     });
 
     it('does not report readiness after room refresh exhausts the shared deadline', async () => {
-        state.readyPeerIds = [];
+        readyPeerIds = [];
         refreshRoom.mockImplementation(async () => {
-            state.nowMs = 60_101;
+            nowMs = 60_101;
         });
 
         await expect(
             control.waitForPeerReadiness({
                 runId: 'run-readiness',
                 agent,
-                participantAgents: [agent],
                 expectedPeerIds: ['session-b'],
                 suffix: 'delivery',
                 startedAtMs: 100
@@ -131,522 +291,599 @@ describe('live RTC control client readiness evidence', () => {
             agentId: 'agent-a',
             expectedPeerIds: ['session-b'],
             health: {
-                captureSucceeded: true,
-                commandOk: true,
-                readyPeerIds: []
-            }
-        });
-    });
-
-    it('retains sanitized signaling evidence per browser and preserves readiness failure when a reader fails', async () => {
-        const failure = new Error('original readiness failure');
-        refreshRoom.mockRejectedValue(failure);
-        const browserAgent = {
-            ...agent,
-            readSignalingObservation: async () => ({
-                available: true,
-                droppedReceived: 0,
-                droppedAttempts: 0,
-                droppedSocketLifetimes: 0,
-                socketLifetimes: [{
-                    socketInstanceOrdinal: 1,
-                    endpointOrigin: 'ws://api.test',
-                    createdAtEpochMs: 1,
-                    openedAtEpochMs: 2,
-                    closedAtEpochMs: 40,
-                    url: 'secret-socket-url'
-                }],
-                droppedNativeLifetimes: 0,
-                nativeLifetimes: [{
-                    nativeInstanceOrdinal: 2,
-                    createdAtEpochMs: 5,
-                    creationState: { signalingState: 'stable', connectionState: 'new', iceConnectionState: 'new' },
-                    closedAtEpochMs: 40,
-                    closeState: { signalingState: 'closed', connectionState: 'closed', iceConnectionState: 'closed' },
-                    observation: 'live' as const,
-                    observedAtEpochMs: 50,
-                    state: { signalingState: 'closed', connectionState: 'closed', iceConnectionState: 'closed', token: 'secret-token' },
-                    reference: 'secret-native-reference'
-                }],
-                received: [{
-                    msgId: 'signal-1',
-                    socketInstanceOrdinal: 1,
-                    signalType: 'Offer' as const,
-                    hasCandidate: false,
-                    offerId: 'offer-1',
-                    fromId: 'session-a',
-                    toId: 'session-b',
-                    receivedAtEpochMs: 10,
-                    sdp: 'secret-sdp',
-                    token: 'secret-token',
-                    fingerprint: 'secret-fingerprint'
-                }],
-                attempts: [{
-                    msgId: 'signal-1',
-                    socketInstanceOrdinal: 1,
-                    nativeInstanceOrdinal: 2,
-                    match: 'unique' as const,
-                    signalType: 'Offer' as const,
-                    offerId: 'offer-1',
-                    fromId: 'session-a',
-                    toId: 'session-b',
-                    receivedAtEpochMs: 10,
-                    attemptedAtEpochMs: 20,
-                    settledAtEpochMs: 30,
-                    settlement: 'applied' as const,
-                    state: { signalingState: 'stable', connectionState: 'new', iceConnectionState: 'new', token: 'secret-token' },
-                    description: 'secret-sdp'
-                }],
-                frames: ['secret-frame']
-            })
-        };
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-signaling',
-            agent: browserAgent,
-            participantAgents: [browserAgent, {
-                agentId: 'agent-b',
-                readSignalingObservation: async () => {
-                    throw new Error('secret-token');
-                }
-            }, { agentId: 'agent-c' }],
-            expectedPeerIds: ['session-b'],
-            suffix: 'signaling',
-            startedAtMs: 100
-        })).rejects.toBe(failure);
-
-        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-signaling.json'), 'utf8');
-        expect(JSON.parse(serialized).signalingByAgentId).toMatchObject({
-            'agent-a': {
-                available: true,
-                received: [{ msgId: 'signal-1', signalType: 'Offer' }],
-                attempts: [{ nativeInstanceOrdinal: 2, settlement: 'applied' }],
-                socketLifetimes: [{ socketInstanceOrdinal: 1, endpointOrigin: 'ws://api.test', closedAtEpochMs: 40 }],
-                nativeLifetimes: [{ nativeInstanceOrdinal: 2, closedAtEpochMs: 40, observation: 'live', state: { connectionState: 'closed' } }]
-            },
-            'agent-b': { available: false, received: [], attempts: [] },
-            'agent-c': { available: false, received: [], attempts: [] }
-        });
-        expect(serialized).not.toMatch(/secret-|fingerprint|description|frames/);
-    });
-
-    it('joins a bounded readiness causal tail to concurrent current health without retaining secrets', async () => {
-        state.runAgentIds = [
-            'retired-agent-a',
-            'retired-agent-b',
-            'agent-a',
-            'agent-b',
-            'agent-c',
-            'agent-outside'
-        ];
-        const sentinel = 'SENTINEL-secret-payload';
-        const entries: Array<{ agentId: string; topic: string; data: LiveRtcJsonRecord; }> = [];
-        for (let index = 0; index < 210; index += 1) {
-            entries.push({ agentId: 'agent-c', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } });
-        }
-        entries.push(
-            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
-            { agentId: 'agent-b', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
-            {
-                agentId: 'agent-a',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                data: { kind: 'commit-phases', typeId: 'rtc-signaling', msgId: 'signal-1', senderId: 'session-a', commitOutcome: 'committed' }
-            },
-            {
-                agentId: 'agent-b',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                data: { kind: 'admission-outcome', typeId: 'rtc-signaling', msgId: 'signal-1', outcome: 'committed', reason: sentinel }
-            },
-            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'close', reason: sentinel } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-timeout', peerId: 'session-b' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-deleted', peerId: 'session-b' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-b' } },
-            { agentId: 'agent-a', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-established', peerId: 'session-b' } },
-            { agentId: 'agent-b', topic: 'rallar.browser.rtc.lifecycle', data: { kind: 'peer-created', peerId: 'session-a' } }
-        );
-        for (let index = 0; index < 230; index += 1) {
-            entries.push({
-                agentId: 'agent-a',
-                topic: 'unrelated',
-                data: { kind: 'open', payload: sentinel }
-            });
-        }
-        entries.push(
-            {
-                agentId: 'agent-a',
-                topic: 'rallar.browser.alm.outbound_diagnostics',
-                data: { kind: 'commit-phases', typeId: 'application-message', msgId: 'app-1' }
-            },
-            {
-                agentId: 'agent-b',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                data: { kind: 'admission-outcome', typeId: 'application-message', msgId: 'app-1' }
-            },
-            { agentId: 'agent-outside', topic: 'rallar.browser.ws.lifecycle', data: { kind: 'open' } }
-        );
-        state.events = entries.map((entry, index) => ({
-            kind: 'diagnostic',
-            protocolVersion: 1,
-            runId: 'run-causal',
-            agentId: entry.agentId,
-            atEpochMs: index,
-            eventId: `event-${index}`,
-            payload: {
-                eventId: `event-${index}`,
-                kind: 'diagnostic',
-                topic: entry.topic,
-                atEpochMs: index,
-                severity: 'info',
-                payload: {
-                    diagnosticSchemaVersion: 1,
-                    diagnosticTypeId: entry.topic,
-                    topic: entry.topic,
-                    severity: 'info',
-                    message: entry.topic,
-                    atEpochMs: index,
-                    data: {
-                        ...entry.data,
-                        payload: sentinel,
-                        credentials: sentinel,
-                        url: 'https://secret.example.test'
+                ok: true,
+                result: {
+                    value: {
+                        rallar: { rtcStatus: { readyPeerIds: [] } }
                     }
                 }
             }
-        }));
-        state.healthValues['agent-a'] = {
-            rallar: {
-                session: { sessionId: 'session-a', accessToken: sentinel },
-                rtcStatus: { readyPeerIds: [], knownPeerIds: ['session-b'] },
-                rtcCausalState: {
-                    localSessionId: 'session-a',
-                    desiredPeerIds: ['session-c', 'session-b', 'session-b'],
-                    onlinePeerIds: ['session-c'],
-                    connectablePeerIds: ['session-b'],
-                    knownPeerIds: ['session-b'],
-                    managerDiagnostics: { reconcileRunCount: 7, payload: sentinel },
-                    attempts: [{ peerId: 'session-b', diagnostics: { peerId: 'session-b', attempts: 2, maxAttempts: 3, payload: sentinel } }, {
-                        peerId: 'session-c',
-                        diagnostics: null
-                    }],
-                    arbitrary: sentinel
-                },
-                rtcDiagnostics: {
-                    sessionId: 'session-a',
-                    generatedAtEpochMs: 10,
-                    peers: []
-                },
-                error: sentinel,
-                url: 'https://secret.example.test'
-            }
-        };
-        state.healthValues['agent-b'] = {
-            rallar: {
-                rtcDiagnostics: {
-                    sessionId: 'session-b',
-                    generatedAtEpochMs: 11,
-                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
-                }
-            }
-        };
-        state.healthValues['agent-c'] = {
-            rallar: {
-                rtcDiagnostics: {
-                    sessionId: 'session-c',
-                    generatedAtEpochMs: 12,
-                    peers: [{ peerId: 'session-a', connection: { state: 'Connecting' }, lanes: [] }]
-                }
-            }
-        };
-        state.healthValues['retired-agent-a'] = { rallar: { session: { sessionId: 'retired-session-a' } } };
-        state.healthValues['retired-agent-b'] = { rallar: { session: { sessionId: 'retired-session-b' } } };
-        const allHealthStarted = Promise.withResolvers<void>();
-        const releaseHealth = Promise.withResolvers<void>();
-        const healthAgents: string[] = [];
-        state.holdHealthCommand = async (agentId) => {
-            healthAgents.push(agentId);
-            if (healthAgents.length === 3) {
-                allHealthStarted.resolve();
-            }
-            await releaseHealth.promise;
-        };
-        const failure = new Error(sentinel);
-        refreshRoom.mockRejectedValue(failure);
-        const readiness = control.waitForPeerReadiness({
-            runId: 'run-causal',
-            agent,
-            participantAgents: [
-                agent,
-                { agentId: 'agent-b' },
-                { agentId: 'agent-c' }
-            ],
-            expectedPeerIds: ['session-c', 'session-b'],
-            suffix: 'causal',
-            startedAtMs: 100
-        });
-        const rejection = expect(readiness).rejects.toThrow(sentinel);
-        try {
-            await Promise.race([allHealthStarted.promise, new Promise<void>((resolve) => setTimeout(resolve, 200))]);
-            expect(healthAgents.sort()).toEqual(['agent-a', 'agent-b', 'agent-c']);
-        }
-        finally {
-            releaseHealth.resolve();
-            await rejection;
-        }
-        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-causal.json'), 'utf8');
-        const sidecar = JSON.parse(serialized);
-        expect(state.readinessHealthAgents.sort()).toEqual(['agent-a', 'agent-b', 'agent-c']);
-        expect(serialized).not.toMatch(
-            /SENTINEL|secret\.example|accessToken|credentials|payload|application-message|app-1|agent-outside|retired/u
-        );
-        expect(sidecar.failure).toEqual({ name: 'readiness-failed', message: 'RTC peer readiness observation failed.' });
-        expect(sidecar.causalEvents).toHaveLength(200);
-        expect(sidecar.causalEvents[0]).toMatchObject({ atEpochMs: 22 });
-        expect(
-            sidecar.causalEvents.slice(-12).map((
-                event: { agentId: string; kind: string; wsGeneration: number | null; peerLifetime?: number; }
-            ) => [event.agentId, event.kind, event.wsGeneration, event.peerLifetime ?? null])
-        ).toEqual([
-            ['agent-a', 'open', 1, null],
-            ['agent-b', 'open', 1, null],
-            ['agent-a', 'peer-created', 1, 1],
-            ['agent-a', 'commit-phases', 1, null],
-            ['agent-b', 'admission-outcome', 1, null],
-            ['agent-a', 'close', 1, null],
-            ['agent-a', 'peer-timeout', 1, 1],
-            ['agent-a', 'peer-deleted', 1, 1],
-            ['agent-a', 'open', 2, null],
-            ['agent-a', 'peer-created', 2, 2],
-            ['agent-a', 'peer-established', 2, 2],
-            ['agent-b', 'peer-created', 1, 1]
-        ]);
-        expect(sidecar.healthByAgentId['agent-b'].rtcDiagnostics.peers).toMatchObject([
-            { peerId: 'session-a' }
-        ]);
-        expect(sidecar.healthByAgentId['agent-c'].rtcDiagnostics.peers).toMatchObject([
-            { peerId: 'session-a' }
-        ]);
-        expect(sidecar.causalEvents.filter((event: { msgId?: string; }) => event.msgId === 'signal-1')).toMatchObject([
-            { agentId: 'agent-a', commitOutcome: 'committed' },
-            { agentId: 'agent-b', outcome: 'committed' }
-        ]);
-        expect(sidecar.healthByAgentId['agent-a']).toMatchObject({
-            localSessionId: 'session-a',
-            rtcCausalState: {
-                desiredPeerIds: ['session-b', 'session-c'],
-                managerDiagnostics: { reconcileRunCount: 7 },
-                attempts: [{ peerId: 'session-b', diagnostics: { attempts: 2 } }, { peerId: 'session-c', diagnostics: null }]
-            }
         });
     });
 
-    it.each([
-        {
-            failedAgentId: `credential=SENTINEL-failed-${'x'.repeat(10_000)}`,
-            discoveredAgentIds: [`credential=SENTINEL-discovered-${'y'.repeat(10_000)}`, 'causal-agent-1'],
-            references: ['@causal-agent-1', '@causal-agent-2', 'causal-agent-1']
-        },
-        {
-            failedAgentId: 'causal-agent-1',
-            discoveredAgentIds: ['@causal-agent-1', 'credential=SENTINEL-discovered'],
-            references: ['causal-agent-1', '@causal-agent-2', '@causal-agent-3']
-        }
-    ])('retains distinct bounded agent references for hostile metadata, case %#', async ({ failedAgentId, discoveredAgentIds, references }) => {
-        const selectedAgentIds = [failedAgentId, ...discoveredAgentIds];
-        state.runAgentIds = [...discoveredAgentIds, 'agent-outside'];
-        state.events = [...selectedAgentIds, 'agent-outside'].map((agentId, index) => ({
-            kind: 'diagnostic',
-            protocolVersion: 1,
-            runId: 'run-hostile-agents',
-            agentId,
-            atEpochMs: index,
-            eventId: `event-${index}`,
+    it('retains sender and receiver health when message delivery times out', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            result: {
+                value: {
+                    message: toDeliveryObservationFixture(
+                        {
+                            handleId: 'message-direct-timeout',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
+                            attempts: 1,
+                            attemptOutcomes: [],
+                            attemptCarriers: [],
+                            relayRejection: undefined,
+                            carrierFallback: undefined,
+                            failure: undefined,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        events.push({
+            agentId: 'agent-b',
             payload: {
-                eventId: `event-${index}`,
-                kind: 'diagnostic',
-                topic: 'rallar.browser.ws.lifecycle',
-                atEpochMs: index,
-                severity: 'info',
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'direct-topic',
                 payload: {
-                    diagnosticSchemaVersion: 1,
-                    diagnosticTypeId: 'rallar.browser.ws.lifecycle',
-                    topic: 'rallar.browser.ws.lifecycle',
-                    severity: 'info',
-                    message: 'rallar.browser.ws.lifecycle',
-                    atEpochMs: index,
-                    data: { kind: 'open' }
+                    data: {
+                        matrixId: 'an-earlier-message',
+                        deliveryMode: 'direct',
+                        credential: 'must-not-be-retained'
+                    }
                 }
             }
-        }));
-        selectedAgentIds.forEach((agentId, index) => {
-            state.healthValues[agentId] = { rallar: { session: { sessionId: `session-${index}` } } };
         });
-        const allHealthStarted = Promise.withResolvers<void>();
-        const releaseHealth = Promise.withResolvers<void>();
-        state.holdHealthCommand = async () => {
-            if (state.readinessHealthAgents.length === 3) {
-                allHealthStarted.resolve();
+        await expect(
+            control.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'direct-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('direct-timeout');
+
+        const artifactBody = readFileSync(
+            path.join(
+                diagnosticsRoot,
+                'live-rtc-message-failure-direct-timeout-agent-b.json'
+            ),
+            'utf8'
+        );
+        expect(artifactBody).not.toContain('must-not-be-retained');
+        const artifact = JSON.parse(artifactBody);
+        expect(artifact).toMatchObject({
+            runId: 'run-message-timeout',
+            senderAgentId: 'agent-a',
+            receiverAgentId: 'agent-b',
+            matrixId: 'direct-timeout',
+            healthByAgentId: {
+                'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                'agent-b': { captureSucceeded: true, commandSucceeded: true }
             }
-            await releaseHealth.promise;
-        };
-        const failure = new Error('SENTINEL-readiness-error');
-        refreshRoom.mockRejectedValue(failure);
-        const readiness = control.waitForPeerReadiness({
-            runId: 'run-hostile-agents',
-            agent: { ...agent, agentId: failedAgentId },
-            participantAgents: selectedAgentIds.map((agentId) => ({ agentId })),
-            expectedPeerIds: ['session-b'],
-            suffix: 'hostile',
-            startedAtMs: 100
         });
-        const rejection = expect(readiness).rejects.toBe(failure);
-        try {
-            await Promise.race([allHealthStarted.promise, new Promise<void>((resolve) => setTimeout(resolve, 200))]);
-            expect(state.readinessHealthAgents).toHaveLength(3);
-            expect(new Set(state.readinessHealthAgents)).toEqual(new Set(selectedAgentIds));
-        }
-        finally {
-            releaseHealth.resolve();
-            await rejection;
-        }
-        const artifactFiles = readdirSync(diagnosticsRoot);
-        expect(artifactFiles).toHaveLength(1);
-        expect(artifactFiles[0]?.length).toBeLessThan(200);
-        expect(artifactFiles.join()).not.toMatch(/SENTINEL|credential/);
-        const serialized = readFileSync(path.join(diagnosticsRoot, artifactFiles[0]!), 'utf8');
-        const sidecar = JSON.parse(serialized);
-        expect(serialized.length).toBeLessThan(10_000);
-        expect(serialized).not.toMatch(/SENTINEL|credential|agent-outside/);
-        expect(sidecar.agentId).toBe(references[0]);
-        expect(Object.keys(sidecar.healthByAgentId)).toEqual(references);
-        expect(Object.values(sidecar.healthByAgentId)).toMatchObject([
-            { captureSucceeded: true, localSessionId: 'session-0' },
-            { captureSucceeded: true, localSessionId: 'session-1' },
-            { captureSucceeded: true, localSessionId: 'session-2' }
-        ]);
-        expect(sidecar.health).toEqual(sidecar.healthByAgentId[references[0]!]);
-        expect(sidecar.causalEvents.map((event: { agentId: string; }) => event.agentId)).toEqual(references);
-        expect(state.readinessHealthAgents).toHaveLength(3);
-    });
-
-    it('names the sidecar by harness slot for a maximum-length punctuation identity', async () => {
-        const punctuationAgentId = ':'.repeat(128);
-        state.runAgentIds = [];
-        state.healthValues[punctuationAgentId] = { rallar: { session: { sessionId: 'session-c' } } };
-        const failure = new Error('SENTINEL-readiness-error');
-        refreshRoom.mockRejectedValue(failure);
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-punctuation',
-            agent: { ...agent, prefix: 'C', agentId: punctuationAgentId },
-            participantAgents: [{ agentId: punctuationAgentId }],
-            expectedPeerIds: ['session-b'],
-            suffix: 'punctuation',
-            startedAtMs: 100
-        })).rejects.toBe(failure);
-
-        const fileName = 'live-rtc-readiness-failure-agent-c-punctuation.json';
-        expect(readdirSync(diagnosticsRoot)).toEqual([fileName]);
-        const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
-        expect(serialized).not.toContain('SENTINEL');
-        expect(JSON.parse(serialized)).toMatchObject({
-            agentId: punctuationAgentId,
-            health: { captureSucceeded: true, localSessionId: 'session-c' }
+        expect(artifact.recentResults).toEqual(
+            expect.arrayContaining([
+                {
+                    agentId: 'agent-a',
+                    commandId: 'send-direct-timeout',
+                    ok: true
+                }
+            ])
+        );
+        expect(artifact.sendResult).toEqual({
+            ok: true,
+            state: 'submitted',
+            reason: 'awaiting a durable admission retry',
+            messageIdPresent: true,
+            submitted: false,
+            enqueued: true,
+            backpressured: false,
+            attempts: 1,
+            confirmedHopCount: 0,
+            unconfirmedHopCount: 0
         });
-    });
-
-    it('keeps separate same-suffix sidecars for hostile identities in different harness slots', async () => {
-        state.runAgentIds = [];
-        const captures = [
-            { prefix: 'A' as const, agentId: 'credential=SENTINEL-first', sessionId: 'session-a' },
-            { prefix: 'B' as const, agentId: 'credential=SENTINEL-second', sessionId: 'session-b' }
-        ];
-        const failure = new Error('SENTINEL-readiness-error');
-        refreshRoom.mockRejectedValue(failure);
-        for (const capture of captures) {
-            state.healthValues[capture.agentId] = { rallar: { session: { sessionId: capture.sessionId } } };
-            await expect(control.waitForPeerReadiness({
-                runId: 'run-shared-suffix',
-                agent: { ...agent, prefix: capture.prefix, agentId: capture.agentId },
-                participantAgents: [{ agentId: capture.agentId }],
-                expectedPeerIds: ['session-c'],
-                suffix: 'shared',
-                startedAtMs: 100
-            })).rejects.toBe(failure);
-        }
-
-        const fileNames = readdirSync(diagnosticsRoot).sort();
-        expect(fileNames).toEqual([
-            'live-rtc-readiness-failure-agent-a-shared.json',
-            'live-rtc-readiness-failure-agent-b-shared.json'
-        ]);
-        const sidecars = fileNames.map((fileName) => {
-            expect(fileName.length).toBeLessThan(100);
-            expect(fileName).not.toMatch(/SENTINEL|credential/);
-            const serialized = readFileSync(path.join(diagnosticsRoot, fileName), 'utf8');
-            expect(serialized).not.toMatch(/SENTINEL|credential/);
-            return JSON.parse(serialized);
-        });
-        expect(sidecars).toMatchObject([
-            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-a' } },
-            { agentId: '@causal-agent-1', health: { captureSucceeded: true, localSessionId: 'session-b' } }
+        expect(artifact.recentEvents).toEqual([
+            {
+                agentId: 'agent-b',
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'direct-topic',
+                matrixId: 'an-earlier-message',
+                deliveryMode: 'direct'
+            }
         ]);
     });
 
-    it('retains only a fixed category when readiness health capture fails', async () => {
-        state.healthCommandFailure = { agentId: 'agent-a', body: 'SENTINEL-health-response' };
-        refreshRoom.mockRejectedValue(new Error('SENTINEL-readiness-error'));
-        await expect(control.waitForPeerReadiness({
-            runId: 'run-health',
-            agent,
-            participantAgents: [agent],
-            expectedPeerIds: ['session-b'],
-            suffix: 'health',
-            startedAtMs: 100
-        })).rejects
-            .toThrow('SENTINEL-readiness-error');
-        const serialized = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-health.json'), 'utf8');
-        expect(serialized).not.toContain('SENTINEL');
-        expect(JSON.parse(serialized).health).toMatchObject({ captureSucceeded: false, failure: 'health-capture-failed' });
-        expect(state.readinessHealthAgents).toEqual(['agent-a']);
+    it('passes the settlement reason through verbatim, and reports null when absent', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast-with-reason',
+            ok: false,
+            result: {
+                value: {
+                    message: toDeliveryObservationFixture({
+                        handleId: 'message-with-reason',
+                        state: 'failed',
+                        reason: 'awaiting a durable admission retry',
+                        submitted: false,
+                        confirmedHopPeerIds: [],
+                        unconfirmedHopPeerIds: [],
+                        receiptMode: undefined,
+                        expectedRecipientPeerIds: [],
+                        confirmedRecipientPeerIds: [],
+                        unconfirmedRecipientPeerIds: [],
+                        attempts: 1,
+                        attemptOutcomes: [],
+                        attemptCarriers: [],
+                        relayRejection: undefined,
+                        carrierFallback: undefined,
+                        failure: undefined,
+                        backpressured: false,
+                        enqueued: false
+                    })
+                }
+            }
+        });
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast-without-reason',
+            ok: false,
+            result: {
+                // No `reason` field, matching the wire shape when the producer recorded none.
+                value: {
+                    message: {
+                        handleId: 'message-without-reason',
+                        state: 'failed',
+                        submitted: false,
+                        confirmedHopPeerIds: [],
+                        unconfirmedHopPeerIds: [],
+                        expectedRecipientPeerIds: [],
+                        confirmedRecipientPeerIds: [],
+                        unconfirmedRecipientPeerIds: [],
+                        attempts: 1,
+                        backpressured: false,
+                        enqueued: false
+                    }
+                }
+            }
+        });
+
+        const attemptFailure = await control.captureAttemptFailure({ runId: 'run-reason-passthrough' });
+
+        expect(attemptFailure.failedResults).toEqual([
+            expect.objectContaining({
+                commandId: 'send-broadcast-with-reason',
+                reason: 'awaiting a durable admission retry'
+            }),
+            expect.objectContaining({
+                commandId: 'send-broadcast-without-reason',
+                reason: null
+            })
+        ]);
     });
 
-    it('uses collision-free bounded command identities for concurrent readiness health', async () => {
-        state.runAgentIds = ['agent-a'];
-        state.healthValues['agent:a'] = {
-            rallar: { session: { sessionId: 'session-colon' } }
-        };
-        state.healthValues['agent-a'] = {
-            rallar: { session: { sessionId: 'session-hyphen' } }
-        };
-        const failure = new Error('readiness failed');
-        refreshRoom.mockRejectedValue(failure);
+    it('retains a sanitized message delivery failure without a diagnostics directory', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            result: {
+                value: {
+                    message: toDeliveryObservationFixture(
+                        {
+                            handleId: 'message-direct-timeout',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
+                            attempts: 1,
+                            attemptOutcomes: [],
+                            attemptCarriers: [],
+                            relayRejection: undefined,
+                            carrierFallback: undefined,
+                            failure: undefined,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
 
         await expect(
-            control.waitForPeerReadiness({
-                runId: 'run-readiness-command-collision',
-                agent: { ...agent, agentId: 'agent:a' },
-                participantAgents: [{ agentId: 'agent:a' }, { agentId: 'agent-a' }],
-                expectedPeerIds: ['session-hyphen'],
-                suffix: 'command-collision',
-                startedAtMs: 100
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'direct-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
             })
-        ).rejects.toBe(failure);
+        ).rejects.toThrow('direct-timeout');
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-message-timeout',
+                senderAgentId: 'agent-b',
+                agentId: 'agent-c',
+                transport: 'messages.rtc',
+                matrixId: 'cleanup-timeout',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('cleanup-timeout');
 
-        const sidecar = JSON.parse(
-            readFileSync(
-                path.join(
-                    diagnosticsRoot,
-                    'live-rtc-readiness-failure-agent-a-command-collision.json'
-                ),
-                'utf8'
-            )
-        );
-        expect(sidecar.healthByAgentId).toMatchObject({
-            'agent:a': { localSessionId: 'session-colon' },
-            'agent-a': { localSessionId: 'session-hyphen' }
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-message-timeout' });
+        expect(JSON.stringify(attemptFailure)).not.toContain('must-not-be-retained');
+        expect(attemptFailure).toMatchObject({
+            kind: 'control-result-failures',
+            runCaptureSucceeded: true,
+            messageFailures: [
+                {
+                    kind: 'message-delivery-failure',
+                    senderAgentId: 'agent-a',
+                    receiverAgentId: 'agent-b',
+                    transport: 'messages.rtc',
+                    matrixId: 'direct-timeout',
+                    deliveryMode: 'direct',
+                    healthByAgentId: {
+                        'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                        'agent-b': { captureSucceeded: true, commandSucceeded: true }
+                    },
+                    sendResult: {
+                        state: 'submitted',
+                        reason: 'awaiting a durable admission retry',
+                        messageIdPresent: true,
+                        submitted: false,
+                        enqueued: true,
+                        backpressured: false,
+                        attempts: 1,
+                        confirmedHopCount: 0,
+                        unconfirmedHopCount: 0
+                    }
+                }
+            ]
         });
-        expect(state.failureHealthCommandIds).toHaveLength(2);
-        expect(new Set(state.failureHealthCommandIds).size).toBe(2);
-        expect(state.failureHealthCommandIds.join('\n')).not.toMatch(/agent:a|agent-a/u);
+    });
+
+    it('does not retain a failed health-command response body in message failure evidence', async () => {
+        healthCommandFailure = {
+            agentId: 'agent-b',
+            body: `credential=must-not-be-retained ${'x'.repeat(10_000)}`
+        };
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+
+        await expect(
+            controlWithoutDiagnosticsDirectory.waitForMessage({
+                runId: 'run-health-failure',
+                senderAgentId: 'agent-a',
+                agentId: 'agent-b',
+                transport: 'messages.rtc',
+                matrixId: 'health-failure',
+                deliveryMode: 'direct',
+                startedAtMs: 100,
+                timeoutMs: 10
+            })
+        ).rejects.toThrow('health-failure');
+
+        const attemptFailure = await controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-health-failure' });
+        expect(JSON.stringify(attemptFailure)).not.toContain('must-not-be-retained');
+        expect(attemptFailure.messageFailures[0]).toMatchObject({
+            failure: {
+                name: 'message-delivery-failed',
+                message: 'RTC message delivery observation failed.'
+            },
+            healthByAgentId: {
+                'agent-b': {
+                    captureSucceeded: false,
+                    commandSucceeded: null,
+                    captureFailure: {
+                        name: 'health-capture-failed',
+                        message: 'RTC health diagnostic capture failed.'
+                    }
+                }
+            }
+        });
+    });
+
+    it('waits for both first-case receiver captures before returning attempt failure evidence', async () => {
+        const releaseDelayedHealth = Promise.withResolvers<void>();
+        const delayedHealthStarted = Promise.withResolvers<void>();
+        holdHealthCommand = async (agentId) => {
+            if (agentId === 'agent-c') {
+                delayedHealthStarted.resolve();
+                await releaseDelayedHealth.promise;
+            }
+        };
+        const controlWithoutDiagnosticsDirectory = new LiveRtcControlClient({
+            request: api,
+            baseUrl: `http://127.0.0.1:${(server.address() as { port: number; }).port}`,
+            monotonicNow: () => nowMs,
+            epochNow: () => 0
+        });
+        const waitForAgentB = controlWithoutDiagnosticsDirectory.waitForMessage({
+            runId: 'run-two-receiver-timeout',
+            senderAgentId: 'agent-a',
+            agentId: 'agent-b',
+            transport: 'messages.rtc',
+            matrixId: 'two-receiver-timeout',
+            deliveryMode: 'multicast',
+            possibleReceiverAgentIds: ['agent-b', 'agent-c'],
+            startedAtMs: 100,
+            timeoutMs: 10
+        }).catch(() => undefined);
+        const waitForAgentC = controlWithoutDiagnosticsDirectory.waitForMessage({
+            runId: 'run-two-receiver-timeout',
+            senderAgentId: 'agent-a',
+            agentId: 'agent-c',
+            transport: 'messages.rtc',
+            matrixId: 'two-receiver-timeout',
+            deliveryMode: 'multicast',
+            possibleReceiverAgentIds: ['agent-b', 'agent-c'],
+            startedAtMs: 100,
+            timeoutMs: 10
+        }).catch(() => undefined);
+
+        await delayedHealthStarted.promise;
+        const attemptFailure = controlWithoutDiagnosticsDirectory
+            .captureAttemptFailure({ runId: 'run-two-receiver-timeout' });
+        releaseDelayedHealth.resolve();
+
+        await expect(attemptFailure).resolves.toMatchObject({
+            messageFailures: [
+                { receiverAgentId: 'agent-b' },
+                { receiverAgentId: 'agent-c' }
+            ]
+        });
+        await Promise.all([waitForAgentB, waitForAgentC]);
+    });
+
+    it('reads the sent message identity from the delivery observation, not the command ID', () => {
+        expect(
+            control.requireSentMessageId({
+                commandId: 'nack-probe-command',
+                ok: true,
+                result: {
+                    value: {
+                        message: toDeliveryObservationFixture(
+                            {
+                                handleId: 'wire-message',
+                                state: 'submitted',
+                                reason: 'awaiting a durable admission retry',
+                                submitted: true,
+                                confirmedHopPeerIds: [],
+                                unconfirmedHopPeerIds: [],
+                                receiptMode: undefined,
+                                expectedRecipientPeerIds: [],
+                                confirmedRecipientPeerIds: [],
+                                unconfirmedRecipientPeerIds: [],
+                                attempts: 1,
+                                attemptOutcomes: [],
+                                attemptCarriers: [],
+                                relayRejection: undefined,
+                                carrierFallback: undefined,
+                                failure: undefined,
+                                backpressured: false,
+                                enqueued: true
+                            }
+                        )
+                    }
+                }
+            })
+        ).toBe('wire-message');
+        expect(() =>
+            control.requireSentMessageId({
+                commandId: 'nack-probe-command',
+                ok: true
+            })
+        ).toThrow('message ID');
+    });
+
+    it('attaches received-NACK proof with the message and peer identities', async () => {
+        let artifact = '';
+        await control.recordReceivedNack({
+            testInfo: {
+                attach: async (_name, options) => {
+                    artifact = String(options?.body);
+                }
+            },
+            runId: 'run-nack',
+            agentId: 'agent-a',
+            messageId: 'wire-message',
+            senderSessionId: 'session-a',
+            targetSessionId: 'session-b',
+            frames: ['received-wire-frame']
+        });
+        expect(normalizeJson(JSON.parse(artifact))).toEqual({
+            observation: 'received-protocol-nack',
+            runId: 'run-nack',
+            agentId: 'agent-a',
+            messageId: 'wire-message',
+            senderSessionId: 'session-a',
+            targetSessionId: 'session-b',
+            frames: ['received-wire-frame']
+        });
+    });
+
+    it('captures bounded NACK failure evidence without raw frames or credentials', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            ok: true,
+            result: {
+                value: {
+                    message: toDeliveryObservationFixture(
+                        {
+                            handleId: 'probe-message',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            receiptMode: undefined,
+                            expectedRecipientPeerIds: [],
+                            confirmedRecipientPeerIds: [],
+                            unconfirmedRecipientPeerIds: [],
+                            attempts: 1,
+                            attemptOutcomes: [],
+                            attemptCarriers: [],
+                            relayRejection: undefined,
+                            carrierFallback: undefined,
+                            failure: undefined,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
+                    credential: 'must-not-be-retained'
+                }
+            }
+        });
+        events.push({
+            agentId: 'agent-b',
+            payload: {
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'credential=must-not-be-retained',
+                payload: {
+                    data: {
+                        matrixId: 'credential=must-not-be-retained',
+                        credential: 'must-not-be-retained'
+                    }
+                }
+            }
+        });
+        const diagnostic = await control.captureNackFailure({
+            runId: 'run-nack-timeout',
+            senderAgentId: 'agent-a',
+            targetAgentId: 'agent-b',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            stage: 'receive',
+            messageId: 'probe-message',
+            senderSessionId: 'session-a',
+            targetSessionId: 'session-b',
+            frames: [
+                'credential=must-not-be-retained',
+                JSON.stringify({
+                    payload: {
+                        typeId: 'al.control.nack.v1',
+                        resource: JSON.stringify({
+                            msgId: 'different-message',
+                            reason: 'not-yet-in-sync',
+                            fromPeerId: 'session-b',
+                            toPeerId: 'session-a',
+                            credential: 'must-not-be-retained'
+                        })
+                    }
+                })
+            ]
+        });
+
+        const artifactBody = JSON.stringify(diagnostic);
+        expect(artifactBody).not.toContain('must-not-be-retained');
+        expect(diagnostic).toMatchObject({
+            kind: 'nack-probe-failure',
+            runId: 'run-nack-timeout',
+            senderAgentId: 'agent-a',
+            targetAgentId: 'agent-b',
+            commandId: 'nack-not-yet-in-sync-timeout',
+            stage: 'receive',
+            failureMessage: 'RTC NACK probe did not observe the expected response.',
+            healthByAgentId: {
+                'agent-a': { captureSucceeded: true, commandSucceeded: true },
+                'agent-b': { captureSucceeded: true, commandSucceeded: true }
+            },
+            runCaptureSucceeded: true,
+            sendResult: {
+                ok: true,
+                state: 'submitted',
+                reason: 'awaiting a durable admission retry',
+                messageIdPresent: true,
+                submitted: false,
+                enqueued: true,
+                backpressured: false,
+                attempts: 1,
+                confirmedHopCount: 0,
+                unconfirmedHopCount: 0,
+                messageIdMatchesProbe: true
+            },
+            wireObservation: {
+                frameCount: 2,
+                malformedFrameCount: 1,
+                typedFrameCount: 1,
+                nackFrameCount: 1,
+                malformedNackFrameCount: 0,
+                nackFrames: [
+                    {
+                        hasMessageId: true,
+                        messageIdMatchesProbe: false,
+                        reason: 'not-yet-in-sync',
+                        hasFromPeerId: true,
+                        fromPeerIdMatchesTarget: true,
+                        hasToPeerId: true,
+                        toPeerIdMatchesSender: true,
+                        matchesProbe: false
+                    }
+                ]
+            },
+            recentEvents: [
+                {
+                    agentRole: 'target',
+                    kind: 'message',
+                    transport: 'messages.rtc',
+                    topicPresent: true,
+                    matrixIdPresent: true,
+                    deliveryMode: 'missing'
+                }
+            ]
+        });
+        expect(diagnostic.recentResults).toContainEqual({
+            agentRole: 'sender',
+            commandRole: 'probe',
+            ok: true
+        });
     });
 });

@@ -53,7 +53,6 @@ export function createFullStackApiV1WebServer(
         spaBaseUrl?: string;
         reuseExistingServer?: boolean;
         requireFreshPostgres?: boolean;
-        almTimingCapture?: boolean;
     }> = {}
 ): FullStackApiV1WebServer {
     const mode = input.mode ?? readFullStackApiServerMode();
@@ -68,13 +67,7 @@ export function createFullStackApiV1WebServer(
     );
 
     return {
-        command: input.almTimingCapture === true
-            ? toAlmTimingCaptureCommand(
-                mode === 'memory'
-                    ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl, true)
-                    : createPostgresApiCommand(apiBaseUrl, spaBaseUrl, true)
-            )
-            : mode === 'memory'
+        command: mode === 'memory'
             ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl)
             : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
         url: `${apiBaseUrl}/api/config`,
@@ -113,6 +106,83 @@ export function assertFullStackApiConfigEvidence(
             'Configured API endpoints.createWs must be a non-empty string.'
         );
     }
+}
+
+export function assertFullStackReadinessHttpEvidence(
+    input: Readonly<{
+        service: 'API' | 'control';
+        ok: boolean;
+        status: number;
+        statusText: string;
+    }>
+): void {
+    if (!input.ok) {
+        throw new Error(
+            `Configured ${input.service} readiness returned HTTP ${input.status} ${input.statusText}.`
+        );
+    }
+}
+
+export function assertFullStackControlHealthEvidence(value: unknown): void {
+    if (!isRecord(value)) {
+        throw new Error('Configured control health must be a JSON object.');
+    }
+    if (value.ok !== true) {
+        throw new Error(`Configured control health ok must be true. Received: ${String(value.ok)}`);
+    }
+    if (value.app !== 'rallar-black-box-control-server') {
+        throw new Error(
+            `Configured control health app must be rallar-black-box-control-server. Received: ${String(value.app)}`
+        );
+    }
+    if (value.protocolVersion !== 1) {
+        throw new Error(
+            `Configured control health protocolVersion must be 1. Received: ${String(value.protocolVersion)}`
+        );
+    }
+}
+
+export type FullStackConfiguredServiceProbe =
+    | Readonly<{ kind: 'unavailable'; }>
+    | Readonly<{
+        kind: 'reachable';
+        ok: boolean;
+        status: number;
+        statusText: string;
+        readJson(): Promise<unknown>;
+    }>;
+
+export async function evaluateFullStackConfiguredServiceEvidence(
+    input: Readonly<{
+        api: FullStackConfiguredServiceProbe;
+        control: FullStackConfiguredServiceProbe;
+        expectedApiBaseUrl: string;
+    }>
+): Promise<'ready' | 'unavailable'> {
+    if (input.api.kind === 'reachable') {
+        assertFullStackReadinessHttpEvidence({
+            service: 'API',
+            ok: input.api.ok,
+            status: input.api.status,
+            statusText: input.api.statusText
+        });
+        assertFullStackApiConfigEvidence(
+            await input.api.readJson(),
+            input.expectedApiBaseUrl
+        );
+    }
+    if (input.control.kind === 'reachable') {
+        assertFullStackReadinessHttpEvidence({
+            service: 'control',
+            ok: input.control.ok,
+            status: input.control.status,
+            statusText: input.control.statusText
+        });
+        assertFullStackControlHealthEvidence(await input.control.readJson());
+    }
+    return input.api.kind === 'unavailable' || input.control.kind === 'unavailable'
+        ? 'unavailable'
+        : 'ready';
 }
 
 export function createFullStackApiProfileEnvBlock(): string {
@@ -156,24 +226,18 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
     return url.protocol === 'https:' ? 443 : 80;
 }
 
-function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string, timingCapture: boolean = false): string {
+function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackApiProfileEnvBlock()} ${
-        timingCapture ? 'RALLAR_TIMING_LOGS=true ' : ''
-    }deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${createFullStackApiProfileEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
-function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string, timingCapture: boolean = false): string {
+function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
     return `cd ../.. && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
         createFullStackSpaCorsOrigins(spaBaseUrl)
-    } PORT=${portFromBaseUrl(apiBaseUrl)} ${createFullStackApiUrlEnvBlock(apiBaseUrl)} ${
-        timingCapture ? 'RALLAR_TIMING_LOGS=true ' : ''
-    }deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
-}
-
-function toAlmTimingCaptureCommand(apiCommand: string): string {
-    return `bash -o pipefail -c '${apiCommand} | node apps/rallar-black-box/scripts/filter-alm-server-timing.mjs apps/rallar-black-box/test-results/alm-observation/server-timing.jsonl'`;
+    } PORT=${portFromBaseUrl(apiBaseUrl)} ${
+        createFullStackApiUrlEnvBlock(apiBaseUrl)
+    } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

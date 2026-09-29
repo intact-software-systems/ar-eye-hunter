@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import {
     evaluateFullStackConfiguredServiceEvidence,
     type FullStackConfiguredServiceProbe
-} from '../../../apps/rallar-black-box/playwright-full-stack-configured-service-evidence.ts';
+} from '../../../apps/rallar-black-box/playwright-full-stack-api-server.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot

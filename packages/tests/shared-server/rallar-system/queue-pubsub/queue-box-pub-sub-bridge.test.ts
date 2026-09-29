@@ -128,7 +128,6 @@ describe('QueueBoxPubSubBridge', () => {
 
     it('publishes a durable outbox key and sends the message to local recipients', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
-        const timingEvents: RallarTimingEvent[] = [];
         const bridge = createBridge();
         const deliveredMessages: ALMessage[] = [];
         const wsQBoxServerService = createTestQueueBoxPubSubWsService({
@@ -143,8 +142,7 @@ describe('QueueBoxPubSubBridge', () => {
             wsQBoxServerService,
             bridge,
             channel: 'queuebox-events',
-            publisherId: 'publisher-1',
-            timing: (event) => timingEvents.push(event)
+            publisherId: 'publisher-1'
         });
         const entry = createWsOutboxEntry();
 
@@ -166,60 +164,6 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
         expect(bridge.subscribedChannels).toEqual(['queuebox-events']);
         expect(deliveredMessages).toEqual([message]);
-        expect(
-            timingEvents.filter((event) => event.details?.msgId === message.id.msgId).map((event) => ({
-                operation: event.operation,
-                keyTopicId: event.details?.keyTopicId,
-                keyResourceId: event.details?.keyResourceId,
-                keyContextId: event.details?.keyContextId,
-                recipientCount: event.details?.recipientCount,
-                sentCount: event.details?.sentCount,
-                failedCount: event.details?.failedCount
-            }))
-        ).toEqual([
-            expect.objectContaining({ operation: 'outbox-dequeued', keyTopicId: entry.key.topicId }),
-            expect.objectContaining({ operation: 'outbox-cluster-publish', keyResourceId: entry.key.resourceId }),
-            expect.objectContaining({
-                operation: 'outbox-direct-send',
-                keyContextId: entry.key.contextId,
-                recipientCount: 1,
-                sentCount: 1,
-                failedCount: 0
-            })
-        ]);
-    });
-
-    it('records a cluster publication failure against the dequeued message and key', async () => {
-        const publishers: ClusterPublisher[] = [];
-        const timingEvents: RallarTimingEvent[] = [];
-        const failure = new Error('private transport detail');
-        const bridge: QueueBoxPubSubBridge = {
-            publish: async () => {
-                throw failure;
-            },
-            subscribe: async () => undefined
-        };
-        await installQueueBoxPubSubBridge({
-            wsQBoxServerService: createTestQueueBoxPubSubWsService({
-                registerOutboxPublisher: (publisher) => publishers.push(publisher)
-            }),
-            bridge,
-            channel: 'queuebox-events',
-            publisherId: 'publisher-1',
-            timing: (event) => timingEvents.push(event)
-        });
-        const entry = createWsOutboxEntry();
-        const message = decodePersistedALMessage(entry.resource);
-
-        await expect(publishers[0](message, entry, undefined)).rejects.toBe(failure);
-        expect(timingEvents).toContainEqual(expect.objectContaining({
-            operation: 'outbox-cluster-publish-failed',
-            status: 'error',
-            details: expect.objectContaining({
-                msgId: message.id.msgId,
-                keyContextId: entry.key.contextId
-            })
-        }));
     });
 
     it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {
@@ -527,23 +471,10 @@ describe('QueueBoxPubSubBridge', () => {
             'delivery',
             'entryKind'
         ]);
-        expect(timingEvents.map((event) => event.operation)).toEqual(expect.arrayContaining([
-            'outbox-key-loaded',
-            'outbox-direct-send'
-        ]));
-        for (const operation of ['outbox-key-loaded', 'outbox-direct-send']) {
-            expect(timingEvents.find((event) => event.operation === operation)?.details).toMatchObject({
-                msgId: decodePersistedALMessage(entry.resource).id.msgId,
-                messageTopicId: decodePersistedALMessage(entry.resource).route.topicId,
-                keyResourceId: entry.key.resourceId,
-                keyContextId: entry.key.contextId
-            });
-        }
     });
 
     it('announces a requeued row as an external write, because the requeue runs outside every runtime', async () => {
         const bridge = createBridge();
-        const timingEvents: RallarTimingEvent[] = [];
         // A remote process reserved the row; delivery on this one is what fails below.
         const entry = { ...createWsOutboxEntry(), status: EntityStatus.RESERVED };
         const outbox = new InMemoryQueueBox();
@@ -557,7 +488,6 @@ describe('QueueBoxPubSubBridge', () => {
             bridge,
             channel: 'queuebox-events',
             publisherId: 'publisher-1',
-            timing: (event) => timingEvents.push(event),
             wakeQueueEngine
         });
 
@@ -568,15 +498,6 @@ describe('QueueBoxPubSubBridge', () => {
         // The row is back in the queue and the owner that must claim it learns of it only from here.
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
         expect(wakeQueueEngine).toHaveBeenCalledOnce();
-        expect(timingEvents.find((event) => event.operation === 'outbox-remote-send-failed')).toMatchObject({
-            status: 'error',
-            details: {
-                msgId: decodePersistedALMessage(entry.resource).id.msgId,
-                messageTopicId: decodePersistedALMessage(entry.resource).route.topicId,
-                keyResourceId: entry.key.resourceId,
-                keyContextId: entry.key.contextId
-            }
-        });
     });
 
     it('requeues a remote row when reading captured admission fails transiently', async () => {

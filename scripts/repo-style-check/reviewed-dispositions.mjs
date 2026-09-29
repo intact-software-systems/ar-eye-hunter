@@ -728,16 +728,11 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 53
     }),
-    // Promise rejection reasons are untrusted exception-boundary values. Both
-    // owners normalize them through the canonical toError before returning
+    // Promise rejection reasons are untrusted exception-boundary values. The
+    // owner normalizes them through the canonical toError before returning
     // settlement evidence; no unknown reason is used as domain state.
     Object.freeze({
         path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'tests/playwright/rallar-black-box/browser-alm-mixed-workload-settlement.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),

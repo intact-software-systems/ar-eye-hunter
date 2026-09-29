@@ -9,7 +9,6 @@ const ignoredDirectoryNames = new Set([
     '.deno',
     '.git',
     '.pnpm-store',
-    '.superpowers',
     'coverage',
     'dist',
     'node_modules',

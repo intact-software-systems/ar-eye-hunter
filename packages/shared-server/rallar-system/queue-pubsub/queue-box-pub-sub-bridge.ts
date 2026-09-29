@@ -116,7 +116,6 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
 
 interface RequeueFailedRemoteOutboxEntryInput {
     readonly message: QueueBoxPubSubMessage;
-    readonly remoteMessage: ALMessage;
     readonly entry: ResourceEntry;
     readonly options: SendRemoteQueueBoxOutboxEntryDependencies;
     readonly result: Pick<WsServerLiveSendResult, 'recipientCount' | 'failedCount'>;
@@ -194,39 +193,19 @@ function registerQueueBoxOutboxPublisher(
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
     options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry, admittedAudience) => {
-        recordPubSubTiming({
-            timing: options.timing,
-            operation: 'outbox-dequeued',
-            message: { key: entry.key, typeId: EnqueuedType.WS_OUTBOX },
-            msgId: message.id.msgId,
-            messageTopicId: message.route.topicId,
-            details: { reservationAttempt: entry.dequeueAudit.attempts }
-        });
         const envelope = toPubSubMessage({
             channel: options.channel,
             publisherId: options.publisherId,
             entry
         });
-        try {
-            await options.bridge.publish(options.channel, envelope);
-        }
-        catch (error) {
-            recordPubSubTiming({
-                timing: options.timing,
-                operation: 'outbox-cluster-publish-failed',
-                message: envelope,
-                msgId: message.id.msgId,
-                messageTopicId: message.route.topicId,
-                status: 'error'
-            });
-            throw error;
-        }
+        await options.bridge.publish(
+            options.channel,
+            envelope
+        );
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-cluster-publish',
-            message: envelope,
-            msgId: message.id.msgId,
-            messageTopicId: message.route.topicId
+            message: envelope
         });
         const policy = requiresWsQueueBoxServerRecipientScope(message) ||
                 isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key) ||
@@ -238,8 +217,6 @@ function registerQueueBoxOutboxPublisher(
             timing: options.timing,
             operation: 'outbox-direct-send',
             message: envelope,
-            msgId: message.id.msgId,
-            messageTopicId: message.route.topicId,
             details: {
                 localPublisherId: options.publisherId,
                 deliveryStatus: result.status,
@@ -340,7 +317,6 @@ async function sendRemoteQueueBoxOutboxEntry(
         }
         await requeueFailedRemoteOutboxEntry({
             message,
-            remoteMessage,
             entry,
             options,
             result: { recipientCount: 0, failedCount: 1 }
@@ -351,8 +327,6 @@ async function sendRemoteQueueBoxOutboxEntry(
         timing: options.timing,
         operation: 'outbox-direct-send',
         message,
-        msgId: remoteMessage.id.msgId,
-        messageTopicId: remoteMessage.route.topicId,
         details: {
             localPublisherId: options.publisherId,
             deliveryStatus: result.status,
@@ -365,13 +339,13 @@ async function sendRemoteQueueBoxOutboxEntry(
         return;
     }
 
-    await requeueFailedRemoteOutboxEntry({ message, remoteMessage, entry, options, result });
+    await requeueFailedRemoteOutboxEntry({ message, entry, options, result });
 }
 
 async function requeueFailedRemoteOutboxEntry(
     input: RequeueFailedRemoteOutboxEntryInput
 ): Promise<void> {
-    const { message, remoteMessage, entry, options, result } = input;
+    const { message, entry, options, result } = input;
     const requeued = await requeueRemoteWsOutboxDeliveryFailure(
         options.wsQBoxServerService.outbox,
         entry,
@@ -384,9 +358,6 @@ async function requeueFailedRemoteOutboxEntry(
         timing: options.timing,
         operation: 'outbox-remote-send-failed',
         message,
-        msgId: remoteMessage.id.msgId,
-        messageTopicId: remoteMessage.route.topicId,
-        status: 'error',
         details: {
             localPublisherId: options.publisherId,
             recipientCount: result.recipientCount,
@@ -526,9 +497,7 @@ async function resolveResourceEntryFromPubSubMessage(
     recordPubSubTiming({
         timing: options.timing,
         operation: 'outbox-key-loaded',
-        message,
-        msgId: canonical.id.msgId,
-        messageTopicId: canonical.route.topicId
+        message
     });
 
     return entry;
@@ -567,10 +536,7 @@ interface RecordPubSubTimingInput {
     readonly timing: RallarTimingSink | undefined;
     readonly operation: string;
     readonly message: Partial<QueueBoxPubSubMessage> | undefined;
-    readonly msgId?: string;
-    readonly messageTopicId?: string;
     readonly details?: RallarTimingDetails;
-    readonly status?: 'ok' | 'error';
 }
 
 function recordPubSubTiming(input: RecordPubSubTimingInput): void {
@@ -581,14 +547,9 @@ function recordPubSubTiming(input: RecordPubSubTimingInput): void {
             component: 'queuebox-pubsub',
             operation,
             serviceId: message?.publisherId,
-            details: {
-                ...toPubSubTimingDetails(message),
-                msgId: input.msgId,
-                messageTopicId: input.messageTopicId,
-                ...details
-            }
+            details: { ...toPubSubTimingDetails(message), ...details }
         },
-        status: input.status ?? 'ok',
+        status: 'ok',
         durationMs: 0
     });
 }
@@ -602,9 +563,6 @@ function toPubSubTimingDetails(
         topicId: message?.key?.topicId,
         resourceId: message?.key?.resourceId,
         contextId: message?.key?.contextId,
-        typeId: message?.typeId,
-        keyTopicId: message?.key?.topicId,
-        keyResourceId: message?.key?.resourceId,
-        keyContextId: message?.key?.contextId
+        typeId: message?.typeId
     };
 }

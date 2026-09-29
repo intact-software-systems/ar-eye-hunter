@@ -1,11 +1,9 @@
 import { expect, type BrowserContext } from '@playwright/test';
-
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BlackBoxRallarRoomRefreshOptions } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 
 import { openTab } from './full-stack-helpers.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
-import { installLiveRtcSignalingObservation } from './live-rtc-signaling-observation.ts';
 import { installLiveRtcWireObservation } from './live-rtc-wire-observation.ts';
 
 export interface LiveRtcBrowserAgentConfig {
@@ -49,18 +47,6 @@ export interface LiveRtcBrowserContextFactory {
     newContext(): Promise<Pick<BrowserContext, 'newPage' | 'close'>>;
 }
 
-export class LiveRtcBrowserAgentStartupFailure extends Error {
-    override readonly cause: Error;
-    readonly cleanupErrors: readonly Error[];
-
-    constructor(cause: Error, cleanupErrors: readonly Error[]) {
-        super(cause.message, { cause });
-        this.name = 'LiveRtcBrowserAgentStartupFailure';
-        this.cause = cause;
-        this.cleanupErrors = cleanupErrors;
-    }
-}
-
 export async function openLiveRtcBrowserAgent(
     browser: LiveRtcBrowserContextFactory,
     input: OpenLiveRtcBrowserAgentInput
@@ -69,7 +55,6 @@ export async function openLiveRtcBrowserAgent(
     try {
         const page = await context.newPage();
         await page.addInitScript(installLiveRtcWireObservation);
-        await page.addInitScript(installLiveRtcSignalingObservation);
 
         if (input.auth.kind === 'restore') {
             await page.addInitScript((session) => {
@@ -98,8 +83,6 @@ export async function openLiveRtcBrowserAgent(
             agentId: input.agentId,
             actor: input.actor,
             connection: input.connection,
-            readSignalingObservation: async () =>
-                await page.evaluate(() => window.__liveRtcSignalingObservation?.read() ?? null),
             refreshRoom: async (options) =>
                 await page.evaluate(refreshLiveRtcBrowserRoom, { timeoutMs: options.timeoutMs })
         };
@@ -109,7 +92,7 @@ export async function openLiveRtcBrowserAgent(
             await context.close();
         }
         catch (cleanupCause) {
-            throw new LiveRtcBrowserAgentStartupFailure(toError(error), [toError(cleanupCause)]);
+            console.error('Failed to close browser context after startup failure', toError(cleanupCause));
         }
         throw toError(error);
     }

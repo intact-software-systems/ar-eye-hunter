@@ -10,7 +10,6 @@ import type {
     WsServerResolvedRecipient
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts';
 
@@ -169,7 +168,6 @@ export interface RallarServerWsProxyRule<T extends RallarServerWsPayload> {
 }
 
 export interface RallarServerWsRouterOptions {
-    readonly timing?: RallarTimingSink;
     readonly maxPayloadBytes?: number;
     readonly sendNacks?: boolean;
     readonly allowImplicitUserTopics?: boolean;

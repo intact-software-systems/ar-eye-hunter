@@ -351,68 +351,23 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 groupId,
                 suffix
             });
-            const clusterOrigins = readLiveRtcClusterApiOrigins();
-            if (clusterOrigins) {
-                expect(new Set(clusterOrigins).size).toBe(3);
-                const expectedSocketOrigins = clusterOrigins.map((origin) => {
-                    const url = new URL(origin);
-                    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-                    return url.origin;
-                });
-                const sessionIds = [realtime.sessions.A, realtime.sessions.B, realtime.sessions.C];
-                const sessionPairs = [
-                    [realtime.sessions.A, realtime.sessions.B],
-                    [realtime.sessions.A, realtime.sessions.C],
-                    [realtime.sessions.B, realtime.sessions.C]
-                ] as const;
-                await expect.poll(async () => {
-                    const observations = await Promise.all(
-                        realtimeAgents.map((agent) => agent.readSignalingObservation?.())
-                    );
-                    if (
-                        observations.some((observation) =>
-                            !observation?.available || observation.droppedReceived > 0 ||
-                            observation.droppedSocketLifetimes > 0
-                        )
-                    ) {
-                        return false;
-                    }
-                    const received = observations.flatMap((observation, recipientIndex) =>
-                        observation?.received.filter((signal) =>
-                            signal.msgId !== null &&
-                            signal.toId === sessionIds[recipientIndex] &&
-                            signal.fromId !== signal.toId &&
-                            sessionIds.includes(signal.fromId ?? '') &&
-                            observation.socketLifetimes.some((socket) =>
-                                socket.socketInstanceOrdinal === signal.socketInstanceOrdinal &&
-                                socket.endpointOrigin === expectedSocketOrigins[recipientIndex]
-                            )
-                        ) ?? []
-                    );
-                    const offers = received.filter((signal) =>
-                        signal.signalType === 'Offer' && signal.offerId !== null
-                    );
-                    const answers = received.filter((signal) => signal.signalType === 'Answer');
-                    const iceCandidates = received.filter((signal) => signal.signalType === 'IceCandidate');
-                    return sessionPairs.every(([first, second]) =>
-                        offers.some((offer) =>
-                            ((offer.fromId === first && offer.toId === second) ||
-                                (offer.fromId === second && offer.toId === first)) &&
-                            answers.some((answer) =>
-                                answer.offerId === offer.offerId &&
-                                answer.fromId === offer.toId && answer.toId === offer.fromId
-                            )
-                        ) && iceCandidates.some((candidate) =>
-                            candidate.hasCandidate &&
-                            ((candidate.fromId === first && candidate.toId === second) ||
-                                (candidate.fromId === second && candidate.toId === first))
-                        )
-                    );
-                }, { timeout: 20_000 }).toBe(true);
-            }
             commandIds.push(...realtime.commandIds);
             timings.push(...realtime.timings);
             scenarios.push(...realtime.scenarios);
+            const clusterOrigins = readLiveRtcClusterApiOrigins();
+            if (clusterOrigins) {
+                expect(new Set(clusterOrigins).size).toBe(3);
+                const cluster = await exchangeClusterDirectMessages({
+                    control,
+                    runId,
+                    agents: realtimeAgents,
+                    sessions: realtime.sessions,
+                    groupId,
+                    suffix
+                });
+                commandIds.push(...cluster.commandIds);
+                scenarios.push(...cluster.scenarios);
+            }
             const realtimeDiagnostics = await control.captureDiagnostics({
                 testInfo,
                 runId,
@@ -1203,4 +1158,99 @@ function toLiveRtcRawEvidence(
         retention: input.retention,
         assertions: input.assertions
     };
+}
+
+interface ExchangeClusterDirectMessagesInput {
+    readonly control: LiveRtcControlClient;
+    readonly runId: string;
+    readonly agents: LiveRtcAgentTrio;
+    readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly groupId: string;
+    readonly suffix: string;
+}
+
+interface ClusterDirectMessage {
+    readonly commandId: string;
+    readonly scenario: LiveRtcControlClient.DeliveryScenario;
+}
+
+interface ClusterDirectMessageExchange {
+    readonly commandIds: readonly string[];
+    readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+}
+
+async function exchangeClusterDirectMessages(
+    input: ExchangeClusterDirectMessagesInput
+): Promise<ClusterDirectMessageExchange> {
+    await waitForClusterPeerReadiness(input);
+    const sent: ClusterDirectMessage[] = [];
+    for (const sender of input.agents) {
+        for (
+            const receiver of input.agents.filter((agent) => agent.agentId !== sender.agentId)
+        ) {
+            sent.push(await sendClusterDirectMessage(input, sender, receiver));
+        }
+    }
+    return {
+        commandIds: sent.map((message) => message.commandId),
+        scenarios: sent.map((message) => message.scenario)
+    };
+}
+
+async function waitForClusterPeerReadiness(
+    input: ExchangeClusterDirectMessagesInput
+): Promise<void> {
+    for (const agent of input.agents) {
+        await input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent,
+            expectedPeerIds: input.agents
+                .filter((peer) => peer.agentId !== agent.agentId)
+                .map((peer) => input.sessions[peer.prefix]),
+            suffix: `cluster-${agent.prefix.toLowerCase()}-${input.suffix}`,
+            startedAtMs: performance.now()
+        });
+    }
+}
+
+async function sendClusterDirectMessage(
+    input: ExchangeClusterDirectMessagesInput,
+    sender: LiveRtcControlClient.Agent,
+    receiver: LiveRtcControlClient.Agent
+): Promise<ClusterDirectMessage> {
+    const matrixId =
+        `cluster-direct-${sender.prefix.toLowerCase()}-to-${receiver.prefix.toLowerCase()}-${input.suffix}`;
+    const startedAtMs = performance.now();
+    const [commandId] = await Promise.all([
+        liveRtcDeliveryOperations.sendMatrixPayload({
+            control: input.control,
+            runId: input.runId,
+            sender,
+            transport: 'realtime',
+            groupId: input.groupId,
+            suffix: input.suffix,
+            deliveryMode: 'direct',
+            targetSessionIds: [input.sessions[receiver.prefix]],
+            matrixId
+        }),
+        input.control.waitForMessage({
+            runId: input.runId,
+            senderAgentId: sender.agentId,
+            agentId: receiver.agentId,
+            transport: 'realtime',
+            matrixId,
+            deliveryMode: 'direct',
+            possibleReceiverAgentIds: [receiver.agentId],
+            startedAtMs
+        })
+    ]);
+    const scenario: LiveRtcControlClient.DeliveryScenario = {
+        matrixId,
+        transport: 'realtime',
+        deliveryMode: 'direct',
+        senderAgentId: sender.agentId,
+        expectedAgentIds: [receiver.agentId],
+        allowedAgentIds: [receiver.agentId]
+    };
+    return { commandId, scenario };
 }
