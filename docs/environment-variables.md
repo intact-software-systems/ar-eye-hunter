@@ -490,15 +490,17 @@ remote worker environment.
 
 ### Full-Stack Playwright Startup
 
-| Variable                                      | Required | Default                 | Usage                                                                                                                                  |
-| --------------------------------------------- | -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_BLACK_BOX_FULL_STACK`                 | No       | Disabled                | `1` or `true` enables API-v1 startup in `apps/rallar-black-box/playwright.full-stack.config.ts`.                                       |
-| `RALLAR_BLACK_BOX_API_MODE`                   | No       | `postgres`              | Full-stack API server mode. Supported values: `postgres`, `memory`. Memory mode starts API-v1 without env files or `DATABASE_URL`.     |
-| `VITE_RALLAR_API_BASE_URL`                    | No       | `http://localhost:8080` | Full-stack API base URL. The Playwright config derives API-v1 `PORT`, `RALLAR_API_BASE_URL`, and `RALLAR_WS_BASE_URL` from this value. |
-| `VITE_RALLAR_SPA_BASE_URL`                    | No       | `http://localhost:5176` | Full-stack SPA base URL. The Playwright config derives the Vite port and API CORS origins from this value.                             |
-| `RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API` | No       | Disabled                | `1` or `true` refuses to reuse an existing API server; valid only with `postgres` mode.                                                |
-| `RALLAR_BLACK_BOX_CONTROL_BASE_URL`           | No       | `http://127.0.0.1:5180` | Control-server base URL; the Playwright config derives the control port from it.                                                       |
-| `RALLAR_BLACK_BOX_EXHAUSTIVE_WORKERS`         | No       | `4`                     | Worker count for `playwright.exhaustive.config.ts`.                                                                                    |
+| Variable                                                   | Required              | Default                 | Usage                                                                                                                                  |
+| ---------------------------------------------------------- | --------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_BLACK_BOX_FULL_STACK`                              | No                    | Disabled                | `1` or `true` enables API-v1 startup in `apps/rallar-black-box/playwright.full-stack.config.ts`.                                       |
+| `RALLAR_BLACK_BOX_API_MODE`                                | No                    | `postgres`              | Full-stack API server mode. Supported values: `postgres`, `memory`. Memory mode starts API-v1 without env files or `DATABASE_URL`.     |
+| `VITE_RALLAR_API_BASE_URL`                                 | No                    | `http://localhost:8080` | Full-stack API base URL. The Playwright config derives API-v1 `PORT`, `RALLAR_API_BASE_URL`, and `RALLAR_WS_BASE_URL` from this value. |
+| `VITE_RALLAR_SPA_BASE_URL`                                 | No                    | `http://localhost:5176` | Full-stack SPA base URL. The Playwright config derives the Vite port and API CORS origins from this value.                             |
+| `RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API`              | No                    | Disabled                | `1` or `true` refuses to reuse an existing API server; valid only with `postgres` mode.                                                |
+| `RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER`                        | No                    | Disabled                | `1` starts two additional PostgreSQL API-v1 processes for the live RTC matrix; ordinary full-stack runs remain single-process.         |
+| `VITE_RALLAR_API_BASE_URL_B`, `VITE_RALLAR_API_BASE_URL_C` | With RTC cluster mode | None                    | Distinct API origins for browser agents B and C; agent A uses `VITE_RALLAR_API_BASE_URL`.                                              |
+| `RALLAR_BLACK_BOX_CONTROL_BASE_URL`                        | No                    | `http://127.0.0.1:5180` | Control-server base URL; the Playwright config derives the control port from it.                                                       |
+| `RALLAR_BLACK_BOX_EXHAUSTIVE_WORKERS`                      | No                    | `4`                     | Worker count for `playwright.exhaustive.config.ts`.                                                                                    |
 
 Both modes select `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory` and use
 bounded full-stack fixture credentials. Memory mode takes its database and ICE

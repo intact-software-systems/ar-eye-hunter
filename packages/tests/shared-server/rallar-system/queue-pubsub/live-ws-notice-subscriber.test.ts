@@ -396,6 +396,58 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([]);
     });
 
+    it('delivers a keyed RTC signal only with exact persisted sender scope and target', async () => {
+        const receiver = createReceiver();
+        const message: ALMessage = {
+            ...roomMessage(),
+            route: { ...roomMessage().route, topicId: 'rtc-signaling' },
+            payload: { ...roomMessage().payload, typeId: 'rtc-signaling' },
+            targets: { mode: 'unicast', toPeerId: 'remote-session' }
+        };
+        const canonical = {
+            msg: message,
+            source: { kind: 'ws-client' as const, peerId: 'sender', authenticatedScope: scope },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        };
+        const notice: LiveWsNotice = {
+            kind: 'live-ws',
+            version: 1,
+            channel: 'ws-channel',
+            publisherId: 'publisher-a',
+            scope,
+            expiresAtMs: deadline,
+            delivery: 'inbound-key',
+            audienceMode: 'peer',
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        };
+        receiver.readDeliverySurface.mockResolvedValue(canonical);
+        await receiver.receive(notice);
+        expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
+
+        receiver.sent.length = 0;
+        receiver.readDeliverySurface.mockResolvedValue({
+            ...canonical,
+            source: { ...canonical.source, authenticatedScope: { applicationId: 'other', workspaceId: 'workspace' } }
+        });
+        await receiver.receive(notice);
+        expect(receiver.sent).toEqual([]);
+
+        receiver.readDeliverySurface.mockResolvedValue({ ...canonical, msg: { ...message, targets: { mode: 'unicast', toPeerId: 'other' } } });
+        await receiver.receive(notice);
+        expect(receiver.sent).toEqual([]);
+
+        receiver.readDeliverySurface.mockResolvedValue({ ...canonical, source: { kind: 'ws-client', peerId: 'sender' } });
+        await receiver.receive(notice);
+        expect(receiver.sent).toEqual([]);
+
+        receiver.readDeliverySurface.mockResolvedValue(canonical);
+        await receiver.receive({ ...notice, expiresAtMs: 1 });
+        expect(receiver.sent).toEqual([]);
+    });
+
     it('accepts an earlier logical deadline when a canonical room message has no AL expiry', async () => {
         const receiver = createReceiver();
         const { constraints: _constraints, ...withoutExpiry } = roomMessage();

@@ -272,6 +272,12 @@ VITE_RALLAR_AGENT_C_USERNAME=<agent C username>
 VITE_RALLAR_AGENT_C_PASSWORD=<agent C password>
 ```
 
+To prove RTC signaling across three PostgreSQL API-v1 processes, also set
+`RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER=1` and distinct
+`VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_API_BASE_URL_B`, and
+`VITE_RALLAR_API_BASE_URL_C` origins. This is opt-in; the ordinary full-stack
+matrix retains its single-process API workload.
+
 The exhaustive all-scenarios matrix additionally sets or requires:
 
 ```text

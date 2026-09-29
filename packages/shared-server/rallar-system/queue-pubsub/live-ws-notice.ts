@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -103,7 +104,10 @@ export function encodeLiveWsNotice(input: LiveWsPublicationInput): EncodeLiveWsN
         return { kind: 'inline', ...inlineEncoded };
     }
 
-    if (input.inbound === undefined || input.audience.mode === 'peer' || input.audience.mode === 'principal') {
+    if (
+        input.inbound === undefined || input.audience.mode === 'principal' ||
+        (input.audience.mode === 'peer' && !isRtcSignalingPeerNotice(input))
+    ) {
         return { kind: 'oversize', inlineBytes, keyBytes: undefined };
     }
     if (
@@ -145,7 +149,18 @@ function toKeyLiveWsNotice(input: LiveWsPublicationInput, inbound: LiveWsInbound
     if (input.scope === undefined) {
         throw new TypeError('Scoped live WS notice requires a scope.');
     }
-    return { ...base, scope: input.scope, delivery: 'inbound-key', audienceMode: 'room', inbound };
+    return {
+        ...base,
+        scope: input.scope,
+        delivery: 'inbound-key',
+        audienceMode: input.audience.mode === 'peer' ? 'peer' : 'room',
+        inbound
+    };
+}
+
+function isRtcSignalingPeerNotice(input: LiveWsPublicationInput): boolean {
+    return input.audience.mode === 'peer' && input.message.route.topicId === AppTopics.rtcSignaling &&
+        input.message.payload.typeId === AppTopics.rtcSignaling;
 }
 
 function toLiveWsNoticeBase(input: LiveWsPublicationInput): LiveWsNoticeBase {

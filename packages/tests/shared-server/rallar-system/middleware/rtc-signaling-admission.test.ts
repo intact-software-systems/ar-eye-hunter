@@ -6,6 +6,7 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import {
     newALEventRoute,
@@ -78,6 +79,7 @@ describe('middleware pre-admission', () => {
                     workQueue: signalingBackend.workQueue
                 }
             });
+            installRtcSignalingWsTopic(runtime.wsQBoxServerService);
             runtime.qboxEngine.start();
             onTestFinished(() => {
                 runtime.wsQBoxServerService.dispose();

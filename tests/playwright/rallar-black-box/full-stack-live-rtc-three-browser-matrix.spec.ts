@@ -12,6 +12,7 @@ import {
     numberEnv,
     openAgentTrio,
     rawEnvironmentValue,
+    readLiveRtcClusterApiOrigins,
     roomSeed,
     workspaceId
 } from './live-rtc-agent-environment.ts';
@@ -350,6 +351,27 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 groupId,
                 suffix
             });
+            const clusterOrigins = readLiveRtcClusterApiOrigins();
+            if (clusterOrigins) {
+                expect(new Set(clusterOrigins).size).toBe(3);
+                await expect.poll(async () => {
+                    const observations = await Promise.all(
+                        realtimeAgents.map((agent) => agent.readSignalingObservation?.())
+                    );
+                    const sessionIds = [realtime.sessions.A, realtime.sessions.B, realtime.sessions.C];
+                    return [
+                        ...new Set(observations.flatMap((observation, index) =>
+                            observation?.received
+                                .filter((signal) =>
+                                    signal.toId === sessionIds[index] &&
+                                    signal.fromId !== signal.toId &&
+                                    sessionIds.includes(signal.fromId ?? '')
+                                )
+                                .map((signal) => signal.signalType) ?? []
+                        ))
+                    ].sort();
+                }, { timeout: 20_000 }).toEqual(['Answer', 'IceCandidate', 'Offer']);
+            }
             commandIds.push(...realtime.commandIds);
             timings.push(...realtime.timings);
             scenarios.push(...realtime.scenarios);

@@ -26,6 +26,14 @@ const requireFreshPostgresApi = [
 ].includes(
     process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? ''
 );
+const liveRtcClusterEnabled = process.env.RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER === '1';
+const clusterApiBaseUrls = [
+    process.env.VITE_RALLAR_API_BASE_URL_B,
+    process.env.VITE_RALLAR_API_BASE_URL_C
+].filter((url): url is string => Boolean(url));
+if (liveRtcClusterEnabled && (fullStackApiServerMode !== 'postgres' || clusterApiBaseUrls.length !== 2)) {
+    throw new Error('Live RTC cluster proof requires Postgres and distinct B/C API base URLs.');
+}
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
@@ -36,7 +44,18 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
                 requireFreshPostgres: requireFreshPostgresApi
-            })
+            }),
+            ...(liveRtcClusterEnabled
+                ? clusterApiBaseUrls.map((apiBaseUrl) =>
+                    createFullStackApiV1WebServer({
+                        mode: 'postgres',
+                        apiBaseUrl,
+                        spaBaseUrl: fullStackSpaBaseUrl,
+                        reuseExistingServer,
+                        requireFreshPostgres: requireFreshPostgresApi
+                    })
+                )
+                : [])
         ]
         : []),
     {

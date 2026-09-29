@@ -94,13 +94,15 @@ function constructDefaultRallarServer(
         crdtLogRepository
     });
 
+    const wsOptions = createDefaultRallarServerWsOptions(input, runtime, nowEpochMs);
     const systemInstallers = createApiV1SystemInstallers({
         database,
         serviceId: myServerId,
         nowEpochMs,
         topology,
         crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies
+        crdtPolicies: configuration.crdt.documentTypePolicies,
+        livePublication: wsOptions.livePublication
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -117,7 +119,7 @@ function constructDefaultRallarServer(
         repositories: defaultRepositoryManager,
         appDataRepository: new PSqlAppDataRepository(database),
         nowEpochMs,
-        ws: createDefaultRallarServerWsOptions(input, runtime, nowEpochMs),
+        ws: wsOptions,
         systemInstallers,
         routeInstallers
     });

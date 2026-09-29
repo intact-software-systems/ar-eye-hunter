@@ -135,6 +135,43 @@ describe('live WS notice codec', () => {
         expect(encoded).toMatchObject({ kind: 'oversize', keyBytes: undefined });
     });
 
+    it('uses a canonical key at the exact RTC peer notice boundary', () => {
+        const rtcMessage: ALMessage = {
+            ...message('x'.repeat(8_000)),
+            route: { ...message().route, topicId: 'rtc-signaling' },
+            payload: { ...message('x'.repeat(8_000)).payload, typeId: 'rtc-signaling' },
+            targets: { mode: 'unicast', toPeerId: 'session-1' }
+        };
+        const input = {
+            ...publication(),
+            message: rtcMessage,
+            audience: { mode: 'peer' as const, recipientSessionIds: ['session-1'] },
+            inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+        };
+        const encoded = encodeLiveWsNotice(input);
+        expect(encoded.kind).toBe('inbound-key');
+        if (encoded.kind === 'inbound-key') {
+            expect(encoded.notice).toMatchObject({ audienceMode: 'peer', scope });
+            expect(new TextEncoder().encode(encoded.serialized).length).toBeLessThan(8_000);
+        }
+        const empty = encodeLiveWsNotice({
+            ...input,
+            message: { ...rtcMessage, payload: { ...rtcMessage.payload, resource: JSON.stringify('') } }
+        });
+        expect(empty.kind).toBe('inline');
+        if (empty.kind !== 'inline') {
+            return;
+        }
+        const baselineBytes = new TextEncoder().encode(empty.serialized).length;
+        const withResource = (length: number) =>
+            encodeLiveWsNotice({
+                ...input,
+                message: { ...rtcMessage, payload: { ...rtcMessage.payload, resource: JSON.stringify('x'.repeat(length)) } }
+            });
+        expect(withResource(7_999 - baselineBytes)).toMatchObject({ kind: 'inline' });
+        expect(withResource(8_000 - baselineBytes)).toMatchObject({ kind: 'inbound-key' });
+    });
+
     it('accepts an explicit logical deadline for a message without AL expiry', () => {
         const { id, route, payload } = message();
         const { scope: _scope, ...broadPublication } = publication();

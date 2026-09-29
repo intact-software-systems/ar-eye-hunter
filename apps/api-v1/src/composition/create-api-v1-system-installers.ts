@@ -10,6 +10,7 @@ import {
     installTopologyAppOutbox,
     type InstallTopologyAppOutboxOptions
 } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
+import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     initWsLifecycle,
@@ -34,6 +35,7 @@ export interface CreateApiV1SystemInstallersInput {
     readonly topology: ApiV1TopologyServices;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
+    readonly livePublication: RallarServerWsRouterOptions['livePublication'];
 }
 
 /** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
@@ -59,7 +61,7 @@ function installApiV1SystemTopics(
     }
 
     installTopologyAppOutbox(createTopologyAppOutboxOptions(input, runtime));
-    installRtcSignalingWsTopic(runtime.wsQBoxServerService);
+    installRtcSignalingWsTopic(runtime.wsQBoxServerService, input.livePublication, input.nowEpochMs);
     installRtcRttSystemTopic(runtime.wsQBoxServerService, {
         enqueueMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)
     });

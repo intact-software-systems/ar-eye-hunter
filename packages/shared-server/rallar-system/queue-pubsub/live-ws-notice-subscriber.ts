@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
 import { filterLiveWsRoomRecipientSessionIds, matchesLiveWsAudience } from './live-ws-audience.ts';
 import {
     decodeLiveWsNotice,
@@ -84,8 +85,7 @@ async function readCanonicalLiveWsDelivery(
     nowMs: number
 ): Promise<LiveWsDelivery | undefined> {
     const store = stores.find((candidate) => candidate.namespace === notice.inbound.namespace);
-    // A canonical unicast ID or principal target does not prove the recipient's frozen scope.
-    if (!store || notice.audienceMode === 'peer' || notice.audienceMode === 'principal') {
+    if (!store || notice.audienceMode === 'principal') {
         return undefined;
     }
     const surface = await store.readDeliverySurface(notice.inbound.reference, nowMs);
@@ -112,6 +112,18 @@ function toRecoveredAudience(
     source: Extract<ALInboundMessageRuntime.Source, { kind: 'ws-client'; }>
 ): LiveWsAudience | undefined {
     const targets = message.targets;
+    if (notice.audienceMode === 'peer') {
+        if (
+            message.route.topicId !== AppTopics.rtcSignaling ||
+            message.payload.typeId !== AppTopics.rtcSignaling ||
+            targets?.mode !== 'unicast' ||
+            source.authenticatedScope?.applicationId !== notice.scope.applicationId ||
+            source.authenticatedScope.workspaceId !== notice.scope.workspaceId
+        ) {
+            return undefined;
+        }
+        return { mode: 'peer', recipientSessionIds: [targets.toPeerId] };
+    }
     if (notice.audienceMode === 'room') {
         if (
             !targets || (targets.mode !== 'multicast' && (targets.mode !== 'broadcast' || targets.scope !== 'room')) ||
