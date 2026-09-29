@@ -17,7 +17,7 @@ describe('hosted ALM reload composition', () => {
         const checkpoints = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints);
         expect(checkpoints, 'combined recipe must retain executable authored checkpoint boundaries').toHaveLength(3);
         expect(receiver.metadata?.almReloadCheckpoints).toEqual(checkpoints);
-        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_200);
+        expect(manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
         expect(
             bindAlmReloadPair({
                 sender: {
@@ -26,7 +26,7 @@ describe('hosted ALM reload composition', () => {
                     runId: manifest.controlRunId,
                     agentId: 'controller-01',
                     commandId: 'sender-root',
-                    command: { kind: 'recipe.run', recipe: sender, timeoutMs: 1_200_000 }
+                    command: { kind: 'recipe.run', recipe: sender, timeoutMs: 1_800_000 }
                 },
                 receiver: {
                     kind: 'command',
@@ -34,7 +34,7 @@ describe('hosted ALM reload composition', () => {
                     runId: manifest.controlRunId,
                     agentId: 'controller-02',
                     commandId: 'receiver-root',
-                    command: { kind: 'recipe.run', recipe: receiver, timeoutMs: 1_200_000 }
+                    command: { kind: 'recipe.run', recipe: receiver, timeoutMs: 1_800_000 }
                 }
             }).left
         ).toBeUndefined();

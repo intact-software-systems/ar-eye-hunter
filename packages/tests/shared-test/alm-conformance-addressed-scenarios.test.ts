@@ -190,6 +190,7 @@ describe('the addressed-send family (C11)', () => {
             expect(body.map(shapeOf), carrier).toEqual([
                 'close',
                 'rtc.connect',
+                'wait:diagnostic:absent',
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert'],
                 ...['messages.send', 'messages.observe', 'assert', 'assert', 'assert', 'assert'],
@@ -210,14 +211,16 @@ describe('the addressed-send family (C11)', () => {
             const connects = body.flatMap((command) => command.kind === 'rtc.connect' ? [command] : []);
             expect(connects.map((command) => command.rallar?.almVolatileLimits), carrier)
                 .toEqual([CAPACITY_LIMITS, undefined]);
+            // The state sync the reconnect admits counts for at most 30 s, so the first send waits it out.
+            expect(body[2], carrier).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 31_000 });
             const [arrivals, ...rest] = bodyOf(scenario.receiver);
             expect(rest, carrier).toEqual([]);
-            // The sender reconnects before it sends, so the receiver's positive wait also owns one RTC readiness.
+            // The sender reconnects and waits before it sends, so the receiver's positive wait owns both.
             expect(arrivals, carrier).toMatchObject({
                 kind: 'messages.received',
                 count: 2,
-                windowMs: 57_000,
-                timeoutMs: 58_000
+                windowMs: 88_000,
+                timeoutMs: 89_000
             });
         }
     });

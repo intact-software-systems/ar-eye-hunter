@@ -1178,13 +1178,13 @@ describe('Hetzner distributed manifest catalog', () => {
                 'ordering-resync',
                 'ws-unicast-receipt',
                 'server-command',
-                'capacity',
                 'not-yet-in-sync',
                 'cross-carrier-duplicate',
                 'fallback-within-deadline',
                 'receipt-exhausted-fallback',
                 'no-fallback-after-deadline',
-                'unicast-fallback'
+                'unicast-fallback',
+                'capacity'
             ]
         });
 
@@ -1203,7 +1203,16 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(
             commandIds.some((commandId) => /^alm-rtc(-with-ws-fallback)?-server-command-/.test(commandId))
         ).toBe(false);
-        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_200);
+        expect(entry?.manifest.metadata?.recommendedTerminalTimeoutSeconds).toBe(1_800);
+        // A capacity block closes and reconnects its sender, so only the other carriers' capacity blocks follow it.
+        for (const selection of entry?.manifest.recipes ?? []) {
+            const roleCommandIds = ((selection.recipe?.commands ?? []) as readonly ManifestCommand[])
+                .map((command) => command.commandId ?? '');
+            const firstCapacity = roleCommandIds.findIndex((commandId) => /^alm-[a-z-]+-capacity-/.test(commandId));
+            expect(firstCapacity, selection.role).toBeGreaterThan(0);
+            expect(roleCommandIds.slice(firstCapacity).filter((commandId) => !commandId.includes('-capacity-')), selection.role)
+                .toEqual([]);
+        }
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');

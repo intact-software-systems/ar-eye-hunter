@@ -37,7 +37,7 @@ const ALM_CONFORMANCE_TYPE_ID = 'alm.conformance';
 const ALM_CONFORMANCE_DEADLINE_MS = 18_000;
 
 /** Also the execution budget of each combined root (distributed-run-commands.ts), so it bounds the whole hosted run. */
-const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_200;
+const ALM_CONFORMANCE_2_AGENT_TERMINAL_TIMEOUT_SECONDS = 1_800;
 
 const ALM_CONFORMANCE_SENDER_CONNECTION = 'almConformanceSender';
 
@@ -146,10 +146,14 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
         isThreeAgentScenario(scenario) === (family === 'three-agent') &&
         !HETZNER_WITHHELD_ALM_SCENARIO_KEYS.includes(scenario.scenarioKey)
     );
-    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL.
+    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
+    // capacity block closes and reconnects its sender, so nothing but another capacity block follows it.
+    const isHoisted = (scenario: AlmConformanceScenario) =>
+        scenario.scenarioId === 'delivery-reload' || scenario.scenarioId === 'capacity';
     return [
         ...scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload'),
-        ...scenarios.filter((scenario) => scenario.scenarioId !== 'delivery-reload')
+        ...scenarios.filter((scenario) => !isHoisted(scenario)),
+        ...scenarios.filter((scenario) => scenario.scenarioId === 'capacity')
     ];
 }
 
