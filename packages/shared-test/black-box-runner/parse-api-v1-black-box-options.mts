@@ -1,4 +1,4 @@
-import { parseRecipeMatrixShard, type RecipeMatrixShard } from './resolve-recipe-matrix-shard.mts';
+import { parseRecipeMatrixShard, type RecipeMatrixShard } from './recipe-matrix/resolve-recipe-matrix-shard.mts';
 
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory' | 'pglite-file';
 

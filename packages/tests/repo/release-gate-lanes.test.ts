@@ -7,6 +7,19 @@ import vitestConfig from '../../../vitest.config.ts';
 
 interface WorkflowStep {
     readonly run?: string;
+    readonly uses?: string;
+    readonly with?: Readonly<Record<string, string>>;
+}
+
+interface MatrixShare {
+    readonly id?: string;
+    readonly scope?: string;
+    readonly shard?: string;
+}
+
+interface WorkflowMatrix {
+    readonly shard?: readonly string[];
+    readonly include?: readonly MatrixShare[];
 }
 
 interface WorkflowService {
@@ -18,6 +31,7 @@ interface WorkflowJob {
     readonly env?: Readonly<Record<string, string>>;
     readonly services?: Readonly<Record<string, WorkflowService>>;
     readonly steps: readonly WorkflowStep[];
+    readonly strategy?: Readonly<{ matrix: WorkflowMatrix; }>;
 }
 
 interface WorkflowDocument {
@@ -86,6 +100,35 @@ describe('Release Gate lanes', () => {
         }
     });
 
+    it('runs every share of a sharded lane exactly once', () => {
+        const shardedLanes = Object.entries(releaseGate.jobs).filter(([, job]) => toShares(job).length > 0);
+
+        expect(shardedLanes.map(([laneName]) => laneName).toSorted()).toEqual(['black-box', 'e2e-recipe-console']);
+        for (const [, job] of shardedLanes) {
+            const shares = toShares(job).map((share) => share.split('/').map(Number));
+            const count = shares[0][1];
+
+            expect(count).toBeGreaterThan(1);
+            expect(shares.map(([, shareCount]) => shareCount)).toEqual(shares.map(() => count));
+            expect(shares.map(([index]) => index).toSorted()).toEqual(Array.from({ length: count }, (_, offset) => offset + 1));
+        }
+    });
+
+    it('runs the standard black-box shares and the cluster profile in separate lanes', () => {
+        const lane = releaseGate.jobs['black-box'];
+        const includes = lane.strategy?.matrix.include ?? [];
+        const [runStep] = lane.steps.filter((step) => step.uses === './.github/actions/api-v1-black-box-test');
+
+        expect(includes.filter((share) => share.scope === 'cluster')).toHaveLength(1);
+        expect(includes.filter((share) => share.scope === 'standard' && share.shard)).toHaveLength(includes.length - 1);
+        expect(new Set(includes.map((share) => share.id)).size).toBe(includes.length);
+        // Each lane needs its own database, artifact directory and upload name.
+        expect(runStep.with?.scope).toBe('${{ matrix.scope }}');
+        expect(runStep.with?.shard).toBe('${{ matrix.shard }}');
+        expect(runStep.with?.['artifact-dir']).toContain('${{ matrix.id }}');
+        expect(runStep.with?.['run-id']).toContain('${{ matrix.id }}');
+    });
+
     it('keeps Postgres presence expiry last, and twice, in a lane with its own Postgres', () => {
         const postgresLanes = blockingLanes.filter((job) => job.steps.flatMap(toNpmScripts).includes('test:postgres:presence-expiry'));
 
@@ -98,6 +141,11 @@ describe('Release Gate lanes', () => {
         expect(commands).toContain('test:postgres:integration');
     });
 });
+
+function toShares(job: WorkflowJob): string[] {
+    const matrix = job.strategy?.matrix;
+    return [...(matrix?.shard ?? []), ...(matrix?.include ?? []).map((share) => share.shard ?? '')].filter((share) => share !== '');
+}
 
 function toNpmScripts(step: WorkflowStep): string[] {
     return [...(step.run ?? '').matchAll(/npm run ([\w:-]+)/gu)].map((match) => match[1]);

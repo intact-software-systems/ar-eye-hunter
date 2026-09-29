@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
     parseRecipeMatrixShard,
     resolveRecipeMatrixShard
-} from '@shared-test/black-box-runner/resolve-recipe-matrix-shard.mts';
+} from '@shared-test/black-box-runner/recipe-matrix/resolve-recipe-matrix-shard.mts';
 
 interface MatrixEntry {
     readonly id: string;
@@ -22,7 +22,7 @@ const matrix = JSON.parse(readFileSync(path.join(runnerRoot, 'recipe-matrix.json
     readonly entries: readonly MatrixEntry[];
 };
 const weights = JSON.parse(
-    readFileSync(path.join(runnerRoot, 'recipe-shard-weights.json'), 'utf8')
+    readFileSync(path.join(runnerRoot, 'recipe-matrix/recipe-shard-weights.json'), 'utf8')
 ) as RecipeShardWeights;
 const standardEntries = matrix.entries.filter((entry) => entry.profiles.includes('api-v1-black-box'));
 

@@ -13,7 +13,7 @@ import {
     resolveRecipeMatrixShard,
     type RecipeMatrixShard,
     type RecipeShardWeights
-} from './resolve-recipe-matrix-shard.mts';
+} from './recipe-matrix/resolve-recipe-matrix-shard.mts';
 
 type MatrixMode = 'dry-run' | 'run';
 
@@ -84,7 +84,7 @@ type MatrixRun = SkippedMatrixRun | ExecutedMatrixRun;
 const SCRIPT_DIR = new URL('.', import.meta.url);
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
 const MATRIX_FILE = new URL('./recipe-matrix.json', SCRIPT_DIR);
-const SHARD_WEIGHTS_FILE = new URL('./recipe-shard-weights.json', SCRIPT_DIR);
+const SHARD_WEIGHTS_FILE = new URL('./recipe-matrix/recipe-shard-weights.json', SCRIPT_DIR);
 const SCENARIO_CLI = new URL('./scenario-black-box.ts', SCRIPT_DIR);
 const OFFLINE_VALIDATION_PROFILE = 'validation';
 
