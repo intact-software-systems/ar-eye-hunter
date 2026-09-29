@@ -464,15 +464,25 @@ describe('arena game realtime acceptance and egress', () => {
             sentAtEpochMs: 1_000,
             payload: shot
         });
-        mockMatch.publishEvent.mockClear();
-        mockMatch.publishSnapshot.mockClear();
+        const events: GameRealtimeMessage[] = [];
+        const snapshots: ArenaSnapshot[] = [];
+        mockMatch.publishEvent.mockImplementation(async (event) => {
+            events.push(event);
+            return { status: 'sent' };
+        });
+        mockMatch.publishSnapshot.mockImplementation(async (snapshot: ArenaSnapshot) => {
+            snapshots.push(snapshot);
+            return { status: 'sent' };
+        });
 
         await act(async () => config?.onIntent?.(intent));
         await act(async () => config?.onIntent?.(intent));
 
-        expect(mockMatch.publishEvent.mock.calls.map(([event]) => event)).toEqual([shot, shot]);
-        expect(mockMatch.publishSnapshot).not.toHaveBeenCalled();
+        expect(events).toEqual([shot, shot]);
+        expect(snapshots).toEqual([]);
         expect(arena.current?.arenaSnapshot).toEqual(before);
+        mockMatch.publishEvent.mockReset();
+        mockMatch.publishSnapshot.mockReset();
     });
 
     it.each(

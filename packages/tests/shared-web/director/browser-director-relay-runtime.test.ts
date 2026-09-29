@@ -1,3 +1,4 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -359,8 +360,8 @@ describe('Rallar director relay', () => {
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
-        const intents: unknown[] = [];
-        const syncRequests: unknown[] = [];
+        const intents: DirectorMove[] = [];
+        const syncRequests: RallarMessagePayload[] = [];
         const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             topicId: 'app.game.director',
