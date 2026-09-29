@@ -468,7 +468,7 @@ function protocolFailures(): readonly BalancedPoolingFailure[] {
 const ENVIRONMENT = `${
     [
         'image_ref=postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
-        'image_id=sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
+        'image_id=sha256:f961d097a9cedd37779baef1aab3fe87ef1c63b3b34d361f90a98ea5c9b77e56',
         'repo_digest=postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
         'platform=linux\nimage_architecture=arm64\nimage_os=linux\nentrypoint=docker-entrypoint.sh',
         'command=postgres -c autovacuum=off',

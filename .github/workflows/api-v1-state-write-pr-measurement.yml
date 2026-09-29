@@ -66,20 +66,21 @@ jobs:
           lscpu > tmp/perf/state-write-pr-566/host-cpu.txt
           free -b > tmp/perf/state-write-pr-566/host-memory.txt
 
-      - name: Prepare identical type-only harness corrections
+      - name: Prepare identical harness and environment corrections
         shell: bash
         run: |
           set -euo pipefail
           output="$GITHUB_WORKSPACE/tmp/perf/state-write-pr-566"
           orchestration_commit="$(git rev-parse HEAD)"
           harness=apps/api-v1/scripts/perf/create-state-write-service-runtime.ts
+          validator=apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs
           npm ci > "$output/install.log" 2>&1
           for role in APPROVED_BASE CANDIDATE; do
             source_variable="${role}_COMMIT"
             source_commit="${!source_variable}"
             git checkout --detach "$source_commit"
-            git restore --source="$orchestration_commit" -- "$harness"
-            # Both measured trees retain the frozen product parent and identical emitted JavaScript.
+            git restore --source="$orchestration_commit" -- "$harness" "$validator"
+            # The harness fix is runtime-neutral; both measured trees also receive the same environment validator.
             node --input-type=module - "$source_commit" "$harness" <<'NODE'
           import assert from 'node:assert/strict';
           import { execFileSync } from 'node:child_process';
@@ -94,12 +95,12 @@ jobs:
           assert.equal(compile(corrected), compile(original), 'Harness correction changed emitted JavaScript');
           NODE
             git -c user.name='State-write measurement' -c user.email='measurement@users.noreply.github.com' \
-              commit --only "$harness" -m 'Correct benchmark type imports without changing runtime'
+              commit --only "$harness" "$validator" -m 'Correct benchmark harness and environment validation'
             measurement_commit="$(git rev-parse HEAD)"
             printf '%s=%s\n' "${role}_MEASUREMENT_COMMIT" "$measurement_commit" >> "$GITHUB_ENV"
             printf '%s product=%s measurement=%s\n' "$role" "$source_commit" "$measurement_commit" \
               >> "$output/measurement-commits.txt"
-            git show --format=fuller HEAD > "$output/$role-harness-correction.patch"
+            git show --format=fuller HEAD > "$output/$role-measurement-corrections.patch"
             deno check --config apps/api-v1/deno.json \
               apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
               > "$output/$role-native-check.log" 2>&1
