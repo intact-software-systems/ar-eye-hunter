@@ -27,14 +27,18 @@ import {
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 
-const CAPACITY_FILLER = 'x'.repeat(45_000);
 /**
- * Two sends of about 45.6 KB fit with about 39 KB to spare for what the session receives meanwhile (C4 counts it);
- * a third never fits. The count bound keeps its constant, so bytes alone decide.
+ * The scenario is deterministic only while 2 * S + B < maxBytes < 3 * S, where S is one send's envelope (the filler
+ * plus about 0.7 KB of envelope, about 55.7 KB) and B is the platform's own state sync that the reconnect's rejoin
+ * admits inbound (`group-state.event`, `client-state.snapshot` and `event`: 6 entries, about 26 KB, each counted for
+ * up to 30 s; R-S3c-ii-6, R-S3c-ii-7). The admitted sends stay counted until their 30 s deadline, so the third never
+ * fits whatever B is (about 167.2 KB > 163.8 KB), and the second fits with about 25.8 KB to spare beyond B. The
+ * count bound keeps its constant, so bytes alone decide.
  */
+const CAPACITY_FILLER = 'x'.repeat(55_000);
 const CAPACITY_LIMITS: ALVolatileSessionLimits = {
     maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
-    maxBytes: 128 * 1024
+    maxBytes: 160 * 1024
 };
 const ADMITTED_INDEXES = [1, 2] as const;
 const REFUSED_INDEX = 3;

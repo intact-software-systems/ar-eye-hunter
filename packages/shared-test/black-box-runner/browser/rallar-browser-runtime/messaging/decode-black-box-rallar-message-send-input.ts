@@ -101,34 +101,36 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
-    const toPeer = decodeMessagePeerRole(value.toPeer);
-    if (toPeer !== undefined && typeof toPeer !== 'string') {
-        return Either.ofLeft(toPeer);
-    }
-    return decodeMessageSendIdentity(value).flatMap(
+    return decodeMessagePeerRole(value.toPeer).flatMap(
         (issue) => Either.ofLeft(issue),
-        (identity) =>
-            decodeMessageSendOptions(value).mapRight((options) => ({
-                ...identity,
-                ...options,
-                payload,
-                toPeer,
-                topicId: decodeBlackBoxCommandString(value.topicId),
-                ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
-                orderingKey: decodeBlackBoxCommandString(value.orderingKey),
-                seq: decodeBlackBoxCommandNumber(value.seq)
-            }))
+        (peer) =>
+            decodeMessageSendIdentity(value).flatMap(
+                (issue) => Either.ofLeft(issue),
+                (identity) =>
+                    decodeMessageSendOptions(value).mapRight((options) => ({
+                        ...identity,
+                        ...options,
+                        ...peer,
+                        payload,
+                        topicId: decodeBlackBoxCommandString(value.topicId),
+                        ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
+                        orderingKey: decodeBlackBoxCommandString(value.orderingKey),
+                        seq: decodeBlackBoxCommandNumber(value.seq)
+                    }))
+            )
     );
 }
 
 function decodeMessagePeerRole(
     value: unknown
-): NonNullable<BlackBoxRallarMessageSendInput['toPeer']> | BlackBoxRallarInputIssue | undefined {
+): Either<BlackBoxRallarInputIssue, Pick<BlackBoxRallarMessageSendInput, 'toPeer'>> {
     if (value === undefined) {
-        return undefined;
+        return Either.ofRight({ toPeer: undefined });
     }
-    return MESSAGE_PEER_ROLES.find((role) => role === value) ??
-        { message: 'messages.send.toPeer must be server or receiver.' };
+    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === value);
+    return toPeer === undefined
+        ? Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' })
+        : Either.ofRight({ toPeer });
 }
 
 function decodeMessageSendIdentity(

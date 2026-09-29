@@ -169,9 +169,13 @@ purpose a product addresses one peer with; the recipe's own `ack` still wins. A 
 the page cannot resolve (no server id, or a roster without exactly one other live
 session) fails the command with `RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED` and opens no
 handle. The roster names no role, so a room with two recipients has no resolvable
-`receiver`, and the three-agent family addresses no peer. The server is no RTC
-peer: `toPeer: 'server'` on `rtc` or `rtc-with-ws-fallback` is refused before
-admission.
+`receiver`, and the three-agent family addresses no peer. `toPeer: 'server'` is a
+WS-only target, because the server is no RTC peer (C9): on `rtc` or
+`rtc-with-ws-fallback` the product's typed send refuses it before admission with
+a validation error of code `unsupported`, which carries no page prefix, so the
+command fails with `RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT`, opens no handle and
+puts nothing on either carrier. The page resolves no role until that send and does
+not pre-check the carrier; `server-command` therefore runs on `ws` only.
 
 `minSnapshotVersion` is a harness floor on the room snapshot a receiver must hold
 before it admits the send: `{ absolute: n }`, or `{ aboveCurrentBy: n }`, which
@@ -358,10 +362,13 @@ hands it to WS; the sender reads `attemptCarriers` containing `rtc` and `ws` and
 `admission-outcome` `committed`/`admitted` on carrier `ws`. `server-command` (`ws` only) sends a `command` to
 `toPeer: 'server'` and observes `acknowledged` on the server's own ACK, while the receiver proves for the whole
 window that nothing reaches it. `capacity` runs over every carrier: the sender closes, reconnects with
-`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 131072 }`, sends two ≈45 KB messages that are
+`rallar.almVolatileLimits` `{ maxAdmissions: 1000, maxBytes: 163840 }`, sends two ≈55.7 KB messages that are
 admitted and acknowledged, and a third that ends `rejected` with `failure: { kind: 'refused', reason: 'capacity' }`
 and `attempts` 0, so no fallback; then it closes and reconnects without the field, restoring the constants. Its
 receiver waits for the two arrivals with one more readiness budget, since the sender reconnects before it sends.
+The close leaves the room and the reconnect rejoins it, so the lowered session also counts the platform's own state
+sync it admits inbound (about 26 KB in 6 entries in the local lane); the bound leaves the second send about 25 KB
+beyond that, and the two counted sends alone refuse the third.
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,

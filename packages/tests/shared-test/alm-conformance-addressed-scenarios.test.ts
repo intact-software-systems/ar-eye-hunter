@@ -39,7 +39,12 @@ const ADDRESSEE_RECEIPT = [
     'expectedRecipientPeerIds.length equals 1',
     'confirmedRecipientPeerIds.length equals 1'
 ];
-const CAPACITY_LIMITS = { maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS, maxBytes: 128 * 1024 };
+const CAPACITY_LIMITS = { maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS, maxBytes: 160 * 1024 };
+/**
+ * The platform's state sync the capacity sender's rejoin admits inbound: 6 entries of 25.8-26.6 KB in total across
+ * six local lane samples on every carrier (R-S3c-ii-7), rounded up.
+ */
+const PLATFORM_STATE_SYNC_BYTES = 26 * 1024;
 
 function scenarioOf(carrier: AlmConformanceCarrier, key: string): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -217,7 +222,7 @@ describe('the addressed-send family (C11)', () => {
         }
     });
 
-    it('fits two capacity sends under the lowered byte bound with room to spare, and never a third', () => {
+    it('fits two capacity sends beside the platform state sync with room to spare, and never a third', () => {
         const send = scenarioOf('rtc', 'capacity').sender.commands.find(
             isRallarBlackBoxTestMessagesSendCommand
         );
@@ -237,8 +242,9 @@ describe('the addressed-send family (C11)', () => {
             throw new Error('A capacity send must be measurable.');
         }
 
+        // The two admitted sends stay counted until their deadline, so the third is refused whatever else arrived.
         expect(3 * bytes).toBeGreaterThan(CAPACITY_LIMITS.maxBytes);
-        // C4 counts what the session receives too; the lowered bound leaves room for it.
-        expect(CAPACITY_LIMITS.maxBytes - 2 * bytes).toBeGreaterThan(32 * 1024);
+        // The second send must fit beside the measured state sync, with room for that background to grow.
+        expect(CAPACITY_LIMITS.maxBytes - 2 * bytes - PLATFORM_STATE_SYNC_BYTES).toBeGreaterThan(24 * 1024);
     });
 });

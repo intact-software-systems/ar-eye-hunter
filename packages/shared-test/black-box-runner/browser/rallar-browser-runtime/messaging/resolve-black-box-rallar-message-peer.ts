@@ -24,7 +24,10 @@ export function resolveBlackBoxRallarMessagePeer(
             ? Either.ofLeft('the WS server named no peer id')
             : Either.ofRight(input.serverPeerId);
     }
-    const others = (input.roomSessions ?? []).filter((session) =>
+    if (input.roomSessions === undefined) {
+        return Either.ofLeft('the page holds no snapshot of the room');
+    }
+    const others = input.roomSessions.filter((session) =>
         session.status === 'active' && session.expiresAtEpochMs > input.nowMs &&
         session.sessionId !== input.ownSessionId
     );

@@ -49,6 +49,11 @@ describe('the lane role a messages.send addresses (C11)', () => {
             toPeer: 'receiver',
             roomSessions: undefined
         });
+        const nobodyElse = resolveBlackBoxRallarMessagePeer({
+            ...input,
+            toPeer: 'receiver',
+            roomSessions: [toRoomRosterSession('sender-session')]
+        });
         const twoOthers = resolveBlackBoxRallarMessagePeer({
             ...input,
             toPeer: 'receiver',
@@ -56,7 +61,8 @@ describe('the lane role a messages.send addresses (C11)', () => {
         });
 
         expect(withoutServer.left).toBe('the WS server named no peer id');
-        expect(withoutRoster.left).toBe('the room holds 0 other live sessions, not exactly one');
+        expect(withoutRoster.left).toBe('the page holds no snapshot of the room');
+        expect(nobodyElse.left).toBe('the room holds 0 other live sessions, not exactly one');
         expect(twoOthers.left).toBe('the room holds 2 other live sessions, not exactly one');
     });
 });
