@@ -47,12 +47,34 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // The full facade measured 225.419921875 KiB at PR #566's reviewed head.
-        // Its approved next whole-KiB ceiling remains strict; narrow entry budgets do not change.
+        // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
+        // ACK per logical recipient measure 215.255859375 KiB; the WS client's receipt admission from
+        // the server's aggregate brings it to 216.73828125 KiB; the rest of S2c-i (WS ordering, bounded and
+        // idempotent receipts, the WS-session ACK rule) measures 217.01171875 KiB. The S2c-ii frozen audience
+        // brings it to 217.681640625 KiB, and its retry through the relay tree (the missing-recipient repair,
+        // the per-recipient relay row and the retried-copy path) to 218.388671875 KiB. Its logical evidence on the
+        // handle (the recipient lists, the hop view, the trusted relay rejection and the refused-leg row) measures
+        // 219.0595703125 KiB. S3a's purpose table and channel policy validation measure 220.3134765625 KiB
+        // (ceiling 221), and its store lanes (a memory pair beside the IndexedDB pair on each outbound
+        // carrier, routed by durability) 221.19140625 KiB (ceiling 222; the final S3a review head e417fe749
+        // measured 221.8 of 222). S3b's receipt ends (receipt-exhausted, the not-yet-in-sync exhaustion,
+        // completion at dispatch and the untracked receipt) measure 222.1884765625 KiB. The next whole-KiB
+        // ceiling is 223. The S3b final review head measures ~222.99 of 223, and its fix wave 222.86328125.
+        // S3c-i's room-naming unicast and the unicast receipt measure 223.056640625 KiB. The next whole-KiB
+        // ceiling is 224. The S3c-ii volatile retention rule measures 224.1494140625 KiB. The next whole-KiB
+        // ceiling is 225. The S3c-ii volatile bound (the session budget, its outbound refusal and inbound count, and
+        // the overloaded provider) measures 224.8525390625 KiB, and its review fix (the 30 s inbound counted
+        // lifetime and the named-deadline rule) 225.056640625 KiB. The next whole-KiB ceiling is 226. The S3c-ii
+        // director command (the typed command channels, the intent sequence window, sendWsUnicast deleted) measures
+        // 225.072265625 KiB, and its final review fix wave (overloaded for the session's own sends only, the budget's
+        // release heap and the intent window below the highest sequence) 225.2333984375 KiB.
+        // The RTC delivery and cluster WS work alone measured 225.419921875 KiB at 4005e09ea (ceiling 226). Merged
+        // with main at 0d5902bc6 the facade measures 227.001953125 KiB. The next whole-KiB ceiling is 228; narrow
+        // entry budgets do not change.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 226
+        brotliBudgetKiB: 228
     },
     {
         label: 'browser/rallar-core.ts',

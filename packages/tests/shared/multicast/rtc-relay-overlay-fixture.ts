@@ -3,6 +3,9 @@ import { onTestFinished } from 'vitest';
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALVolatileInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -25,12 +28,22 @@ export interface RtcRelayOverlayFixtureInput {
     readonly snapshot: GroupSnapshot;
     /** The overlay neighbours of the relay: its parent and its children, each with an open channel. */
     readonly neighbourPeerIds: readonly string[];
+    /** The session's memory pair a volatile message is admitted to; absent, every admission uses one in-memory pair. */
+    readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
+    /** The provider the composition hands the manager; absent, the capabilities of the carrier alone. */
+    readonly qosProvider?: ALQosInputProvider;
+    /** The keys the overlay is cached under; absent, the bare room id. The browser sender reads the scoped key. */
+    readonly overlayIds?: readonly string[];
 }
 
 /** A real RTC receive pipeline for one relay: inbound admission, the relay row, and its own forwarding. */
 export interface RtcRelayOverlayFixture {
     receive(message: ALMessage, fromPeerId: string): Promise<void>;
     readSent(peerId: string): Promise<readonly ALMessage[]>;
+    /** The messages this session delivered to its own inbox, in arrival order. */
+    readonly delivered: readonly ALMessage[];
+    /** Admits a message this session sends, as the browser sender hands it to the RTC carrier. */
+    enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult>;
     /** Replaces the room this relay sees, as a membership change reaches it. */
     acceptSnapshot(snapshot: GroupSnapshot): void;
 }
@@ -51,14 +64,16 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
-    overlays.accept('room', createOriginOverlay(input.neighbourPeerIds));
+    for (const overlayId of input.overlayIds ?? ['room']) {
+        overlays.accept(overlayId, createOriginOverlay(input.neighbourPeerIds));
+    }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
     const multicast = new shared.WebRtcOverlayMulticastManager({
         connectionService: connection.service,
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connection.service),
-        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         outboundDiagnostics: undefined,
         outboundSettlements: undefined,
         outboundRuntime: outboundResources,
@@ -71,10 +86,16 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         multicast,
         sessionId: input.selfPeerId,
         inboundStores,
+        inboundVolatileStores: input.inboundVolatileStores,
         roomAuthorityRefresh: undefined
     });
     service.setRttReportingPeerIds([]);
-    service.onAllInboxMessagesDo({ onMessage: async () => undefined });
+    const delivered: ALMessage[] = [];
+    service.onAllInboxMessagesDo({
+        onMessage: async (message) => {
+            delivered.push(message);
+        }
+    });
     const openings = input.neighbourPeerIds.map((peerId) => {
         connection.service.ensurePeerConnectionStarted(peerId, true);
         service.addPeer(connection.service.readPeer(peerId)!);
@@ -99,6 +120,11 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         readSent: async (peerId) => {
             await waitForOwnedQueueWork(outboundResources.workQueue);
             return connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)));
+        },
+        delivered,
+        enqueue: async (message) => {
+            await ready;
+            return await service.enqueueOutboxIfAbsent(message);
         },
         acceptSnapshot: (snapshot) => groups.accept('room', snapshot)
     };

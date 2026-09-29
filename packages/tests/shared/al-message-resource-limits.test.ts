@@ -12,6 +12,7 @@ import {
     decodePersistedALMessageValue
 } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
+    computeALMessageEnvelopeBytes,
     validateALMessageResourceLimits,
     validateSerializedALMessageSize
 } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -273,6 +274,25 @@ describe('AL envelope resource limits', () => {
         expect(validateALMessageResourceLimits(rejected)[0]?.code).toBe('oversized');
         expect(allowed).toEqual({ values: [{ value: 'safe' }, { value: 'safe' }] });
         expect(rejected).toEqual({ values: [{ value: 'safe' }, { value: 'safe' }], constraints: { ttlHops: 65 } });
+    });
+
+    it('counts the envelope bytes the validator walks, in UTF-8 as the wire carries them (C17)', () => {
+        const message: ALMessage = {
+            ...messageFixture(),
+            payload: {
+                typeId: 'message.v1',
+                contentType: 'application/json',
+                resource: '{"text":"blåbær"}'
+            }
+        };
+        const oversized: ALMessage = {
+            ...message,
+            payload: { ...message.payload, resource: JSON.stringify({ text: 'x'.repeat(130 * 1024) }) }
+        };
+
+        expect(computeALMessageEnvelopeBytes(message).right)
+            .toBe(new TextEncoder().encode(JSON.stringify(message)).length);
+        expect(computeALMessageEnvelopeBytes(oversized).left?.code).toBe('oversized');
     });
 });
 

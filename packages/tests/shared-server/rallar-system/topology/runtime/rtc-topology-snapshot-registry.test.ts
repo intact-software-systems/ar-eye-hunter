@@ -57,17 +57,15 @@ describe('RtcTopologySnapshotRegistry', () => {
         const registry = new RtcTopologySnapshotRegistry();
         const snapshot = createSnapshot({ groupRevision: 1, presenceRevision: 1, version: 1 });
 
-        expect(registry.has(snapshot.overlayId)).toBe(false);
+        expect(registry.get(snapshot.overlayId)).toBeUndefined();
         expect(registry.size).toBe(0);
         expect(registry.remove(snapshot.overlayId)).toBe(false);
 
         registry.observe(snapshot);
 
-        expect(registry.has(snapshot.overlayId)).toBe(true);
         expect(registry.get(snapshot.overlayId)).toBe(snapshot);
         expect(registry.size).toBe(1);
         expect(registry.remove(snapshot.overlayId)).toBe(true);
-        expect(registry.has(snapshot.overlayId)).toBe(false);
         expect(registry.get(snapshot.overlayId)).toBeUndefined();
         expect(registry.size).toBe(0);
     });

@@ -46,7 +46,7 @@ describe('RTC topology planning options and revisions', () => {
         expect(noRtt.snapshot.topology).toBe('tree');
         expect(weighted.snapshot.topology).toBe('mesh');
         expect(weighted.snapshot.degreeLimit).toBe(2);
-        expect(metrics.read(0, 0)).toMatchObject({
+        expect(metrics.read(0)).toMatchObject({
             topologyUpdateCount: 0,
             updatesWithoutRttMeasurementCount: 1,
             updatesWithRttMeasurementCount: 1,
@@ -87,7 +87,7 @@ describe('RTC topology planning options and revisions', () => {
         });
         expect(incrementallyPlanned.snapshot.topology).toBe('mesh');
         expect(ordinaryFallback.snapshot.topology).toBe('mesh');
-        expect(metrics.read(0, 0)).toMatchObject({
+        expect(metrics.read(0)).toMatchObject({
             incrementalPlanCount: 1,
             incrementalPlanFallbackFullCount: 1,
             incrementalPlanInvariantFallbackCount: 0
@@ -112,7 +112,7 @@ describe('RTC topology planning options and revisions', () => {
         });
 
         expect(heldKind.snapshot.topology).toBe('mesh');
-        expect(hysteresisMetrics.read(0, 0)).toMatchObject({
+        expect(hysteresisMetrics.read(0)).toMatchObject({
             incrementalPlanCount: 0,
             incrementalPlanFallbackFullCount: 1,
             hysteresisHeldKindCount: 1
@@ -144,11 +144,11 @@ describe('RTC topology planning options and revisions', () => {
             });
         }
 
-        expect(metrics.read(0, 0)).toMatchObject({
+        expect(metrics.read(0)).toMatchObject({
             incrementalPlanInvariantFallbackCount: expect.any(Number),
             incrementalPlanFallbackFullCount: expect.any(Number)
         });
-        expect(metrics.read(0, 0).incrementalPlanInvariantFallbackCount).toBeGreaterThan(0);
+        expect(metrics.read(0).incrementalPlanInvariantFallbackCount).toBeGreaterThan(0);
     });
 
     it('honors request topology kind override for star topology', () => {

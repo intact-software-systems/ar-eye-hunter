@@ -204,7 +204,6 @@ export type {
     RtcTopologyKindHysteresisWidths,
     RtcTopologyPlanningIntent
 } from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-export type { RallarRtcTopologyRttQueueResult } from './rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 export type {
     RallarServerWsAuthorizer,

@@ -262,7 +262,10 @@ describe('the RTC origin retry of a receiver receipt', () => {
             { label: 'a local-outbox', durability: 'local-outbox', lane: 'durable', durable: true }
         ] as const
     )('admits $label receiver send from an origin alone in its room to the $lane pair', async ({ durability, lane, durable }) => {
-        const volatileStores = createVolatileALOutboundRuntimeStores({ decodePrepared: decodeALOutboundTransportMessage });
+        const volatileStores = createVolatileALOutboundRuntimeStores(
+            { decodePrepared: decodeALOutboundTransportMessage },
+            undefined
+        );
         const fixture = createRtcOriginOverlayFixture({
             snapshot: createOriginSnapshot(['a'], 4),
             nextHopPeerIds: [],

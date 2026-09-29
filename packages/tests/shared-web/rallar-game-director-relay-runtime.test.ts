@@ -31,13 +31,6 @@ describe('RallarGameDirectorRelayRuntime', () => {
         const runtime = new RallarGameDirectorRelayRuntime(
             toTestDouble<RallarGameDirectorRelayRuntime.Input<Payload, Payload, Payload, Payload, Payload>>({
                 config,
-                laneIds: {
-                    input: 'input',
-                    intent: 'intent',
-                    snapshot: 'snapshot',
-                    metrics: 'metrics',
-                    replication: 'replication'
-                },
                 typeIds: {
                     capability: 'capability',
                     intent: 'intent',
@@ -111,13 +104,6 @@ function createPublishingRuntime(
     return new RallarGameDirectorRelayRuntime(
         toTestDouble<RallarGameDirectorRelayRuntime.Input<Payload, Payload, Payload, Payload, Payload>>({
             config,
-            laneIds: {
-                input: 'input',
-                intent: 'intent',
-                snapshot: 'snapshot',
-                metrics: 'metrics',
-                replication: 'replication'
-            },
             typeIds: {
                 capability: 'capability',
                 intent: 'intent',

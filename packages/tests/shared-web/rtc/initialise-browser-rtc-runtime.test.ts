@@ -27,6 +27,11 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    ALVolatileSessionBudget
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -48,6 +53,7 @@ import {
     installNativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -156,13 +162,17 @@ describe('browser RTC runtime composition', () => {
             match: { typeId: 'alm.lifecycle', msgId: undefined, controlType: undefined }
         } as const;
         faults.inject(fault);
-        const fixture = createNativeRtcConnectionFixture({
-            sessionId: 'self',
-            token: 'fixture-token',
-            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-            dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc'
-        }, nativeRuntime, faults);
+        const fixture = createNativeRtcConnectionFixture(
+            {
+                sessionId: 'self',
+                token: 'fixture-token',
+                iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+                dataChannelName: 'test',
+                rtcSignalingTopicId: 'rtc'
+            },
+            nativeRuntime,
+            faults
+        );
         onTestFinished(() => {
             fixture.dispose();
             nativeRuntime.dispose();
@@ -178,6 +188,7 @@ describe('browser RTC runtime composition', () => {
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+            volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: (event) => registry.record(event),
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -254,6 +265,7 @@ describe('browser RTC runtime composition', () => {
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             qosProvider: undefined,
+            volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine
@@ -291,6 +303,67 @@ describe('browser RTC runtime composition', () => {
         const message = decodePersistedALMessage(sent);
         expect(message.forwarding?.overlayId).toBe(overlayId);
         expect(message.forwarding?.nextHopPeerIds).toEqual(['accepted-peer']);
+    });
+
+    it('counts a volatile send against the session budget the overlay is handed (C3)', async () => {
+        const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlayFixture(group, 1, ['accepted-peer'])
+        );
+        const nativeRuntime = installNativeRtcRuntime();
+        const fixture = createNativeRtcConnectionFixture(
+            {
+                sessionId: 'self',
+                token: 'fixture-token',
+                iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+                dataChannelName: 'test',
+                rtcSignalingTopicId: 'rtc'
+            },
+            nativeRuntime,
+            createPassThroughTransportFaultPort()
+        );
+        onTestFinished(() => {
+            try {
+                fixture.dispose();
+            }
+            finally {
+                nativeRuntime.dispose();
+            }
+        });
+        fixture.service.ensurePeerConnectionStarted('accepted-peer', true);
+        const nativePeer = fixture.nativePeer('accepted-peer');
+        nativePeer.setConnected();
+        for (const channel of nativePeer.channels) {
+            channel.open();
+        }
+        const budget = new ALVolatileSessionBudget({
+            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+        });
+        const manager = initialiseRtcOverlayMulticastManager({
+            qosProvider: undefined,
+            volatileBudget: budget,
+            outboundSettlements: () => {},
+            webRtcConnectionService: fixture.service,
+            qboxEngine: new InboxOutboxEngine()
+        });
+        onTestFinished(() => manager.dispose());
+
+        const result = await manager.enqueueIfAbsent(
+            newALMulticastMessage(
+                'self',
+                { topicId: 'chat', resourceId: 'counted', contextId: group.group.groupId },
+                group.group,
+                'chat.message.v1',
+                { text: 'counted' },
+                { ttlMs: 30_000 }
+            )
+        );
+
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(budget.readUsage(Date.now()).admissions).toBe(1);
     });
 });
 

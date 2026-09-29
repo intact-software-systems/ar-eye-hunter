@@ -60,6 +60,7 @@ describe('Browser transport cleanup', () => {
         });
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -110,6 +111,7 @@ describe('Browser transport cleanup', () => {
         });
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -158,6 +160,7 @@ describe('Browser transport cleanup', () => {
         });
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -208,6 +211,7 @@ describe('Browser transport cleanup', () => {
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const connection = new BrowserSessionConnectionLifecycle({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -263,6 +267,7 @@ describe('Browser transport cleanup', () => {
 
         const pending = transportRuntime.init({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
             deliverySettlements: { ws: () => {}, rtc: () => {} }
         });
@@ -338,6 +343,7 @@ describe('Browser transport cleanup', () => {
 
         const sessionController = createRallarSessionController({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
@@ -393,6 +399,7 @@ describe('Browser transport cleanup', () => {
         });
         const sessionController = createRallarSessionController({
             qosProvider: undefined,
+            readVolatileSessionLimits: undefined,
             ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
@@ -432,6 +439,31 @@ describe('Browser transport cleanup', () => {
         ]);
         expect(runtime.readConnectState()).toBe('idle');
         expect(runtime.readMiddleware()).toBeUndefined();
+    });
+});
+
+describe('the session volatile limits seam', () => {
+    it('hands the composition\'s limit reader to the session\'s middleware initialisation', async () => {
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
+        const readVolatileSessionLimits = () => ({ maxAdmissions: 3, maxBytes: 4_096 });
+        const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
+            readVolatileSessionLimits,
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
+            connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
+            transportRuntime,
+            lifecycle: createRallarLifecycleCoordinator(),
+            clearCurrentRoom: () => {}
+        });
+
+        await connection.connect(toConnectionInput(middleware.session));
+
+        expect(mocks.initialiseMiddleware.mock.calls.at(-1)?.[2].readVolatileSessionLimits)
+            .toBe(readVolatileSessionLimits);
     });
 });
 

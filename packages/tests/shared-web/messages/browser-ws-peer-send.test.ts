@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
@@ -7,7 +8,7 @@ import { createBrowserMessageSenderFixture } from './browser-message-sender-fixt
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const COMMAND_CHANNEL = { purpose: 'command', durability: undefined } as const;
 
-describe('a WS send addressed to one peer (Q11, WS only)', () => {
+describe('a WS send addressed to one peer (Q11)', () => {
     it('builds a receipted room unicast to the peer for a command channel', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const envelope = vi.spyOn(
@@ -58,19 +59,26 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
         });
     });
 
-    it('refuses a peer target on any strategy but ws until the RTC unicast lands (S3c-ii)', async () => {
+    it('refuses a peer target on ws-then-rtc, which hands over at admission only (V1)', async () => {
         const fixture = createBrowserMessageSenderFixture();
 
         const sending = fixture.sender.sendTyped({
             typeId: 'relic.command.v1',
             payload: {},
             roomId: 'room',
-            peerId: 'server'
+            peerId: 'server',
+            strategy: 'ws-then-rtc'
         }, COMMAND_CHANNEL);
 
         await expect(sending).rejects.toSatisfy(isRallarValidationError);
         // The default topic would fail the WS topic rule too; the peer refusal must come first.
-        await expect(sending).rejects.toMatchObject({ issues: [{ path: '$.peerId', code: 'unsupported' }] });
+        await expect(sending).rejects.toMatchObject({
+            issues: [{
+                path: '$.peerId',
+                code: 'unsupported',
+                message: 'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
+            }]
+        });
     });
 
     it.each([
@@ -151,6 +159,32 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
         expect(envelope.mock.calls[0][0]).toMatchObject({
             targets: { mode: 'unicast', toPeerId: 'server', groupRef: ROOM_REF },
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        });
+    });
+
+    it('admits a scope-all peer send under its own context id, which names no room to mismatch (C8)', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware.webSocketQueueBox,
+            'enqueueOutboxIfAbsent'
+        );
+
+        const handle = await fixture.sender.sendWs({
+            scope: 'all',
+            peerId: 'callee',
+            topicId: 'app.rallar.calls',
+            typeId: 'app.rallar.calls.invite.v1',
+            contextId: 'call-1',
+            payload: { kind: 'invite' },
+            reliability: 'best-effort'
+        }, undefined);
+        const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(outcome.lifecycle.state).toBe('queued');
+        expect(outcome.lifecycle.evidence.failure).toBeUndefined();
+        expect(envelope.mock.calls[0][0]).toMatchObject({
+            targets: { mode: 'unicast', toPeerId: 'callee' },
+            route: { topicId: 'app.rallar.calls', contextId: 'call-1' }
         });
     });
 });

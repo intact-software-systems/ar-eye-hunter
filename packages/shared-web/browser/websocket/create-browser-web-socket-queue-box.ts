@@ -12,6 +12,7 @@ import type {
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
@@ -37,11 +38,12 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
-        /** The WS server's peer id from `/api/config`; undefined when the server names none (R-S3c-i-6). */
+        /** The WS server's peer id from `/api/config`; undefined when the server names none. */
         readonly serverPeerId: string | undefined;
         readonly inboundStores: ALInboundRuntimeStores;
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
+        readonly volatileBudget: ALVolatileSessionBudget;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;
         readonly newConnectionRequestId: (() => string) | undefined;
@@ -92,7 +94,8 @@ function createBrowserWebSocketQueueBoxService(
         inboundVolatileStores: input.inboundVolatileStores,
         outboundStores,
         outboundVolatileStores: createBrowserALVolatileOutboundRuntimeStores(
-            toBrowserWsClientALRuntimeStoreId(clientData.sessionId)
+            toBrowserWsClientALRuntimeStoreId(clientData.sessionId),
+            input.volatileBudget
         ),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,

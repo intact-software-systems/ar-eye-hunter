@@ -1,3 +1,4 @@
+import { load } from 'js-yaml';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readdir, readFile, rm } from 'node:fs/promises';
@@ -5,7 +6,38 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+interface WorkflowStep {
+    readonly 'continue-on-error'?: boolean;
+    readonly if?: string;
+    readonly name?: string;
+    readonly run?: string;
+    readonly uses?: string;
+    readonly with?: Readonly<Record<string, string>>;
+}
+
+interface WorkflowJob {
+    readonly steps: readonly WorkflowStep[];
+}
+
+interface WorkflowDocument {
+    readonly jobs: Readonly<Record<string, WorkflowJob>>;
+}
+
+interface ActionInput {
+    readonly default: string;
+}
+
+interface ActionRuns {
+    readonly steps: readonly WorkflowStep[];
+}
+
+interface ActionDocument {
+    readonly inputs: Readonly<Record<string, ActionInput>>;
+    readonly runs: ActionRuns;
+}
+
 const repoRoot = path.resolve(__dirname, '../../..');
+const LANE_SETUP_ACTION = './.github/actions/release-gate-setup';
 const githubAutomationRoots = ['.github/actions', '.github/workflows'] as const;
 const requiredActionReferences = {
     cache: 'actions/cache@v6',
@@ -58,51 +90,47 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate).not.toContain('npm run check:test-structure-coupling');
     });
 
-    it('observes IDE navigation after dependency installation without weakening failures', async () => {
-        const releaseGate = await readFile(
-            path.join(repoRoot, '.github/workflows/release-gate.yml'),
-            'utf8'
-        );
-        const installIndex = releaseGate.indexOf('run: npm ci');
-        const navigationIndex = releaseGate.indexOf(
-            'run: npm run check:repo-style:navigation-details'
-        );
-        const changedStyleIndex = releaseGate.indexOf(
-            'node scripts/check-changed-repo-style.mjs'
-        );
+    it('observes IDE navigation after lane setup without weakening failures', async () => {
+        const releaseGate = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
+        const steps = releaseGate.jobs.checks.steps;
+        const setupIndex = steps.findIndex((step) => step.uses === LANE_SETUP_ACTION);
+        const navigationIndex = steps.findIndex((step) => step.run === 'npm run check:repo-style:navigation-details');
+        const changedStyleIndex = steps.findIndex((step) => step.run?.startsWith('node scripts/check-changed-repo-style.mjs'));
 
-        expect(installIndex).toBeGreaterThan(-1);
-        expect(navigationIndex).toBeGreaterThan(installIndex);
+        expect(setupIndex).toBeGreaterThan(-1);
+        expect(navigationIndex).toBeGreaterThan(setupIndex);
         expect(changedStyleIndex).toBeGreaterThan(navigationIndex);
-        expect(releaseGate.slice(navigationIndex - 120, navigationIndex + 120)).not.toContain(
-            'continue-on-error'
-        );
+        expect(steps[navigationIndex]).not.toHaveProperty('continue-on-error');
     });
 
     it('restores Deno caches without saving unless the exact main push is checked out', async () => {
-        const releaseGate = await readFile(
-            path.join(repoRoot, '.github/workflows/release-gate.yml'),
-            'utf8'
-        );
-        const restoreOnlyCacheStep = getWorkflowStep(
-            releaseGate,
-            'Restore Deno cache without save permission'
-        );
-        const trustedCacheStep = getWorkflowStep(releaseGate, 'Cache Deno for trusted runs');
+        const releaseGate = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
+        const setup = await readYaml<ActionDocument>('.github/actions/release-gate-setup/action.yml');
+        const restoreOnlyCacheStep = setup.runs.steps.find((step) => step.name === 'Restore Deno cache without save permission');
+        const trustedCacheStep = setup.runs.steps.find((step) => step.name === 'Cache Deno for trusted runs');
+        const setupSteps = Object.values(releaseGate.jobs).flatMap((job) => job.steps).filter((step) => step.uses === LANE_SETUP_ACTION);
+        const savingSteps = setupSteps.filter((step) => step.with?.['save-deno-cache'] !== undefined);
 
-        expect(restoreOnlyCacheStep).toContain(
-            'if: ${{ github.event_name != \'push\' || github.ref != \'refs/heads/main\' || inputs.candidate_ref != github.sha }}'
-        );
-        expect(restoreOnlyCacheStep).toContain('uses: actions/cache/restore@v6');
-        expect(restoreOnlyCacheStep).not.toContain('uses: actions/cache@v6');
-        expect(trustedCacheStep).toContain(
-            'if: ${{ github.event_name == \'push\' && github.ref == \'refs/heads/main\' && inputs.candidate_ref == github.sha }}'
-        );
-        expect(trustedCacheStep).toContain('uses: actions/cache@v6');
-        expect(releaseGate).not.toContain('lookup-only:');
-        expect(releaseGate).toContain(
-            'ref: ${{ github.event_name == \'workflow_dispatch\' && github.sha || inputs.candidate_ref }}'
-        );
+        expect(restoreOnlyCacheStep).toMatchObject({
+            if: '${{ inputs.deno == \'true\' && inputs.save-deno-cache != \'true\' }}',
+            uses: 'actions/cache/restore@v6'
+        });
+        expect(trustedCacheStep).toMatchObject({
+            if: '${{ inputs.deno == \'true\' && inputs.save-deno-cache == \'true\' }}',
+            uses: 'actions/cache@v6'
+        });
+        expect(setup.inputs['save-deno-cache'].default).toBe('false');
+        // Exactly one lane may save, and only on the push that validates its exact main commit.
+        expect(savingSteps.map((step) => step.with?.['save-deno-cache'])).toEqual([
+            '${{ github.event_name == \'push\' && github.ref == \'refs/heads/main\' && inputs.candidate_ref == github.sha }}'
+        ]);
+        for (const job of Object.values(releaseGate.jobs)) {
+            expect(job.steps[0]).toMatchObject({
+                uses: 'actions/checkout@v7',
+                with: { ref: '${{ github.event_name == \'workflow_dispatch\' && github.sha || inputs.candidate_ref }}' }
+            });
+            expect(job.steps.filter((step) => step.uses === 'actions/cache@v6')).toEqual([]);
+        }
     });
 
     it('uses the exact merge base when the trusted base tip has diverged', async () => {
@@ -194,13 +222,6 @@ function runGit(root: string, args: readonly string[]): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 }
 
-function getWorkflowStep(source: string, stepName: string): string {
-    const marker = `      - name: ${stepName}`;
-    const start = source.indexOf(marker);
-    if (start === -1) {
-        return '';
-    }
-
-    const nextStep = source.indexOf('\n      - name:', start + marker.length);
-    return source.slice(start, nextStep === -1 ? undefined : nextStep);
+async function readYaml<T>(relativePath: string): Promise<T> {
+    return load(await readFile(path.join(repoRoot, relativePath), 'utf8')) as T;
 }

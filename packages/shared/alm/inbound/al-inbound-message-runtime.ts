@@ -9,6 +9,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
     toALInboundAdmissionDiagnostics,
@@ -17,6 +18,7 @@ import {
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import type { ALInboundControlAdmissionResult } from './control/al-inbound-control-admission.ts';
 import { isALOriginAcknowledgement } from './control/is-al-origin-acknowledgement.ts';
+import { admitALInboundVolatileBudget } from './lane/admit-al-inbound-volatile-budget.ts';
 import { ALInboundStoreLane } from './lane/al-inbound-store-lane.ts';
 import { resolveALInboundStoreDurability } from './lane/resolve-al-inbound-store-durability.ts';
 import {
@@ -36,6 +38,7 @@ export interface ALInboundRuntimeStores {
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
 export interface ALVolatileInboundRuntimeStores extends ALInboundRuntimeStores {
     evictExpired(): void;
+    readonly budget: ALVolatileSessionBudget | undefined;
 }
 
 export namespace ALInboundMessageRuntime {
@@ -243,7 +246,17 @@ export class ALInboundMessageRuntime {
         if (isALControlTypeId(msg.payload.typeId)) {
             return Either.ofRight(await this.admitControlMessage(msg, source));
         }
-        return await this.resolveDataLane(msg).admitData(msg, source, planIncomingMessage);
+        const lane = this.resolveDataLane(msg);
+        const admitted = await lane.admitData(msg, source, planIncomingMessage);
+        if (lane === this.volatile) {
+            admitALInboundVolatileBudget({
+                msg,
+                acceptance: admitted.right,
+                budget: this.dependencies.volatileStores?.budget,
+                nowMs: this.dependencies.clock.nowMs()
+            });
+        }
+        return admitted;
     }
 
     /** The lane the envelope's durability names, or the only lane of a runtime with one backend. */

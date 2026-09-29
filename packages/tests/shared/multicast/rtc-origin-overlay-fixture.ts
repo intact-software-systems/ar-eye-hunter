@@ -4,10 +4,12 @@ import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@share
 import { newALMulticastMessage, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, type ALAckStatus } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundMessageRuntime,
+    ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -54,8 +56,12 @@ export interface RtcOriginOverlayFixtureInput {
     /** The overlay next hops of the origin, each with an open channel. */
     readonly nextHopPeerIds: readonly string[];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
+    readonly stores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
     /** The memory pair the browser composition gives the origin; absent, every admission uses one backend. */
     readonly volatileStores?: ALVolatileOutboundRuntimeStores<ALOutboundTransportMessage>;
+    /** The session's provider the composition hands the manager; absent, the carrier's capabilities alone. */
+    readonly qosProvider?: ALQosInputProvider;
 }
 
 export interface OriginAcknowledgementInput {
@@ -79,6 +85,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     overlays.accept('room', createOriginOverlay(input.nextHopPeerIds));
     const resources = createDefaultALOutboundRuntimeResources({
         decodePrepared: decodeALOutboundTransportMessage,
+        stores: input.stores,
         volatileStores: input.volatileStores
     });
     const settlements: ALDeliverySettlement[] = [];
@@ -87,7 +94,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         groupCache: groups,
         overlayCache: overlays,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
-        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
+        qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         outboundDiagnostics: undefined,
         outboundSettlements: (settlement) => settlements.push(settlement),
         outboundRuntime: resources,

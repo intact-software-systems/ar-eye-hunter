@@ -51,6 +51,7 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: RECEIPTED_AUDIENCE_ROLES,
+    laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),
@@ -72,6 +73,7 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: RECEIPTED_AUDIENCE_ROLES,
+    laneFamily: 'three-agent',
     toReceiptRoles: toRetryReceiptRoles,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({
@@ -98,6 +100,7 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: RECEIPTED_AUDIENCE_ROLES,
+    laneFamily: 'three-agent',
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS }),
@@ -118,6 +121,7 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: RTC_CARRIERS,
     roles: RECEIPTED_AUDIENCE_ROLES,
+    laneFamily: 'three-agent',
     toReceiptRoles: () => BOTH_CONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS }),

@@ -37,6 +37,10 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
 ];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['toPeer']>[] = [
+    'server',
+    'receiver'
+];
 /** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
 const REPLAY_REFUSED_FIELDS = [
     'carrier',
@@ -53,7 +57,8 @@ const REPLAY_REFUSED_FIELDS = [
     'seq',
     'handleId',
     'minSnapshotVersion',
-    'qos'
+    'qos',
+    'toPeer'
 ] as const;
 
 type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
@@ -96,19 +101,36 @@ function decodeOrdinarySend(
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
     }
-    return decodeMessageSendIdentity(value).flatMap(
+    return decodeMessagePeerRole(value.toPeer).flatMap(
         (issue) => Either.ofLeft(issue),
-        (identity) =>
-            decodeMessageSendOptions(value).mapRight((options) => ({
-                ...identity,
-                ...options,
-                payload,
-                topicId: decodeBlackBoxCommandString(value.topicId),
-                ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
-                orderingKey: decodeBlackBoxCommandString(value.orderingKey),
-                seq: decodeBlackBoxCommandNumber(value.seq)
-            }))
+        (peer) =>
+            decodeMessageSendIdentity(value).flatMap(
+                (issue) => Either.ofLeft(issue),
+                (identity) =>
+                    decodeMessageSendOptions(value).mapRight((options) => ({
+                        ...identity,
+                        ...options,
+                        ...peer,
+                        payload,
+                        topicId: decodeBlackBoxCommandString(value.topicId),
+                        ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
+                        orderingKey: decodeBlackBoxCommandString(value.orderingKey),
+                        seq: decodeBlackBoxCommandNumber(value.seq)
+                    }))
+            )
     );
+}
+
+function decodeMessagePeerRole(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, Pick<BlackBoxRallarMessageSendInput, 'toPeer'>> {
+    if (value === undefined) {
+        return Either.ofRight({ toPeer: undefined });
+    }
+    const toPeer = MESSAGE_PEER_ROLES.find((role) => role === value);
+    return toPeer === undefined
+        ? Either.ofLeft({ message: 'messages.send.toPeer must be server or receiver.' })
+        : Either.ofRight({ toPeer });
 }
 
 function decodeMessageSendIdentity(

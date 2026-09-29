@@ -33,6 +33,14 @@ inputs:
     description: Stable run id for test data isolation.
     required: false
     default: local
+  scope:
+    description: 'Which matrix profiles run: all (the profile, then the appended cluster profile), standard (the profile only) or cluster (the cluster profile only).'
+    required: false
+    default: all
+  shard:
+    description: 'Optional <index>/<count> share of the selected recipes, e.g. 1/2. Every share together runs each recipe once.'
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
@@ -61,6 +69,17 @@ runs:
 
         if [ -n "${{ inputs.tertiary-api-port }}" ]; then
           args+=("--tertiary-port=${{ inputs.tertiary-api-port }}")
+        fi
+
+        case "${{ inputs.scope }}" in
+          all) ;;
+          standard) args+=("--standard-only") ;;
+          cluster) args+=("--cluster-only") ;;
+          *) echo "::error::scope must be all, standard or cluster" >&2; exit 1 ;;
+        esac
+
+        if [ -n "${{ inputs.shard }}" ]; then
+          args+=("--shard=${{ inputs.shard }}")
         fi
 
         deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"

@@ -325,7 +325,6 @@ const commandRoomProperties = {
 
 const directorRelayConfigProperties = {
     handle: stringSchema,
-    laneId: stringSchema,
     topicId: stringSchema,
     intentTypeId: stringSchema,
     outputTypeId: stringSchema,
@@ -612,6 +611,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         handleId: stringSchema,
         minSnapshotVersion: messagesSnapshotFloorSchema,
         qos: messagesQosSchema,
+        toPeer: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesToPeer },
         replayOnCarrier: messagesReplaySchema
     })),
     'messages.observe': strictCommandSchema('messages.observe', {

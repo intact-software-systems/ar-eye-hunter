@@ -187,7 +187,16 @@ export interface RallarBlackBoxControlServiceReceiveResult {
     readonly runId: string;
     readonly agentId: string;
     readonly accepted: boolean;
+    /** False when the envelope changed nothing the dispatch scan reads, so no command or barrier can be due. */
+    readonly affectsDispatch: boolean;
 }
+
+interface ControlEnvelopeReceipt {
+    readonly accepted: boolean;
+    readonly affectsDispatch: boolean;
+}
+
+const DISPATCH_RECEIPT: ControlEnvelopeReceipt = { accepted: true, affectsDispatch: true };
 
 interface ControlRetentionDeletion {
     readonly deletedRunIds: readonly string[];
@@ -212,12 +221,13 @@ export class RallarBlackBoxControlService {
     }
 
     receiveClientEnvelope(envelope: ControlClientEnvelope): RallarBlackBoxControlServiceReceiveResult {
-        const accepted = this.receiveEnvelope(envelope);
+        const receipt = this.receiveEnvelope(envelope);
         return {
             kind: envelope.kind,
             runId: envelope.runId,
             agentId: envelope.agentId,
-            accepted
+            accepted: receipt.accepted,
+            affectsDispatch: receipt.affectsDispatch
         };
     }
 
@@ -649,16 +659,16 @@ export class RallarBlackBoxControlService {
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
     }
 
-    private receiveEnvelope(envelope: ControlClientEnvelope): boolean {
+    private receiveEnvelope(envelope: ControlClientEnvelope): ControlEnvelopeReceipt {
         switch (envelope.kind) {
             case 'register':
                 this.register(envelope);
-                return true;
+                return DISPATCH_RECEIPT;
             case 'heartbeat':
                 this.receiveHeartbeat(envelope);
-                return true;
+                return DISPATCH_RECEIPT;
             case 'result':
-                return this.receiveResult(envelope);
+                return { accepted: this.receiveResult(envelope), affectsDispatch: true };
             case 'event':
             case 'diagnostic':
             case 'stats':
@@ -842,14 +852,14 @@ export class RallarBlackBoxControlService {
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
     }
 
-    private receiveEvent(envelope: ControlEventEnvelope): boolean {
+    private receiveEvent(envelope: ControlEventEnvelope): ControlEnvelopeReceipt {
         const run = this.ensureRun(envelope.runId);
         const agent = this.ensureAgent(run, envelope.agentId);
         const storedEnvelope = envelope.kind === 'report'
             ? toCompactedControlReport(envelope, this.config.redaction)
             : envelope;
         if (storedEnvelope.kind === 'report' && !this.admitReportKey(run, storedEnvelope)) {
-            return false;
+            return { accepted: false, affectsDispatch: false };
         }
 
         agent.receivedEventCount += 1;
@@ -872,7 +882,7 @@ export class RallarBlackBoxControlService {
         }
         this.touch(run);
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
-        return true;
+        return { accepted: true, affectsDispatch: barrier !== undefined };
     }
 
     private admitReportKey(run: ControlRunState, report: ControlEventEnvelope): boolean {

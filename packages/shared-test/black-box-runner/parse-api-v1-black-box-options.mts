@@ -1,3 +1,5 @@
+import { parseRecipeMatrixShard, type RecipeMatrixShard } from './recipe-matrix/resolve-recipe-matrix-shard.mts';
+
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory' | 'pglite-file';
 
 export interface ApiV1BlackBoxOptions {
@@ -8,6 +10,8 @@ export interface ApiV1BlackBoxOptions {
     readonly profile: string;
     readonly clusterProfile: string;
     readonly clusterOnly: boolean;
+    readonly standardOnly: boolean;
+    readonly shard?: RecipeMatrixShard;
     readonly artifactDir: string;
     readonly runId: string;
     readonly requireGates: boolean;
@@ -32,6 +36,7 @@ interface ApiV1ClusterOptionValues {
     readonly profile: string;
     readonly recipesOnly: boolean;
     readonly clusterOnly: boolean;
+    readonly standardOnly: boolean;
     readonly hasClusterProfile: boolean;
 }
 
@@ -50,6 +55,8 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         values.get('--profile') ?? (recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box')
     );
     const clusterOnly = values.get('--cluster-only') === true;
+    const standardOnly = values.get('--standard-only') === true;
+    const shardText = values.get('--shard');
     const clusterOptionIssues = validateApiV1ClusterOptionValues({
         backend,
         port,
@@ -58,6 +65,7 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         profile,
         recipesOnly,
         clusterOnly,
+        standardOnly,
         hasClusterProfile: values.has('--cluster-profile')
     });
     if (clusterOptionIssues.length > 0) {
@@ -72,6 +80,8 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         profile,
         clusterProfile: String(values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE),
         clusterOnly,
+        standardOnly,
+        ...(shardText === undefined ? {} : { shard: parseRecipeMatrixShard(String(shardText)) }),
         artifactDir: String(values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`),
         runId: String(values.get('--run-id') ?? `local-${Date.now()}`),
         requireGates: values.get('--no-require-gates') !== true,
@@ -89,6 +99,9 @@ function validateApiV1ClusterOptionValues(values: ApiV1ClusterOptionValues): rea
         issues.push(
             '--secondary-port and --tertiary-port must be provided together for a managed cluster.'
         );
+    }
+    if (values.clusterOnly && values.standardOnly) {
+        issues.push('--cluster-only and --standard-only cannot be combined.');
     }
     if (values.secondaryPort === values.port) {
         issues.push('--secondary-port must differ from --port.');

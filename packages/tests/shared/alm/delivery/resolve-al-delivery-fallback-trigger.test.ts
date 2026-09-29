@@ -3,9 +3,11 @@ import type {
     ALDeliveryAttemptOutcome,
     ALDeliveryCarrier,
     ALDeliveryFallbackReason,
+    ALDeliveryRefusalReason,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
+    AL_DELIVERY_FALLBACK_REFUSAL_REASONS,
     AL_FALLBACK_NOT_READY_ATTEMPTS,
     isALDeliveryAdmissionFallbackVerdict,
     isALDeliveryFallbackPastDeadline,
@@ -75,6 +77,11 @@ describe('the declared retryable outcomes (D56)', () => {
         expectTypeOf<ALDeliveryFallbackReason>().toEqualTypeOf<'not-ready' | 'not-yet-in-sync-exhausted' | 'receipt-exhausted'>();
     });
 
+    it('keeps capacity out of the refusals that hand over: a send over the bound ends rejected (D78, C1)', () => {
+        expectTypeOf<Extract<ALDeliveryRefusalReason, 'capacity'>>().toEqualTypeOf<'capacity'>();
+        expect(AL_DELIVERY_FALLBACK_REFUSAL_REASONS).toEqual(['unsupported']);
+    });
+
     it.each(
         [
             [{ kind: 'unroutable', reason: 'no-route', detail: 'no route' }, true],
@@ -82,6 +89,7 @@ describe('the declared retryable outcomes (D56)', () => {
             [{ kind: 'unroutable', reason: 'rate-limited', detail: 'limited' }, true],
             [{ kind: 'refused', reason: 'unsupported', detail: 'receiver over rtc' }, true],
             [{ kind: 'refused', reason: 'unauthorized', detail: 'denied' }, false],
+            [{ kind: 'refused', reason: 'capacity', detail: 'over the volatile bound' }, false],
             [{ kind: 'admitted', durable: false, queuedAttempts: 1 }, false],
             [{ kind: 'expired', detail: 'late' }, false]
         ] satisfies ReadonlyArray<readonly [ALDeliveryAdmissionVerdict, boolean]>
@@ -167,6 +175,7 @@ describe('the declared retryable outcomes (D56)', () => {
             mode: 'receiver',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['b'],
+            cause: 'budget',
             detail: 'The receipt ran out of retries after 3 of 3.'
         }])).toEqual({
             kind: 'fall-back',

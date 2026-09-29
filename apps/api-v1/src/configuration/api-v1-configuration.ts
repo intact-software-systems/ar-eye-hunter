@@ -124,10 +124,7 @@ export interface ApiV1TopologyPlanningConfiguration {
 }
 
 export interface ApiV1TopologyRecomputeConfiguration {
-    readonly rttRebuildDebounceMs: number;
     readonly formationDebounceMs: number;
-    readonly globalWindowMs: number;
-    readonly globalMaxPerWindow: number;
 }
 
 export interface ApiV1TopologyRttRefinementConfiguration {

@@ -23,9 +23,9 @@ import { toCommandId, toScenarioTypeId } from '../alm-conformance-step-identitie
 
 interface AlmConformanceFaultInput extends AlmConformanceStepInput {
     readonly faultCarrier: AlmConformanceFaultCarrier;
+    readonly name: 'fault' | 'release';
+    readonly remaining: 'until-cleared' | 0;
 }
-
-const FAULT_REMAINING = 100;
 
 export const deadlineExpiry: AlmConformanceScenarioDefinition = {
     scenarioId: 'deadline-expiry',
@@ -33,6 +33,7 @@ export const deadlineExpiry: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toDeadlineExpirySenderCommands,
     toRecipientCommands: toDeadlineExpiryReceiverCommands
 };
@@ -52,7 +53,7 @@ function toDeadlineExpirySenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toFaultCarriers(sender.input.carrier).map((faultCarrier) => toFaultCommand({ ...sender, faultCarrier })),
+        ...toFaultCommands(sender, 'fault', 'until-cleared'),
         toSendCommand({
             ...sender,
             index: 1,
@@ -68,20 +69,32 @@ function toDeadlineExpirySenderCommands(
             field: 'state',
             operator: 'equals',
             expected: 'expired'
-        })
+        }),
+        ...toFaultCommands(sender, 'release', 0)
     ];
+}
+
+/** A hold, not a frame count: an RTC drop is retried every 50 ms, so a count runs out before the lifetime ends. */
+function toFaultCommands(
+    sender: AlmConformanceStepInput,
+    name: AlmConformanceFaultInput['name'],
+    remaining: AlmConformanceFaultInput['remaining']
+): readonly RallarBlackBoxTestCommand[] {
+    return toFaultCarriers(sender.input.carrier).map((faultCarrier) =>
+        toFaultCommand({ ...sender, faultCarrier, name, remaining })
+    );
 }
 
 function toFaultCommand(fault: AlmConformanceFaultInput): RallarBlackBoxTestCommand {
     const typeId = toScenarioTypeId(fault);
     return {
         kind: 'fault.inject',
-        commandId: toCommandId(fault, `fault-${fault.faultCarrier}`),
+        commandId: toCommandId(fault, `${fault.name}-${fault.faultCarrier}`),
         faultId: `drop-${fault.faultCarrier}-${typeId}`,
         carrier: fault.faultCarrier,
         match: { typeId },
         action: 'drop',
-        remaining: FAULT_REMAINING,
+        remaining: fault.remaining,
         timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, fault.input.deadlineMs)
     };
 }

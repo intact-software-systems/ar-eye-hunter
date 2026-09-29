@@ -9,5 +9,7 @@ export const BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES = {
     /** The page cannot replay now: no connected session, or the capturing carrier no longer retains the envelope. */
     replayUnavailable: 'Message replay unavailable',
     /** The page has no connected session to submit a raw control from. */
-    rawControlUnavailable: 'Raw control submission unavailable'
+    rawControlUnavailable: 'Raw control submission unavailable',
+    /** A `messages.send.toPeer` role the page could not resolve to exactly one peer. */
+    peerUnresolved: 'Message peer unresolved'
 } as const;

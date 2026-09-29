@@ -27,6 +27,7 @@ export const noFallbackAfterDeadline: AlmConformanceScenarioDefinition = {
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_FALLBACK_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toNoFallbackAfterDeadlineSenderCommands,
     toRecipientCommands: toNoFallbackAfterDeadlineReceiverCommands
 };

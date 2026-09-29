@@ -69,10 +69,12 @@ import { BlackBoxRallarConnectionState } from './black-box-rallar-connection-sta
 import { BlackBoxRallarConnectionSubscriptions } from './black-box-rallar-connection-subscriptions.ts';
 import { BlackBoxRallarCrdtLiveConnection } from './black-box-rallar-crdt-live-connection.ts';
 import { BlackBoxRallarHealthReader } from './black-box-rallar-health-reader.ts';
+import type { BlackBoxRallarVolatileLimits } from './black-box-rallar-volatile-limits.ts';
 
 export namespace BlackBoxRallarConnectionRuntime {
     export interface Input {
         readonly facade: BlackBoxBrowserRallarRuntimeDependency;
+        readonly volatileLimits: BlackBoxRallarVolatileLimits;
         readonly targetWindow: BlackBoxRallarRuntimeInstallationTarget;
         readonly clock: {
             now(): number;
@@ -106,6 +108,7 @@ export namespace BlackBoxRallarConnectionRuntime {
         readonly connectionState: BlackBoxRallarConnectionState;
         readonly authentication: BlackBoxRallarAuthentication;
         readonly consoleDiagnostics: BlackBoxRallarConsoleDiagnostics<BlackBoxRallarConnectionConfig>;
+        readonly volatileLimits: BlackBoxRallarVolatileLimits;
     }
 
     export interface Controllers {
@@ -321,7 +324,8 @@ function createConnectionFoundation(
             publishRestore: (restore) => {
                 globalThis.__blackBoxRallarRestoreConsoleWarn = restore;
             }
-        })
+        }),
+        volatileLimits: input.volatileLimits
     };
 }
 
@@ -409,9 +413,11 @@ function createMessagingControllers(
         }),
         deliveryLedger: new BlackBoxRallarDeliveryLedger({
             deliveries: rallar.deliveries,
+            peers: rallar.peers,
             typedChannels,
             resources,
             diagnostics,
+            now: clock.now,
             requireConfig
         })
     };

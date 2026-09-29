@@ -12,13 +12,13 @@ import type {
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
+import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
     decodeAlmDeliveryResultValue,
     decodeAlmMessagesControlResultValue,
     decodeAlmMessagesReplayResultValue,
     decodeAlmMessagesSendResultValue,
-    decodeAlmRuntimeRecord,
     decodeAlmStorageCountersResultValue
 } from './decode-alm-runtime-result.ts';
 import type { RallarBlackBoxTestMessagesObserveResultValue } from './rallar-black-box-alm-result-values.ts';
@@ -120,6 +120,7 @@ const ALM_ERROR_CODES = {
     scriptedPortsUnavailable: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE',
     replayUnavailable: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE',
     rawControlUnavailable: 'RALLAR_BLACK_BOX_ALM_RAW_CONTROL_UNAVAILABLE',
+    peerUnresolved: 'RALLAR_BLACK_BOX_ALM_PEER_UNRESOLVED',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
     messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
     messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT'
@@ -129,7 +130,8 @@ const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_
     'deliveryStateTimeout',
     'scriptedPortsUnavailable',
     'replayUnavailable',
-    'rawControlUnavailable'
+    'rawControlUnavailable',
+    'peerUnresolved'
 ];
 
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and

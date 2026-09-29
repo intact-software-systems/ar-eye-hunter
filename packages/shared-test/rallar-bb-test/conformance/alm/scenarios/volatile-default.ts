@@ -26,6 +26,7 @@ export const volatileDefault: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toVolatileDefaultSenderCommands,
     toRecipientCommands: toVolatileDefaultReceiverCommands
 };

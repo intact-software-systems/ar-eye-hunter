@@ -1,3 +1,9 @@
+import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import {
+    AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+    AL_VOLATILE_SESSION_MAX_BYTES,
+    type ALVolatileSessionLimits
+} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import {
     afterEach,
     beforeEach,
@@ -5,6 +11,7 @@ import {
     it,
     vi
 } from 'vitest';
+
 import {
     facade,
     loadRuntime,
@@ -159,4 +166,35 @@ it('revalidates a queued connection target before mutating the facade', async ()
         apiBaseUrl: 'https://other-api.example.test'
     });
     expect(facade.records.connectionAttempts).toHaveLength(1);
+});
+
+it('holds a connect\'s lowered volatile limits for the session the facade initialises, and the constants after', async () => {
+    const volatileLimits = new BlackBoxRallarVolatileLimits();
+    const runtime = await loadRuntime(volatileLimits);
+    const read: ALVolatileSessionLimits[] = [];
+    facade.behavior.connect.mockImplementation(async () => {
+        read.push(volatileLimits.get());
+    });
+    const config = {
+        connection: 'aliceAlm',
+        actor: 'alice',
+        rallar: { apiBaseUrl: 'https://api.example.test', username: 'alice', password: 'secret' }
+    };
+
+    await runtime.connect({
+        ...config,
+        rallar: { ...config.rallar, almVolatileLimits: { maxAdmissions: 2, maxBytes: 4_096 } }
+    });
+    await runtime.close();
+    await runtime.connect(config);
+    await runtime.close();
+
+    // The facade initialises its session inside `connect`, so what it reads there is what the session keeps.
+    expect(read).toEqual([
+        { maxAdmissions: 2, maxBytes: 4_096 },
+        {
+            maxAdmissions: AL_VOLATILE_SESSION_MAX_ADMISSIONS,
+            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+        }
+    ]);
 });

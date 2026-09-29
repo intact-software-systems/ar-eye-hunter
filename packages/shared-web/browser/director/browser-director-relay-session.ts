@@ -10,7 +10,6 @@ import type {
 import { BrowserRallarSubscriptionScope } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -23,7 +22,6 @@ import type { BrowserDirectorRelayTransport } from './browser-director-relay-tra
 import type { BrowserDirectorStatusRuntime } from './browser-director-status-runtime.ts';
 
 const RALLAR_DIRECTOR_DEFAULT_TOPIC_ID = 'app.rallar.director';
-const DEFAULT_RALLAR_REALTIME_LANE_ID = 'realtime';
 
 export namespace BrowserDirectorRelaySession {
     export interface Input<TIntent, TOutput, TSnapshot> {
@@ -31,7 +29,6 @@ export namespace BrowserDirectorRelaySession {
         readonly status: BrowserDirectorStatusRuntime;
         readonly transport: BrowserDirectorRelayTransport;
         readonly messages: RallarMessagesOperations;
-        readonly realtime: RallarRealtimeFacade;
         readSession(): AuthSession | undefined;
         onStop(stop: () => void): void;
     }
@@ -46,7 +43,6 @@ export namespace BrowserDirectorRelaySession {
 export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     implements RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> {
     private readonly input: BrowserDirectorRelaySession.Input<TIntent, TOutput, TSnapshot>;
-    private readonly laneId: string;
     private readonly topicId: string;
     private readonly heartbeatTypeId: string;
     private readonly snapshotTypeId: string;
@@ -60,7 +56,6 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         input: BrowserDirectorRelaySession.Input<TIntent, TOutput, TSnapshot>
     ) {
         this.input = input;
-        this.laneId = input.config.laneId ?? DEFAULT_RALLAR_REALTIME_LANE_ID;
         this.topicId = input.config.topicId ?? RALLAR_DIRECTOR_DEFAULT_TOPIC_ID;
         this.heartbeatTypeId = input.config.heartbeatTypeId ??
             `${this.topicId}.heartbeat`;
@@ -84,9 +79,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         intent: TIntent
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
-        return guarded ?? await this.input.transport.sendIntent({
+        return guarded ?? await this.input.transport.sendCommand({
             current: this.status(),
-            laneId: this.laneId,
             topicId: this.topicId,
             typeId: this.input.config.intentTypeId,
             payload: intent
@@ -153,9 +147,8 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
         payload?: TPayload
     ): Promise<RallarDirectorRelaySendResult> => {
         const guarded = this.guardSend();
-        return guarded ?? await this.input.transport.sendIntent({
+        return guarded ?? await this.input.transport.sendCommand({
             current: this.status(),
-            laneId: this.laneId,
             topicId: this.topicId,
             typeId: this.syncRequestTypeId,
             payload: payload ?? {}
@@ -187,33 +180,24 @@ export class BrowserDirectorRelaySession<TIntent, TOutput, TSnapshot>
     }
 
     private subscribe(): void {
-        this.subscriptions
-            .add(this.input.realtime.onJson<RallarDirectorRelayEnvelope>(
-                this.laneId,
-                async (message) => {
-                    await this.receive({
-                        transport: 'rtc',
-                        senderId: message.peerId,
-                        envelope: message.data
-                    });
-                }
-            ))
-            .add(this.input.messages.ws.onMessage<RallarDirectorRelayEnvelope>(
-                { topicId: this.topicId },
-                async (message) => {
-                    await this.receive({
-                        transport: 'ws',
-                        senderId: message.senderId,
-                        envelope: message.payload
-                    });
-                }
-            ));
+        this.subscriptions.add(this.input.messages.ws.onMessage<RallarDirectorRelayEnvelope>(
+            { topicId: this.topicId },
+            async (message) => {
+                await this.receive({
+                    transport: 'ws',
+                    senderId: message.senderId,
+                    envelope: message.payload
+                });
+            }
+        ));
         this.subscribeToRtcRoomMessages();
     }
 
     private subscribeToRtcRoomMessages(): void {
         for (
             const typeId of [
+                this.input.config.intentTypeId,
+                this.syncRequestTypeId,
                 this.input.config.outputTypeId,
                 this.heartbeatTypeId,
                 this.snapshotTypeId

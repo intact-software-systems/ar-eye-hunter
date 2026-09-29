@@ -190,6 +190,9 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             mode: 'hop',
             confirmedPeerIds: [],
             unconfirmedPeerIds: ['server-1'],
+            cause: 'hop-refused',
+            hopPeerId: 'server-1',
+            nackReason: 'unauthorized',
             detail: 'Hop server-1 refused the message: unauthorized.'
         }]);
         expect(

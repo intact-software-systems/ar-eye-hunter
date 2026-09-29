@@ -14,6 +14,7 @@ import type {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
@@ -52,7 +53,7 @@ import {
     loadRuntime,
     resetFacade
 } from './browser-rallar-runtime-test-harness.ts';
-import { openFacadeDelivery } from './browser-runtime-facade-test-double.ts';
+import { openFacadeDelivery, toRoomRosterSession } from './browser-runtime-facade-test-double.ts';
 
 interface DeliveryFixture {
     readonly registry: BrowserRallarDeliveryRegistry;
@@ -86,6 +87,8 @@ const unknownObservation = {
     attemptOutcomes: [],
     attemptCarriers: [],
     relayRejection: undefined,
+    carrierFallback: undefined,
+    failure: undefined,
     confirmedHopPeerIds: [],
     unconfirmedHopPeerIds: [],
     receiptMode: undefined,
@@ -509,6 +512,97 @@ it('passes a stated QoS request to the typed send as given, and none without one
         .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
+it('addresses a lane role through the page: the server by its peer id, the receiver as the room\'s one other session', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    facade.behavior.serverPeerId.mockReturnValue('server-peer');
+    facade.behavior.getRoomSessions.mockReturnValue([
+        toRoomRosterSession(facade.session.sessionId),
+        toRoomRosterSession('bob-session')
+    ]);
+
+    await runtime.sendMessage({ ...send, handleId: 'h-server', toPeer: 'server' });
+    await runtime.sendMessage({
+        ...send,
+        carrier: 'rtc',
+        handleId: 'h-receiver',
+        toPeer: 'receiver'
+    });
+    await runtime.sendMessage({ ...send, handleId: 'h-room' });
+
+    expect(facade.records.typedSends.map(([, options]) => options?.peerId))
+        .toEqual(['server-peer', 'bob-session', undefined]);
+    // A product names one peer as a command (D53); the purpose fills only what the recipe leaves out.
+    expect(facade.records.typedChannelOpens.slice(-3).map((definition) => definition.purpose))
+        .toEqual(['command', 'command', 'notification']);
+});
+
+it('fails a lane role the page cannot resolve with its own failure, before any handle opens', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    facade.behavior.getRoomSessions.mockReturnValue([
+        toRoomRosterSession('bob-session'),
+        toRoomRosterSession('carol-session')
+    ]);
+    const prefix = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.peerUnresolved;
+
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-server', toPeer: 'server' }))
+        .rejects.toThrow(
+            `${prefix}: messages.send.toPeer server names no peer: the WS server named no peer id.`
+        );
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-receiver', toPeer: 'receiver' }))
+        .rejects.toThrow(
+            `${prefix}: messages.send.toPeer receiver names no peer: the room holds 2 other live sessions, not exactly one.`
+        );
+    await expect(runtime.sendMessage({ ...send, handleId: 'h-role', toPeer: 'recipient-b' }))
+        .rejects.toThrow('messages.send.toPeer must be server or receiver.');
+    const replay = {
+        connection: 'aliceAlm',
+        timeoutMs: 100,
+        replayOnCarrier: { handleId: 'h-server', carrier: 'ws' }
+    };
+    await expect(runtime.sendMessage({ ...replay, toPeer: 'receiver' }))
+        .rejects.toThrow(
+            'messages.send names toPeer beside replayOnCarrier; a replay names only the handle and its carrier.'
+        );
+    expect(facade.records.typedSends).toEqual([]);
+    expect(events.some((event) => JSON.stringify(event).includes('h-receiver')), 'no send_started')
+        .toBe(false);
+});
+
+it('projects the hand-over to the fallback carrier on every ledger view (D56)', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    const { msgId } = await runtime.sendMessage(send);
+    facade.deliveries.record({
+        kind: 'carrier-fallback',
+        msgId,
+        carrier: 'rtc',
+        to: 'ws',
+        reason: 'not-ready',
+        atMs: 5,
+        detail: 'three consecutive not-ready attempts'
+    });
+
+    const handle = { connection: 'aliceAlm', handleId: 'h-1' };
+    // The admitted handle is not terminal, so the observe asks for its current state and never waits out the timer.
+    const views = [
+        await runtime.observeDelivery({ ...handle, state: ['accepted', 'queued'], timeoutMs: 100 }),
+        await runtime.readReceipts(handle),
+        await runtime.cancelDelivery(handle)
+    ];
+    for (const observation of views) {
+        expect(observation.carrierFallback)
+            .toEqual({
+                from: 'rtc',
+                to: 'ws',
+                reason: 'not-ready',
+                atMs: 5,
+                detail: 'three consecutive not-ready attempts'
+            });
+    }
+});
+
 it('decodes a declared send durability and refuses an unknown one', () => {
     const send = {
         kind: 'messages.send',
@@ -550,13 +644,25 @@ it.each([
     const detail = `${reason} at the ws carrier`;
     facade.behavior.typedSend.mockImplementation(async () => {
         const handle = openFacadeDelivery('ws', { kind: 'unroutable', reason, detail });
-        facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), detail });
+        facade.deliveries.record({
+            kind: 'attempts-exhausted',
+            msgId: handle.msgId,
+            carrier: 'ws',
+            atMs: Date.now(),
+            reason,
+            detail
+        });
         return handle;
     });
     await runtime.connect(connection);
     await runtime.sendMessage(send);
 
-    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'failed', backpressured, enqueued: false });
+    expect(await runtime.readReceipts(query)).toMatchObject({
+        state: 'failed',
+        backpressured,
+        enqueued: false,
+        failure: { kind: 'unroutable', reason }
+    });
 });
 
 it('reads a handle the session registry dropped after terminal retention as unobservable', async () => {

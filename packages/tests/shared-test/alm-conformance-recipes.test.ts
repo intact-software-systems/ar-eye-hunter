@@ -124,7 +124,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-lifecycle',
         'durable-opt-in',
         'delivery-reload',
-        'ordering-resync'
+        'ordering-resync',
+        'ws-unicast-receipt',
+        'server-command',
+        'capacity'
     ],
     rtc: [
         'volatile-default',
@@ -136,7 +139,9 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-reload',
         'ordering-resync',
         'not-yet-in-sync-delivered-after-refresh',
-        'not-yet-in-sync-expires'
+        'not-yet-in-sync-expires',
+        'ws-unicast-receipt',
+        'capacity'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -153,7 +158,10 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'not-yet-in-sync-expires',
         'fallback-within-deadline',
         'receipt-exhausted-fallback',
-        'no-fallback-after-deadline'
+        'no-fallback-after-deadline',
+        'ws-unicast-receipt',
+        'unicast-fallback',
+        'capacity'
     ]
 } as const;
 
@@ -162,6 +170,22 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
 }
 
 describe('alm-conformance recipe family', () => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('names each %s scenario the lane family whose agents it needs', (carrier) => {
+        const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+
+        for (const scenario of scenarios) {
+            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(isThreeAgentScenario(scenario));
+        }
+        expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
+            .toEqual(
+                carrier === 'ws'
+                    ? ['ws-unicast-receipt', 'server-command', 'capacity']
+                    : carrier === 'rtc'
+                    ? ['ws-unicast-receipt', 'capacity']
+                    : ['ws-unicast-receipt', 'unicast-fallback', 'capacity']
+            );
+    });
+
     it('generates the pinned recipe list for every carrier, in scenario order', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             expect(toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).map((recipe) => recipe.recipeId), carrier)
@@ -256,7 +280,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                if (durableOptInReceived1) {
+                // The capacity sender reconnects before it sends; that wait is pinned in alm-conformance-addressed-scenarios.
+                const capacityReceived1 = command.commandId?.endsWith('capacity-receiver-received-1') === true;
+                if (durableOptInReceived1 || capacityReceived1) {
                     continue;
                 }
                 expect({ windowMs: command.windowMs, timeoutMs: command.timeoutMs })
@@ -349,6 +375,9 @@ describe('alm-conformance recipe family', () => {
             'not-yet-in-sync',
             'receipt-exhausted-fallback',
             'no-fallback-after-deadline',
+            'ws-unicast-receipt',
+            'unicast-fallback',
+            'capacity',
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
@@ -363,6 +392,8 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

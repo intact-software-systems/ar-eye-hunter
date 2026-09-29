@@ -697,9 +697,6 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain(
             'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K "${manifest_rtc_topology_mesh_param_k}"'
         );
-        expect(workflow).toContain(
-            'validate_non_negative_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS "${manifest_rtc_topology_rtt_rebuild_debounce_ms}"'
-        );
         expect(rolloutScript).toContain('update_api_rtc_topology_env');
         expect(rolloutScript).toContain('RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE');
         expect(rolloutScript).toContain('update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"');
@@ -3256,7 +3253,7 @@ describe('Hetzner distributed recipe workflow', () => {
                 metadata: {
                     rtcTopologyEnv: {
                         RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2',
-                        RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: '0'
+                        RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '3'
                     }
                 }
             })
@@ -3279,7 +3276,7 @@ describe('Hetzner distributed recipe workflow', () => {
         const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
         expect(args).toContain('run_id=topology-env-values');
         expect(stdout).toContain(
-            'Topology : RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=2 RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS=0'
+            'Topology : RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=2 RALLAR_RTC_TOPOLOGY_MESH_PARAM_K=3'
         );
     });
 

@@ -117,6 +117,10 @@ export type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 export type { ALDurabilityAlgo, ALQosPolicyRequest, ALReceiptMode } from '@shared/al-contracts/al-policy.ts';
 export type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 export type {
+    ALDeliveryFailure,
+    ALDeliveryReceiptExhaustedCause
+} from '@shared/alm/delivery/al-delivery-failure.ts';
+export type {
     ALDeliveryAttempt,
     ALDeliveryCarrierFallback,
     ALDeliveryEvidence,

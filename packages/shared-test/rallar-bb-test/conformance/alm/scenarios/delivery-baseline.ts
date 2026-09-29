@@ -20,6 +20,7 @@ export const deliveryBaseline: AlmConformanceScenarioDefinition = {
     tags: SMOKE_TAGS,
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ['sender', 'receiver'],
+    laneFamily: 'two-agent',
     toSenderCommands: toDeliveryBaselineSenderCommands,
     toRecipientCommands: toDeliveryBaselineReceiverCommands
 };

@@ -48,6 +48,7 @@ function toReceiptExhausted(
         mode,
         confirmedPeerIds,
         unconfirmedPeerIds,
+        cause: 'budget',
         detail: EXHAUSTED_DETAIL
     };
 }

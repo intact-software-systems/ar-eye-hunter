@@ -563,6 +563,9 @@ describe('outbound control admission identity', () => {
                 mode: 'hop',
                 confirmedPeerIds: [],
                 unconfirmedPeerIds: ['receiver'],
+                cause: 'hop-refused',
+                hopPeerId: 'receiver',
+                nackReason: reason,
                 detail: `Hop receiver refused the message: ${reason}.`
             });
         }
@@ -678,7 +681,13 @@ describe('a relay rejection of a retained send (R-S2c-ii-5)', () => {
 
         expect(settlements).toMatchObject([
             { kind: 'acknowledgement', msgId: 'message' },
-            { kind: 'receipt-exhausted', detail: 'Hop ws-server-1 refused the message: unauthorized.' }
+            {
+                kind: 'receipt-exhausted',
+                cause: 'hop-refused',
+                hopPeerId: 'ws-server-1',
+                nackReason: 'unauthorized',
+                detail: 'Hop ws-server-1 refused the message: unauthorized.'
+            }
         ]);
         expect(await admissionStore.readReceiptState({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
     });

@@ -67,7 +67,7 @@ npm run test:ci      # test:unit + test:deno + test:e2e + test:full-stack:memory
 Focused gates:
 
 ```sh
-npm run test:unit    # vitest, includes packages/tests/**/*.test.ts only
+npm run test:unit    # vitest, both projects: unit (test:unit:main) + tooling (test:unit:tooling)
 npm run test:deno    # deno tasks in the three Deno apps + two shared-test files
 npm run test:e2e     # Playwright: rallar-black-box app-local
 npm run test:full-stack  # Playwright full-stack against in-memory API
@@ -275,9 +275,28 @@ Highest-frequency rules:
 `main` — including amend, merge, revert, cherry-pick, rebase, and squash. Commit approval and push
 approval are separate. Read the exact disclosure requirements in `AGENTS.md` before asking.
 
-Branch CI (`branch-release-gate.yml` → `release-gate.yml`) runs on every non-main push:
-`check:repo-style:changed` against `origin/main`, `typecheck`, `test:ci`, app builds, Deno checks,
-Postgres migrations, API-v1 black-box recipes, and Postgres full-stack smoke tests.
+Branch CI (`branch-release-gate.yml` → `release-gate.yml`) runs on pull requests (`opened`,
+`synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`), not on bare branch pushes. The
+main-push deploy calls the same `release-gate.yml`. Its blocking lanes run in parallel:
+
+| Lane                   | Runs                                                                                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checks`               | navigation report, changed style and coupling (PR only), `typecheck`, app builds, Deno checks                                                              |
+| `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
+| `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
+| `deno`                 | `test:deno`                                                                                                                                                |
+| `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
+| `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
+| `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
+| `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
+
+Together `unit`, `unit-tooling`, `deno`, `e2e-app` and `e2e-recipe-console` run exactly what
+`npm run test:ci` runs;
+`packages/tests/repo/release-gate-lanes.test.ts` fails if a lane drops a suite or a Vitest project.
+
+The non-blocking ALM conformance observation is not a lane of `release-gate.yml`. It lives in
+`alm-conformance-observation.yml`, which `branch-release-gate.yml` and `deploy.yml` start beside the
+gate; neither `Branch Release Gate result` nor any deployment waits for it.
 
 The two changed-range checks — `check-changed-repo-style.mjs` and `check-test-structure-coupling.mjs
 --changed` — run only when `release-gate.yml` receives a non-empty `changed_repo_style_base`. The

@@ -195,7 +195,6 @@ sanitize_api_environment_file() {
 	allowed_names+="RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS|RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS|"
 	allowed_names+="RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT|RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE|"
 	allowed_names+="RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE|RALLAR_RTC_TOPOLOGY_MESH_PARAM_K|"
-	allowed_names+="RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS|"
 
 	if [[ ! -f "${env_file}" ]]; then
 		echo "Missing ${env_file}. Run 02-deploy-controller.sh first." >&2
@@ -281,7 +280,6 @@ run_rollout_self_test() {
 			RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
 			RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
 			RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-			RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
 		)
 		for name in "${names[@]}"; do
 			update_env_value "${RALLAR_API_ENV_FILE}" "${name}" "${!name:-}"
@@ -444,7 +442,6 @@ update_api_rtc_topology_env() {
 		RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
 		RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
 		RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
-		RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
 	)
 
 	for key in "${keys[@]}"; do

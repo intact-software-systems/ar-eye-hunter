@@ -50,6 +50,7 @@ import { convergeSummaryForTest } from '../../shared-server/rallar-system/group-
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
 beforeEach(() => {
     vi.stubGlobal('localStorage', new TestAuthStorage());
@@ -90,7 +91,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        ),
+        volatileBudget: createDefaultVolatileSessionBudget(),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -134,7 +139,11 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
         clientData: { clientId: sessionId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        ),
+        volatileBudget: createDefaultVolatileSessionBudget(),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -456,7 +465,11 @@ async function openRecoveryOwner(
         clientData: { clientId: principalId, sessionId, isOnline: true },
         serverPeerId: 'server',
         inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
-        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
+        inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+            toBrowserSessionALInboundRuntimeStoreId(sessionId),
+            createDefaultVolatileSessionBudget()
+        ),
+        volatileBudget: createDefaultVolatileSessionBudget(),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

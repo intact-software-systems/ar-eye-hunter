@@ -16,6 +16,7 @@ import {
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
+import { isALDeliveryAdmissionFallbackVerdict } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type {
     ALOutboundSettlementEmitter,
@@ -161,6 +162,39 @@ describe('outbound admission verdict', () => {
             reason: 'unauthorized',
             detail: 'Sender is not a room member'
         });
+    });
+
+    it('is refused as capacity when the planner drops the message with that code, and hands nothing over (D78, C1)', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const store = stores.admissionStore;
+        const message = createOutboundMessage('verdict-capacity');
+        const read = await store.readOutgoingMessage({
+            msg: message,
+            planner: () => ({
+                msg: message,
+                dropReason: 'The session is over its volatile bound.',
+                dropReasonCode: 'capacity',
+                persist: false,
+                preparedMessages: []
+            }),
+            observedCanonicalEntry: undefined,
+            intent: 'enqueue'
+        });
+        const computed = computeALOutboundDispatch({
+            read,
+            outboxEntry: createOutboundCanonicalEntry(store, read.msg),
+            dispatchAtMs: Date.now(),
+            intent: 'enqueue',
+            phase: 'immediate',
+            options: {}
+        });
+
+        expect(computed.verdict).toEqual({
+            kind: 'refused',
+            reason: 'capacity',
+            detail: 'The session is over its volatile bound.'
+        });
+        expect(isALDeliveryAdmissionFallbackVerdict(computed.verdict)).toBe(false);
     });
 
     it('is deferred as not-yet-in-sync when the planner drops the message with that code', async () => {

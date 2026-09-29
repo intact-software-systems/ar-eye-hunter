@@ -223,47 +223,44 @@ async function setupGroupMembership(
         groupId: string;
     }>
 ): Promise<void> {
-    const groupSegment = pathSegment(input.groupId);
+    const statePrefix = `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
+        pathSegment(config.workspaceId)
+    }`;
+    // Group-state mutations are idempotent per requestId (20 to 128 characters), so each run names its own.
+    const requestPrefix = `director-${crypto.randomUUID()}`;
     await executeOk(request, runId, input.owner.agentId, 'director-group-create', {
         kind: 'http.request',
         request: {
-            path: `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-                pathSegment(config.workspaceId)
-            }/groups`,
+            path: `${statePrefix}/groups/requests/${requestPrefix}-group`,
             method: 'POST',
             body: {
                 groupId: input.groupId,
                 displayName: input.groupId,
-                description: 'Created by rallar-black-box director orchestration',
                 kind: 'room',
-                joinMode: 'open',
-                createdByPrincipalId: '{auth.clientId}',
-                metadata: {
-                    source: 'rallar-black-box',
-                    scenario: 'director-orchestration'
-                }
+                joinMode: 'open'
             }
         },
         response: {
-            body: 'json'
+            body: 'json',
+            acceptedStatusCodes: [200, 201]
         },
         timeoutMs: 10_000
     });
 
     for (const member of input.members) {
+        const memberPath = `${statePrefix}/groups/${pathSegment(input.groupId)}/members/{auth.clientId}`;
         await executeOk(request, runId, member.agentId, `director-group-join-${member.prefix.toLowerCase()}`, {
             kind: 'http.request',
             request: {
-                path: `/api/state/apps/${pathSegment(config.applicationId)}/workspaces/${
-                    pathSegment(config.workspaceId)
-                }/groups/${groupSegment}/members/{auth.clientId}`,
+                path: `${memberPath}/requests/${requestPrefix}-member-${member.prefix.toLowerCase()}`,
                 method: 'PUT',
                 body: {
                     status: 'active'
                 }
             },
             response: {
-                body: 'json'
+                body: 'json',
+                acceptedStatusCodes: [200, 201]
             },
             timeoutMs: 10_000
         });
@@ -346,6 +343,16 @@ function directorRoomFields(groupId: string): Record<string, unknown> {
             groupId
         }
     };
+}
+
+function expectDirectorConfirmed(result: ControlResult): void {
+    const sendResult = asRecord(resultValue(result).sendResult);
+    expect(sendResult, JSON.stringify(sendResult)).toMatchObject({
+        status: 'sent',
+        receipt: { msgId: expect.any(String) }
+    });
+    expect(sendResult).not.toHaveProperty('rtc');
+    expect(sendResult).not.toHaveProperty('ws');
 }
 
 test.describe('full-stack SPA-appointed director orchestration', () => {
@@ -438,7 +445,6 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     kind: 'director.relay.start',
                     handle: relayHandle,
                     ...directorRoomFields(groupId),
-                    laneId: 'director',
                     topicId,
                     intentTypeId,
                     outputTypeId,
@@ -448,7 +454,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                 });
             }
 
-            await executeOk(request, runId, agentB.agentId, 'director-intent-b', {
+            const sentB = await executeOk(request, runId, agentB.agentId, 'director-intent-b', {
                 kind: 'director.intent',
                 handle: relayHandle,
                 intent: {
@@ -457,7 +463,7 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     action: 'pose'
                 }
             }, 30_000);
-            await executeOk(request, runId, agentC.agentId, 'director-intent-c', {
+            const sentC = await executeOk(request, runId, agentC.agentId, 'director-intent-c', {
                 kind: 'director.intent',
                 handle: relayHandle,
                 intent: {
@@ -466,6 +472,9 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     action: 'shot'
                 }
             }, 30_000);
+            // A relay command reports sent only once the director's receipt arrives; it carries its one handle.
+            expectDirectorConfirmed(sentB);
+            expectDirectorConfirmed(sentC);
 
             await Promise.all([
                 waitForDirectorEvent(request, runId, {
@@ -500,20 +509,22 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                 })
             ]);
 
-            await executeOk(request, runId, agentB.agentId, 'director-sync-b', {
+            const syncB = await executeOk(request, runId, agentB.agentId, 'director-sync-b', {
                 kind: 'director.sync.request',
                 handle: relayHandle,
                 payload: {
                     reason: 'black-box-b'
                 }
             });
-            await executeOk(request, runId, agentC.agentId, 'director-sync-c', {
+            const syncC = await executeOk(request, runId, agentC.agentId, 'director-sync-c', {
                 kind: 'director.sync.request',
                 handle: relayHandle,
                 payload: {
                     reason: 'black-box-c'
                 }
             });
+            expectDirectorConfirmed(syncB);
+            expectDirectorConfirmed(syncC);
             await Promise.all([
                 waitForDirectorEvent(request, runId, {
                     agentId: agentB.agentId,
@@ -579,8 +590,10 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
             );
             expect(appointEvents.map((event) => event.agentId)).toEqual([agentA.agentId]);
 
+            // The bundle keeps the latest 200 events, which the periodic heartbeats and snapshots fill, so the
+            // early intent_received events (awaited above) can fall out of it; the later sync requests stay.
             const artifacts = await exportControlRunArtifacts(request, runId);
-            expect(JSON.stringify(artifacts)).toContain('rallar.browser.director.intent_received');
+            expect(JSON.stringify(artifacts)).toContain('rallar.browser.director.sync_request_received');
             expect(JSON.stringify(artifacts)).toContain('rallar.browser.director.snapshot_received');
         }
         finally {
