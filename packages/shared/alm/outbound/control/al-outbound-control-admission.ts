@@ -14,7 +14,6 @@ import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
-import { resolveALReceiptRetentionExpiryMs } from '../../delivery/resolve-al-receipt-retention-expiry-ms.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -55,6 +54,7 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
+import { computeALOutboundControlRowExpiryMs } from './compute-al-outbound-control-row-expiry-ms.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -374,7 +374,11 @@ export class ALOutboundControlAdmission<TPrepared> {
         await tx.set(
             toALOutboundControlHistoryKey(this.namespace, candidate.history.kind, read.targetMsgId),
             candidate.history,
-            this.computeControlRowExpiryMs(candidate.controlExpireAtTimestamp, read)
+            computeALOutboundControlRowExpiryMs(
+                candidate.controlExpireAtTimestamp,
+                this.durability,
+                read.sent?.reference.expiresAtMs
+            )
         );
         const pendingAckKey = toALOutboundPendingAckKey({
             namespace: this.namespace,
@@ -388,7 +392,11 @@ export class ALOutboundControlAdmission<TPrepared> {
             await tx.set(
                 pendingAckKey,
                 candidate.pending.value,
-                this.computeControlRowExpiryMs(candidate.receiptExpireAtTimestamp, read)
+                computeALOutboundControlRowExpiryMs(
+                    candidate.receiptExpireAtTimestamp,
+                    this.durability,
+                    read.sent?.reference.expiresAtMs
+                )
             );
         }
         if (candidate.removeRepairAttempt) {
@@ -399,17 +407,6 @@ export class ALOutboundControlAdmission<TPrepared> {
             candidate.nextVersion!,
             candidate.versionExpireAtTimestamp
         );
-    }
-
-    /**
-     * The volatile pair keeps a message's control rows no longer than its deadline plus the receipt grace (D74):
-     * past it the owner row is gone and no control reads them. A pending receipt still ends at the deadline.
-     */
-    private computeControlRowExpiryMs(expireAtTimestamp: number, read: ALControlAdmissionRead): number {
-        if (this.durability !== 'volatile' || read.sent === undefined) {
-            return expireAtTimestamp;
-        }
-        return Math.min(expireAtTimestamp, resolveALReceiptRetentionExpiryMs(read.sent.reference.expiresAtMs));
     }
 
     private async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {
