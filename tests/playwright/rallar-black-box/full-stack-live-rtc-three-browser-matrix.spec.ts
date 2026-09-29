@@ -961,9 +961,18 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 agents: captured.checkpoint.agents
             });
         };
+        const runRetentionPhase = async <Result>(
+            phaseName: string,
+            operation: () => Promise<Result>
+        ): Promise<Result> => {
+            console.info(
+                `[retention-100] phase-start ${new Date().toISOString()} ${phaseName}`
+            );
+            return test.step(phaseName, operation);
+        };
 
         try {
-            const agents = await test.step(
+            const agents = await runRetentionPhase(
                 'retention-100: open the three browser agents',
                 async () => {
                     const openedAgents = await openAgentTrio(browser, {
@@ -976,7 +985,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     return openedAgents;
                 }
             );
-            await test.step(
+            await runRetentionPhase(
                 'retention-100: establish group membership',
                 async () => {
                     commandIds.push(
@@ -991,7 +1000,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     );
                 }
             );
-            const initialFormation = await test.step(
+            const initialFormation = await runRetentionPhase(
                 'retention-100: form the initial group and wait for readiness',
                 async () => {
                     const formation = await liveRtcDeliveryOperations.runGroupFormation({
@@ -1007,7 +1016,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     return formation;
                 }
             );
-            await test.step(
+            await runRetentionPhase(
                 'retention-100: capture initial checkpoint at cycle 0',
                 async () => captureCheckpoint(agents, 0)
             );
@@ -1015,7 +1024,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             let currentSessionId = initialFormation.sessions.C;
             for (let cycle = 1; cycle <= 100; cycle += 1) {
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
-                await test.step(
+                await runRetentionPhase(
                     `retention-100 cycle ${cycle}: close peer C`,
                     async () => {
                         await control.executeOk({
@@ -1028,7 +1037,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         commandIds.push(closeCommandId);
                     }
                 );
-                await test.step(
+                await runRetentionPhase(
                     `retention-100 cycle ${cycle}: wait for both surviving peers to observe absence`,
                     async () => {
                         await Promise.all(
@@ -1043,7 +1052,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         );
                     }
                 );
-                await test.step(
+                await runRetentionPhase(
                     `retention-100 cycle ${cycle}: reconnect peer C and wait for readiness`,
                     async () => {
                         const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
@@ -1071,7 +1080,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     }
                 );
                 if (cycle % 10 === 0) {
-                    await test.step(
+                    await runRetentionPhase(
                         `retention-100 cycle ${cycle}: capture every-tenth checkpoint`,
                         async () => captureCheckpoint(agents, cycle)
                     );
@@ -1079,7 +1088,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             }
             reconnectPassed = true;
             matrixPassed = true;
-            await test.step(
+            await runRetentionPhase(
                 'retention-100: close and reset all agents after cycle 100',
                 async () => {
                     commandIds.push(
@@ -1092,7 +1101,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     );
                 }
             );
-            await test.step(
+            await runRetentionPhase(
                 'retention-100: assert the final artifact bundle',
                 async () => {
                     await control.expectArtifactBundle({ runId, commandIds });
@@ -1108,7 +1117,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             throw toError(error);
         }
         finally {
-            await test.step(
+            await runRetentionPhase(
                 'retention-100: finalize attempt diagnostics and evidence',
                 async () => {
                     await finalizeLiveRtcAttempt({
