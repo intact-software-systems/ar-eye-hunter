@@ -7,7 +7,7 @@ import { createBrowserMessageSenderFixture } from './browser-message-sender-fixt
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const COMMAND_CHANNEL = { purpose: 'command', durability: undefined } as const;
 
-describe('a WS send addressed to one peer (Q11, WS only)', () => {
+describe('a WS send addressed to one peer (Q11)', () => {
     it('builds a receipted room unicast to the peer for a command channel', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const envelope = vi.spyOn(
@@ -58,19 +58,26 @@ describe('a WS send addressed to one peer (Q11, WS only)', () => {
         });
     });
 
-    it('refuses a peer target on any strategy but ws until the RTC unicast lands (S3c-ii)', async () => {
+    it('refuses a peer target on ws-then-rtc, which hands over at admission only (V1)', async () => {
         const fixture = createBrowserMessageSenderFixture();
 
         const sending = fixture.sender.sendTyped({
             typeId: 'relic.command.v1',
             payload: {},
             roomId: 'room',
-            peerId: 'server'
+            peerId: 'server',
+            strategy: 'ws-then-rtc'
         }, COMMAND_CHANNEL);
 
         await expect(sending).rejects.toSatisfy(isRallarValidationError);
         // The default topic would fail the WS topic rule too; the peer refusal must come first.
-        await expect(sending).rejects.toMatchObject({ issues: [{ path: '$.peerId', code: 'unsupported' }] });
+        await expect(sending).rejects.toMatchObject({
+            issues: [{
+                path: '$.peerId',
+                code: 'unsupported',
+                message: 'A peer-addressed typed send takes the ws, rtc or rtc-with-ws-fallback strategy.'
+            }]
+        });
     });
 
     it.each([
