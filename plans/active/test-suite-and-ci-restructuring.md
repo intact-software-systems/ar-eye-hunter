@@ -8,8 +8,9 @@
 **Status:** analysis complete, written 2026-09-28 against `main` `caef8ba17`. The maintainer took
 all eleven rulings on 2026-09-29 (section 8). Slices 1–4 have merged and cut the gate from about 57
 minutes to about 10 (section 12 has the numbers, and what differed from this plan). Slice 5 was skipped
-by ruling; Slices 6 and 7 were cut to the parts with a demonstrated cost (#622, #623). Slices 5–8 stay outcome-shaped under
-`adaptive-plan-execution`: each becomes concrete when it starts, from the evidence in sections 2–5.
+by ruling; Slices 6 and 7 were cut to the parts with a demonstrated cost (#622, #623).
+What remains of Slices 6 to 8 stays outcome-shaped under `adaptive-plan-execution`: each item becomes
+concrete when it starts, from the evidence in sections 2–5.
 
 **Goal:** Cut the Branch Release Gate and the main deploy from about 55 minutes to about 18 minutes
 (Slice 2), then about 10 minutes (Slice 3). Remove the duplicated, obsolete and badly written test
