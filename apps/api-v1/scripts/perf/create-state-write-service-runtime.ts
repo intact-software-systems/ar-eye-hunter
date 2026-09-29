@@ -25,15 +25,11 @@ import { AppClientInboxService } from '@shared-server/rallar-system/client-state
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
-import {
-    createClientStateService,
-    type ClientStateService
-} from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
-import {
-    createGroupStateService,
-    type GroupStateService
-} from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
@@ -162,7 +158,9 @@ function createStateWriteDomainServices(
         serviceId,
         timing,
         authSessionRepository,
+        // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readPlannedLayoutRow: async () => null,
+        // deno-lint-ignore require-await -- The benchmark supplies the asynchronous layout-read port.
         readAcceptedLayoutRow: async () => null
     });
     const clientState = createClientStateService({ runtimeRepository, clientStateEventStore, serviceId, timing });
