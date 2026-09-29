@@ -3,6 +3,7 @@ import { CoreSelectionAlgo, findWCNodes } from '@shared-graph/graph/steiner-core
 import { runRemoveAlgorithm } from '@shared-graph/remove/remove-dynamics-service.ts';
 import type { RemoveDynamicsContext } from '@shared-graph/remove/remove-dynamics-types.ts';
 import { UndirectedGraph } from 'graphology';
+import { describe, expect, it } from 'vitest';
 
 function makeGraph(id = 'g1'): TreeGraph {
     const g = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
@@ -59,20 +60,7 @@ function connect(g: TreeGraph, a: string, b: string, weight: number): void {
 }
 
 function assert(condition: boolean, message: string): void {
-    if (!condition) {
-        throw new Error(message);
-    }
-}
-
-function runTest(name: string, fn: () => void): void {
-    try {
-        fn();
-        console.log(`PASS ${name}`);
-    }
-    catch (error) {
-        console.error(`FAIL ${name}`);
-        throw error;
-    }
+    expect(condition, message).toBe(true);
 }
 
 function makeSelectSteinerCandidate() {
@@ -307,6 +295,7 @@ function testCleanupRemovesUnusedSteinerLeaf(): void {
     addSteinerNode(globalGraph, 'S1');
     connect(globalGraph, 'X', 'A', 1);
     connect(globalGraph, 'X', 'B', 1);
+    connect(globalGraph, 'A', 'B', 1);
     connect(globalGraph, 'S1', 'A', 1);
     connect(globalGraph, 'S1', 'B', 1);
 
@@ -333,35 +322,16 @@ function testCleanupRemovesUnusedSteinerLeaf(): void {
         }
     );
 
-    if (result.graph.hasNode('S1')) {
-        assert(
-            result.graph.degree('S1') > 1 ||
-                result.graph.getNodeAttributes('S1').state === VertexState.MEMBER,
-            'expected unused Steiner leaf to be pruned'
-        );
-    }
+    assert(result.graph.hasEdge('A', 'B'), 'expected the neighbors of the removed vertex to be reconnected');
+    assert(!result.graph.hasNode('S1'), 'expected unused Steiner leaf to be pruned');
 }
 
-export function main(): void {
-    runTest('leaf removal removes the leaf', testLeafRemoval);
-    runTest('degree-2 removal reconnects neighbors', testDegreeTwoRemovalReconnectsNeighbors);
-    runTest(
-        'MDDL naive can keep action vertex as Steiner',
-        testMddlNaiveKeepsActionAsSteinerWhenBest
-    );
-    runTest(
-        'try-replace prune can use external Steiner candidate',
-        testTryReplacePruneWithExternalSteinerCandidate
-    );
-    runTest('minimum-cost remove can fall back to MDDL naive', testMinimumCostFallbackToMddlNaive);
-    runTest(
-        'minimum-diameter remove can fall back to MDDL naive',
-        testMinimumDiameterFallbackToMddlNaive
-    );
-    runTest('cleanup prunes unused Steiner leaf', testCleanupRemovesUnusedSteinerLeaf);
-    console.log('All remove-dynamics service tests passed.');
-}
-
-if (import.meta.main) {
-    main();
-}
+describe('remove dynamics scenarios on real graphs', () => {
+    it('leaf removal removes the leaf', testLeafRemoval);
+    it('degree-2 removal reconnects neighbors', testDegreeTwoRemovalReconnectsNeighbors);
+    it('MDDL naive can keep action vertex as Steiner', testMddlNaiveKeepsActionAsSteinerWhenBest);
+    it('try-replace prune can use external Steiner candidate', testTryReplacePruneWithExternalSteinerCandidate);
+    it('minimum-cost remove can fall back to MDDL naive', testMinimumCostFallbackToMddlNaive);
+    it('minimum-diameter remove can fall back to MDDL naive', testMinimumDiameterFallbackToMddlNaive);
+    it('cleanup prunes unused Steiner leaf', testCleanupRemovesUnusedSteinerLeaf);
+});
