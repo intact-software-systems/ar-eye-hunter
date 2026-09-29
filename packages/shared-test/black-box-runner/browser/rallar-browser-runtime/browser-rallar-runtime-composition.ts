@@ -178,7 +178,6 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        realtime,
         rooms,
         session: session.session
     });

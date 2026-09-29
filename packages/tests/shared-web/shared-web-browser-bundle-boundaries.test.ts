@@ -55,7 +55,9 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // ceiling is 224. The S3c-ii volatile retention rule measures 224.1494140625 KiB. The next whole-KiB
         // ceiling is 225. The S3c-ii volatile bound (the session budget, its outbound refusal and inbound count, and
         // the overloaded provider) measures 224.8525390625 KiB, and its review fix (the 30 s inbound counted
-        // lifetime and the named-deadline rule) 225.056640625 KiB. The next whole-KiB ceiling is 226.
+        // lifetime and the named-deadline rule) 225.056640625 KiB. The next whole-KiB ceiling is 226. The S3c-ii
+        // director command (the typed command channels, the intent sequence window, sendWsUnicast deleted) measures
+        // 225.072265625 KiB.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',

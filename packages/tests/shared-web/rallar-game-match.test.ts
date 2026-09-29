@@ -65,7 +65,6 @@ describe('Rallar Game match', () => {
         await match.start();
 
         expect(fake.relayConfig).toMatchObject({
-            laneId: 'game-intent',
             topicId: 'game.topic',
             intentTypeId: 'game.topic.intent.v1',
             outputTypeId: 'game.topic.event.v1',
@@ -656,6 +655,26 @@ describe('Rallar Game match', () => {
         expect(receivedSnapshots).toEqual([]);
     });
 
+    it('routes a relayed intent that arrives out of order and drops its replay (C10)', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true
+        });
+        const received: number[] = [];
+        const match = createMatch(fake, {
+            onIntent: (intent) => {
+                received.push(intent.seq);
+            }
+        });
+        await match.start();
+
+        for (const seq of [5, 3, 5, 3, 4]) {
+            await emitRelayIntent(fake, seq);
+        }
+
+        expect(received).toEqual([5, 3, 4]);
+    });
+
     it('delegates sync request to Director Relay and exposes readSnapshot for relay sync responses', async () => {
         const fake = createFakeRallar({
             directorPeerId: 'peer-b',
@@ -845,6 +864,27 @@ async function emitRelaySnapshot(
     });
 }
 
+async function emitRelayIntent(fake: FakeRallar, seq: number): Promise<void> {
+    const intent = toTestJsonValue(
+        envelope({ kind: 'intent', senderId: 'peer-b', payload: { action: `move-${seq}` }, seq })
+    ) ?? null;
+    await fake.relayConfig?.onIntent?.({
+        transport: 'rtc',
+        senderId: 'peer-b',
+        data: intent,
+        envelope: {
+            protocol: 'rallar.director.relay.v1',
+            topicId: 'game.topic',
+            typeId: 'game.topic.intent.v1',
+            roomId: 'room-1',
+            epoch: 1,
+            sentAtEpochMs: 1_000 + seq,
+            payload: intent
+        },
+        receivedAtEpochMs: 1_100 + seq
+    }, fake.relay);
+}
+
 interface FakeRallarOptions {
     readonly directorPeerId?: string;
     readonly directorIsFresh?: boolean;
@@ -860,7 +900,15 @@ interface FakeRallarState {
     relayConfig:
         | Pick<
             RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>,
-            'laneId' | 'topicId' | 'intentTypeId' | 'outputTypeId' | 'snapshotTypeId' | 'syncRequestTypeId' | 'heartbeatTypeId' | 'readSnapshot' | 'onSnapshot'
+            | 'topicId'
+            | 'intentTypeId'
+            | 'outputTypeId'
+            | 'snapshotTypeId'
+            | 'syncRequestTypeId'
+            | 'heartbeatTypeId'
+            | 'readSnapshot'
+            | 'onSnapshot'
+            | 'onIntent'
         >
         | undefined;
     relayStopped: boolean;
@@ -1076,7 +1124,6 @@ function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
             throw new Error('Relay creation forbidden by this test.');
         }
         state.relayConfig = {
-            laneId: config.laneId,
             topicId: config.topicId,
             intentTypeId: config.intentTypeId,
             outputTypeId: config.outputTypeId,
@@ -1084,7 +1131,8 @@ function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
             syncRequestTypeId: config.syncRequestTypeId,
             heartbeatTypeId: config.heartbeatTypeId,
             readSnapshot: async () => toTestJsonValue(await config.readSnapshot?.()),
-            onSnapshot: config.onSnapshot as RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>['onSnapshot']
+            onSnapshot: config.onSnapshot as RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>['onSnapshot'],
+            onIntent: config.onIntent as RallarDirectorRelayConfig<ApiJsonValue, ApiJsonValue>['onIntent']
         };
         return relay;
     };

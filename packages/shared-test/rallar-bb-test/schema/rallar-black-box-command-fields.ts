@@ -176,7 +176,6 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'workspaceId',
             'scope',
             'roomRef',
-            'laneId',
             'topicId',
             'heartbeatTypeId',
             'snapshotTypeId',

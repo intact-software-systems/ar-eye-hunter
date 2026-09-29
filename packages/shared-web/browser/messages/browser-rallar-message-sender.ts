@@ -93,19 +93,6 @@ export namespace BrowserRallarMessageSender {
             explicitMinSnapshotVersion?: number
         ): number | undefined;
     }
-
-    export interface WsUnicastInput<T> {
-        readonly peerId: string;
-        readonly payload: T;
-        readonly typeId: string;
-        readonly route: WsUnicastRoute;
-    }
-
-    export interface WsUnicastRoute {
-        topicId: string;
-        contextId: string;
-        resourceId?: string;
-    }
 }
 
 export class BrowserRallarMessageSender {
@@ -114,33 +101,6 @@ export class BrowserRallarMessageSender {
 
     public constructor(input: BrowserRallarMessageSender.Input) {
         this.input = input;
-    }
-
-    public async sendWsUnicast<T>(
-        input: BrowserRallarMessageSender.WsUnicastInput<T>
-    ): Promise<RallarMessageHandle> {
-        const payloadValidation = this.capturePayload(input.payload);
-        const context = await this.input.connect();
-        const session = this.input.requireSession();
-        const message = this.input.creation.createUnicast(
-            session.sessionId,
-            newALRoute(
-                input.route.topicId,
-                input.route.contextId,
-                input.route.resourceId ?? this.input.creation.newResourceId()
-            ),
-            input.peerId,
-            input.typeId,
-            parseCapturedPayload(payloadValidation),
-            { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
-        );
-        return this.startDelivery({
-            context,
-            carrier: 'ws',
-            message,
-            canFallback: false,
-            payloadIssues: payloadValidation.issues
-        });
     }
 
     public async sendRtc<T>(

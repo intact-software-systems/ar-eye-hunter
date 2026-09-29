@@ -1,3 +1,4 @@
+import { resolveRallarGameTypeIds } from '@shared-web/game/match.ts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -29,6 +30,13 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
     it('uses room-scoped topics for production WS fallback compatibility', () => {
         expect(GAME_DIRECTOR_TOPIC_ID).toMatch(/^room\./);
         expect(GAME_AI_TOPIC_ID).toMatch(/^room\./);
+    });
+
+    it('sends director intents and sync requests on the two derived command channel ids (C12)', () => {
+        expect(resolveRallarGameTypeIds(GAME_DIRECTOR_TOPIC_ID)).toMatchObject({
+            intent: 'room.ar-eye-hunter.director.intent.v1',
+            syncRequest: 'room.ar-eye-hunter.director.sync-request.v1'
+        });
     });
 
     it('accepts pose and shot intents only from the sender peer', () => {

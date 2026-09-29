@@ -82,7 +82,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // measures 285.8173828125 KiB here. The S3c-ii typed failure evidence and the capacity vocabulary measure
         // 286.3046875 KiB here. The next whole-KiB ceiling is 287. The S3c-ii volatile bound (the session budget,
         // its outbound refusal and inbound count, and the overloaded provider) measures 287.4267578125 KiB here. The
-        // next whole-KiB ceiling is 288. All operator dependency exclusions above remain enforced.
+        // next whole-KiB ceiling is 288. The S3c-ii director command measures 287.6357421875 KiB here. All operator
+        // dependency exclusions above remain enforced.
         expect(result.brotliKiB).toBeLessThan(288);
     });
 });

@@ -610,7 +610,6 @@ export type RallarBlackBoxTestDirectorRelayStartCommand =
     & RallarBlackBoxTestRoomFields
     & Readonly<{
         handle: string;
-        laneId?: string;
         topicId?: string;
         intentTypeId: string;
         outputTypeId: string;

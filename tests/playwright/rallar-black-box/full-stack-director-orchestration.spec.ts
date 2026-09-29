@@ -438,7 +438,6 @@ test.describe('full-stack SPA-appointed director orchestration', () => {
                     kind: 'director.relay.start',
                     handle: relayHandle,
                     ...directorRoomFields(groupId),
-                    laneId: 'director',
                     topicId,
                     intentTypeId,
                     outputTypeId,

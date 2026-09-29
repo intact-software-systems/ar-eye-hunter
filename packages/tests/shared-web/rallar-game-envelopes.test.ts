@@ -1,4 +1,5 @@
 import { createRallarGameEnvelope, createRallarGameSequenceTracker, isRallarGameEnvelope } from '@shared-web/game/mod.ts';
+import { RALLAR_GAME_INTENT_SEQUENCE_WINDOW } from '@shared-web/game/rallar-game-intent-sequences.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('Rallar Game envelopes', () => {
@@ -297,6 +298,61 @@ describe('Rallar Game envelopes', () => {
                 })
             )
         ).toMatchObject({ accepted: true });
+    });
+
+    it('accepts a lower intent sequence and refuses an equal one as a duplicate (C10)', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const intent = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'intent', seq });
+
+        expect([5, 3, 5, 3, 4].map((seq) => tracker.accept(intent(seq)))).toMatchObject([
+            { accepted: true },
+            { accepted: true },
+            { accepted: false, reason: 'duplicate-sequence' },
+            { accepted: false, reason: 'duplicate-sequence' },
+            { accepted: true }
+        ]);
+        expect(tracker.last(intent(0))).toBe(5);
+    });
+
+    it.each(
+        ['capability', 'presence', 'input', 'event', 'snapshot', 'sync-request', 'heartbeat'] as const
+    )(
+        'keeps refusing a lower %s sequence as stale (C10)',
+        (kind) => {
+            const tracker = createRallarGameSequenceTracker();
+            const envelope = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind, seq });
+
+            expect(tracker.accept(envelope(5))).toMatchObject({ accepted: true });
+            expect(tracker.accept(envelope(3))).toMatchObject({
+                accepted: false,
+                reason: 'stale-sequence'
+            });
+        }
+    );
+
+    it('forgets the oldest intent sequence past its window and refuses it as stale, never as new (C10)', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const intent = (seq: number) => createRallarGameEnvelope({ ...validEnvelope, kind: 'intent', seq });
+        for (let seq = 1; seq <= RALLAR_GAME_INTENT_SEQUENCE_WINDOW + 1; seq++) {
+            expect(tracker.accept(intent(seq)).accepted).toBe(true);
+        }
+
+        expect(tracker.accept(intent(1))).toMatchObject({ accepted: false, reason: 'stale-sequence' });
+        expect(tracker.accept(intent(0))).toMatchObject({ accepted: false, reason: 'stale-sequence' });
+        expect(tracker.accept(intent(2))).toMatchObject({
+            accepted: false,
+            reason: 'duplicate-sequence'
+        });
+    });
+
+    it('forgets remembered intent sequences on reset', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const intent = createRallarGameEnvelope({ ...validEnvelope, kind: 'intent', seq: 5 });
+        tracker.accept(intent);
+
+        tracker.reset();
+
+        expect(tracker.accept(intent)).toMatchObject({ accepted: true });
     });
 });
 

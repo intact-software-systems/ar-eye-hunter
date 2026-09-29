@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
@@ -158,6 +159,32 @@ describe('a WS send addressed to one peer (Q11)', () => {
         expect(envelope.mock.calls[0][0]).toMatchObject({
             targets: { mode: 'unicast', toPeerId: 'server', groupRef: ROOM_REF },
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        });
+    });
+
+    it('admits a scope-all peer send under its own context id, which names no room to mismatch (C8)', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const envelope = vi.spyOn(
+            fixture.middleware.middleware.webSocketQueueBox,
+            'enqueueOutboxIfAbsent'
+        );
+
+        const handle = await fixture.sender.sendWs({
+            scope: 'all',
+            peerId: 'callee',
+            topicId: 'app.rallar.calls',
+            typeId: 'app.rallar.calls.invite.v1',
+            contextId: 'call-1',
+            payload: { kind: 'invite' },
+            reliability: 'best-effort'
+        }, undefined);
+        const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
+
+        expect(outcome.lifecycle.state).toBe('queued');
+        expect(outcome.lifecycle.evidence.failure).toBeUndefined();
+        expect(envelope.mock.calls[0][0]).toMatchObject({
+            targets: { mode: 'unicast', toPeerId: 'callee' },
+            route: { topicId: 'app.rallar.calls', contextId: 'call-1' }
         });
     });
 });

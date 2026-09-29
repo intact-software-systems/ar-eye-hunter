@@ -110,7 +110,6 @@ function createBrowserFacadeCompositions(
     const director = createBrowserDirectorComposition({
         state,
         messaging,
-        realtime,
         rooms,
         session: sessionPort
     });

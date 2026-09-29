@@ -21,6 +21,13 @@ const current: RallarDirectorStatus = {
     appointment: { version: 1, mode: 'appointed-spa', sessionId: 'director', principalId: 'principal', epoch: 1, appointedAtEpochMs: 0, heartbeatTtlMs: 5_000 }
 };
 const envelopeInput = { current, topicId: 'room.director', typeId: 'output', payload: { revision: 1 }, ack: undefined };
+const clientStatus: RallarDirectorStatus = { ...current, role: 'client', isDirector: false };
+const commandInput = {
+    current: clientStatus,
+    topicId: 'room.director',
+    typeId: 'room.director.intent.v1',
+    payload: { revision: 7 }
+};
 
 describe('director delivery admission', () => {
     afterEach(() => vi.useRealTimers());
@@ -122,6 +129,147 @@ describe('director receipt output', () => {
     });
 });
 
+describe('director command', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it.each(['room.director.intent.v1', 'room.director.sync-request.v1'])(
+        'sends %s on its own command channel to the director and reports sent on the director\'s receipt',
+        async (typeId) => {
+            const command = createMessageDelivery('rtc', {
+                kind: 'admitted',
+                durable: false,
+                queuedAttempts: 1
+            }, 'receiver');
+            const room = createRoomChannel(async () => command.handle);
+            const transport = createTransport(
+                createMessageDelivery('rtc', undefined),
+                rejectCarrierSend,
+                {
+                    room: toRoomOperation(room),
+                    rtcSend: rejectCarrierSend
+                }
+            );
+
+            const sending = transport.sendCommand({ ...commandInput, typeId });
+            await vi.waitFor(() => expect(room.send).toHaveBeenCalledTimes(1));
+            recordDirectorReceipt(command);
+
+            expect(await sending).toEqual({ status: 'sent', receipt: command.handle });
+            expect(room.open).toHaveBeenCalledWith({
+                topicId: 'room.director',
+                typeId,
+                roomRef: current.roomRef,
+                purpose: 'command'
+            });
+            expect(room.send).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    protocol: 'rallar.director.relay.v1',
+                    typeId,
+                    roomId: 'room',
+                    epoch: 1,
+                    payload: { revision: 7 }
+                }),
+                { peerId: 'director', strategy: 'rtc-with-ws-fallback' }
+            );
+        }
+    );
+
+    it('reports a refused command as failed with its typed refusal, never as sent (correction 11)', async () => {
+        const command = createMessageDelivery('ws', {
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'Server unknown'
+        }, 'receiver');
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            {
+                room: toRoomOperation(createRoomChannel(async () => command.handle)),
+                rtcSend: rejectCarrierSend
+            }
+        );
+
+        expect(await transport.sendCommand(commandInput)).toEqual({
+            status: 'failed',
+            receipt: command.handle,
+            reason: 'Server unknown'
+        });
+        expect(command.handle.lifecycle().evidence.failure).toEqual({
+            kind: 'refused',
+            reason: 'unsupported'
+        });
+    });
+
+    it('reports an admitted command the director never confirms as failed at its deadline', async () => {
+        vi.useFakeTimers();
+        const command = createMessageDelivery('rtc', {
+            kind: 'admitted',
+            durable: false,
+            queuedAttempts: 1
+        }, 'receiver');
+        const transport = createTransport(
+            createMessageDelivery('rtc', undefined),
+            rejectCarrierSend,
+            {
+                room: toRoomOperation(createRoomChannel(async () => command.handle)),
+                rtcSend: rejectCarrierSend
+            }
+        );
+
+        const sending = transport.sendCommand(commandInput);
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(await sending).toEqual({
+            status: 'failed',
+            receipt: command.handle,
+            reason: 'The director did not confirm the command before its deadline.'
+        });
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it.each(
+        [
+            { current: { ...clientStatus, isFresh: false }, status: 'stale-director' },
+            { current, status: 'not-director' },
+            { current: { ...clientStatus, roomRef: undefined }, status: 'no-director' }
+        ] as const
+    )(
+        'refuses a command to a $status target without opening a channel',
+        async ({ current: target, status }) => {
+            const transport = createTransport(
+                createMessageDelivery('rtc', undefined),
+                rejectCarrierSend,
+                {
+                    room: () => {
+                        throw new Error('A refused command must not open a channel.');
+                    },
+                    rtcSend: rejectCarrierSend
+                }
+            );
+
+            expect(await transport.sendCommand({ ...commandInput, current: target })).toMatchObject(
+                { status }
+            );
+        }
+    );
+});
+
+function recordDirectorReceipt(command: MessageDeliveryFixture): void {
+    command.registry.record({
+        kind: 'acknowledgement',
+        carrier: 'rtc',
+        msgId: command.handle.msgId,
+        atMs: Date.now(),
+        mode: 'receiver',
+        confirmedHopPeerIds: [],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: ['director'],
+        confirmedRecipientPeerIds: ['director'],
+        unconfirmedRecipientPeerIds: [],
+        complete: true
+    });
+}
+
 async function rejectCarrierSend(): Promise<never> {
     throw new Error('This output must not reach a carrier-pinned send.');
 }
@@ -173,12 +321,6 @@ function createTransport(
                 throw new Error('Not a room test');
             })
         },
-        readSession: () => ({ clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test', expiresAtEpochMs: 60_000 }),
-        createTargetedChannel: () => {
-            throw new Error('Room output must use room messages.');
-        },
-        sendWsUnicast: async () => {
-            throw new Error('Room output must not send unicast.');
-        }
+        readSession: () => ({ clientId: 'client', sessionId: 'session', username: 'user', accessToken: 'test', expiresAtEpochMs: 60_000 })
     });
 }

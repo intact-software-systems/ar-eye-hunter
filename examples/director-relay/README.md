@@ -27,7 +27,6 @@ if (shouldBecomeDirector()) {
 
 const relay = rallar.director.createRelay<MoveIntent, DirectorOutput>({
     roomRef: currentRoom.group,
-    laneId: 'director',
     topicId: 'demo.director',
     intentTypeId: 'demo.intent',
     outputTypeId: 'demo.output',

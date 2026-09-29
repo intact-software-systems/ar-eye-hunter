@@ -325,7 +325,6 @@ const commandRoomProperties = {
 
 const directorRelayConfigProperties = {
     handle: stringSchema,
-    laneId: stringSchema,
     topicId: stringSchema,
     intentTypeId: stringSchema,
     outputTypeId: stringSchema,

@@ -1,4 +1,4 @@
-import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarCallHandle,
@@ -30,19 +30,6 @@ const RALLAR_CALL_DECLINE_TYPE_ID = 'app.rallar.calls.decline.v1';
 const RALLAR_CALL_CANCEL_TYPE_ID = 'app.rallar.calls.cancel.v1';
 
 export namespace BrowserCallSignalRuntime {
-    export interface SignalRoute {
-        readonly topicId: string;
-        readonly contextId: string;
-        readonly resourceId?: string;
-    }
-
-    export interface SignalSendInput<T> {
-        readonly peerId: string;
-        readonly payload: T;
-        readonly typeId: string;
-        readonly route: SignalRoute;
-    }
-
     export interface Input {
         connect(): Promise<void>;
         nowMs(): number;
@@ -51,9 +38,8 @@ export namespace BrowserCallSignalRuntime {
         requireSession(): AuthSession;
         resolveRoomRef(room?: string | GroupRef): GroupRef | undefined;
         resolveTargetPeerIds(input?: RallarCallInviteInput): readonly string[];
-        readonly messages: { readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>; };
+        readonly messages: { readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage' | 'send'>; };
         readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
-        sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageHandle>;
         startCall(input: RallarCallStartInput): Promise<RallarCallHandle>;
     }
 
@@ -138,14 +124,14 @@ export class BrowserCallSignalRuntime {
         return await Promise.all(
             uniquePeerIds.map(async (peerId) => ({
                 peerId,
-                result: await this.input.sendWsUnicast({
+                result: await this.input.messages.ws.send({
+                    scope: 'all',
                     peerId,
-                    payload,
+                    topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
                     typeId: toCallSignalTypeId(payload.kind),
-                    route: {
-                        topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
-                        contextId: payload.callId
-                    }
+                    contextId: payload.callId,
+                    payload,
+                    reliability: 'best-effort'
                 })
             }))
         );

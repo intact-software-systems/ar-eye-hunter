@@ -66,7 +66,6 @@ export interface CreateBrowserCallsCompositionInput {
 export interface CreateBrowserDirectorCompositionInput {
     readonly state: BrowserStateComposition;
     readonly messaging: BrowserMessagingComposition;
-    readonly realtime: BrowserRealtimeCoreComposition;
     readonly rooms: BrowserRoomsComposition;
     readonly session: RallarSessionController;
 }
@@ -141,8 +140,6 @@ export function createBrowserCallsComposition(
         resolveTargetPeerIds: (target) => input.realtime.realtimeTargeted.resolvePeerIds(target),
         messages: input.messaging.messages,
         readSourceStatus: (kind) => input.media.localMediaSources.readStatus(kind),
-        sendWsUnicast: async ({ peerId, payload, typeId, route }) =>
-            await input.messaging.messagesController.sender.sendWsUnicast({ peerId, payload, typeId, route }),
         startCall: async (startInput) => await callLifecycle.start(startInput)
     });
     const calls: RallarCallsFacade = {
@@ -176,16 +173,12 @@ export function createBrowserDirectorComposition(
     });
     const relayTransport = new BrowserDirectorRelayTransport({
         messages: input.messaging.messages,
-        readSession,
-        createTargetedChannel: <T>(definition: RallarTargetedChannelDefinition) =>
-            input.realtime.realtimeTargeted.create<T>(definition),
-        sendWsUnicast: async (sendInput) => await input.messaging.messagesController.sender.sendWsUnicast(sendInput)
+        readSession
     });
     const directorRelays = new BrowserDirectorRelayRuntime({
         status: directorStatus,
         transport: relayTransport,
         messages: input.messaging.messages,
-        realtime: input.realtime.realtime,
         readSession
     });
     const director: RallarDirectorFacade = {

@@ -582,7 +582,6 @@ export interface BlackBoxRallarDirectorStatusInput extends BlackBoxRallarDirecto
 
 export interface BlackBoxRallarDirectorRelayStartInput extends BlackBoxRallarDirectorRoomInput {
     readonly handle: string;
-    readonly laneId?: string;
     readonly topicId?: string;
     readonly intentTypeId: string;
     readonly outputTypeId: string;

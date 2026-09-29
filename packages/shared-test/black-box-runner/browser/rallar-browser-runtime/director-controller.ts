@@ -193,7 +193,6 @@ function normalizeDirectorRelayStartInput(input: unknown): BlackBoxRallarDirecto
     return {
         ...normalizeDirectorRoomInput(record),
         handle,
-        laneId: stringValue(record.laneId),
         topicId: stringValue(record.topicId),
         intentTypeId,
         outputTypeId,
@@ -415,7 +414,6 @@ export class BlackBoxRallarDirectorController {
         return this.#options.facade.director.createRelay({
             roomId: context.input.roomId ?? context.config.roomId,
             roomRef: this.#options.roomRefOf(context.config, context.input),
-            laneId: context.input.laneId,
             topicId: context.input.topicId,
             intentTypeId: context.input.intentTypeId,
             outputTypeId: context.input.outputTypeId,

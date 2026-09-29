@@ -16,7 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 
-import { createRallarGameEnvelope, type RallarGameMatchStatus, type RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
+import {
+    createRallarGameEnvelope,
+    type RallarGameMatchStatus,
+    type RallarGamePeerReadiness,
+    type RallarGameSendResult
+} from '@shared-web/game/mod.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import {
@@ -327,6 +332,24 @@ describe('arena director delivery and appointment', () => {
         await act(async () => {
             laneWait.resolve(emptyPeerReadiness());
             await laneWait.promise;
+        });
+    });
+
+    it('starts the peer-ready sync while the director has not yet confirmed the join sync (D60)', async () => {
+        const joinSync = Promise.withResolvers<RallarGameSendResult>();
+        mockMatch.requestSync.mockReturnValueOnce(joinSync.promise);
+
+        await arena.render();
+
+        await vi.waitFor(() =>
+            expect(mockMatch.waitForReadyLanes).toHaveBeenCalledWith(
+                expect.objectContaining({ expect: { min: 0 }, timeoutMs: 650 })
+            )
+        );
+        expect(mockMatch.requestSync).toHaveBeenCalledWith({ reason: 'arena-join' });
+        await act(async () => {
+            joinSync.resolve({ status: 'sent', transport: 'director-relay' });
+            await joinSync.promise;
         });
     });
 
