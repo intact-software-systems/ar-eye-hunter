@@ -291,13 +291,15 @@ export function newALMulticastMessage<T>(
         qos?: ALQosPolicyRequest;
     }>
 ): ALMessage {
-    const expiresAtMs = options?.ttlMs !== undefined
-        ? Date.now() + options.ttlMs
-        : undefined;
+    const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
+        qos: options?.qos,
+        ttlMs: options?.ttlMs
+    });
+    const expiresAtMs = untargeted.constraints?.expiresAtMs;
     const targetGroupRef = toALGroupRef(groupRef);
 
     return {
-        ...newALUntargetedMessage(senderId, route, typeId, resource, { qos: options?.qos }),
+        ...untargeted,
         targets: {
             mode: 'multicast',
             groupRef: targetGroupRef,
@@ -420,15 +422,17 @@ export function newALBroadcastMessage<T>(
         ordering?: Readonly<{ orderingKey: string; seq: number; }>;
     }>
 ): ALMessage {
-    const expiresAtMs = options?.ttlMs !== undefined
-        ? Date.now() + options.ttlMs
-        : undefined;
     const groupRef = scope === 'room' && options?.groupRef !== undefined
         ? toALGroupRef(options.groupRef)
         : undefined;
+    const untargeted = newALUntargetedMessage(senderId, route, typeId, resource, {
+        qos: options?.qos,
+        ttlMs: options?.ttlMs
+    });
+    const expiresAtMs = untargeted.constraints?.expiresAtMs;
 
     return {
-        ...newALUntargetedMessage(senderId, route, typeId, resource, { qos: options?.qos }),
+        ...untargeted,
         targets: {
             mode: 'broadcast',
             scope,
