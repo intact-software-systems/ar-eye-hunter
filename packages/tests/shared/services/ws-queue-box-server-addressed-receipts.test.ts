@@ -6,7 +6,11 @@ import {
     AL_CONTROL_NACK_TYPE_ID,
     AL_CONTROL_RECEIPT_TYPE_ID
 } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import {
+    decodeALAckPayload,
+    decodeALNackPayload,
+    decodeALReceiptPayload
+} from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     type ALAckPayload,
@@ -41,6 +45,13 @@ interface AddressedFixture {
     readonly routed: ALMessage[];
 }
 
+interface RoomUnicastInput {
+    readonly msgId: string;
+    readonly toPeerId: string;
+    readonly ack: 'receiver' | 'none';
+    readonly qos?: ALMessage['qos'];
+}
+
 describe('WS server receipts for addressed sends', () => {
     afterEach(() => vi.restoreAllMocks());
 
@@ -48,7 +59,7 @@ describe('WS server receipts for addressed sends', () => {
         const fixture = await createAddressedFixture();
 
         const admitted = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-b', 'b', 'receiver'),
+            roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }),
             'a'
         );
 
@@ -69,7 +80,7 @@ describe('WS server receipts for addressed sends', () => {
 
     it('completes the one-member receipt on the addressee\'s own ACK', async () => {
         const fixture = await createAddressedFixture();
-        await fixture.service.acceptIncomingMessage(roomUnicast('to-b', 'b', 'receiver'), 'a');
+        await fixture.service.acceptIncomingMessage(roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }), 'a');
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
             return readFrames(fixture.sockets.b).length;
@@ -90,7 +101,7 @@ describe('WS server receipts for addressed sends', () => {
         const fixture = await createAddressedFixture();
 
         const refused = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-c', 'c', 'receiver'),
+            roomUnicast({ msgId: 'to-c', toPeerId: 'c', ack: 'receiver' }),
             'a'
         );
 
@@ -111,7 +122,10 @@ describe('WS server receipts for addressed sends', () => {
     it('follows the authorizer NACK policy when refusing an out-of-audience addressee', async () => {
         const fixture = await createAddressedFixture(false);
 
-        const refused = await fixture.service.acceptIncomingMessage(roomUnicast('to-c', 'c', 'receiver'), 'a');
+        const refused = await fixture.service.acceptIncomingMessage(
+            roomUnicast({ msgId: 'to-c', toPeerId: 'c', ack: 'receiver' }),
+            'a'
+        );
 
         expect(refused.left).toEqual({
             code: 'unauthorized',
@@ -126,7 +140,7 @@ describe('WS server receipts for addressed sends', () => {
         const fixture = await createAddressedFixture();
 
         const admitted = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-server', SERVER_ID, 'receiver'),
+            roomUnicast({ msgId: 'to-server', toPeerId: SERVER_ID, ack: 'receiver' }),
             'a'
         );
 
@@ -145,7 +159,7 @@ describe('WS server receipts for addressed sends', () => {
         const fixture = await createAddressedFixture();
 
         await fixture.service.acceptIncomingMessage(
-            roomUnicast('hop-to-b', 'b', 'none', { ack: { algo: 'hop' } }),
+            roomUnicast({ msgId: 'hop-to-b', toPeerId: 'b', ack: 'none', qos: { ack: { algo: 'hop' } } }),
             'a'
         );
 
@@ -161,7 +175,7 @@ describe('WS server receipts for addressed sends', () => {
     it('acknowledges a subtree room send itself: the router owns the fanout, so no subtree is waited for', async () => {
         const fixture = await createAddressedFixture();
         const roomSend: ALMessage = {
-            ...roomUnicast('subtree-room', 'b', 'none'),
+            ...roomUnicast({ msgId: 'subtree-room', toPeerId: 'b', ack: 'none' }),
             targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
             delivery: { reliability: 'at-least-once', ack: 'group-leader' }
         };
@@ -177,7 +191,7 @@ describe('WS server receipts for addressed sends', () => {
     it('aggregates a handed-over message over the audience its RTC leg froze, so a leaver reads unconfirmed', async () => {
         const fixture = await createAddressedFixture();
         const handedOver: ALMessage = {
-            ...roomUnicast('frozen-1', 'b', 'receiver'),
+            ...roomUnicast({ msgId: 'frozen-1', toPeerId: 'b', ack: 'receiver' }),
             targets: {
                 mode: 'multicast',
                 groupRef: ROOM,
@@ -252,12 +266,8 @@ async function createAddressedFixture(sendNacks = true): Promise<AddressedFixtur
     return { service, engine, sockets, routed };
 }
 
-function roomUnicast(
-    msgId: string,
-    toPeerId: string,
-    ack: 'receiver' | 'none',
-    qos?: ALMessage['qos']
-): ALMessage {
+function roomUnicast(input: RoomUnicastInput): ALMessage {
+    const { msgId, toPeerId, ack, qos } = input;
     const nowMs = Date.now();
     return {
         id: { v: 2, msgId, ts: nowMs, senderId: 'a' },
@@ -305,9 +315,9 @@ function readReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
 }
 
 function readAcks(socket: SimulatedWebSocket): readonly ALAckPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_ACK_TYPE_ID) as readonly ALAckPayload[];
+    return readControlPayloads(socket, AL_CONTROL_ACK_TYPE_ID).map((payload) => decodeALAckPayload(payload));
 }
 
 function readNacks(socket: SimulatedWebSocket): readonly ALNackPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_NACK_TYPE_ID) as readonly ALNackPayload[];
+    return readControlPayloads(socket, AL_CONTROL_NACK_TYPE_ID).map((payload) => decodeALNackPayload(payload));
 }
