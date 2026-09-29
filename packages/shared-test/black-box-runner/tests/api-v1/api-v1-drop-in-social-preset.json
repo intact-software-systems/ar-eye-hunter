@@ -332,13 +332,13 @@
           "&applicationId=",
           {
             "urlEncode": {
-              "path": "variables.applicationId"
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.applicationId"
             }
           },
           "&workspaceId=",
           {
             "urlEncode": {
-              "path": "variables.workspaceId"
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.workspaceId"
             }
           }
         ]
@@ -399,13 +399,13 @@
           "&applicationId=",
           {
             "urlEncode": {
-              "path": "variables.applicationId"
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.applicationId"
             }
           },
           "&workspaceId=",
           {
             "urlEncode": {
-              "path": "variables.workspaceId"
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.workspaceId"
             }
           }
         ]

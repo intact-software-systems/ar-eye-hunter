@@ -168,9 +168,9 @@
           "?ticket=",
           { "urlEncode": { "path": "outputs.aliceWsTicket" } },
           "&applicationId=",
-          { "urlEncode": { "path": "variables.applicationId" } },
+          { "urlEncode": { "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId" } },
           "&workspaceId=",
-          { "urlEncode": { "path": "variables.workspaceId" } }
+          { "urlEncode": { "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.workspaceId" } }
         ]
       }
     },
@@ -206,9 +206,9 @@
           "?ticket=",
           { "urlEncode": { "path": "outputs.bobWsTicket" } },
           "&applicationId=",
-          { "urlEncode": { "path": "variables.applicationId" } },
+          { "urlEncode": { "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId" } },
           "&workspaceId=",
-          { "urlEncode": { "path": "variables.workspaceId" } }
+          { "urlEncode": { "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.workspaceId" } }
         ]
       }
     },

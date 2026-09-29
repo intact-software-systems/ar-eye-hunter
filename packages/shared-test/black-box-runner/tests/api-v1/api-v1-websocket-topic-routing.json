@@ -249,13 +249,13 @@
           "&applicationId=",
           {
             "urlEncode": {
-              "path": "variables.applicationId"
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.applicationId"
             }
           },
           "&workspaceId=",
           {
             "urlEncode": {
-              "path": "variables.workspaceId"
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.workspaceId"
             }
           }
         ]

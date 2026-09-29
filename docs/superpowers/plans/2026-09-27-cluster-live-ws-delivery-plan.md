@@ -1311,14 +1311,30 @@ checks pass.
 the hosted ALM lane passed. Its retained safe artifact correlates six admitted
 messages through dequeue, cluster publish, and direct socket send: 11/11
 intended sends succeeded, with zero recorded send failures. The formation and
-medium-scale API-v1 gates also passed. The Release Gate's broader PostgreSQL
-checks remain in progress at this checkpoint. The unchanged branch-only E3
-diagnostic cohort did not produce acceptance evidence: runner 2 failed C
+medium-scale API-v1 gates also passed. The Release Gate failed only its
+API-v1 PostgreSQL black-box recipes: 55/60 passed, and the same five
+scope-sensitive WS recipes failed. The retained report shows the created HTTP
+group had an expanded run-specific application/workspace scope, while the WS
+client-state event still reported a literal `{runId}` in its application ID.
+The encoded `variables.applicationId`/`workspaceId` transform inputs do not
+recursively expand placeholders. Correct those fixture inputs from the
+already-created group's canonical response and prove the transform with a
+runtime-like nested-placeholder test; do not weaken server scope checks. The
+fixture correction now passes focused tests locally, including the allowed
+409 group-create branch in topic routing, but has not passed hosted PostgreSQL
+validation. The unchanged branch-only E3 diagnostic cohort did not produce
+acceptance evidence: runner 2 failed C
 readiness on reconnect cycle 1, runner 3 failed B readiness on cycle 4, and
 runner 1 was terminated with exit 143 during cycle 21 at about 30 minutes,
 before artifact upload, despite the workflow's 360-minute job declaration.
-The source of that apparent runtime cap is not yet proven. Runner 1's first
-20 completed reconnect phases took roughly 25–72 seconds each; a 100-cycle
+The source of that apparent runtime cap is not yet proven. A read-only job
+trace rules out the declared 360-minute workflow limit, matrix fail-fast,
+workflow concurrency cancellation, and the Playwright test's own 30-minute
+timer: that timer began about ten minutes after the job and had not expired.
+The job stopped with exit 143, and even the `always()` artifact upload was
+skipped, consistent with job/runner termination rather than a test assertion.
+The exact issuer remains unknown; do not infer a GitHub-hosted 30-minute cap.
+Runner 1's first 20 completed reconnect phases took roughly 25–72 seconds each; a 100-cycle
 run cannot fit a 30-minute limit at that pace, even if every connection
 eventually opens. This runtime/throughput concern is separate from fixing the
 premature expiry. The phase markers
@@ -1333,13 +1349,17 @@ on the first valid offer, while retaining idle expiry and attempt bounds, is
 proposed for review, not implemented. The diagnostic cohort is non-publishing
 and cannot substitute for a valid E3 primary.
 
-(1) Finish the in-progress exact-head Release Gate, prove the five corrected
-recipe WS paths against PostgreSQL, and repair only a demonstrated remaining
-defect. Keep the successful ALM trace as same-head browser evidence, not proof
+(1) Prove the five locally corrected fixture WS paths against PostgreSQL on a
+new exact-head Release Gate, and repair only a
+demonstrated remaining defect. Keep the successful ALM trace as same-head
+browser evidence, not proof
 of unrelated RTC retention. (2) Resolve the E3 receiver-watchdog design gate,
 then, if approved, use focused tests and the unchanged browser case to verify
 the smallest bounded correction. Determine why the third diagnostic runner
-was terminated near 30 minutes before planning another 100-cycle cohort.
+was terminated near 30 minutes before planning another 100-cycle cohort; a
+diagnostic TERM marker and runner-debug evidence, or a separate inert 31-minute
+job on the same runner class, can distinguish a runner-level termination from
+the RTC workload without changing the E3 test.
 Present the
 [principal-relevant state-sync read design](../specs/2026-09-29-principal-relevant-state-sync-read-design.md)
 for maintainer review. It keeps the full authorized audience, validates only
