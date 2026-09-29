@@ -20,8 +20,8 @@ interface PublishRtcSignalingMessageInput {
 
 export function installRtcSignalingWsTopic(
     service: WsQueueBoxServerService,
-    publication?: RallarServerWsRouterOptions['livePublication'],
-    nowEpochMs: () => number = Date.now
+    publication: RallarServerWsRouterOptions['livePublication'],
+    nowEpochMs: () => number
 ): void {
     service.onInboxMessageDo(AppTopics.rtcSignaling, {
         onMessage: (

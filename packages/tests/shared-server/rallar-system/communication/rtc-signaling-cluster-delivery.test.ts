@@ -60,7 +60,7 @@ it.each([
         transport,
         channel: 'ws-channel',
         publisherId: 'publisher-a'
-    });
+    }, Date.now);
     const message = signalingMessage();
 
     expect((await fixture.service.acceptIncomingMessage(message, 'sender')).right?.kind).toBe('admitted');
@@ -90,7 +90,7 @@ it('keeps non-RTC unicast on the ordinary forwarding path', async () => {
         },
         channel: 'ws-channel',
         publisherId: 'publisher-a'
-    });
+    }, Date.now);
     const message = newALUnicastMessage(
         'sender',
         newALEventRoute('topic', 'receiver', 'ordinary'),

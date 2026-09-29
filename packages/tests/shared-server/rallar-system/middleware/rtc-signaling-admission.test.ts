@@ -79,7 +79,7 @@ describe('middleware pre-admission', () => {
                     workQueue: signalingBackend.workQueue
                 }
             });
-            installRtcSignalingWsTopic(runtime.wsQBoxServerService);
+            installRtcSignalingWsTopic(runtime.wsQBoxServerService, undefined, Date.now);
             runtime.qboxEngine.start();
             onTestFinished(() => {
                 runtime.wsQBoxServerService.dispose();
