@@ -311,24 +311,9 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.topology.planning.treeExitWidth = value
     },
     {
-        name: 'RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS',
-        decode: decodeNumber,
-        apply: (source, value) => source.topology.recompute.rttRebuildDebounceMs = value
-    },
-    {
         name: 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS',
         decode: decodeNumber,
         apply: (source, value) => source.topology.recompute.formationDebounceMs = value
-    },
-    {
-        name: 'RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS',
-        decode: decodeNumber,
-        apply: (source, value) => source.topology.recompute.globalWindowMs = value
-    },
-    {
-        name: 'RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW',
-        decode: decodeNumber,
-        apply: (source, value) => source.topology.recompute.globalMaxPerWindow = value
     },
     {
         name: 'RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS',

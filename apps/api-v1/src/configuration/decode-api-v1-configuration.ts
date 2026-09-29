@@ -359,18 +359,9 @@ function decodeTopology(
             treeExitWidth: decoder.integer('topology.planning.treeExitWidth', 0)
         },
         recompute: {
-            rttRebuildDebounceMs: decoder.integer(
-                'topology.recompute.rttRebuildDebounceMs',
-                0
-            ),
             formationDebounceMs: decoder.integer(
                 'topology.recompute.formationDebounceMs',
                 0
-            ),
-            globalWindowMs: decoder.integer('topology.recompute.globalWindowMs', 1),
-            globalMaxPerWindow: decoder.integer(
-                'topology.recompute.globalMaxPerWindow',
-                1
             )
         },
         rttRefinement: {

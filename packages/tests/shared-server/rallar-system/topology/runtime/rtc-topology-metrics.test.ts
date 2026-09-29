@@ -20,7 +20,7 @@ describe('RtcTopologyMetrics', () => {
             hysteresisHoldCount: 8
         }, 9);
 
-        expect(metrics.read(0, 0)).toMatchObject({
+        expect(metrics.read(0)).toMatchObject({
             topologyUpdateCount: 1,
             topologyWorkComputeDurationMs: 9,
             topologyChangedCount: 0,
@@ -70,14 +70,6 @@ describe('RtcTopologyMetrics', () => {
         metrics.recordIncrementalFallback('delta-too-large');
         metrics.recordIncrementalFallback('invariant-violation');
         metrics.recordHysteresisHold();
-        metrics.recordRttQueue('new', true);
-        metrics.recordRttQueue('coalesced', false);
-        metrics.recordRttQueueRequest();
-        metrics.recordRttQueueResult('new', false);
-        metrics.recordRttFlush(false);
-        metrics.recordRttFlush(true);
-        metrics.recordRttFlushAttempt();
-        metrics.recordRttFlushResult(true);
         metrics.recordPublish(true);
         metrics.recordPublish(false);
         metrics.recordFingerprintSkip();
@@ -85,7 +77,7 @@ describe('RtcTopologyMetrics', () => {
         metrics.recordRemoval(true);
         metrics.recordRemoval(false);
 
-        expect(metrics.read(7, 8)).toMatchObject({
+        expect(metrics.read(7)).toMatchObject({
             topologyUpdateCount: 3,
             topologyWorkComputeDurationMs: 0,
             topologyChangedCount: 1,
@@ -107,13 +99,6 @@ describe('RtcTopologyMetrics', () => {
             incrementalPlanFallbackFullCount: 2,
             incrementalPlanInvariantFallbackCount: 1,
             hysteresisHeldKindCount: 1,
-            rttQueueRequestCount: 3,
-            rttQueueNewCount: 2,
-            rttQueueCoalescedCount: 1,
-            rttQueueImmediateCount: 1,
-            rttFlushAttemptCount: 3,
-            rttFlushSkippedCount: 1,
-            rttFlushExecutedCount: 2,
             topologyPublishAttemptCount: 2,
             topologyPublishedCount: 1,
             topologyPublishSkippedUnchangedCount: 1,
@@ -122,13 +107,12 @@ describe('RtcTopologyMetrics', () => {
             topologyRemovalRequestCount: 2,
             topologyRemovedCount: 1,
             topologyRemoveMissCount: 1,
-            topologySnapshotCount: 7,
-            pendingRttUpdateCount: 8
+            topologySnapshotCount: 7
         });
 
         metrics.reset();
 
-        expect(metrics.read(7, 8)).toEqual({
+        expect(metrics.read(7)).toEqual({
             topologyUpdateCount: 0,
             topologyWorkComputeDurationMs: 0,
             topologyChangedCount: 0,
@@ -150,13 +134,6 @@ describe('RtcTopologyMetrics', () => {
             incrementalPlanFallbackFullCount: 0,
             incrementalPlanInvariantFallbackCount: 0,
             hysteresisHeldKindCount: 0,
-            rttQueueRequestCount: 0,
-            rttQueueNewCount: 0,
-            rttQueueCoalescedCount: 0,
-            rttQueueImmediateCount: 0,
-            rttFlushAttemptCount: 0,
-            rttFlushSkippedCount: 0,
-            rttFlushExecutedCount: 0,
             topologyPublishAttemptCount: 0,
             topologyPublishedCount: 0,
             topologyPublishSkippedUnchangedCount: 0,
@@ -165,8 +142,7 @@ describe('RtcTopologyMetrics', () => {
             topologyRemovalRequestCount: 0,
             topologyRemovedCount: 0,
             topologyRemoveMissCount: 0,
-            topologySnapshotCount: 7,
-            pendingRttUpdateCount: 8
+            topologySnapshotCount: 7
         });
     });
 });

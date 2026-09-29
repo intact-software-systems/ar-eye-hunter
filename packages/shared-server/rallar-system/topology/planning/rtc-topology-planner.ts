@@ -440,8 +440,7 @@ export class RtcTopologyPlanner {
         }
         return {
             ...this.serviceOptions,
-            ...updateOptions.topologyOptions,
-            rttRebuildDebounceMs: this.serviceOptions.rttRebuildDebounceMs
+            ...updateOptions.topologyOptions
         };
     }
 

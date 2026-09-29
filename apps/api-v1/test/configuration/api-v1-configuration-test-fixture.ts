@@ -87,10 +87,7 @@ export function validConfigurationDefaultsSource(): MutableApiV1ConfigurationSou
                 treeExitWidth: 0
             },
             recompute: {
-                rttRebuildDebounceMs: 250,
-                formationDebounceMs: 500,
-                globalWindowMs: 5_000,
-                globalMaxPerWindow: 2
+                formationDebounceMs: 500
             },
             rttRefinement: {
                 minIntervalMs: 30_000,
