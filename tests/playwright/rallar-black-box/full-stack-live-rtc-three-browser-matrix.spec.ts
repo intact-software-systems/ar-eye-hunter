@@ -963,94 +963,142 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         };
 
         try {
-            const agents = await openAgentTrio(browser, {
-                runId,
-                groupId,
-                suffix,
-                label: 'live-retention'
-            });
-            openHandles.push(...agents);
-            commandIds.push(
-                ...(await liveRtcDeliveryOperations.setupGroupMembership({
-                    control,
-                    runId,
-                    owner: agents[0],
-                    members: agents,
-                    groupId,
-                    suffix
-                }))
+            const agents = await test.step(
+                'retention-100: open the three browser agents',
+                async () => {
+                    const openedAgents = await openAgentTrio(browser, {
+                        runId,
+                        groupId,
+                        suffix,
+                        label: 'live-retention'
+                    });
+                    openHandles.push(...openedAgents);
+                    return openedAgents;
+                }
             );
-            const initialFormation = await liveRtcDeliveryOperations.runGroupFormation({
-                control,
-                runId,
-                agents,
-                transport: 'messages.rtc',
-                groupId,
-                suffix: `${suffix}-initial`,
-                readinessScope: 'all'
-            });
-            commandIds.push(...initialFormation.commandIds);
-            await captureCheckpoint(agents, 0);
+            await test.step(
+                'retention-100: establish group membership',
+                async () => {
+                    commandIds.push(
+                        ...(await liveRtcDeliveryOperations.setupGroupMembership({
+                            control,
+                            runId,
+                            owner: agents[0],
+                            members: agents,
+                            groupId,
+                            suffix
+                        }))
+                    );
+                }
+            );
+            const initialFormation = await test.step(
+                'retention-100: form the initial group and wait for readiness',
+                async () => {
+                    const formation = await liveRtcDeliveryOperations.runGroupFormation({
+                        control,
+                        runId,
+                        agents,
+                        transport: 'messages.rtc',
+                        groupId,
+                        suffix: `${suffix}-initial`,
+                        readinessScope: 'all'
+                    });
+                    commandIds.push(...formation.commandIds);
+                    return formation;
+                }
+            );
+            await test.step(
+                'retention-100: capture initial checkpoint at cycle 0',
+                async () => captureCheckpoint(agents, 0)
+            );
 
             let currentSessionId = initialFormation.sessions.C;
             for (let cycle = 1; cycle <= 100; cycle += 1) {
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
-                await control.executeOk({
-                    runId,
-                    agentId: agents[2].agentId,
-                    commandId: closeCommandId,
-                    command: { kind: 'close' },
-                    timeoutMs: 45_000
-                });
-                commandIds.push(closeCommandId);
-                await Promise.all(
-                    agents.slice(0, 2).map((agent) =>
-                        control.waitForPeerAbsence({
+                await test.step(
+                    `retention-100 cycle ${cycle}: close peer C`,
+                    async () => {
+                        await control.executeOk({
                             runId,
-                            agent,
-                            departedPeerIds: [currentSessionId],
-                            suffix: `${suffix}-${cycle}`
-                        })
-                    )
+                            agentId: agents[2].agentId,
+                            commandId: closeCommandId,
+                            command: { kind: 'close' },
+                            timeoutMs: 45_000
+                        });
+                        commandIds.push(closeCommandId);
+                    }
                 );
-                const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
-                    control,
-                    runId,
-                    reconnectingAgent: agents[2],
-                    survivingAgents: [agents[0], agents[1]],
-                    survivingSessionIds: [
-                        initialFormation.sessions.A,
-                        initialFormation.sessions.B
-                    ],
-                    transport: 'messages.rtc',
-                    groupId,
-                    suffix: `${suffix}-${cycle}`
-                });
-                commandIds.push(reconnected.commandId);
-                timings.push({
-                    kind: 'reconnect-ready',
-                    transport: 'messages.rtc',
-                    senderAgentId: agents[2].agentId,
-                    receiverAgentIds: [agents[0].agentId, agents[1].agentId],
-                    durationMs: reconnected.receiverReadinessDurationMs
-                });
-                currentSessionId = reconnected.sessionId;
+                await test.step(
+                    `retention-100 cycle ${cycle}: wait for both surviving peers to observe absence`,
+                    async () => {
+                        await Promise.all(
+                            agents.slice(0, 2).map((agent) =>
+                                control.waitForPeerAbsence({
+                                    runId,
+                                    agent,
+                                    departedPeerIds: [currentSessionId],
+                                    suffix: `${suffix}-${cycle}`
+                                })
+                            )
+                        );
+                    }
+                );
+                await test.step(
+                    `retention-100 cycle ${cycle}: reconnect peer C and wait for readiness`,
+                    async () => {
+                        const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
+                            control,
+                            runId,
+                            reconnectingAgent: agents[2],
+                            survivingAgents: [agents[0], agents[1]],
+                            survivingSessionIds: [
+                                initialFormation.sessions.A,
+                                initialFormation.sessions.B
+                            ],
+                            transport: 'messages.rtc',
+                            groupId,
+                            suffix: `${suffix}-${cycle}`
+                        });
+                        commandIds.push(reconnected.commandId);
+                        timings.push({
+                            kind: 'reconnect-ready',
+                            transport: 'messages.rtc',
+                            senderAgentId: agents[2].agentId,
+                            receiverAgentIds: [agents[0].agentId, agents[1].agentId],
+                            durationMs: reconnected.receiverReadinessDurationMs
+                        });
+                        currentSessionId = reconnected.sessionId;
+                    }
+                );
                 if (cycle % 10 === 0) {
-                    await captureCheckpoint(agents, cycle);
+                    await test.step(
+                        `retention-100 cycle ${cycle}: capture every-tenth checkpoint`,
+                        async () => captureCheckpoint(agents, cycle)
+                    );
                 }
             }
             reconnectPassed = true;
             matrixPassed = true;
-            commandIds.push(
-                ...(await liveRtcDeliveryOperations.closeAndResetAgents({
-                    control,
-                    runId,
-                    agents,
-                    suffix: `${suffix}-final`
-                }))
+            await test.step(
+                'retention-100: close and reset all agents after cycle 100',
+                async () => {
+                    commandIds.push(
+                        ...(await liveRtcDeliveryOperations.closeAndResetAgents({
+                            control,
+                            runId,
+                            agents,
+                            suffix: `${suffix}-final`
+                        }))
+                    );
+                }
             );
-            await control.expectArtifactBundle({ runId, commandIds });
-            artifactBundlePassed = true;
+            await test.step(
+                'retention-100: assert the final artifact bundle',
+                async () => {
+                    await control.expectArtifactBundle({ runId, commandIds });
+                    artifactBundlePassed = true;
+                }
+            );
         }
         catch (error) {
             producerExitStatus = 1;
@@ -1060,29 +1108,34 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             throw toError(error);
         }
         finally {
-            await finalizeLiveRtcAttempt({
-                control,
-                testInfo,
-                runId,
-                agents: openHandles,
-                suffix,
-                context: evidenceContext,
-                producerExitStatus,
-                timings,
-                diagnostics,
-                failureDiagnostics,
-                retention: {
-                    cycles: 100,
-                    checkpoints,
-                    settledStateReturned: liveRtcRetentionStateReturned(checkpoints)
-                },
-                assertions: {
-                    matrixPassed,
-                    artifactBundlePassed,
-                    unexpectedDeliveryCount,
-                    reconnectPassed
+            await test.step(
+                'retention-100: finalize attempt diagnostics and evidence',
+                async () => {
+                    await finalizeLiveRtcAttempt({
+                        control,
+                        testInfo,
+                        runId,
+                        agents: openHandles,
+                        suffix,
+                        context: evidenceContext,
+                        producerExitStatus,
+                        timings,
+                        diagnostics,
+                        failureDiagnostics,
+                        retention: {
+                            cycles: 100,
+                            checkpoints,
+                            settledStateReturned: liveRtcRetentionStateReturned(checkpoints)
+                        },
+                        assertions: {
+                            matrixPassed,
+                            artifactBundlePassed,
+                            unexpectedDeliveryCount,
+                            reconnectPassed
+                        }
+                    });
                 }
-            });
+            );
         }
     });
 });

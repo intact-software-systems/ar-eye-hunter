@@ -82,7 +82,7 @@ export default defineConfig({
     expect: {
         timeout: 15_000
     },
-    reporter: [['list']],
+    reporter: [['list', { printSteps: true }]],
     use: {
         baseURL: fullStackSpaBaseUrl,
         trace: 'on-first-retry',
