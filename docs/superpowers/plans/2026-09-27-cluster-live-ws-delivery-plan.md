@@ -1091,6 +1091,41 @@ evidence map in the draft PR, and require a green exact-head Release Gate before
 readiness. Do not disrupt an existing PostgreSQL container or erase benchmark
 data to obtain the comparison without separate authorization.
 
+**Completed local enabling slices — inbound authority and test contracts.**
+The room-unicast addressee projection again runs at the inbound authority
+before admission. Addressed and originated receipt fixtures now prove current
+authenticated scope, and the addressed live-send fixture uses the current DTO.
+The refusal/NACK behavior passed 75 focused tests after independent review.
+Six authorizer fixtures now state their required NACK policy, and two RTC
+fixtures state their required server-peer field. Thirteen duplicate ingress
+delivery cases were removed only after mapping their equivalent setup and
+assertions to retained inbound-delivery tests; independent review approved
+the mapping. `typecheck:tests` passes. No public overload, production contract
+loosening, or retained affected legacy was added. These fixes are not remote
+acceptance evidence until checked on the exact PR head.
+
+**Next slice — close the measured bundle budgets.** The local whole suite
+passes 13,157 tests and skips 12; only the two strict bundle tests fail:
+`browser/rallar.ts` measures 225.419921875 KiB against `<225` and the headless
+agent measures 287.8095703125 KiB against `<287`. The one-millisecond timing
+failure seen in an earlier whole-suite run did not recur. Compare the exact
+entry-point bundles and their inputs against an environment-matched baseline,
+identify avoidable shipped code on the changed path, and make the smallest
+behavior-preserving reduction. Keep both approved ceilings strict; do not
+raise them, hide inputs, or omit required runtime behavior. Recheck focused
+correctness, both bundle harnesses, test typing, and the whole suite.
+
+**Following slice — exact-head distributed and browser evidence.** Once the
+local gate is green, run the branch Release Gate and reconcile remaining raw
+WS-outbox producers against the approved authority policy. Existing exact-head
+three-process group-delta and auth-logout proofs pass, but they do not prove
+CRDT replies, topology first-dequeue, or E3 browser acceptance. Run the
+remaining required cluster and unchanged E3 diagnostics, obtain a controlled
+environment-matched state-write comparison without disrupting existing
+PostgreSQL data, then perform whole-branch standards/legacy review and update
+the draft PR evidence map. Keep the PR draft until the exact-head gate and
+required acceptance evidence are green.
+
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
 the existing service clock through live delivery and recipient selection. The
