@@ -37,7 +37,7 @@ const esbuildBin = path.join(
 );
 
 const budgetsKiB = decodeBrotliBudgetsKiB(
-    readFileSync(path.join(repoRoot, 'packages/tests/shared-web/shared-web-bundle-budgets.json'), 'utf8')
+    readFileSync(path.join(repoRoot, 'packages/shared-web/bundle-budgets.json'), 'utf8')
 );
 
 function decodeBrotliBudgetsKiB(text: string): Readonly<Record<string, number>> {
@@ -47,7 +47,7 @@ function decodeBrotliBudgetsKiB(text: string): Readonly<Record<string, number>> 
 function budgetFor(label: string): number {
     const budget = budgetsKiB[label];
     if (budget === undefined) {
-        throw new Error(`shared-web-bundle-budgets.json has no budget for ${label}`);
+        throw new Error(`packages/shared-web/bundle-budgets.json has no budget for ${label}`);
     }
     return budget;
 }
@@ -140,7 +140,7 @@ describe('shared-web browser bundle boundaries', () => {
             expect(
                 result.brotliKiB,
                 `${entry.label} measures ${result.brotliKiB.toFixed(3)} KiB against ${entry.brotliBudgetKiB} in ` +
-                    `shared-web-bundle-budgets.json; budgets are adjustable, so raise it to ${Math.floor(result.brotliKiB) + 1} and say so in the PR`
+                    `packages/shared-web/bundle-budgets.json; budgets are adjustable, so raise it to ${Math.floor(result.brotliKiB) + 1} and say so in the PR`
             ).toBeLessThan(entry.brotliBudgetKiB);
         }
     });
