@@ -23,24 +23,12 @@ permissions:
   actions: read
 
 jobs:
-  release-gate:
-    name: Release Gate
+  # Every lane below runs in parallel on its own runner. A caller's `needs` on this reusable workflow
+  # fails when any blocking lane fails; the ALM observation job is continue-on-error.
+  checks:
+    name: Static checks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app
-          POSTGRES_DB: appdb
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U app -d appdb"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
+    timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
@@ -52,43 +40,10 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      # Only a push validating its exact main commit may save cache state; every other caller restores only.
-      - name: Restore Deno cache without save permission
-        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' || inputs.candidate_ref != github.sha }}
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/.cache/deno
-            ~/.deno
-          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deno-
-
-      - name: Cache Deno for trusted runs
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.candidate_ref == github.sha }}
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/deno
-            ~/.deno
-          key: ${{ runner.os }}-deno-${{ hashFiles('deno.lock', 'apps/**/deno.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-deno-
-
-      - name: Install dependencies
-        run: npm ci
+          deno: 'true'
 
       - name: Report IDE navigation details
         run: npm run check:repo-style:navigation-details
@@ -117,12 +72,6 @@ jobs:
       - name: Type-check TypeScript 7 workspaces
         run: npm run typecheck
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Run root CI suite
-        run: npm run test:ci
-
       - name: Build deployable apps
         run: |
           npm run build:ar-eye-hunter-v1
@@ -136,11 +85,161 @@ jobs:
           (cd apps/relic-hunter-server-v1 && deno task check)
           (cd apps/rallar-black-box-control-server && deno task check)
 
-      - name: Run Postgres migrations
-        run: npm run db:migrate
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
 
-      - name: Run Postgres shared-server integration tests
-        run: npm run test:postgres:integration
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
+      - name: Run unit tests
+        run: npm run test:unit:main
+
+  unit-tooling:
+    name: Unit tests (tooling)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+
+      - name: Run tooling unit tests
+        run: npm run test:unit:tooling
+
+  deno:
+    name: Deno tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          # Only a push validating its exact main commit may save cache state; every other lane restores only.
+          save-deno-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && inputs.candidate_ref == github.sha }}
+
+      - name: Run Deno tests
+        run: npm run test:deno
+
+  e2e-app:
+    name: Browser tests (app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
+      - name: Run app browser tests
+        run: npm run test:rallar
+
+      - name: Run in-memory full-stack browser tests
+        run: npm run test:full-stack:memory
+
+  e2e-recipe-console:
+    name: Browser tests (Recipe Console)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          playwright: 'true'
+
+      - name: Run Recipe Console browser tests
+        run: npm run test:rallar:recipe-console
+
+  black-box:
+    name: API black-box recipes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
 
       - name: Run API v1 black-box recipes
         uses: ./.github/actions/api-v1-black-box-test
@@ -161,6 +260,47 @@ jobs:
           name: api-v1-black-box-postgres
           path: .artifacts/api-v1-black-box/postgres
           if-no-files-found: warn
+
+  postgres-integration:
+    name: Postgres integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
+      - name: Run Postgres migrations
+        run: npm run db:migrate
+
+      - name: Run Postgres shared-server integration tests
+        run: npm run test:postgres:integration
 
       - name: Record exact topology replay checkout
         run: |
@@ -193,6 +333,7 @@ jobs:
           npm run test:rallar:full-stack:postgres:rest
           npm run test:rallar:full-stack:postgres:control
 
+      # Last in this lane: presence expiry leaves fixed-ID outbox evidence that later outbox workers would see.
       - name: Run Postgres presence-expiry integration tests
         run: |
           npm run test:postgres:presence-expiry

@@ -38,36 +38,14 @@ function getJobBlock(workflow: string, jobName: string): string {
 describe('Deploy workflow release gate', () => {
     it('runs validation before every main deployment job proceeds', async () => {
         const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
-        const releaseGateWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/release-gate.yml'),
-            'utf8'
-        );
 
+        // What the reusable gate runs is owned by packages/tests/repo/release-gate-lanes.test.ts.
         expect(workflow).toContain('release-gate:');
         expect(workflow).toContain('name: Release Gate');
         expect(getJobBlock(workflow, 'release-gate')).toContain(
             'uses: ./.github/workflows/release-gate.yml'
         );
         expect(getJobBlock(workflow, 'release-gate')).toContain(releaseGateEnabledCondition);
-        expect(releaseGateWorkflow).toContain('postgres:');
-        expect(releaseGateWorkflow).toContain('npm ci');
-        expect(releaseGateWorkflow).toContain('npx playwright install --with-deps chromium');
-        expect(releaseGateWorkflow).toContain('RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory');
-        expect(releaseGateWorkflow).not.toContain('RALLAR_AUTH_CREDENTIAL_SECRET:');
-        expect(releaseGateWorkflow).toContain('npm run test:ci');
-        expect(releaseGateWorkflow).toContain('npm run build:ar-eye-hunter-v1');
-        expect(releaseGateWorkflow).toContain('npm run build:relic-hunters-v1');
-        expect(releaseGateWorkflow).toContain('npm run build:rallar');
-        expect(releaseGateWorkflow).toContain('cd apps/api-v1 && deno task check');
-        expect(releaseGateWorkflow).toContain('cd apps/relic-hunter-server-v1 && deno task check');
-        expect(releaseGateWorkflow).toContain(
-            'cd apps/rallar-black-box-control-server && deno task check'
-        );
-        expect(releaseGateWorkflow).toContain('npm run db:migrate');
-        expect(releaseGateWorkflow.match(/npm run test:postgres:presence-expiry/gu))
-            .toHaveLength(2);
-        expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:rest');
-        expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:control');
 
         const denoDeployJobs = ['deploy-api', 'deploy-control-server', 'deploy-relic-api'];
 
