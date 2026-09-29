@@ -15,5 +15,14 @@
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:relic:full-stack",
     "reason": "Needs the Relic Hunters game server and a browser pair; no lane starts that stack."
+  },
+  {
+    "paths": [
+      "tests/playwright/ar-eye-hunter/director-capability-delivery.spec.ts",
+      "tests/playwright/ar-eye-hunter/mobile-controls.spec.ts"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npm run test:playwright:ar-eye",
+    "reason": "Passes locally (4 passed, 4 skipped) but on the Linux runner three specs hit the 45 s timeout waiting for canvas effects (mobile-controls.spec.ts:33, director-capability-delivery.spec.ts:55), so wiring it into e2e-app turned the gate red. Fix the headless rendering dependency before wiring a lane."
   }
 ]

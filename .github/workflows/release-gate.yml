@@ -179,9 +179,6 @@ jobs:
       - name: Run app browser tests
         run: npm run test:rallar
 
-      - name: Run AR Eye Hunter browser tests
-        run: npm run test:playwright:ar-eye
-
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
 

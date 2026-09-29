@@ -285,7 +285,7 @@ main-push deploy calls the same `release-gate.yml`. Its blocking lanes run in pa
 | `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
 | `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
 | `deno`                 | `test:deno`                                                                                                                                                |
-| `e2e-app`              | `test:rallar`, `test:playwright:ar-eye`, `test:full-stack:memory`                                                                                          |
+| `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
 | `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
 | `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
