@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { scheduler } from 'node:timers/promises';
 
 import {
     RALLAR_CRDT_OPERATION_VERSION,
@@ -9,6 +10,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import {
     computeCrdtOutboxProvenance,
     writeCrdtOutboxProvenance
@@ -20,11 +22,14 @@ import {
 import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import {
     CrdtMutationConflictError,
@@ -35,6 +40,7 @@ import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mut
 
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
+import { TestWebSocket } from '../../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
@@ -70,6 +76,20 @@ interface CollisionEntries {
     readonly durableResult: ResourceEntry;
 }
 
+interface CommandInput {
+    readonly commandId: string;
+    readonly updateId: string;
+    readonly capturedAtEpochMs: number;
+    readonly document?: RallarCrdtDocumentRef;
+}
+
+interface FanoutFirstDequeueInput {
+    readonly sql: PGliteSql;
+    readonly entry: ResourceEntry;
+    readonly scope: 'room' | 'principal' | 'app';
+    readonly proofState: 'present' | 'missing';
+}
+
 Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
     await verifyAtomicMutationCommit();
 });
@@ -77,7 +97,7 @@ Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', as
 Deno.test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
-        const input = await command('scoped-reply-command', 'scoped-reply-update', 1_000);
+        const input = await command({ commandId: 'scoped-reply-command', updateId: 'scoped-reply-update', capturedAtEpochMs: 1_000 });
         const computed = await computeValidatedWrite(service, input);
         const reply = computed.outboxWrites[0]?.entry;
         assert.ok(reply);
@@ -109,15 +129,129 @@ Deno.test(
     }
 );
 
+for (const scope of ['room', 'principal', 'app'] as const) {
+    for (const proofState of ['present', 'missing'] as const) {
+        Deno.test(`committed CRDT ${scope} fanout first dequeue with ${proofState} producer proof`, async () => {
+            await withPGliteSql(async (sql) => {
+                const now = Date.now();
+                const document: RallarCrdtDocumentRef = {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    scope,
+                    documentType: 'checklist',
+                    documentId: 'document-1',
+                    ...(scope === 'room' ? { roomRef: DOCUMENT.roomRef } : {}),
+                    ...(scope === 'principal' ? { principalId: 'principal-1' } : {})
+                };
+                const repository = new PSqlCrdtMutationRepository({
+                    sql,
+                    authorize: async (input) => ({
+                        ...await authorizeTestCrdtCommand(input),
+                        publicationAuthority: {
+                            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                            admittedAudience: ['session-1', 'recipient', 'wrong-scope', 'wrong-principal']
+                        }
+                    })
+                }, { policies: [] });
+                const service = createCrdtMutationService({ repository, serviceId: 'producer' });
+                const input = await command({ commandId: 'fanout-command', updateId: 'fanout-update', capturedAtEpochMs: now, document });
+                const computed = await computeValidatedWrite(service, input);
+                const proofs = await computeCrdtOutboxProvenance(computed);
+                await sql.begin(async (transaction) => {
+                    await writePSqlCrdtMutation(transaction, computed);
+                    if (proofState === 'present') {
+                        await writeCrdtOutboxProvenance(transaction, proofs);
+                    }
+                });
+                const rows = await sql<ResourceInboxRow[]>`
+                    select * from resource_inbox where ri_type_id = 'WS_OUTBOX'
+                    and ri_resource::jsonb->'payload'->>'typeId' = 'rallar.crdt.update.v1'
+                `;
+                assert.equal(rows.length, 1);
+                await assertFanoutFirstDequeue({ sql, entry: toDomain(rows[0]!), scope, proofState });
+            });
+        });
+    }
+}
+
+async function assertFanoutFirstDequeue(input: FanoutFirstDequeueInput): Promise<void> {
+    const { sql, entry, scope, proofState } = input;
+    const socket = new JsonWebSocketServer();
+    const recipients = ['session-1', 'recipient', 'wrong-scope', 'wrong-principal', 'late-joiner'].map((id) => {
+        const native = new TestWebSocket(`ws://${id}`);
+        native.open();
+        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        return { id, native };
+    });
+    const reader = new WsOutboxProvenanceReader({ repository: new PSqlRuntimeStateRepository(sql), nowMs: Date.now });
+    const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
+    const engine = new InboxOutboxEngine();
+    const service = createDefaultWsQueueBoxServerService({
+        name: 'foreign-dequeue',
+        socket,
+        outbox: stores.workQueue,
+        outboundStores: stores,
+        queueEngine: engine,
+        readProducerProvenance: (message, row) => reader.readProducerProvenance(message, row),
+        readAuthenticatedConnectionScope: (connection) => ({
+            scope: {
+                applicationId: 'app-1',
+                workspaceId: connection.id === 'wrong-scope' ? 'other' : 'workspace-1'
+            },
+            principalId: connection.id === 'wrong-principal' ? 'other' : 'principal-1',
+            expiresAtEpochMs: Date.now() + 60_000
+        })
+    });
+    try {
+        await stores.workQueue.enqueue(entry);
+        await engine.executeOnce();
+        // executeOnce submits tracked work; it does not await every task's completion.
+        const deadline = performance.now() + 10_000;
+        while (performance.now() < deadline) {
+            const status = (await stores.workQueue.getItem(entry.key))?.status;
+            if (status === EntityStatus.COMPLETED || status === EntityStatus.NON_RETRYABLE) {
+                break;
+            }
+            await scheduler.yield();
+        }
+        assert.equal((await stores.workQueue.getItem(entry.key))?.status, proofState === 'present' ? EntityStatus.COMPLETED : EntityStatus.NON_RETRYABLE);
+        const delivered = recipients.filter(({ native }) => native.sent.length > 0).map(({ id }) => id);
+        assert.deepEqual(
+            delivered,
+            proofState === 'missing' ? [] : scope === 'principal'
+                ? ['session-1', 'recipient']
+                : scope === 'room'
+                ? ['recipient', 'wrong-principal']
+                : ['recipient', 'wrong-principal', 'late-joiner']
+        );
+        for (const { native } of recipients) {
+            assert.ok(native.sent.length <= 1);
+            if (native.sent[0] !== undefined) {
+                const sent = decodePersistedALMessage(native.sent[0]);
+                assert.equal(sent.id.msgId, 'crdt:fanout-command:fanout');
+                assert.equal(sent.payload.typeId, 'rallar.crdt.update.v1');
+                assert.equal(JSON.parse(sent.payload.resource).updateId, 'fanout-update');
+            }
+        }
+    }
+    finally {
+        service.dispose();
+        engine.stop();
+        for (const { native } of recipients) {
+            native.close();
+        }
+    }
+}
+
 async function verifyAtomicMutationCommit(): Promise<void> {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
-        const first = await command('command-1', 'update-1', 1_000);
+        const first = await command({ commandId: 'command-1', updateId: 'update-1', capturedAtEpochMs: 1_000 });
         await apply(sql, service, first);
         await assertFirstMutationCommitted(sql, first.documentKey);
 
-        const second = await command('command-2', 'update-2', 2_000);
-        const third = await command('command-3', 'update-3', 3_000);
+        const second = await command({ commandId: 'command-2', updateId: 'update-2', capturedAtEpochMs: 2_000 });
+        const third = await command({ commandId: 'command-3', updateId: 'update-3', capturedAtEpochMs: 3_000 });
         const secondComputed = await computeValidatedWrite(service, second);
         const thirdComputed = await computeValidatedWrite(service, third);
         await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, secondComputed));
@@ -131,11 +265,11 @@ async function verifyAtomicMutationCommit(): Promise<void> {
 async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
-        const input = await command(
-            'identical-outbox-collision-command',
-            'identical-outbox-collision-update',
-            1_000
-        );
+        const input = await command({
+            commandId: 'identical-outbox-collision-command',
+            updateId: 'identical-outbox-collision-update',
+            capturedAtEpochMs: 1_000
+        });
         const computed = await computeValidatedWrite(service, input);
         const entries = readCollisionEntries(computed);
         await createPSqlResourceInboxRepository(sql).entries.write(entries.collision);
@@ -150,16 +284,9 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
     });
 }
 
-function createMutationRepository(sql: PGliteSql): PSqlCrdtMutationRepository {
-    return new PSqlCrdtMutationRepository(
-        { sql, authorize: authorizeTestCrdtCommand },
-        { policies: [] }
-    );
-}
-
 function createMutationService(sql: PGliteSql) {
     return createCrdtMutationService({
-        repository: createMutationRepository(sql),
+        repository: new PSqlCrdtMutationRepository({ sql, authorize: authorizeTestCrdtCommand }, { policies: [] }),
         serviceId: 'server-1'
     });
 }
@@ -258,11 +385,11 @@ async function apply(
     });
 }
 
-async function command(
-    commandId: string,
-    updateId: string,
-    capturedAtEpochMs: number
-): Promise<CrdtMutationCommand> {
+async function command(input: CommandInput): Promise<CrdtMutationCommand> {
+    const { commandId, updateId, capturedAtEpochMs, document = DOCUMENT } = input;
+    if (document.scope === 'custom') {
+        throw new Error('This publication fixture covers room, principal and app documents');
+    }
     return await createCrdtMutationCommand({
         operation: 'append',
         commandId,
@@ -274,14 +401,14 @@ async function command(
         },
         capturedAtEpochMs,
         expireAtEpochMs: capturedAtEpochMs + 60_000,
-        document: DOCUMENT,
-        update: update(updateId, capturedAtEpochMs),
-        authorizationScope: 'room',
+        document,
+        update: { ...update(updateId, capturedAtEpochMs), document },
+        authorizationScope: document.scope,
         responseAudience: {
-            kind: 'room',
+            kind: document.scope,
             senderSessionId: 'session-1',
-            topicId: 'room.crdt',
-            contextId: 'group-1'
+            topicId: `${document.scope}.crdt`,
+            contextId: document.scope === 'room' ? 'group-1' : document.scope === 'principal' ? 'principal-1' : 'app-1'
         }
     });
 }
