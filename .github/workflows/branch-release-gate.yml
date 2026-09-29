@@ -103,7 +103,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/release-gate.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -119,7 +119,7 @@ jobs:
       - governance-gate
       - validation-evidence
       - release-gate
-    if: ${{ always() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -156,7 +156,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'rtc-observation' }}
+    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'rtc-observation' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

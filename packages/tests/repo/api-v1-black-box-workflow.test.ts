@@ -17,7 +17,10 @@ interface ActionDocument {
 }
 
 interface WorkflowStep {
+    readonly id?: string;
+    readonly if?: string;
     readonly name?: string;
+    readonly run?: string;
     readonly uses?: string;
     readonly with?: Readonly<Record<string, string>>;
 }
@@ -28,6 +31,7 @@ interface WorkflowJob {
 }
 
 interface WorkflowDocument {
+    readonly concurrency?: Readonly<Record<string, string>>;
     readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 }
 
@@ -56,7 +60,6 @@ describe('API-v1 black-box workflow', () => {
         const workflowJobs = [
             ['.github/workflows/api-v1-black-box.yml', ['postgres', 'topology-replay', 'memory']],
             ['.github/workflows/api-v1-medium-scale-gate.yml', ['medium-scale']],
-            ['.github/workflows/api-v1-topology-replay-gate.yml', ['topology-replay']],
             ['.github/workflows/release-gate.yml', ['release-gate']]
         ] as const;
 
@@ -135,43 +138,29 @@ describe('API-v1 black-box workflow', () => {
         });
     });
 
-    it('publishes an exact-SHA topology replay gate with the proof and all four logs', async () => {
-        const workflow = await readYaml<WorkflowDocument>(
-            '.github/workflows/api-v1-topology-replay-gate.yml'
-        );
-        const proofStep = blackBoxActionStep(workflow, 'topology-replay');
-        const steps = workflow.jobs?.['topology-replay']?.steps ?? [];
-        const exactShaStep = steps.find((step) => step.name === 'Record exact checkout SHA');
-        const uploadStep = steps.find((step) => step.name === 'Upload exact-SHA artifacts');
-        const artifactPath = uploadStep?.with?.path;
+    it('publishes the exact-SHA topology replay proof directory from the Release Gate', async () => {
+        const workflow = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
+        const steps = workflow.jobs?.['release-gate']?.steps ?? [];
+        const proofIndex = steps.findIndex((step) => step.with?.profile === 'api-v1-black-box-topology-replay');
+        const proofStep = steps[proofIndex];
+        const artifactDir = proofStep?.with?.['artifact-dir'];
+        const exactShaIndex = steps.findIndex((step) => step.name === 'Record exact topology replay checkout');
+        const uploadStep = steps.find((step) => step.name === 'Upload topology replay artifacts');
 
-        expect(proofStep?.with).toMatchObject({
-            backend: 'postgres',
-            'api-port': '18080',
-            'secondary-api-port': '18081',
-            'tertiary-api-port': '18082',
-            profile: 'api-v1-black-box-topology-replay'
-        });
-        expect(exactShaStep).toBeDefined();
+        expect(artifactDir).toBe('.artifacts/api-v1-black-box/topology-replay');
+        expect(exactShaIndex).toBeGreaterThan(-1);
+        expect(exactShaIndex).toBeLessThan(proofIndex);
+        expect(steps[exactShaIndex].run).toContain(`git rev-parse HEAD > ${artifactDir}/validated-sha.txt`);
+        expect(steps[exactShaIndex].run).toContain(`git write-tree > ${artifactDir}/validated-tree.txt`);
         expect(uploadStep?.uses).toBe('actions/upload-artifact@v7');
-        expect(uploadStep?.with?.name).toBe('api-v1-topology-replay-${{ github.sha }}');
-        expect(typeof artifactPath).toBe('string');
-        if (typeof artifactPath !== 'string') {
-            throw new Error('The topology replay artifact upload must declare a path.');
-        }
-        for (
-            const required of [
-                'validated-sha.txt',
-                'validated-tree.txt',
-                'rtc-topology-replay-proof.json',
-                'api-v1-server.log',
-                'api-v1-server-secondary.log',
-                'api-v1-server-tertiary.log',
-                'api-v1-server-tertiary-restart.log'
-            ]
-        ) {
-            expect(artifactPath).toContain(required);
-        }
+        expect(uploadStep?.with).toMatchObject({
+            name: 'api-v1-topology-replay-${{ github.sha }}',
+            path: artifactDir,
+            'if-no-files-found': 'error'
+        });
+        // An earlier failure skips the proof, and uploading its empty directory would add a second red step.
+        expect(proofStep?.id).toBe('topology_replay');
+        expect(uploadStep?.if).toBe('${{ !cancelled() && steps.topology_replay.outcome != \'skipped\' }}');
     });
 
     it('runs the medium-scale gate against three Postgres APIs and uploads every server log', async () => {
@@ -201,6 +190,18 @@ describe('API-v1 black-box workflow', () => {
         expect(artifactPath).toContain('api-v1-server.log');
         expect(artifactPath).toContain('api-v1-server-secondary.log');
         expect(artifactPath).toContain('api-v1-server-tertiary.log');
+    });
+
+    it.each([
+        '.github/workflows/api-v1-medium-scale-gate.yml',
+        '.github/workflows/api-v1-formation-gate.yml'
+    ])('cancels a superseded %s run of the same pull request', async (workflowPath) => {
+        const workflow = await readYaml<WorkflowDocument>(workflowPath);
+
+        expect(workflow.concurrency).toEqual({
+            group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
+            'cancel-in-progress': '${{ github.event_name == \'pull_request\' }}'
+        });
     });
 
     it('keeps Branch Release Gate reusing the three-server Release Gate', async () => {

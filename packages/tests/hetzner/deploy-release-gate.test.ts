@@ -1,10 +1,22 @@
+import { load } from 'js-yaml';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+interface DeployWorkflowStep {
+    readonly run?: string;
+}
+
+interface DeployWorkflowJob {
+    readonly uses?: string;
+    readonly steps?: readonly DeployWorkflowStep[];
+}
+
+interface DeployWorkflow {
+    readonly jobs: Readonly<Record<string, DeployWorkflowJob>>;
+}
+
 const repoRoot = path.resolve(__dirname, '../../..');
-const deployAfterReleaseGateCondition =
-    'if: ${{ always() && !cancelled() && github.ref == \'refs/heads/main\' && (needs.release-gate.result == \'success\' || (github.event_name == \'workflow_dispatch\' && inputs.skip_release_gate == true)) }}';
 const denoPreflightCondition =
     'if: ${{ always() && !cancelled() && github.ref == \'refs/heads/main\' && vars.DENO_DEPLOY_ACTIONS_ENABLED == \'true\' && (needs.release-gate.result == \'success\' || (github.event_name == \'workflow_dispatch\' && inputs.skip_release_gate == true)) }}';
 const deployDenoAfterPreflightCondition =
@@ -57,18 +69,6 @@ describe('Deploy workflow release gate', () => {
         expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:rest');
         expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:control');
 
-        const deployJobs = ['deploy-eye-hunter', 'deploy-relic-web', 'deploy-rallar-kit'];
-
-        for (const jobName of deployJobs) {
-            const jobBlock = getJobBlock(workflow, jobName);
-
-            expect(jobBlock).toContain('needs: release-gate');
-            expect(jobBlock).toContain(deployAfterReleaseGateCondition);
-            expect(workflow.indexOf('  release-gate:\n')).toBeLessThan(
-                workflow.indexOf(`  ${jobName}:\n`)
-            );
-        }
-
         const denoDeployJobs = ['deploy-api', 'deploy-control-server', 'deploy-relic-api'];
 
         for (const jobName of denoDeployJobs) {
@@ -81,6 +81,18 @@ describe('Deploy workflow release gate', () => {
                 workflow.indexOf(`  ${jobName}:\n`)
             );
         }
+    });
+
+    it('leaves the web app builds to the Release Gate instead of rebuilding them after it', async () => {
+        const workflow = load(
+            await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8')
+        ) as DeployWorkflow;
+        const rebuildingJobs = Object.entries(workflow.jobs)
+            .filter(([, job]) => (job.steps ?? []).some((step) => /\bnpm (?:install|ci|run build)\b/u.test(step.run ?? '')))
+            .map(([jobName]) => jobName);
+
+        expect(workflow.jobs['release-gate'].uses).toBe('./.github/workflows/release-gate.yml');
+        expect(rebuildingJobs).toEqual([]);
     });
 
     it('defaults manual release-gate skipping off while keeping push-to-main deploys gated', async () => {
