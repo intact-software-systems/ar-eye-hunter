@@ -1289,26 +1289,40 @@ is not yet a proven deterministic product regression. Its artifact shows
 browser admission and a server admission receipt, but no server outbox verdict
 or socket-send result; do not change delivery behavior on an unproven cause.
 
-**2026-09-29 current next two slices:** (1) The startup-fixture repair passed
-focused and full local unit validation and is published, but the next hosted
-ALM observation repeated a `durable-opt-in` receiver miss while its root
-Release Gate was still running. Review and publish named E3 retention phase
-timing, including a non-TTY phase-start marker, then add only bounded
-admission/dequeue/send diagnostics to the existing ALM Playwright/Release Gate
-lane. Retain safe correlated evidence on pass and failure, rerun the exact-head
-hosted lane, and classify the miss before changing delivery behavior. (2)
-Present the [principal-relevant state-sync read design](../specs/2026-09-29-principal-relevant-state-sync-read-design.md)
+**2026-09-29 latest checkpoint and next two slices:** The published
+startup-fixture repair passed local unit validation, but its hosted ALM lane
+again missed one `durable-opt-in` receiver. The root Release Gate then failed
+five of sixty API-v1 PostgreSQL black-box recipes: their eleven fixture WS
+URLs omitted the application/workspace query parameters while their messages
+targeted a run-specific scope. This is a fixture/strict-scope contract mismatch;
+the backend default and recipient authorization remain unchanged. The five
+recipe files now carry encoded scope parameters and pass offline validation
+5/5; live PostgreSQL delivery is unverified because local service preflight
+was unreachable. The existing development PostgreSQL container was not
+touched. Reviewed E3 retention instrumentation now prints a phase-start marker
+in non-TTY CI and completed phase durations, but no new 100-cycle primary has
+run. The existing ALM WS browser lane passed 1/1 with bounded, correlated
+route/dequeue/cluster/direct-send JSONL; that local pass does not classify the
+hosted miss. Independent review removed unsafe raw-stdout forwarding and
+separated cross-service readiness ownership; focused tests and changed-style
+checks pass.
+
+(1) Publish those reviewed changes together in draft PR #566, then run the
+exact-head hosted ALM observation and Release Gate. Inspect the retained ALM
+JSONL on pass or failure, prove the five recipe WS paths against PostgreSQL,
+and fix only a demonstrated remaining defect. Do not change delivery behavior
+merely because one prior browser receiver missed. (2) Present the
+[principal-relevant state-sync read design](../specs/2026-09-29-principal-relevant-state-sync-read-design.md)
 for maintainer review. It keeps the full authorized audience, validates only
 relevant live groups, and preserves omission of purged groups with persistent
 member rows. After design approval, write a separate implementation plan for
 review; only then implement and measure the smallest read-selector change
-against the unchanged order-balanced state-write comparison. The existing
-development PostgreSQL container must remain untouched. After those slices,
-obtain unchanged E3 retention-100 and its required same-head diagnostic cohort
-without weakening the workload, complete whole-branch standards/legacy review,
-and require a green exact-head Release Gate before marking the draft PR ready.
-No diagnostic artifact is a valid B06 primary or a substitute for later
-main-stream publication.
+against the unchanged order-balanced state-write comparison. After those
+slices, obtain unchanged E3 retention-100 and its required same-head
+diagnostic cohort without weakening the workload, complete whole-branch
+standards/legacy review, and require a green exact-head Release Gate before
+marking the draft PR ready. No diagnostic artifact is a valid B06 primary or a
+substitute for later main-stream publication.
 
 Task 14b's two local commits close the four prior-head style findings through
 direct control flow and three exact reviewed warning-tier caps, then propagate
