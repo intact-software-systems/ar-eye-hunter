@@ -1,0 +1,55 @@
+name: ALM Conformance Observation
+
+on:
+  workflow_call:
+    inputs:
+      candidate_ref:
+        description: 'Exact Git revision to observe'
+        required: true
+        type: string
+      alm_scope:
+        description: 'ALM conformance scope the observation job runs: smoke or full'
+        required: false
+        default: 'smoke'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Non-blocking and beside the gates, not inside them: no caller waits for this job, so its 10 to 20
+  # minutes never lengthen a verdict or a deployment. The hosted runner has not yet completed a typed ws
+  # send and a cold RTC handshake inside the recipe budgets; the uploaded run snapshots are the diagnostic.
+  alm-conformance-observation:
+    name: ALM conformance observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+      RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.alm_scope }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          deno: 'true'
+          playwright: 'true'
+
+      - name: Observe the ALM conformance lane
+        run: npm run test:rallar:full-stack:memory:alm
+
+      - name: Upload ALM conformance lane results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: alm-conformance-lane-${{ github.sha }}
+          path: apps/rallar-black-box/test-results
+          if-no-files-found: ignore
