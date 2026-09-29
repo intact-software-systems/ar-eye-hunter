@@ -250,6 +250,7 @@ function toRecipeMatrixCommand(
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
         `--profile=${options.profile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
+        ...toShardArguments(options),
         `--artifact-dir=${artifactDir}`
     ];
 }
@@ -265,6 +266,7 @@ export function toClusterRecipeMatrixCommand(
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
         `--profile=${options.clusterProfile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
+        ...toShardArguments(options),
         `--artifact-dir=${artifactDir.replace(/\/+$/, '')}/cluster`
     ];
 }
@@ -275,10 +277,14 @@ export function toRecipeMatrixCommands(
 ): readonly (readonly string[])[] {
     return [
         ...(options.clusterOnly ? [] : [toRecipeMatrixCommand(options, artifactDir)]),
-        ...(options.tertiaryPort === undefined
+        ...(options.tertiaryPort === undefined || options.standardOnly
             ? []
             : [toClusterRecipeMatrixCommand(options, artifactDir)])
     ];
+}
+
+function toShardArguments(options: ApiV1BlackBoxOptions): readonly string[] {
+    return options.shard === undefined ? [] : [`--shard=${options.shard.index}/${options.shard.count}`];
 }
 
 function repoRootPath(): string {
