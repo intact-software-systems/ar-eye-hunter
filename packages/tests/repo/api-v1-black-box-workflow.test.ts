@@ -28,6 +28,7 @@ interface WorkflowJob {
 }
 
 interface WorkflowDocument {
+    readonly concurrency?: Readonly<Record<string, string>>;
     readonly jobs?: Readonly<Record<string, WorkflowJob>>;
 }
 
@@ -201,6 +202,18 @@ describe('API-v1 black-box workflow', () => {
         expect(artifactPath).toContain('api-v1-server.log');
         expect(artifactPath).toContain('api-v1-server-secondary.log');
         expect(artifactPath).toContain('api-v1-server-tertiary.log');
+    });
+
+    it.each([
+        '.github/workflows/api-v1-medium-scale-gate.yml',
+        '.github/workflows/api-v1-formation-gate.yml'
+    ])('cancels a superseded %s run of the same pull request', async (workflowPath) => {
+        const workflow = await readYaml<WorkflowDocument>(workflowPath);
+
+        expect(workflow.concurrency).toEqual({
+            group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}',
+            'cancel-in-progress': '${{ github.event_name == \'pull_request\' }}'
+        });
     });
 
     it('keeps Branch Release Gate reusing the three-server Release Gate', async () => {
