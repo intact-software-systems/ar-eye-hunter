@@ -7,15 +7,16 @@ import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALVolatileSessionBudget } from './al-volatile-session-budget.ts';
 
 /**
- * The budget's view of one data message, or `undefined` for a message with no deadline: the budget releases an
- * admission at its deadline, and RTC signaling (`WsRtcSignalingTransportUsingWsQBox.send`) is the volatile data a
- * session sends and receives without one, which the bound must never refuse.
+ * The budget's view of one planned or arrived data message, or `undefined` when its sender named no deadline
+ * (R-S3c-ii-3). Such an envelope's expiry is `ttl-only` with no `expiresAtMs` of its own: its
+ * `constraints.expiresAtMs` is only the lifetime every planner stamps (`toALOutboundMessage`). RTC signaling
+ * (`WsRtcSignalingTransportUsingWsQBox.send`) travels that way, and the bound must neither count nor refuse it.
  */
 export function toALVolatileSessionAdmission(
     msg: ALMessage,
     nowMs: number
 ): ALVolatileSessionBudget.Admission | undefined {
-    const deadlineAtMs = resolveALMessageExpireAtMs(msg);
+    const deadlineAtMs = resolveALNamedDeadlineAtMs(msg);
     if (deadlineAtMs === undefined) {
         return undefined;
     }
@@ -25,4 +26,11 @@ export function toALVolatileSessionAdmission(
         deadlineAtMs,
         nowMs
     };
+}
+
+function resolveALNamedDeadlineAtMs(msg: ALMessage): number | undefined {
+    const expiry = msg.qos?.expiry;
+    return expiry?.algo === 'ttl-only' && expiry.opts?.expiresAtMs === undefined
+        ? undefined
+        : resolveALMessageExpireAtMs(msg);
 }

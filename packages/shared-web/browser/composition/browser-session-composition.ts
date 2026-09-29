@@ -42,7 +42,6 @@ export interface BrowserCrdtComposition {
 
 export interface CreateBrowserSessionCoreCompositionInput {
     readonly qosProvider: ALQosInputProvider | undefined;
-    /** Read once per session; the product passes `undefined`, the black-box lane a lowered bound (C11). */
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly foundation: BrowserRuntimeFoundation;

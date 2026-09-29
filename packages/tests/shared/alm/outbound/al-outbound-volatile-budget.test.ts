@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { normalizeALQosPolicy, type ALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundDispatchPlan } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { AL_OUTBOUND_MESSAGE_LIFETIME_MS } from '@shared/alm/outbound/to-al-outbound-message.ts';
+import { toALOutboundMessage } from '@shared/alm/outbound/to-al-outbound-message.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES,
@@ -21,27 +22,33 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound
 const DURABLE_TYPE_ID = 'chat.durable.v1';
 
 /**
- * Volatile unless the message's type says durable, with one prepared send and a planned deadline: what every
- * browser planner states (`toALOutboundMessage` gives a message without one the default lifetime).
+ * Volatile unless the message's type says durable, with one prepared send and the envelope every browser
+ * planner states: `toALOutboundMessage` over the normalized policy, which gives a message without a deadline
+ * the default lifetime.
  */
-function planByTypeId(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
+function planByTypeId(
+    msg: ALMessage,
+    normalization: ALQosNormalizationInput = {}
+): ALOutboundDispatchPlan<OutboundTestPayload> {
     return {
-        msg: msg.constraints?.expiresAtMs === undefined
-            ? { ...msg, constraints: { ...msg.constraints, expiresAtMs: msg.id.ts + AL_OUTBOUND_MESSAGE_LIFETIME_MS } }
-            : msg,
+        msg: toALOutboundMessage(msg, normalizeALQosPolicy(msg, normalization).effective),
         dropReasonCode: undefined,
         persist: msg.payload.typeId === DURABLE_TYPE_ID,
         preparedMessages: [{ kind: 'send' }]
     };
 }
 
-function createBudgetedRuntime(budget: ALVolatileSessionBudget, carrier: ALDeliveryCarrier = 'ws') {
+function createBudgetedRuntime(
+    budget: ALVolatileSessionBudget,
+    carrier: ALDeliveryCarrier = 'ws',
+    planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<OutboundTestPayload> = planByTypeId
+) {
     return createDefaultOutboundTestRuntime({
         carrier,
         volatileStores: createVolatileALOutboundRuntimeStores({
             decodePrepared: decodeOutboundTestPayload
         }, budget),
-        planOutgoingMessage: planByTypeId,
+        planOutgoingMessage,
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 }
@@ -195,6 +202,41 @@ describe('the session volatile bound at the outbound admission (D74, D78)', () =
             kind: 'admitted',
             durable: false
         });
+        expect(budget.readUsage(Date.now()).admissions).toBe(1);
+    });
+
+    it('releases a counted send at its planned deadline, which the effective QoS expiry may bring forward', async () => {
+        const budget = createDefaultBudget();
+        const runtime = createBudgetedRuntime(
+            budget,
+            'ws',
+            (msg) => planByTypeId(msg, { defaults: { expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 5_000 } } } })
+        );
+        const message = createOutboundMessage('fresh-for-five-seconds');
+
+        expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe('admitted');
+
+        expect(budget.readUsage(message.id.ts + 4_999).admissions).toBe(1);
+        expect(budget.readUsage(message.id.ts + 5_000).admissions).toBe(0);
+    });
+
+    it('never counts a retransmission, which carries its own plan', async () => {
+        const budget = new ALVolatileSessionBudget({
+            maxAdmissions: 1,
+            maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
+        });
+        const runtime = createBudgetedRuntime(budget);
+        const relayed = createOutboundMessage('relayed-then-retried');
+        expect((await runtime.enqueueIfAbsent(relayed, planByTypeId(relayed))).verdict.kind).toBe('admitted');
+        budget.record({ msgId: 'received', bytes: 1, deadlineAtMs: Date.now() + 10_000, nowMs: Date.now() });
+
+        const retried = await runtime.retransmitAdmittedMessage({
+            msg: relayed,
+            plan: planByTypeId(relayed),
+            attemptIdentity: 'retry-1'
+        });
+
+        expect(retried.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(budget.readUsage(Date.now()).admissions).toBe(1);
     });
 });

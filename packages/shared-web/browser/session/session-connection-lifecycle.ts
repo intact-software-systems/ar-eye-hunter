@@ -40,7 +40,6 @@ interface PendingSessionConnection {
 export namespace BrowserSessionConnectionLifecycle {
     export interface Input {
         readonly qosProvider: ALQosInputProvider | undefined;
-        /** The composition's reader of the session's volatile limits; `undefined` keeps D74's constants. */
         readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly connectionRuntime: RallarConnectionRuntimePort;

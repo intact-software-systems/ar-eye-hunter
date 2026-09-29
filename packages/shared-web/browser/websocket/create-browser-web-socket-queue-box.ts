@@ -43,7 +43,6 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly inboundStores: ALInboundRuntimeStores;
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
-        /** The session's one volatile budget, which this client's outbound memory pair counts against (C3). */
         readonly volatileBudget: ALVolatileSessionBudget | undefined;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;

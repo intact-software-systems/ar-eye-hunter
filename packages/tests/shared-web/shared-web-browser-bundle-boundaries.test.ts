@@ -53,11 +53,13 @@ const budgetedEntries: readonly BundleBoundary[] = [
         // ceiling is 223. The S3b final review head measures ~222.99 of 223, and its fix wave 222.86328125.
         // S3c-i's room-naming unicast and the unicast receipt measure 223.056640625 KiB. The next whole-KiB
         // ceiling is 224. The S3c-ii volatile retention rule measures 224.1494140625 KiB. The next whole-KiB
-        // ceiling is 225.
+        // ceiling is 225. The S3c-ii volatile bound (the session budget, its outbound refusal and inbound count, and
+        // the overloaded provider) measures 224.8525390625 KiB, and its review fix (the 30 s inbound counted
+        // lifetime and the named-deadline rule) 225.056640625 KiB. The next whole-KiB ceiling is 226.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 225
+        brotliBudgetKiB: 226
     },
     {
         label: 'browser/rallar-core.ts',

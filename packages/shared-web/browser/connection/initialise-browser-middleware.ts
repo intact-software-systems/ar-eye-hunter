@@ -80,7 +80,6 @@ import {
 
 export interface MiddlewareInitOptions {
     readonly qosProvider: ALQosInputProvider | undefined;
-    /** The session's volatile limits, read once per initialisation; `undefined` keeps D74's two constants. */
     readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
@@ -178,7 +177,6 @@ interface InitialiseBrowserTransportInput {
     readonly clientData: ClientInfo;
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
-    /** The session's one volatile budget and its QoS provider, handed to both carriers (C3, C13). */
     readonly volatileBound: BrowserSessionVolatileBound;
     readonly options: MiddlewareInitOptions;
 }
@@ -199,6 +197,7 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
+    initialiseBrowserRuntimeStores(session.sessionId, options.diagnosticsPorts);
     const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
@@ -231,7 +230,6 @@ export async function initialiseMiddleware(
     };
 }
 
-/** One session's stores, its one volatile bound over the three memory pairs (C3) and its creation ports. */
 function createBrowserTransportInput(
     session: AuthSession,
     options: MiddlewareInitOptions
@@ -241,7 +239,6 @@ function createBrowserTransportInput(
         sessionId: session.sessionId,
         isOnline: true
     };
-    initialiseBrowserRuntimeStores(clientData.sessionId, options.diagnosticsPorts);
     const volatileBound = createBrowserSessionVolatileBound({
         readVolatileSessionLimits: options.readVolatileSessionLimits,
         qosProvider: options.qosProvider,

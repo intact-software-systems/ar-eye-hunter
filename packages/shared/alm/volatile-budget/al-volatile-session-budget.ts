@@ -1,9 +1,13 @@
 import { Either } from '../../resilience/Either.ts';
 
-/** The data admissions one session's memory pairs hold at once (D74). */
 export const AL_VOLATILE_SESSION_MAX_ADMISSIONS = 1_000;
-/** The envelope bytes one session's memory pairs hold at once (D74). */
 export const AL_VOLATILE_SESSION_MAX_BYTES = 4 * 1024 * 1024;
+/**
+ * The longest an inbound admission counts (R-S3c-ii-6): its deadline is the sender's clock and the sender's
+ * choice, so a peer whose clock runs ahead or who names a far deadline must not hold this session's own sends
+ * refused. An inbound envelope is delivered at once; only small rows outlive it.
+ */
+export const AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS = 30_000;
 
 export interface ALVolatileSessionLimits {
     readonly maxAdmissions: number;
@@ -21,7 +25,6 @@ interface ALVolatileSessionEntry {
 }
 
 export namespace ALVolatileSessionBudget {
-    /** One data message, counted from its admission until its own deadline. */
     export interface Admission {
         readonly msgId: string;
         readonly bytes: number;
@@ -29,7 +32,6 @@ export namespace ALVolatileSessionBudget {
         readonly nowMs: number;
     }
 
-    /** The limit a new admission would pass, and the usage it met. */
     export interface Refusal {
         readonly limit: 'admissions' | 'bytes';
         readonly usage: ALVolatileSessionUsage;
@@ -52,7 +54,6 @@ export class ALVolatileSessionBudget {
         this.limits = limits;
     }
 
-    /** An outbound admission: refused when it would pass either limit (D78). */
     tryAdmit(
         input: ALVolatileSessionBudget.Admission
     ): Either<ALVolatileSessionBudget.Refusal, ALVolatileSessionUsage> {
@@ -62,19 +63,16 @@ export class ALVolatileSessionBudget {
         }
         const limit = resolveALVolatileSessionPassedLimit(usage, input.bytes, this.limits);
         return limit === undefined
-            ? Either.ofRight(this.record(input))
+            ? Either.ofRight(this.hold(input))
             : Either.ofLeft({ limit, usage, limits: this.limits });
     }
 
-    /** An inbound admission: counted, never refused (C6). */
+    /** An inbound admission: never refused (C6), and counted for at most the inbound lifetime. */
     record(input: ALVolatileSessionBudget.Admission): ALVolatileSessionUsage {
-        this.releaseDue(input.nowMs);
-        if (!this.entries.has(input.msgId) && input.deadlineAtMs > input.nowMs) {
-            this.entries.set(input.msgId, { bytes: input.bytes, deadlineAtMs: input.deadlineAtMs });
-            this.bytes += input.bytes;
-            this.nextReleaseAtMs = Math.min(this.nextReleaseAtMs, input.deadlineAtMs);
-        }
-        return this.toUsage();
+        return this.hold({
+            ...input,
+            deadlineAtMs: Math.min(input.deadlineAtMs, input.nowMs + AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS)
+        });
     }
 
     readUsage(nowMs: number): ALVolatileSessionUsage {
@@ -82,10 +80,19 @@ export class ALVolatileSessionBudget {
         return this.toUsage();
     }
 
-    /** At or over either limit: what the session's QoS provider states as `overloaded` (C13). */
     isOverloaded(nowMs: number): boolean {
         const usage = this.readUsage(nowMs);
         return usage.admissions >= this.limits.maxAdmissions || usage.bytes >= this.limits.maxBytes;
+    }
+
+    private hold(input: ALVolatileSessionBudget.Admission): ALVolatileSessionUsage {
+        this.releaseDue(input.nowMs);
+        if (!this.entries.has(input.msgId) && input.deadlineAtMs > input.nowMs) {
+            this.entries.set(input.msgId, { bytes: input.bytes, deadlineAtMs: input.deadlineAtMs });
+            this.bytes += input.bytes;
+            this.nextReleaseAtMs = Math.min(this.nextReleaseAtMs, input.deadlineAtMs);
+        }
+        return this.toUsage();
     }
 
     private releaseDue(nowMs: number): void {

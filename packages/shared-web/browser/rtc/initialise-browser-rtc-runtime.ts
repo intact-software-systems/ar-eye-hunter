@@ -51,7 +51,6 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly qosProvider: ALQosInputProvider | undefined;
-    /** The session's one volatile budget, which the overlay's outbound memory pair counts against (C3). */
     readonly volatileBudget: ALVolatileSessionBudget | undefined;
     readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;

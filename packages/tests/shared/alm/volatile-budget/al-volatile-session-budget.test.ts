@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS,
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES,
     ALVolatileSessionBudget
@@ -27,9 +28,10 @@ function toAdmission(
 }
 
 describe('the per-session volatile budget (D74)', () => {
-    it('holds D74\'s two limits', () => {
+    it('holds D74\'s two limits and the inbound counted lifetime (R-S3c-ii-6)', () => {
         expect(AL_VOLATILE_SESSION_MAX_ADMISSIONS).toBe(1_000);
         expect(AL_VOLATILE_SESSION_MAX_BYTES).toBe(4 * 1024 * 1024);
+        expect(AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS).toBe(30_000);
     });
 
     it('counts outbound and inbound admissions and their bytes together', () => {
@@ -125,6 +127,30 @@ describe('the per-session volatile budget (D74)', () => {
 
         expect(budget.record(toAdmission('received-2'))).toEqual({ admissions: 2, bytes: 200 });
         expect(budget.tryAdmit(toAdmission('sent')).left?.limit).toBe('admissions');
+    });
+
+    it('counts an inbound admission for at most 30 s, whatever deadline its sender named (R-S3c-ii-6)', () => {
+        const budget = new ALVolatileSessionBudget({ maxAdmissions: 10, maxBytes: 1_000 });
+        budget.record(toAdmission('an-hour-ahead', { deadlineAtMs: NOW_MS + 3_600_000 }));
+
+        expect(budget.readUsage(NOW_MS + 29_999).admissions).toBe(1);
+        expect(budget.readUsage(NOW_MS + 30_000)).toEqual({ admissions: 0, bytes: 0 });
+    });
+
+    it('releases an inbound admission at its own deadline when that comes first', () => {
+        const budget = new ALVolatileSessionBudget({ maxAdmissions: 10, maxBytes: 1_000 });
+        budget.record(toAdmission('five-seconds', { deadlineAtMs: NOW_MS + 5_000 }));
+
+        expect(budget.readUsage(NOW_MS + 4_999).admissions).toBe(1);
+        expect(budget.readUsage(NOW_MS + 5_000).admissions).toBe(0);
+    });
+
+    it('keeps an outbound admission counted until its own deadline, however far', () => {
+        const budget = new ALVolatileSessionBudget({ maxAdmissions: 10, maxBytes: 1_000 });
+        budget.tryAdmit(toAdmission('sent-for-an-hour', { deadlineAtMs: NOW_MS + 3_600_000 }));
+
+        expect(budget.readUsage(NOW_MS + 30_000).admissions).toBe(1);
+        expect(budget.readUsage(NOW_MS + 3_600_000).admissions).toBe(0);
     });
 
     it('is overloaded at or over either limit and clear below both (C13)', () => {

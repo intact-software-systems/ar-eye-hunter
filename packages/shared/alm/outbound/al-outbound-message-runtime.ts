@@ -551,7 +551,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const lane = this.resolveLaneForPlan(plan);
         const bounded = lane === this.volatile
             ? admitALOutboundVolatileBudget({
-                msg,
                 plan,
                 budget: this.dependencies.volatileStores?.budget,
                 nowMs: this.dependencies.clock.nowMs()
