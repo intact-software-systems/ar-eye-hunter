@@ -78,6 +78,7 @@ describe('Release Gate lanes', () => {
 
         expect(laneScripts).toEqual(expect.arrayContaining([
             'typecheck',
+            'check:test-reachability',
             'build:ar-eye-hunter-v1',
             'build:relic-hunters-v1',
             'build:rallar',

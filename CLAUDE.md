@@ -281,14 +281,17 @@ main-push deploy calls the same `release-gate.yml`. Its blocking lanes run in pa
 
 | Lane                   | Runs                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks`               | navigation report, changed style and coupling (PR only), `typecheck`, app builds, Deno checks                                                              |
+| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, app builds, Deno checks                                           |
 | `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
 | `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
 | `deno`                 | `test:deno`                                                                                                                                                |
-| `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
+| `e2e-app`              | `test:rallar`, `test:playwright:ar-eye`, `test:full-stack:memory`                                                                                          |
 | `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
 | `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
+
+`npm run check:test-reachability` fails when a tracked test file is run by no CI workflow and is not
+owned by an entry (owner, command, reason) in `tests/manual-suites.json`.
 
 Together `unit`, `unit-tooling`, `deno`, `e2e-app` and `e2e-recipe-console` run exactly what
 `npm run test:ci` runs;

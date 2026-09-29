@@ -1,0 +1,19 @@
+[
+  {
+    "paths": [
+      "tests/playwright/relic-hunters/web.spec.ts",
+      "tests/playwright/relic-hunters/server-api.spec.ts"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npm run test:playwright:relic",
+    "reason": "No lane installs the Relic Hunters browser stack. 2026-09-29 run: 24 passed, 1 failed (web.spec.ts camera-mode flyover), 1 skipped; fix or delete before wiring a lane."
+  },
+  {
+    "paths": [
+      "tests/playwright/relic-hunters/full-stack-propagation.spec.ts"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npm run test:playwright:relic:full-stack",
+    "reason": "Needs the Relic Hunters game server and a browser pair; no lane starts that stack."
+  }
+]

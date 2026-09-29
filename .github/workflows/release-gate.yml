@@ -64,6 +64,9 @@ jobs:
           "${{ steps.changed_review_range.outputs.base }}"
           "${{ steps.changed_review_range.outputs.head }}"
 
+      - name: Check every test file runs somewhere
+        run: npm run check:test-reachability
+
       - name: Type-check TypeScript 7 workspaces
         run: npm run typecheck
 
@@ -175,6 +178,9 @@ jobs:
 
       - name: Run app browser tests
         run: npm run test:rallar
+
+      - name: Run AR Eye Hunter browser tests
+        run: npm run test:playwright:ar-eye
 
       - name: Run in-memory full-stack browser tests
         run: npm run test:full-stack:memory
