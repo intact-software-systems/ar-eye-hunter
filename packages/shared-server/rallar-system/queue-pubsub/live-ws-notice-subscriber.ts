@@ -2,7 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { matchesLiveWsAudience } from './live-ws-audience.ts';
+import { filterLiveWsRoomRecipientSessionIds, matchesLiveWsAudience } from './live-ws-audience.ts';
 import {
     decodeLiveWsNotice,
     type LiveWsAudience,
@@ -121,7 +121,15 @@ function toRecoveredAudience(
         ) {
             return undefined;
         }
-        return { mode: 'room', groupRef: targets.groupRef, recipientSessionIds: source.groupRecipientPeerIds };
+        return {
+            mode: 'room',
+            groupRef: targets.groupRef,
+            recipientSessionIds: filterLiveWsRoomRecipientSessionIds(
+                targets,
+                message.id.senderId,
+                source.groupRecipientPeerIds
+            )
+        };
     }
     if (notice.audienceMode === 'broad') {
         return targets?.mode === 'broadcast' && targets.scope === notice.targetMode

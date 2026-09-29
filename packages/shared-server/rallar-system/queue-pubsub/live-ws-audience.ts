@@ -1,4 +1,4 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -55,6 +55,24 @@ export function matchesLiveWsAudience(message: ALMessage, audience: LiveWsAudien
             message.targets.principalRef.principalId === audience.principalRef.principalId;
     }
     return message.targets?.mode === 'broadcast' && message.targets.scope === audience.targetMode;
+}
+
+export function filterLiveWsRoomRecipientSessionIds(
+    targets: ALTargets,
+    senderId: string,
+    addressedSessionIds: readonly string[]
+): readonly string[] {
+    switch (targets.mode) {
+        case 'unicast':
+            return addressedSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
+        case 'multicast':
+            return addressedSessionIds.filter((sessionId) => sessionId !== senderId);
+        case 'broadcast':
+            return addressedSessionIds.filter((sessionId) =>
+                !targets.exceptPeerIds?.includes(sessionId) &&
+                (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
+            );
+    }
 }
 
 function isGroupRef(value: JsonWireValue, scope: GroupScope): value is JsonWireObject & GroupRef {

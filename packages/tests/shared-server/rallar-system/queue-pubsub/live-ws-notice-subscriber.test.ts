@@ -34,7 +34,7 @@ function roomNotice(recipientSessionIds: readonly string[] = ['remote-session'])
     return encoded.notice;
 }
 
-function createReceiver() {
+function createReceiver(eligibleSessionIds: readonly string[] = ['remote-session', 'late-joiner']) {
     let callback: ((notice: LiveWsNotice) => Promise<void> | void) | undefined;
     const transport: LiveWsNoticeTransport = {
         publish: async () => {},
@@ -44,7 +44,7 @@ function createReceiver() {
     };
     const sent: Array<{ message: ALMessage; ids: readonly string[]; }> = [];
     const readDeliverySurface = vi.fn(async (): Promise<ALInboundStoredPlanningRead | undefined> => undefined);
-    const eligible = (ids: readonly string[]) => ids.filter((id) => id === 'remote-session' || id === 'late-joiner');
+    const eligible = (ids: readonly string[]) => ids.filter((id) => eligibleSessionIds.includes(id));
     const resolveBroad = vi.fn((): readonly string[] => ['remote-session']);
     const installed = installLiveWsNoticeSubscriber({
         transport,
@@ -225,6 +225,57 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([{ message: largeMessage, ids: ['remote-session'] }]);
     });
 
+    it('applies a canonical room broadcast subset and exclusions to an oversized key notice', async () => {
+        const receiver = createReceiver(['remote-session', 'late-joiner', 'excluded']);
+        const message: ALMessage = {
+            ...roomMessage(JSON.stringify('x'.repeat(9_000))),
+            targets: {
+                mode: 'broadcast',
+                scope: 'room',
+                groupRef,
+                recipientPeerIds: ['remote-session', 'late-joiner'],
+                exceptPeerIds: ['late-joiner']
+            }
+        };
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: message,
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                groupRecipientPeerIds: ['remote-session', 'late-joiner', 'excluded']
+            },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
+
+        await receiver.receive(roomKeyNotice(message));
+
+        expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
+    });
+
+    it('excludes the sender from an oversized multicast key notice even when locally eligible', async () => {
+        const receiver = createReceiver(['sender', 'remote-session']);
+        const message = roomMessage(JSON.stringify('x'.repeat(9_000)));
+        receiver.readDeliverySurface.mockResolvedValue({
+            msg: message,
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                groupRecipientPeerIds: ['sender', 'remote-session']
+            },
+            nowMs: 1,
+            supersedenceKey: null,
+            supersedence: {},
+            supersedenceTrackTtlMs: 1000
+        });
+
+        await receiver.receive(roomKeyNotice(message));
+
+        expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
+    });
+
     it('treats absent or mismatched canonical authority and unknown namespaces as misses', async () => {
         const receiver = createReceiver();
         const key: Extract<LiveWsNotice, { delivery: 'inbound-key'; }> = {
@@ -371,3 +422,19 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
     });
 });
+
+function roomKeyNotice(message: ALMessage): LiveWsNotice {
+    const encoded = encodeLiveWsNotice({
+        channel: 'ws-channel',
+        publisherId: 'publisher-a',
+        scope,
+        expiresAtMs: deadline,
+        audience: { mode: 'room', groupRef, recipientSessionIds: ['remote-session'] },
+        message,
+        inbound: { namespace: 'ws', reference: { senderId: 'sender', msgId: 'message-1' } }
+    });
+    if (encoded.kind !== 'inbound-key') {
+        throw new Error('Expected oversized room key fixture');
+    }
+    return encoded.notice;
+}

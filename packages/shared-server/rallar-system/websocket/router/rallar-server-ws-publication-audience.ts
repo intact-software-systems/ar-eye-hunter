@@ -1,5 +1,6 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
+import { filterLiveWsRoomRecipientSessionIds } from '../../queue-pubsub/live-ws-audience.ts';
 import { authorizeRallarServerWsIngress } from './decode-rallar-server-ws-ingress.ts';
 import type {
     RallarServerWsFanout,
@@ -48,18 +49,7 @@ export function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSess
     const addressedSessionIds = input.admittedPeerIds ?? audience.sessions
         .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
         .map((session) => session.sessionId);
-    const targets = audience.targets;
-    switch (targets.mode) {
-        case 'unicast':
-            return addressedSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
-        case 'multicast':
-            return addressedSessionIds.filter((sessionId) => sessionId !== message.id.senderId);
-        case 'broadcast':
-            return addressedSessionIds.filter((sessionId) =>
-                !targets.exceptPeerIds?.includes(sessionId) &&
-                (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
-            );
-    }
+    return filterLiveWsRoomRecipientSessionIds(audience.targets, message.id.senderId, addressedSessionIds);
 }
 
 export function isAuthorizedRoomAudience(
