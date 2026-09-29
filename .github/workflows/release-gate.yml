@@ -64,6 +64,9 @@ jobs:
           "${{ steps.changed_review_range.outputs.base }}"
           "${{ steps.changed_review_range.outputs.head }}"
 
+      - name: Check every test file runs somewhere
+        run: npm run check:test-reachability
+
       - name: Type-check TypeScript 7 workspaces
         run: npm run typecheck
 

@@ -51,6 +51,28 @@ Deno.test('readRateLimiter separates limits by policy', () => {
     assert.notEqual(second, first);
 });
 
+Deno.test('readRateLimiter keeps keys that differ only past 160 characters apart', () => {
+    const namespace = `test-${crypto.randomUUID()}`;
+    const policy = new RateLimiterPolicy(60_000, 2);
+    const sharedPrefix = 'x'.repeat(200);
+
+    const first = readRateLimiter(namespace, `${sharedPrefix}:principal-a`, policy);
+    const second = readRateLimiter(namespace, `${sharedPrefix}:principal-b`, policy);
+
+    assert.notEqual(second, first);
+    assert.equal(readRateLimiter(namespace, `${sharedPrefix}:principal-a`, policy), first);
+});
+
+Deno.test('readRateLimiter still treats keys as trimmed and case-insensitive', () => {
+    const namespace = `test-${crypto.randomUUID()}`;
+    const policy = new RateLimiterPolicy(60_000, 2);
+
+    const limiter = readRateLimiter(namespace, 'client-1', policy);
+
+    assert.equal(readRateLimiter(namespace, '  Client-1 ', policy), limiter);
+    assert.equal(readRateLimiter(namespace, '   ', policy), readRateLimiter(namespace, 'unknown', policy));
+});
+
 Deno.test('readRateLimiter replaces an expired cached limiter for the same key', () => {
     const originalNow = Date.now;
     let nowMs = 1_000;
@@ -88,4 +110,15 @@ Deno.test('readRequestClientKey prefers proxy client headers', () => {
     };
 
     assert.equal(readRequestClientKey(req), '203.0.113.10');
+});
+
+Deno.test('readRequestClientKey bounds an untrusted forwarded value to 256 characters', () => {
+    const forwarded = `for=${'a'.repeat(1_000)}`;
+    const req = {
+        header(name: string): string | undefined {
+            return name === 'forwarded' ? forwarded : undefined;
+        }
+    };
+
+    assert.equal(readRequestClientKey(req), forwarded.slice(0, 256));
 });
