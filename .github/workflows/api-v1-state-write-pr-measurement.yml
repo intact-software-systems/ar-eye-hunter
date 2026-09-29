@@ -132,7 +132,7 @@ jobs:
             benchmark_status=0
             npm run perf:api-v1:state-write -- \
               --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
-              --out="$output/position-$position.json" \
+              --out="tmp/perf/state-write-pr-566/position-$position.json" \
               > "$output/position-$position-benchmark.log" 2>&1 || benchmark_status=$?
             printf '%s\n' "$benchmark_status" > "$output/position-$position-exit.txt"
             node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
