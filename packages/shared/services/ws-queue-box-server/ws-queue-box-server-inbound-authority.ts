@@ -6,7 +6,10 @@ import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
-import { toWsQueueBoxServerScopeAuthorization } from './scope/to-ws-queue-box-server-scope-authorization.ts';
+import {
+    toWsQueueBoxServerScopeAuthorization,
+    type WsQueueBoxServerScopeRefusal
+} from './scope/to-ws-queue-box-server-scope-authorization.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
@@ -62,7 +65,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         | {
             readonly kind: 'refused';
             readonly message: ALMessage;
-            readonly refusal: Extract<WsServerInboundAuthorization, { authorized: false; }>;
+            readonly refusal: WsQueueBoxServerScopeRefusal;
         }
         | {
             readonly kind: 'finished';

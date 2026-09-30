@@ -186,15 +186,19 @@ it.each([
             ? [interaction.SET.request.transform]
             : []
     );
-    const elsewhereMarker = 'elsewhereApplicationId';
+    const elsewhereMarker = '-elsewhere';
     const urlTransforms = allUrlTransforms.filter((transform) => !JSON.stringify(transform).includes(elsewhereMarker));
     expect(urlTransforms).toHaveLength(urlCount);
     const elsewhereTransforms = allUrlTransforms.filter((transform) => JSON.stringify(transform).includes(elsewhereMarker));
     expect(elsewhereTransforms).toHaveLength(name === 'websocket-addressed-sends' ? 1 : 0);
     for (const transform of elsewhereTransforms) {
         const url = new URL(evaluateScenarioTransform({ transform, context }));
-        expect(url.searchParams.get('applicationId')).not.toBe(createdGroup.applicationId);
-        expect(url.searchParams.get('workspaceId')).toBe(createdGroup.workspaceId);
+        expect(url.pathname).toBe('/api/ws/session');
+        expect([...url.searchParams.entries()]).toEqual([
+            ['ticket', 'ticket'],
+            ['applicationId', `${createdGroup.applicationId}-elsewhere`],
+            ['workspaceId', createdGroup.workspaceId]
+        ]);
     }
     for (const transform of urlTransforms) {
         const url = new URL(evaluateScenarioTransform({ transform, context }));

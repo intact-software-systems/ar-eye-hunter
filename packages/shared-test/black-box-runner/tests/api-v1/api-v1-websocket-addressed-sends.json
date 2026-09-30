@@ -5,7 +5,6 @@
     "applicationId": "addressed-sends-{runId}",
     "workspaceId": "default-{runId}",
     "groupId": "addressed-sends-room-{runId}",
-    "elsewhereApplicationId": "addressed-sends-elsewhere-{runId}",
     "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
     "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
     "bobUsername": { "env": "RALLAR_BOB_USERNAME", "default": "bob" },
@@ -648,9 +647,10 @@
           "&applicationId=",
           {
             "urlEncode": {
-              "path": "variables.elsewhereApplicationId"
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId"
             }
           },
+          "-elsewhere",
           "&workspaceId=",
           {
             "urlEncode": {

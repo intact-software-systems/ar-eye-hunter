@@ -77,7 +77,6 @@ class GameAuthority {
         };
 
         await this.#dependencies.rallar.ws.publish({
-            scope: { applicationId: 'demo-game', workspaceId: 'main' },
             message: newALBroadcastMessage(
                 'demo-game-server',
                 newALRoute(
