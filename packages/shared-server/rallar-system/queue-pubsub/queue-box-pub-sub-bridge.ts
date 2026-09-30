@@ -22,7 +22,8 @@ import {
     isWsQueueBoxServerDirectWorldBroadcastRow,
     requiresWsQueueBoxServerRecipientScope,
     validateWsQueueBoxServerRecipientAuthority
-} from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
+} from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
+import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerLiveSendInputDto,
     WsServerLiveSendResult
@@ -386,7 +387,7 @@ function sendToCapturedLocalTargets(
         );
     }
     const captured = policy?.admittedAudience ?? input.admittedAudience;
-    const recipientScope = policy?.recipientScope;
+    const recipientScope = resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope);
     const sessionInvalidation = policy?.sessionInvalidation;
     if (sessionInvalidation !== undefined) {
         return options.wsQBoxServerService.sendToTargetsWithResult({

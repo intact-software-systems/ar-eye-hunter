@@ -120,7 +120,9 @@ async function publishRallarServerWsFanout(
             const result = await input.service.enqueueOutboxIfAbsent(
                 input.message,
                 toAdmittedAudience(input),
-                input.message.targets?.mode === 'unicast' ? input.inboundScope ?? undefined : undefined
+                input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
+                    ? input.inboundScope ?? undefined
+                    : undefined
             );
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();

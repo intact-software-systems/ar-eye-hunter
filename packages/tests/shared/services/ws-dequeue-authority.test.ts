@@ -117,6 +117,20 @@ describe('WS first dequeue authority', () => {
         expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: ['peer'], recipientScope: SCOPE });
     });
 
+    it('refuses a raw group-addressed unicast even with producer provenance', async () => {
+        const fixture = createFixture(async () => ({ admittedAudience: ['peer'], recipientScope: SCOPE }));
+        const message = newALUnicastMessage('server', { topicId: 'app.message', resourceId: 'resource', contextId: 'context' }, 'peer', 'message.v1', {}, {
+            ttlMs: 30_000,
+            qos: { durability: { algo: 'local-outbox' } },
+            groupRef: { ...SCOPE, groupId: 'room' }
+        });
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
+        await fixture.stores.workQueue.enqueue(entry);
+        await fixture.engine.executeOnce();
+        await expect.poll(async () => (await fixture.stores.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
+        expect(fixture.native.sent).toEqual([]);
+    });
+
     it('captures an explicitly empty frozen audience without widening it to the connected target', async () => {
         const fixture = createFixture(async () => ({ admittedAudience: [], recipientScope: SCOPE }));
         const message = createMessage('unicast');
@@ -146,10 +160,13 @@ describe('WS first dequeue authority', () => {
 
 function createMessage(mode: 'unicast' | 'broadcast'): ALMessage {
     const route = { topicId: 'app.message', resourceId: 'resource', contextId: 'context' };
-    const options = { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' as const } }, groupRef: { ...SCOPE, groupId: 'room' } };
+    const options = { ttlMs: 30_000, qos: { durability: { algo: 'local-outbox' as const } } };
     return mode === 'unicast'
         ? newALUnicastMessage('server', route, 'peer', 'message.v1', {}, options)
-        : newALBroadcastMessage('server', route, 'room', 'message.v1', {}, options);
+        : newALBroadcastMessage('server', route, 'room', 'message.v1', {}, {
+            ...options,
+            groupRef: { ...SCOPE, groupId: 'room' }
+        });
 }
 
 function createFixture(

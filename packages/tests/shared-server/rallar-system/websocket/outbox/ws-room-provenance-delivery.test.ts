@@ -46,7 +46,7 @@ describe('verified direct room row delivery', () => {
         expect(fixture.native.get('session')!.sent).toEqual([]);
         expect(fixture.native.get('late')!.sent).toHaveLength(1);
     });
-    it('replaces the observed direct key, scope, and audience together when canonical admission wins', async () => {
+    it('replaces the observed direct key and audience when canonical admission wins', async () => {
         const fixture = new RoomFixture();
         const message = newALBroadcastMessage('server', { topicId: 'snapshot', resourceId: 'room', contextId: 'event' }, 'room', 'snapshot.v1', {}, {
             ttlMs: 30_000,
@@ -54,14 +54,14 @@ describe('verified direct room row delivery', () => {
             qos: { durability: { algo: 'local-outbox' } }
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
-        const winner = await fixture.service.enqueueOutboxIfAbsent(message, ['winner-peer'], SCOPE);
+        const winner = await fixture.service.enqueueOutboxIfAbsent(message, ['winner-peer']);
         expect(winner.verdict.kind).toBe('admitted');
         const authorities: (ALOutboundPlanningAuthority | undefined)[] = [];
         await fixture.stores.admissionStore.readOutgoingMessage({
             msg: message,
             observedCanonicalEntry: entry,
             intent: 'dequeue',
-            dequeueAuthority: { admittedAudience: ['session'], recipientScope: { ...SCOPE, workspaceId: 'stale' } },
+            dequeueAuthority: { admittedAudience: ['session'], recipientScope: undefined },
             planner: (msg, authority) => {
                 authorities.push(authority);
                 return { msg, persist: true, dropReasonCode: undefined, preparedMessages: [] };
@@ -69,7 +69,7 @@ describe('verified direct room row delivery', () => {
         });
         expect(authorities).toEqual([{
             admittedAudience: ['winner-peer'],
-            recipientScope: SCOPE,
+            recipientScope: undefined,
             referenceKey: winner.entry!.key
         }]);
     });
@@ -98,7 +98,7 @@ describe('verified direct room row delivery', () => {
         const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
         vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
             const authority = await readProof(message, entry);
-            const winner = await winnerService.enqueueOutboxIfAbsent(message, ['session'], SCOPE);
+            const winner = await winnerService.enqueueOutboxIfAbsent(message, ['session']);
             expect(winner.verdict.kind).toBe('admitted');
             return authority;
         });
@@ -129,7 +129,7 @@ describe('verified direct room row delivery', () => {
             groupRef: ROOM,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        await fixture.service.enqueueOutboxIfAbsent(message, ['session'], SCOPE);
+        await fixture.service.enqueueOutboxIfAbsent(message, ['session']);
         await fixture.engine.executeOnce();
         await expect.poll(() => bridge.published.length).toBe(1);
         expect(fixture.native.get('peer-socket')!.sent).toHaveLength(1);
@@ -142,11 +142,13 @@ describe('verified direct room row delivery', () => {
         await expect.poll(() => fixture.native.get('session')!.sent.length).toBe(1);
         expect(fixture.native.get('peer-socket')!.sent).toEqual([]);
         expect(fixture.native.get('late')!.sent).toEqual([]);
-        expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: ['session'], recipientScope: SCOPE });
+        expect(await fixture.service.readCapturedPolicy(message, entry)).toEqual(expect.objectContaining({ admittedAudience: ['session'] }));
+        expect(await fixture.service.readCapturedPolicy(message, entry)).not.toHaveProperty('recipientScope');
         await fixture.repository.deleteByKey(WS_OUTBOX_PROVENANCE_NAMESPACE, toWsOutboxProvenanceKey(entry.key));
         fixture.restart();
         await fixture.redeliver(entry);
-        expect(await fixture.service.readCapturedPolicy(message, entry)).toMatchObject({ admittedAudience: ['session'], recipientScope: SCOPE });
+        expect(await fixture.service.readCapturedPolicy(message, entry)).toEqual(expect.objectContaining({ admittedAudience: ['session'] }));
+        expect(await fixture.service.readCapturedPolicy(message, entry)).not.toHaveProperty('recipientScope');
         expect(fixture.native.get('peer-socket')!.sent).toEqual([]);
         expect(fixture.native.get('late')!.sent).toEqual([]);
     });

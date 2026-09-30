@@ -154,11 +154,10 @@ export class WsOutboxProvenanceReader {
                     principalTargetId: proof.target.peerId
                 };
             }
-            const scope = proof.target.kind === 'scoped-unicast'
-                ? proof.target.scope
-                : proof.target.kind === 'scoped-room-broadcast'
-                ? proof.target.groupRef
-                : proof.target.principalRef;
+            if (proof.target.kind === 'scoped-room-broadcast') {
+                return { admittedAudience: proof.target.admittedAudience, recipientScope: undefined };
+            }
+            const scope = proof.target.kind === 'scoped-unicast' ? proof.target.scope : proof.target.principalRef;
             return {
                 admittedAudience: proof.target.admittedAudience,
                 recipientScope: { applicationId: scope.applicationId, workspaceId: scope.workspaceId }

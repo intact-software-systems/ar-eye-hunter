@@ -22,27 +22,35 @@ interface RoomProvenanceFixture {
 }
 
 describe('room publication identity at WS planning', () => {
-    it('keeps canonical peer receipts while resolving the same direct audience as sessions', () => {
+    it('plans canonical room fan-out as peer recipients and a direct room row as room recipients', () => {
         const { planner, message, socket } = createFixture();
-        const request = {
-            message,
-            phase: 'dequeue' as const,
-            clusterPublisherRegistered: false,
-            admittedAudience: ['frozen'],
-            recipientScope: SCOPE
-        };
+        const request = { message, phase: 'dequeue' as const, clusterPublisherRegistered: false, admittedAudience: ['frozen'] };
         const canonical = planner.planOutboundMessage({ ...request, referenceKey: CANONICAL_KEY });
-        expect(canonical.preparedMessages).toMatchObject([{
-            kind: 'scoped-recipient',
-            peerId: 'frozen',
-            connectionId: 'peer-socket',
-            recipientScope: SCOPE,
-            generationId: socket.connections.get('peer-socket')!.generationId
-        }]);
+        expect(canonical.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'frozen', connectionId: 'peer-socket' }]);
         expect(canonical.ackTracking?.expectedPeerIds).toEqual(['frozen']);
         const direct = planner.planOutboundMessage({ ...request, referenceKey: DIRECT_KEY });
-        expect(direct.preparedMessages).toMatchObject([{ kind: 'scoped-recipient', peerId: 'frozen', connectionId: 'frozen', recipientScope: SCOPE }]);
+        expect(direct.preparedMessages).toMatchObject([{
+            kind: 'room-recipient',
+            peerId: 'frozen',
+            connectionId: 'frozen',
+            generationId: socket.connections.get('frozen')!.generationId
+        }]);
+        expect(direct.preparedMessages[0]).not.toHaveProperty('recipientScope');
+        expect(direct).not.toHaveProperty('recipientScope');
         expect(direct.ackTracking?.expectedPeerIds).toEqual(['frozen']);
+    });
+
+    it.each([CANONICAL_KEY, DIRECT_KEY])('refuses a room row planned with a second recipient scope for $topicId', (referenceKey) => {
+        const { planner, message } = createFixture();
+        const plan = planner.planOutboundMessage({
+            message,
+            phase: 'dequeue',
+            clusterPublisherRegistered: false,
+            admittedAudience: ['frozen'],
+            recipientScope: SCOPE,
+            referenceKey
+        });
+        expect(plan).toMatchObject({ persist: false, preparedMessages: [], dropReasonCode: 'unauthorized' });
     });
 
     it.each([CANONICAL_KEY, DIRECT_KEY])('repairs only the retained audience for $topicId', (referenceKey) => {
@@ -54,16 +62,13 @@ describe('room publication identity at WS planning', () => {
             completedHopPeerIds: [],
             missingSeqs: [],
             admittedAudience: ['frozen'],
-            recipientScope: SCOPE,
             referenceKey
         });
-        expect(repair?.preparedMessages).toMatchObject([{
-            kind: 'scoped-recipient',
-            peerId: 'frozen',
-            connectionId: referenceKey === DIRECT_KEY ? 'frozen' : 'peer-socket',
-            recipientScope: SCOPE,
-            generationId: socket.connections.get(referenceKey === DIRECT_KEY ? 'frozen' : 'peer-socket')!.generationId
-        }]);
+        expect(repair?.preparedMessages).toMatchObject([
+            referenceKey === DIRECT_KEY
+                ? { kind: 'room-recipient', peerId: 'frozen', connectionId: 'frozen', generationId: socket.connections.get('frozen')!.generationId }
+                : { kind: 'recipient', peerId: 'frozen', connectionId: 'peer-socket' }
+        ]);
         expect(repair?.ackTracking?.expectedPeerIds).toEqual(['frozen']);
     });
 
@@ -72,6 +77,34 @@ describe('room publication identity at WS planning', () => {
         const prepared = { kind: 'recipient', peerId: 'frozen', connectionId: 'peer-socket', message: toALOutboundTransportMessage(message) };
         expect(decodeWsQueueBoxServerPreparedMessage(prepared, message, CANONICAL_KEY)).toEqual(prepared);
         expect(() => decodeWsQueueBoxServerPreparedMessage(prepared, message, DIRECT_KEY)).toThrow();
+    });
+
+    it('reads back a room recipient only for its group-addressed direct row', () => {
+        const { message } = createFixture();
+        const prepared = {
+            kind: 'room-recipient',
+            peerId: 'frozen',
+            connectionId: 'frozen',
+            generationId: 'generation',
+            message: toALOutboundTransportMessage(message)
+        };
+        expect(decodeWsQueueBoxServerPreparedMessage(JSON.parse(JSON.stringify(prepared)), message, DIRECT_KEY)).toEqual(prepared);
+        expect(() => decodeWsQueueBoxServerPreparedMessage(prepared, message, CANONICAL_KEY)).toThrow(TypeError);
+        const unnamed: ALMessage = { ...message, targets: { mode: 'broadcast', scope: 'room' } };
+        expect(() => decodeWsQueueBoxServerPreparedMessage(prepared, unnamed, DIRECT_KEY)).toThrow(TypeError);
+    });
+
+    it('refuses a stored second scope for a group-addressed row', () => {
+        const { message } = createFixture();
+        const scoped = {
+            kind: 'scoped-recipient',
+            peerId: 'frozen',
+            connectionId: 'frozen',
+            generationId: 'generation',
+            recipientScope: SCOPE,
+            message: toALOutboundTransportMessage(message)
+        };
+        expect(() => decodeWsQueueBoxServerPreparedMessage(scoped, message, DIRECT_KEY)).toThrow(TypeError);
     });
 });
 

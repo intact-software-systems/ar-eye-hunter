@@ -13,13 +13,15 @@ import {
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 describe('captured outbound audience read', () => {
     it('returns the captured set, including empty, and distinguishes a missing admission', async () => {
         const fixture = await createFixture(['session-a']);
-        expect(await fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
-            .toMatchObject({ admittedAudience: ['session-a'], recipientScope: { applicationId: 'app', workspaceId: 'workspace' } });
+        const captured = await fixture.store.readCapturedPolicy(fixture.message, fixture.entry);
+        expect(captured).toMatchObject({ admittedAudience: ['session-a'] });
+        expect(captured).not.toHaveProperty('recipientScope');
 
         const empty = await createFixture([]);
         expect(await empty.store.readCapturedPolicy(empty.message, empty.entry)).toMatchObject({ admittedAudience: [] });
@@ -29,6 +31,12 @@ describe('captured outbound audience read', () => {
 
         absentPolicy.state.data.clear();
         await expect(absentPolicy.store.readCapturedPolicy(absentPolicy.message, absentPolicy.entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('refuses a stored room row that also stores a recipient scope', async () => {
+        const fixture = await createFixture(['session-a'], { applicationId: 'app', workspaceId: 'workspace' });
+        await expect(fixture.store.readCapturedPolicy(fixture.message, fixture.entry))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -58,7 +66,7 @@ describe('captured outbound audience read', () => {
     });
 });
 
-async function createFixture(admittedAudience: readonly string[] | undefined) {
+async function createFixture(admittedAudience: readonly string[] | undefined, recipientScope?: StateScope) {
     const nowMs = Date.now();
     const scope = 'server-scope';
     const namespace = 'server-namespace';
@@ -85,7 +93,7 @@ async function createFixture(admittedAudience: readonly string[] | undefined) {
             persist: true,
             preparedMessages: [],
             admittedAudience,
-            recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
+            ...(recipientScope === undefined ? {} : { recipientScope })
         }),
         creationExpiry: captureALOutboundCreationExpiry(message)
     };

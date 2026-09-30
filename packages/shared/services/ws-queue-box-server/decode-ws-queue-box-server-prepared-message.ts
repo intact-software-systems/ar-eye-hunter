@@ -1,5 +1,8 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../alm/al-admission-value-validation.ts';
+import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    decodeALAdmissionRecord,
+    decodeALAdmissionString
+} from '../../alm/al-admission-value-validation.ts';
 import { decodeALOutboundRecipientScope } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALSessionInvalidationAuthority,
@@ -12,7 +15,7 @@ import {
     isWsQueueBoxServerDirectWorldBroadcastRow,
     readWsQueueBoxServerScopedTargetScope,
     requiresWsQueueBoxServerRecipientScope
-} from './requires-ws-queue-box-server-recipient-scope.ts';
+} from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import type { WsQueueBoxServerPreparedMessage } from './ws-queue-box-server-outbound-planning.ts';
 
 export function decodeWsQueueBoxServerPreparedMessage(
@@ -34,13 +37,12 @@ export function decodeWsQueueBoxServerPreparedMessage(
     if (prepared.kind === 'scoped-recipient') {
         return decodeScopedRecipientPrepared(value, msg, referenceKey);
     }
+    if (prepared.kind === 'room-recipient') {
+        return decodeRoomRecipientPrepared(value, msg, referenceKey);
+    }
     const message = decodeALOutboundTransportMessage(prepared.message, msg);
     if (prepared.kind === 'recipient') {
-        if (
-            requiresWsQueueBoxServerRecipientScope(msg) ||
-            isWsQueueBoxServerDirectScopedBroadcastRow(msg, referenceKey) ||
-            isWsQueueBoxServerDirectWorldBroadcastRow(msg, referenceKey)
-        ) {
+        if (isConnectionCheckedRow(msg, referenceKey)) {
             throw new TypeError('Persisted public WS unicast recipient has no scope proof');
         }
         decodeALAdmissionRecord(value, ['kind', 'message', 'peerId', 'connectionId']);
@@ -58,6 +60,45 @@ export function decodeWsQueueBoxServerPreparedMessage(
     throw new TypeError('Persisted WS outbound prepared message kind is invalid');
 }
 
+function isConnectionCheckedRow(message: ALMessage, referenceKey: Key | undefined): boolean {
+    return requiresWsQueueBoxServerRecipientScope(message) ||
+        (message.targets?.mode === 'unicast' && message.targets.groupRef !== undefined) ||
+        isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) ||
+        isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey);
+}
+
+function decodeRoomRecipientPrepared(
+    value: unknown,
+    message: ALMessage,
+    referenceKey: Key | undefined
+): WsQueueBoxServerPreparedMessage {
+    const prepared = decodeALAdmissionRecord(value, [
+        'kind',
+        'message',
+        'peerId',
+        'connectionId',
+        'generationId'
+    ]);
+    const peerId = decodeALAdmissionString(prepared.peerId);
+    const connectionId = decodeALAdmissionString(prepared.connectionId);
+    const targets = message.targets;
+    const addressed = targets?.mode === 'unicast'
+        ? targets.groupRef !== undefined && peerId === targets.toPeerId
+        : readALTargetGroupRef(message) !== undefined &&
+            isWsQueueBoxServerDirectScopedBroadcastRow(message, referenceKey) &&
+            peerId === connectionId;
+    if (!addressed) {
+        throw new TypeError('Persisted room recipient differs from its group-addressed target');
+    }
+    return {
+        kind: 'room-recipient',
+        peerId,
+        connectionId,
+        generationId: decodeALAdmissionString(prepared.generationId),
+        message: decodeALOutboundTransportMessage(prepared.message, message)
+    };
+}
+
 function decodeScopedRecipientPrepared(
     value: unknown,
     message: ALMessage,
@@ -71,6 +112,11 @@ function decodeScopedRecipientPrepared(
         'generationId',
         'recipientScope'
     ], ['principalTargetId']);
+    if (readALTargetGroupRef(message) !== undefined) {
+        throw new TypeError(
+            'Persisted scoped recipient stores a second scope for a group-addressed row'
+        );
+    }
     const scope = decodeALOutboundRecipientScope(prepared.recipientScope);
     const principalTargetId = prepared.principalTargetId === undefined
         ? undefined
@@ -79,7 +125,8 @@ function decodeScopedRecipientPrepared(
         const targetScope = readWsQueueBoxServerScopedTargetScope(message);
         if (
             !targetScope || scope.applicationId !== targetScope.applicationId ||
-            scope.workspaceId !== targetScope.workspaceId || prepared.peerId !== prepared.connectionId ||
+            scope.workspaceId !== targetScope.workspaceId ||
+            prepared.peerId !== prepared.connectionId ||
             principalTargetId !== undefined
         ) {
             throw new TypeError('Persisted scoped recipient differs from direct broadcast target');
@@ -87,7 +134,8 @@ function decodeScopedRecipientPrepared(
     }
     else if (isWsQueueBoxServerDirectWorldBroadcastRow(message, referenceKey)) {
         if (
-            message.route.contextId !== scope.applicationId || prepared.peerId !== prepared.connectionId ||
+            message.route.contextId !== scope.applicationId ||
+            prepared.peerId !== prepared.connectionId ||
             principalTargetId !== undefined
         ) {
             throw new TypeError('Persisted scoped recipient differs from direct world target');
@@ -97,7 +145,8 @@ function decodeScopedRecipientPrepared(
         if (
             referenceKey === undefined || referenceKey.topicId === 'AL_OUTBOUND_MESSAGE' ||
             message.targets?.mode !== 'unicast' || message.targets.toPeerId !== principalTargetId ||
-            message.route.contextId !== principalTargetId || prepared.peerId !== prepared.connectionId
+            message.route.contextId !== principalTargetId ||
+            prepared.peerId !== prepared.connectionId
         ) {
             throw new TypeError('Persisted scoped recipient differs from direct principal target');
         }

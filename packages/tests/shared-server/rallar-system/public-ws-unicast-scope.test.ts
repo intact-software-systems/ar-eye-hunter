@@ -61,6 +61,17 @@ describe('public WS publication scope', () => {
         expect(result).toMatchObject({ status: 'failed', reason: 'A group-addressed publication takes its scope from targets.groupRef' });
         expect(await outbox.getAllKeys()).toEqual([]);
     });
+    it('queues a room unicast without a DTO scope: its groupRef scopes it', async () => {
+        const outbox = new InMemoryQueueBox();
+        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+        onTestFinished(() => service.dispose());
+        const router = new RallarServerWsRouter(service);
+
+        const result = await router.publish({ message: createRoomUnicast(), fanout: 'outbox' });
+
+        expect(result.status).toBe('queued-outbox');
+        expect((await outbox.getAllKeys()).length).toBeGreaterThan(0);
+    });
 });
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };

@@ -62,8 +62,7 @@ describe('retained room authority through repair scheduling', () => {
             expect(request).toMatchObject({
                 trigger,
                 referenceKey: entry.key,
-                admittedAudience: ['frozen-session'],
-                recipientScope: SCOPE
+                admittedAudience: ['frozen-session']
             });
         }
     });
@@ -76,7 +75,6 @@ function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<Outbo
         dropReasonCode: undefined,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         admittedAudience: ['frozen-session'],
-        recipientScope: SCOPE,
         ackTracking: { enabled: true, timeoutMs, maxAttempts: 1, expectedPeerIds: ['frozen-session'], nextHopPeerIds: ['frozen-session'], mode: 'receiver' },
         repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 2 }
     };

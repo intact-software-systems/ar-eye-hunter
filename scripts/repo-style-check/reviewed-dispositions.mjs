@@ -736,16 +736,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // The WS server service composes direct owners for admission, receipts,
-    // control delivery, live delivery and acknowledgement relay. Each owns one
-    // decision beside the service that constructs it; the exact cap records that
-    // review, not permission to grow.
-    Object.freeze({
-        path: 'packages/shared/services/ws-queue-box-server',
-        rule: 'layout.directory-density',
-        symbol: 'ws-queue-box-server',
-        maximumMagnitude: 21
-    }),
     // Lane waiting owns channel open/abort/failure translation beside its
     // connection-service caller. These exact sibling service/policy clusters
     // expose distinct direct entry owners, not fragments of that wait flow.

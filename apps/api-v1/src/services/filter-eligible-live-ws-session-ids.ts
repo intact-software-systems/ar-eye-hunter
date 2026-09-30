@@ -1,7 +1,7 @@
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import type { CapturedWsRecipientEligibilityInputDto } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
-import { readWsQueueBoxServerScopedTargetScope } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
+import { readWsQueueBoxServerScopedTargetScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { readAuthorisedWsConnectionEligibility } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';

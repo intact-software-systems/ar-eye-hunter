@@ -175,7 +175,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         assert.ok(page);
         assert.deepEqual(await reader.readProducerProvenance(decodePersistedALMessage(page.resource), page), {
             admittedAudience: ['session-1'],
-            recipientScope: { applicationId: stalePublication.groupRef.applicationId, workspaceId: stalePublication.groupRef.workspaceId }
+            recipientScope: undefined
         });
     }
     finally {

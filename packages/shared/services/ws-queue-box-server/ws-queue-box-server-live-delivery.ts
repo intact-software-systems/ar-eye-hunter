@@ -5,7 +5,8 @@ import { validateALSessionInvalidationMessage } from '../../alm/outbound/admissi
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { EncodedJsonWebSocketMessage, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
-import { requiresWsQueueBoxServerRecipientScope } from './requires-ws-queue-box-server-recipient-scope.ts';
+import { requiresWsQueueBoxServerRecipientScope } from './scope/requires-ws-queue-box-server-recipient-scope.ts';
+import { resolveWsQueueBoxServerUnicastScope } from './scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendFailure,
@@ -107,7 +108,8 @@ export class WsQueueBoxServerLiveDelivery {
         recipients: readonly WsServerResolvedRecipient[],
         expiresAtMs: number | undefined
     ): WsServerLiveSendResult {
-        const { message, inboundScope } = input;
+        const { message } = input;
+        const unicastScope = resolveWsQueueBoxServerUnicastScope(message, input.inboundScope);
         const generations = new Map(recipients.map((recipient) => [
             recipient.connectionId,
             this.#socket.connections.get(recipient.connectionId)?.generationId
@@ -122,12 +124,10 @@ export class WsQueueBoxServerLiveDelivery {
             invalidatedSessionId: input.sessionInvalidation?.sessionId,
             recipients,
             expiresAtMs,
-            scope: input.recipientScope ??
-                (message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined),
+            scope: input.recipientScope ?? unicastScope ?? undefined,
             principalId: input.recipientPrincipalId,
             requireAuthenticatedRecipient: input.requireAuthenticatedRecipient === true ||
-                input.recipientScope !== undefined ||
-                (message.targets?.mode === 'unicast' && inboundScope !== undefined),
+                input.recipientScope !== undefined || unicastScope !== undefined,
             generations
         });
         this.#deliveryReporting.recordDiagnostics({
@@ -151,12 +151,12 @@ export class WsQueueBoxServerLiveDelivery {
         if (expiresAtMs !== undefined && expiresAtMs <= this.#clock.nowMs()) {
             return 0;
         }
+        const unicastScope = resolveWsQueueBoxServerUnicastScope(message, inboundScope);
         const resolved = this.#targetResolution.resolveRepairRecipients(message, [peerId]);
-        const recipients = inboundScope === undefined || message.targets?.mode !== 'unicast'
+        const recipients = unicastScope === undefined
             ? resolved
             : resolved.filter((recipient) =>
-                inboundScope !== null &&
-                this.#recipientSelection.isCurrentAuthorized(recipient, inboundScope)
+                unicastScope !== null && this.#recipientSelection.isCurrentAuthorized(recipient, unicastScope)
             );
         const generations = new Map(
             recipients.map((
@@ -172,9 +172,9 @@ export class WsQueueBoxServerLiveDelivery {
             invalidatedSessionId: undefined,
             recipients,
             expiresAtMs,
-            scope: message.targets?.mode === 'unicast' ? inboundScope ?? undefined : undefined,
+            scope: unicastScope ?? undefined,
             principalId: undefined,
-            requireAuthenticatedRecipient: inboundScope !== undefined && message.targets?.mode === 'unicast',
+            requireAuthenticatedRecipient: unicastScope !== undefined,
             generations
         }).sentCount;
     }

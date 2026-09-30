@@ -393,11 +393,19 @@ refusal by the trusted server is answered with a NACK, which the origin states a
 `unauthorized`, so a receipted send reads `rejected` at once rather than at its deadline: a unicast to a session outside
 the room's admitted audience
 ([`toWsQueueBoxServerAddresseeAuthorization`](../../services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts)),
-a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), and any room send the room
+a room unicast whose `route.contextId` names another room than its `groupRef` (R-S3c-i-33), a message whose room or principal names another application or workspace than its connection authenticated (D100, [`toWsQueueBoxServerScopeAuthorization`](../../services/ws-queue-box-server/scope/to-ws-queue-box-server-scope-authorization.ts)), and any room send the room
 authorizer refuses — a sender that is not an active member, a halted transport, a scope mismatch, data before
 activation. A `receiver` unicast that names no room is refused `unsupported` at admission (D71). A message addressed to the server keeps the server's own ACK and opens no
 aggregate (D76). A message carrying a frozen multicast audience — an RTC leg handed to WS — is aggregated over that
 audience verbatim, so a session that left since reads unconfirmed (D73).
+
+The wire `targets.groupRef` scopes every row that names a group (D101): its captured policy stores no
+`recipientScope`, `principalTargetId` or `sessionInvalidation`
+([`resolveALOutboundScopeAuthority`](./admission/al-outbound-scope-authority.ts)), a row that stores one is corrupt,
+and a room unicast's or a direct room row's send checks the recipient's connection against the group's scope. A
+stored recipient scope remains only on rows that name no group: a unicast whose producer proved a scope, a principal
+target, a principal or world broadcast. A raw `WS_OUTBOX` row without producer provenance fails closed, and a
+unicast `router.publish` that names no group and carries no scope returns `failed` (D103).
 
 In the production outbox fan-out (`forwardsRoomScopedMessages: false`) the server's own outbound owner
 sends the room message and keeps a `receiver` pending row for it, keyed by the origin and message id

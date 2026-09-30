@@ -16,6 +16,7 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
+import { resolveALOutboundScopeAuthority } from '../../alm/outbound/admission/al-outbound-scope-authority.ts';
 import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
 import type {
     ALOutboundAckTrackingPlan,
@@ -29,7 +30,11 @@ import type { Key } from '../../queuebox/ResourceEntry.ts';
 import {
     isWsQueueBoxServerDirectScopedBroadcastRow,
     validateWsQueueBoxServerRecipientAuthority
-} from './requires-ws-queue-box-server-recipient-scope.ts';
+} from './scope/requires-ws-queue-box-server-recipient-scope.ts';
+import {
+    toWsQueueBoxServerRecipientPreparedMessages,
+    toWsQueueBoxServerUnscopedPreparedMessages
+} from './scope/to-ws-queue-box-server-recipient-prepared-messages.ts';
 import type { WsServerResolvedRecipient } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
 import { isWsQueueBoxServerReceiptRow } from './ws-queue-box-server-receipt-row.ts';
@@ -51,6 +56,14 @@ export type WsQueueBoxServerPreparedMessage =
         generationId: string;
         recipientScope: StateScope;
         principalTargetId?: string;
+        message: ALOutboundTransportMessage;
+    }>
+    | Readonly<{
+        /** A recipient of a row whose targets name a group: its send checks the connection against that group. */
+        kind: 'room-recipient';
+        peerId: string;
+        connectionId: string;
+        generationId: string;
         message: ALOutboundTransportMessage;
     }>
     | Readonly<{
@@ -172,15 +185,7 @@ export class WsQueueBoxServerOutboundPlanning {
             persist,
             preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                 ? toClusterPreparedMessages(message, recipients)
-                : this.toRecipientPreparedMessages(
-                    message,
-                    recipients,
-                    {
-                        recipientScope,
-                        principalTargetId: request.principalTargetId,
-                        sessionInvalidation: request.sessionInvalidation
-                    }
-                ),
+                : this.toPreparedRecipients(message, recipients, { ...request, recipientScope }),
             ackTracking: toAckTrackingPlan(
                 normalized.effective,
                 resolveRecipients
@@ -198,42 +203,20 @@ export class WsQueueBoxServerOutboundPlanning {
         };
     }
 
-    private toRecipientPreparedMessages(
+    private toPreparedRecipients(
         message: ALMessage,
         recipients: readonly WsServerResolvedRecipient[],
-        authority: Pick<
+        request: Pick<
             WsQueueBoxServerOutboundPlanning.Request,
-            'recipientScope' | 'principalTargetId' | 'sessionInvalidation'
+            'recipientScope' | 'principalTargetId' | 'sessionInvalidation' | 'referenceKey'
         >
     ): readonly WsQueueBoxServerPreparedMessage[] {
-        const { recipientScope, principalTargetId, sessionInvalidation } = authority;
-        if (sessionInvalidation !== undefined) {
-            return recipients.flatMap((recipient) => {
-                const generationId = this.#targetResolution.getConnectionGeneration(recipient.connectionId);
-                return generationId === undefined
-                    ? []
-                    : [{
-                        kind: 'invalidated-session' as const,
-                        ...recipient,
-                        generationId,
-                        sessionInvalidation,
-                        message: toALOutboundTransportMessage(message)
-                    }];
-            });
-        }
-        if (recipientScope === undefined) {
-            return toRecipientPreparedMessages(message, recipients);
-        }
-        return recipients.flatMap((recipient) => {
-            const generationId = this.#targetResolution.getConnectionGeneration(recipient.connectionId);
-            return generationId === undefined ? [] : [{
-                kind: 'scoped-recipient' as const,
-                ...recipient,
-                generationId,
-                recipientScope,
-                ...(principalTargetId === undefined ? {} : { principalTargetId }),
-                message: toALOutboundTransportMessage(message)
-            }];
+        return toWsQueueBoxServerRecipientPreparedMessages({
+            message,
+            recipients,
+            authority: resolveALOutboundScopeAuthority(message, request).right!,
+            referenceKey: request.referenceKey,
+            readConnectionGeneration: (connectionId) => this.#targetResolution.getConnectionGeneration(connectionId)
         });
     }
 
@@ -271,15 +254,7 @@ export class WsQueueBoxServerOutboundPlanning {
             msg: message,
             dropReasonCode: undefined,
             persist: false,
-            preparedMessages: this.toRecipientPreparedMessages(
-                message,
-                recipients,
-                {
-                    recipientScope: request.recipientScope,
-                    principalTargetId: request.principalTargetId,
-                    sessionInvalidation: request.sessionInvalidation
-                }
-            ),
+            preparedMessages: this.toPreparedRecipients(message, recipients, request),
             admittedAudience: request.admittedAudience,
             recipientScope: request.recipientScope,
             principalTargetId: request.principalTargetId,
@@ -384,18 +359,6 @@ function toExpectedPeerIds(input: ToExpectedPeerIdsInput): readonly string[] {
         : recipients.map((recipient) => recipient.peerId);
 }
 
-function toRecipientPreparedMessages(
-    message: ALMessage,
-    recipients: readonly WsServerResolvedRecipient[]
-): readonly WsQueueBoxServerPreparedMessage[] {
-    return recipients.map((recipient) => ({
-        kind: 'recipient',
-        peerId: recipient.peerId,
-        connectionId: recipient.connectionId,
-        message: toALOutboundTransportMessage(message)
-    }));
-}
-
 /**
  * With a cluster publisher the dequeue publishes the row and completes, except for a receipt: it goes to
  * its origin's session here, or repeats its cluster publication until the origin has a session here or
@@ -409,7 +372,7 @@ function toClusterPreparedMessages(
         return [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }];
     }
     return recipients.length > 0
-        ? toRecipientPreparedMessages(message, recipients)
+        ? toWsQueueBoxServerUnscopedPreparedMessages(message, recipients)
         : [{ kind: 'cluster-receipt', message: toALOutboundTransportMessage(message) }];
 }
 

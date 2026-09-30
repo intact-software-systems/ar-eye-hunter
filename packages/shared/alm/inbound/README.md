@@ -285,13 +285,17 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s3c-i'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-scoped-delivery'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
 S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
-which older decoders refuse (C1).
+which older decoders refuse (C1). The scoped-delivery bump (D101) followed because the WS
+server's rows gained fields older decoders refuse: the captured policy's `recipientScope`,
+`principalTargetId` and `sessionInvalidation`, the `ws-client` source's `authenticatedScope`,
+and the prepared recipient kinds `scoped-recipient`, `room-recipient` and `invalidated-session`.
+A row whose targets name a group stores none of the three captured fields: its `groupRef` scopes it.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -320,6 +324,18 @@ An ACK sent by a page still running the old build is refused as
 this is not bounded by the row TTL, since the page itself, not a stored row,
 is what is out of date. The refusal is symmetric: an old-build page also
 refuses a new-build `al.control.ack.v2`, until it reloads.
+
+**The scoped-delivery window.** The WS server's PostgreSQL rows carry no schema identity, so the
+scoped-delivery bump resets browsers only. On the server:
+
+- A server rolled back past this change cannot decode a captured policy, a prepared recipient or a
+  `ws-client` source this build wrote; each stays undecodable for its row's TTL.
+- A raw `WS_OUTBOX` row an older build wrote has no producer provenance and ends `NON_RETRYABLE` at
+  its first dequeue (D103).
+- `ws-client` unicast work an older build retained carries no `authenticatedScope` and is dropped at
+  delivery.
+
+Web and API deploy together.
 
 ## Admission and invocation paths
 

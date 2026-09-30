@@ -123,9 +123,9 @@ describe('RTC topology producer provenance', () => {
             }
             else {
                 await expect.poll(async () => service.readCapturedPolicy(message, entry)).toMatchObject({
-                    admittedAudience: ['session-a', 'session-b'],
-                    recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+                    admittedAudience: ['session-a', 'session-b']
                 });
+                expect(await service.readCapturedPolicy(message, entry)).not.toHaveProperty('recipientScope');
             }
             expect(native.sent).toHaveLength(recipient === 'captured' ? 1 : 0);
         }

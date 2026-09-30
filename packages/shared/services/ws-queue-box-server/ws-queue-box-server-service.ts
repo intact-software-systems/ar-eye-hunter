@@ -1,5 +1,5 @@
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
-import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -44,7 +44,7 @@ import type { OnWebSocketServerMessageCallback } from '../queue-message-callback
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
 import {
     validateWsQueueBoxServerRecipientAuthority
-} from './requires-ws-queue-box-server-recipient-scope.ts';
+} from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -521,7 +521,7 @@ export class WsQueueBoxServerService {
     ): Promise<ALOutboundSettledSendResult> {
         if (
             prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient' &&
-            prepared.kind !== 'invalidated-session'
+            prepared.kind !== 'room-recipient' && prepared.kind !== 'invalidated-session'
         ) {
             return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
@@ -531,7 +531,7 @@ export class WsQueueBoxServerService {
     private async sendPreparedRecipient(
         prepared: Extract<
             WsQueueBoxServerPreparedMessage,
-            { kind: 'recipient' | 'scoped-recipient' | 'invalidated-session'; }
+            { kind: 'recipient' | 'scoped-recipient' | 'room-recipient' | 'invalidated-session'; }
         >,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
@@ -552,7 +552,10 @@ export class WsQueueBoxServerService {
                     reason: 'WS connection is not open before native submission'
                 };
             }
-            if (prepared.kind === 'scoped-recipient' && !this.isCurrentScopedRecipient(prepared)) {
+            if (
+                (prepared.kind === 'scoped-recipient' || prepared.kind === 'room-recipient') &&
+                !this.isCurrentScopedRecipient(prepared, message)
+            ) {
                 return { status: 'no-targets', submissionAttempted: false };
             }
             if (
@@ -587,17 +590,20 @@ export class WsQueueBoxServerService {
     }
 
     private isCurrentScopedRecipient(
-        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'scoped-recipient'; }>
+        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'scoped-recipient' | 'room-recipient'; }>,
+        message: ALMessage
     ): boolean {
         const connection = this.socket.connections.get(prepared.connectionId);
         if (!connection?.isOpen || connection.generationId !== prepared.generationId) {
             return false;
         }
+        const scope = prepared.kind === 'scoped-recipient' ? prepared.recipientScope : readALTargetGroupRef(message);
+        const principalTargetId = prepared.kind === 'scoped-recipient' ? prepared.principalTargetId : undefined;
         const proof = this.readAuthenticatedConnectionScope(connection);
-        return proof !== undefined && proof.expiresAtEpochMs > this.clock.nowMs() &&
-            proof.scope.applicationId === prepared.recipientScope.applicationId &&
-            proof.scope.workspaceId === prepared.recipientScope.workspaceId &&
-            (prepared.principalTargetId === undefined || proof.principalId === prepared.principalTargetId);
+        return scope !== undefined && proof !== undefined && proof.expiresAtEpochMs > this.clock.nowMs() &&
+            proof.scope.applicationId === scope.applicationId &&
+            proof.scope.workspaceId === scope.workspaceId &&
+            (principalTargetId === undefined || proof.principalId === principalTargetId);
     }
 }
 

@@ -1,6 +1,7 @@
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
+import { resolveWsQueueBoxServerUnicastScope } from './scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import type {
     WsServerInboundConnectionScopeReader,
     WsServerLiveSendInputDto,
@@ -43,10 +44,10 @@ export class WsQueueBoxServerRecipientSelection {
         const admittedRecipients = admitted === undefined
             ? currentRecipients
             : currentRecipients.filter((recipient) => admitted.has(recipient.peerId));
-        const requiredScope = input.recipientScope ?? (message.targets?.mode === 'unicast' ? inboundScope : undefined);
+        const unicastScope = resolveWsQueueBoxServerUnicastScope(message, inboundScope);
+        const requiredScope = input.recipientScope ?? unicastScope;
         const requiresAuthentication = input.requireAuthenticatedRecipient === true ||
-            input.recipientScope !== undefined ||
-            (message.targets?.mode === 'unicast' && inboundScope !== undefined);
+            input.recipientScope !== undefined || unicastScope !== undefined;
         return !requiresAuthentication && requiredScope === undefined
             ? admittedRecipients
             : admittedRecipients.filter((recipient) =>

@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs, type ALQosEffectivePolicy } from '@shared/al-contracts/al-policy.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { resolveWsQueueBoxServerUnicastScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import {
     encodeLiveWsNotice,
     type LiveWsAudience,
@@ -166,8 +167,9 @@ function readLiveWsPublicationScope(message: ALMessage, inboundScope: StateScope
     if (targets?.mode === 'broadcast' && targets.scope === 'principal' && targets.principalRef) {
         return { applicationId: targets.principalRef.applicationId, workspaceId: targets.principalRef.workspaceId };
     }
-    if (targets?.mode === 'unicast' && inboundScope) {
-        return inboundScope;
+    const unicastScope = resolveWsQueueBoxServerUnicastScope(message, inboundScope);
+    if (unicastScope) {
+        return unicastScope;
     }
     throw new TypeError('Scoped live WS publication has no full recipient scope.');
 }

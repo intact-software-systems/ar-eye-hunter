@@ -51,7 +51,7 @@ export interface WsServerLiveSendInputDto {
     readonly expiresAtMs?: number;
     readonly recipientSessionIds?: readonly string[];
     readonly admittedPeerIds?: readonly string[];
-    /** Explicit recipient scope; null or absent proof refuses generic unicast, including server-originated sends. */
+    /** The scope a producer proved for a unicast that names no group; a unicast naming a group takes its groupRef's. */
     readonly inboundScope?: StateScope | null;
     /** Rechecked at the final send for every fixed, scoped cluster notice audience. */
     readonly recipientScope?: StateScope;

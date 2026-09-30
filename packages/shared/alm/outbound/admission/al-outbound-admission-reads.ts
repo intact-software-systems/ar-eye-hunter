@@ -67,6 +67,7 @@ import {
     type ALOutboundCapturedPolicy,
     type ALStoredOutboundMessage
 } from './al-outbound-admission-validation.ts';
+import { resolveALOutboundScopeAuthority } from './al-outbound-scope-authority.ts';
 
 export type ALOutboundControlHistoryKind = 'acks' | 'nacks' | 'repairs';
 
@@ -268,6 +269,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
                 admissionKey,
                 new TypeError('Durable WS outbox message differs from captured outbound admission')
             );
+        }
+        const authority = resolveALOutboundScopeAuthority(message, stored.policy);
+        if (authority.left) {
+            throw new ALAdmissionCorruptionError(admissionKey, new TypeError(authority.left.join('; ')));
         }
         return stored.policy;
     }

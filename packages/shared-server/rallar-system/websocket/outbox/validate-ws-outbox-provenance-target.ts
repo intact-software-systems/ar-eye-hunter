@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { validateALSessionInvalidationMessage } from '@shared/alm/outbound/admission/al-session-invalidation-authority.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
-import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/requires-ws-queue-box-server-recipient-scope.ts';
+import { requiresWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
 
 import type { WsOutboxProvenance } from './ws-outbox-provenance.ts';
 
