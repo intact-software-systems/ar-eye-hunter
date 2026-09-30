@@ -34,7 +34,6 @@ import { toDisconnectClientSessionMutationInput } from '../mutation/command-inpu
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/assert-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { writeClientSnapshotProvenance } from '../persistence/client-snapshot-provenance.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -335,7 +334,6 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
-                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                     }
                 )
         );
@@ -355,7 +353,6 @@ export class ClientStateInboxHandler {
                         for (const mutation of computed.writes) {
                             await this.dependencies.mutationService.write(transaction, mutation);
                         }
-                        await writeClientSnapshotProvenance(transaction, computed.sidecarWrites);
                         if (computed.successorWrite !== null) {
                             await this.dependencies.expiryContinuationWriter.write(
                                 transaction,
