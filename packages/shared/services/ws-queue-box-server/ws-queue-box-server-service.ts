@@ -32,7 +32,6 @@ import {
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
 import type { StateScope } from '../../api/state-types.ts';
-import { toAppQueueCreatedBy } from '../../queuebox/AppQueueIdentity.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -172,8 +171,7 @@ export class WsQueueBoxServerService {
         this.clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution: this.targetResolution,
             canonicalScope: this.admissionStore.canonicalScope,
-            clock: this.clock,
-            readAdmittedAudience: (msgId) => this.admissionStore.readAdmittedAudience(msgId)
+            clock: this.clock
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
@@ -275,7 +273,8 @@ export class WsQueueBoxServerService {
             },
             diagnostics: dependencies.outboundDiagnostics,
             settlements: dependencies.outboundSettlements,
-            toOutboxEntry: createWsQueueBoxServerOutboxEntry,
+            toOutboxEntry: (message: ALMessage) =>
+                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             readDequeueAuthority: (message, entry) => dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, authority) =>
@@ -511,10 +510,6 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargetsWithResult(input);
     }
 
-    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
-        return this.admissionStore.readAdmittedAudience(msgId);
-    }
-
     private async sendPreparedMessage(
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
@@ -637,12 +632,4 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
-}
-
-function createWsQueueBoxServerOutboxEntry(message: ALMessage): ResourceEntry {
-    const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE);
-    return {
-        ...entry,
-        audit: { ...entry.audit, createdBy: toAppQueueCreatedBy(entry.audit.createdBy) }
-    };
 }

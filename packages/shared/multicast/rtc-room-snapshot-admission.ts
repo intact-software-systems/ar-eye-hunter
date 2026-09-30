@@ -13,6 +13,7 @@ import type {
     GroupRef,
     GroupSnapshot
 } from '../api/group-types.ts';
+import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
 
 export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
@@ -99,8 +100,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
         resolveRoomSessionDenial(authority, session.sessionId) === undefined
     ).map((session) => session.sessionId);
     const memberPeerIdSet = new Set(authorizedPeerIds);
-    const forwardingPeerIds = input.overlay?.provenance === 'server' && input.overlay.state === 'active' &&
-            isSameGroupRef(input.overlay.groupRef, roomRef)
+    const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, roomRef)
         ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
         : [];
     return {

@@ -51,7 +51,6 @@ import type {
 } from './rallar-server-ws-router-contracts.ts';
 import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-server-ws-status.ts';
 import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.ts';
-import { readRallarServerWsPublishAudience } from './read-rallar-server-ws-publish-audience.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));

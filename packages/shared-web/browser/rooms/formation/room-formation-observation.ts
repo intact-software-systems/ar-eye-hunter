@@ -14,9 +14,12 @@ import {
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
+import {
+    isAcceptedRoomLayoutOverlay,
+    isRoomLayoutOverlay
+} from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity, type OverlayRepositoryChange } from '@shared/repository/overlays-repository.ts';
 
-import { isAcceptedRoomLayoutOverlay, isRoomLayoutOverlay } from '../is-room-layout-overlay.ts';
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from '../room-state-store.ts';
 import type {

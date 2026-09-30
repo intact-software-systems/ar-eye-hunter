@@ -204,6 +204,42 @@ describe('WS server outbound planning', () => {
         expect(repairRequestedBy('late-joiner')).toBeUndefined();
         expect(repairRequestedBy('b')?.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'b' }]);
     });
+
+    it('merges a repair over the receipt it retains, so every peer the row expects and every confirmation stay', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-merge' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        );
+
+        const repair = planning.planRepairMessage(message, {
+            trigger: 'repair',
+            requestedByPeerId: 'b',
+            failedPeerIds: [],
+            completedHopPeerIds: [],
+            missingSeqs: [],
+            repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
+            admittedAudience: ['b', 'c']
+        });
+
+        expect(repair?.ackTracking).toMatchObject({
+            mode: 'receiver',
+            expectedPeerIds: ['b'],
+            expectedPeerIdsUpdate: 'merge'
+        });
+    });
 });
 
 interface PlanningFixture {

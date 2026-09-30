@@ -6,7 +6,7 @@ import {
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { ALOutboundMessageRuntime } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { isOverlayForGroupRef } from '../api/api-type-utils.ts';
-import { isOverlayIdentity } from '../repository/overlays-repository.ts';
+import { isAcceptedRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
 import type { RtcOutboundObservation } from './read-rtc-outbound-observation.ts';
 import {
@@ -78,16 +78,9 @@ export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
     const { overlayId, room, overlay, nowMs } = observation;
-    const identity = room?.group.acceptedLayoutIdentity;
-    if (
-        !overlayId || !room || !overlay || overlay.provenance !== 'server' ||
-        overlay.state !== 'active' ||
-        !isOverlayForGroupRef(overlay, room.group) || !identity ||
-        !isOverlayIdentity(overlay, identity)
-    ) {
-        return undefined;
-    }
-    return { overlayId, room, overlay, nowMs };
+    return overlayId && room && isAcceptedRoomLayoutOverlay(overlay, room.group)
+        ? { overlayId, room, overlay, nowMs }
+        : undefined;
 }
 
 export function toRtcCarrierGapFrozenMessage(

@@ -423,11 +423,14 @@ every one that confirmed, and resends only to a failed peer the message was admi
 own `recipientPeerIds`. Running out of receipt-admission attempts is reported as a warning
 naming the message and its origin.
 
-The server's own room notifications carry receipts too (D58, D77). The router freezes an `outbox` room broadcast whose
-sender is the server peer id to the room's live sessions at publish
-([`readRallarServerWsPublishAudience`](../../../shared-server/rallar-system/websocket/router/read-rallar-server-ws-publish-audience.ts));
-the server's pending row expects them, and both cluster sends — the publishing instance's and every other instance's —
-narrow to the audience captured in the shared admission store (`readAdmittedAudience`). Every settlement of the
+The server's own room notifications carry receipts too (D58, D77), and so does every server or proxy publish that
+names its room (D104). The router freezes any publish that carries a `groupRef`, a multicast or a room broadcast at
+any fanout but `none` and from any sender, to the room's live sessions at publish
+([`readRallarServerWsPublicationAudience`](../../../shared-server/rallar-system/websocket/router/rallar-server-ws-publication-audience.ts));
+a proxy publish takes the audience the room authorizer grants, and an admitted client message keeps the audience it
+was admitted to. The server's pending row expects those sessions. Both cluster sends, the publishing instance's and
+every other instance's, read the row's captured policy once from the shared admission store (`readCapturedPolicy`),
+fail closed on a row that differs from its admission, and narrow to the audience it holds. Every settlement of the
 server's outbound owner feeds one bounded in-memory recorder per process
 ([`createRallarAlmReceiptDiagnosticsRecorder`](../../../shared-server/rallar-system/observability/alm-receipt-diagnostics.ts),
 256 messages), read as `almReceipts` on `/api/admin/operations/realtime`: per message the confirmed and unconfirmed
