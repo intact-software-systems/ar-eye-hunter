@@ -173,6 +173,19 @@ returns `pending`, meaning durable ownership exists, not that transport ran. A s
 control type whose envelope does not decode as a canonical control stays on the ordinary
 serialized path.
 
+Controls are `volatile` (`computeALControlMessage` in
+[`al-control.ts`](../../al-contracts/al-control.ts)), so a runtime with a memory pair — both browser
+carriers — admits them in the memory lane, which takes no Web Lock: there the hand-off skips only that
+lane's in-tab sender queue. A runtime without a memory pair (the WS server, or a WS client built
+without `outboundVolatileStores`) admits them in the durable lane, where the hand-off also skips the
+Web Lock when the platform has one. Two tabs of one session that share the IndexedDB lane and the
+Web Lock and hand off the same controls at once, or where one tab closes after its commit or inside
+its send, send each control once and in hand-off order
+([`al-outbound-control-handoff-two-tabs.test.ts`](../../../tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts));
+a send a closed tab still holds under its lease waits for that lease on either path. The hand-off
+shares the sender version fence with that sender's data commits, so a data commit that races a
+control can conflict and retain a pending admission, which the worker replays.
+
 The outbound worker claims the retained `admit-message`, rereads current admission
 facts, and replays one new attempt through the unchanged sender queue and browser Web
 Lock. The retained policy, original deadline, and authorized transport provenance
