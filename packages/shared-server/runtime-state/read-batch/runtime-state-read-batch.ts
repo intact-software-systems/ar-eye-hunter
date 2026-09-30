@@ -14,9 +14,18 @@ export interface RuntimeStateReadBatchPrefixSelector {
     readonly keyPrefix: string;
 }
 
+export interface RuntimeStateReadBatchPrefixSuffixSelector {
+    readonly selectorId: string;
+    readonly kind: 'prefix-suffix';
+    readonly namespace: string;
+    readonly keyPrefix: string;
+    readonly keySuffix: string;
+}
+
 export type RuntimeStateReadBatchSelector =
     | RuntimeStateReadBatchKeySelector
-    | RuntimeStateReadBatchPrefixSelector;
+    | RuntimeStateReadBatchPrefixSelector
+    | RuntimeStateReadBatchPrefixSuffixSelector;
 
 export interface RuntimeStateReadBatchSelection {
     readonly selectorId: string;

@@ -1,5 +1,6 @@
 import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
+import { isRuntimeStateReadBatchKeySelected } from './is-runtime-state-read-batch-key-selected.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
@@ -34,20 +35,15 @@ function validateSelectionEntries(
     entries: readonly RuntimeStateEntry[],
     label: string
 ): void {
-    if (selector.kind === 'key') {
-        if (entries.length > 1) {
-            throw invalidReadBatch(`${label} exact key returned multiple entries`);
-        }
-        if (entries[0] !== undefined && entries[0].key !== selector.key) {
-            throw invalidReadBatch(`${label} exact key does not match`);
-        }
+    if (selector.kind === 'key' && entries.length > 1) {
+        throw invalidReadBatch(`${label} exact key returned multiple entries`);
     }
-    else {
-        for (const entry of entries) {
-            if (!entry.key.startsWith(selector.keyPrefix)) {
-                throw invalidReadBatch(`${label} entry does not match prefix`);
-            }
-        }
+    if (entries.some((entry) => !isRuntimeStateReadBatchKeySelected(selector, entry.key))) {
+        throw invalidReadBatch(
+            selector.kind === 'key'
+                ? `${label} exact key does not match`
+                : `${label} entry does not match ${selector.kind}`
+        );
     }
 
     for (let index = 1; index < entries.length; index += 1) {

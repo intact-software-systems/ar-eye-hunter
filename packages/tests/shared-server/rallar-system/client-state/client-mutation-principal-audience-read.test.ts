@@ -3,8 +3,14 @@ import { clientStatePrincipalStorageKey } from '@shared-server/rallar-system/cli
 import { groupStateScopeStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { computePrincipalStateSyncAudience } from '@shared-server/rallar-system/state-sync/state-sync-principal-audience.ts';
-import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
-import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import {
+    createTestClientStateRepository,
+    createTestGroupStateRepository
+} from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -28,16 +34,20 @@ class AudienceReadRepository extends FakeRuntimeStateRepository {
                 selector.kind === 'prefix' &&
                 (
                     (selector.namespace.startsWith('group-state:') &&
-                        selector.namespace !== 'group-state:groups' && selector.keyPrefix === groupScopePrefix) ||
+                        selector.keyPrefix === groupScopePrefix) ||
                     (selector.namespace.startsWith('client-state:') &&
-                        selector.namespace !== 'client-state:principals' && selector.keyPrefix === clientScopePrefix)
+                        selector.namespace !== 'client-state:principals' &&
+                        selector.keyPrefix === clientScopePrefix)
                 )
             ) {
                 throw new Error(`Audience read requested every child in ${selector.namespace}`);
             }
         }
         const selections = await super.readRuntimeStateBatch(selectors);
-        if (this.afterActorMemberRead && selectors.some((selector) => selector.kind === 'key' && selector.namespace === 'group-state:members')) {
+        if (
+            this.afterActorMemberRead &&
+            selectors.some((selector) => selector.kind === 'prefix-suffix')
+        ) {
             const afterActorMemberRead = this.afterActorMemberRead;
             this.afterActorMemberRead = undefined;
             await afterActorMemberRead();
@@ -51,9 +61,27 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup({ repository: groups, groupId: 'room-one', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: ['carol'] });
-        await seedGroup({ repository: groups, groupId: 'room-two', ownerPrincipalId: 'alice', activePrincipalIds: ['dave'], leftPrincipalIds: [] });
-        await seedGroup({ repository: groups, groupId: 'unrelated', ownerPrincipalId: 'mallory', activePrincipalIds: ['erin'], leftPrincipalIds: [] });
+        await seedGroup({
+            repository: groups,
+            groupId: 'room-one',
+            ownerPrincipalId: 'alice',
+            activePrincipalIds: ['bob'],
+            leftPrincipalIds: ['carol']
+        });
+        await seedGroup({
+            repository: groups,
+            groupId: 'room-two',
+            ownerPrincipalId: 'alice',
+            activePrincipalIds: ['dave'],
+            leftPrincipalIds: []
+        });
+        await seedGroup({
+            repository: groups,
+            groupId: 'unrelated',
+            ownerPrincipalId: 'mallory',
+            activePrincipalIds: ['erin'],
+            leftPrincipalIds: []
+        });
         for (const principalId of ['alice', 'bob', 'carol', 'dave', 'erin', 'mallory']) {
             await seedClient(clients, principalId);
         }
@@ -73,10 +101,11 @@ describe('client mutation principal audience read', () => {
             'room-one',
             'room-two'
         ]);
-        expect(read.audienceClientSnapshots.map((snapshot) => snapshot.principal.principalId)).toEqual([
-            'bob',
-            'dave'
-        ]);
+        expect(read.audienceClientSnapshots.map((snapshot) => snapshot.principal.principalId))
+            .toEqual([
+                'bob',
+                'dave'
+            ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
             ownSnapshot: read.snapshot,
@@ -90,7 +119,13 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup({ repository: groups, groupId: 'joined-room', ownerPrincipalId: 'mallory', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
+        await seedGroup({
+            repository: groups,
+            groupId: 'joined-room',
+            ownerPrincipalId: 'mallory',
+            activePrincipalIds: ['bob'],
+            leftPrincipalIds: []
+        });
         for (const principalId of ['alice', 'bob', 'mallory']) {
             await seedClient(clients, principalId);
         }
@@ -99,7 +134,14 @@ describe('client mutation principal audience read', () => {
             if (!previous) {
                 throw new Error('Expected group before concurrent membership write');
             }
-            await groups.putMember(member({ groupId: 'joined-room', principalId: 'alice', role: 'member', status: 'active' }));
+            await groups.putMember(
+                member({
+                    groupId: 'joined-room',
+                    principalId: 'alice',
+                    role: 'member',
+                    status: 'active'
+                })
+            );
             await groups.putGroup({
                 ...previous,
                 activeMemberCount: 3,
@@ -118,7 +160,9 @@ describe('client mutation principal audience read', () => {
         if (!read.snapshot) {
             throw new Error('Expected Alice principal snapshot');
         }
-        expect(read.audienceGroupSnapshots.map((snapshot) => snapshot.group.groupId)).toEqual(['joined-room']);
+        expect(read.audienceGroupSnapshots.map((snapshot) => snapshot.group.groupId)).toEqual([
+            'joined-room'
+        ]);
         expect(computePrincipalStateSyncAudience({
             principalRef: read.snapshot.principal,
             ownSnapshot: read.snapshot,
@@ -128,17 +172,92 @@ describe('client mutation principal audience read', () => {
         })).toEqual(['alice-session', 'bob-session', 'mallory-session']);
     });
 
+    it('keeps only live sessions of active co-members in the requested scope', async () => {
+        const runtime = new AudienceReadRepository();
+        const groups = createTestGroupStateRepository(runtime);
+        const clients = createTestClientStateRepository(runtime);
+        await seedGroup({
+            repository: groups,
+            groupId: 'room-one',
+            ownerPrincipalId: 'alice',
+            activePrincipalIds: ['bob'],
+            leftPrincipalIds: ['carol']
+        });
+        for (const principalId of ['alice', 'bob', 'carol']) {
+            await seedClient(clients, principalId);
+        }
+        await seedClient(
+            clients,
+            'bob',
+            { ...TEST_SCOPE, workspaceId: 'workspace-2' },
+            'bob-other-scope-session'
+        );
+        await clients.insertSession(
+            session({
+                principalId: 'bob',
+                sessionId: 'bob-expired-session',
+                expiresAtEpochMs: AUDIENCE_EPOCH_MS
+            })
+        );
+        await clients.insertSession({
+            ...session({
+                principalId: 'bob',
+                sessionId: 'bob-replaced-session',
+                expiresAtEpochMs: 4_000_000_000_000
+            }),
+            status: 'disconnected',
+            disconnectedAtEpochMs: 2,
+            disconnectReason: 'replaced'
+        });
+
+        const read = await readClientMutation({
+            repository: clients,
+            groupRepository: groups,
+            authSessionRepository: { findBySessionId: async () => undefined },
+            command: await principalCommand('audience-sessions'),
+            audienceObservedAtEpochMs: AUDIENCE_EPOCH_MS
+        });
+        if (!read.snapshot) {
+            throw new Error('Expected Alice principal snapshot');
+        }
+
+        expect(computePrincipalStateSyncAudience({
+            principalRef: read.snapshot.principal,
+            ownSnapshot: read.snapshot,
+            groupSnapshots: read.audienceGroupSnapshots,
+            clientSnapshots: read.audienceClientSnapshots,
+            nowEpochMs: AUDIENCE_EPOCH_MS
+        })).toEqual(['alice-session', 'bob-session']);
+    });
+
     it('rejects a selected actor member stored in the wrong canonical slot', async () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup({ repository: groups, groupId: 'corrupt-room', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
+        await seedGroup({
+            repository: groups,
+            groupId: 'corrupt-room',
+            ownerPrincipalId: 'alice',
+            activePrincipalIds: ['bob'],
+            leftPrincipalIds: []
+        });
         await seedClient(clients, 'alice');
-        const actorKey = groupStateMemberStorageKey({ ...TEST_SCOPE, groupId: 'corrupt-room', principalId: 'alice' });
+        const actorKey = groupStateMemberStorageKey({
+            ...TEST_SCOPE,
+            groupId: 'corrupt-room',
+            principalId: 'alice'
+        });
         await runtime.upsert(
             'group-state:members',
             actorKey,
-            JSON.stringify(member({ groupId: 'corrupt-room', principalId: 'mallory', role: 'owner', status: 'active' })),
+            JSON.stringify(
+                member({
+                    groupId: 'corrupt-room',
+                    principalId: 'mallory',
+                    role: 'owner',
+                    status: 'active'
+                })
+            ),
             Number.MAX_SAFE_INTEGER
         );
 
@@ -158,7 +277,13 @@ describe('client mutation principal audience read', () => {
         const runtime = new AudienceReadRepository();
         const groups = createTestGroupStateRepository(runtime);
         const clients = createTestClientStateRepository(runtime);
-        await seedGroup({ repository: groups, groupId: 'corrupt-client-room', ownerPrincipalId: 'alice', activePrincipalIds: ['bob'], leftPrincipalIds: [] });
+        await seedGroup({
+            repository: groups,
+            groupId: 'corrupt-client-room',
+            ownerPrincipalId: 'alice',
+            activePrincipalIds: ['bob'],
+            leftPrincipalIds: []
+        });
         await seedClient(clients, 'alice');
         await seedClient(clients, 'bob');
         const bobRef = { ...TEST_SCOPE, principalId: 'bob' };
@@ -195,7 +320,9 @@ interface SeedGroupInput {
     readonly leftPrincipalIds: readonly string[];
 }
 
-async function seedGroup({ repository, groupId, ownerPrincipalId, activePrincipalIds, leftPrincipalIds }: SeedGroupInput): Promise<void> {
+async function seedGroup(
+    { repository, groupId, ownerPrincipalId, activePrincipalIds, leftPrincipalIds }: SeedGroupInput
+): Promise<void> {
     const group: Group = createTestGroup({
         ...TEST_SCOPE,
         groupId,
@@ -243,10 +370,12 @@ function member({ groupId, principalId, role, status }: MemberInput): GroupMembe
 
 async function seedClient(
     repository: ReturnType<typeof createTestClientStateRepository>,
-    principalId: string
+    principalId: string,
+    scope: typeof TEST_SCOPE = TEST_SCOPE,
+    sessionId = `${principalId}-session`
 ): Promise<void> {
     const principal: ClientPrincipal = {
-        ...TEST_SCOPE,
+        ...scope,
         principalId,
         username: principalId,
         displayName: principalId,
@@ -266,7 +395,7 @@ async function seedClient(
         lastSeenAtEpochMs: 1
     };
     const instance: ClientInstance = {
-        ...TEST_SCOPE,
+        ...scope,
         principalId,
         clientInstanceId: `${principalId}-instance`,
         status: 'active',
@@ -279,12 +408,27 @@ async function seedClient(
         registered: audit(),
         updated: audit()
     };
-    const session: ClientSession = {
+    await repository.insertPrincipal(principal);
+    await repository.insertInstance(instance);
+    await repository.insertSession({
+        ...session({ principalId, sessionId, expiresAtEpochMs: 4_000_000_000_000 }),
+        ...scope
+    });
+}
+
+interface SessionInput {
+    readonly principalId: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+}
+
+function session({ principalId, sessionId, expiresAtEpochMs }: SessionInput): ClientSession {
+    return {
         ...TEST_SCOPE,
         principalId,
-        clientInstanceId: instance.clientInstanceId,
-        sessionId: `${principalId}-session`,
-        generationId: `${principalId}-generation`,
+        clientInstanceId: `${principalId}-instance`,
+        sessionId,
+        generationId: `${sessionId}-generation`,
         generationVersion: 1,
         status: 'active',
         presenceState: 'online',
@@ -293,13 +437,10 @@ async function seedClient(
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
         lastHeartbeatAtEpochMs: 1,
-        expiresAtEpochMs: 4_000_000_000_000,
+        expiresAtEpochMs,
         disconnectedAtEpochMs: null,
         disconnectReason: null
     };
-    await repository.insertPrincipal(principal);
-    await repository.insertInstance(instance);
-    await repository.insertSession(session);
 }
 
 function audit(): AuditStamp {

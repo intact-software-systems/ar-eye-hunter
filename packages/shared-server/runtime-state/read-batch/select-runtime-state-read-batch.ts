@@ -1,5 +1,9 @@
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
-import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
+import { isRuntimeStateReadBatchKeySelected } from './is-runtime-state-read-batch-key-selected.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from './runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchResult } from './validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
@@ -17,20 +21,16 @@ export function selectRuntimeStateReadBatch(
         namespace,
         entry: { ...entry }
     }));
-    const selections = selectors.map((selector) => ({
-        selectorId: selector.selectorId,
-        entries: selector.kind === 'key'
-            ? snapshot
-                .filter(({ namespace, entry }) => namespace === selector.namespace && entry.key === selector.key)
-                .map(({ entry }) => entry)
-            : snapshot
-                .filter(({ namespace, entry }) =>
-                    namespace === selector.namespace &&
-                    entry.key.startsWith(selector.keyPrefix)
-                )
-                .map(({ entry }) => entry)
-                .sort((left, right) => compareUtf8(left.key, right.key))
-    }));
+    const selections = selectors.map((selector) => {
+        const selected = snapshot
+            .filter(({ namespace, entry }) =>
+                namespace === selector.namespace &&
+                isRuntimeStateReadBatchKeySelected(selector, entry.key)
+            )
+            .map(({ entry }) => entry)
+            .sort((left, right) => compareUtf8(left.key, right.key));
+        return { selectorId: selector.selectorId, entries: selected };
+    });
     return validateRuntimeStateReadBatchResult(selectors, selections);
 }
 

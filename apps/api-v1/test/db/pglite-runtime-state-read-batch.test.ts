@@ -1,6 +1,7 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
 import assert from 'node:assert/strict';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
@@ -37,6 +38,26 @@ Deno.test('PGlite returns dense packed runtime-state key and prefix selections',
         }]);
         assert.equal(selections[2].entries[0].value, 'exact-value');
         assert.deepEqual(driverRowCounts, [1]);
+    }
+    finally {
+        await lifecycle.close();
+    }
+});
+
+Deno.test('PGlite selects literal prefix-suffix matches in caller order and C key order', async () => {
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const namespace = `read-batch-${crypto.randomUUID()}`;
+    const fixture = createPrefixSuffixReadBatchFixture(namespace);
+    const repository = new PSqlRuntimeStateRepository(lifecycle.database);
+
+    try {
+        for (const [index, entry] of fixture.entries.entries()) {
+            await repository.upsert(entry.namespace, entry.key, `value-${index}`, FUTURE_MS);
+        }
+
+        const selections = await repository.readRuntimeStateBatch(fixture.selectors);
+
+        assert.deepEqual(toSelectionKeys(selections), fixture.expectedSelections);
     }
     finally {
         await lifecycle.close();

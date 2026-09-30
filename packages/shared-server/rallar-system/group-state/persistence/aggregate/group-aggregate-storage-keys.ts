@@ -43,7 +43,11 @@ export function groupStateChildStorageKey(
     partName: string,
     value: string
 ): string {
-    return [groupStateGroupStorageKey(ref), groupStateStorageKeyPart(partName, value)].join(':');
+    return `${groupStateGroupStorageKey(ref)}${groupStateChildStorageKeySuffix(partName, value)}`;
+}
+
+export function groupStateChildStorageKeySuffix(partName: string, value: string): string {
+    return `:${groupStateStorageKeyPart(partName, value)}`;
 }
 
 export function decodeGroupStateChildStorageKey<Name extends string>(

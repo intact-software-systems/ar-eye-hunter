@@ -19,6 +19,7 @@ interface PSqlRuntimeStateReadBatchSelector {
     readonly namespace: string;
     readonly key: string | null;
     readonly keyPrefix: string | null;
+    readonly keySuffix: string | null;
     readonly prefixEnd: string | null;
 }
 
@@ -69,6 +70,7 @@ export async function readRuntimeStateBatch(
                descriptor.value ->> 'namespace' as store_namespace,
                descriptor.value ->> 'key' as store_key,
                descriptor.value ->> 'keyPrefix' as key_prefix,
+               descriptor.value ->> 'keySuffix' as key_suffix,
                descriptor.value ->> 'prefixEnd' as prefix_end
         from jsonb_array_elements(${selectors.map(toSqlSelector)}::jsonb)
           with ordinality as descriptor(value, ordinality)
@@ -96,6 +98,23 @@ export async function readRuntimeStateBatch(
           and prefix_entry.store_namespace = selector.store_namespace
           and prefix_entry.store_key collate "C" >= selector.key_prefix
           and prefix_entry.store_key collate "C" < selector.prefix_end
+
+        union all
+
+        select suffix_entry.store_key,
+               suffix_entry.store_value,
+               suffix_entry.expire_at_ts,
+               suffix_entry.updated_ts,
+               suffix_entry.revision
+        from runtime_state_store suffix_entry
+        where selector.selector_kind = 'prefix-suffix'
+          and suffix_entry.store_namespace = selector.store_namespace
+          and suffix_entry.store_key collate "C" >= selector.key_prefix
+          and suffix_entry.store_key collate "C" < selector.prefix_end
+          and char_length(suffix_entry.store_key)
+            >= char_length(selector.key_prefix) + char_length(selector.key_suffix)
+          and right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C"
+            = selector.key_suffix
       ) matched on true
       group by selector.selector_ordinal, selector.selector_id
     ) selector_result
@@ -115,15 +134,17 @@ export async function readRuntimeStateBatch(
 function toSqlSelector(
     selector: RuntimeStateReadBatchSelector
 ): PSqlRuntimeStateReadBatchSelector {
-    return selector.kind === 'key'
-        ? {
-            ...selector,
-            keyPrefix: null,
-            prefixEnd: null
-        }
-        : {
-            ...selector,
-            key: null,
-            prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
-        };
+    switch (selector.kind) {
+        case 'key':
+            return { ...selector, keyPrefix: null, keySuffix: null, prefixEnd: null };
+        case 'prefix':
+            return {
+                ...selector,
+                key: null,
+                keySuffix: null,
+                prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
+            };
+        case 'prefix-suffix':
+            return { ...selector, key: null, prefixEnd: toExclusivePrefixEnd(selector.keyPrefix) };
+    }
 }

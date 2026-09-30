@@ -7,12 +7,10 @@ import type {
     GroupScope,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
-import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { readStableStateSnapshot, StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
+import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
 import { canonicalStoredGroup, toGroupStateAuthorityGuard } from './aggregate/group-aggregate-repository.ts';
 import {
@@ -42,19 +40,11 @@ import {
     SESSIONS_NAMESPACE
 } from './group-state-runtime-namespaces.ts';
 import { canonicalStoredMember } from './membership/group-membership-repository.ts';
-import {
-    decodeGroupStateMemberStorageKey,
-    groupStateMemberStorageKey
-} from './membership/group-membership-storage-key.ts';
+import { decodeGroupStateMemberStorageKey } from './membership/group-membership-storage-key.ts';
 import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
 import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
 import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
-
-interface GroupStateAudienceChildren {
-    readonly members: readonly GroupMember[];
-    readonly summary: GroupPresenceSummary | undefined;
-    readonly sessions: readonly GroupPresenceSession[];
-}
+import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
@@ -101,102 +91,13 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
         scope: GroupScope,
         principalId: string
     ): Promise<readonly GroupSnapshot[]> {
-        const observedAtEpochMs = Date.now();
-        const keyPrefix = `${groupStateScopeStorageKey(scope)}:`;
-        const groupsBefore = (await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix))
-            .map((stored) => canonicalStoredGroup(stored, scope));
-        const actorSelectors: readonly RuntimeStateReadBatchSelector[] = groupsBefore.map((stored, index) => ({
-            selectorId: `actor:${index}`,
-            kind: 'key',
-            namespace: MEMBERS_NAMESPACE,
-            key: groupStateMemberStorageKey({ ...stored.value, principalId })
-        }));
-        const actorSelections = actorSelectors.length === 0
-            ? []
-            : await this.readLiveBatchSelections(actorSelectors);
-        const selected = groupsBefore.filter((stored, index) => {
-            const actor = actorSelections[index]?.[0];
-            return actor !== undefined &&
-                canonicalStoredMember(actor, { ...stored.value, principalId }).value.status === 'active';
+        return await readGroupStateSnapshotsForPrincipal({
+            repository: this.repository,
+            scope,
+            principalId,
+            observedAtEpochMs: Date.now(),
+            readSnapshot: async (ref) => await this.readSnapshot(ref)
         });
-        const selectedChildren = await this.readAudienceGroupChildren(selected);
-        const groupsAfter = (await this.listJsonEntryValues(GROUPS_NAMESPACE, keyPrefix))
-            .map((stored) => canonicalStoredGroup(stored, scope));
-        const beforeByKey = new Map(groupsBefore.map((stored) => [stored.entry.key, stored]));
-        const selectedByKey = new Map(selected.map((stored, index) => [stored.entry.key, selectedChildren[index]]));
-        const snapshots = await Promise.all(groupsAfter.map(async (stored) => {
-            const before = beforeByKey.get(stored.entry.key);
-            if (!before || before.entry.revision !== stored.entry.revision) {
-                return await this.readSnapshot(stored.value);
-            }
-            const children = selectedByKey.get(stored.entry.key);
-            if (!children) {
-                return undefined;
-            }
-            return this.toSnapshot({
-                group: stored.value,
-                members: children.members,
-                summary: children.summary,
-                authoritativeSessions: children.sessions,
-                groupRevision: stored.value.snapshotVersion,
-                observedAtEpochMs,
-                sessionLeaseFields: 'authoritative'
-            });
-        }));
-        return snapshots.filter((snapshot): snapshot is GroupSnapshot =>
-            snapshot !== undefined &&
-            snapshot.members.some((member) => member.principalId === principalId && member.status === 'active')
-        );
-    }
-
-    private async readAudienceGroupChildren(
-        groups: readonly RuntimeStateEntryValue<Group>[]
-    ): Promise<readonly GroupStateAudienceChildren[]> {
-        if (groups.length === 0) {
-            return [];
-        }
-        const selectors: RuntimeStateReadBatchSelector[] = groups.flatMap((stored, index) => {
-            const groupKey = groupStateGroupStorageKey(stored.value);
-            return [
-                {
-                    selectorId: `members:${index}`,
-                    kind: 'prefix',
-                    namespace: MEMBERS_NAMESPACE,
-                    keyPrefix: `${groupKey}:`
-                },
-                { selectorId: `summary:${index}`, kind: 'key', namespace: PRESENCE_SUMMARIES_NAMESPACE, key: groupKey },
-                {
-                    selectorId: `sessions:${index}`,
-                    kind: 'prefix',
-                    namespace: SESSIONS_NAMESPACE,
-                    keyPrefix: `${groupKey}:`
-                }
-            ];
-        });
-        const selections = await this.readLiveBatchSelections(selectors);
-        return groups.map((stored, index) => ({
-            members: selections[index * 3].map((entry) => canonicalStoredMember(entry, stored.value).value),
-            summary: selections[index * 3 + 1][0] === undefined
-                ? undefined
-                : canonicalStoredSummary(selections[index * 3 + 1][0], stored.value).value,
-            sessions: selections[index * 3 + 2].map((entry) => canonicalStoredSession(entry, stored.value).value)
-        }));
-    }
-
-    private async readLiveBatchSelections(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly (readonly RuntimeStateEntryValue<JsonWireValue>[])[]> {
-        const resolved = await resolveRuntimeStateReadBatchLiveValues(
-            selectors,
-            await this.repository.readRuntimeStateBatch(selectors),
-            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
-        );
-        if (resolved.status === 'changed') {
-            throw new StateSnapshotReadConflictError(
-                selectors[0].kind === 'key' ? selectors[0].key : selectors[0].keyPrefix
-            );
-        }
-        return resolved.selections.map((selection) => selection.entries);
     }
 
     private async readScopeSnapshot(scope: GroupScope): Promise<GroupStateScopeSnapshotRead> {
