@@ -207,6 +207,7 @@ export class WsQueueBoxServerService {
         });
         this.ackRelay = new WsQueueBoxServerAckRelay({
             serverPeerId: dependencies.name,
+            clock: this.clock,
             receipts: this.receipts,
             publishRelayedAck: dependencies.publishRelayedAck
         });
@@ -456,7 +457,11 @@ export class WsQueueBoxServerService {
         input: WsQueueBoxServerInboundAuthority.AuthorizedMessage
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const { message, fromPeerId, authorization, proof } = input;
-        if (await this.ackRelay.relayUnownedAck(message)) {
+        const relayed = await this.ackRelay.relayUnownedAck(message);
+        if (relayed.left !== undefined) {
+            return Either.ofLeft(relayed.left);
+        }
+        if (relayed.right) {
             return Either.ofRight({ kind: 'control', handled: false });
         }
         const admitted = await this.inboundRuntime.admitIncomingMessage(message, {

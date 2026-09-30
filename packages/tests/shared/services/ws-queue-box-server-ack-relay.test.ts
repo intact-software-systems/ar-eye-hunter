@@ -25,6 +25,7 @@ import {
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const RELAY_BUDGET = 60;
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
 interface ServerInstance {
@@ -152,6 +153,55 @@ describe('WS server ACK relay across instances', () => {
         );
 
         expect(other.relayed).toEqual([]);
+    });
+
+    it('relays at most a fixed number of ACKs per session per window, whatever message they name', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const { other } = await createCluster();
+        const outcomes = [];
+        for (let index = 0; index < RELAY_BUDGET + 1; index += 1) {
+            outcomes.push(
+                await other.service.acceptIncomingMessage(forgedAck('c', index), 'c')
+            );
+        }
+
+        expect(other.relayed).toHaveLength(RELAY_BUDGET);
+        expect(outcomes.slice(0, RELAY_BUDGET).map((outcome) => outcome.right)).toEqual(
+            Array.from({ length: RELAY_BUDGET }, () => ({ kind: 'control', handled: false }))
+        );
+        expect(outcomes[RELAY_BUDGET]!.left).toEqual({
+            code: 'unauthorized',
+            message: 'AL acknowledgement relay budget of this session is used up'
+        });
+
+        const otherSession = await other.service.acceptIncomingMessage(forgedAck('d', 0), 'd');
+        expect(otherSession.right).toEqual({ kind: 'control', handled: false });
+        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
+
+        vi.setSystemTime(Date.now() + 60_001);
+        const nextWindow = await other.service.acceptIncomingMessage(forgedAck('c', 0), 'c');
+        expect(nextWindow.right).toEqual({ kind: 'control', handled: false });
+        expect(other.relayed).toHaveLength(RELAY_BUDGET + 2);
+    });
+
+    it('spends no relay budget on an ACK its own aggregate counts', async () => {
+        const { owner, other } = await createCluster();
+        await admitRoomMessage(owner, Date.now() + 30_000);
+        for (let index = 0; index < RELAY_BUDGET; index += 1) {
+            await owner.service.acceptIncomingMessage(forgedAck('b', index), 'b');
+        }
+
+        await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
+        await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
+
+        expect(owner.relayed).toHaveLength(RELAY_BUDGET);
+        await expect.poll(() => readReceipts(owner.sockets.a!)).toEqual([
+            { phase: 'admitted', expected: ['b', 'c'], confirmed: [] },
+            { phase: 'complete', expected: ['b', 'c'], confirmed: ['b', 'c'] }
+        ]);
     });
 
     it('ends the receipt timed out, naming the recipient, when the relay could not be sent', async () => {
@@ -285,6 +335,22 @@ function receiverAck(
             toPeerId: address.toPeerId ?? 'a',
             originPeerId: address.originPeerId ?? 'a',
             logicalRecipientPeerId: address.logicalRecipientPeerId ?? recipient,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+function forgedAck(recipient: string, index: number): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: `forged-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        {
+            ackedMsgId: `forged-message-${index}`,
+            fromPeerId: recipient,
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: recipient,
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()

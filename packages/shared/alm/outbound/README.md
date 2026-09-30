@@ -374,7 +374,11 @@ answers an unhandled `control` instead of a refusal. The instance that holds the
 checks as a local ACK; any other instance drops it, and nothing relays it again. The notice is best effort and one
 attempt: a lost one leaves the recipient unconfirmed, and the receipt ends `timed-out` naming it. The relay runs
 only with Postgres pub/sub; a single instance still refuses an ACK it holds no aggregate for. An ACK addressed to
-the server is never relayed: the server's own pending row lives in the shared outbound admission store.
+the server is never relayed: the server's own pending row lives in the shared outbound admission store. The relay is
+bounded before it publishes: each session may hand over 60 ACKs per minute, and a further one is refused at ingress
+as a typed value. The admission store cannot tell a forged ACK from a genuine one, because it records the admitted
+audience only of a message the router enqueued on an `outbox` topic, never of one a WS client sent to a live-only
+topic.
 
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).

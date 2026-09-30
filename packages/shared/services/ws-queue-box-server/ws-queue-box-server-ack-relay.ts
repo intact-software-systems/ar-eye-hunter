@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALAckPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
-import type { Either } from '../../resilience/Either.ts';
+import { Either } from '../../resilience/Either.ts';
 import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 
 /** Carries one receiver ACK to the other server instances; the left value names why it could not be sent. */
@@ -9,9 +9,14 @@ export type WsServerAckRelayPublisher = (
     message: ALMessage
 ) => Promise<Either<string, 'published'>>;
 
+const RELAY_BUDGET_WINDOW_MS = 60_000;
+const RELAY_BUDGET_PER_SESSION = 60;
+const RELAY_BUDGET_SWEEP_SIZE = 1_024;
+
 export namespace WsQueueBoxServerAckRelay {
     export interface Dependencies {
         readonly serverPeerId: string;
+        readonly clock: { nowMs(): number; };
         readonly receipts: WsQueueBoxServerReceiptAggregation;
         readonly publishRelayedAck: WsServerAckRelayPublisher | undefined;
     }
@@ -21,14 +26,20 @@ export namespace WsQueueBoxServerAckRelay {
  * A receiver ACK counts only on the instance whose socket admitted the message, where its receipt aggregate
  * lives. An instance that holds no aggregate for the ACK hands it once to the others, and an instance that
  * receives a handed-over ACK counts it only against an aggregate of its own: it never hands it on again.
+ * The outbound admission store knows no message a WS client sent to a live-only topic, so nothing here can tell
+ * a forged ACK from a genuine one before it is published; each session may hand over a fixed number of ACKs per
+ * window, and a notice costs one NOTIFY.
  */
 export class WsQueueBoxServerAckRelay {
     readonly #serverPeerId: string;
     readonly #receipts: WsQueueBoxServerReceiptAggregation;
     readonly #publishRelayedAck: WsServerAckRelayPublisher | undefined;
+    readonly #clock: { nowMs(): number; };
+    readonly #budgets = new Map<string, { windowEndsAtMs: number; used: number; }>();
 
     constructor(dependencies: WsQueueBoxServerAckRelay.Dependencies) {
         this.#serverPeerId = dependencies.serverPeerId;
+        this.#clock = dependencies.clock;
         this.#receipts = dependencies.receipts;
         this.#publishRelayedAck = dependencies.publishRelayedAck;
     }
@@ -38,25 +49,35 @@ export class WsQueueBoxServerAckRelay {
         if (this.#publishRelayedAck === undefined || this.#receipts.holdsReceiptFor(ack)) {
             return this.#receipts.readRelayedAckRejection(ack);
         }
-        const issues = validateRelayableAck(ack);
-        return issues.length === 0
-            ? undefined
-            : { code: 'unauthorized', message: issues.join('; ') };
+        return ack.toPeerId === ack.originPeerId ? undefined : {
+            code: 'unauthorized',
+            message: 'AL acknowledgement is not addressed to the origin it names'
+        };
     }
 
-    /** Whether the admitted ACK left for the instance that aggregates it; this instance then admits nothing. */
-    async relayUnownedAck(message: ALMessage): Promise<boolean> {
-        const ack = this.readUnownedAck(message);
-        if (ack === undefined || this.#publishRelayedAck === undefined) {
-            return false;
+    /**
+     * Whether the admitted ACK left for the instance that aggregates it, in which case this instance admits
+     * nothing; refused when its session has used its relay budget.
+     */
+    async relayUnownedAck(message: ALMessage): Promise<Either<ALMessageRejection, boolean>> {
+        const publish = this.#publishRelayedAck;
+        const ack = publish === undefined ? undefined : this.readUnownedAck(message);
+        if (publish === undefined || ack === undefined) {
+            return Either.ofRight(false);
         }
-        const published = await this.#publishRelayedAck(message);
+        if (!this.takeRelayBudget(message.id.senderId)) {
+            return Either.ofLeft({
+                code: 'unauthorized',
+                message: 'AL acknowledgement relay budget of this session is used up'
+            });
+        }
+        const published = await publish(message);
         if (published.left !== undefined) {
             console.warn(
                 `AL acknowledgement ${message.id.msgId} for ${ack.originPeerId} was not relayed: ${published.left}`
             );
         }
-        return true;
+        return Either.ofRight(true);
     }
 
     /** A handed-over ACK: counted against this instance's aggregate, or dropped without an answer. */
@@ -64,9 +85,7 @@ export class WsQueueBoxServerAckRelay {
         const control = decodeALControlMessage(message).right;
         if (
             control?.type !== 'ack' || control.payload.toPeerId === this.#serverPeerId ||
-            message.id.senderId !== control.payload.fromPeerId ||
-            validateRelayableAck(control.payload).length > 0 ||
-            !this.#receipts.holdsReceiptFor(control.payload)
+            message.id.senderId !== control.payload.fromPeerId
         ) {
             return;
         }
@@ -80,15 +99,22 @@ export class WsQueueBoxServerAckRelay {
             ? control.payload
             : undefined;
     }
-}
 
-function validateRelayableAck(ack: ALAckPayload): readonly string[] {
-    const issues: string[] = [];
-    if (ack.toPeerId !== ack.originPeerId) {
-        issues.push('AL acknowledgement is not addressed to the origin it names');
+    private takeRelayBudget(sessionId: string): boolean {
+        const nowMs = this.#clock.nowMs();
+        if (this.#budgets.size >= RELAY_BUDGET_SWEEP_SIZE) {
+            for (const [id, budget] of this.#budgets) {
+                if (budget.windowEndsAtMs <= nowMs) {
+                    this.#budgets.delete(id);
+                }
+            }
+        }
+        const current = this.#budgets.get(sessionId);
+        const budget = current !== undefined && current.windowEndsAtMs > nowMs
+            ? current
+            : { windowEndsAtMs: nowMs + RELAY_BUDGET_WINDOW_MS, used: 0 };
+        this.#budgets.set(sessionId, budget);
+        budget.used += 1;
+        return budget.used <= RELAY_BUDGET_PER_SESSION;
     }
-    if (ack.fromPeerId !== ack.logicalRecipientPeerId) {
-        issues.push('AL acknowledgement speaks for another recipient than its sender');
-    }
-    return issues;
 }

@@ -99,20 +99,20 @@ The controller decided, each with its reason in the task's own "Rulings" block:
 
 ## D-row ids (cited in documents, never in source comments)
 
-| Id   | Decision                                                                                                                                                      |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D95  | Inbound scan: head read after a commit replaces F2b's rewind (P5)                                                                                             |
-| D96  | RTC room authority gap decides the carrier; `unauthorized` only for a foreign or inactive overlay (P6)                                                        |
-| D97  | RTC signaling correlates Offer and Answer by `offerId` (wire change; web and API deploy together)                                                             |
-| D98  | A re-desired retained peer that never established is dropped and redialled in the same reconcile pass (P16, #594)                                             |
-| D99  | A live-only topic sends once at any QoS; the cluster notice (Postgres NOTIFY) is its best-effort one-attempt carrier; amends D37 (P4, P10)                    |
-| D100 | WS ingress binds a message's scope to the connection's authenticated scope; a mismatch is refused with a NACK (P7)                                            |
-| D101 | Scope authority: wire `targets.groupRef` for room and unicast messages; stored recipient scope only for rows without a `groupRef`; schema id bumped (P8, P13) |
-| D102 | Publish statuses: `sent-live`, `cluster-published` and `queued-outbox` are all the game's `sent` (P9)                                                         |
-| D103 | Raw WS_OUTBOX rows without producer provenance fail closed; a unicast publish without scope is a typed failure (P12)                                          |
-| D104 | D58 widened: the frozen audience covers any server or proxy publish that carries a `groupRef` (P13)                                                           |
-| D105 | Initial control hand-off (P11), written as kept or reverted by task 9's result                                                                                |
-| D106 | An ACK that finds no receipt aggregate on its process is relayed once over the cluster notice to the owning process; amends D37 (P20)                         |
+| Id   | Decision                                                                                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D95  | Inbound scan: head read after a commit replaces F2b's rewind (P5)                                                                                                        |
+| D96  | RTC room authority gap decides the carrier; `unauthorized` only for a foreign or inactive overlay (P6)                                                                   |
+| D97  | RTC signaling correlates Offer and Answer by `offerId` (wire change; web and API deploy together)                                                                        |
+| D98  | A re-desired retained peer that never established is dropped and redialled in the same reconcile pass (P16, #594)                                                        |
+| D99  | A live-only topic sends once at any QoS; the cluster notice (Postgres NOTIFY) is its best-effort one-attempt carrier; amends D37 (P4, P10)                               |
+| D100 | WS ingress binds a message's scope to the connection's authenticated scope; a mismatch is refused with a NACK (P7)                                                       |
+| D101 | Scope authority: wire `targets.groupRef` for room and unicast messages; stored recipient scope only for rows without a `groupRef`; schema id bumped (P8, P13)            |
+| D102 | Publish statuses: `sent-live`, `cluster-published` and `queued-outbox` are all the game's `sent` (P9)                                                                    |
+| D103 | Raw WS_OUTBOX rows without producer provenance fail closed; a unicast publish without scope is a typed failure (P12)                                                     |
+| D104 | D58 widened: the frozen audience covers any server or proxy publish that carries a `groupRef` (P13)                                                                      |
+| D105 | Initial control hand-off (P11), written as kept or reverted by task 9's result                                                                                           |
+| D106 | An ACK that finds no receipt aggregate on its process is relayed once over the cluster notice to the owning process, at most 60 per session per minute; amends D37 (P20) |
 
 ## Global Constraints
 
@@ -19945,7 +19945,7 @@ D105 = {
     'kept': '#566: a canonical initial AL control commits through the optimistic sender-version fence without the per-sender commit queue or the Web Lock; a real conflict retains it for a replay through both. In a browser controls are volatile and the memory lane never took the lock, so only the in-tab queue wait goes. A two-tab test proved each control sent once, in hand-off order. A racing data commit of the same sender can now conflict and be retained (2026-09-29).',
     'reverted': '#566: initial AL controls keep the per-sender commit queue and the Web Lock, as every outbound commit does. The bypass that skipped both is reverted because the two-tab test (`al-outbound-control-handoff-two-tabs.test.ts`) failed on it; the test stays as the proof that two tabs send each control once and in hand-off order (2026-09-29).',
 }
-D106 = "#566: an ACK that finds no receipt aggregate on its API process is relayed once over the cluster notice, kind `relayed-ack`, to the process that owns the aggregate, best effort with no retry and Postgres pub/sub only; a lost notice leaves that recipient unconfirmed and the receipt ends `timed-out`. Only ACKs are relayed: a recipient's NACK stays refused where it arrives, and an ACK addressed to the server is never relayed. Amends D37 with a second notice kind (2026-09-29)."
+D106 = "#566: an ACK that finds no receipt aggregate on its API process is relayed once over the cluster notice, kind `relayed-ack`, to the process that owns the aggregate, best effort with no retry and Postgres pub/sub only, and bounded before it publishes: each session may hand over at most 60 ACKs per minute and a further one is refused at ingress as a typed value, because the outbound admission store knows no message a WS client sent to a live-only topic, so a forged ACK cannot be told from a genuine one there; a lost notice leaves that recipient unconfirmed and the receipt ends `timed-out`. Only ACKs are relayed: a recipient's NACK stays refused where it arrives, and an ACK addressed to the server is never relayed. Amends D37 with a second notice kind (2026-09-29)."
 ANNOTATIONS = {
     'D37': ' **Amended by D99 and D106:** live-only publications and relayed acknowledgements also cross processes, each by one best-effort Postgres NOTIFY notice.',
     'D46': ' **Extended by D101.**',
