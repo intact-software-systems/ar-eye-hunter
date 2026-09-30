@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { findUnknownUsages } from '../../../scripts/repo-style-check/contract-rules.mjs';
 import { estimateCyclomaticComplexity, extractRouteHandlerRanges } from '../../../scripts/repo-style-check/factory-route-rules.mjs';
 import { isTestRunnerConfigFile } from '../../../scripts/repo-style-check/repository-scan.mjs';
 
@@ -200,7 +201,7 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
     });
 
     it('reports unknown after an apostrophe inside a block comment', () => {
@@ -213,7 +214,7 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
     });
 
     it('does not report unknown when the word only appears in a comment', () => {
@@ -238,7 +239,7 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
     });
 
     it('recovers quote state at the end of a line holding an unpaired quote', () => {
@@ -251,7 +252,48 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('reports unknown after a regexp that contains two slashes', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const pattern = /http:\\/\\//; const hidden = /unknown/;',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Review unknown at line 2');
+        expect(result).not.toContain('Review unknown at line 1');
+    });
+
+    it('does not report unknown inside a backslash-continued string', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const text = \'foo\\',
+                'unknown inside\';',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Review unknown at line 3');
+        expect(result).not.toContain('Review unknown at line 2');
+    });
+
+    it('closes a block comment when the star and slash are on separate lines', () => {
+        const usages = findUnknownUsages([
+            '/* mutation\'s *',
+            '/',
+            'export const onReject = (reason: unknown): void => {'
+        ]);
+
+        expect(usages.map((usage) => usage.line)).toEqual([3]);
     });
 
     it('does not report synthetic TypeScript inside a multiline template literal', () => {
@@ -274,7 +316,7 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
     });
 
     it('does not report unknown consumed by a validating decoder boundary', () => {
