@@ -51,7 +51,6 @@ export async function readBrowserVersion(context: BrowserContext): Promise<strin
     }
 }
 
-/** One run on a freshly loaded page: throttle, optional frame load, warm-up, then the measured sends. */
 export async function runDurableSendConfiguration(
     context: BrowserContext,
     configuration: DurableSendConfiguration,
@@ -72,7 +71,6 @@ export async function runDurableSendConfiguration(
     }
 }
 
-/** A CPU profile over the measured sends of an idle page, taken after its warm-up. */
 export async function profileDurableSends(
     context: BrowserContext,
     input: Omit<DurableSendRunInput, 'frameLoad'>

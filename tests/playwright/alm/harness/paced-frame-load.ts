@@ -1,27 +1,42 @@
 import type { FrameLoadInput, FrameLoadObservation } from './durable-send-harness-contract.ts';
 
+export interface FramePhase {
+    /** Offset from the current frame's start; undefined when no load runs. */
+    readonly offsetMs: number | undefined;
+    readonly framesStarted: number;
+}
+
+interface ScheduledSend {
+    readonly offsetMs: number;
+    readonly action: () => void;
+}
+
 /**
- * Busy main-thread work paced by a fixed frame clock inside a `requestAnimationFrame` loop. Headless
- * Chromium runs animation frames back to back instead of on a display's vsync, so the clock, not
- * the callback rate, holds the load at `busyMsPerFrame` of every `frameIntervalMs`.
+ * Busy main-thread work in a `requestAnimationFrame` loop, paced by a fixed frame clock: each frame
+ * that starts burns `busyMsPerFrame` of every `frameIntervalMs` (the observation reports the measured
+ * busy share). Headless Chromium has no display vsync, so frames are not aligned to one; their
+ * lateness against the clock is recorded instead of assumed away.
  *
- * A caller that waits for a frame's end starts its work where a game's frame loop would: right
- * after the frame's own work, in the same task. Starting at that fixed phase keeps the round trips'
- * alignment with later frames, and so the figures, the same from run to run.
+ * `runAtFrameOffset` starts a send at a chosen offset from the start of the next frame, from inside
+ * that frame's busy work when the offset falls within it, so a run samples a chosen mix of phases.
  */
 export class PacedFrameLoad {
     private handle: number | undefined;
+    private gapTimer: ReturnType<typeof setTimeout> | undefined;
+    private scheduledSend: ScheduledSend | undefined;
     private nextFrameAtMs = 0;
     private startedAtMs = 0;
+    private currentFrameStartMs = 0;
     private busyMs = 0;
     private frameCount = 0;
-    private frameEndWaiters: (() => void)[] = [];
+    private frameLatenessMs: number[] = [];
 
     start(input: FrameLoadInput): void {
         this.startedAtMs = performance.now();
         this.nextFrameAtMs = this.startedAtMs;
         this.busyMs = 0;
         this.frameCount = 0;
+        this.frameLatenessMs = [];
         const runFrame = () => {
             this.runFrame(input);
             this.handle = requestAnimationFrame(runFrame);
@@ -29,12 +44,24 @@ export class PacedFrameLoad {
         this.handle = requestAnimationFrame(runFrame);
     }
 
-    /** Resolves right after the next frame's work; at once when no load runs. */
-    waitForFrameEnd(): Promise<void> {
+    /** Runs `action` at once when no load runs. */
+    runAtFrameOffset(offsetMs: number, action: () => void): void {
         if (this.handle === undefined) {
-            return Promise.resolve();
+            action();
+            return;
         }
-        return new Promise((resolve) => this.frameEndWaiters.push(resolve));
+        this.scheduledSend = { offsetMs, action };
+    }
+
+    readFramePhase(atMs: number): FramePhase {
+        return {
+            offsetMs: this.handle === undefined ? undefined : atMs - this.currentFrameStartMs,
+            framesStarted: this.frameCount
+        };
+    }
+
+    countFramesStarted(): number {
+        return this.frameCount;
     }
 
     stop(): FrameLoadObservation | undefined {
@@ -42,12 +69,14 @@ export class PacedFrameLoad {
             return undefined;
         }
         cancelAnimationFrame(this.handle);
+        clearTimeout(this.gapTimer);
         this.handle = undefined;
-        this.releaseFrameEndWaiters();
+        this.scheduledSend = undefined;
         const elapsedMs = performance.now() - this.startedAtMs;
         return {
             frameCount: this.frameCount,
-            busyShare: Math.round((this.busyMs / elapsedMs) * 1000) / 1000
+            busyShare: Math.round((this.busyMs / elapsedMs) * 1000) / 1000,
+            frameLatenessMs: this.frameLatenessMs
         };
     }
 
@@ -56,19 +85,31 @@ export class PacedFrameLoad {
         if (frameStartMs < this.nextFrameAtMs) {
             return;
         }
-        const busyUntilMs = frameStartMs + input.busyMsPerFrame;
-        while (performance.now() < busyUntilMs) {
-            // Busy-wait: the frame's main-thread work every durable round trip queues behind.
+        if (this.frameCount > 0) {
+            this.frameLatenessMs.push(frameStartMs - this.nextFrameAtMs);
         }
-        this.busyMs += performance.now() - frameStartMs;
+        this.currentFrameStartMs = frameStartMs;
         this.frameCount += 1;
         this.nextFrameAtMs = Math.max(this.nextFrameAtMs + input.frameIntervalMs, frameStartMs);
-        this.releaseFrameEndWaiters();
+        const unstarted = this.burnBusyTime(frameStartMs, input.busyMsPerFrame);
+        this.busyMs += performance.now() - frameStartMs;
+        if (unstarted !== undefined) {
+            const delayMs = unstarted.offsetMs - (performance.now() - frameStartMs);
+            this.gapTimer = setTimeout(unstarted.action, Math.max(0, delayMs));
+        }
     }
 
-    private releaseFrameEndWaiters(): void {
-        const waiters = this.frameEndWaiters;
-        this.frameEndWaiters = [];
-        waiters.forEach((resolve) => resolve());
+    /** Burns the frame's busy time, starting the scheduled send when its offset is reached; returns it if the frame ended first. */
+    private burnBusyTime(frameStartMs: number, busyMs: number): ScheduledSend | undefined {
+        let pending = this.scheduledSend;
+        this.scheduledSend = undefined;
+        while (performance.now() - frameStartMs < busyMs) {
+            if (pending !== undefined && performance.now() - frameStartMs >= pending.offsetMs) {
+                const { action } = pending;
+                pending = undefined;
+                action();
+            }
+        }
+        return pending;
     }
 }

@@ -5,8 +5,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import type {
     ALOutboundDispatchPlan,
     ALOutboundEnqueueResult,
-    ALOutboundMessageRuntime,
-    ALOutboundRuntimeDiagnosticsEvent
+    ALOutboundMessageRuntime
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -20,110 +19,101 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type {
     DurableSendHarness,
     DurableSendRun,
-    DurableSendRunInput
+    DurableSendRunInput,
+    DurableSendSample,
+    FrameLoadInput
 } from './durable-send-harness-contract.ts';
-import { PacedFrameLoad } from './paced-frame-load.ts';
+import { DurableSendObservation, type DurableSendDispatch } from './durable-send-observation.ts';
+import { PacedFrameLoad, type FramePhase } from './paced-frame-load.ts';
 
-/** Far above any batch this page runs, so a missing probe shows up as a count instead of a hang. */
-const SETTLE_BOUND_MS = 2_000;
+/** 7 is coprime with a 16 ms frame, so consecutive sends visit every phase before repeating one. */
+const PHASE_STRIDE_MS = 7;
 
-interface DurableSendSample {
-    readonly sendToDispatchMs: number;
-    readonly settled: boolean;
-}
-
-/** The carrier's send calls and the durable lane's readiness probes, as the page observes them. */
-class DurableSendObservation {
-    private readonly dispatchWaiters = new Map<string, (atMs: number) => void>();
-    private probeWaiters: (() => void)[] = [];
-
-    observeDispatch(msgId: string): void {
-        const atMs = performance.now();
-        this.dispatchWaiters.get(msgId)?.(atMs);
-        this.dispatchWaiters.delete(msgId);
-    }
-
-    observeDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
-        if (event.kind !== 'readiness-probe' || event.lane !== 'durable') {
-            return;
-        }
-        const waiters = this.probeWaiters;
-        this.probeWaiters = [];
-        waiters.forEach((resolve) => resolve());
-    }
-
-    waitForDispatch(msgId: string): Promise<number> {
-        return new Promise((resolve) => this.dispatchWaiters.set(msgId, resolve));
-    }
-
-    waitForProbe(boundMs: number): Promise<boolean> {
-        return new Promise((resolve) => {
-            const timer = setTimeout(() => resolve(false), boundMs);
-            this.probeWaiters.push(() => {
-                clearTimeout(timer);
-                resolve(true);
-            });
-        });
-    }
+interface DurableSendStart {
+    readonly startedAtMs: number;
+    readonly phase: FramePhase;
+    readonly admission: Promise<ALOutboundEnqueueResult>;
+    readonly dispatch: Promise<DurableSendDispatch>;
 }
 
 class PlainPageDurableSendHarness implements DurableSendHarness {
     private readonly sessionId: string;
     private readonly runtime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
     private readonly observation: DurableSendObservation;
+    private readonly frameLoad: PacedFrameLoad;
 
     constructor(
         sessionId: string,
         runtime: ALOutboundMessageRuntime<ALOutboundTransportMessage>,
-        observation: DurableSendObservation
+        observation: DurableSendObservation,
+        frameLoad: PacedFrameLoad
     ) {
         this.sessionId = sessionId;
         this.runtime = runtime;
         this.observation = observation;
+        this.frameLoad = frameLoad;
     }
 
     async runSends(input: DurableSendRunInput): Promise<DurableSendRun> {
-        const frameLoad = new PacedFrameLoad();
         if (input.frameLoad !== undefined) {
-            frameLoad.start(input.frameLoad);
+            this.frameLoad.start(input.frameLoad);
         }
         try {
-            const samples = await this.sendAll(input, frameLoad);
-            return { ...samples, frameLoad: frameLoad.stop() };
+            const samples = await this.sendAll(input);
+            return { samples, frameLoad: this.frameLoad.stop() };
         }
         finally {
-            frameLoad.stop();
+            this.frameLoad.stop();
         }
     }
 
-    private async sendAll(
-        input: DurableSendRunInput,
-        frameLoad: PacedFrameLoad
-    ): Promise<Omit<DurableSendRun, 'frameLoad'>> {
-        const sendToDispatchMs: number[] = [];
-        let unsettledCount = 0;
+    private async sendAll(input: DurableSendRunInput): Promise<DurableSendSample[]> {
+        const samples: DurableSendSample[] = [];
         for (let index = 0; index < input.warmupCount + input.measuredCount; index += 1) {
-            await frameLoad.waitForFrameEnd();
-            const sample = await this.sendOnce(
-                toHarnessMessage(this.sessionId, `${input.runId}-${index}`)
-            );
+            const sample = await this.sendOnce(input, index);
             if (index >= input.warmupCount) {
-                sendToDispatchMs.push(sample.sendToDispatchMs);
-                unsettledCount += sample.settled ? 0 : 1;
+                samples.push(sample);
             }
         }
-        return { sendToDispatchMs, unsettledCount };
+        return samples;
     }
 
-    /** One durable send, then the wait for its batch's readiness probe so the next send starts idle. */
-    private async sendOnce(msg: ALMessage): Promise<DurableSendSample> {
-        const dispatched = this.observation.waitForDispatch(msg.id.msgId);
-        const startedAtMs = performance.now();
-        assertDurableAdmission(await this.runtime.enqueueIfAbsent(msg));
-        const dispatchedAtMs = await dispatched;
-        const settled = await this.observation.waitForProbe(SETTLE_BOUND_MS);
-        return { sendToDispatchMs: dispatchedAtMs - startedAtMs, settled };
+    /** One durable send, then the wait for the probe its own commit earns so the next send starts on an idle owner. */
+    private async sendOnce(input: DurableSendRunInput, index: number): Promise<DurableSendSample> {
+        const msg = toHarnessMessage(this.sessionId, `${input.runId}-${index}`);
+        const start = await new Promise<DurableSendStart>((resolve) =>
+            this.frameLoad.runAtFrameOffset(
+                toPhaseOffsetMs(input.frameLoad, index),
+                () => resolve(this.startSend(msg, index))
+            )
+        );
+        const [admission, dispatch] = await Promise.all([start.admission, start.dispatch]);
+        assertDurableAdmission(admission);
+        const ownProbe = await dispatch.ownProbe;
+        return {
+            sendToDispatchMs: dispatch.atMs - start.startedAtMs,
+            phaseOffsetMs: start.phase.offsetMs,
+            framesStraddled: dispatch.framesStarted - start.phase.framesStarted,
+            probeEnd: ownProbe.endedOn,
+            observedProbeCauses: ownProbe.observedCauses
+        };
     }
+
+    private startSend(msg: ALMessage, index: number): DurableSendStart {
+        const dispatch = this.observation.waitForDispatch(msg.id.msgId, index);
+        const startedAtMs = performance.now();
+        const admission = this.runtime.enqueueIfAbsent(msg);
+        return {
+            startedAtMs,
+            phase: this.frameLoad.readFramePhase(startedAtMs),
+            admission,
+            dispatch
+        };
+    }
+}
+
+function toPhaseOffsetMs(frameLoad: FrameLoadInput | undefined, index: number): number {
+    return frameLoad === undefined ? 0 : (index * PHASE_STRIDE_MS) % frameLoad.frameIntervalMs;
 }
 
 function assertDurableAdmission(result: ALOutboundEnqueueResult): void {
@@ -153,16 +143,15 @@ function toDurablePlan(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTranspo
 }
 
 /**
- * The browser WS client's durable outbound owner over the browser's IndexedDB store pair, with a
- * carrier that records when it is called and reports every attempt sent.
+ * The browser WS client's durable outbound owner over the browser's IndexedDB store pair, on a
+ * private engine with no inbound owner and no volatile pair, and a carrier that records when it is called.
  */
 export async function createDurableSendHarness(sessionId: string): Promise<DurableSendHarness> {
-    const observation = new DurableSendObservation();
+    const frameLoad = new PacedFrameLoad();
+    const observation = new DurableSendObservation(frameLoad);
     const stores = createBrowserALOutboundRuntimeStores(
         toBrowserWsClientALRuntimeStoreId(sessionId),
-        {
-            canonicalScope: `browser-session:${sessionId}`
-        }
+        { canonicalScope: `browser-session:${sessionId}` }
     );
     const runtime = createDefaultALOutboundMessageRuntime<ALOutboundTransportMessage>({
         stores,
@@ -179,5 +168,5 @@ export async function createDurableSendHarness(sessionId: string): Promise<Durab
         }
     });
     await runtime.ready();
-    return new PlainPageDurableSendHarness(sessionId, runtime, observation);
+    return new PlainPageDurableSendHarness(sessionId, runtime, observation, frameLoad);
 }

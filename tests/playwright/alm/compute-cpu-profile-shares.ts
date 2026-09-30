@@ -1,6 +1,5 @@
 import type { BundledModule } from './bundle-durable-send-harness.ts';
 
-/** The fields of a CDP `Profiler.Profile` the shares read. */
 export interface CpuProfile {
     readonly nodes: readonly CpuProfileNode[];
     readonly samples?: readonly number[];
@@ -23,18 +22,22 @@ export interface CpuProfileSharesInput {
     readonly modules: readonly BundledModule[];
 }
 
+export const TEMPORAL_POLYFILL_SOURCE = '@js-temporal/polyfill/';
+export const JSBI_SOURCE = '/jsbi/';
+export const CODEC_SOURCE_SUFFIX = 'queuebox/indexed-db-queue-box-entry-codec.ts';
+
 /** Self-time shares of busy CPU (every sample but `(idle)`), each rounded to 0.1 %. */
 export interface CpuProfileShares {
     readonly busyMs: number;
     readonly temporalPolyfillPercent: number;
     readonly jsbiPercent: number;
-    /** The polyfill and JSBI together: the spike's 32 %. */
     readonly temporalPercent: number;
     readonly codecSelfPercent: number;
-    /** Samples with the codec anywhere on the stack. */
     readonly codecInclusivePercent: number;
-    /** Of the polyfill and JSBI time, the part the codec called: the spike's 72 %. */
+    /** Of the polyfill and JSBI time, the part with a codec frame on the stack. */
     readonly temporalUnderCodecPercent: number;
+    /** Busy time no named owner accounts for; 100 means the attribution found nothing. */
+    readonly otherPercent: number;
 }
 
 type FrameOwner = 'temporal-polyfill' | 'jsbi' | 'codec' | 'other' | 'idle';
@@ -56,7 +59,8 @@ export function computeCpuProfileShares(input: CpuProfileSharesInput): CpuProfil
         temporalPercent: toPercent(temporalUs, totals.busyUs),
         codecSelfPercent: toPercent(totals.selfUs.codec, totals.busyUs),
         codecInclusivePercent: toPercent(totals.codecOnStackUs, totals.busyUs),
-        temporalUnderCodecPercent: toPercent(totals.temporalUnderCodecUs, temporalUs)
+        temporalUnderCodecPercent: toPercent(totals.temporalUnderCodecUs, temporalUs),
+        otherPercent: toPercent(totals.selfUs.other, totals.busyUs)
     };
 }
 
@@ -90,7 +94,6 @@ interface NodeAttribution {
     readonly codecOnStack: boolean;
 }
 
-/** Every node's own frame owner and whether a codec frame is at or above it, walked once from the root. */
 function toNodeAttributions(input: CpuProfileSharesInput): ReadonlyMap<number, NodeAttribution> {
     const nodes = new Map(input.profile.nodes.map((node) => [node.id, node]));
     const attributions = new Map<number, NodeAttribution>();
@@ -119,16 +122,15 @@ function resolveFrameOwner(node: CpuProfileNode, input: CpuProfileSharesInput): 
         return 'other';
     }
     const source = resolveBundledSource(input.modules, node.callFrame.lineNumber);
-    if (source.includes('@js-temporal/polyfill/')) {
+    if (source.includes(TEMPORAL_POLYFILL_SOURCE)) {
         return 'temporal-polyfill';
     }
-    if (source.includes('/jsbi/')) {
+    if (source.includes(JSBI_SOURCE)) {
         return 'jsbi';
     }
-    return source.endsWith('queuebox/indexed-db-queue-box-entry-codec.ts') ? 'codec' : 'other';
+    return source.endsWith(CODEC_SOURCE_SUFFIX) ? 'codec' : 'other';
 }
 
-/** The module whose section holds this zero-based bundle line; sections are in line order. */
 function resolveBundledSource(modules: readonly BundledModule[], lineNumber: number): string {
     let source = '';
     for (const module of modules) {

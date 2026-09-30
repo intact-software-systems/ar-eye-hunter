@@ -7,7 +7,6 @@ const HARNESS_ENTRY = 'tests/playwright/alm/harness/durable-send-harness-page.ts
 /** esbuild opens every module of an unminified bundle with a `// <path>` line naming its source. */
 const MODULE_MARKER = /^\/\/ (\S+\.[cm]?[jt]sx?)$/;
 
-/** Where one bundled module's code starts, so a profile's bundle line can be traced to its source file. */
 export interface BundledModule {
     readonly startLine: number;
     readonly source: string;
@@ -18,10 +17,6 @@ export interface DurableSendHarnessBundle {
     readonly modules: readonly BundledModule[];
 }
 
-/**
- * The harness page as one unminified ES module with its function names kept, so a CPU profile names
- * the functions and every bundle line maps to the module it came from.
- */
 export async function bundleDurableSendHarness(): Promise<DurableSendHarnessBundle> {
     const result = await build({
         absWorkingDir: REPOSITORY_ROOT,
