@@ -289,7 +289,7 @@ alone in its room is the empty frozen audience above, not this case.
 ([`compute-rtc-outbound-carrier-availability.ts`](../../multicast/compute-rtc-outbound-carrier-availability.ts)).
 Only a selected overlay that is removed or belongs to another scope, or the room authority's own refusal (an
 inactive or expired room, session or member), refuses the send `unauthorized`, on every strategy. Every other
-missing or stale observation is a carrier gap: no room snapshot, a `halted` room, no active accepted layout, or no
+missing or stale observation is a carrier gap: no room snapshot, a room whose transport is not `flowing`, no active accepted layout, or no
 cached overlay that is the exact accepted server layout (a missing, `bootstrap` or other-version overlay). The leg
 decides what a gap means at admission. A leg with a fallback carrier (`rtc-with-ws-fallback`) admits through
 `WebRtcOverlayMulticastManager.enqueueLegIfAbsent(msg, 'hand-over')` and reads a gap `unroutable`/`no-route` at

@@ -189,7 +189,8 @@ member of the frozen audience. Every other such ACK is refused at ingress as
 a typed value, except on an instance that holds no aggregate for it: with a
 cluster relay channel, an ACK that speaks for its own sender, is addressed
 to the origin it names and names a message the shared inbound store froze to
-that sender is handed to the instance that holds the aggregate instead (D106; outbound README, "Server receipts on WS").
+that sender is handed to the instance that holds the aggregate instead, at most 60 relays per session per 60 s
+(D106; outbound README, "Server receipts on WS").
 
 The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
@@ -332,8 +333,8 @@ scoped-delivery bump resets browsers only. On the server:
   `ws-client` source this build wrote; each stays undecodable for its row's TTL.
 - A raw `WS_OUTBOX` row an older build wrote has no producer provenance and ends `NON_RETRYABLE` at
   its first dequeue (D103).
-- `ws-client` unicast work an older build retained carries no `authenticatedScope` and is dropped at
-  delivery.
+- `ws-client` work an older build retained carries no `authenticatedScope`, fails strict decoding and is
+  dropped once as corrupt.
 
 Web and API deploy together.
 

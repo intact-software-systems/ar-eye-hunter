@@ -316,11 +316,11 @@ that the send is unauthorized. The send's strategy decides what the gap does: `r
 it to WS at admission (`no-route`) or, for a copy already prepared, after three `not-ready` attempts; `rtc`,
 and the RTC leg of `ws-then-rtc`, hold a durable send (a volatile one reads `no-route`, as before): it reads
 `accepted`, states one `not-ready` attempt per claim, has no receipt row until copies are planned, and ends
-`expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps main's own
-admission; only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
+`expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps its ordinary
+admission (`deferred` while there is no room snapshot); only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
 overlay. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
-that is explicitly foreign or inactive for the message's room, or the room authority's own refusal as on
-main (an inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
+that is explicitly foreign or inactive for the message's room, or the room authority's own refusal (an
+inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
 are correlated by `offerId` (D97), and a peer that reloads inside the overlay grace is redialled by the
 offering side in the same reconcile pass instead of waiting for the 30 s establishment timeout; the redial
 keeps the peer's attempt budget, which is not reset, so it counts as an attempt (D98). An old offer applied

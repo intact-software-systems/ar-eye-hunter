@@ -13,6 +13,7 @@ import type {
 } from '@shared-server/rallar-server/rallar-server-application.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 interface GameCommand {
     gameId: string;
@@ -49,8 +50,8 @@ export async function installGameAuthority(
     const authority = new GameAuthority({ rallar, games });
     authority.installTopics();
     return {
-        applyCommand: (command: GameCommand, senderId: string) =>
-            authority.applyCommand(command, senderId),
+        applyCommand: (command: GameCommand, senderId: string, roomRef: GroupRef) =>
+            authority.applyCommand(command, senderId, roomRef),
         readSnapshot: (gameId: string) => authority.readSnapshot(gameId)
     };
 }
@@ -69,14 +70,14 @@ class GameAuthority {
         this.#dependencies = dependencies;
     }
 
-    private async publishSnapshot(state: GameState): Promise<void> {
+    private async publishSnapshot(state: GameState, roomRef: GroupRef): Promise<void> {
         const snapshot: GameSnapshot = {
             gameId: state.gameId,
             revision: state.revision,
             readyPeerIds: state.readyPeerIds
         };
 
-        await this.#dependencies.rallar.ws.publish({
+        const result = await this.#dependencies.rallar.ws.publish({
             message: newALBroadcastMessage(
                 'demo-game-server',
                 newALRoute(
@@ -90,25 +91,28 @@ class GameAuthority {
                 {
                     reliability: 'at-least-once',
                     ttlMs: 15_000,
-                    groupRef: {
-                        applicationId: 'demo-game',
-                        workspaceId: 'main',
-                        groupId: state.roomId
-                    }
+                    groupRef: roomRef
                 }
             ),
             fanout: 'live-only'
         });
+        if (result.status === 'failed') {
+            // The players missed this revision; they catch up from readSnapshot.
+            console.warn(
+                `Snapshot ${state.gameId}@${state.revision} was not published: ${result.reason}`
+            );
+        }
     }
 
     async applyCommand(
         command: GameCommand,
-        senderId: string
+        senderId: string,
+        roomRef: GroupRef
     ): Promise<GameSnapshot> {
         const state = await this.#dependencies.games.updateOrCreate(command.gameId, (current) => {
             const previous: GameState = current ?? {
                 gameId: command.gameId,
-                roomId: command.gameId,
+                roomId: roomRef.groupId,
                 revision: 0,
                 readyPeerIds: [],
                 events: []
@@ -134,7 +138,7 @@ class GameAuthority {
             };
         });
 
-        await this.publishSnapshot(state);
+        await this.publishSnapshot(state, roomRef);
         return {
             gameId: state.gameId,
             revision: state.revision,
@@ -151,8 +155,8 @@ class GameAuthority {
             maxPayloadBytes: 16 * 1024,
             validate: (value, context) =>
                 isGameCommand(value) &&
-                context.roomId !== undefined &&
-                value.gameId === context.roomId
+                context.roomRef !== undefined &&
+                value.gameId === context.roomRef.groupId
         });
 
         this.#dependencies.rallar.ws.on<GameCommand>(
@@ -161,7 +165,9 @@ class GameAuthority {
                 typeId: 'room.demo.command.v1'
             },
             async (message, context) => {
-                await this.applyCommand(message.payload, context.senderId);
+                if (context.roomRef) {
+                    await this.applyCommand(message.payload, context.senderId, context.roomRef);
+                }
             }
         );
     }

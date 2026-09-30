@@ -61,6 +61,9 @@ local default connection unless `DATABASE_URL` selects another server.
 The package `check:deno` command type checks both executable entries without
 starting services.
 
+No CI lane runs either proof; they are manual acceptance runs (owner: Knut-Helge Vik). They are not
+`*.test` files, so `tests/manual-suites.json`, which only claims test files, cannot list them.
+
 ## Recipe execution and observations
 
 - [scenario-black-box.ts](./scenario-black-box.ts) owns CLI execution and

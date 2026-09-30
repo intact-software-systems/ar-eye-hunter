@@ -276,7 +276,10 @@ To prove RTC signaling across three PostgreSQL API-v1 processes, also set
 `RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER=1` and distinct
 `VITE_RALLAR_API_BASE_URL`, `VITE_RALLAR_API_BASE_URL_B`, and
 `VITE_RALLAR_API_BASE_URL_C` origins. This is opt-in; the ordinary full-stack
-matrix retains its single-process API workload.
+matrix retains its single-process API workload. The agent setup refuses origins
+that are not distinct. The mode's proof is each agent's peer readiness, which
+witnesses the cross-process signaling, and six receiver-restricted direct sends
+over `realtime`; those sends do not pin the carrier.
 
 The exhaustive all-scenarios matrix additionally sets or requires:
 
