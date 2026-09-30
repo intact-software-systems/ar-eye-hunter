@@ -22,13 +22,17 @@ import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts'
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    createDefaultWsQueueBoxServerService,
+    type WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
+import { createRecordingLiveWsPublication } from './recording-live-ws-publication.ts';
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
@@ -43,7 +47,7 @@ type QosCase = (typeof QOS_CASES)[number];
 interface CarrierFixture {
     readonly router: RallarServerWsRouter;
     readonly receiver: TestWebSocket;
-    readonly notices: LiveWsNotice[];
+    readonly notices: readonly LiveWsNotice[];
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
@@ -244,6 +248,23 @@ function createCarrierFixture(
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
+    const recording = createRecordingLiveWsPublication();
+    const router = new RallarServerWsRouter(createCarrierService(socketServer, outboundStores), {
+        defaultFanout,
+        readServerPublishAudience: async (message) => ({
+            targets: message.targets!,
+            sessions: [roomSession('receiver')],
+            snapshotVersion: 3
+        }),
+        livePublication: cluster ? recording.livePublication : undefined
+    });
+    return { router, receiver, notices: recording.notices, outboundStores };
+}
+
+function createCarrierService(
+    socketServer: JsonWebSocketServer,
+    outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>
+): WsQueueBoxServerService {
     const service = createDefaultWsQueueBoxServerService({
         outbox: outboundStores.workQueue,
         outboundStores,
@@ -260,28 +281,7 @@ function createCarrierFixture(
         }
     });
     onTestFinished(() => service.dispose());
-    const notices: LiveWsNotice[] = [];
-    const router = new RallarServerWsRouter(service, {
-        defaultFanout,
-        readServerPublishAudience: async (message) => ({
-            targets: message.targets!,
-            sessions: [roomSession('receiver')],
-            snapshotVersion: 3
-        }),
-        livePublication: cluster
-            ? {
-                transport: {
-                    publish: async (notice) => {
-                        notices.push(notice);
-                    },
-                    subscribe: async () => {}
-                },
-                channel: 'ws-channel',
-                publisherId: 'server-a'
-            }
-            : undefined
-    });
-    return { router, receiver, notices, outboundStores };
+    return service;
 }
 
 function createRoomBroadcast(senderId: string, resourceId: string, qosCase: QosCase): ALMessage {

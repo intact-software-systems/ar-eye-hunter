@@ -16,7 +16,10 @@ import {
     createRallarGameAuthorityEnvelope,
     type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
-import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    createDefaultWsQueueBoxServerService,
+    type WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer
@@ -24,6 +27,7 @@ import {
 
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
+import { createRecordingLiveWsPublication } from '../rallar-system/websocket/router/recording-live-ws-publication.ts';
 
 interface Command {
     readonly action: string;
@@ -203,35 +207,9 @@ function createGameRouterFixture(cluster = false): GameRouterFixture {
         player.open();
         socket.addConnection(new ConnectionContext({ id: sessionId, socket: player }));
     }
-    const service = createDefaultWsQueueBoxServerService({
-        outbox: new InMemoryQueueBox(new Map()),
-        socket,
-        name: 'server-1',
-        readAuthenticatedConnectionScope: (connection) =>
-            socket.connections.get(connection.id) === connection
-                ? { scope: toScope(roomRef), expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
-                : undefined,
-        targetResolver: {
-            resolvePeerIdForConnection: (connectionId) => connectionId,
-            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
-            resolveBroadcastRecipients: () => Object.keys(players).map((peerId) => ({ peerId, connectionId: peerId }))
-        }
-    });
-    onTestFinished(() => service.dispose());
-    const notices: LiveWsNotice[] = [];
-    const router = new RallarServerWsRouter(service, {
-        livePublication: cluster
-            ? {
-                transport: {
-                    publish: async (notice) => {
-                        notices.push(notice);
-                    },
-                    subscribe: async () => {}
-                },
-                channel: 'ws-channel',
-                publisherId: 'server-a'
-            }
-            : undefined,
+    const recording = createRecordingLiveWsPublication();
+    const router = new RallarServerWsRouter(createGameService(socket, roomRef, Object.keys(players)), {
+        livePublication: cluster ? recording.livePublication : undefined,
         authorizeRoomMessage: ({ message }) =>
             message.targets === undefined ? false : {
                 authorized: true,
@@ -246,7 +224,30 @@ function createGameRouterFixture(cluster = false): GameRouterFixture {
             nowEpochMs: () => Date.now()
         })
     });
-    return { router, roomRef, players, notices };
+    return { router, roomRef, players, notices: recording.notices };
+}
+
+function createGameService(
+    socket: JsonWebSocketServer,
+    roomRef: GroupRef,
+    playerIds: readonly string[]
+): WsQueueBoxServerService {
+    const service = createDefaultWsQueueBoxServerService({
+        outbox: new InMemoryQueueBox(new Map()),
+        socket,
+        name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            socket.connections.get(connection.id) === connection
+                ? { scope: toScope(roomRef), expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
+        targetResolver: {
+            resolvePeerIdForConnection: (connectionId) => connectionId,
+            resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
+            resolveBroadcastRecipients: () => playerIds.map((peerId) => ({ peerId, connectionId: peerId }))
+        }
+    });
+    onTestFinished(() => service.dispose());
+    return service;
 }
 
 function toCommand(value: JsonWireValue): Command {

@@ -104,6 +104,28 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });
+    const peerIds = ['origin', ...receiverIds];
+    const service = createLiveRoomService(socketServer, outboundStores, peerIds);
+    const router = new RallarServerWsRouter(service, {
+        authorizeRoomMessage: ({ message }) =>
+            message.targets === undefined ? false : {
+                authorized: true,
+                audience: {
+                    targets: message.targets,
+                    sessions: peerIds.map(roomSession),
+                    snapshotVersion: 3
+                }
+            }
+    });
+    router.install().defineTopic({ topicId: 'room.chat' });
+    return { service, origin, receivers, outboundStores };
+}
+
+function createLiveRoomService(
+    socketServer: JsonWebSocketServer,
+    outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>,
+    peerIds: readonly string[]
+): WsQueueBoxServerService {
     const service = createDefaultWsQueueBoxServerService({
         outbox: outboundStores.workQueue,
         outboundStores,
@@ -117,23 +139,11 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
-            resolveBroadcastRecipients: () => ['origin', ...receiverIds].map((peerId) => ({ peerId, connectionId: peerId }))
+            resolveBroadcastRecipients: () => peerIds.map((peerId) => ({ peerId, connectionId: peerId }))
         }
     });
     onTestFinished(() => service.dispose());
-    const router = new RallarServerWsRouter(service, {
-        authorizeRoomMessage: ({ message }) =>
-            message.targets === undefined ? false : {
-                authorized: true,
-                audience: {
-                    targets: message.targets,
-                    sessions: ['origin', ...receiverIds].map(roomSession),
-                    snapshotVersion: 3
-                }
-            }
-    });
-    router.install().defineTopic({ topicId: 'room.chat' });
-    return { service, origin, receivers, outboundStores };
+    return service;
 }
 
 function createReceiverRoomSend(

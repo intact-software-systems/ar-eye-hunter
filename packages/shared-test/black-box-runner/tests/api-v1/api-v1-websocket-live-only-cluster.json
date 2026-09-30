@@ -224,7 +224,7 @@
       "connection": "secondary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/lwoc-join-bob-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/lwoc-join-room-bob-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
