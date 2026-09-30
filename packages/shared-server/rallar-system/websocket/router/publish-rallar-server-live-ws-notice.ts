@@ -49,27 +49,34 @@ export async function publishRallarServerLiveWsNotice(
             inbound: input.inbound,
             inboundScope: input.inboundScope
         });
-        if (notice.left !== undefined) {
-            return failedLivePublication(input, notice.left);
-        }
-        const noticeInput = notice.right!;
-        const encoded = encodeLiveWsNotice(noticeInput);
-        if (encoded.kind === 'oversize') {
-            return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
-        }
-        await publication.transport.publish(encoded.notice);
-        const localFailureReason = sendLocalPublishedLiveWsNotice(input, noticeInput);
-        return {
-            fanout: input.fanout,
-            status: 'cluster-published',
-            message: input.message,
-            entries: [],
-            ...(localFailureReason === undefined ? {} : { reason: localFailureReason })
-        };
+        return notice.left === undefined
+            ? await writeLiveWsNotice(input, publication, notice.right!)
+            : failedLivePublication(input, notice.left);
     }
     catch (error) {
         return failedLivePublication(input, error instanceof Error ? error.message : String(error));
     }
+}
+
+/** Publishes the notice to every process, then sends it to this process's own recipients. */
+async function writeLiveWsNotice(
+    input: PublishRallarServerWsMessageInput,
+    publication: NonNullable<PublishRallarServerWsMessageInput['livePublication']>,
+    notice: LiveWsPublicationInput
+): Promise<RallarServerWsPublishResult> {
+    const encoded = encodeLiveWsNotice(notice);
+    if (encoded.kind === 'oversize') {
+        return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
+    }
+    await publication.transport.publish(encoded.notice);
+    const localFailureReason = sendLocalPublishedLiveWsNotice(input, notice);
+    return {
+        fanout: input.fanout,
+        status: 'cluster-published',
+        message: input.message,
+        entries: [],
+        ...(localFailureReason === undefined ? {} : { reason: localFailureReason })
+    };
 }
 
 function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): Either<string, LiveWsPublicationInput> {
