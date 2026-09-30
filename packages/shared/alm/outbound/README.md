@@ -178,9 +178,11 @@ Controls are `volatile` (`computeALControlMessage` in
 carriers — admits them in the memory lane, which takes no Web Lock: there the hand-off skips only that
 lane's in-tab sender queue. A runtime without a memory pair (the WS server, or a WS client built
 without `outboundVolatileStores`) admits them in the durable lane, where the hand-off also skips the
-Web Lock when the platform has one. Two tabs of one session that share the IndexedDB lane and the
-Web Lock and hand off the same controls at once, or where one tab closes after its commit or inside
-its send, send each control once and in hand-off order
+Web Lock when the platform has one. The memory lane shares nothing between tabs, so the two-tab
+proof covers the durable lane: two tabs of one session that share the IndexedDB lane and the Web
+Lock and hand off the same controls at once, or where one tab closes after its commit, send each
+control once and in hand-off order; a tab that closes inside its send leaves that send to be
+retried once after its lease lapses, at least once on the wire
 ([`al-outbound-control-handoff-two-tabs.test.ts`](../../../tests/shared/alm/outbound/al-outbound-control-handoff-two-tabs.test.ts));
 a send a closed tab still holds under its lease waits for that lease on either path. The hand-off
 shares the sender version fence with that sender's data commits, so a data commit that races a

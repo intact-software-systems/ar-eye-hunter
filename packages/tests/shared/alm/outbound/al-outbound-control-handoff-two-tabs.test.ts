@@ -25,7 +25,13 @@ const SENDER_PEER_ID = 'self';
  * batch that took two of them from one page would send them reversed.
  */
 const CONTROL_SEQUENCE = ['control-d', 'control-c', 'control-b', 'control-a'] as const;
-const DRAIN_PASS_LIMIT = 12;
+/**
+ * The controls the second tab sees in test 2. They sort against hand-off order, as the sequence above,
+ * so first-in-first-out order and key order give different sends.
+ */
+const SECOND_TAB_SEQUENCE = ['control-b', 'control-a'] as const;
+const IDLE_PASSES = 3;
+const DRAIN_PASS_LIMIT = 60;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -34,23 +40,23 @@ afterEach(() => {
 
 it('sends each control two tabs hand off for one admission once, in hand-off order', async () => {
     const session = createTwoTabSession();
-    const admittedBy: string[] = [];
+    const verdictsByControl = new Map<string, string[]>();
 
-    // Both tabs run the admission's send-control rows at once, as two owners whose leases overlap do.
-    await Promise.all(session.tabs.map(async (tab) => {
-        for (const msgId of CONTROL_SEQUENCE) {
+    // Both tabs hand off each control at once, as two owners whose leases overlap do: one optimistic
+    // commit wins and the other hits a real version conflict and retains a pending admission.
+    for (const msgId of CONTROL_SEQUENCE) {
+        const results = await Promise.all(session.tabs.map(async (tab) => {
             const [result] = await tab.runtime.enqueueAllIfAbsent([
                 createControlMessage(msgId, session.nowMs())
             ]);
-            expect(['admitted', 'pending', 'duplicate']).toContain(result!.verdict.kind);
-            if (result!.verdict.kind === 'admitted') {
-                admittedBy.push(msgId);
-            }
-        }
-    }));
-    await drainTabs(session.tabs);
+            return result!.verdict.kind;
+        }));
+        verdictsByControl.set(msgId, results.toSorted());
+    }
+    await drainTabs(session, session.tabs);
 
-    expect(admittedBy.toSorted()).toEqual([...CONTROL_SEQUENCE].toSorted());
+    expect([...verdictsByControl.keys()]).toEqual([...CONTROL_SEQUENCE]);
+    expect([...verdictsByControl.values()]).toEqual(CONTROL_SEQUENCE.map(() => ['admitted', 'pending']));
     expect(session.sent.map((send) => send.msgId)).toEqual([...CONTROL_SEQUENCE]);
     expect(await readOwnerRows(session.tabs[0]!.stores)).toEqual({ canonical: 4, identity: 4 });
 });
@@ -68,31 +74,32 @@ it('sends each control once, in hand-off order, when the tab that committed the 
 
     expect(
         (await first.runtime.enqueueAllIfAbsent([
-            createControlMessage('control-1', session.nowMs())
+            createControlMessage(SECOND_TAB_SEQUENCE[0], session.nowMs())
         ]))[0]!.verdict.kind
     )
         .toBe('admitted');
     // The other tab's inbound owner runs the same send-control row again, then the admission's next one.
     const retried = await second.runtime.enqueueAllIfAbsent([
-        createControlMessage('control-1', session.nowMs())
+        createControlMessage(SECOND_TAB_SEQUENCE[0], session.nowMs())
     ]);
-    expect(['pending', 'duplicate']).toContain(retried[0]!.verdict.kind);
+    expect(retried[0]!.verdict.kind).toBe('duplicate');
     expect(
         (await second.runtime.enqueueAllIfAbsent([
-            createControlMessage('control-2', session.nowMs())
+            createControlMessage(SECOND_TAB_SEQUENCE[1], session.nowMs())
         ]))[0]!.verdict.kind
     )
         .toBe('admitted');
-    await drainTabs([second]);
+    // Both tabs run their work: the closed one must claim nothing.
+    await drainTabs(session, session.tabs);
 
-    expect(session.sent.map((send) => `${send.tab}:${send.msgId}`)).toEqual([
-        'second:control-1',
-        'second:control-2'
-    ]);
+    expect(session.sent.map((send) => `${send.tab}:${send.msgId}`)).toEqual(
+        SECOND_TAB_SEQUENCE.map((msgId) => `second:${msgId}`)
+    );
+    expect(session.attempts).toEqual(session.sent);
     expect(await readOwnerRows(second.stores)).toEqual({ canonical: 2, identity: 2 });
 });
 
-it('sends a control once when the tab that committed it closes inside its send and the other tab retries it', async () => {
+it('retries a control the closed tab never finished sending only once that tab lease lapses', async () => {
     const session = createTwoTabSession({ crashFirstTabInsideTransport: true });
     const [first, second] = session.tabs as [TwoTabRuntime, TwoTabRuntime];
 
@@ -107,15 +114,22 @@ it('sends a control once when the tab that committed it closes inside its send a
     const retried = await second.runtime.enqueueAllIfAbsent([
         createControlMessage('control-1', session.nowMs())
     ]);
-    expect(['pending', 'duplicate']).toContain(retried[0]!.verdict.kind);
-    await drainTabs([second]);
-    // The closed tab's lease still holds the send, on either commit path, until it lapses.
+    expect(retried[0]!.verdict.kind).toBe('duplicate');
+    await drainTabs(session, [second]);
+    // The closed tab's lease still holds the send, on either commit path, until it lapses: the only
+    // attempt so far is the closed tab's own, which may or may not have reached the wire.
+    expect(session.attempts).toEqual([{ tab: 'first', msgId: 'control-1' }]);
     expect(session.sent).toEqual([]);
 
     session.advanceMs(AL_OUTBOUND_WORK_LEASE_MS + 1);
-    await drainTabs([second]);
+    await drainTabs(session, [second]);
 
-    expect(session.sent.map((send) => `${send.tab}:${send.msgId}`)).toEqual(['second:control-1']);
+    // Delivery after a crash inside a send is at least once; the retry is the one and only further attempt.
+    expect(session.attempts).toEqual([
+        { tab: 'first', msgId: 'control-1' },
+        { tab: 'second', msgId: 'control-1' }
+    ]);
+    expect(session.sent).toEqual([{ tab: 'second', msgId: 'control-1' }]);
     expect(await readOwnerRows(second.stores)).toEqual({ canonical: 1, identity: 1 });
 });
 
@@ -131,7 +145,10 @@ interface TwoTabRuntime {
 
 interface TwoTabSession {
     readonly tabs: readonly TwoTabRuntime[];
+    /** Every frame a transport finished putting on the wire, in wire order. */
     readonly sent: readonly TransportSend[];
+    /** Every transport entry, including one that never returned. */
+    readonly attempts: readonly TransportSend[];
     readonly crashedInsideTransport: boolean;
     nowMs(): number;
     advanceMs(durationMs: number): void;
@@ -149,9 +166,11 @@ function createTwoTabSession(
     stubSharedWebLocks();
     let nowMs = Date.now();
     const sent: TransportSend[] = [];
+    const attempts: TransportSend[] = [];
     const dbName = `two-tab-controls-${crypto.randomUUID()}`;
     const session = {
         sent,
+        attempts,
         crashedInsideTransport: false,
         nowMs: () => nowMs,
         advanceMs: (durationMs: number) => {
@@ -178,6 +197,7 @@ function createTwoTabSession(
                 preparedMessages: [{ transport: 'ws', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
+                attempts.push({ tab, msgId: prepared.msgId! });
                 if (tab === 'first' && input.crashFirstTabInsideTransport) {
                     session.crashedInsideTransport = true;
                     return await new Promise(() => {});
@@ -213,11 +233,18 @@ function stubSharedWebLocks(): void {
     vi.stubGlobal('navigator', { locks: { request } });
 }
 
-/** Runs both tabs' outbound batches until a pass sends nothing more. */
-async function drainTabs(tabs: readonly TwoTabRuntime[]): Promise<void> {
+/** Runs the tabs' outbound batches until several passes in a row start no transport attempt, and fails if they never settle. */
+async function drainTabs(session: TwoTabSession, tabs: readonly TwoTabRuntime[]): Promise<void> {
+    let idlePasses = 0;
     for (let pass = 0; pass < DRAIN_PASS_LIMIT; pass += 1) {
+        const attemptsBefore = session.attempts.length;
         await Promise.all(tabs.map((tab) => runOutboundWorkTask(tab.runtime)));
+        idlePasses = session.attempts.length === attemptsBefore ? idlePasses + 1 : 0;
+        if (idlePasses === IDLE_PASSES) {
+            return;
+        }
     }
+    throw new Error(`The tabs' outbound work did not settle in ${DRAIN_PASS_LIMIT} passes`);
 }
 
 function createControlMessage(msgId: string, nowMs: number): ALMessage {
