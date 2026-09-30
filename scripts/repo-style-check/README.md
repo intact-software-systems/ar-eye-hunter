@@ -7,7 +7,8 @@ branch with its merge base. That comparison is the gate that can fail.
 
 The human review sequence and the rule list live in
 [docs/repo-human-style-guide.md](../../docs/repo-human-style-guide.md). Split and move manifests
-live in [lineages/README.md](./lineages/README.md).
+are JSON files in `plans/repo-style-lineages/`, read by
+[structural-lineage.mjs](./structural-lineage.mjs).
 
 ## Commands
 
