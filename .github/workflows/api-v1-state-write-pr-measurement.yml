@@ -3,32 +3,52 @@ name: API v1 State-Write PR Measurement
 on:
   pull_request:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or commit to measure against its merge base with main'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+# The label is part of the group, so labelling a pull request for any other reason cannot cancel a
+# measurement in progress.
 concurrency:
-  group: api-v1-state-write-pr-566-measurement
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || inputs.ref }}
+  cancel-in-progress: true
 
 jobs:
   compare:
+    name: State-write A-B-B-A comparison
     if: >-
-      github.event.pull_request.number == 566 &&
-      github.event.label.name == 'measure-state-write-566' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.run_attempt == 1
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'measure-state-write' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      APPROVED_BASE_COMMIT: 322c50854153f4547fc53572b4ad77029d9ba6bf
-      CANDIDATE_COMMIT: 27125a396d7b0d5c6ab9d7d71b55f44fea2f1d37
+      CANDIDATE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.event.pull_request.head.sha }}
       DATABASE_URL: postgres://app:app@localhost:5433/appdb
-      COMPOSE_PROJECT_NAME: state-write-pr-566
+      COMPOSE_PROJECT_NAME: state-write-comparison
+      MEASUREMENT_OUTPUT: tmp/perf/state-write-comparison
+      COMPARATOR_FILES: >-
+        apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs
+        apps/api-v1/scripts/perf/api-v1-state-write-artifact-validation.mjs
+        apps/api-v1/scripts/perf/api-v1-state-write-outbox-contract.mjs
+        apps/api-v1/scripts/perf/api-v1-state-write-result-binding.mjs
+        apps/api-v1/scripts/perf/validate-state-write-attempt-evidence.mjs
+        apps/api-v1/scripts/perf/validate-state-write-durable-evidence.mjs
+      FROZEN_ENVIRONMENT_FILES: >-
+        package-lock.json
+        apps/api-v1/deno.json
+        apps/api-v1/deno.lock
+        docker-compose.perf-bench.yml
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.CANDIDATE_REF }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -40,67 +60,68 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Validate frozen sources and disposable runner
+      - name: Resolve the merge base and validate the runner
         shell: bash
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(nproc)" -ge 4
           test -z "$(docker ps -aq)"
-          git cat-file -e "$APPROVED_BASE_COMMIT^{commit}"
-          git cat-file -e "$CANDIDATE_COMMIT^{commit}"
-          git merge-base --is-ancestor "$APPROVED_BASE_COMMIT" "$CANDIDATE_COMMIT"
-          git merge-base --is-ancestor "$CANDIDATE_COMMIT" HEAD
-          git diff --exit-code "$APPROVED_BASE_COMMIT" "$CANDIDATE_COMMIT" -- \
-            apps/api-v1/scripts/perf package.json package-lock.json \
-            apps/api-v1/deno.json apps/api-v1/deno.lock docker-compose.perf-bench.yml
-          mkdir -p tmp/perf/state-write-pr-566
-          git rev-parse HEAD > tmp/perf/state-write-pr-566/orchestration-commit.txt
-          printf '%s\n%s\n' "$APPROVED_BASE_COMMIT" "$CANDIDATE_COMMIT" \
-            > tmp/perf/state-write-pr-566/source-commits.txt
-          node --version > tmp/perf/state-write-pr-566/toolchain.txt
-          npm --version >> tmp/perf/state-write-pr-566/toolchain.txt
-          deno --version >> tmp/perf/state-write-pr-566/toolchain.txt
-          docker version --format '{{.Server.Version}}' >> tmp/perf/state-write-pr-566/toolchain.txt
-          docker compose version >> tmp/perf/state-write-pr-566/toolchain.txt
-          lscpu > tmp/perf/state-write-pr-566/host-cpu.txt
-          free -b > tmp/perf/state-write-pr-566/host-memory.txt
+          output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
+          mkdir -p "$output"
+          node scripts/resolve-changed-review-range.mjs origin/main HEAD | tee "$output/review-range.txt"
+          base_commit="$(sed -n 's/^base=//p' "$output/review-range.txt")"
+          candidate_commit="$(sed -n 's/^head=//p' "$output/review-range.txt")"
+          if [ "$base_commit" = "$candidate_commit" ]; then
+            echo "FAIL: $candidate_commit is its own merge base with main; there is nothing to compare."
+            exit 1
+          fi
+          # The gate is main's: a candidate that edits the comparator or its imports is refused.
+          git diff --exit-code "$base_commit" "$candidate_commit" -- $COMPARATOR_FILES
+          # Dependencies and the pinned database are installed once, so both sides must share them.
+          git diff --exit-code "$base_commit" "$candidate_commit" -- $FROZEN_ENVIRONMENT_FILES
+          read_npm_script() {
+            git show "$1:package.json" | node -e '
+              let text = "";
+              process.stdin.on("data", (chunk) => { text += chunk; }).on("end", () => {
+                process.stdout.write(JSON.parse(text).scripts[process.argv[1]] ?? "");
+              });' "$2"
+          }
+          for script in perf:api-v1:state-write db:migrate; do
+            test -n "$(read_npm_script "$base_commit" "$script")"
+            test "$(read_npm_script "$base_commit" "$script")" = "$(read_npm_script "$candidate_commit" "$script")"
+          done
+          printf 'BASE_COMMIT=%s\nCANDIDATE_COMMIT=%s\n' "$base_commit" "$candidate_commit" >> "$GITHUB_ENV"
+          node --version > "$output/toolchain.txt"
+          npm --version >> "$output/toolchain.txt"
+          deno --version >> "$output/toolchain.txt"
+          docker version --format '{{.Server.Version}}' >> "$output/toolchain.txt"
+          docker compose version >> "$output/toolchain.txt"
+          lscpu > "$output/host-cpu.txt"
+          free -b > "$output/host-memory.txt"
 
-      - name: Prepare identical harness and environment corrections
+      - name: Give both sides the candidate's harness
         shell: bash
         run: |
           set -euo pipefail
-          output="$GITHUB_WORKSPACE/tmp/perf/state-write-pr-566"
-          orchestration_commit="$(git rev-parse HEAD)"
-          harness=apps/api-v1/scripts/perf/create-state-write-service-runtime.ts
-          validator=apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs
+          output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
           npm ci > "$output/install.log" 2>&1
-          for role in APPROVED_BASE CANDIDATE; do
-            source_variable="${role}_COMMIT"
-            source_commit="${!source_variable}"
-            git checkout --detach "$source_commit"
-            git restore --source="$orchestration_commit" -- "$harness" "$validator"
-            # The harness fix is runtime-neutral; both measured trees also receive the same environment validator.
-            node --input-type=module - "$source_commit" "$harness" <<'NODE'
-          import assert from 'node:assert/strict';
-          import { execFileSync } from 'node:child_process';
-          import { readFileSync } from 'node:fs';
-          import { transformSync } from 'esbuild';
-          const [source, path] = process.argv.slice(2);
-          const original = execFileSync('git', ['show', `${source}:${path}`], { encoding: 'utf8' });
-          const corrected = readFileSync(path, 'utf8');
-          const compile = (text) => transformSync(text, {
-            loader: 'ts', target: 'esnext', minifyWhitespace: true
-          }).code;
-          assert.equal(compile(corrected), compile(original), 'Harness correction changed emitted JavaScript');
-          NODE
+          git diff "$BASE_COMMIT" "$CANDIDATE_COMMIT" -- apps/api-v1/scripts/perf > "$output/harness-overlay.patch"
+          base_measurement_commit="$BASE_COMMIT"
+          if [ -s "$output/harness-overlay.patch" ]; then
+            git checkout --detach "$BASE_COMMIT"
+            git restore --source="$CANDIDATE_COMMIT" --staged --worktree -- apps/api-v1/scripts/perf
             git -c user.name='State-write measurement' -c user.email='measurement@users.noreply.github.com' \
-              commit --only "$harness" "$validator" -m 'Correct benchmark harness and environment validation'
-            measurement_commit="$(git rev-parse HEAD)"
-            printf '%s=%s\n' "${role}_MEASUREMENT_COMMIT" "$measurement_commit" >> "$GITHUB_ENV"
-            printf '%s product=%s measurement=%s\n' "$role" "$source_commit" "$measurement_commit" \
-              >> "$output/measurement-commits.txt"
-            git show --format=fuller HEAD > "$output/$role-measurement-corrections.patch"
+              commit -m 'Measure the merge base with the candidate state-write harness'
+            base_measurement_commit="$(git rev-parse HEAD)"
+          fi
+          git diff --exit-code "$base_measurement_commit" "$CANDIDATE_COMMIT" -- apps/api-v1/scripts/perf
+          printf 'BASE_MEASUREMENT_COMMIT=%s\n' "$base_measurement_commit" >> "$GITHUB_ENV"
+          printf 'base=%s\nbase-measurement=%s\ncandidate=%s\n' \
+            "$BASE_COMMIT" "$base_measurement_commit" "$CANDIDATE_COMMIT" > "$output/measurement-commits.txt"
+          for role in base candidate; do
+            if [ "$role" = base ]; then commit="$base_measurement_commit"; else commit="$CANDIDATE_COMMIT"; fi
+            git checkout --detach "$commit"
             deno check --config apps/api-v1/deno.json \
               apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
               > "$output/$role-native-check.log" 2>&1
@@ -110,10 +131,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          output="$GITHUB_WORKSPACE/tmp/perf/state-write-pr-566"
+          output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
           position=0
-          git diff --exit-code "$APPROVED_BASE_MEASUREMENT_COMMIT" "$CANDIDATE_MEASUREMENT_COMMIT" -- apps/api-v1/scripts/perf
-          for source_commit in "$APPROVED_BASE_MEASUREMENT_COMMIT" "$CANDIDATE_MEASUREMENT_COMMIT" "$CANDIDATE_MEASUREMENT_COMMIT" "$APPROVED_BASE_MEASUREMENT_COMMIT"; do
+          for source_commit in "$BASE_MEASUREMENT_COMMIT" "$CANDIDATE_COMMIT" "$CANDIDATE_COMMIT" "$BASE_MEASUREMENT_COMMIT"; do
             position=$((position + 1))
             git checkout --detach "$source_commit"
             test -z "$(git status --porcelain --untracked-files=no)"
@@ -124,7 +144,7 @@ jobs:
             node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
               --stage preflight --container rallar-perf-bench-postgres \
               --database-url "$DATABASE_URL" --out "$output/position-$position-preflight.json"
-            # Reject unsupported image/resource settings before the expensive benchmark.
+            # Reject an unsupported image or resource setting before the expensive benchmark.
             node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
               --stage postflight --container rallar-perf-bench-postgres \
               --database-url "$DATABASE_URL" --preflight "$output/position-$position-preflight.json" \
@@ -132,9 +152,10 @@ jobs:
             benchmark_status=0
             npm run perf:api-v1:state-write -- \
               --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
-              --out="tmp/perf/state-write-pr-566/position-$position.json" \
+              --out="$MEASUREMENT_OUTPUT/position-$position.json" \
               > "$output/position-$position-benchmark.log" 2>&1 || benchmark_status=$?
             printf '%s\n' "$benchmark_status" > "$output/position-$position-exit.txt"
+            grep '^{"workload"' "$output/position-$position-benchmark.log" || true
             node apps/api-v1/scripts/perf/capture-api-v1-state-write-environment.mjs \
               --stage postflight --container rallar-perf-bench-postgres \
               --database-url "$DATABASE_URL" --preflight "$output/position-$position-preflight.json" \
@@ -146,14 +167,15 @@ jobs:
             docker compose -f docker-compose.perf-bench.yml down -v
           done
 
-      - name: Pool and compare the governed captures
+      - name: Pool and compare with the unchanged comparator
         shell: bash
         run: |
           set -euo pipefail
-          output="$GITHUB_WORKSPACE/tmp/perf/state-write-pr-566"
-          node apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs \
-            --expected-approved-base-commit "$APPROVED_BASE_MEASUREMENT_COMMIT" \
-            --expected-candidate-commit "$CANDIDATE_MEASUREMENT_COMMIT" \
+          output="$GITHUB_WORKSPACE/$MEASUREMENT_OUTPUT"
+          # Each nine-run position is close to 500 MB of JSON; the default heap cannot hold two roles.
+          node --max-old-space-size=12288 apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs \
+            --expected-approved-base-commit "$BASE_MEASUREMENT_COMMIT" \
+            --expected-candidate-commit "$CANDIDATE_COMMIT" \
             --approved-base-first "$output/position-1.json" \
             --candidate-first "$output/position-2.json" \
             --candidate-second "$output/position-3.json" \
@@ -166,15 +188,18 @@ jobs:
             --candidate-out "$output/candidate.json" \
             --manifest-out "$output/pooling-manifest.json" \
             2>&1 | tee "$output/pooling.log"
-          node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs \
+          node --max-old-space-size=12288 apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs \
             "$output/approved-base.json" "$output/candidate.json" \
             2>&1 | tee "$output/comparison.log"
 
-      - name: Retain complete measurement and failure artifacts
+      - name: Retain the captures and the verdict
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: state-write-pr-566-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tmp/perf/state-write-pr-566
+          name: state-write-comparison-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/perf/state-write-comparison
+            !tmp/perf/state-write-comparison/approved-base.json
+            !tmp/perf/state-write-comparison/candidate.json
           if-no-files-found: warn
           retention-days: 14
