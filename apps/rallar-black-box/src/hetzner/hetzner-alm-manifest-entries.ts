@@ -57,11 +57,7 @@ interface HetznerWithheldAlmScenario {
 const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // Reads red by a recorded gap: no plain-member write advances the snapshot version, so a floor one past it is
     // never reached.
-    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS },
-    // On hosted agents the side that stayed dials the reloading peer before its signalling is back, the dial is kept
-    // through the grace, and recovery takes the 30 s peer establishment timeout, longer than the scenario wait of 27 s
-    // (issue #594). The local lane, whose timing differs, keeps the scenario on every carrier.
-    { scenarioKey: 'delivery-reload', carriers: ['rtc', 'rtc-with-ws-fallback'] }
+    { scenarioKey: 'not-yet-in-sync-delivered-after-refresh', carriers: ALM_CONFORMANCE_CARRIERS }
 ];
 
 export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEntry {
@@ -75,7 +71,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
             'not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no ' +
             'fallback after the deadline, and the addressed sends: a command to the receiver, its unicast ' +
             'fallback, a command to the server, and the volatile session bound) across ws, rtc, and ' +
-            'rtc-with-ws-fallback carriers; durable reload runs on ws only.',
+            'rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender', 'two-agent'),

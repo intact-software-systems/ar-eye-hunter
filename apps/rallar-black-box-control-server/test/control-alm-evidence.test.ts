@@ -86,21 +86,22 @@ for (const scheduled of [false, true]) {
         assertEquals(pair.receiver, { agentId: agents[1], commandId: receiver.commandId });
         assertEquals(sender.command.timeoutMs, 1_800_000);
         assertEquals(receiver.command.timeoutMs, 1_800_000);
-        assertEquals(pair.checkpoints.length, 1, 'hosted manifest 18 withholds the reload over rtc and rtc-with-ws-fallback (issue #594)');
+        assertEquals(pair.checkpoints.length, 3, 'one full reload specimen per supported carrier');
         assertEquals(sender.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(receiver.command.recipe.metadata?.almReloadCheckpoints, pair.checkpoints);
         assertEquals(senderPrefix.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].senderPrefixEnd);
         assertEquals(receiverReady.command.recipe.commands.at(-1)?.commandId, pair.checkpoints[0].receiverReadyEnd);
 
         let prefixStart = 0;
+        const carriers = ['ws', 'rtc', 'rtc-with-ws-fallback'];
         const commands: RallarBlackBoxTestRecipe['commands'] = sender.command.recipe.commands;
-        for (const checkpoint of pair.checkpoints) {
+        for (const [index, checkpoint] of pair.checkpoints.entries()) {
             const prefixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderPrefixEnd);
             const reloadIndex = commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const prefix = commands.slice(prefixStart, prefixEnd + 1);
             const originals = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
-            assertEquals(originals.map((command) => command.carrier), ['ws'], 'reload precedes ordinary scenario work');
+            assertEquals(originals.map((command) => command.carrier), [carriers[index]], 'reload precedes ordinary scenario work');
             assertEquals(reloadIndex, prefixEnd + 1);
             assertEquals(commands[reloadIndex]?.kind, 'agent.reload');
             const suffix = commands.slice(reloadIndex + 1, suffixEnd + 1);

@@ -65,16 +65,14 @@ describe('ALM conformance combined recipe', () => {
         const families = [
             {
                 entry: createAlmConformance2AgentEntry(),
-                scenarioKeys: ['delivery-baseline', 'ws-unicast-receipt', 'capacity'],
-                wsOnlyScenarioKeys: ['delivery-reload']
+                scenarioKeys: ['delivery-baseline', 'delivery-reload', 'ws-unicast-receipt', 'capacity']
             },
             {
                 entry: createAlmConformance3AgentEntry(),
-                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership'],
-                wsOnlyScenarioKeys: []
+                scenarioKeys: ['aggregated-receipt', 'frozen-audience-membership']
             }
         ];
-        for (const { entry, scenarioKeys, wsOnlyScenarioKeys } of families) {
+        for (const { entry, scenarioKeys } of families) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe as RallarBlackBoxTestRecipe;
                 const connects = recipe.commands.filter((command) => command.kind === 'rtc.connect');
@@ -94,10 +92,6 @@ describe('ALM conformance combined recipe', () => {
                         for (const scenarioKey of scenarioKeys) {
                             expect(listed).toContain(`alm.conformance.${carrier}.${scenarioKey}`);
                         }
-                    }
-                    for (const scenarioKey of wsOnlyScenarioKeys) {
-                        expect(listed).toContain(`alm.conformance.ws.${scenarioKey}`);
-                        expect(listed).not.toContain(`alm.conformance.rtc.${scenarioKey}`);
                     }
                     // A protocol control type is owned by the ALM runtime's own RTC callback, never by the harness.
                     expect(listed?.some((typeId) => typeId.startsWith('al.control.'))).toBe(false);
@@ -129,7 +123,7 @@ describe('ALM conformance combined recipe', () => {
 });
 
 describe('ALM conformance 2-agent hosted withholdings', () => {
-    it('withholds exactly the named cells: the reload over rtc and rtc-with-ws-fallback, and the refresh variant', () => {
+    it('withholds exactly the named cells: the refresh variant over rtc and rtc-with-ws-fallback', () => {
         const defined = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
             createAlmConformanceRecipes({
                 group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
@@ -140,11 +134,9 @@ describe('ALM conformance 2-agent hosted withholdings', () => {
                 deadlineMs: 18_000
             }).filter((scenario) => !isThreeAgentScenario(scenario)).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
         );
-        // Removing a withheld cell from hosted manifest 18 is a deliberate act: issue #594 for the reload over RTC,
-        // and no plain-member write advancing the snapshot version for the refresh variant.
+        // Removing a withheld cell from hosted manifest 18 is a deliberate act: no plain-member write advances the
+        // snapshot version for the refresh variant.
         const withheld = [
-            'alm-rtc-delivery-reload',
-            'alm-rtc-with-ws-fallback-delivery-reload',
             'alm-rtc-not-yet-in-sync-delivered-after-refresh',
             'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh'
         ];
@@ -154,7 +146,11 @@ describe('ALM conformance 2-agent hosted withholdings', () => {
 
         expect(defined).toEqual(expect.arrayContaining(withheld));
         expect(new Set(cells)).toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
-        expect(cells.filter((cell) => cell.endsWith('-delivery-reload'))).toEqual(['alm-ws-delivery-reload']);
+        expect(cells.filter((cell) => cell.endsWith('-delivery-reload'))).toEqual([
+            'alm-ws-delivery-reload',
+            'alm-rtc-delivery-reload',
+            'alm-rtc-with-ws-fallback-delivery-reload'
+        ]);
     });
 });
 

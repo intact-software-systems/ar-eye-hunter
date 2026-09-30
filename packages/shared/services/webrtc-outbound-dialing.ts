@@ -4,13 +4,22 @@ import {
     type InFlightDialAdmission
 } from '../api/group-lifecycle/compute-in-flight-dial-admission.ts';
 import { isPeerSetupStarted, type WebRtcConnectionService } from './web-rtc-connection-service.ts';
-import type { WebRtcPeerOwnership } from './webrtc-group-manager-contracts.ts';
+import type {
+    RetainedPeerConnection,
+    WebRtcPeerOwnership
+} from './webrtc-group-manager-contracts.ts';
 import { computeInFlightSetupCounts, type OutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
 
 export interface OutboundDialingInput {
     readonly rtcQBox: WebRtcConnectionService;
     readonly dialPlan: OutboundDialPlan;
     readonly ownership: WebRtcPeerOwnership;
+}
+
+export interface UnansweredRetainedDialsInput {
+    readonly desiredPeerIds: ReadonlySet<PeerId>;
+    readonly retainedPeerConnections: ReadonlyMap<PeerId, RetainedPeerConnection>;
+    readonly rtcQBox: WebRtcConnectionService;
 }
 
 export interface OutboundDialsStarted {
@@ -127,4 +136,34 @@ function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): n
         throw new Error(`Owning group ${groupKey} has no in-flight bound`);
     }
     return bound;
+}
+
+/**
+ * A dial kept through the overlay grace while its remote side was gone offered to a session that could not take it.
+ * Only the offering side negotiates, and only its unanswered offer can be the lost one; an answer to it that still
+ * arrives is discarded by its offer id once the redial owns the peer. The caller ends the retention in the same
+ * pass, so each reappearance redials at most once. The redial keeps the attempt budget: it is not reset, so the
+ * redial counts as an attempt.
+ */
+export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
+    for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {
+        input.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
+    }
+}
+
+function resolveUnansweredRetainedDialPeerIds(
+    input: UnansweredRetainedDialsInput
+): readonly PeerId[] {
+    const inFlightPeerIds = new Set(input.rtcQBox.inFlightPeerIds());
+    return Array.from(input.desiredPeerIds).filter((peerId) =>
+        input.retainedPeerConnections.get(peerId)?.reason === 'overlay-transition' &&
+        inFlightPeerIds.has(peerId) &&
+        hasUnansweredOffer(input.rtcQBox.readPeer(peerId))
+    );
+}
+
+function hasUnansweredOffer(peer: WebRtcConnectionService.Peer | undefined): boolean {
+    return peer !== undefined &&
+        !peer.connection.input.isPolite &&
+        peer.connection.status.pc?.signalingState === 'have-local-offer';
 }
