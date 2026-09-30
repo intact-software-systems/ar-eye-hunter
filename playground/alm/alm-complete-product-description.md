@@ -174,7 +174,9 @@ and tracked message audience. Cryptographic signatures by the original sender
 are outside the approved roadmap.
 
 Domain topic registries add payload schema, maximum size, authority, scope,
-fanout, and allowed QoS. Unknown topics follow an explicit deny/allow policy.
+fanout, and allowed QoS. Fanout is the topic's declaration, never derived from a
+message's QoS; a topic that declares none takes the router's `live-only` default
+(D99). Unknown topics follow an explicit deny/allow policy.
 Room delivery requires sufficient matching server-provided authority; it does
 not require a new server round trip for every message. Missing/stale evidence
 can trigger bounded refresh or authorized alternative routing. Pending intake
@@ -191,6 +193,17 @@ before dispatch; unknown controls cannot create pending work. An ACK names the
 message's origin and the logical recipient it speaks for (`al.control.ack.v2`,
 S2c-i), and RTC peer ingress refuses a room multicast that carries no frozen
 audience (S2c-ii).
+
+**CURRENT — #566, connection scope at WS ingress:** a WS connection's scope is
+the `applicationId` and `workspaceId` of its socket URL, or the default scope when
+the URL names none. A message whose `targets.groupRef` or principal scope names
+another scope is refused before routing, with a NACK the origin can read, as the
+S3c-i addressee refusal is (D100). For a room or unicast message the wire
+`targets.groupRef` is the scope authority; only a row that names no room keeps a
+stored recipient scope (D101). A raw server outbox row that no ALM admission wrote
+is delivered only with producer provenance; a unicast server publish that names no
+room and carries no scope fails typed, and a server publish that names a room and
+also passes a scope is refused (D103).
 
 ## Logical audiences
 
@@ -295,6 +308,23 @@ every member of the frozen audience, relay or leaf, sends its own ACK again over
 leg needs (R-S3b-1, R-S3b-21). Limits:
 `ws-then-rtc` falls back at admission only, and a durable RTC message resumed after a reload has no handle
 and never hands over (D64).
+
+**CURRENT — #566, RTC authority gaps and redial:** a gap in the room authority an RTC send needs (no room
+snapshot, a room that is not `flowing`, no accepted layout or a `bootstrap` one, presence that moved while
+there is no overlay, an overlay other than the accepted layout) means RTC cannot carry the send now, never
+that the send is unauthorized. The send's strategy decides what the gap does: `rtc-with-ws-fallback` hands
+it to WS at admission (`no-route`) or, for a copy already prepared, after three `not-ready` attempts; `rtc`,
+and the RTC leg of `ws-then-rtc`, hold a durable send (a volatile one reads `no-route`, as before): it reads
+`accepted`, states one `not-ready` attempt per claim, has no receipt row until copies are planned, and ends
+`expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps main's own
+admission; only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
+overlay. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
+that is explicitly foreign or inactive for the message's room, or the room authority's own refusal as on
+main (an inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
+are correlated by `offerId` (D97), and a peer that reloads inside the overlay grace is redialled by the
+offering side in the same reconcile pass instead of waiting for the 30 s establishment timeout; the redial
+keeps the peer's attempt budget, which is not reset, so it counts as an attempt (D98). An old offer applied
+after the new one still waits for that timeout.
 
 **PLANNED — F1, conformance contract:** There is no cross-transport suite or
 public outcome model proving that the same QoS request has the same meaning on
@@ -416,7 +446,18 @@ receipt (`al.control.receipt.v1`), RTC relays forward each recipient's ACK towar
 the origin, an RTC retry goes only through the hops that may still lead to a
 missing recipient, and the handle carries the expected, confirmed and unconfirmed
 recipients beside the hop lists. A WS live-only room topic keeps no copy to
-retry, so its receipt ends timed out naming the recipients it did not confirm.
+retry: the server sends the message live once, at any QoS, to its own sockets and
+through one best-effort Postgres NOTIFY notice to the other server processes, so
+its receipt ends timed out naming the recipients it did not confirm (D99). A
+recipient's ACK that reaches a server process without the message's
+receipt aggregate is relayed once, over a second notice kind, to the process that
+holds it, so receipts complete across API processes; a lost relay leaves that
+recipient unconfirmed and the receipt ends timed out (D106). The relay first checks
+the shared inbound admission store's ingress audience and fails closed, and it
+carries at most 60 relays per session per 60 s. The server's own
+acknowledgement of a message addressed to it reaches the sender on any process:
+a process that claims it without the sender's socket hands it to the cluster
+outbound route (D107).
 Durable replay rechecks snapshot readiness, preserves predecessor order, and
 ACKs the admitted upstream relay. Current coverage includes
 [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
@@ -437,7 +478,8 @@ own HTTP/WS catch-up.
 server as its one hop, so it is receipted by the server's own ACK and no longer ends at `transport-accepted` with a
 downgrade (R-S3a-4 closed). The
 server's own room notifications carry `receiver` receipts over the room's live sessions frozen at publish, and cluster
-delivery honours that audience (D58, D77).
+delivery honours that audience (D58, D77). Since #566 the router freezes the audience for every server or proxy
+publish that carries a `groupRef`, and cluster delivery reads it once from the captured policy (D104).
 
 **PLANNED — A2, distinct leader ACK:** `group-leader` still maps to the subtree
 behavior; all-recipient is the frozen logical audience since S2. A2 defines the
@@ -760,7 +802,11 @@ definition.
 
 **PARTIAL:** Outbound disposal, inbound runtime, effect worker, and delivery
 owner have disposal fences. Tests cover disposal during commit/read and retry
-cancellation. Web Locks, versioned commits, and effect leases also exist.
+cancellation. Web Locks, versioned commits, and effect leases also exist. Since
+#566 an initial control commits without the sender queue and the Web Lock and
+falls back to both on a commit conflict (D105). A two-tab proof covers the
+durable lane; browsers admit controls in the per-tab memory lane, which never
+took the lock.
 
 **PLANNED — I2a, complete lifecycle outcomes:** Multi-tab claims, quota,
 eviction, blocked upgrades, and restart have no typed outcomes:
@@ -819,7 +865,8 @@ decision D3). ALM never falls back to an obsolete API, migrates incompatible
 records, or keeps a compatibility window (decision D8). Every capability in
 this document is in scope (decision D5); the roadmap's release map owns the
 order, and the two games are changed wherever that proves a capability in a
-real UI (decision D4).
+real UI (decision D4). #566 ships two such cutovers as one web and API deploy:
+RTC signaling's required `offerId` (D97) and the admission schema bump (D101).
 
 ## Current validation baseline
 

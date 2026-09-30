@@ -19,10 +19,10 @@ completion record here.
   snapshot readers in `playground/alm/tools/` belong to the hosted lifecycle
   diagnosis beside those documents.
 - `docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`
-  stays because pull request
+  stays because it is not finished: RTC-B06 has no accepted E3-memory primary
+  and `RTC-B07` is held. Its status section names what pull request
   [#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566)
-  still edits it. The committed-work design and implementation plan for that
-  pull request stay on the pull request branch.
+  delivered and what remains.
 
 ## When a plan is finished
 

@@ -62,9 +62,43 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-11
+**Updated:** 2026-09-30
 
-**Status:** `origin/main` is
+**Status:** RTC-B06 still has no valid E3-memory primary and `RTC-B07` remains
+held, so this plan is not finished and stays in the keep-set of
+`plans/README.md`. The two-slice horizon below is complete: PR #562 merged as
+`bf67bacb9` and PR #563 as `1656e283d`. Pull request
+[#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566),
+reconciled with ALM, delivers the B06 correction set its failed observations
+exposed:
+
+- heartbeat lease renewal across the 60 s room-cache TTL;
+- Offer/Answer correlation by a required `offerId` (ALM roadmap D97), a
+  signaling wire change deployed together with the API;
+- overlay-gap recovery in which a room-authority gap chooses the carrier and
+  never refuses authorization (D96);
+- the redial of a peer that reloads inside the overlay grace, the reload
+  case of issue #594 (D98), with `delivery-reload` back on manifest 18's RTC
+  carriers;
+- RTC signaling across API processes through the cluster live-WS notice (D99);
+- named E3 retention phases with non-TTY start markers.
+
+#566 runs the unchanged 100-cycle E3 case once and reports it in its pull
+request; that run is diagnostic evidence, never the accepted primary. What
+remains:
+
+- E3 acceptance: an unchanged 100-cycle E3-memory primary, dispatched in
+  `publish` mode from moving `main` after #566 merges;
+- the receiver-watchdog correction: in runs 36341736117 and 36565509508 the
+  30 s establishment watchdog expired after valid offers arrived; a bounded
+  one-time renewal is proposed, not approved, and the termination issuer is
+  unknown;
+- the browser AL IndexedDB lifetime design, drafted on #566's branch and kept
+  only at tag `pr566-pre-reconcile`; it needs its own review before any
+  implementation;
+- `RTC-B07`, held.
+
+**Status on 2026-09-11 (superseded):** `origin/main` is
 `48717845a287ab2d009b36639d2e2c6abe9911aa`. PR #560 merged the verified
 failed run-34524003896 observation unchanged, and PR #561 merged its bounded
 failure-evidence tooling correction. Publish run 34563664803 then observed that

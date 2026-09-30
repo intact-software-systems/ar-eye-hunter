@@ -165,7 +165,7 @@ references are corruption. Superseding messages retain separate canonical payloa
 they do not overwrite a predecessor's envelope.
 
 A validated initial AL control enqueue runs the normal read, computation, validation,
-and optimistic commit without entering the sender queue or browser Web Lock. An
+and optimistic commit without entering the sender queue or browser Web Lock (D105). An
 uncontended commit returns `admitted`; a real commit conflict atomically retains the
 canonical payload, immutable identity, and compact `admit-message` work through
 [`retainALOutboundPendingAdmission`](./al-outbound-pending-admission.ts). That fallback
@@ -301,7 +301,7 @@ the authority returns, at its 10 s lease end (the next claim states the attempt 
 at the deadline. When the exact accepted overlay returns inside the deadline the dequeue plans the copies to the
 audience frozen at admission, and the receipt starts with them; otherwise the row's deadline ends the message
 `expired` (D10). A unicast keeps its own admission. A copy already prepared when a gap opens settles `not-ready` on every attempt, so
-`rtc-with-ws-fallback` hands it to WS after three and `rtc` alone retries it to the deadline.
+`rtc-with-ws-fallback` hands it to WS after three and `rtc` alone retries it to the deadline. A re-plan that states no `ackTracking` keeps the captured `receiver` set, so a durable RTC send whose provider defaults change during a gap keeps its receipt (D96).
 
 ### The frozen audience
 
@@ -366,7 +366,7 @@ target and a cluster publisher is registered,
 [`WsQueueBoxServerControlDelivery`](../../services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts)
 admits the control here as one durable `WS_OUTBOX` row that expires 30 s after the hand-off. Unlike a
 receipt, its first dequeue publishes it once and completes, so a target connected to no instance
-costs one publication and no retry.
+costs one publication and no retry (D107).
 
 A room topic's declared fanout picks the carrier, whatever the message's QoS (D71, D99). On an `outbox` topic the
 server's own outbound owner sends the message and keeps the `receiver` row described below. On a `live-only` topic
@@ -464,11 +464,6 @@ Known limitations:
 - A multicast or a room broadcast that carries a `groupRef` is authorized in the room it names, but its
   `route.contextId` is not bound to that room, so an application keying on `route.contextId` can misattribute it
   (known debt, D82; it predates S3c-i). Only a room unicast is refused when the two differ (R-S3c-i-33).
-- With the cluster publisher registered (the pub/sub bridge), a dequeued room message is planned as one
-  `cluster-local-complete` publication, and every instance then delivers it to the room's current
-  sessions: the audience the outbox carried is ignored there, so a session that joined after admission
-  receives the message although the `receiver` row does not expect it. The audience stated above holds
-  only without a cluster publisher, until a slice routes cluster delivery through the plan.
 
 The origin admits a receipt through
 [`ALOutboundReceiptAdmission`](./control/al-outbound-receipt-admission.ts), not through control
