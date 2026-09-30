@@ -93,12 +93,21 @@ async function main() {
             ? scanHighConfidenceNavigationFindings(repoRoot, governedTargetSources)
             : [])
     ];
-    const newFindings = subtractExistingFindings({
+    const logicalSourceByTargetPath = new Map([
+        ...renameByTargetPath,
+        ...structuralLineageByTargetPath
+    ]);
+    const newFindings = retainTouchedEnforcedFindings({
         repoRoot,
-        baseFindings,
+        changes,
         targetFindings,
-        structuralLineageSourcePaths: new Set(structuralLineageByTargetPath.values()),
-        logicalSourceByTargetPath: new Map([...renameByTargetPath, ...structuralLineageByTargetPath])
+        newFindings: subtractExistingFindings({
+            repoRoot,
+            baseFindings,
+            targetFindings,
+            structuralLineageSourcePaths: new Set(structuralLineageByTargetPath.values()),
+            logicalSourceByTargetPath
+        })
     });
 
     printChangedFindings({
@@ -243,6 +252,16 @@ function subtractExistingFindings(input) {
     }
 
     const baseMagnitudesByKey = groupFindingMagnitudes(input.repoRoot, input.baseFindings, new Map());
+    const baseUnknownTotals = boundaryUnknownTotalByPath(
+        input.repoRoot,
+        input.baseFindings,
+        new Map()
+    );
+    const targetUnknownTotals = boundaryUnknownTotalByPath(
+        input.repoRoot,
+        input.targetFindings,
+        input.logicalSourceByTargetPath
+    );
     const targetFindingsByKey = groupFindings(
         input.repoRoot,
         regularTargetFindings,
@@ -251,6 +270,17 @@ function subtractExistingFindings(input) {
     for (const [key, findings] of targetFindingsByKey) {
         const baseMagnitudes = baseMagnitudesByKey.get(key) ?? [];
         for (const finding of findings.toSorted(compareFindingMagnitudeDescending)) {
+            if (
+                boundaryUnknownStayedWithinBase({
+                    finding,
+                    repoRoot: input.repoRoot,
+                    logicalSourceByTargetPath: input.logicalSourceByTargetPath,
+                    baseUnknownTotals,
+                    targetUnknownTotals
+                })
+            ) {
+                continue;
+            }
             const targetMagnitude = findingMagnitude(finding);
             const matchIndex = baseMagnitudes.findIndex((baseMagnitude) =>
                 matchesBaseMagnitude(finding.ruleId, baseMagnitude, targetMagnitude)
@@ -324,7 +354,62 @@ function findingVariant(finding) {
         const prefixMatch = /prefix '([^']+)' appears/u.exec(finding.message);
         return prefixMatch === null ? finding.message : `prefix:${prefixMatch[1]}`;
     }
+    if (finding.ruleId === 'boundary.unknown') {
+        const kind = finding.message.startsWith('... and ') ? 'summary' : 'detail';
+        return `${kind}:${finding.symbol ?? ''}`;
+    }
     return finding.message.startsWith('... and ') ? 'summary' : 'detail';
+}
+
+const touchedEnforcedRuleIds = new Set([
+    'boundary.unknown',
+    'construction.forward-capture'
+]);
+
+function retainTouchedEnforcedFindings(input) {
+    const touchedPaths = new Set(
+        input.changes.map((change) => change.target).filter((target) => target !== undefined)
+    );
+    const retained = [...input.newFindings];
+    const included = new Set(input.newFindings);
+    for (const finding of input.targetFindings) {
+        if (included.has(finding) || !touchedEnforcedRuleIds.has(finding.ruleId)) {
+            continue;
+        }
+        const relativePath = toRelativePath(input.repoRoot, finding.file);
+        if (!touchedPaths.has(relativePath)) {
+            continue;
+        }
+        included.add(finding);
+        retained.push(finding);
+    }
+    return retained;
+}
+
+function boundaryUnknownTotalByPath(repoRoot, findings, logicalSourceByTargetPath) {
+    const totals = new Map();
+    for (const finding of findings) {
+        if (finding.ruleId !== 'boundary.unknown') {
+            continue;
+        }
+        const logicalPath = findingLogicalPath(repoRoot, finding, logicalSourceByTargetPath);
+        totals.set(logicalPath, (totals.get(logicalPath) ?? 0) + boundaryUnknownMagnitude(finding));
+    }
+    return totals;
+}
+
+function boundaryUnknownStayedWithinBase(input) {
+    if (input.finding.ruleId !== 'boundary.unknown') {
+        return false;
+    }
+    const logicalPath = findingLogicalPath(
+        input.repoRoot,
+        input.finding,
+        input.logicalSourceByTargetPath
+    );
+    const baseTotal = input.baseUnknownTotals.get(logicalPath) ?? 0;
+    const targetTotal = input.targetUnknownTotals.get(logicalPath) ?? 0;
+    return targetTotal <= baseTotal;
 }
 
 function toRenameMap(changes) {
