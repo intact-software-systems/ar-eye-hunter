@@ -363,7 +363,7 @@ describe('WebRtc overlay services', () => {
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
     });
 
-    it('defers multicast sends while room authority is missing', async () => {
+    it('answers no-route for a volatile multicast while room authority is missing', async () => {
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager({
             connectionService: connectionService,
@@ -398,7 +398,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            verdict: { kind: 'deferred', reason: 'not-yet-in-sync' },
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);

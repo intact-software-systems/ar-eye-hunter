@@ -110,7 +110,7 @@ describe('RTC durable accepted-overlay readiness', () => {
     });
 
     it.each([false, true])(
-        'never revives prepared traffic after its recipient leaves the authoritative active sessions (sender absent: %s)',
+        'keeps prepared traffic waiting while its recipient is absent from the active sessions and sends it on return (sender absent: %s)',
         async (senderAbsent) => {
             const fixture = await createFixture();
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
@@ -148,8 +148,8 @@ describe('RTC durable accepted-overlay readiness', () => {
             fixture.groups.accept('room', restored);
             await vi.advanceTimersByTimeAsync(500);
 
-            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
-            expect(afterRemoval).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+            expect(afterRemoval).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+            expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
             expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
         }
     );
@@ -176,73 +176,33 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
     });
 
-    it.each(
-        [
-            'halted',
-            'identity-missing',
-            'identity-removed',
-            'identity-superseded',
-            'room-expired',
-            'session-expired',
-            'member-removed',
-            'overlay-removed',
-            'overlay-foreign',
-            'overlay-superseded'
-        ] as const
-    )('never revives prepared traffic revoked by %s during reconfiguration', async (revocation) => {
-        const fixture = await createFixture();
-        const overlay = createOverlay(['peer-1']);
-        fixture.overlays.accept(overlayId, overlay);
-        const snapshot = createFlowingReconfiguration();
-        const revoked: GroupSnapshot = {
-            ...snapshot,
-            group: {
-                ...snapshot.group,
-                transportState: revocation === 'halted' ? 'halted' : 'flowing',
-                expiresAtEpochMs: revocation === 'room-expired' ? 1_000 : null,
-                acceptedLayoutIdentity: revocation === 'identity-missing'
-                    ? null
-                    : revocation === 'identity-removed'
-                    ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'removed' }
-                    : revocation === 'identity-superseded'
-                    ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'active' }
-                    : snapshot.group.acceptedLayoutIdentity
-            },
-            activeSessions: snapshot.activeSessions.map((session) =>
-                revocation === 'session-expired' && session.sessionId === 'peer-1'
-                    ? { ...session, expiresAtEpochMs: 1_000 }
-                    : session
-            ),
-            members: snapshot.members.map((member) =>
-                revocation === 'member-removed' && member.principalId === 'peer-1'
-                    ? { ...member, status: 'removed', removed: member.updated, left: null, banned: null }
-                    : member
-            )
-        };
-        const commit = fixture.resources.admissionStore.commitBundle.bind(fixture.resources.admissionStore);
-        vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
-            const committed = await commit(bundle);
-            expect(committed).toBe('committed');
-            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.NEW });
-            fixture.groups.accept('room', revoked);
-            fixture.overlays.accept(overlayId, {
-                ...overlay,
-                state: revocation === 'overlay-removed' ? 'removed' : 'active',
-                groupRef: revocation === 'overlay-foreign' ? { ...roomRef, workspaceId: 'other' } : roomRef,
-                overlayVersion: revocation === 'overlay-superseded' ? 8 : 7,
-                nextHopSessionIds: ['peer-1']
-            });
-            return committed;
-        });
+    it.each(['room-expired', 'session-expired', 'member-removed', 'overlay-removed', 'overlay-foreign'] as const)(
+        'never revives prepared traffic revoked by %s during reconfiguration',
+        async (revocation) => {
+            const fixture = await admitThenRevoke(revocation);
+            await vi.advanceTimersByTimeAsync(0);
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+            fixture.groups.accept('room', createSnapshot());
+            fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+            await vi.advanceTimersByTimeAsync(500);
+            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+        }
+    );
 
-        expect((await fixture.manager.enqueueIfAbsent(createMessage('multicast'))).verdict.kind).toBe('admitted');
-        await vi.advanceTimersByTimeAsync(0);
-        expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
-        fixture.groups.accept('room', createSnapshot());
-        fixture.overlays.accept(overlayId, overlay);
-        await vi.advanceTimersByTimeAsync(500);
-        expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
-    });
+    it.each(['halted', 'identity-missing', 'identity-removed', 'identity-superseded', 'overlay-superseded'] as const)(
+        'keeps prepared traffic waiting through a %s carrier gap during reconfiguration and sends it after restoration',
+        async (revocation) => {
+            const fixture = await admitThenRevoke(revocation);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+            fixture.groups.accept('room', createSnapshot());
+            fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+            await vi.advanceTimersByTimeAsync(100);
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.COMPLETED, dequeueAudit: { attempts: 1 } });
+            expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
+        }
+    );
 
     it('retains prepared traffic while its accepted edge is unavailable and sends after the edge returns', async () => {
         const fixture = await createFixture();
@@ -292,7 +252,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         };
         await vi.advanceTimersByTimeAsync(1_250);
         const pending = await fixture.resources.workQueue.getItem(admitted.entries[0].key);
-        expect(pending).toMatchObject({ dequeueAudit: { attempts: 0 } });
+        expect(pending).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
         expect(JSON.parse(pending!.resource).constraints.expiresAtMs).toBe(6_000);
         expect(await fixture.resources.workQueue.getAllKeys()).toEqual(admittedKeys);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'self', msgId: message.id.msgId })).toBeUndefined();
@@ -300,7 +260,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(warnings.mock.calls).toEqual([]);
 
         fixture.overlays.accept(overlayId, createOverlay(['peer-2']));
-        await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(100);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
         expect(native.createdConnections[1].channels[0].sent).toHaveLength(1);
         if (acknowledge) {
@@ -308,7 +268,8 @@ describe('RTC durable accepted-overlay readiness', () => {
                 expectedPeerIds: ['peer-2'],
                 timeoutMs: 200,
                 maxAttempts: 2,
-                deadlineAtMs: 2_500
+                // The held claim sees the overlay at its 2_300 re-check and releases the row due 1 ms later.
+                deadlineAtMs: 2_501
             });
             await fixture.manager.acceptControlMessage(newALAckControlMessage(
                 { v: 2, msgId: 'captured-policy-ack', ts: Date.now(), senderId: 'peer-2' },
@@ -346,57 +307,75 @@ describe('RTC durable accepted-overlay readiness', () => {
     );
 
     it.each(
-        [
-            'unknown',
-            'pending-session',
-            'pending-member',
-            'halted',
-            'identity-missing',
-            'identity-stale',
-            'identity-removed',
-            'room-inactive',
-            'foreign',
-            'self-only'
-        ] as const
-    )(
-        'does not admit initial %s authority as a cache wait',
-        async (denial) => {
-            const fixture = await createFixture();
-            fixture.groups.delete('room');
-            const snapshot = toAuthoritySnapshot(denial);
-            if (snapshot) {
-                fixture.groups.accept('room', snapshot);
-            }
-            const result = await fixture.manager.enqueueIfAbsent(createMessage('broadcast'));
-            const expectedKind = ['unknown', 'pending-session', 'pending-member', 'foreign'].includes(denial)
-                ? 'deferred'
-                : denial === 'self-only'
-                ? 'unroutable'
-                : 'refused';
-            expect(result.verdict.kind, result.reason).toBe(expectedKind);
-            expect(result.entries).toEqual([]);
-            expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+        ['unknown', 'pending-session', 'pending-member', 'halted', 'identity-missing', 'identity-stale', 'identity-removed', 'foreign'] as const
+    )('holds a durable send admitted in an initial %s carrier gap without sending it', async (gap) => {
+        const fixture = await createFixture();
+        fixture.groups.delete('room');
+        const snapshot = toAuthoritySnapshot(gap);
+        if (snapshot) {
+            fixture.groups.accept('room', snapshot);
         }
-    );
+        const result = await fixture.manager.enqueueIfAbsent(createMessage('broadcast'));
+        expect(result.verdict.kind, result.reason).toBe('admitted');
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0].status).toBe(EntityStatus.NEW);
+        await vi.advanceTimersByTimeAsync(100);
+        expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+    });
 
-    it.each(['removed', 'foreign', 'planned', 'wrong-version'] as const)(
-        'rejects an explicit %s overlay despite an exact scoped alternative',
+    it.each(
+        ['unknown', 'pending-session', 'pending-member', 'halted', 'identity-missing', 'identity-stale', 'identity-removed', 'foreign'] as const
+    )('hands an initial %s carrier gap to the fallback carrier as no-route', async (gap) => {
+        const fixture = await createFixture();
+        fixture.groups.delete('room');
+        const snapshot = toAuthoritySnapshot(gap);
+        if (snapshot) {
+            fixture.groups.accept('room', snapshot);
+        }
+        const result = await fixture.manager.enqueueLegIfAbsent(createMessage('broadcast'), 'hand-over');
+        expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        expect(result.entries).toEqual([]);
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+    });
+
+    it.each(['room-inactive', 'self-only'] as const)('does not hold initial %s authority', async (denial) => {
+        const fixture = await createFixture();
+        fixture.groups.accept('room', toAuthoritySnapshot(denial)!);
+        const result = await fixture.manager.enqueueIfAbsent(createMessage('broadcast'));
+        expect(result.verdict.kind, result.reason).toBe(denial === 'room-inactive' ? 'refused' : 'unroutable');
+        expect(result.entries).toEqual([]);
+        expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
+    });
+
+    it.each(['removed', 'foreign'] as const)(
+        'refuses an explicit %s overlay despite an exact scoped alternative, whatever the leg',
         async (denial) => {
             const fixture = await createFixture();
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
-            const overlay = createOverlay(['peer-2']);
-            fixture.overlays.accept('explicit', {
-                ...overlay,
-                overlayId: 'explicit',
-                state: denial === 'removed' ? 'removed' : 'active',
-                groupRef: denial === 'foreign' ? { ...roomRef, workspaceId: 'other' } : roomRef,
-                provenance: denial === 'planned' ? 'bootstrap' : 'server',
-                overlayVersion: denial === 'wrong-version' ? 8 : 7
-            });
+            fixture.overlays.accept('explicit', toExplicitOverlay(denial));
+            const original = createMessage('broadcast');
+            const held = await fixture.manager.enqueueIfAbsent({ ...original, forwarding: { overlayId: 'explicit' } });
+            const handedOver = await fixture.manager.enqueueLegIfAbsent(
+                { ...original, id: { ...original.id, msgId: 'handed-over' }, forwarding: { overlayId: 'explicit' } },
+                'hand-over'
+            );
+            expect(held.verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
+            expect(handedOver.verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
+            expect(held.entries).toEqual([]);
+            expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+        }
+    );
+
+    it.each(['planned', 'wrong-version'] as const)(
+        'holds a durable send while its explicit %s overlay is not the exact accepted layout',
+        async (gap) => {
+            const fixture = await createFixture();
+            fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+            fixture.overlays.accept('explicit', toExplicitOverlay(gap));
             const original = createMessage('broadcast');
             const result = await fixture.manager.enqueueIfAbsent({ ...original, forwarding: { overlayId: 'explicit' } });
-            expect(result.verdict.kind, result.reason).toBe('refused');
-            expect(result.entries).toEqual([]);
+            expect(result.verdict.kind, result.reason).toBe('admitted');
+            await vi.advanceTimersByTimeAsync(100);
             expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
         }
     );
@@ -410,13 +389,16 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
     });
 
-    it('does not dispatch an active cached layout after transport authority halts', async () => {
+    it('holds a durable send while transport authority is halted and sends it after resume', async () => {
         const fixture = await createFixture();
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
         fixture.groups.accept('room', toAuthoritySnapshot('halted')!);
-        expect((await fixture.manager.enqueueIfAbsent(createMessage('broadcast'))).verdict.kind).toBe('refused');
+        expect((await fixture.manager.enqueueIfAbsent(createMessage('broadcast'))).verdict.kind).toBe('admitted');
         await vi.advanceTimersByTimeAsync(100);
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+        fixture.groups.accept('room', createSnapshot());
+        await vi.advanceTimersByTimeAsync(100);
+        expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
     });
 
     it('treats explicit overlay removal as terminal even while the room cache is absent', async () => {
@@ -445,7 +427,10 @@ describe('RTC durable accepted-overlay readiness', () => {
                 fixture.groups.accept('room', snapshot);
             }
             await vi.advanceTimersByTimeAsync(1_250);
-            expect(await fixture.resources.workQueue.getItem(result.entries[0].key)).toMatchObject({ dequeueAudit: { attempts: 0 } });
+            expect(await fixture.resources.workQueue.getItem(result.entries[0].key)).toMatchObject({
+                status: EntityStatus.RESERVED,
+                dequeueAudit: { attempts: 1 }
+            });
             fixture.groups.accept('room', createSnapshot());
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
             await vi.advanceTimersByTimeAsync(100);
@@ -497,7 +482,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(native.createdConnections[0].channels[0].sent).toEqual([]);
     });
 
-    it('rechecks logical authority after a real zero-copy optimistic admission conflict', async () => {
+    it('keeps a zero-copy optimistic admission conflict waiting through a halted carrier gap and admits it on resume', async () => {
         const fixture = await createFixture();
         const competitor = await computeOutboundTestAdmission(fixture.resources.admissionStore, {
             ...createMessage('broadcast'),
@@ -516,8 +501,8 @@ describe('RTC durable accepted-overlay readiness', () => {
         fixture.groups.accept('room', createSnapshot());
         fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
         await vi.advanceTimersByTimeAsync(200);
-        expect(await fixture.resources.admissionStore.readSentMessage(message.id.msgId)).toBeUndefined();
-        expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+        expect(await fixture.resources.admissionStore.readSentMessage(message.id.msgId)).toBeDefined();
+        expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
     });
 
     it.each(['broadcast', 'multicast'] as const)(
@@ -535,7 +520,7 @@ describe('RTC durable accepted-overlay readiness', () => {
             expect(duplicate.verdict.kind).toBe('duplicate');
             await vi.advanceTimersByTimeAsync(1_250);
             const canonical = await fixture.resources.workQueue.getItem(admitted.entries[0].key);
-            expect(canonical).toMatchObject({ dequeueAudit: { attempts: 0 } });
+            expect(canonical).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
             expect(JSON.parse(canonical!.resource).constraints.expiresAtMs).toBe(6_000);
             expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
             expect(warnings.mock.calls).toEqual([]);
@@ -564,7 +549,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         await vi.advanceTimersByTimeAsync(500);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'self', msgId: message.id.msgId })).toBeUndefined();
         fixture.overlays.accept(overlayId, createOverlay(['peer-2']));
-        await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(100);
         expect(await fixture.resources.admissionStore.readPendingAck({ originPeerId: 'self', msgId: message.id.msgId })).toMatchObject({
             expectedPeerIds: ['peer-2']
         });
@@ -609,7 +594,7 @@ describe('RTC durable accepted-overlay readiness', () => {
         expect(await fixture.resources.workQueue.getItem(oldAdmission.entries[0].key)).toMatchObject({ status: EntityStatus.COMPLETED });
     });
 
-    it.each(['halted', 'identity-removed', 'room-inactive', 'session-expired', 'member-removed', 'overlay-removed'] as const)(
+    it.each(['room-inactive', 'session-expired', 'member-removed', 'overlay-removed'] as const)(
         'terminates owned work after %s and never sends it after restoration',
         async (revocation) => {
             const fixture = await createFixture();
@@ -621,8 +606,6 @@ describe('RTC durable accepted-overlay readiness', () => {
                 ...snapshot,
                 group: {
                     ...snapshot.group,
-                    transportState: revocation === 'halted' ? 'halted' as const : 'flowing' as const,
-                    acceptedLayoutIdentity: revocation === 'identity-removed' ? null : snapshot.group.acceptedLayoutIdentity,
                     expiresAtEpochMs: revocation === 'room-inactive' ? Date.now() : null
                 },
                 activeSessions: snapshot.activeSessions.map((session) => ({
@@ -645,6 +628,25 @@ describe('RTC durable accepted-overlay readiness', () => {
             fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
             await vi.advanceTimersByTimeAsync(200);
             expect(native.createdConnections.flatMap((peer) => peer.channels.flatMap((channel) => channel.sent))).toEqual([]);
+        }
+    );
+
+    it.each(['halted', 'identity-removed'] as const)(
+        'keeps owned work through a %s carrier gap and sends it after restoration',
+        async (gap) => {
+            const fixture = await createFixture();
+            const admitted = await fixture.manager.enqueueIfAbsent(createMessage('broadcast'));
+            expect(admitted.verdict.kind).toBe('admitted');
+            await vi.advanceTimersByTimeAsync(50);
+            fixture.overlays.accept(overlayId, createOverlay(['peer-1']));
+            fixture.groups.accept('room', toAuthoritySnapshot(gap)!);
+            await vi.advanceTimersByTimeAsync(100);
+            expect(await fixture.resources.workQueue.getItem(admitted.entries[0].key)).toMatchObject({ status: EntityStatus.RESERVED });
+            expect(native.createdConnections[0].channels[0].sent).toEqual([]);
+            fixture.groups.accept('room', createSnapshot());
+            await vi.advanceTimersByTimeAsync(200);
+            expect(native.createdConnections[0].channels[0].sent).toHaveLength(1);
+            expect(await fixture.resources.workQueue.getItem(admitted.entries[0].key)).toMatchObject({ status: EntityStatus.COMPLETED });
         }
     );
 });
@@ -706,6 +708,97 @@ function toAuthoritySnapshot(denial: string): GroupSnapshot | undefined {
         default:
             throw new Error('Unknown authority denial fixture');
     }
+}
+
+type ReconfigurationRevocation =
+    | 'halted'
+    | 'identity-missing'
+    | 'identity-removed'
+    | 'identity-superseded'
+    | 'room-expired'
+    | 'session-expired'
+    | 'member-removed'
+    | 'overlay-removed'
+    | 'overlay-foreign'
+    | 'overlay-superseded';
+
+/** Admits one multicast over the accepted overlay, then revokes its authority between the commit and the first attempt. */
+async function admitThenRevoke(revocation: ReconfigurationRevocation): Promise<OverlayFixture> {
+    const fixture = await createFixture();
+    const overlay = createOverlay(['peer-1']);
+    fixture.overlays.accept(overlayId, overlay);
+    const revoked = toRevokedReconfiguration(revocation);
+    const commit = fixture.resources.admissionStore.commitBundle.bind(
+        fixture.resources.admissionStore
+    );
+    vi.spyOn(fixture.resources.admissionStore, 'commitBundle').mockImplementationOnce(
+        async (bundle) => {
+            const committed = await commit(bundle);
+            expect(committed).toBe('committed');
+            expect(await readPreparedEntry(fixture)).toMatchObject({ status: EntityStatus.NEW });
+            fixture.groups.accept('room', revoked);
+            fixture.overlays.accept(overlayId, {
+                ...overlay,
+                state: revocation === 'overlay-removed' ? 'removed' : 'active',
+                groupRef: revocation === 'overlay-foreign'
+                    ? { ...roomRef, workspaceId: 'other' }
+                    : roomRef,
+                overlayVersion: revocation === 'overlay-superseded' ? 8 : 7,
+                nextHopSessionIds: ['peer-1']
+            });
+            return committed;
+        }
+    );
+    expect((await fixture.manager.enqueueIfAbsent(createMessage('multicast'))).verdict.kind).toBe(
+        'admitted'
+    );
+    return fixture;
+}
+
+function toRevokedReconfiguration(revocation: ReconfigurationRevocation): GroupSnapshot {
+    const snapshot = createFlowingReconfiguration();
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            transportState: revocation === 'halted' ? 'halted' : 'flowing',
+            expiresAtEpochMs: revocation === 'room-expired' ? 1_000 : null,
+            acceptedLayoutIdentity: revocation === 'identity-missing'
+                ? null
+                : revocation === 'identity-removed'
+                ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'removed' }
+                : revocation === 'identity-superseded'
+                ? { groupRevision: 2, presenceRevision: 4, version: 8, state: 'active' }
+                : snapshot.group.acceptedLayoutIdentity
+        },
+        activeSessions: snapshot.activeSessions.map((session) =>
+            revocation === 'session-expired' && session.sessionId === 'peer-1'
+                ? { ...session, expiresAtEpochMs: 1_000 }
+                : session
+        ),
+        members: snapshot.members.map((member) =>
+            revocation === 'member-removed' && member.principalId === 'peer-1'
+                ? {
+                    ...member,
+                    status: 'removed',
+                    removed: member.updated,
+                    left: null,
+                    banned: null
+                }
+                : member
+        )
+    };
+}
+
+function toExplicitOverlay(kind: 'removed' | 'foreign' | 'planned' | 'wrong-version'): OverlayInfo {
+    return {
+        ...createOverlay(['peer-2']),
+        overlayId: 'explicit',
+        state: kind === 'removed' ? 'removed' : 'active',
+        groupRef: kind === 'foreign' ? { ...roomRef, workspaceId: 'other' } : roomRef,
+        provenance: kind === 'planned' ? 'bootstrap' : 'server',
+        overlayVersion: kind === 'wrong-version' ? 8 : 7
+    };
 }
 
 async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayFixture> {

@@ -308,7 +308,7 @@ describe('RTC outbound transport results', () => {
         });
     });
 
-    it('admits a receiver ack on an RTC unicast and defers a room multicast without room authority', async () => {
+    it('admits a receiver ack on an RTC unicast and answers a room multicast without room authority no-route', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
@@ -323,7 +323,7 @@ describe('RTC outbound transport results', () => {
         });
 
         expect(unicast.verdict).toMatchObject({ kind: 'admitted' });
-        expect(multicast.verdict).toMatchObject({ kind: 'deferred', reason: 'not-yet-in-sync' });
+        expect(multicast.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
     });
 
     it('resubmits an ACK a one-shot drop fault dropped, and keeps it on the page only while a held fault is armed', async () => {

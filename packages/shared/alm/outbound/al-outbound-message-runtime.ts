@@ -342,6 +342,7 @@ export namespace ALOutboundMessageRuntime {
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
+        /** Read before a retained admission replays (with its prepared copies) and before a dequeued message plans (with none). */
         readonly readPendingAdmissionAuthority?: (
             msg: ALMessage,
             preparedMessages: readonly TPrepared[]

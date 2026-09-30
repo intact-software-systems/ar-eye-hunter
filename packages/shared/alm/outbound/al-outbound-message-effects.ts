@@ -20,6 +20,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import type { ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
+import { readALOutboundDequeueWait } from './lane/read-al-outbound-dequeue-wait.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundMessageEffects {
@@ -96,10 +97,20 @@ export class ALOutboundMessageEffects<TPrepared> {
      * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
      * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
      */
-    async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkOutcome> {
+    async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkAttemptResult> {
         const { resilience } = this.dependencies.runtime.dequeue;
         if (resilience.isNotAllowedThroughToDequeue()) {
             return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
+        }
+        const wait = await readALOutboundDequeueWait({
+            effect,
+            readAuthority: this.dependencies.runtime.readPendingAdmissionAuthority,
+            settlements: this.dependencies.settlements,
+            clock: this.dependencies.runtime.clock,
+            signal: this.dependencies.sendSignal
+        });
+        if (wait !== undefined) {
+            return wait;
         }
         try {
             const outcome = await this.readDequeuedAdmissionOutcome(effect);

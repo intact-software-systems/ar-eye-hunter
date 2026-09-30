@@ -161,13 +161,14 @@ describe('multicast QoS integration', () => {
         await manager.outbox.enqueue(entry);
         const failure = vi.spyOn(resilience, 'failure');
         const success = vi.spyOn(resilience, 'success');
-        for (let cycle = 0; cycle < 25; cycle += 1) {
-            await drainOnce();
-            const waiting = await manager.outbox.getItem(entry.key);
-            expect(waiting?.dequeueAudit.attempts).toBe(0);
-            expect(waiting?.status).toBe(shared.EntityStatus.RETRY);
-            expect(waiting?.audit.expiryTs.equals(entry.audit.expiryTs)).toBe(true);
-            vi.setSystemTime(waiting!.dequeueAudit.nextTs!.epochMilliseconds + 1);
+        await drainOnce();
+        // One claim holds the row and re-checks the authority in memory: 25 re-checks write nothing.
+        for (let recheck = 0; recheck < 25; recheck += 1) {
+            await vi.advanceTimersByTimeAsync(50);
+            const held = await manager.outbox.getItem(entry.key);
+            expect(held?.status).toBe(shared.EntityStatus.RESERVED);
+            expect(held?.dequeueAudit.attempts).toBe(1);
+            expect(held?.audit.expiryTs.equals(entry.audit.expiryTs)).toBe(true);
         }
         expect(failure).not.toHaveBeenCalled();
         expect(success).not.toHaveBeenCalled();
@@ -177,7 +178,8 @@ describe('multicast QoS integration', () => {
         }
         groups.set('group-1', createGroupSnapshot(['self', 'peer-1']));
         overlays.set(toScopedOverlayId(groupRef('group-1')), createOverlayInfo(['peer-1']));
-        // The first drain admits the row; the send it commits runs on the owner's follow-up batch.
+        // The next re-check releases the row, due 1 ms later; the first drain admits it, the follow-up batch sends.
+        await vi.advanceTimersByTimeAsync(51);
         await drainOnce();
         await drainOnce();
         expect(connectionService.sendByPeerId.get('peer-1') ?? []).toHaveLength(atExpiry ? 0 : 1);

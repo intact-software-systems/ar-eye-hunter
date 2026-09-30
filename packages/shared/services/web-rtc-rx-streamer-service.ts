@@ -20,6 +20,7 @@ import {
     type PeerId,
     type RttMeasurementInfo
 } from '../api/api-config.ts';
+import type { RtcCarrierGapAdmission } from '../multicast/compute-rtc-outbound-carrier-availability.ts';
 import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
@@ -476,8 +477,11 @@ export class WebRtcRxStreamerService {
         await this.multicast.handOver(msgId);
     }
 
-    async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
-        return await this.multicast.enqueueIfAbsent(msg);
+    async enqueueOutboxIfAbsent(
+        msg: ALMessage,
+        carrierGap: RtcCarrierGapAdmission
+    ): Promise<ALOutboundEnqueueResult> {
+        return await this.multicast.enqueueLegIfAbsent(msg, carrierGap);
     }
 
     async setLocalMediaStream(stream: MediaStream): Promise<void> {

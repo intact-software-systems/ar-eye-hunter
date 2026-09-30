@@ -75,7 +75,7 @@ describe('RTC scoped snapshot-floor admission', () => {
             }
             expect((await sender.multicast.enqueueIfAbsent(roomMessage(2))).verdict).toMatchObject(
                 failure === 'missing-room'
-                    ? { kind: 'deferred', reason: 'not-yet-in-sync' }
+                    ? { kind: 'unroutable', reason: 'no-route' }
                     : { kind: 'refused', reason: 'unauthorized' }
             );
             expect(sender.sent).toEqual([]);

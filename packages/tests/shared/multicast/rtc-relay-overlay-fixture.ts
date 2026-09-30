@@ -124,7 +124,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
         delivered,
         enqueue: async (message) => {
             await ready;
-            return await service.enqueueOutboxIfAbsent(message);
+            return await service.enqueueOutboxIfAbsent(message, 'hold');
         },
         acceptSnapshot: (snapshot) => groups.accept('room', snapshot)
     };
