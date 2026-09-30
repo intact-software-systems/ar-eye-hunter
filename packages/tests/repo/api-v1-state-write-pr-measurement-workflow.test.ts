@@ -45,7 +45,8 @@ describe('API v1 state-write PR measurement workflow', () => {
         );
         expect(workflow.jobs.compare.if).toContain('github.event_name == \'workflow_dispatch\'');
         expect(source).not.toMatch(/\b[0-9a-f]{40}\b/u);
-        expect(source).not.toMatch(/pull_request\.number\s*==|566/u);
+        expect(source).not.toMatch(/pull_request\.number\s*==/u);
+        expect(source).not.toContain('measure-state-write-566');
     });
 
     it('lets a newer measurement of the same pull request and label cancel the older one', () => {
@@ -77,10 +78,18 @@ describe('API v1 state-write PR measurement workflow', () => {
             '--backend=postgres --warmup=1 --runs=9 --concurrency=10'
         );
         const compare = readStepRun('Pool and compare with the unchanged comparator');
-        expect(compare).toContain(
-            `${COMPARATOR} \\\n  "$output/approved-base.json" "$output/candidate.json"`
+        expect(toCommandTokens(compare)).toContain(
+            `node --max-old-space-size=12288 ${COMPARATOR} "$output/approved-base.json" "$output/candidate.json"`
         );
         expect(compare).not.toMatch(/regression-reason/u);
+    });
+
+    it('retains the captures under the artifact name later readers download', () => {
+        const upload = readWorkflow().jobs.compare.steps.find((step) => step.uses?.startsWith('actions/upload-artifact@'));
+
+        expect(upload?.with?.name).toBe(
+            'state-write-comparison-${{ github.run_id }}-${{ github.run_attempt }}'
+        );
     });
 });
 
@@ -94,6 +103,10 @@ function readStepRun(name: string): string {
         throw new Error(`Expected a run step named ${name}`);
     }
     return step.run;
+}
+
+function toCommandTokens(script: string): string {
+    return script.replace(/\\\n/gu, ' ').split(/\s+/u).filter(Boolean).join(' ');
 }
 
 function readRelativeImportClosure(entry: string): ReadonlySet<string> {
