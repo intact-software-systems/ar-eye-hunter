@@ -9,6 +9,7 @@ import { computeIndexedDbFairnessReservation } from '@shared/queuebox/compute-in
 import { computeIndexedDbQueueRelease } from '@shared/queuebox/compute-indexed-db-queue-release.ts';
 import {
     decodeStoredResourceEntry,
+    decodeStoredResourceEntryValue,
     encodeStoredResourceEntry,
     type StoredResourceEntry
 } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
@@ -31,6 +32,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { NO_TEMPORAL_PARSES, recordTemporalParses } from './queuebox/record-temporal-parses.ts';
 
 describe('IndexedDbQueueBox computed writes', () => {
     it.each([
@@ -332,6 +334,33 @@ describe('IndexedDbQueueBox computed writes', () => {
         finally {
             vi.unstubAllGlobals();
         }
+    });
+
+    it('reserves a fairness row it read without parsing its timestamps again', () => {
+        const dueAt = Temporal.Instant.from('2026-01-01T12:00:00Z');
+        const read = decodeStoredResourceEntryValue(structuredClone(encodeStoredResourceEntry({
+            ...createEntry('fair', 'fair'),
+            status: EntityStatus.RETRY,
+            dequeueAudit: { attempts: 1, nextTs: dueAt }
+        }, 0)));
+        const now = dueAt.add({ seconds: 1 });
+
+        const parses = recordTemporalParses(() => {
+            const computed = computeIndexedDbFairnessReservation({
+                entriesByType: new Map([['computed-write', [read]]]),
+                maxAttempts: 3,
+                maxToReserve: 1,
+                maxToScan: 1,
+                now,
+                requestedTypes: ['computed-write']
+            });
+            expect([...computed.result.values()][0]?.selectedDueTs.equals(dueAt)).toBe(true);
+        });
+
+        expect(parses, 'the read verified the row, and its due time is the decoded next timestamp')
+            .toEqual(
+                NO_TEMPORAL_PARSES
+            );
     });
 });
 

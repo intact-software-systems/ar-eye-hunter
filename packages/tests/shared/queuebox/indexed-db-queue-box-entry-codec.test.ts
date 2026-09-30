@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    decodeStoredResourceEntry,
     decodeStoredResourceEntryValue,
     encodeStoredResourceEntry,
     type StoredResourceEntry
@@ -119,6 +120,21 @@ describe('IndexedDB queue entry codec', () => {
         );
     });
 
+    it('rejects a frozen row the encoder did not produce', () => {
+        const stored = encodeStoredResourceEntry(createRetryEntry(), 0);
+        const fabricated = Object.freeze({
+            ...stored,
+            key: Object.freeze({ ...stored.key }),
+            audit: Object.freeze({ ...stored.audit }),
+            dequeueAudit: Object.freeze({ ...stored.dequeueAudit }),
+            expiryEpochMs: stored.expiryEpochMs + 1
+        });
+
+        expect(() => decodeStoredResourceEntryValue(fabricated)).toThrow(
+            new TypeError('IndexedDB queue expiry timestamp (ms) differs from its expiry instant')
+        );
+    });
+
     it('rejects a computed put whose status is not a queue status', () => {
         const put = computeIndexedDbQueuePut(undefined, {
             ...createRetryEntry(),
@@ -170,6 +186,65 @@ describe('IndexedDB queue entry codec', () => {
                 true
             ]);
     });
+
+    it('decodes a row back to the timestamps it was encoded from', () => {
+        const entry = createRetryEntry();
+        const decoded = decodeStoredResourceEntry(
+            structuredClone(encodeStoredResourceEntry(entry, 0))
+        );
+
+        expect(toTimestampStrings(decoded)).toEqual(toTimestampStrings(entry));
+        expect(decoded.db).toEqual({ id: 'topic/resource/context' });
+    });
+
+    it('rejects a read row whose mirror disagrees when it is decoded to an entry', () => {
+        const stored = structuredClone(encodeStoredResourceEntry(createRetryEntry(), 0));
+
+        expect(() => decodeStoredResourceEntry({ ...stored, expiryEpochMs: stored.expiryEpochMs + 1 }))
+            .toThrow(
+                new TypeError(
+                    'IndexedDB queue expiry timestamp (ms) differs from its expiry instant'
+                )
+            );
+    });
+
+    it('hands each decoded entry a key of its own', () => {
+        const canonical = decodeStoredResourceEntryValue(
+            structuredClone(encodeStoredResourceEntry(createRetryEntry(), 0))
+        );
+        const first = decodeStoredResourceEntry(canonical);
+        const second = decodeStoredResourceEntry(canonical);
+
+        expect(first.key).toEqual(second.key);
+        expect(first.key).not.toBe(second.key);
+        expect(Object.isFrozen(first.key)).toBe(false);
+    });
+
+    it('decodes a read row to an entry with one parse per timestamp', () => {
+        const read = structuredClone(encodeStoredResourceEntry(createRetryEntry(), 0));
+
+        expect(
+            recordTemporalParses(() => decodeStoredResourceEntry(read)),
+            'validating a read row builds the Temporal values the entry is made of, so each is parsed once'
+        ).toEqual({ instant: 4, plainTime: 1, plainDateTime: 1 });
+    });
+
+    it('decodes and replaces a row it already read without parsing it again', () => {
+        const entry = createRetryEntry();
+        const canonical = decodeStoredResourceEntryValue(
+            structuredClone(encodeStoredResourceEntry(entry, 0))
+        );
+
+        expect(
+            recordTemporalParses(() => {
+                decodeStoredResourceEntry(canonical);
+                validateComputedIndexedDbQueueMutations([
+                    computeIndexedDbQueuePut(canonical, entry)
+                ]);
+            }),
+            'the read already parsed and checked every timestamp of this row'
+        ).toEqual(NO_TEMPORAL_PARSES);
+    });
 });
 
 function createRetryEntry(): ResourceEntry {
@@ -191,4 +266,15 @@ function createRetryEntry(): ResourceEntry {
             attempts: 1
         }
     };
+}
+
+function toTimestampStrings(entry: ResourceEntry): readonly (string | undefined)[] {
+    return [
+        entry.audit.date.toString(),
+        entry.audit.createdTs.toString(),
+        entry.audit.expiryTs.toString(),
+        entry.dequeueAudit.startTs?.toString(),
+        entry.dequeueAudit.endTs?.toString(),
+        entry.dequeueAudit.nextTs?.toString()
+    ];
 }

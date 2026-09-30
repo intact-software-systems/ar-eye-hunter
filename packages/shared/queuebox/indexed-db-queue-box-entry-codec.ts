@@ -83,6 +83,11 @@ interface StoredResourceEntryTimestamps {
     readonly nextTs: Temporal.Instant | undefined;
 }
 
+interface DecodedStoredResourceEntry {
+    readonly canonical: StoredResourceEntry;
+    readonly timestamps: StoredResourceEntryTimestamps;
+}
+
 /** Frozen rows whose timestamp strings and epoch-ms mirrors were produced from, or checked against, these values. */
 const verifiedTimestamps = new WeakMap<object, StoredResourceEntryTimestamps>();
 
@@ -98,22 +103,22 @@ export function encodeStoredResourceEntry(
 }
 
 export function decodeStoredResourceEntry(stored: StoredResourceEntry): ResourceEntry {
-    const canonical = decodeStoredResourceEntryValue(stored);
+    const { canonical, timestamps } = decodeStoredResourceEntryParts(stored);
     return {
-        key: canonical.key,
+        key: { ...canonical.key },
         resource: canonical.resource,
         typeId: canonical.typeId,
         audit: {
-            date: toPlainTime(canonical.audit.date),
+            date: timestamps.date,
             createdBy: canonical.audit.createdBy,
-            createdTs: toPlainDateTime(canonical.audit.createdTs),
-            expiryTs: toInstant(canonical.audit.expiryTs)
+            createdTs: timestamps.createdTs,
+            expiryTs: timestamps.expiryTs
         },
         status: canonical.status,
         dequeueAudit: {
-            startTs: toOptionalInstant(canonical.dequeueAudit.startTs),
-            endTs: toOptionalInstant(canonical.dequeueAudit.endTs),
-            nextTs: toOptionalInstant(canonical.dequeueAudit.nextTs),
+            startTs: timestamps.startTs,
+            endTs: timestamps.endTs,
+            nextTs: timestamps.nextTs,
             attempts: canonical.dequeueAudit.attempts
         },
         db: {
@@ -123,11 +128,14 @@ export function decodeStoredResourceEntry(stored: StoredResourceEntry): Resource
 }
 
 export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResourceEntry {
+    return decodeStoredResourceEntryParts(value).canonical;
+}
+
+function decodeStoredResourceEntryParts<Value>(value: Value): DecodedStoredResourceEntry {
     const canonical = decodeStoredResourceEntryFields(value);
-    if (getVerifiedTimestamps(value) === undefined) {
+    const timestamps = getVerifiedTimestamps(value) ??
         decodeStoredResourceEntryTimestamps(canonical);
-    }
-    return canonical;
+    return { canonical: freezeVerifiedStoredResourceEntry(canonical, timestamps), timestamps };
 }
 
 function toStoredResourceEntryTimestamps(entry: ResourceEntry): StoredResourceEntryTimestamps {
@@ -289,11 +297,7 @@ function decodeStoredResourceEntryFields<Value>(value: Value): StoredResourceEnt
                     'IndexedDB queue fairness timestamp'
                 )
             }),
-        key: {
-            topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
-            resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
-            contextId: requireString(key.contextId, 'IndexedDB queue context id')
-        },
+        key: toStoredKey(key),
         resource: requireString(stored.resource, 'IndexedDB queue resource'),
         typeId: requireString(stored.typeId, 'IndexedDB queue type id'),
         audit: toStoredAudit(audit),
@@ -312,6 +316,14 @@ function decodeStoredResourceEntryFields<Value>(value: Value): StoredResourceEnt
         throw new TypeError('IndexedDB queue row key differs from its canonical key');
     }
     return canonical;
+}
+
+function toStoredKey(key: IndexedDbQueueDataRecord): Key {
+    return {
+        topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
+        resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
+        contextId: requireString(key.contextId, 'IndexedDB queue context id')
+    };
 }
 
 function toStoredAudit(audit: IndexedDbQueueDataRecord): StoredResourceEntry['audit'] {
