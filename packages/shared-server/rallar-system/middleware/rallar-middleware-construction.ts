@@ -27,6 +27,7 @@ import type { GroupStateInboxService } from '../group-state/inbox/group-state-in
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
 import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
@@ -122,6 +123,8 @@ export interface CreateRallarMiddlewareOptions {
         InstallLiveWsNoticeSubscriberInput,
         'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
     >;
+    /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
+    readonly relayedAckNotices?: RelayedAckNoticeChannel;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }

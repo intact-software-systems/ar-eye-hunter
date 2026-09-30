@@ -45,6 +45,7 @@ import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-ser
 import {
     validateWsQueueBoxServerRecipientAuthority
 } from './requires-ws-queue-box-server-recipient-scope.ts';
+import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
@@ -91,6 +92,8 @@ export namespace WsQueueBoxServerService {
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope?:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+        /** Absent on a single instance: an ACK no aggregate here counts is then refused at ingress. */
+        readonly publishRelayedAck?: WsServerAckRelayPublisher;
         /**
          * Whether inbound ALM forwarding relays room-scoped messages (default
          * true, the standalone service contract). A composition that installs a
@@ -119,6 +122,7 @@ export namespace WsQueueBoxServerService {
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+        readonly publishRelayedAck: WsServerAckRelayPublisher | undefined;
         readonly forwardsRoomScopedMessages: boolean;
     }
 }
@@ -141,6 +145,7 @@ export class WsQueueBoxServerService {
     private readonly outboundPlanning: WsQueueBoxServerOutboundPlanning;
     /** Counts relayed receiver ACKs and routes every other control to the server's own outbound owner. */
     private readonly receipts: WsQueueBoxServerReceiptAggregation;
+    private readonly ackRelay: WsQueueBoxServerAckRelay;
     private readonly controlDelivery: WsQueueBoxServerControlDelivery;
     private readonly inboundAuthority: WsQueueBoxServerInboundAuthority;
     private readonly inboundDelivery: WsQueueBoxServerInboundDelivery;
@@ -200,6 +205,11 @@ export class WsQueueBoxServerService {
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
             acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
         });
+        this.ackRelay = new WsQueueBoxServerAckRelay({
+            serverPeerId: dependencies.name,
+            receipts: this.receipts,
+            publishRelayedAck: dependencies.publishRelayedAck
+        });
         this.controlDelivery = new WsQueueBoxServerControlDelivery({
             clock: this.clock,
             liveDelivery: this.liveDelivery,
@@ -222,7 +232,7 @@ export class WsQueueBoxServerService {
             newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
             targetResolution: this.targetResolution,
             controlDelivery: this.controlDelivery,
-            receipts: this.receipts,
+            ackRelay: this.ackRelay,
             validateInboundMessage: dependencies.validateInboundMessage,
             readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
@@ -311,7 +321,7 @@ export class WsQueueBoxServerService {
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
-            readRelayedAckRejection: (ack) => this.receipts.readRelayedAckRejection(ack),
+            readRelayedAckRejection: (ack) => this.ackRelay.readRelayedAckRejection(ack),
             forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
@@ -446,6 +456,9 @@ export class WsQueueBoxServerService {
         input: WsQueueBoxServerInboundAuthority.AuthorizedMessage
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
         const { message, fromPeerId, authorization, proof } = input;
+        if (await this.ackRelay.relayUnownedAck(message)) {
+            return Either.ofRight({ kind: 'control', handled: false });
+        }
         const admitted = await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
@@ -462,6 +475,11 @@ export class WsQueueBoxServerService {
             acceptance: admitted.right
         });
         return admitted;
+    }
+
+    /** A receiver ACK another instance handed over: counted here only against this instance's aggregate. */
+    async acceptRelayedAck(message: ALMessage): Promise<void> {
+        await this.ackRelay.acceptRelayedAck(message);
     }
 
     sendToTargets(message: ALMessage): number {
@@ -600,6 +618,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,
         readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope ?? (() => undefined),
+        publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
 }

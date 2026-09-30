@@ -7,6 +7,7 @@ import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-me
 import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
+import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
     WsServerInboundAuthorization,
     WsServerInboundAuthorizer,
@@ -14,7 +15,6 @@ import type {
     WsServerInboundConnectionScopeReader
 } from './ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerControlDelivery } from './ws-queue-box-server-control-delivery.ts';
-import type { WsQueueBoxServerReceiptAggregation } from './ws-queue-box-server-receipt-aggregation.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerInboundAuthority {
@@ -25,7 +25,7 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly newControlId: () => string;
         readonly targetResolution: WsQueueBoxServerTargetResolution;
         readonly controlDelivery: WsQueueBoxServerControlDelivery;
-        readonly receipts: WsQueueBoxServerReceiptAggregation;
+        readonly ackRelay: WsQueueBoxServerAckRelay;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
         readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -73,7 +73,7 @@ export class WsQueueBoxServerInboundAuthority {
     readonly #newControlId: () => string;
     readonly #targetResolution: WsQueueBoxServerTargetResolution;
     readonly #controlDelivery: WsQueueBoxServerControlDelivery;
-    readonly #receipts: WsQueueBoxServerReceiptAggregation;
+    readonly #ackRelay: WsQueueBoxServerAckRelay;
     readonly #validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
     readonly #readAuthenticatedConnectionScope:
         WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
@@ -87,7 +87,7 @@ export class WsQueueBoxServerInboundAuthority {
         this.#newControlId = dependencies.newControlId;
         this.#targetResolution = dependencies.targetResolution;
         this.#controlDelivery = dependencies.controlDelivery;
-        this.#receipts = dependencies.receipts;
+        this.#ackRelay = dependencies.ackRelay;
         this.#validateInboundMessage = dependencies.validateInboundMessage;
         this.#readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
     }
@@ -199,7 +199,7 @@ export class WsQueueBoxServerInboundAuthority {
         const protocol = validateALInboundMessage(
             message,
             { kind: 'ws-client', peerId: fromPeerId },
-            toALInboundReceiver(this.#serverPeerId, (ack) => this.#receipts.readRelayedAckRejection(ack))
+            toALInboundReceiver(this.#serverPeerId, (ack) => this.#ackRelay.readRelayedAckRejection(ack))
         );
         if (protocol.left) {
             return Either.ofLeft(protocol.left);

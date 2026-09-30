@@ -2818,7 +2818,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 at-least-once room send on an undeclared (live-only) topic across processes. Alice's socket is on the primary, Bob's on the secondary. The broadcast is sent once and reaches Bob through the cluster live notice; the admitted receipt names Bob. Bob's ACK enters the secondary, which holds no receipt aggregate for the message, so the origin's receipt ends timed-out with Bob unconfirmed."
+      "description": "No-browser API-v1 at-least-once room send on an undeclared (live-only) topic across processes. Alice's socket is on the primary, Bob's on the secondary. The broadcast is sent once and reaches Bob through the cluster live notice; the admitted receipt names Bob. Bob's ACK enters the secondary, which holds no receipt aggregate for the message and relays it once as a relayed-ack notice; the primary counts it and the origin's receipt ends complete."
     },
     {
       "id": "api-v1-admin-authorization-boundary",

@@ -132,6 +132,11 @@ export class WsQueueBoxServerReceiptAggregation {
         return issues.length === 0 ? undefined : { code: 'unauthorized', message: issues.join('; ') };
     }
 
+    /** Whether this instance holds the receipt aggregate the ACK names. */
+    holdsReceiptFor(ack: ALAckPayload): boolean {
+        return this.#aggregates.has(toReceiptAggregateKey(ack.originPeerId, ack.ackedMsgId));
+    }
+
     /** The `admitted` receipt the origin receives at once. An empty audience is complete as it is admitted. */
     recordAdmission(admission: WsQueueBoxServerReceiptAggregation.Admission): ALReceiptPayload {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);

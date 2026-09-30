@@ -137,6 +137,7 @@ function createClockService(fixture: LiveClockFixture): WsQueueBoxServerService 
         deliveryDiagnostics: undefined,
         validateInboundMessage: Either.ofRight,
         readAuthenticatedConnectionScope: () => ({ scope: SCOPE, expiresAtEpochMs: 2000 }),
+        publishRelayedAck: undefined,
         forwardsRoomScopedMessages: false
     });
     onTestFinished(() => service.dispose());

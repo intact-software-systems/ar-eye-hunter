@@ -42,6 +42,7 @@ import type {
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { createApiV1LiveWsNoticeTransport } from '../db/api-v1-live-ws-notice-transport.ts';
+import { createApiV1RelayedAckNotices } from '../db/create-postgres-relayed-ack-notice-transport.ts';
 import type { LocalQueuePubSubBus } from '../db/local-queue-pubsub-bridge.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -332,6 +333,12 @@ function createSharedMiddleware(
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiV1QueuePubSubBridge(input),
         liveWsNoticeSubscriber: createApiV1LiveWsNoticeSubscriber(input),
+        relayedAckNotices: createApiV1RelayedAckNotices({
+            mode: input.databasePubSubMode,
+            notification: input.databaseNotification,
+            channel: input.queuePubSubChannel,
+            publisherId: input.queuePubSubPublisherId
+        }),
         readiness: rtcTopology.readiness,
         healthFailure: rtcTopology.healthFailure
     });

@@ -331,7 +331,8 @@ the WS server freezes the audience and answers for it. Each recipient's ACK stay
 origin (`toPeerId` is the message's `senderId`); the server admits it at ingress as the aggregating
 relay hop and counts it in
 [`WsQueueBoxServerReceiptAggregation`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts),
-an in-memory map per server instance. The server answers the origin with
+an in-memory map on the instance whose socket admitted the
+message. The server answers the origin with
 `al.control.receipt.v1` controls, each written as one durable `WS_OUTBOX` row that reaches the origin's
 socket on this instance or, through the cluster publisher, on another: `admitted` at once with the
 frozen audience, then `complete` when every expected recipient has acknowledged, or `timed-out` at the
@@ -362,6 +363,18 @@ attempt: an instance whose listener is down misses it. A live-only publication w
 NOTIFY limit and that has no canonical inbound row to point at is refused `failed`, never moved to the outbox.
 Either way the receipt is the aggregate above, so a recipient the one send did not reach, or that never
 acknowledged, reads unconfirmed and the receipt ends `timed-out` naming it. A `none` topic runs its handlers only.
+
+A recipient's ACK reaches the server through the recipient's own socket, which may be on another instance than
+the aggregate (D106). An instance that holds no aggregate for the ACK checks what needs none (the sender is the
+authenticated session, the ACK speaks for itself and is addressed to the origin it names) and relays it once as a
+`relayed-ack` notice on the cluster notice channel
+([`WsQueueBoxServerAckRelay`](../../services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts),
+[`relayed-ack-notice.ts`](../../../shared-server/rallar-system/queue-pubsub/relayed-ack-notice.ts)); its ingress
+answers an unhandled `control` instead of a refusal. The instance that holds the aggregate counts it with the same
+checks as a local ACK; any other instance drops it, and nothing relays it again. The notice is best effort and one
+attempt: a lost one leaves the recipient unconfirmed, and the receipt ends `timed-out` naming it. The relay runs
+only with Postgres pub/sub; a single instance still refuses an ACK it holds no aggregate for. An ACK addressed to
+the server is never relayed: the server's own pending row lives in the shared outbound admission store.
 
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).

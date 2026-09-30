@@ -562,7 +562,7 @@
       },
       "expect": {
         "connection": "wsAlicePrimary",
-        "withinMs": 15000,
+        "withinMs": 10000,
         "message": {
           "route": {
             "topicId": "al-control"
@@ -589,21 +589,23 @@
       }
     },
     {
-      "name": "assertTheCrossProcessAckLeavesBobUnconfirmed",
+      "name": "assertBobsCrossProcessAckCompletesTheReceipt",
       "type": "assert",
       "actual": {
         "msgId": "{terminalReceipt.msgId}",
         "phase": "{terminalReceipt.phase}",
         "firstExpected": "{terminalReceipt.expectedRecipientPeerIds.0}",
-        "firstConfirmed": "{terminalReceipt.confirmedRecipientPeerIds.0}"
+        "firstConfirmed": "{terminalReceipt.confirmedRecipientPeerIds.0}",
+        "secondConfirmed": "{terminalReceipt.confirmedRecipientPeerIds.1}"
       },
       "expect": {
         "missingActualValue": "MISSING",
         "body": {
           "msgId": "live-only-cluster-broadcast-{runId}",
-          "phase": "timed-out",
+          "phase": "complete",
           "firstExpected": "{bobSessionId}",
-          "firstConfirmed": "MISSING"
+          "firstConfirmed": "{bobSessionId}",
+          "secondConfirmed": "MISSING"
         }
       }
     },

@@ -14,6 +14,8 @@ import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
 import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
+import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -56,6 +58,9 @@ export function createRallarMiddlewareInfrastructure(
         outboundSettlements: options.wsOutboundSettlements,
         inboundDiagnostics: options.wsInboundDiagnostics,
         validateInboundMessage: validateMiddlewareALIngress,
+        publishRelayedAck: options.relayedAckNotices
+            ? createRelayedAckPublisher(options.relayedAckNotices)
+            : undefined,
         forwardsRoomScopedMessages: false
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
@@ -65,12 +70,20 @@ export function createRallarMiddlewareInfrastructure(
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
-    const liveWsNoticeSubscriberReadiness = installMiddlewareLiveWsNoticeSubscriber({
-        options,
-        webSocketServer,
-        targetResolver,
-        wsQBoxServerService
-    });
+    const liveWsNoticeSubscriberReadiness = Promise.all([
+        installMiddlewareLiveWsNoticeSubscriber({
+            options,
+            webSocketServer,
+            targetResolver,
+            wsQBoxServerService
+        }),
+        options.relayedAckNotices
+            ? installRelayedAckNoticeSubscriber({
+                ...options.relayedAckNotices,
+                acceptRelayedAck: (message) => wsQBoxServerService.acceptRelayedAck(message)
+            })
+            : Promise.resolve()
+    ]).then(() => undefined);
 
     return {
         wsQBoxServerService,
