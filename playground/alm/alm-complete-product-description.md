@@ -617,9 +617,9 @@ and zero non-probe `al-work` IndexedDB operations: a unit pin per direction, and
 the `volatile-default` conformance scenario on both pages of every carrier over a
 reset window, with the durable owners' idle probes (`work-page`, `work-probe`)
 reported beside the zero. The `durable-opt-in` scenario shows the opt-in pays for
-storage; one durable send still spends 10 `al-admission` and 15 `al-work`
-operations, and the storage snapshot's durable figures are unchanged while the
-volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
+storage; one durable send on a cold runtime still spends 10 `al-admission` and
+15 `al-work` operations, and the storage snapshot's durable figures are
+unchanged while the volatile default adds 0 rows. A volatile admission reads no IndexedDB and takes no
 Web Lock, so it completes within the caller's microtask turn: a burst loop of
 awaited volatile sends yields no task turn until it ends and should yield or
 batch (R-S3a-7). A literal total zero (lazy owner start and stop) is I2a's; the
@@ -633,10 +633,11 @@ degraded to `volatile` with a note on the handle. It is never weakened silently.
 **PLANNED — P1, I2a, and I2b, the storage tiers:**
 
 - P1 lowers the durable tiers' pinned storage cost without weakening them. Today
-  a durable send spends 10 `al-admission` and 15 `al-work` operations, and a
-  durable inbound admission spends 8. The first levers are taking the Temporal
-  polyfill off the storage hot path and cutting a durable send's 14 sequential
-  transactions (D90).
+  a durable send on a cold runtime spends 10 `al-admission` and 15 `al-work`
+  operations (10 and 12 warm), and a durable inbound admission spends 8
+  `al-admission`. The levers are taking the Temporal polyfill off the storage
+  hot path and cutting the 11 transactions a warm durable send runs before the
+  carrier sends (D90, D108 to D110).
 - I2a gives every durable tier one owner per session store across tabs. It
   replaces today's silent memory fallback when IndexedDB is missing with the
   typed outcome, and adds typed recovery outcomes and one storage-health
