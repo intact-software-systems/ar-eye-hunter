@@ -84,8 +84,11 @@ exposed:
 - named E3 retention phases with non-TTY start markers.
 
 #566 runs the unchanged 100-cycle E3 case once and reports it in its pull
-request; that run is diagnostic evidence, never the accepted primary. What
-remains:
+request; that run is diagnostic evidence, never the accepted primary. It was
+workflow run `36761155884` in `diagnostic` mode: runner 1 failed at reconnect
+cycle 1, runner 2 at cycle 13 and runner 3 at cycle 5, each in the phase
+`reconnect peer C and wait for readiness` (peer readiness did not return);
+none reached 100 cycles. What remains:
 
 - E3 acceptance: an unchanged 100-cycle E3-memory primary, dispatched in
   `publish` mode from moving `main` after #566 merges;
