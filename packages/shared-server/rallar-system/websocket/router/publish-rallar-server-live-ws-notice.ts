@@ -58,7 +58,7 @@ export async function publishRallarServerLiveWsNotice(
     }
 }
 
-/** Publishes the notice to every process, then sends it to this process's own recipients. */
+/** Publishes the notice to every process, then sends it to the recipients connected here. */
 async function writeLiveWsNotice(
     input: PublishRallarServerWsMessageInput,
     publication: NonNullable<PublishRallarServerWsMessageInput['livePublication']>,
