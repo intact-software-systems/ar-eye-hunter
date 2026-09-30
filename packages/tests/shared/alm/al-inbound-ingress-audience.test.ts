@@ -8,6 +8,7 @@ import {
     createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestRuntime,
+    INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE,
     type InboundTestStorage
 } from './inbound-runtime-test-fixture.ts';
@@ -32,7 +33,8 @@ describe('inbound ingress audience read', () => {
             const audienceMessage = createInboundTestMessage({ msgId: 'with-audience' });
             const plainMessage = createInboundTestMessage({ msgId: 'without-audience' });
             await fixture.runtime.admitIncomingMessage(audienceMessage, {
-                ...INBOUND_TEST_SOURCE,
+                kind: 'ws-client',
+                peerId: INBOUND_TEST_SENDER_PEER_ID,
                 groupRecipientPeerIds: AUDIENCE
             });
             await fixture.runtime.admitIncomingMessage(plainMessage, INBOUND_TEST_SOURCE);

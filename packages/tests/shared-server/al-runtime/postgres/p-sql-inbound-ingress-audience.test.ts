@@ -5,6 +5,7 @@ import { createPSqlALInboundRuntimeStores } from '@shared-server/al-runtime/post
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
+    INBOUND_TEST_SENDER_PEER_ID,
     INBOUND_TEST_SOURCE
 } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
 import { createPSqlAdmissionTestStorage } from './create-p-sql-admission-test-storage.ts';
@@ -25,7 +26,8 @@ it('answers the audience a WS client message was frozen to over PostgreSQL, and 
     });
     await fixture.runtime.ready();
     await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'with-audience' }), {
-        ...INBOUND_TEST_SOURCE,
+        kind: 'ws-client',
+        peerId: INBOUND_TEST_SENDER_PEER_ID,
         groupRecipientPeerIds: ['sender', 'peer-b']
     });
     await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'without-audience' }), INBOUND_TEST_SOURCE);
