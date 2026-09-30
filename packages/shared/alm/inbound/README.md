@@ -358,8 +358,9 @@ it through `commitWork()`: it asks the rotation page for a head read
 The next page read starts at the head of NEW and stores no position, so the rotation resumes
 where it stood; a page a probe held is dropped without moving the rotation. The row reaches the
 batch the commit starts when the owner is idle, or the follow-up batch the running batch's end
-runs. At most one head read runs between two rotation reads: a commit that lands during a head
-batch waits for the read after the next rotation read, and the lane announces it again at that
+runs. Both land one batch later when a head batch ran since the last rotation read. At most one
+head read runs between two rotation reads: a commit that lands during a head batch, or after one
+before the next rotation read, waits for the read after that rotation read, and the lane announces it again at that
 rotation read, so the handler's own follow-up batch runs it. The rotation therefore advances at
 least every other batch while commits keep arriving, and later NEW pages, RETRY rows and expired
 reservations keep their turn. A retained
@@ -449,8 +450,8 @@ carried by neither, and are taken fresh instead — `readALInboundEffectFacts` c
 and this owner's effect preparation. So the retained payload carries nothing it did not
 carry before and the stored schema identity did not move. The replay runs in the batch the
 owner's own commit starts when the worker is idle, or in the follow-up batch `commitPending`
-schedules when a batch is already running (one batch later when that running batch was itself a
-head read); it never waits for the rotation to come round to it.
+schedules when a batch is already running (in either case one batch later when a head batch ran
+since the last rotation read); it never waits for the rotation to come round to it.
 
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous

@@ -454,7 +454,7 @@ receipt aggregate is relayed once, over a second notice kind, to the process tha
 holds it, so receipts complete across API processes; a lost relay leaves that
 recipient unconfirmed and the receipt ends timed out (D106). The relay first checks
 the shared inbound admission store's ingress audience and fails closed, and it
-carries at most 60 relays per session per 60 s. The server's own
+relays at most 60 ACKs per session per 60 s. The server's own
 acknowledgement of a message addressed to it reaches the sender on any process:
 a process that claims it without the sender's socket hands it to the cluster
 outbound route (D107).

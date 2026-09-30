@@ -301,7 +301,9 @@ the authority returns, at its 10 s lease end (the next claim states the attempt 
 at the deadline. When the exact accepted overlay returns inside the deadline the dequeue plans the copies to the
 audience frozen at admission, and the receipt starts with them; otherwise the row's deadline ends the message
 `expired` (D10). A unicast keeps its own admission. A copy already prepared when a gap opens settles `not-ready` on every attempt, so
-`rtc-with-ws-fallback` hands it to WS after three and `rtc` alone retries it to the deadline. A re-plan that states no `ackTracking` keeps the captured `receiver` set, so a durable RTC send whose provider defaults change during a gap keeps its receipt (D96).
+`rtc-with-ws-fallback` hands it to WS after three and `rtc` alone retries it to the deadline. A re-plan that
+states no `ackTracking` keeps the captured `receiver` set, so a durable RTC send whose provider defaults
+change during a gap keeps its receipt (D96).
 
 ### The frozen audience
 
