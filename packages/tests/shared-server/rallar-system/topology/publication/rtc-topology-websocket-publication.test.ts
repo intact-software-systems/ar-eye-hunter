@@ -60,6 +60,7 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
         server.addConnection(new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1',
@@ -106,6 +107,7 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
 
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
@@ -154,6 +156,7 @@ describe('RTC topology websocket publication', () => {
         }
 
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
@@ -256,6 +259,7 @@ describe('RTC topology websocket publication', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
@@ -304,6 +308,7 @@ describe('RTC topology websocket publication', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: wsOutbox,
             socket: server,
             name: 'server-1'

@@ -19,6 +19,7 @@ import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 import {
+    authorizeTestCrdtCommand,
     queueNow,
     update,
     withCompetingWrite
@@ -86,12 +87,11 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
                         expiresAtEpochMs: now + 60_000
                     }),
                 adminClientIds: ['admin'],
-                authorizeDocument: () => {
+                authorizeDocument: (command) => {
                     documentAuthorityReads += 1;
-                    return Promise.resolve({
-                        allowed: membershipAllowed,
-                        code: membershipAllowed ? 'allowed' : 'authorization-scope-denied'
-                    });
+                    return membershipAllowed
+                        ? authorizeTestCrdtCommand(command)
+                        : Promise.resolve({ allowed: false, code: 'authorization-scope-denied', publicationAuthority: null });
                 }
             },
             policies: [{ documentType: 'checklist', rollout: 'production' }]

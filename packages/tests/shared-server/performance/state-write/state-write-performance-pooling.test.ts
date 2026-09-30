@@ -1,11 +1,17 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { access, link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
-import { poolApiV1StateWriteResults, poolApiV1StateWriteResultsForPositions } from '../../../../../apps/api-v1/scripts/perf/pool-api-v1-state-write-results.mjs';
+import {
+    poolApiV1StateWriteResults,
+    poolApiV1StateWriteResultsForPositions
+} from '../../../../../apps/api-v1/scripts/perf/pool-api-v1-state-write-results.mjs';
+import { validateApiV1StateWriteEnvironment } from '../../../../../apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs';
 import { writeApiV1StateWritePooledResults } from '../../../../../apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs';
 import {
     createStateWritePerformanceArtifact,
@@ -17,8 +23,9 @@ import {
 const APPROVED_BASE_COMMIT = '52d973bb71dda2100455e8585a0a8f98d177bd13';
 const CANDIDATE_COMMIT = 'c8b842cb5156ef231f68dd711700ae66ffda844c';
 const IMAGE_HASH = '081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
+const ARM64_IMAGE_ID = 'f961d097a9cedd37779baef1aab3fe87ef1c63b3b34d361f90a98ea5c9b77e56';
 const ENVIRONMENT = (
-    `image_ref=postgres@sha256:${IMAGE_HASH};image_id=sha256:${IMAGE_HASH};` +
+    `image_ref=postgres@sha256:${IMAGE_HASH};image_id=sha256:${ARM64_IMAGE_ID};` +
     `repo_digest=postgres@sha256:${IMAGE_HASH};platform=linux;image_architecture=arm64;` +
     'image_os=linux;entrypoint=docker-entrypoint.sh;command=postgres -c autovacuum=off;' +
     'shm_size=268435456;memory=4294967296;memory_swap=4294967296;nano_cpus=4000000000;' +
@@ -36,6 +43,26 @@ const ENVIRONMENT = (
     'preflight_runtime_state_store_rows=0;preflight_automatic_maintenance_count=0;' +
     'postflight_automatic_maintenance_count=0;'
 ).replaceAll(';', '\n');
+
+describe('API-v1 state-write captured image identity', () => {
+    it('accepts the pinned OCI index with its actual amd64 image ID on an x64 host', () => {
+        const captured = ENVIRONMENT
+            .replace(`image_id=sha256:${ARM64_IMAGE_ID}`, 'image_id=sha256:c6199d53bd7eb16a9e9eab402cc677468b0b6ed584c2fff8f17e20dafbb43f36')
+            .replace('image_architecture=arm64', 'image_architecture=amd64')
+            .replace('host_architecture=arm64', 'host_architecture=x64');
+
+        expect(validateApiV1StateWriteEnvironment(captured)).toEqual([]);
+    });
+
+    it('rejects a different image ID even when the pinned index digest matches', () => {
+        const captured = ENVIRONMENT
+            .replace(`image_id=sha256:${ARM64_IMAGE_ID}`, 'image_id=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+
+        expect(validateApiV1StateWriteEnvironment(captured)).toContain(
+            'environment record image_id does not match the pinned arm64 image'
+        );
+    });
+});
 
 /** Manifest position record emitted by createManifest in the api-v1 state-write pooler. */
 interface PooledManifestPosition {
@@ -213,7 +240,7 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
         );
     });
 
-    it('writes both validated pooled artifacts and their exact output hashes', async () => {
+    it('writes complete pooled artifacts and exact hashes within a 768 MiB CLI heap', async () => {
         const directory = await mkdtemp(join(tmpdir(), 'rallar-state-write-pooling-'));
         try {
             const input = createPoolingInput();
@@ -222,9 +249,11 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
             const approvedBaseOut = join(directory, 'approved-base-pooled.json');
             const candidateOut = join(directory, 'candidate-pooled.json');
             const manifestOut = join(directory, 'manifest.json');
-            await writeApiV1StateWritePooledResults(
-                toWriterArguments(paths, { approvedBaseOut, candidateOut, manifestOut })
-            );
+            await promisify(execFile)(process.execPath, [
+                '--max-old-space-size=768',
+                'apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs',
+                ...toWriterArguments(paths, { approvedBaseOut, candidateOut, manifestOut })
+            ]);
 
             const approvedBaseText = await readFile(approvedBaseOut, 'utf8');
             const candidateText = await readFile(candidateOut, 'utf8');

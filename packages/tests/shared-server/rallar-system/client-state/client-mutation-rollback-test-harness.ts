@@ -83,7 +83,7 @@ export async function createRollbackHarness(): Promise<RollbackHarness> {
             clientStateService: createAutoAuthorizingClientStateService(
                 runtimeRepository,
                 database,
-                eventStore
+                { eventStore }
             )
         },
         {

@@ -14,6 +14,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     captureALOutboundCreationExpiry,
+    toALOutboundCanonicalKey,
     toALOutboundIdentityEntry,
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
@@ -147,7 +148,7 @@ describe('QueueBoxPubSubBridge', () => {
         const entry = createWsOutboxEntry();
 
         const message = decodePersistedALMessage(entry.resource);
-        await outboxPublishers[0](message, entry, undefined);
+        await outboxPublishers[0](message, entry);
 
         expect(bridge.published).toEqual([
             {
@@ -164,6 +165,60 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
         expect(bridge.subscribedChannels).toEqual(['queuebox-events']);
         expect(deliveredMessages).toEqual([message]);
+    });
+
+    it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const bridge = createBridge();
+        const entry = createWsOutboxEntry();
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const addressed: Array<readonly string[] | undefined> = [];
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            outbox,
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => ['admitted-session'],
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                addressed.push(recipientSessionIds);
+                return sentLiveResult(message);
+            }
+        });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+        });
+
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+
+        expect(addressed).toEqual([['admitted-session'], ['admitted-session']]);
+    });
+
+    it('preserves an empty captured audience without falling back to current room members', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const entry = createWsOutboxEntry();
+        const addressed: Array<readonly string[] | undefined> = [];
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => [],
+            sendToTargetsWithResult: (message, recipientSessionIds) => {
+                addressed.push(recipientSessionIds);
+                return noRecipientLiveSendResult(message);
+            }
+        });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+        });
+
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry)).resolves.toBeUndefined();
+        expect(addressed).toEqual([[]]);
     });
 
     it('keeps long valid AL identities in storage while publishing bounded advisory claims', async () => {
@@ -350,7 +405,7 @@ describe('QueueBoxPubSubBridge', () => {
                 handedAudiences.push(admittedPeerIds);
                 return sentLiveResult(message);
             },
-            readAdmittedAudience: () => Promise.resolve(undefined)
+            readAudience: () => Promise.resolve(undefined)
         });
         installQueueBoxPubSubBridge({
             wsQBoxServerService,
@@ -359,7 +414,7 @@ describe('QueueBoxPubSubBridge', () => {
             publisherId: 'publisher-1'
         });
 
-        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry, undefined);
+        await outboxPublishers[0](decodePersistedALMessage(entry.resource), entry);
         await bridge.subscriber?.(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'publisher-2', entry }));
 
         expect(handedAudiences).toEqual([undefined, undefined]);
@@ -444,6 +499,63 @@ describe('QueueBoxPubSubBridge', () => {
         // The row is back in the queue and the owner that must claim it learns of it only from here.
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
         expect(wakeQueueEngine).toHaveBeenCalledOnce();
+    });
+
+    it('requeues a remote row when reading captured admission fails transiently', async () => {
+        const bridge = createBridge();
+        const entry = { ...createWsOutboxEntry(), status: EntityStatus.RESERVED };
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const wakeQueueEngine = vi.fn();
+        const send = vi.fn(sentLiveResult);
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: async () => {
+                    throw new Error('admission backend unavailable');
+                },
+                sendToTargetsWithResult: send
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            wakeQueueEngine,
+            filterEligibleCapturedSessionIds: (input) => input.candidateSessionIds
+        });
+
+        await expect(bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })))
+            .resolves.toBeUndefined();
+        expect(send).not.toHaveBeenCalled();
+        expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RETRY);
+        expect(wakeQueueEngine).toHaveBeenCalledOnce();
+    });
+
+    it('does not requeue a remote row with no captured local recipient', async () => {
+        const bridge = createBridge();
+        const entry = { ...createWsOutboxEntry(), status: EntityStatus.RESERVED };
+        const outbox = new InMemoryQueueBox();
+        await persistCanonicalEntry(outbox, entry);
+        const wakeQueueEngine = vi.fn();
+        const addressed: Array<readonly string[] | undefined> = [];
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService: createTestQueueBoxPubSubWsService({
+                outbox,
+                readAudience: async () => [],
+                sendToTargetsWithResult: (message, _recipientSessionIds, admittedPeerIds) => {
+                    addressed.push(admittedPeerIds);
+                    return noRecipientLiveSendResult(message);
+                }
+            }),
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'local',
+            wakeQueueEngine
+        });
+
+        await bridge.subscriber!(toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry }));
+        expect(addressed).toEqual([[]]);
+        expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
+        expect(wakeQueueEngine).not.toHaveBeenCalled();
     });
 
     it('reports only exact durable outbox key receives through the optional wake seam', async () => {
@@ -616,6 +728,119 @@ describe('QueueBoxPubSubBridge', () => {
     });
 });
 
+describe('the captured audience of a cluster publication', () => {
+    interface CapturedAudienceCase {
+        readonly name: string;
+        readonly captured: readonly string[] | undefined;
+        readonly expired: boolean;
+        readonly handed: readonly (readonly string[] | undefined)[];
+        readonly reads: number;
+    }
+
+    it.each<CapturedAudienceCase>([
+        {
+            name: 'an admitted audience',
+            captured: ['b', 'c'],
+            expired: false,
+            handed: [['b', 'c'], ['b', 'c']],
+            reads: 2
+        },
+        {
+            name: 'no admitted audience',
+            captured: undefined,
+            expired: false,
+            handed: [undefined, undefined],
+            reads: 2
+        },
+        {
+            name: 'a session that joined after admission',
+            captured: ['b'],
+            expired: false,
+            handed: [['b'], ['b']],
+            reads: 2
+        },
+        {
+            name: 'a row whose deadline passed before the notice arrived',
+            captured: ['b'],
+            expired: true,
+            handed: [['b']],
+            reads: 1
+        }
+    ])(
+        'reads the captured policy once per publish and once per receive for $name',
+        async (input) => {
+            let nowMs = Date.now();
+            const outboxPublishers: ClusterPublisher[] = [];
+            const bridge = createBridge();
+            const entry = createCanonicalRoomOutboxEntry(nowMs);
+            const message = decodePersistedALMessage(entry.resource);
+            const outbox = new InMemoryQueueBox();
+            await persistCanonicalEntry(outbox, entry);
+            let reads = 0;
+            const handed: (readonly string[] | undefined)[] = [];
+            const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+                outbox,
+                registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+                readAudience: async () => {
+                    reads += 1;
+                    return input.captured;
+                },
+                sendToTargetsWithResult: (sent, _recipientSessionIds, admittedPeerIds) => {
+                    handed.push(admittedPeerIds);
+                    return sentLiveResult(sent);
+                }
+            });
+            await installQueueBoxPubSubBridge({
+                wsQBoxServerService,
+                bridge,
+                channel: 'queuebox-events',
+                publisherId: 'local',
+                clock: { nowMs: () => nowMs }
+            });
+
+            await outboxPublishers[0](message, entry);
+            if (input.expired) {
+                nowMs = message.constraints!.expiresAtMs! + 1;
+            }
+            await bridge.subscriber!(
+                toPubSubMessage({ channel: 'queuebox-events', publisherId: 'remote', entry })
+            );
+
+            expect(handed).toEqual(input.handed);
+            expect(reads).toBe(input.reads);
+        }
+    );
+
+    it('fails the local publish closed when the captured policy is missing, as the remote receive does', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const entry = createCanonicalRoomOutboxEntry(Date.now());
+        const sent: ALMessage[] = [];
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => {
+                throw new ALAdmissionCorruptionError(
+                    'sent-message',
+                    new TypeError('missing admission')
+                );
+            },
+            sendToTargetsWithResult: (message) => {
+                sent.push(message);
+                return sentLiveResult(message);
+            }
+        });
+        await installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'local'
+        });
+
+        await expect(outboxPublishers[0](decodePersistedALMessage(entry.resource), entry))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(sent).toEqual([]);
+    });
+});
+
 function createBridge(): TestQueueBoxPubSubBridge {
     let subscriber: Parameters<QueueBoxPubSubBridge['subscribe']>[1] | undefined;
     const published: TestQueueBoxPubSubBridge['published'] = [];
@@ -640,8 +865,12 @@ function createBridge(): TestQueueBoxPubSubBridge {
 interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly outbox?: InMemoryQueueBox;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
-    readonly sendToTargetsWithResult?: QueueBoxPubSubWsService['sendToTargetsWithResult'];
-    readonly readAdmittedAudience?: (msgId: string) => Promise<readonly string[] | undefined>;
+    readonly readAudience?: (message: ALMessage, entry: ResourceEntry) => Promise<readonly string[] | undefined>;
+    readonly sendToTargetsWithResult?: (
+        message: ALMessage,
+        recipientSessionIds?: readonly string[],
+        admittedPeerIds?: readonly string[]
+    ) => WsServerLiveSendResult;
 }
 
 function createTestQueueBoxPubSubWsService(
@@ -653,12 +882,19 @@ function createTestQueueBoxPubSubWsService(
             input.registerOutboxPublisher?.(publisher);
             return service;
         },
-        sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds) {
+        sendToTargetsWithResult({ message, recipientSessionIds, admittedPeerIds }) {
             return input.sendToTargetsWithResult?.(message, recipientSessionIds, admittedPeerIds) ??
                 noRecipientLiveSendResult(message);
         },
-        readAdmittedAudience(msgId) {
-            return input.readAdmittedAudience?.(msgId) ?? Promise.resolve(undefined);
+        async readCapturedPolicy(message, entry) {
+            return {
+                persist: true,
+                ackTracking: null,
+                retryTracking: null,
+                repairTracking: null,
+                supersedenceTracking: null,
+                admittedAudience: await input.readAudience?.(message, entry)
+            };
         }
     };
 
@@ -735,6 +971,30 @@ function createWsOutboxEntry(): ResourceEntry {
         ),
         EnqueuedType.WS_OUTBOX
     );
+}
+
+/** A room broadcast stored under its canonical outbound key, as the server's outbound owner stores it. */
+function createCanonicalRoomOutboxEntry(nowMs: number): ResourceEntry {
+    const message = newALBroadcastMessage(
+        'rallar-server',
+        newALRoute('room.snapshot', 'room-1', 'snapshot-1'),
+        'room',
+        'room.snapshot.v1',
+        { version: 1 },
+        {
+            ttlMs: 60_000,
+            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+        }
+    );
+    const timed = {
+        ...message,
+        id: { ...message.id, ts: nowMs },
+        constraints: { expiresAtMs: nowMs + 60_000 }
+    };
+    return {
+        ...QueueBoxUtilities.toResourceEntryFromMsg(timed, EnqueuedType.WS_OUTBOX),
+        key: toALOutboundCanonicalKey('cluster-test', timed)
+    };
 }
 
 async function persistCanonicalEntry(outbox: InMemoryQueueBox, entry: ResourceEntry): Promise<void> {

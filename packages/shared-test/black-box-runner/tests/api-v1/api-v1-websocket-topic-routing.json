@@ -245,6 +245,18 @@
             "urlEncode": {
               "path": "outputs.wsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.joinAliceToGroup.0.actual.body.group.workspaceId"
+            }
           }
         ]
       }

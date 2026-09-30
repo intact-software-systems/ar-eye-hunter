@@ -23,6 +23,7 @@ import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mut
 
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -60,7 +61,12 @@ Deno.test(
             const read = await new PSqlCrdtMutationRepository(
                 {
                     sql,
-                    authorize: () => Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' })
+                    authorize: () =>
+                        Promise.resolve({
+                            allowed: false,
+                            code: 'current-authority-reader-missing',
+                            publicationAuthority: null
+                        })
                 },
                 { policies: [] }
             ).readMutation(
@@ -176,7 +182,7 @@ Deno.test(
     `;
             await assert.rejects(
                 new PSqlCrdtMutationRepository(
-                    { sql, authorize: () => Promise.resolve(true) },
+                    { sql, authorize: authorizeTestCrdtCommand },
                     { policies: [] }
                 ).readMutation(input),
                 /document.*identity|corrupt/i
@@ -379,7 +385,7 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
 function mutationService(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
     return createCrdtMutationService({
         repository: new PSqlCrdtMutationRepository(
-            { sql, authorize: () => Promise.resolve(true) },
+            { sql, authorize: authorizeTestCrdtCommand },
             { policies: [{ documentType: 'checklist', rollout: 'production' }] }
         ),
         serviceId: 'server-1'

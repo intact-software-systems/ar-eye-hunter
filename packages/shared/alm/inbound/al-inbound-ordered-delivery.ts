@@ -13,7 +13,7 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
-import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
+import { isAuthorizedStoredWsClientDelivery, toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
@@ -62,6 +62,9 @@ export class ALInboundOrderedDelivery {
         }
         if (read.snapshot.delivery?.effectId !== effectId) {
             throw new NonRetryableException('Inbound work no longer owns its buffered message');
+        }
+        if (!isAuthorizedStoredWsClientDelivery(read.snapshot.msg, read.source)) {
+            throw new NonRetryableException('Stored WS client scope does not authorize buffered delivery');
         }
         const plan = this.dependencies.planIncomingMessage(
             read.snapshot.msg,

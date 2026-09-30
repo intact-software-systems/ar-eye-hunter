@@ -10,10 +10,10 @@ import {
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type {
-    RallarServerWsFanout,
     RallarServerWsMessage,
     RallarServerWsMessageContext,
     RallarServerWsPayload,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
     RallarServerWsTopicMetadata,
@@ -21,17 +21,21 @@ import type {
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createRallarGameAuthorityEnvelope,
     isRallarGameAuthorityEnvelope,
     type RallarGameAuthorityEnvelope,
     type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 // dprint-ignore
 import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -45,6 +49,13 @@ interface Snapshot {
 
 interface Event {
     readonly kind: string;
+}
+
+interface CreateTestAuthorityEnvelopeInputDto<TPayload extends JsonWireValue> {
+    readonly kind: RallarGameAuthorityEnvelope<TPayload>['kind'];
+    readonly senderId: string;
+    readonly payload: TPayload;
+    readonly seq: number;
 }
 
 const roomRef: GroupRef = {
@@ -95,14 +106,14 @@ describe('Rallar Game Authority server installer', () => {
         const commandDefinition = fake.definition('game.authority.command.v1');
         expect(
             await commandDefinition.validate?.(
-                toWireValue(envelope('command', 'peer-a', { action: 'move' }, 1)),
+                toWireValue(envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })),
                 fake.context('peer-a')
             )
         ).toBe(true);
         expect(
             await commandDefinition.validate?.(
                 toWireValue({
-                    ...envelope('command', 'peer-a', { action: 'move' }, 1),
+                    ...envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 }),
                     senderId: 'peer-b'
                 }),
                 fake.context('peer-a')
@@ -130,13 +141,72 @@ describe('Rallar Game Authority server installer', () => {
             'game.authority.command.v1',
             'peer-a',
             {
-                ...envelope('command', 'peer-a', { action: 'move' }, 1),
+                ...envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 }),
                 protocol: 'wrong.protocol'
             }
         );
 
         expect(commandHandled).toBe(false);
         expect(fake.published).toHaveLength(0);
+    });
+
+    it.each([
+        ['missing', { roomId: 'room-1' }],
+        ['different room', { roomId: 'room-1', roomRef: { ...roomRef, groupId: 'room-2' } }]
+    ])('rejects command work when authorized room scope is %s', async (_, roomContext) => {
+        const fake = createFakeServerRallar(roomContext);
+        const handledCommands: Command[] = [];
+        installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async ({ command }) => {
+                handledCommands.push(command);
+                return { status: 'accepted', snapshot: { tick: 1 } };
+            }
+        });
+
+        await fake.emit(
+            'game.authority.command.v1',
+            'peer-a',
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
+        );
+
+        expect(handledCommands).toEqual([]);
+        expect(fake.published).toEqual([]);
+    });
+
+    it.each([
+        ['missing', { roomId: 'room-1' }],
+        ['different room', { roomId: 'room-1', roomRef: { ...roomRef, groupId: 'room-2' } }]
+    ])('rejects sync work when authorized room scope is %s', async (_, roomContext) => {
+        const fake = createFakeServerRallar(roomContext);
+        const snapshotReads: string[] = [];
+        installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' }),
+            readSnapshot: async ({ roomId }) => {
+                snapshotReads.push(roomId);
+                return { tick: 2 };
+            }
+        });
+
+        await fake.emit(
+            'game.authority.sync-request.v1',
+            'peer-a',
+            envelope({ kind: 'sync-request', senderId: 'peer-a', payload: { reason: 'join' }, seq: 1 })
+        );
+
+        expect(snapshotReads).toEqual([]);
+        expect(fake.published).toEqual([]);
     });
 
     it('passes the decoded command to the game handler', async () => {
@@ -158,7 +228,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: ' MOVE ' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: ' MOVE ' }, seq: 1 })
         );
 
         expect(handledCommands).toEqual([{ action: 'move' }]);
@@ -183,12 +253,12 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 42 }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 42 }, seq: 1 })
         );
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
         );
 
         expect(handledCommands).toEqual([{ action: 'move' }]);
@@ -214,7 +284,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'move' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'move' }, seq: 1 })
         );
 
         expect(handleCommand).toHaveBeenCalledWith(
@@ -237,6 +307,8 @@ describe('Rallar Game Authority server installer', () => {
             mode: 'unicast',
             toPeerId: 'peer-a'
         });
+        expect(fake.published[0].scope).toEqual({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
+        expect(fake.published[1].scope).toBeUndefined();
         expect(fake.published[1].message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
@@ -268,7 +340,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'cheat' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'cheat' }, seq: 1 })
         );
 
         expect(fake.published).toHaveLength(1);
@@ -299,7 +371,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.sync-request.v1',
             'peer-a',
-            envelope('sync-request', 'peer-a', { reason: 'late-join' }, 1)
+            envelope({ kind: 'sync-request', senderId: 'peer-a', payload: { reason: 'late-join' }, seq: 1 })
         );
 
         expect(readSnapshot).toHaveBeenCalledWith(
@@ -347,6 +419,98 @@ describe('Rallar Game Authority server installer', () => {
         expect(fake.published[0].message.targets).toEqual({
             mode: 'unicast',
             toPeerId: 'peer-b'
+        });
+    });
+
+    it('refuses snapshot and event publication when the full room reference names a different room', async () => {
+        const fake = createFakeServerRallar();
+        const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' })
+        });
+
+        const snapshotResult = await server.publishSnapshot({
+            roomId: 'room-2',
+            roomRef,
+            snapshot: { tick: 73 },
+            toPeerId: 'peer-b'
+        });
+        const eventResult = await server.publishEvent({
+            roomId: 'room-2',
+            roomRef,
+            event: { kind: 'wrong-room' }
+        });
+
+        expect(snapshotResult).toMatchObject({ status: 'failed', reason: 'room-ref-mismatch' });
+        expect(eventResult).toMatchObject({ status: 'failed', reason: 'room-ref-mismatch' });
+        expect(fake.published).toEqual([]);
+    });
+
+    it.each(
+        [
+            { routerStatus: 'sent-live', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'cluster-published', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'queued-outbox', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'none', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'none' },
+            { routerStatus: 'no-recipients', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'no-recipients' },
+            { routerStatus: 'skipped', gameStatus: 'skipped', count: 0, routerReason: 'policy-denied', gameReason: 'policy-denied' },
+            { routerStatus: 'duplicate', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'duplicate' },
+            { routerStatus: 'superseded', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'superseded' },
+            { routerStatus: 'expired', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'expired' },
+            { routerStatus: 'partial-failure', gameStatus: 'partial', count: 0, routerReason: 'one-send-failed', gameReason: 'one-send-failed' },
+            { routerStatus: 'no-route', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'no-route' },
+            { routerStatus: 'rate-limited', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'rate-limited' },
+            { routerStatus: 'circuit-open', gameStatus: 'failed', count: 0, routerReason: undefined, gameReason: 'circuit-open' },
+            { routerStatus: 'failed', gameStatus: 'failed', count: 0, routerReason: 'transport-broken', gameReason: 'transport-broken' }
+        ] as const
+    )('reports $routerStatus as $gameStatus without inflating publication counts', async ({
+        routerStatus,
+        gameStatus,
+        count,
+        routerReason,
+        gameReason
+    }) => {
+        const fake = createFakeServerRallar();
+        const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
+            rallar: fake.rallar,
+            protocol: 'test.authority.v1',
+            topicId: 'game.authority',
+            authority,
+            decodeCommand,
+            nowEpochMs,
+            handleCommand: async () => ({ status: 'accepted' })
+        });
+        vi.spyOn(fake.ws, 'publish').mockImplementation(async ({ message, fanout }) => ({
+            fanout: fanout ?? 'live-only',
+            status: routerStatus,
+            message,
+            reason: routerReason,
+            entries: []
+        }));
+
+        const snapshotResult = await server.publishSnapshot({
+            roomId: 'room-1',
+            roomRef,
+            snapshot: { tick: 73 }
+        });
+        const eventResult = await server.publishEvent({
+            roomId: 'room-1',
+            roomRef,
+            event: { kind: 'publication-result' }
+        });
+
+        expect(snapshotResult).toMatchObject({ status: gameStatus, reason: gameReason });
+        expect(eventResult).toMatchObject({ status: gameStatus, reason: gameReason });
+        expect(snapshotResult.raw).toMatchObject({ status: routerStatus, reason: routerReason });
+        expect(eventResult.raw).toMatchObject({ status: routerStatus, reason: routerReason });
+        expect(server.status()).toMatchObject({
+            publishedSnapshotCount: count,
+            publishedEventCount: count
         });
     });
 
@@ -421,7 +585,7 @@ describe('Rallar Game Authority server installer', () => {
         await fake.emit(
             'game.authority.command.v1',
             'peer-a',
-            envelope('command', 'peer-a', { action: 'late' }, 1)
+            envelope({ kind: 'command', senderId: 'peer-a', payload: { action: 'late' }, seq: 1 })
         );
 
         expect(commandHandled).toBe(false);
@@ -431,20 +595,17 @@ describe('Rallar Game Authority server installer', () => {
 });
 
 function envelope<TPayload extends JsonWireValue>(
-    kind: RallarGameAuthorityEnvelope<TPayload>['kind'],
-    senderId: string,
-    payload: TPayload,
-    seq: number
+    input: CreateTestAuthorityEnvelopeInputDto<TPayload>
 ): RallarGameAuthorityEnvelope<TPayload> {
     return createRallarGameAuthorityEnvelope({
         protocol: 'test.authority.v1',
-        kind,
+        kind: input.kind,
         roomId: 'room-1',
-        senderId,
-        seq,
-        sentAtEpochMs: 1_000 + seq,
+        senderId: input.senderId,
+        seq: input.seq,
+        sentAtEpochMs: 1_000 + input.seq,
         authority,
-        payload
+        payload: input.payload
     });
 }
 
@@ -460,10 +621,12 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function createFakeServerRallar() {
+function createFakeServerRallar(
+    roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }> = { roomId: 'room-1', roomRef }
+) {
     const definitions: StoredTopicDefinition[] = [];
     const handlers: HandlerSubscription[] = [];
-    const published: FakePublishedMessage[] = [];
+    const published: RallarServerWsPublishInputDto[] = [];
     const ws = createFakeGameAuthorityWebSocket({
         definitions,
         handlers,
@@ -478,7 +641,7 @@ function createFakeServerRallar() {
         ws,
         rallar,
         definition: (typeId: string) => readStoredTopicDefinition(definitions, typeId),
-        context: (senderId: string) => createMessageContext(definitions, senderId),
+        context: (senderId: string) => createMessageContext(definitions, senderId, roomContext),
         emit<TPayload extends JsonWireValue>(
             typeId: string,
             senderId: string,
@@ -489,7 +652,8 @@ function createFakeServerRallar() {
                 handlers,
                 typeId,
                 senderId,
-                envelopePayload
+                envelopePayload,
+                roomContext
             });
         }
     };
@@ -498,7 +662,7 @@ function createFakeServerRallar() {
 interface CreateFakeGameAuthorityWebSocketInput {
     readonly definitions: StoredTopicDefinition[];
     readonly handlers: HandlerSubscription[];
-    readonly published: FakePublishedMessage[];
+    readonly published: RallarServerWsPublishInputDto[];
 }
 
 function createFakeGameAuthorityWebSocket(
@@ -538,10 +702,10 @@ function createFakeGameAuthorityWebSocket(
             };
         },
         async publish(
-            message: ALMessage,
-            fanout?: RallarServerWsFanout
+            publication: RallarServerWsPublishInputDto
         ): Promise<RallarServerWsPublishResult> {
-            input.published.push({ message, fanout });
+            input.published.push(publication);
+            const { message, fanout } = publication;
             return {
                 fanout: fanout ?? 'live-only',
                 status: 'sent-live' as const,
@@ -568,16 +732,34 @@ function readStoredTopicDefinition(
 
 function createMessageContext(
     definitions: readonly StoredTopicDefinition[],
-    senderId: string
+    senderId: string,
+    roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>
 ): RallarServerWsMessageContext {
+    const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
+        name: 'authority-test',
+        socket: new JsonWebSocketServer(),
+        outbox: new InMemoryQueueBox()
+    });
+    onTestFinished(() => service.dispose());
     return {
-        service: {} as RallarServerWsMessageContext['service'],
+        service,
         definition: definitions[0],
-        roomId: 'room-1',
-        roomRef,
+        roomId: roomContext.roomId,
+        roomRef: roomContext.roomRef,
         senderId,
-        proxy: {} as RallarServerWsMessageContext['proxy']
+        authenticatedScope: { applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId },
+        proxy: {
+            toTargets: unexpectedProxyCall,
+            toPeer: unexpectedProxyCall,
+            toRoom: unexpectedProxyCall,
+            toAll: unexpectedProxyCall
+        }
     };
+}
+
+function unexpectedProxyCall(): never {
+    throw new Error('Game authority publishes through its WS port, not its inbound proxy');
 }
 
 interface EmitFakeGameAuthorityMessageInput<TPayload extends JsonWireValue> {
@@ -586,12 +768,13 @@ interface EmitFakeGameAuthorityMessageInput<TPayload extends JsonWireValue> {
     readonly typeId: string;
     readonly senderId: string;
     readonly envelopePayload: RallarGameAuthorityEnvelope<TPayload>;
+    readonly roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>;
 }
 
 async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
     input: EmitFakeGameAuthorityMessageInput<TPayload>
 ): Promise<void> {
-    const messageContext = createMessageContext(input.definitions, input.senderId);
+    const messageContext = createMessageContext(input.definitions, input.senderId, input.roomContext);
     const wireValue = toWireValue(input.envelopePayload);
     const topicDefinition = readStoredTopicDefinition(input.definitions, input.typeId);
     if (
@@ -614,11 +797,6 @@ async function emitFakeGameAuthorityMessage<TPayload extends JsonWireValue>(
             )
             .map((subscription) => subscription.invoke(message, messageContext))
     );
-}
-
-interface FakePublishedMessage {
-    readonly message: ALMessage;
-    readonly fanout?: RallarServerWsFanout;
 }
 
 interface StoredTopicDefinition extends RallarServerWsTopicMetadata {

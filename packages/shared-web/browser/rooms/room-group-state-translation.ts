@@ -10,6 +10,7 @@ import type {
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
@@ -32,7 +33,6 @@ import type {
     UpsertStateGroupMemberBody
 } from '../api/state-mutation-http-contracts.ts';
 
-import { isAcceptedRoomLayoutOverlay } from './is-room-layout-overlay.ts';
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
 
 export type {

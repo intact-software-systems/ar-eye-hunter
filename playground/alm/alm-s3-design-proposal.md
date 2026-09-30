@@ -755,6 +755,7 @@ The texts below are the plan's, kept here because the pull request that finishes
   correlation on the wire, which is the maintainer's decision. `deadline-expiry` held its message back with a fault
   counted in frames, which a fast agent used up inside the lifetime; its faults now hold until released. Cost if
   wrong: hosted runs do not cover a reload over RTC until issue #594 is fixed; the local lane still does.
+  **Superseded by D98 (#566):** manifest 18 runs `delivery-reload` on `rtc` and `rtc-with-ws-fallback` again.
 
 ### 11.5 What was built and measured
 
@@ -789,8 +790,9 @@ The texts below are the plan's, kept here because the pull request that finishes
 - **The lane (R-S3c-ii-2, -5).** `toPeer` is `server` or `receiver`, and `toPeer: 'server'` is a WS-only target. The
   four addressed scenarios run as their own two-agent family, and manifest 22 is unchanged. Manifest 18 runs the three
   `capacity` blocks after every other block, and the scenario waits 31 s after its lowered reconnect before it sends
-  (R-S3c-ii-9); it runs `delivery-reload` on `ws` only (R-S3c-ii-14). The generated manifest's receiver absence
-  windows sum to 496 s and the sender's three waits to 93 s; summed over its 37 blocks, the larger role's command
+  (R-S3c-ii-9); it runs `delivery-reload` on `ws` only (R-S3c-ii-14; **superseded by D98 (#566)**, which runs it
+  on every carrier). The generated manifest's receiver absence windows sum to 496 s and the sender's three waits to
+  93 s; summed over its 37 blocks, the larger role's command
   budgets come to about 6 890 s, so the 1 800 s terminal timeout is a typical-case budget, not a worst case. The director orchestration spec (`npm run test:rallar:full-stack:memory:director`) was stale on
   `main` (it used retired group routes and is in no CI lane); S3c-ii revived it and it passes, which is the
   end-to-end proof of the receipt-gated `sent`.

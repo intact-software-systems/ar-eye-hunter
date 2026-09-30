@@ -6,7 +6,11 @@ import {
     AL_CONTROL_NACK_TYPE_ID,
     AL_CONTROL_RECEIPT_TYPE_ID
 } from '@shared/al-contracts/al-control-type-ids.ts';
-import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
+import {
+    decodeALAckPayload,
+    decodeALNackPayload,
+    decodeALReceiptPayload
+} from '@shared/al-contracts/al-control-value-codec.ts';
 import {
     newALAckControlMessage,
     type ALAckPayload,
@@ -16,7 +20,6 @@ import {
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { toWsQueueBoxServerAddresseeAuthorization } from '@shared/services/ws-queue-box-server/to-ws-queue-box-server-addressee-authorization.ts';
 import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
@@ -29,7 +32,8 @@ import {
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const SERVER_ID = 'server';
-const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
+const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+const ROOM = { ...SCOPE, groupId: 'room-1' };
 /** The sessions the room's authority admits; `c` is connected but not a member. */
 const ROOM_SESSIONS: readonly string[] = ['a', 'b'];
 
@@ -41,14 +45,21 @@ interface AddressedFixture {
     readonly routed: ALMessage[];
 }
 
-describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
+interface RoomUnicastInput {
+    readonly msgId: string;
+    readonly toPeerId: string;
+    readonly ack: 'receiver' | 'none';
+    readonly qos?: ALMessage['qos'];
+}
+
+describe('WS server receipts for addressed sends', () => {
     afterEach(() => vi.restoreAllMocks());
 
     it('delivers a room unicast to its addressee through the router and answers the origin with the addressee alone', async () => {
         const fixture = await createAddressedFixture();
 
         const admitted = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-b', 'b', 'receiver'),
+            roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }),
             'a'
         );
 
@@ -69,7 +80,7 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
 
     it('completes the one-member receipt on the addressee\'s own ACK', async () => {
         const fixture = await createAddressedFixture();
-        await fixture.service.acceptIncomingMessage(roomUnicast('to-b', 'b', 'receiver'), 'a');
+        await fixture.service.acceptIncomingMessage(roomUnicast({ msgId: 'to-b', toPeerId: 'b', ack: 'receiver' }), 'a');
         await expect.poll(async () => {
             await fixture.engine.executeOnce();
             return readFrames(fixture.sockets.b).length;
@@ -86,11 +97,11 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         }).toEqual([['admitted', []], ['complete', ['b']]]);
     });
 
-    it('refuses a room unicast to a session outside the admitted audience before admission, with a NACK (Q5)', async () => {
+    it('refuses a room unicast to a session outside the admitted audience before admission, with a NACK', async () => {
         const fixture = await createAddressedFixture();
 
         const refused = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-c', 'c', 'receiver'),
+            roomUnicast({ msgId: 'to-c', toPeerId: 'c', ack: 'receiver' }),
             'a'
         );
 
@@ -108,29 +119,28 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         expect(readFrames(fixture.sockets.c)).toEqual([]);
     });
 
-    it('refuses an out-of-audience addressee with the NACK policy its authorizer was configured with (C3)', () => {
-        const refusal = toWsQueueBoxServerAddresseeAuthorization({
-            message: roomUnicast('to-c', 'c', 'receiver'),
-            serverPeerId: SERVER_ID,
-            sendNack: false,
-            authorization: {
-                authorized: true,
-                roomAudience: { recipientPeerIds: ROOM_SESSIONS, snapshotVersion: 3 }
-            }
-        });
+    it('follows the authorizer NACK policy when refusing an out-of-audience addressee', async () => {
+        const fixture = await createAddressedFixture(false);
 
-        expect(refusal).toMatchObject({
-            authorized: false,
-            reason: 'unauthorized',
-            sendNack: false
+        const refused = await fixture.service.acceptIncomingMessage(
+            roomUnicast({ msgId: 'to-c', toPeerId: 'c', ack: 'receiver' }),
+            'a'
+        );
+
+        expect(refused.left).toEqual({
+            code: 'unauthorized',
+            message: 'AL unicast to-c addresses c, who is not in the audience its room admitted'
         });
+        expect(readNacks(fixture.sockets.a)).toEqual([]);
+        await fixture.engine.executeOnce();
+        expect(fixture.routed).toEqual([]);
     });
 
-    it('keeps its own ACK for a receiver unicast addressed to itself and opens no aggregate (Q2)', async () => {
+    it('keeps its own ACK for a receiver unicast addressed to itself and opens no aggregate', async () => {
         const fixture = await createAddressedFixture();
 
         const admitted = await fixture.service.acceptIncomingMessage(
-            roomUnicast('to-server', SERVER_ID, 'receiver'),
+            roomUnicast({ msgId: 'to-server', toPeerId: SERVER_ID, ack: 'receiver' }),
             'a'
         );
 
@@ -149,7 +159,7 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         const fixture = await createAddressedFixture();
 
         await fixture.service.acceptIncomingMessage(
-            roomUnicast('hop-to-b', 'b', 'none', { ack: { algo: 'hop' } }),
+            roomUnicast({ msgId: 'hop-to-b', toPeerId: 'b', ack: 'none', qos: { ack: { algo: 'hop' } } }),
             'a'
         );
 
@@ -162,10 +172,10 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         ]);
     });
 
-    it('acknowledges a subtree room send itself: the router owns the fanout, so no subtree is waited for (R-S3a-4)', async () => {
+    it('acknowledges a subtree room send itself: the router owns the fanout, so no subtree is waited for', async () => {
         const fixture = await createAddressedFixture();
         const roomSend: ALMessage = {
-            ...roomUnicast('subtree-room', 'b', 'none'),
+            ...roomUnicast({ msgId: 'subtree-room', toPeerId: 'b', ack: 'none' }),
             targets: { mode: 'broadcast', scope: 'room', groupRef: ROOM },
             delivery: { reliability: 'at-least-once', ack: 'group-leader' }
         };
@@ -178,10 +188,10 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
         }).toEqual([['subtree-room', SERVER_ID]]);
     });
 
-    it('aggregates a handed-over message over the audience its RTC leg froze, so a leaver reads unconfirmed (Q12)', async () => {
+    it('aggregates a handed-over message over the audience its RTC leg froze, so a leaver reads unconfirmed', async () => {
         const fixture = await createAddressedFixture();
         const handedOver: ALMessage = {
-            ...roomUnicast('frozen-1', 'b', 'receiver'),
+            ...roomUnicast({ msgId: 'frozen-1', toPeerId: 'b', ack: 'receiver' }),
             targets: {
                 mode: 'multicast',
                 groupRef: ROOM,
@@ -199,7 +209,7 @@ describe('WS server receipts for addressed sends (D53, D57 as applied)', () => {
     });
 });
 
-async function createAddressedFixture(): Promise<AddressedFixture> {
+async function createAddressedFixture(sendNacks = true): Promise<AddressedFixture> {
     const socketServer = new JsonWebSocketServer();
     const sockets = {
         a: new SimulatedWebSocket('ws://a'),
@@ -218,13 +228,17 @@ async function createAddressedFixture(): Promise<AddressedFixture> {
         name: SERVER_ID,
         queueEngine: engine,
         forwardsRoomScopedMessages: false,
+        readAuthenticatedConnectionScope: (connection) =>
+            socketServer.connections.get(connection.id) === connection
+                ? { scope: SCOPE, expiresAtEpochMs: Date.now() + 60_000 }
+                : undefined,
         targetResolver: {
             resolvePeerRecipients: (peerId) => recipients().filter((recipient) => recipient.peerId === peerId),
             resolveBroadcastRecipients: recipients
         }
     });
     service.authorizeInboundMessagesWith({
-        sendNacks: true,
+        sendNacks,
         authorize: async (message) =>
             isRoomScopedALMessage(message)
                 ? {
@@ -239,7 +253,12 @@ async function createAddressedFixture(): Promise<AddressedFixture> {
         onMessage: async (message) => {
             routed.push(message);
             if (message.targets?.mode === 'unicast' && message.targets.toPeerId !== SERVER_ID) {
-                service.sendToTargetsWithResult(message, [message.targets.toPeerId], ROOM_SESSIONS);
+                service.sendToTargetsWithResult({
+                    message,
+                    recipientSessionIds: [message.targets.toPeerId],
+                    admittedPeerIds: ROOM_SESSIONS,
+                    inboundScope: SCOPE
+                });
             }
         }
     });
@@ -247,12 +266,8 @@ async function createAddressedFixture(): Promise<AddressedFixture> {
     return { service, engine, sockets, routed };
 }
 
-function roomUnicast(
-    msgId: string,
-    toPeerId: string,
-    ack: 'receiver' | 'none',
-    qos?: ALMessage['qos']
-): ALMessage {
+function roomUnicast(input: RoomUnicastInput): ALMessage {
+    const { msgId, toPeerId, ack, qos } = input;
     const nowMs = Date.now();
     return {
         id: { v: 2, msgId, ts: nowMs, senderId: 'a' },
@@ -300,9 +315,9 @@ function readReceipts(socket: SimulatedWebSocket): readonly ALReceiptPayload[] {
 }
 
 function readAcks(socket: SimulatedWebSocket): readonly ALAckPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_ACK_TYPE_ID) as readonly ALAckPayload[];
+    return readControlPayloads(socket, AL_CONTROL_ACK_TYPE_ID).map((payload) => decodeALAckPayload(payload));
 }
 
 function readNacks(socket: SimulatedWebSocket): readonly ALNackPayload[] {
-    return readControlPayloads(socket, AL_CONTROL_NACK_TYPE_ID) as readonly ALNackPayload[];
+    return readControlPayloads(socket, AL_CONTROL_NACK_TYPE_ID).map((payload) => decodeALNackPayload(payload));
 }

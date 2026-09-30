@@ -5,10 +5,7 @@ import {
 } from 'vitest';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
-import {
-    ALM_CONFORMANCE_CARRIERS,
-    type AlmConformanceCarrier
-} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import {
     assessAlmConformanceIdentity,
@@ -26,10 +23,7 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 import { isSameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
-import {
-    createAlmConformance2AgentEntry,
-    toAlmConformanceCombinedRecipe
-} from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
+import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 
 // These are external evidence transcripts for the pure assessor, not native delivery or persistence proof.
 describe('ALM recipe identity assessment', () => {
@@ -139,12 +133,8 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
     });
 
-    it('accepts the reload checkpoint and existing lifecycle evidence in the actual combined recipe', () => {
+    it('accepts all three reload checkpoints and existing lifecycle evidence in the actual combined recipe', () => {
         expect(assessAlmConformanceIdentity(new IdentityTranscript('combined').input())).toEqual([]);
-    });
-
-    it('accepts one reload checkpoint per carrier in a combined recipe', () => {
-        expect(assessAlmConformanceIdentity(new IdentityTranscript('combined-reloads').input())).toEqual([]);
     });
 
     it('accepts canonical zero write baseline, queued retained work, and reset counters in the new document', () => {
@@ -385,7 +375,7 @@ describe('ALM recipe identity assessment', () => {
     });
 
     it('rejects a receiver subscription reconnect before a later checkpoint', () => {
-        const transcript = new IdentityTranscript('combined-reloads');
+        const transcript = new IdentityTranscript('combined');
         const sender = transcript.receiver;
         const health = sender.command('health', 2);
         const reconnect = { ...sender.command('rtc.connect'), commandId: 'receiver-reconnect' };
@@ -420,7 +410,7 @@ describe('ALM recipe identity assessment', () => {
     });
 
     it('rejects the sole receiver connect moved beyond initial readiness', () => {
-        const transcript = new IdentityTranscript('combined-reloads');
+        const transcript = new IdentityTranscript('combined');
         const receiver = transcript.receiver;
         const connect = receiver.command('rtc.connect');
         const laterHealth = receiver.command('health', 2);
@@ -517,7 +507,7 @@ describe('ALM recipe identity assessment', () => {
 });
 
 namespace IdentityTranscript {
-    export type Kind = 'lifecycle' | 'reload' | 'combined' | 'combined-reloads';
+    export type Kind = 'lifecycle' | 'reload' | 'combined';
 }
 
 class IdentityTranscript {
@@ -634,18 +624,6 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         }
         return { sender, receiver };
     }
-    if (kind === 'combined-reloads') {
-        // Hosted manifest 18 withholds the reload over RTC (issue #594), so several checkpoints are composed here.
-        const reloads = ALM_CONFORMANCE_CARRIERS.map((reloadCarrier) => toGeneratedScenario('reload', reloadCarrier));
-        return {
-            sender: toAlmConformanceCombinedRecipe(reloads, 'sender', 'two-agent'),
-            receiver: toAlmConformanceCombinedRecipe(reloads, 'receiver', 'two-agent')
-        };
-    }
-    return toGeneratedScenario(kind, carrier);
-}
-
-function toGeneratedScenario(kind: 'lifecycle' | 'reload', carrier: AlmConformanceCarrier) {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier,

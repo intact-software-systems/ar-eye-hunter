@@ -50,9 +50,8 @@ async function createConnectedGroup(): Promise<ConnectedGroup> {
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         dataChannelName: 'reliable',
         dataChannelLanes: [{ id: 'realtime', label: 'realtime' }],
-        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc'
-    }, runtime);
+    }, runtime, createPassThroughTransportFaultPort());
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(connection.service, {
         groupCache: new LatestRepository<string, GroupSnapshot>(),

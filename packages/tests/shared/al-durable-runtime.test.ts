@@ -73,14 +73,22 @@ describe('AL state retained across runtime recreation', () => {
             { ttlMs: 30_000, reliability: 'at-least-once' }
         );
 
-        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         runtime1.dispose();
         const restartedStores = createRetainedInboundStoreSet(stores);
         const restartedRuntime = createDefaultInboundRuntime(restartedStores, dispatchedMsgIds);
 
-        await restartedRuntime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await restartedRuntime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         // The redelivered duplicate must not dispatch again: settle every retained row before reading.
         await waitForSettledALInboundWork(restartedStores.runtimeStores.workQueue);
@@ -96,7 +104,11 @@ describe('AL state retained across runtime recreation', () => {
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
-        await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(seq2, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
         await waitForSettledALInboundWork(stores.runtimeStores.workQueue);
@@ -116,7 +128,11 @@ describe('AL state retained across runtime recreation', () => {
             controlMessages
         );
 
-        await runtime2.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(seq1, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(

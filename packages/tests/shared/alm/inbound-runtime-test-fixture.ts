@@ -48,7 +48,9 @@ export const INBOUND_TEST_SENDER_PEER_ID = 'sender';
 const INBOUND_TEST_ORDERING_KEY = 'chat';
 export const INBOUND_TEST_SOURCE: ALInboundMessageRuntime.Source = {
     kind: 'ws-client',
-    peerId: INBOUND_TEST_SENDER_PEER_ID
+    peerId: INBOUND_TEST_SENDER_PEER_ID,
+    /** This shared fixture represents an authenticated connection, not a legacy stored source. */
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
 };
 
 /** The policy's own plan for the fixture's two peers: what every inbound owner here admits with. */

@@ -23,6 +23,7 @@ import {
 import {
     peekOutboundWorkReadyAt
 } from '../alm/outbound-runtime-test-fixture.ts';
+import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
@@ -307,7 +308,7 @@ describe('RTC outbound transport results', () => {
         });
     });
 
-    it('admits a receiver ack on an RTC unicast and routes a room multicast by its overlay, refusing neither', async () => {
+    it('admits a receiver ack on an RTC unicast and answers a room multicast without room authority no-route', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
         const manager = createManager([channel], resources);
@@ -379,7 +380,7 @@ function createChannel(
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peer.connect();
     const channel = new QRtcDataChannel(peer, { faultPort, peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);

@@ -3,7 +3,6 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
-import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
@@ -21,6 +20,7 @@ import type {
 } from './al-outbound-message-runtime.ts';
 import type { ALOutboundPendingAdmission } from './al-outbound-pending-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
+import { readALOutboundDequeueWait } from './lane/read-al-outbound-dequeue-wait.ts';
 import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundMessageEffects {
@@ -97,10 +97,20 @@ export class ALOutboundMessageEffects<TPrepared> {
      * The breaker's whole accounting for the dequeue path: the work handler turns a rejection and a
      * thrown store error alike into an outcome, so an attempt that never returns still owes a charge.
      */
-    async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkOutcome> {
+    async admitDequeuedMessage(effect: ALOutboundEffectSnapshot<TPrepared>): Promise<ALWorkAttemptResult> {
         const { resilience } = this.dependencies.runtime.dequeue;
         if (resilience.isNotAllowedThroughToDequeue()) {
             return { status: 'not-ready', readyAtMs: this.readNowMs() + resilience.toCircuitOpenBackoffMs() };
+        }
+        const wait = await readALOutboundDequeueWait({
+            effect,
+            readAuthority: this.dependencies.runtime.readPendingAdmissionAuthority,
+            settlements: this.dependencies.settlements,
+            clock: this.dependencies.runtime.clock,
+            signal: this.dependencies.sendSignal
+        });
+        if (wait !== undefined) {
+            return wait;
         }
         try {
             const outcome = await this.readDequeuedAdmissionOutcome(effect);
@@ -123,11 +133,13 @@ export class ALOutboundMessageEffects<TPrepared> {
         if (!msg) {
             throw new NonRetryableException('Dequeued work has no message');
         }
+        const dequeueAuthority = await runtime.readDequeueAuthority?.(msg, effect.entry);
         if (await this.dependencies.admissionStore.isMessageSuperseded(msg)) {
             return { status: 'completed' };
         }
         const computed = await this.dependencies.commitDispatchPlan({
             msg,
+            dequeueAuthority,
             planner: runtime.planDequeuedMessage,
             intent: 'dequeue',
             phase: 'dequeue',
@@ -141,13 +153,13 @@ export class ALOutboundMessageEffects<TPrepared> {
                 ])
             }
         });
-        if (isDiscardedDequeuedAdmission(computed.verdict)) {
-            return { status: 'completed' };
-        }
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }
-        await runtime.afterDequeueAdmission?.(msg, effect.entry);
+        const [entry] = computed.entries;
+        if (computed.msg && entry) {
+            await runtime.afterDequeueAdmission?.(computed.msg, entry);
+        }
         return { status: 'completed' };
     }
 
@@ -308,19 +320,6 @@ interface ComputeALOutboundRetainedAdmissionSkipInput {
     readonly authority: ALOutboundMessageRuntime.PendingAdmissionAuthority;
 }
 
-/**
- * Skips `afterDequeueAdmission` for `expired`, `superseded`, `skipped`, `deferred`, and a `refused`
- * `unauthorized` verdict — the set the deleted status converter mapped to `skipped`. Publishing any
- * of them would deliver a message the planner already dropped.
- */
-function isDiscardedDequeuedAdmission(verdict: ALDeliveryAdmissionVerdict): boolean {
-    return verdict.kind === 'expired' ||
-        verdict.kind === 'superseded' ||
-        verdict.kind === 'skipped' ||
-        verdict.kind === 'deferred' ||
-        (verdict.kind === 'refused' && verdict.reason === 'unauthorized');
-}
-
 function computeALOutboundSendDisposition(
     result: ALOutboundSettledSendResult,
     timing: ALOutboundSettlementTiming
@@ -404,6 +403,9 @@ function toALOutboundRetainedDispatchPlan<TPrepared>(
         retryTracking: pending.policy.retryTracking ?? undefined,
         repairTracking: pending.policy.repairTracking ?? undefined,
         supersedenceTracking: pending.policy.supersedenceTracking ?? undefined,
-        admittedAudience: pending.policy.admittedAudience
+        admittedAudience: pending.policy.admittedAudience,
+        recipientScope: pending.policy.recipientScope,
+        principalTargetId: pending.policy.principalTargetId,
+        sessionInvalidation: pending.policy.sessionInvalidation
     };
 }

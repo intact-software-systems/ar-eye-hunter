@@ -42,6 +42,34 @@ export const hasThreeAgentConfig = Boolean(
 export const LIVE_RTC_SKIP_MESSAGE =
     'Live RTC three-browser scenarios require RALLAR_BLACK_BOX_FULL_STACK=1, RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1, an API base URL and three agent credentials.';
 
+export function readLiveRtcClusterApiOrigins(): readonly string[] | undefined {
+    if (!booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER')) {
+        return undefined;
+    }
+    const urls = readLiveRtcAgentApiUrls(apiBaseUrl);
+    return [urls.A, urls.B, urls.C].map((url) => new URL(url).origin);
+}
+
+export function readLiveRtcAgentApiUrls(baseApiUrl: string | undefined): Readonly<Record<AgentPrefix, string>> {
+    if (!baseApiUrl) {
+        throw new Error('Live RTC browser agents require an API base URL.');
+    }
+    if (!booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_CLUSTER')) {
+        return { A: baseApiUrl, B: baseApiUrl, C: baseApiUrl };
+    }
+    const B = envValue('VITE_RALLAR_API_BASE_URL_B');
+    const C = envValue('VITE_RALLAR_API_BASE_URL_C');
+    if (!B || !C) {
+        throw new Error('RTC cluster proof requires API origins for A, B, and C.');
+    }
+    const urls = { A: baseApiUrl, B, C };
+    const origins = [urls.A, urls.B, urls.C].map((url) => new URL(url).origin);
+    if (new Set(origins).size !== 3) {
+        throw new Error('RTC cluster proof requires three distinct API origins.');
+    }
+    return urls;
+}
+
 export function envValue(key: string): string | undefined {
     const value = process.env[key]?.trim();
     return value && value.length > 0 ? value : undefined;
@@ -153,7 +181,7 @@ export function liveRtcAgentConfig(): Parameters<typeof openLiveRtcBrowserAgent>
     return {
         spaBaseUrl: SPA_BASE_URL,
         controlWsUrl: CONTROL_WS_URL,
-        apiBaseUrl: apiBaseUrl ?? '',
+        apiBaseUrl: readLiveRtcAgentApiUrls(apiBaseUrl).A,
         register: booleanEnv('VITE_RALLAR_REGISTER')
     };
 }
@@ -164,11 +192,16 @@ export async function openAgentTrio(
 ): Promise<LiveRtcAgentTrio> {
     const handles: LiveRtcControlClient.Agent[] = [];
     try {
+        const agentApiUrls = readLiveRtcAgentApiUrls(apiBaseUrl);
+        const config = liveRtcAgentConfig();
         for (const prefix of ['A', 'B', 'C'] as const) {
             const agentName = `${input.label}-${prefix.toLowerCase()}-${input.suffix}`;
             handles.push(
                 await openLiveRtcBrowserAgent(browser, {
-                    config: liveRtcAgentConfig(),
+                    config: {
+                        ...config,
+                        apiBaseUrl: agentApiUrls[prefix]
+                    },
                     prefix,
                     auth: agentAuth(prefix),
                     runId: input.runId,

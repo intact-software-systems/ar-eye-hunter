@@ -446,6 +446,18 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchLobbyGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchLobbyGroup.0.actual.body.group.workspaceId"
+            }
           }
         ]
       }
@@ -500,6 +512,18 @@
           {
             "urlEncode": {
               "path": "outputs.bobWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchLobbyGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchLobbyGroup.0.actual.body.group.workspaceId"
             }
           }
         ]
@@ -865,6 +889,18 @@
             "urlEncode": {
               "path": "outputs.carolWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchArenaGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchArenaGroup.0.actual.body.group.workspaceId"
+            }
           }
         ]
       }
@@ -919,6 +955,18 @@
           {
             "urlEncode": {
               "path": "outputs.danWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchArenaGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createMatchArenaGroup.0.actual.body.group.workspaceId"
             }
           }
         ]

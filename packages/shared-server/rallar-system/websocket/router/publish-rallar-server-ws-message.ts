@@ -1,18 +1,28 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    hasALDeliveryDurableWork,
-    type ALDeliveryAdmissionVerdict
-} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
+import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
+import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
+import {
+    isAuthorizedRoomAudience,
+    readRallarServerWsPublicationAudience,
+    resolveAuthorizedRoomSessionIds,
+    type RallarServerWsPublicationAudience
+} from './rallar-server-ws-publication-audience.ts';
+import {
+    toRallarServerWsLivePublishResult,
+    toRallarServerWsOutboxPublishResult
+} from './rallar-server-ws-publish-result.ts';
 import type {
     RallarServerWsFanout,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
-    RallarServerWsPublishStatus,
-    RallarServerWsRoomAudience
+    RallarServerWsRoomAudience,
+    RallarServerWsRouterOptions
 } from './rallar-server-ws-router-contracts.ts';
+import { validateRallarServerWsPublishScope } from './validate-rallar-server-ws-publish-scope.ts';
 
 export interface PublishRallarServerWsMessageInput {
     readonly service: WsQueueBoxServerService;
@@ -21,84 +31,136 @@ export interface PublishRallarServerWsMessageInput {
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
     readonly admittedPeerIds?: readonly string[];
+    /** An explicit public scope or authenticated inbound scope; absent proof refuses unicast. */
+    readonly inboundScope?: StateScope | null;
     readonly nowEpochMs: number;
+    readonly livePublication?: RallarServerWsRouterOptions['livePublication'];
+    readonly readServerPublishAudience?: RallarServerWsRouterOptions['readServerPublishAudience'];
+    readonly inbound?: LiveWsInboundReference;
+    readonly origin?: 'server' | 'proxy' | 'admitted';
+    readonly authorizeRoomMessage?: RallarServerWsRouterOptions['authorizeRoomMessage'];
+}
+
+/** A malformed call is a programmer error, before operational audience reads can fail. */
+export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInputDto): void {
+    const message = input?.message;
+    if (
+        !input || typeof input !== 'object' || Array.isArray(input) ||
+        !message || typeof message !== 'object' || Array.isArray(message) ||
+        !message.id || typeof message.id !== 'object' ||
+        !message.route || typeof message.route !== 'object' ||
+        !message.payload || typeof message.payload !== 'object'
+    ) {
+        throw new TypeError('Public WS publication requires a message DTO.');
+    }
 }
 
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
+    if (input.audience !== undefined) {
+        return await publishAuthorizedRallarServerWsMessage(input);
+    }
+    let audience: Either<string, RallarServerWsPublicationAudience>;
+    try {
+        audience = await readRallarServerWsPublicationAudience({
+            message: input.message,
+            fanout: input.fanout,
+            origin: input.origin,
+            authorizeRoomMessage: input.authorizeRoomMessage,
+            readServerPublishAudience: input.readServerPublishAudience
+        });
+    }
+    catch (error) {
+        // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
+        if (input.origin === 'proxy' || input.origin === 'admitted') {
+            throw error;
+        }
+        return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
+    }
+    if (audience.left !== undefined) {
+        return toFailedPublishResult(input, audience.left);
+    }
+    return await publishAuthorizedRallarServerWsMessage({ ...input, audience: audience.right!.frozen });
+}
+
+/** The topic's fanout alone picks the carrier; the message's QoS never moves it to another one. */
+async function publishAuthorizedRallarServerWsMessage(
+    input: PublishRallarServerWsMessageInput
+): Promise<RallarServerWsPublishResult> {
+    const scopeIssues = validateRallarServerWsPublishScope(input);
+    if (scopeIssues.length > 0) {
+        return toFailedPublishResult(input, scopeIssues.join('; '));
+    }
+    if (input.fanout === 'none') {
+        return await publishRallarServerWsFanout(input);
+    }
+    const targets = input.message.targets;
+    const roomTarget = targets?.mode === 'multicast' ||
+        (targets?.mode === 'broadcast' && targets.scope === 'room');
+    if (input.livePublication && roomTarget && !readALTargetGroupRef(input.message)) {
+        return toFailedPublishResult(input, 'Room publication requires a full group reference.');
+    }
+    if (input.livePublication && roomTarget && !input.audience) {
+        return toFailedPublishResult(input, 'Room publication has no authorized frozen audience.');
+    }
+    if (input.audience && !isAuthorizedRoomAudience(input.message, input.audience, input.nowEpochMs)) {
+        return toFailedPublishResult(input, 'Room publication audience does not authorize the final message targets.');
+    }
+    if (input.fanout === 'live-only' && input.livePublication) {
+        return await publishRallarServerLiveWsNotice(
+            input,
+            input.service.resolveOutboundPolicy(input.message).effective
+        );
+    }
+    return await publishRallarServerWsFanout(input);
+}
+
+async function publishRallarServerWsFanout(
+    input: PublishRallarServerWsMessageInput
+): Promise<RallarServerWsPublishResult> {
     switch (input.fanout) {
         case 'none':
-            return {
-                fanout: input.fanout,
-                status: 'none',
-                message: input.message,
-                sentCount: 0,
-                entries: []
-            };
+            return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
         case 'outbox': {
-            const result = await input.service.enqueueOutboxIfAbsent(input.message, toAdmittedAudience(input));
+            const result = await input.service.enqueueOutboxIfAbsent(input.message, {
+                admittedAudience: toAdmittedAudience(input),
+                recipientScope:
+                    input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
+                        ? input.inboundScope ?? undefined
+                        : undefined
+            });
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
-            return toOutboxPublishResult(input.message, input.fanout, result);
+            return toRallarServerWsOutboxPublishResult(input.message, input.fanout, result);
         }
         case 'live-only': {
-            const result = input.service.sendToTargetsWithResult(
-                input.message,
-                input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
+            const groupRef = readALTargetGroupRef(input.message);
+            const result = input.service.sendToTargetsWithResult({
+                message: input.message,
+                recipientSessionIds: input.audience === undefined ? undefined : resolveAuthorizedRoomSessionIds({
                     message: input.message,
                     audience: input.audience,
                     admittedPeerIds: input.admittedPeerIds,
                     nowEpochMs: input.nowEpochMs
                 }),
-                input.admittedPeerIds
-            );
+                admittedPeerIds: input.admittedPeerIds,
+                inboundScope: input.inboundScope,
+                recipientScope: input.audience && groupRef
+                    ? { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId }
+                    : undefined
+            });
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);
             }
-            return toLivePublishResult(input.message, input.fanout, result);
+            return toRallarServerWsLivePublishResult(input.message, input.fanout, result);
         }
     }
 }
 
-interface ResolveAuthorizedRoomSessionIdsInput {
-    readonly message: ALMessage;
-    readonly audience: RallarServerWsRoomAudience;
-    readonly admittedPeerIds: readonly string[] | undefined;
-    readonly nowEpochMs: number;
-}
-
-/**
- * An admitted message goes to the audience it was admitted to, not to the room as it is now: a session that
- * left after admission stays addressed and its receipt reports it missing (D43). Socket liveness stays the
- * send-time decision, so a disconnected session is not sent to and simply never confirms.
- */
-function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSessionIdsInput): readonly string[] {
-    const { message, audience, nowEpochMs } = input;
-    // A handler may change targets after authorization. Never reuse that authority
-    // for a different scope or exclusions, or fall back to a cached audience.
-    if (
-        JSON.stringify(message.targets) !== JSON.stringify(audience.targets) ||
-        (message.constraints?.expiresAtMs !== undefined && nowEpochMs > message.constraints.expiresAtMs)
-    ) {
-        return [];
-    }
-    const addressedSessionIds = input.admittedPeerIds ?? audience.sessions
-        .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
-        .map((session) => session.sessionId);
-    const targets = audience.targets;
-    switch (targets.mode) {
-        case 'unicast':
-            return addressedSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
-        case 'multicast':
-            return addressedSessionIds.filter((sessionId) => sessionId !== message.id.senderId);
-        case 'broadcast':
-            return addressedSessionIds.filter((sessionId) =>
-                !targets.exceptPeerIds?.includes(sessionId) &&
-                (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
-            );
-    }
+function toFailedPublishResult(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {
+    return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };
 }
 
 /**
@@ -109,65 +171,7 @@ function resolveAuthorizedRoomSessionIds(input: ResolveAuthorizedRoomSessionIdsI
  */
 function toAdmittedAudience(input: PublishRallarServerWsMessageInput): readonly string[] | undefined {
     const { message, audience, admittedPeerIds } = input;
-    return audience === undefined || admittedPeerIds === undefined
+    return audience === undefined
         ? undefined
         : resolveAuthorizedRoomSessionIds({ message, audience, admittedPeerIds, nowEpochMs: input.nowEpochMs });
-}
-
-function toLivePublishResult(
-    message: ALMessage,
-    fanout: RallarServerWsFanout,
-    result: WsServerLiveSendResult
-): RallarServerWsPublishResult {
-    return {
-        fanout,
-        status: result.status,
-        message,
-        sentCount: result.sentCount,
-        recipientCount: result.recipientCount,
-        failedCount: result.failedCount,
-        recipients: result.recipients,
-        failures: result.failures,
-        entries: []
-    };
-}
-
-function toOutboxPublishResult(
-    message: ALMessage,
-    fanout: RallarServerWsFanout,
-    result: ALOutboundEnqueueResult
-): RallarServerWsPublishResult {
-    return {
-        fanout,
-        status: toOutboxPublishStatus(result.verdict),
-        message,
-        entry: result.entry,
-        entries: result.entries,
-        verdict: result.verdict,
-        reason: result.reason
-    };
-}
-
-function toOutboxPublishStatus(
-    verdict: ALDeliveryAdmissionVerdict
-): RallarServerWsPublishStatus {
-    switch (verdict.kind) {
-        case 'admitted':
-        case 'pending':
-            return 'queued-outbox';
-        case 'duplicate':
-            return 'duplicate';
-        case 'refused':
-            return verdict.reason === 'unauthorized' ? 'skipped' : 'failed';
-        case 'unroutable':
-            return verdict.reason;
-        // An enqueue-time deferred writes no outbox row, so it reports the same status as skipped.
-        case 'deferred':
-            return 'skipped';
-        case 'superseded':
-        case 'expired':
-        case 'skipped':
-        case 'failed':
-            return verdict.kind;
-    }
 }

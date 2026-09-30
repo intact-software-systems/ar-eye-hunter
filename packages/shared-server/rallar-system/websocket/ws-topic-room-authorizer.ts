@@ -3,7 +3,7 @@ import {
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-import { readALTargetGroupRef, type ALTargets } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -49,6 +49,23 @@ export function createGroupRoomWsAuthorizer(
     dependencies: GroupRoomWsAuthorizerDependencies
 ): RallarServerWsRoomAuthorizer {
     return (input) => authorizeGroupRoomMessage(dependencies, input);
+}
+
+export function computeServerRoomPublicationAudience(
+    snapshot: GroupSnapshot | undefined,
+    message: ALMessage,
+    nowEpochMs: number
+): RallarServerWsRoomAudience | undefined {
+    const groupRef = readALTargetGroupRef(message);
+    if (
+        !snapshot || !groupRef || !message.targets ||
+        !isSameGroupRef(snapshot.group, groupRef) ||
+        snapshot.group.status !== 'active' || snapshot.group.transportState === 'halted' ||
+        (snapshot.group.expiresAtEpochMs !== null && snapshot.group.expiresAtEpochMs <= nowEpochMs)
+    ) {
+        return undefined;
+    }
+    return toAuthorizedRoomAudience(snapshot, message.targets, nowEpochMs);
 }
 
 async function authorizeGroupRoomMessage(

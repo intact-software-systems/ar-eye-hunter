@@ -26,6 +26,10 @@ describe('WS server inbound identity', () => {
         const service = createDefaultWsQueueBoxServerService({
             outbox: new InMemoryQueueBox(),
             socket: server,
+            readAuthenticatedConnectionScope: (connection) =>
+                server.connections.get(connection.id) === connection
+                    ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                    : undefined,
             name: 'server-1',
             inboundDiagnostics: (event) => inboundDiagnostics.push(event)
         });
@@ -69,6 +73,7 @@ describe('WS server inbound identity', () => {
         server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1',

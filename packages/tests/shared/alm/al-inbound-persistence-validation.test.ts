@@ -98,7 +98,7 @@ function readOwner(
 }
 
 function readIncoming(store: ReturnType<typeof createFixture>['store'], candidate: ALMessage) {
-    const source = { kind: 'ws-client' as const, peerId: candidate.id.senderId };
+    const source = { kind: 'ws-client' as const, peerId: candidate.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
     const nowMs = Date.now();
     return store.readIncomingMessage({
         msg: candidate,
@@ -177,7 +177,7 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
             value: {
                 msgId: message.id.msgId,
                 senderId: input.senderId,
-                source: { kind: 'ws-client', peerId: input.senderId },
+                source: { kind: 'ws-client', peerId: input.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                 supersedenceKey: null
             },
             expireAtTimestamp: input.expireAtTimestamp
@@ -209,13 +209,63 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
 }
 
 describe('inbound admission persisted values', () => {
+    it('reads back a complete authenticated WS scope from the message owner', async () => {
+        const { backend, store } = createFixture();
+        const authenticatedScope = { applicationId: 'app', workspaceId: 'workspace' };
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({
+            source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope }
+        });
+    });
+
+    it.each([
+        { applicationId: 'app' },
+        { applicationId: '', workspaceId: 'workspace' },
+        { applicationId: 'app', workspaceId: 'workspace', extra: 'untrusted' },
+        null
+    ])('rejects malformed stored authenticated WS scope %j', async (authenticatedScope) => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('rejects a stored WS client source that carries no authenticated scope', async () => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
     it('rejects a delimiter-containing message owner mismatch before admission planning', async () => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
             await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
                 msgId: message.id.msgId,
                 senderId: 'delimiter',
-                source: { kind: 'ws-client', peerId: 'delimiter' },
+                source: { kind: 'ws-client', peerId: 'delimiter', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                 supersedenceKey: null
             });
         });
@@ -246,7 +296,13 @@ describe('inbound admission persisted values', () => {
     it.each([
         { kind: 'rtc-peer', peerId: message.id.senderId, snapshotVersion: 4 },
         { kind: 'rtc-peer', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 0 },
-        { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 4 }
+        {
+            kind: 'ws-client',
+            peerId: message.id.senderId,
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupRecipientPeerIds: ['receiver'],
+            snapshotVersion: 4
+        }
     ])('rejects a snapshot version without a valid RTC frozen audience beside it on $kind provenance', async (source) => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
@@ -308,7 +364,12 @@ describe('inbound admission persisted values', () => {
                     value: {
                         msgId: message.id.msgId,
                         senderId: message.id.senderId,
-                        source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds },
+                        source: {
+                            kind: 'ws-client',
+                            peerId: message.id.senderId,
+                            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                            groupRecipientPeerIds
+                        },
                         supersedenceKey: null
                     },
                     expireAtTimestamp
@@ -318,7 +379,12 @@ describe('inbound admission persisted values', () => {
         ).toBe('committed');
 
         await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({
-            source: { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds }
+            source: {
+                kind: 'ws-client',
+                peerId: message.id.senderId,
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupRecipientPeerIds
+            }
         });
     });
 
@@ -669,7 +735,7 @@ describe('inbound admission persisted values', () => {
                 value: {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null
                 },
                 expireAtTimestamp: Date.now() + 60_000
@@ -717,7 +783,7 @@ describe('inbound admission persisted values', () => {
                 value: {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null
                 },
                 expireAtTimestamp: Date.now() + 60_000
@@ -734,7 +800,11 @@ describe('inbound admission persisted values', () => {
                     value: {
                         msgId: secondMessage.id.msgId,
                         senderId: secondMessage.id.senderId,
-                        source: { kind: 'ws-client', peerId: secondMessage.id.senderId },
+                        source: {
+                            kind: 'ws-client',
+                            peerId: secondMessage.id.senderId,
+                            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+                        },
                         supersedenceKey: null
                     },
                     expireAtTimestamp: Date.now() + 60_000
@@ -744,9 +814,9 @@ describe('inbound admission persisted values', () => {
         ).toBe('committed');
 
         expect((await readOwner(backend, store.namespace))?.source)
-            .toEqual({ kind: 'ws-client', peerId: message.id.senderId });
+            .toEqual({ kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } });
         expect((await readOwner(backend, store.namespace, secondMessage))?.source)
-            .toEqual({ kind: 'ws-client', peerId: secondMessage.id.senderId });
+            .toEqual({ kind: 'ws-client', peerId: secondMessage.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } });
         expect([...state.data.keys()].filter((key) => key.startsWith('inbound:msg-owner:')).sort()).toEqual([
             'inbound:msg-owner:message:second-sender',
             'inbound:msg-owner:message:sender%3Awith%3Adelimiter'
@@ -951,7 +1021,7 @@ async function seedPendingAcknowledgement(
                 value: {
                     msgId: message.id.msgId,
                     senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                     supersedenceKey: null
                 },
                 expireAtTimestamp

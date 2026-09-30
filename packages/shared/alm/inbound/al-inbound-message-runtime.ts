@@ -3,6 +3,7 @@ import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -48,7 +49,12 @@ export namespace ALInboundMessageRuntime {
             readonly groupRecipientPeerIds?: readonly string[];
             readonly snapshotVersion?: number;
         }
-        | { readonly kind: 'ws-client'; readonly peerId: string; readonly groupRecipientPeerIds?: readonly string[]; }
+        | {
+            readonly kind: 'ws-client';
+            readonly peerId: string;
+            readonly authenticatedScope: StateScope;
+            readonly groupRecipientPeerIds?: readonly string[];
+        }
         | { readonly kind: 'trusted-server'; };
 
     export type Acceptance =
@@ -87,6 +93,13 @@ export namespace ALInboundMessageRuntime {
         readonly attemptIdentity: string;
     }
 
+    export interface ForwardMessageInputDto {
+        readonly msg: ALMessage;
+        readonly fromPeerId: string;
+        readonly plan: ALMessageHandlingPlan;
+        readonly source: Source;
+    }
+
     export interface Dependencies extends Resources {
         /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
         readonly carrier: ALDeliveryCarrier;
@@ -103,11 +116,7 @@ export namespace ALInboundMessageRuntime {
         /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
         readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
-        readonly forwardMessage?: (
-            msg: ALMessage,
-            fromPeerId: string,
-            plan: ALMessageHandlingPlan
-        ) => Promise<void | 'completed' | 'retry'>;
+        readonly forwardMessage?: (input: ForwardMessageInputDto) => Promise<void | 'completed' | 'retry'>;
         /** Absence means a retried copy of an admitted message is never forwarded again. */
         readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */

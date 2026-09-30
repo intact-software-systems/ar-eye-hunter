@@ -91,6 +91,7 @@ export type ClientStateServiceDependencies = Readonly<{
     clientStateEventStore: ClientStateEventStore;
     serviceId: string;
     timing?: import('../observability/timing.ts').RallarTimingSink;
+    nowMs?: () => number;
 }>;
 
 export function requiresClientWrite(

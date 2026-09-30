@@ -38,6 +38,11 @@ import {
 } from 'vitest';
 
 const NAMESPACE = 'inbound-canonical';
+const SCOPED_WS_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'sender',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
 
 interface CanonicalRuntimeFixture {
     readonly state: ALAdmissionMemoryState;
@@ -53,7 +58,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const message = newInboundMessage('message', { orderingKey: 'stream', seq: 1 }, 'hello');
 
-        await fixture.runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(message, SCOPED_WS_SOURCE);
 
         const stored = await readALInboundStoredMessage({
             database: fixture.backend,
@@ -75,7 +80,7 @@ describe('inbound canonical message ownership', () => {
         const fixture = createCanonicalRuntime();
         const gapped = newInboundMessage('gapped', { orderingKey: 'stream', seq: 2 }, 'buffered');
 
-        await fixture.runtime.admitIncomingMessage(gapped, { kind: 'ws-client', peerId: 'sender' });
+        await fixture.runtime.admitIncomingMessage(gapped, SCOPED_WS_SOURCE);
 
         const buffered = [...fixture.state.data.values()].filter((value) => value.key.includes(':buffered:'));
         expect(buffered).toHaveLength(1);
@@ -193,7 +198,7 @@ describe('inbound canonical message ownership', () => {
             payload: { kind: 'dispatch-local', message: { senderId: 'sender', msgId: message.id.msgId } }
         });
         const nowMs = Date.now();
-        const source = { kind: 'ws-client' as const, peerId: 'sender' };
+        const source = SCOPED_WS_SOURCE;
         const read = await fixture.admissionStore.readIncomingMessage({
             msg: message,
             source,
@@ -289,8 +294,8 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
         sendControlMessages: async () => {},
-        forwardMessage: async (outgoing) => {
-            forwarded.push(outgoing.id.msgId);
+        forwardMessage: async ({ msg }) => {
+            forwarded.push(msg.id.msgId);
         },
         diagnostics: undefined
     });
@@ -303,7 +308,7 @@ async function admitMessage(
     msg: ALMessage,
     nowMs: number
 ): Promise<ALInboundCommitBundle> {
-    const source = { kind: 'ws-client' as const, peerId: 'sender' };
+    const source = SCOPED_WS_SOURCE;
     const read = await admissionStore.readIncomingMessage({
         msg,
         source,

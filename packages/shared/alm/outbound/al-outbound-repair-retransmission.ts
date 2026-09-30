@@ -1,6 +1,7 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundPlanner,
     ALOutboundRepairHint,
     ALOutboundRepairReadDto
 } from './admission/al-outbound-admission-store.ts';
@@ -30,7 +31,7 @@ export namespace ALOutboundRepairRetransmission {
     export interface Dependencies<TPrepared> {
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,
@@ -131,17 +132,7 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             return;
         }
 
-        if (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg)) {
-            return;
-        }
-        const repairedPlan = this.dependencies.planRepairMessage
-            ? await this.dependencies.planRepairMessage(msg, {
-                ...request,
-                completedHopPeerIds: [],
-                repair,
-                admittedAudience: plan.admittedAudience
-            })
-            : plan;
+        const repairedPlan = await this.readRepairPlan(read, request);
         if (repairedPlan?.dropReason) {
             console.warn(`Skipping outbound repair dispatch: ${repairedPlan.dropReason}`);
             return;
@@ -157,6 +148,30 @@ export class ALOutboundRepairRetransmission<TPrepared> {
             maxAttempts: repair.maxAttempts,
             attemptIdentity
         });
+    }
+
+    private async readRepairPlan(
+        read: ALOutboundRepairReadDto<TPrepared>,
+        request: ALOutboundRepairHint
+    ): Promise<ALOutboundDispatchPlan<TPrepared> | undefined> {
+        const msg = read.sentSnapshot?.msg;
+        const plan = read.plan;
+        const repair = plan?.repairTracking;
+        if (!msg || !plan || !repair || (!this.dependencies.planRepairMessage && isRoomScopedALMessage(msg))) {
+            return undefined;
+        }
+        return this.dependencies.planRepairMessage
+            ? await this.dependencies.planRepairMessage(msg, {
+                ...request,
+                completedHopPeerIds: [],
+                repair,
+                recipientScope: plan.recipientScope,
+                principalTargetId: plan.principalTargetId,
+                sessionInvalidation: plan.sessionInvalidation,
+                admittedAudience: plan.admittedAudience,
+                referenceKey: read.storedMessage?.reference.key
+            })
+            : plan;
     }
 
     private async retryMissingAcknowledgements(
@@ -176,10 +191,14 @@ export class ALOutboundRepairRetransmission<TPrepared> {
         const retryPlan = this.dependencies.planRepairMessage
             ? await this.dependencies.planRepairMessage(msg, {
                 ...request,
+                recipientScope: plan.recipientScope,
+                principalTargetId: plan.principalTargetId,
+                sessionInvalidation: plan.sessionInvalidation,
+                admittedAudience: plan.admittedAudience,
+                referenceKey: read.storedMessage?.reference.key,
                 failedPeerIds: pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId)),
                 completedHopPeerIds: toALOutboundCompletedHopPeerIds(read.acks),
-                repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts },
-                admittedAudience: plan.admittedAudience
+                repair: { enabled: true, algo: 'retransmit', maxAttempts: pending.maxAttempts }
             })
             : plan;
         if (!retryPlan || retryPlan.dropReason) {

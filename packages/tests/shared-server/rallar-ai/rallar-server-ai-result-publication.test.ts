@@ -103,7 +103,7 @@ function createPublicationCapture(): PublicationCapture {
     let publishedMessage: ALMessage | undefined;
     let publishedFanout: RallarServerWsFanout | undefined;
     const port: RallarServerAiResultPublicationPort = {
-        publish: async (message, fanout) => {
+        publish: async ({ message, fanout }) => {
             publishedMessage = message;
             publishedFanout = fanout;
             return successfulPublication(message, fanout);

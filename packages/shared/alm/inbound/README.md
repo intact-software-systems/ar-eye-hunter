@@ -186,7 +186,11 @@ is addressed to the origin, not to the server; the server admits it as the
 aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
 lives, the ACK speaks for its own sender, and it confirms an uncounted
 member of the frozen audience. Every other such ACK is refused at ingress as
-a typed value.
+a typed value, except on an instance that holds no aggregate for it: with a
+cluster relay channel, an ACK that speaks for its own sender, is addressed
+to the origin it names and names a message the shared inbound store froze to
+that sender is handed to the instance that holds the aggregate instead, at most 60 relays per session per 60 s
+(D106; outbound README, "Server receipts on WS").
 
 The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
@@ -282,13 +286,17 @@ peer that owns no children never asks: the retry of a recipient the origin
 already counted is the origin's decision from its receipt (see the outbound
 README for the origin's `no-route` verdict when it owns no child).
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s3c-i'`. An
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-scoped-delivery'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
 S3c-i bumped it because a unicast may now name its room (`targets.groupRef`),
-which older decoders refuse (C1).
+which older decoders refuse (C1). The scoped-delivery bump (D101) followed because the WS
+server's rows gained fields older decoders refuse: the captured policy's `recipientScope`,
+`principalTargetId` and `sessionInvalidation`, the `ws-client` source's `authenticatedScope`,
+and the prepared recipient kinds `scoped-recipient`, `room-recipient` and `invalidated-session`.
+A row whose targets name a group stores none of the three captured fields: its `groupRef` scopes it.
 
 **The deploy window.** No row kind this change touches lacks an expiry, so
 nothing the WS server's PostgreSQL store holds from before the deploy stays
@@ -318,6 +326,18 @@ this is not bounded by the row TTL, since the page itself, not a stored row,
 is what is out of date. The refusal is symmetric: an old-build page also
 refuses a new-build `al.control.ack.v2`, until it reloads.
 
+**The scoped-delivery window.** The WS server's PostgreSQL rows carry no schema identity, so the
+scoped-delivery bump resets browsers only. On the server:
+
+- A server rolled back past this change cannot decode a captured policy, a prepared recipient or a
+  `ws-client` source this build wrote; each stays undecodable for its row's TTL.
+- A raw `WS_OUTBOX` row an older build wrote has no producer provenance and ends `NON_RETRYABLE` at
+  its first dequeue (D103).
+- `ws-client` work an older build retained carries no `authenticatedScope`, fails strict decoding and is
+  dropped once as corrupt.
+
+Web and API deploy together.
+
 ## Admission and invocation paths
 
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
@@ -334,8 +354,17 @@ obligation short-circuits, because the remaining checks read that obligation.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
-it through `commitWork()`: the scan restarts and the row reaches the batch the running
-batch's end schedules, rather than whichever round the rotation next reaches. A retained
+it through `commitWork()`: it asks the rotation page for a head read
+([`ALInboundRotationPage`](./lane/al-inbound-rotation-page.ts)) and then tells the handler.
+The next page read starts at the head of NEW and stores no position, so the rotation resumes
+where it stood; a page a probe held is dropped without moving the rotation. The row reaches the
+batch the commit starts when the owner is idle, or the follow-up batch the running batch's end
+runs. Both land one batch later when a head batch ran since the last rotation read. At most one
+head read runs between two rotation reads: a commit that lands during a head batch, or after one
+before the next rotation read, waits for the read after that rotation read, and the lane announces it again at that
+rotation read, so the handler's own follow-up batch runs it. The rotation therefore advances at
+least every other batch while commits keep arriving, and later NEW pages, RETRY rows and expired
+reservations keep their turn. A retained
 conflict announces for the same reason, and only when retention left a claimable row: a message
 already past its deadline is rejected before the write or as a row written already expired, and a
 row that is already terminal holds nothing to claim. An admission that wrote no row announces nothing, because
@@ -417,13 +446,13 @@ and cannot: a conflict means an authority-bearing observation moved, so the surf
 attempt read is exactly the thing that has to be read again. The pre-plan, the deadline and
 the decoded message are pure work re-derived from the message and the source
 [`retainPending`](./al-inbound-message-admission.ts) already persists; the effect facts are
-carried by neither, and are taken fresh instead — `readALInboundEffectFacts` builds
+carried by neither, and are taken fresh instead — `readALInboundEffectFacts` constructs
 `selfPeerId`, `observedAtEpochMs` and a new `controlIdPrefix` from the replay's own clock
 and this owner's effect preparation. So the retained payload carries nothing it did not
 carry before and the stored schema identity did not move. The replay runs in the batch the
-owner's own commit starts when the worker is idle, or in the follow-up batch
-`commitPending` schedules when a batch is already running; it never waits for the rotation
-to come round to it.
+owner's own commit starts when the worker is idle, or in the follow-up batch `commitPending`
+schedules when a batch is already running (in either case one batch later when a head batch ran
+since the last rotation read); it never waits for the rotation to come round to it.
 
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
@@ -460,8 +489,10 @@ The delivery that an eligibility read cleared does not read that surface again. 
 `dispatch-local` or `forward-message` row the read takes the retained message and its
 stored planning state, and the selector carries exactly that surface to the claim by effect
 id ([`ALInboundDeliveryObservation`](./al-inbound-admitted-delivery.ts)). It is recorded
-only for a row the port went on to reserve, and it is dropped when the scan restarts or the
-next page replaces it. The delivery then decides again only what cannot be decided as early
+only for a row the port went on to reserve, and it is replaced by the next claimed selection. A
+commit leaves it in place: it describes a row the running batch holds, and a commit changes neither
+that reservation nor the stored message, source and plan it carries. The delivery then decides
+again only what cannot be decided as early
 as the page: every expiry, against a fresh clock reading, and an ordered message's
 predecessor, which can land inside the claim window. A claim that carries no observation
 reads the surface for itself.
@@ -481,21 +512,29 @@ the port reserved, with the envelope its eligibility read decoded
 selection. The first of those claims to run hands the whole array to `sendControlMessages`, and
 every other claim of that batch awaits the same send. The browser carriers commit that array as one
 outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
-order. The round is keyed by that array's identity, never by time, so a row retried in a later
-batch never joins a finished round. A restarted scan empties the array, and a claim it left out
-sends alone. When the round's send throws, each of its claims sends its own message alone, so each
+order
+([`WsQueueBoxServerControlDelivery`](../../services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts)).
+The round is keyed by that array's identity, never by time, so a row retried in a later
+batch never joins a finished round. A commit leaves the claimed array in place, so a running batch's control claims still send as one round.
+When the round's send throws, each of its claims sends its own message alone, so each
 claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
 a member's storage throw once every member ran: a message the round already admitted then answers
 `duplicate`, and only the claim whose message throws again carries that failure. On RTC the round
 does not throw, because the multicast manager's circuit breaker answers a throw as `failed` values,
-as it answered a single send's throw before grouping. The WS server makes no admission; a
-synchronous throw there would send the messages before it a second time, which receivers drop by
-message id.
+as it answered a single send's throw before grouping. The WS server writes to the sockets it holds
+and admits nothing, except a control whose target has no socket on the instance that claimed its
+row. Any instance of a deployment may claim that row, so with a cluster publisher registered the
+control is admitted as one durable `WS_OUTBOX` row, idempotent by message id, whose first dequeue
+publishes it to every instance once; the instance holding the target's socket sends it, and the row
+completes whether or not one does. Without a cluster publisher the control is dropped with a
+warning. A throw in the WS server's round sends the messages before it a second time, which
+receivers drop by message id.
 
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather
 than the remembered readiness the outbound owners use: a remembered answer would skip
-the read and leave the scan where it stood. Measured over a hundred engine passes of an
+the read and leave the scan where it stood. A head read is the one page
+read that leaves the scan position where it stood. Measured over a hundred engine passes of an
 idle owner — `al-indexeddb-operation-counts.test.ts`, both an empty queue and one holding
 a row no consumer claims — the probe reaches storage on more than half of them (97 of
 100 as measured, the rest being rounds spent inside the batch the round before started),

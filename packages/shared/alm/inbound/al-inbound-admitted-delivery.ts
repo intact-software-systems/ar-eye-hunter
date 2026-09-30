@@ -12,6 +12,7 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundStoredPlanningObservations
 } from './al-inbound-planner-snapshot.ts';
+import { isAuthorizedStoredWsClientDelivery } from './al-inbound-source-validation.ts';
 import type { ALPersistedInboundEffect } from './al-inbound-work-entry.ts';
 
 export namespace ALInboundAdmittedDelivery {
@@ -115,6 +116,9 @@ export class ALInboundAdmittedDelivery {
         if (read === undefined) {
             return READY_WITHOUT_OBSERVATION;
         }
+        if (!isAuthorizedStoredWsClientDelivery(read.snapshot.msg, read.source)) {
+            return READY_WITHOUT_OBSERVATION;
+        }
         const plan = this.dependencies.planIncomingMessage(
             read.snapshot.msg,
             read.source,
@@ -141,6 +145,9 @@ export class ALInboundAdmittedDelivery {
                 JSON.stringify(reference),
                 new TypeError('Inbound message owner row is missing')
             );
+        }
+        if (!isAuthorizedStoredWsClientDelivery(read.msg, read.source)) {
+            throw new NonRetryableException('Stored WS client scope does not authorize delivery');
         }
         const source = retriedFromPeerId === undefined || read.source.kind === 'trusted-server'
             ? read.source
@@ -303,7 +310,12 @@ export class ALInboundAdmittedDelivery {
             return 'completed';
         }
         const forwarded = forward.retryPeerIds === undefined
-            ? await this.dependencies.forwardMessage?.(msg, forward.fromPeerId, plan)
+            ? await this.dependencies.forwardMessage?.({
+                msg,
+                fromPeerId: forward.fromPeerId,
+                plan,
+                source: forward.observed.source
+            })
             : await this.dependencies.forwardRetriedCopy?.({
                 msg,
                 fromPeerId: forward.fromPeerId,

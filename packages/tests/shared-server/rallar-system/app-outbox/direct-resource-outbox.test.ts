@@ -33,10 +33,12 @@ import {
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { WsOutboxProvenanceReader } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type {
     AuditStamp,
+    GroupPresenceSession,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import {
@@ -52,6 +54,7 @@ import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/w
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { drainEngine } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { createGroupDeltaProducer, readCommittedGroupDelta } from '../group-state/presence/group-delta-producer-fixture.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
 
@@ -423,11 +426,10 @@ describe('direct resource outbox writes', () => {
     });
 
     it('resolves logical websocket recipients only while consuming committed work', async () => {
-        const snapshot = createGroupSnapshot();
-        const [entry] = computeGroupStateSyncEntries(
-            createComputedGroupStateSync(snapshot),
-            'server-1'
-        );
+        const producer = await createGroupDeltaProducer();
+        await producer.worker.processReservedEntry(producer.message, producer.entry);
+        const entry = await readCommittedGroupDelta(producer);
+        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now });
         const outbox = new InMemoryQueueBox();
         const socket = createSocket();
         const resolveBroadcastRecipients = vi.fn(() => [
@@ -442,19 +444,15 @@ describe('direct resource outbox writes', () => {
             socket: socket,
             name: 'server-1',
             targetResolver: { resolveBroadcastRecipients },
+            readProducerProvenance: (message, row) => proofReader.readProducerProvenance(message, row),
+            readAuthenticatedConnectionScope: () => ({ scope: producer.ref, expiresAtEpochMs: producer.now + 60_000 }),
             queueEngine: engine
         });
         onTestFinished(() => service.dispose());
 
         expect(socket.sent).toEqual([]);
 
-        // The fixture's own createdTs (CREATED_AT_EPOCH_MS) sits in the future; the engine's isWork()
-        // gate falls back to createdTs when a row carries no nextTs, so without a due nextTs this row
-        // would never look ready to the gate the way an unmocked port.claim never checked before.
-        await outbox.enqueue({
-            ...entry,
-            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
-        });
+        await outbox.enqueue(entry);
         const wake = vi.fn(() => {
             throw new Error('wake failed');
         });
@@ -472,14 +470,13 @@ describe('direct resource outbox writes', () => {
     });
 
     it('treats no current websocket recipient as a post-commit delivery outcome', async () => {
-        vi.useFakeTimers({ toFake: ['Date'] });
-        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        const [entry] = computeGroupStateSyncEntries(
-            createComputedGroupStateSync(createGroupSnapshot()),
-            'server-1'
-        );
+        const producer = await createGroupDeltaProducer();
+        await producer.worker.processReservedEntry(producer.message, producer.entry);
+        const entry = await readCommittedGroupDelta(producer);
+        const proofReader = new WsOutboxProvenanceReader({ repository: producer.repository, nowMs: Date.now });
         const outbox = new InMemoryQueueBox();
         const socket = createSocket();
+        socket.connections.clear();
         const resolveBroadcastRecipients = vi.fn(() => []);
         const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
         const engine = new InboxOutboxEngine();
@@ -489,22 +486,17 @@ describe('direct resource outbox writes', () => {
             name: 'server-1',
             targetResolver: { resolveBroadcastRecipients },
             outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome),
+            readProducerProvenance: (message, row) => proofReader.readProducerProvenance(message, row),
+            readAuthenticatedConnectionScope: () => ({ scope: producer.ref, expiresAtEpochMs: producer.now + 60_000 }),
             queueEngine: engine
         });
         onTestFinished(() => service.dispose());
-        // The fixture's own createdTs (CREATED_AT_EPOCH_MS) sits in the future; the engine's isWork()
-        // gate falls back to createdTs when a row carries no nextTs, so without a due nextTs this row
-        // would never look ready to the gate the way an unmocked port.claim never checked before.
-        await outbox.enqueue({
-            ...entry,
-            dequeueAudit: { ...entry.dequeueAudit, nextTs: Temporal.Instant.fromEpochMilliseconds(Date.now()) }
-        });
+        await outbox.enqueue(entry);
         await drainEngine(engine);
         await expect.poll(async () => {
             const status = (await outbox.getItem(entry.key))?.status;
             return status === EntityStatus.NEW || status === EntityStatus.RESERVED;
         }).toBe(false);
-        vi.useRealTimers();
         expect(socket.sent).toEqual([]);
         expect(deliveryOutcomes).toEqual([
             {
@@ -769,25 +761,27 @@ function createGroupSnapshot(): GroupSnapshot {
                 banned: null
             }
         ],
-        activeSessions: [
-            {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1',
-                principalId: 'alice',
-                sessionId: 'session-alice',
-                generationId: 'generation-alice',
-                generationVersion: 1,
-                status: 'active',
-                disconnectedAtEpochMs: null,
-                disconnectReason: null,
-                connectedAtEpochMs: 1,
-                lastHeartbeatAtEpochMs: 1,
-                expiresAtEpochMs: EXPIRE_AT_EPOCH_MS
-            }
-        ],
+        activeSessions: [createGroupPresenceSession()],
         memberCount: 1,
         onlineMemberCount: 1
+    };
+}
+
+function createGroupPresenceSession(): GroupPresenceSession {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        principalId: 'alice',
+        sessionId: 'session-alice',
+        generationId: 'generation-alice',
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: EXPIRE_AT_EPOCH_MS
     };
 }
 

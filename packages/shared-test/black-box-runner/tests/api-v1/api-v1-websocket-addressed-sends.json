@@ -20,7 +20,8 @@
       "timeoutMs": 10000
     },
     "wsAlice": { "type": "ws", "timeoutMs": 10000 },
-    "wsBob": { "type": "ws", "timeoutMs": 10000 }
+    "wsBob": { "type": "ws", "timeoutMs": 10000 },
+    "wsAliceElsewhere": { "type": "ws", "timeoutMs": 10000 }
   },
   "steps": [
     {
@@ -166,7 +167,19 @@
           "/api/ws/",
           { "path": "outputs.aliceSessionId" },
           "?ticket=",
-          { "urlEncode": { "path": "outputs.aliceWsTicket" } }
+          { "urlEncode": { "path": "outputs.aliceWsTicket" } },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.workspaceId"
+            }
+          }
         ]
       }
     },
@@ -200,7 +213,19 @@
           "/api/ws/",
           { "path": "outputs.bobSessionId" },
           "?ticket=",
-          { "urlEncode": { "path": "outputs.bobWsTicket" } }
+          { "urlEncode": { "path": "outputs.bobWsTicket" } },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.workspaceId"
+            }
+          }
         ]
       }
     },
@@ -516,6 +541,227 @@
       "type": "ws.close",
       "connection": "wsAlice",
       "request": { "code": 1000, "reason": "addressed sends recipe done" }
+    },
+    {
+      "name": "loginAliceElsewhere",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-addressed-login-alice-elsewhere-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceElsewhereClientId": "body.clientId",
+          "aliceElsewhereSessionId": "body.sessionId",
+          "aliceElsewhereAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceElsewhereAuthHeader",
+      "type": "set",
+      "output": "aliceElsewhereAuthHeader",
+      "secret": true,
+      "redactAs": "aliceElsewhereAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceElsewhereAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "connectAliceElsewherePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceElsewhereSessionId}/requests/bb-addressed-presence-alice-elsewhere-{runId}",
+        "headers": {
+          "Authorization": "{aliceElsewhereAuthHeader}",
+          "x-client-id": "{aliceElsewhereClientId}"
+        },
+        "body": {
+          "generationId": "generation-elsewhere-{runId}",
+          "principalId": "{aliceElsewhereClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createAliceElsewhereWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-addressed-ticket-alice-elsewhere-{runId}",
+        "headers": {
+          "Authorization": "{aliceElsewhereAuthHeader}",
+          "x-client-id": "{aliceElsewhereClientId}"
+        },
+        "outputs": {
+          "aliceElsewhereWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceElsewhereWsUrl",
+      "type": "set",
+      "output": "aliceElsewhereWsUrl",
+      "secret": true,
+      "redactAs": "aliceElsewhereWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceElsewhereSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceElsewhereWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.applicationId"
+            }
+          },
+          "-elsewhere",
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.aliceCreatesTheRoom.0.actual.body.group.workspaceId"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceElsewhereWs",
+      "type": "ws.open",
+      "connection": "wsAliceElsewhere",
+      "request": {
+        "url": "{aliceElsewhereWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "roomSendFromAnotherScopeIsRefusedWithANack",
+      "type": "ws.send",
+      "connection": "wsAliceElsewhere",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "addressed-from-elsewhere-{runId}",
+            "ts": 0,
+            "senderId": "{aliceElsewhereSessionId}",
+            "sessionId": "{aliceElsewhereSessionId}",
+            "traceId": "addressed-from-elsewhere-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.chat",
+            "resourceId": "addressed-from-elsewhere-{runId}",
+            "contextId": "{groupId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "at-least-once",
+            "ack": "receiver"
+          },
+          "payload": {
+            "typeId": "chat.message.v1",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"from another scope\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "scopeNackResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAliceElsewhere",
+        "withinMs": 10000,
+        "message": {
+          "route": {
+            "topicId": "al-control"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceElsewhereSessionId}"
+          },
+          "payload": {
+            "typeId": "al.control.nack.v1"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parseScopeNack",
+      "type": "set",
+      "output": "scopeNack",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.scopeNackResource"
+        }
+      }
+    },
+    {
+      "name": "assertScopeNackShape",
+      "type": "assert",
+      "actual": {
+        "msgId": "{scopeNack.msgId}",
+        "reason": "{scopeNack.reason}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "addressed-from-elsewhere-{runId}",
+          "reason": "unauthorized"
+        }
+      }
+    },
+    {
+      "name": "closeAliceElsewhereWs",
+      "type": "ws.close",
+      "connection": "wsAliceElsewhere",
+      "request": {
+        "code": 1000,
+        "reason": "addressed sends recipe done"
+      }
     }
   ]
 }

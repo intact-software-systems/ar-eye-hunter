@@ -104,6 +104,17 @@ export function timeClientStateMutationPhase<T>(
     }
 }
 
+export function timeClientStateMutationAsyncPhase<T>(
+    input: ClientStatePhaseTimingInput,
+    action: () => Promise<T>
+): Promise<T> {
+    return timeRallarAsync(
+        input.timing.sink,
+        toMutationTiming(input.operation, input.command, input.timing.serviceId),
+        action
+    );
+}
+
 export async function timeClientStateMutationCommit<T>(
     input: ClientStateMutationCommitTimingInput,
     action: () => Promise<T>

@@ -24,7 +24,7 @@ it('suppresses every held RTC native write until the same fault is explicitly re
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, { createOfferId: crypto.randomUUID.bind(crypto) });
     const channel = new QRtcDataChannel(peer, { faultPort: faults, peerId: 'peer', dataChannelName: 'alm' });
     try {
         peer.connect();

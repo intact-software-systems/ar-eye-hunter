@@ -13,7 +13,10 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import * as shared from '@shared/mod.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type {
+    WsServerInboundConnectionScopeReader,
+    WsServerTargetResolver
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
     ConnectionContext,
     JsonWebSocketServer
@@ -41,6 +44,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             name: 'server-1',
             socket,
             outbox: new shared.InMemoryQueueBox(),
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -69,7 +73,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             nowMs = expiresAtMs + offsetMs;
         }
 
-        const result = service.sendToTargetsWithResult(msg);
+        const result = service.sendToTargetsWithResult({ message: msg, inboundScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
 
         expect(result.status).toBe(offsetMs < 0 ? 'sent-live' : 'expired');
         expect(result.sentCount).toBe(offsetMs < 0 ? 1 : 0);
@@ -85,6 +89,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outboundStores,
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -103,7 +108,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg);
+        const result = await service.enqueueOutboxIfAbsent(msg, {
+            admittedAudience: undefined,
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
         await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
@@ -121,6 +129,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outboundStores = createObservedOutboundStores(outbox);
         let providerEvaluationCount = 0;
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -178,6 +187,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -220,6 +230,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 failingConnectionIds: ['conn-2']
             });
             const service = shared.createDefaultWsQueueBoxServerService({
+                readAuthenticatedConnectionScope: () => undefined,
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket,
                 name: 'server-1',
@@ -241,7 +252,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 { groupRef: groupRef('room-1') }
             );
 
-            const result = service.sendToTargetsWithResult(msg);
+            const result = service.sendToTargetsWithResult({ message: msg });
 
             expect(result.status).toBe('partial-failure');
             expect(result.recipientCount).toBe(3);
@@ -268,6 +279,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -307,6 +319,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -348,6 +361,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -380,7 +394,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg);
+        await service.enqueueOutboxIfAbsent(msg, { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
@@ -416,6 +430,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -449,6 +464,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const engine = new shared.InboxOutboxEngine();
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -498,6 +514,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox,
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -552,6 +569,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -583,7 +601,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(msg, 'conn-1');
 
         expect(localDeliveries).toBe(0);
-        expect(socket.sent).toHaveLength(1);
+        await expect.poll(() => socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
     });
@@ -594,6 +612,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -616,7 +635,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await socket.receive(msg, 'conn-1');
 
-        expect(socket.sent).toHaveLength(2);
+        await expect.poll(() => socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
             'conn-2',
             'conn-3'
@@ -634,6 +653,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver(),
             forwardsRoomScopedMessages: false
         });
@@ -662,6 +682,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -692,7 +713,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(msg, 'conn-1');
         await socket.receive(msg, 'conn-1');
 
-        expect(received).toEqual([msg.id.msgId]);
+        await expect.poll(() => received).toEqual([msg.id.msgId]);
     });
 
     it('emits nack and repair controls for ordered gaps on inbound server messages', async () => {
@@ -701,6 +722,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             outbox: new shared.InMemoryQueueBox(new Map()),
             socket: socket,
             name: 'server-1',
+            readAuthenticatedConnectionScope: readTestAuthenticatedScope(socket),
             targetResolver: createTargetResolver()
         });
         onTestFinished(() => service.dispose());
@@ -766,7 +788,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await socket.receive(seq2, 'conn-1');
 
         expect(deliveredTexts).toEqual([]);
-        expect(socket.sent).toHaveLength(2);
+        await expect.poll(() => socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.data.payload.typeId).sort()).toEqual([
             shared.AL_CONTROL_NACK_TYPE_ID,
             shared.AL_CONTROL_REPAIR_TYPE_ID
@@ -785,6 +807,18 @@ interface RecordingWsServerInput {
 
 function createRecordingWsServer(options: RecordingWsServerInput = {}): RecordingJsonWebSocketServer {
     return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
+}
+
+function readTestAuthenticatedScope(
+    server: RecordingJsonWebSocketServer
+): WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'] {
+    return (connection) =>
+        server.connections.get(connection.id) === connection
+            ? {
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+            }
+            : undefined;
 }
 
 namespace RecordingJsonWebSocketServer {

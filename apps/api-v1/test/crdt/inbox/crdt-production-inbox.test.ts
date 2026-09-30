@@ -34,6 +34,7 @@ import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -109,7 +110,7 @@ Deno.test(
                             expiresAtEpochMs: now + 60_000
                         });
                     },
-                    authorizeDocument: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+                    authorizeDocument: authorizeTestCrdtCommand,
                     adminClientIds: []
                 },
                 policies: [{ documentType: 'checklist', rollout: 'production' }]
@@ -337,11 +338,10 @@ function productionService(input: ProductionServiceInput) {
                     sessionId,
                     expiresAtEpochMs: now + 60_000
                 }),
-            authorizeDocument: () =>
-                Promise.resolve({
-                    allowed: isAllowed(),
-                    code: isAllowed() ? 'allowed' : 'authorization-denied'
-                }),
+            authorizeDocument: (command) =>
+                isAllowed()
+                    ? authorizeTestCrdtCommand(command)
+                    : Promise.resolve({ allowed: false, code: 'authorization-denied', publicationAuthority: null }),
             adminClientIds: ['client-1']
         },
         policies: allow

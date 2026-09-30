@@ -1,8 +1,9 @@
-import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel, type RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 
 export interface BrowserRtcPeerTestInput {
     readonly peerId: string;
@@ -11,14 +12,14 @@ export interface BrowserRtcPeerTestInput {
 }
 
 /** Facade tests replace selected public operations on fully constructed RTC owners. */
-export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): QRtcPeerDto {
+export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): WebRtcConnectionService.Peer {
     const connection = new QRtcPeerConnection({ send: async () => undefined }, {
         sessionId: 'session-1',
         peerSessionId: input.peerId,
         token: 'fixture-token',
         isPolite: false,
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 }
-    });
+    }, new DeterministicRtcOfferIds());
     Object.assign(connection.status, input.status);
     const channels = new Map(input.channels.map(([laneId, overrides]) =>
         [

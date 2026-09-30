@@ -10,8 +10,10 @@ import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
     WsDeliveryDiagnosticsSink,
+    WsServerInboundConnectionScopeReader,
     WsServerTargetResolver
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import type { WsOutboxProducerProvenanceReader } from '@shared/services/ws-queue-box-server/ws-queue-box-server-dequeue-authority.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -23,7 +25,9 @@ import type { ClientStateRepository } from '../client-state/persistence/client-s
 import type { AppCrdtInboxService } from '../crdt/inbox/app-crdt-inbox-service.ts';
 import type { GroupStateInboxService } from '../group-state/inbox/group-state-inbox-service.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
+import type { InstallLiveWsNoticeSubscriberInput } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import type { InstallQueueBoxPubSubBridgeOptions } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { RelayedAckNoticeChannel } from '../queue-pubsub/relayed-ack-notice.ts';
 import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
@@ -79,6 +83,8 @@ export interface CreateRallarMiddlewareOptions {
     readonly webSocketServer?: JsonWebSocketServer;
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;
+    readonly readWsOutboxProducerProvenance?: WsOutboxProducerProvenanceReader;
+    readonly readAuthenticatedConnectionScope: WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];
@@ -112,6 +118,12 @@ export interface CreateRallarMiddlewareOptions {
     readonly rtcTopologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
     readonly queuePubSubBridge?: Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
+    readonly liveWsNoticeSubscriber?: Omit<
+        InstallLiveWsNoticeSubscriberInput,
+        'inboundStores' | 'resolveBroadRecipientSessionIds' | 'sendToTargetsWithResult'
+    >;
+    /** The notice channel that carries receiver ACKs between instances; absent on a single instance. */
+    readonly relayedAckNotices?: RelayedAckNoticeChannel;
     readonly readiness?: Promise<void>;
     readonly healthFailure?: Promise<never>;
 }
@@ -123,6 +135,7 @@ export interface RallarMiddlewareInfrastructure {
     readonly appInboxResilience: ResourceInboxResilience;
     readonly appOutboxResilience: ResourceInboxResilience;
     readonly queuePubSubBridgeReadiness: Promise<void>;
+    readonly liveWsNoticeSubscriberReadiness: Promise<void>;
     readonly wakeQueueEngine: () => void;
 }
 

@@ -12,6 +12,7 @@ import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
+    ALOutboundPlanner,
     ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type {
@@ -40,7 +41,7 @@ export namespace ALOutboundRepairAdmission {
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly controlAdmission: ALOutboundControlAdmission<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,
@@ -124,14 +125,17 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return true;
         }
         const planned = await this.dependencies.planRepairMessage?.(msg, {
+            referenceKey: read.storedMessage?.reference.key,
+            admittedAudience: read.plan?.admittedAudience,
+            recipientScope: read.plan?.recipientScope,
+            sessionInvalidation: read.plan?.sessionInvalidation,
             trigger: control.type,
             requestedByPeerId: control.payload.fromPeerId,
             orderingTrackKey: control.payload.orderingKey,
             missingSeqs: control.payload.missingSeqs ?? [],
             failedPeerIds: [],
             completedHopPeerIds: [],
-            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 },
-            admittedAudience: read.plan?.admittedAudience
+            repair: read.plan?.repairTracking ?? { enabled: false, algo: 'none', maxAttempts: 0 }
         });
         return planned !== undefined && !planned.dropReason && planned.preparedMessages.length > 0;
     }

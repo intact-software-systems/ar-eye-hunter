@@ -1052,7 +1052,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config and the server-addressed receipt."
+      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config, the server-addressed receipt, and the NACK for a room send from another scope."
     },
     {
       "id": "api-v1-websocket-topic-routing",
@@ -2784,6 +2784,41 @@
         ]
       },
       "description": "No-browser API-v1 cluster lifecycle over a non-primary socket. Exactly one lifecycle recipe runs against three nodes today. Group setup is written on primary and secondary only, then the connect command is served by the tertiary node, which wrote none of it, fenced on the layout the other two produced, and both writing nodes must read the result back. The sockets are opened against RALLAR_WS_BASE_URL_SECONDARY, which the runner exports and no recipe in the corpus has referenced, and the connect delta is bound to the tertiary command by its own requestId. Which node executed the entry is deliberately not asserted: those counters are process-local."
+    },
+    {
+      "id": "api-v1-websocket-live-only-cluster",
+      "recipe": "tests/api-v1/api-v1-websocket-live-only-cluster.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-websocket-live-only-cluster",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 at-least-once room send on an undeclared (live-only) topic across processes. Alice's socket is on the primary, Bob's on the secondary. The broadcast is sent once and reaches Bob through the cluster live notice; the admitted receipt names Bob. Bob's ACK enters the secondary, which holds no receipt aggregate for the message and relays it once as a relayed-ack notice; the primary counts it and the origin's receipt ends complete."
     },
     {
       "id": "api-v1-admin-authorization-boundary",

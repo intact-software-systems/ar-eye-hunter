@@ -1,4 +1,5 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 
 interface LocalQueuePubSubSubscriber {
@@ -6,8 +7,14 @@ interface LocalQueuePubSubSubscriber {
     readonly onMessage: (message: JsonWireValue) => Promise<void> | void;
 }
 
+export interface LocalLiveWsNoticeSubscriber {
+    readonly ignoredPublisherId: string;
+    readonly onNotice: (notice: LiveWsNotice) => Promise<void> | void;
+}
+
 export interface LocalQueuePubSubBus {
     readonly subscribersByChannel: Map<string, Set<LocalQueuePubSubSubscriber>>;
+    readonly liveNoticeSubscribersByChannel: Map<string, Set<LocalLiveWsNoticeSubscriber>>;
 }
 
 export interface LocalQueuePubSubBridgeOptions {
@@ -17,7 +24,8 @@ export interface LocalQueuePubSubBridgeOptions {
 
 export function createLocalQueuePubSubBus(): LocalQueuePubSubBus {
     return {
-        subscribersByChannel: new Map()
+        subscribersByChannel: new Map(),
+        liveNoticeSubscribersByChannel: new Map()
     };
 }
 

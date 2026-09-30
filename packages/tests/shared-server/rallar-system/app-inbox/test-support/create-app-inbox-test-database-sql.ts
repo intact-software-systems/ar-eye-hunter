@@ -165,17 +165,9 @@ async function executeRuntimeStateSelectionSql({
         return undefined;
     }
     const repository = requireTransactionRuntime(runtime);
-    const selectors = readRuntimeStateSqlSelectors(values[0]);
-    const selections = [];
-    for (const selector of selectors) {
-        const entries = selector.kind === 'key'
-            ? await repository.findEntriesByKeys(
-                selector.namespace,
-                selector.key === null ? [] : [selector.key]
-            )
-            : await repository.findEntriesByPrefix(selector.namespace, selector.keyPrefix ?? '');
-        selections.push({ selectorId: selector.selectorId, entries });
-    }
+    const selections = await repository.readRuntimeStateBatch(
+        readRuntimeStateSqlSelectors(values[0])
+    );
     return [{ selections }];
 }
 
@@ -339,6 +331,7 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
         nextTs,
         attempts
     ] = values;
+    Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'));
     return {
         key: {
             resourceId: readStringParameter(resourceId, 'Outbox resource ID'),
@@ -349,9 +342,7 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
         typeId: readStringParameter(typeId, 'Outbox type ID'),
         status: readEntityStatus(status, 'Outbox status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'))
-                .toPlainDateTime()
-                .toPlainTime(),
+            date: toPlainDateTime(createdTs).toPlainTime(),
             createdBy: readStringParameter(createdBy, 'Outbox creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
@@ -378,6 +369,7 @@ function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
         createdTs,
         expiryTs
     ] = values;
+    Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'));
     return {
         key: {
             resourceId: readStringParameter(resourceId, 'Result resource ID'),
@@ -388,9 +380,7 @@ function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
         typeId: readStringParameter(typeId, 'Result type ID'),
         status: readEntityStatus(status, 'Result status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'))
-                .toPlainDateTime()
-                .toPlainTime(),
+            date: toPlainDateTime(createdTs).toPlainTime(),
             createdBy: readStringParameter(createdBy, 'Result creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
@@ -468,32 +458,16 @@ function readRuntimeStateSqlSelectors(
     if (!Array.isArray(decoded)) {
         throw new TypeError('Runtime-state SQL selectors must be an array');
     }
-    const selectors = decoded.map((selector, index): RuntimeStateReadBatchSelector => {
-        const record = readJsonWireObject(selector, `Runtime-state SQL selector ${index}`);
-        const selectorId = readJsonWireString(record.selectorId, 'Runtime-state selector ID');
-        const namespace = readJsonWireString(record.namespace, 'Runtime-state selector namespace');
-        if (record.kind === 'key') {
-            return {
-                selectorId,
-                kind: record.kind,
-                namespace,
-                key: readJsonWireString(record.key, 'Runtime-state selector key')
-            };
-        }
-        if (record.kind === 'prefix') {
-            return {
-                selectorId,
-                kind: record.kind,
-                namespace,
-                keyPrefix: readJsonWireString(
-                    record.keyPrefix,
-                    'Runtime-state selector key prefix'
-                )
-            };
-        }
-        throw new TypeError('Runtime-state SQL selector kind is invalid');
-    });
-    return validateRuntimeStateReadBatchSelectors(selectors);
+    // The SQL descriptor carries every selector field, null where its kind has none, plus the derived
+    // prefixEnd; the canonical selector keeps only the fields its kind declares.
+    return validateRuntimeStateReadBatchSelectors(
+        decoded.map((selector, index) =>
+            Object.fromEntries(
+                Object.entries(readJsonWireObject(selector, `Runtime-state SQL selector ${index}`))
+                    .filter(([field, fieldValue]) => fieldValue !== null && field !== 'prefixEnd')
+            )
+        )
+    );
 }
 
 function readJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
@@ -501,13 +475,6 @@ function readJsonWireObject(value: JsonWireValue, label: string): JsonWireObject
         throw new TypeError(`${label} must be an object`);
     }
     return value as JsonWireObject;
-}
-
-function readJsonWireString(value: JsonWireValue | undefined, label: string): string {
-    if (typeof value !== 'string') {
-        throw new TypeError(`${label} must be a string`);
-    }
-    return value;
 }
 
 function readStringParameter(value: PSqlParameter, label: string): string {

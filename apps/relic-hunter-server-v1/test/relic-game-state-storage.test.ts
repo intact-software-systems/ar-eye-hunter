@@ -25,7 +25,11 @@ describe('Relic game state storage', () => {
             readSessionUsername: () => Promise.resolve('Alice')
         });
 
-        await handlers[0]({ payload: joinCommand('room-1') }, { senderId: 'alice-session' });
+        await handlers[0]({ payload: joinCommand('room-1') }, {
+            senderId: 'alice-session',
+            roomId: 'room-1',
+            roomRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'room-1' }
+        });
 
         const stored = store.read('room-1');
         expect(stored?.players.map((player) => player.playerId)).toEqual(['alice-session']);

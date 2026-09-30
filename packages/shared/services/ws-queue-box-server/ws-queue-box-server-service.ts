@@ -1,6 +1,5 @@
 import { AL_WS_SERVER_CAPABILITIES, toALCarrierQosInputProvider } from '../../al-contracts/al-carrier-capabilities.ts';
-import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
-import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
+import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     decodeALMessageValue,
     decodePersistedALMessage,
@@ -9,19 +8,15 @@ import {
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import {
-    planALMessageHandling,
-    resolveALMessageExpireAtMs,
-    resolveALQosNormalizationInput,
-    type ALMessageHandlingPlan,
-    type ALMessagePlanningObservations,
-    type ALQosInputProvider
+    type ALQosInputProvider,
+    type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound/validate-al-inbound-message.ts';
+import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
@@ -35,29 +30,35 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
-import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
-import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
+import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
-import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
+import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
-    type WsServerInboundAuthorization,
     type WsServerInboundAuthorizer,
+    type WsServerInboundConnectionScopeReader,
+    type WsServerLiveSendInputDto,
     type WsServerLiveSendResult,
     type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
+import { WsQueueBoxServerControlDelivery } from './ws-queue-box-server-control-delivery.ts';
 import { WsQueueBoxServerDeliveryReporting } from './ws-queue-box-server-delivery-reporting.ts';
-import { toWsQueueBoxServerInboundPlan } from './ws-queue-box-server-inbound-plan.ts';
-import { resolveWsQueueBoxServerInboundRecipients } from './ws-queue-box-server-inbound-recipients.ts';
+import {
+    WsQueueBoxServerDequeueAuthority,
+    type WsOutboxProducerProvenanceReader
+} from './ws-queue-box-server-dequeue-authority.ts';
+import { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
+import { WsQueueBoxServerInboundDelivery } from './ws-queue-box-server-inbound-delivery.ts';
 import { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
 import {
     WsQueueBoxServerOutboundPlanning,
@@ -74,6 +75,7 @@ export namespace WsQueueBoxServerService {
         readonly name: string;
         readonly qosProvider?: ALQosInputProvider;
         readonly targetResolver?: WsServerTargetResolver;
+        readonly readProducerProvenance?: WsOutboxProducerProvenanceReader;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
         readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -83,6 +85,11 @@ export namespace WsQueueBoxServerService {
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        /** A connection it proves no current scope for has every AL frame refused. */
+        readonly readAuthenticatedConnectionScope:
+            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+        /** Absent on a single instance: an ACK no aggregate here counts is then refused at ingress. */
+        readonly publishRelayedAck?: WsServerAckRelayPublisher;
         /**
          * Whether inbound ALM forwarding relays room-scoped messages (default
          * true, the standalone service contract). A composition that installs a
@@ -94,11 +101,22 @@ export namespace WsQueueBoxServerService {
         readonly forwardsRoomScopedMessages?: boolean;
     }
 
+    export interface EnqueueAuthority {
+        /**
+         * The room audience a router admitted the message to. It travels with the outbound row, never on
+         * the wire, and narrows every later plan of the message to that audience.
+         */
+        readonly admittedAudience: readonly string[] | undefined;
+        /** The scope a producer proved for a unicast that names no group. */
+        readonly recipientScope: StateScope | undefined;
+    }
+
     export interface Dependencies {
         readonly socket: JsonWebSocketServer;
         readonly name: string;
         readonly qosProvider: ALQosInputProvider;
         readonly targetResolver: WsServerTargetResolver;
+        readonly readProducerProvenance: WsOutboxProducerProvenanceReader | undefined;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly outboundRuntime: ALOutboundMessageRuntime.Resources<WsQueueBoxServerPreparedMessage>;
         readonly dequeueResilience: ResourceInboxResilience;
@@ -108,57 +126,52 @@ export namespace WsQueueBoxServerService {
         readonly outboundDeliveryOutcome: ((outcome: WsOutboxDeliveryOutcome) => void) | undefined;
         readonly deliveryDiagnostics: WsDeliveryDiagnosticsSink | undefined;
         readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+        readonly readAuthenticatedConnectionScope:
+            WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+        readonly publishRelayedAck: WsServerAckRelayPublisher | undefined;
         readonly forwardsRoomScopedMessages: boolean;
     }
 }
 
 export class WsQueueBoxServerService {
     private static readonly READINESS_RETRY_AFTER_MS = 50;
-    private static readonly ALL_IN: string = '*';
 
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.WS_OUTBOX;
     public static readonly OUTBOX_DEQUEUE_TYPES = new Set<string>([
         this.OUTBOX_ENQUEUE_TYPE
     ]);
 
-    private readonly onInboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
-
-    private readonly onAnyInboxWebSocketMessageCallbacks = new Map<
-        string,
-        OnWebSocketServerMessageCallback<ALMessage>
-    >();
-
     private readonly clusterPublication: WsQueueBoxServerClusterPublication;
     private readonly inboundRuntime: ALInboundMessageRuntime;
-    private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
     private readonly admissionStore: WsQueueBoxServerService.Dependencies['outboundRuntime']['admissionStore'];
-    private readonly qosProvider: ALQosInputProvider;
+    private readonly dequeueAuthority: WsQueueBoxServerDequeueAuthority;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
     private readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
     private readonly outboundPlanning: WsQueueBoxServerOutboundPlanning;
     /** Counts relayed receiver ACKs and routes every other control to the server's own outbound owner. */
     private readonly receipts: WsQueueBoxServerReceiptAggregation;
-    private readonly validateInboundMessage: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
+    private readonly ackRelay: WsQueueBoxServerAckRelay;
+    private readonly controlDelivery: WsQueueBoxServerControlDelivery;
+    private readonly inboundAuthority: WsQueueBoxServerInboundAuthority;
+    private readonly inboundDelivery: WsQueueBoxServerInboundDelivery;
+    private readonly readAuthenticatedConnectionScope:
+        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     private readonly forwardsRoomScopedMessages: boolean;
-    private inboundAuthorizer: WsServerInboundAuthorizer | undefined;
-    private disposed = false;
     private readonly clock: ALOutboundMessageRuntime.Clock;
-    private readonly newControlId: () => string;
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
+    private readonly inboundNamespace: string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
         this.clock = dependencies.outboundRuntime.clock;
-        this.newControlId = dependencies.inboundRuntime.effectPreparation.newControlId;
-        this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
         this.outbox = dependencies.outboundRuntime.workQueue;
         this.admissionStore = dependencies.outboundRuntime.admissionStore;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
-        this.qosProvider = dependencies.qosProvider;
+        this.inboundNamespace = dependencies.inboundRuntime.admissionStore.namespace;
         this.targetResolution = new WsQueueBoxServerTargetResolution({
             socket: dependencies.socket,
             targetResolver: dependencies.targetResolver
@@ -166,19 +179,20 @@ export class WsQueueBoxServerService {
         this.clusterPublication = new WsQueueBoxServerClusterPublication({
             targetResolution: this.targetResolution,
             canonicalScope: this.admissionStore.canonicalScope,
-            clock: this.clock,
-            readAdmittedAudience: (msgId) => this.admissionStore.readAdmittedAudience(msgId)
+            clock: this.clock
         });
         this.deliveryReporting = new WsQueueBoxServerDeliveryReporting({
             outboundOutcome: dependencies.outboundDeliveryOutcome,
             diagnostics: dependencies.deliveryDiagnostics
         });
-        this.validateInboundMessage = dependencies.validateInboundMessage;
+        this.readAuthenticatedConnectionScope = dependencies.readAuthenticatedConnectionScope;
         this.forwardsRoomScopedMessages = dependencies.forwardsRoomScopedMessages;
         this.liveDelivery = new WsQueueBoxServerLiveDelivery({
             socket: dependencies.socket,
+            clock: this.clock,
             targetResolution: this.targetResolution,
-            deliveryReporting: this.deliveryReporting
+            deliveryReporting: this.deliveryReporting,
+            readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
         });
         this.outboundPlanning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: dependencies.name,
@@ -186,19 +200,72 @@ export class WsQueueBoxServerService {
             targetResolution: this.targetResolution,
             deliveryReporting: this.deliveryReporting
         });
+        this.dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
+            admissionStore: this.admissionStore,
+            outbox: this.outbox,
+            readProducerProvenance: dependencies.readProducerProvenance
+        });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
         this.receipts = new WsQueueBoxServerReceiptAggregation({
             serverPeerId: dependencies.name,
             clock: this.clock,
-            newControlId: this.newControlId,
+            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
             qosProvider: dependencies.qosProvider,
-            queueEngine: this.inboundQueueEngine,
+            queueEngine: dependencies.inboundRuntime.queueEngine,
             enqueueOutbox: (message, plan) => this.outboundRuntime.enqueueIfAbsent(message, plan),
             acceptServerControl: (message) => this.outboundRuntime.acceptControlMessage(message, 'peer'),
             acceptServerReceipt: (control) => this.outboundRuntime.acceptReceipt(control)
         });
+        this.ackRelay = new WsQueueBoxServerAckRelay({
+            serverPeerId: dependencies.name,
+            clock: this.clock,
+            readIngressAudience: (msgId, originPeerId) =>
+                dependencies.inboundRuntime.admissionStore.readIngressAudience(msgId, originPeerId),
+            receipts: this.receipts,
+            publishRelayedAck: dependencies.publishRelayedAck
+        });
+        this.controlDelivery = new WsQueueBoxServerControlDelivery({
+            clock: this.clock,
+            liveDelivery: this.liveDelivery,
+            clusterPublication: this.clusterPublication,
+            outbound: this.outboundRuntime
+        });
+        this.inboundAuthority = this.createInboundAuthority(dependencies);
+        this.inboundDelivery = this.createInboundDelivery(dependencies);
         this.inboundRuntime = this.createInboundRuntime(dependencies);
         this.registerSocketIngress();
+    }
+
+    private createInboundAuthority(
+        dependencies: WsQueueBoxServerService.Dependencies
+    ): WsQueueBoxServerInboundAuthority {
+        return new WsQueueBoxServerInboundAuthority({
+            socket: this.socket,
+            serverPeerId: this.name,
+            clock: this.clock,
+            newControlId: dependencies.inboundRuntime.effectPreparation.newControlId,
+            targetResolution: this.targetResolution,
+            controlDelivery: this.controlDelivery,
+            ackRelay: this.ackRelay,
+            validateInboundMessage: dependencies.validateInboundMessage,
+            readAuthenticatedConnectionScope: this.readAuthenticatedConnectionScope
+        });
+    }
+
+    private createInboundDelivery(
+        dependencies: WsQueueBoxServerService.Dependencies
+    ): WsQueueBoxServerInboundDelivery {
+        return new WsQueueBoxServerInboundDelivery({
+            socket: this.socket,
+            serverPeerId: this.name,
+            clock: this.clock,
+            queueEngine: dependencies.inboundRuntime.queueEngine,
+            qosProvider: dependencies.qosProvider,
+            targetResolution: this.targetResolution,
+            liveDelivery: this.liveDelivery,
+            authority: this.inboundAuthority,
+            routerOwnsRoomFanout: !this.forwardsRoomScopedMessages
+        });
     }
 
     private createOutboundRuntime(
@@ -215,24 +282,30 @@ export class WsQueueBoxServerService {
             diagnostics: dependencies.outboundDiagnostics,
             settlements: dependencies.outboundSettlements,
             toOutboxEntry: (message: ALMessage) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(
-                    message,
-                    WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
-                ),
+                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            planOutgoingMessage: (message) =>
+            readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
+            planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'immediate',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience: undefined
+                    admittedAudience: authority?.admittedAudience,
+                    recipientScope: authority?.recipientScope,
+                    principalTargetId: authority?.principalTargetId,
+                    sessionInvalidation: authority?.sessionInvalidation,
+                    referenceKey: authority?.referenceKey
                 }),
-            planDequeuedMessage: (message, admittedAudience) =>
+            planDequeuedMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
                     phase: 'dequeue',
                     clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-                    admittedAudience
+                    admittedAudience: authority?.admittedAudience,
+                    recipientScope: authority?.recipientScope,
+                    principalTargetId: authority?.principalTargetId,
+                    sessionInvalidation: authority?.sessionInvalidation,
+                    referenceKey: authority?.referenceKey
                 }),
             afterDequeueAdmission: (message, entry) => this.clusterPublication.writeDequeuedRow(message, entry),
             sendPreparedMessage: async (prepared, _phase, lifecycle) =>
@@ -248,21 +321,18 @@ export class WsQueueBoxServerService {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
             carrier: 'ws',
-            readPendingAdmissionAuthority: (message, source) => this.readPendingAdmissionAuthority(message, source),
+            readPendingAdmissionAuthority: (message, source) =>
+                this.inboundAuthority.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>
-                this.planIncomingMessage(message, fromPeerId, runtime),
-            canDispatchMessage: (message) => this.hasInboxConsumer(message),
-            dispatchInboxEntry: (entry, plan, source) => this.dispatchInboxEntry(entry, plan, source),
-            sendControlMessages: async (messages) => {
-                for (const message of messages) {
-                    await this.sendControlMessage(message);
-                }
-            },
+                this.inboundDelivery.planIncomingMessage(message, fromPeerId, runtime),
+            canDispatchMessage: (message) => this.inboundDelivery.hasInboxConsumer(message),
+            dispatchInboxEntry: (entry, plan, source) => this.inboundDelivery.dispatchInboxEntry(entry, plan, source),
+            sendControlMessages: (messages) => this.controlDelivery.sendControlMessages(messages),
             onControlMessage: async (message) => {
                 await this.receipts.acceptControlMessage(message);
             },
-            readRelayedAckRejection: (ack) => this.receipts.readRelayedAckRejection(ack),
-            forwardMessage: (message, fromPeerId, plan) => this.forwardIncomingMessage(message, fromPeerId, plan),
+            readRelayedAckRejection: (ack) => this.ackRelay.readRelayedAckRejection(ack),
+            forwardMessage: (input) => this.inboundDelivery.forwardIncomingMessage(input),
             canForwardMessage: (message) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(message),
             diagnostics: dependencies.inboundDiagnostics
         });
@@ -278,20 +348,16 @@ export class WsQueueBoxServerService {
     }
 
     dispose(): void {
-        this.disposed = true;
+        this.inboundAuthority.dispose();
         this.socket.removeOnMessageCallbackById(this.name);
         this.inboundRuntime.dispose();
         this.receipts.dispose();
         this.outboundRuntime.dispose();
-        this.onInboxWebSocketMessageCallbacks.clear();
-        this.onAnyInboxWebSocketMessageCallbacks.clear();
+        this.inboundDelivery.dispose();
     }
 
     authorizeInboundMessagesWith(authorizer: WsServerInboundAuthorizer): void {
-        if (this.inboundAuthorizer !== undefined) {
-            throw new Error('WS server inbound authorizer is already installed');
-        }
-        this.inboundAuthorizer = authorizer;
+        this.inboundAuthority.authorizeInboundMessagesWith(authorizer);
     }
 
     onOutboxClusterPublishDo(publisher: WsQueueBoxServerClusterPublication.Publisher): WsQueueBoxServerService {
@@ -303,18 +369,7 @@ export class WsQueueBoxServerService {
         callback: OnWebSocketServerMessageCallback<ALMessage>,
         forceUpdate: boolean = false
     ): WsQueueBoxServerService {
-        if (
-            !forceUpdate &&
-            this.onInboxWebSocketMessageCallbacks.has(WsQueueBoxServerService.ALL_IN)
-        ) {
-            throw new Error('Cannot set multiple Ws inbox callbacks for ALL_IN');
-        }
-
-        this.onInboxWebSocketMessageCallbacks.set(
-            WsQueueBoxServerService.ALL_IN,
-            callback
-        );
-        this.inboundQueueEngine.wake();
+        this.inboundDelivery.onAllInboxMessagesDo(callback, forceUpdate);
         return this;
     }
 
@@ -322,8 +377,7 @@ export class WsQueueBoxServerService {
         id: string,
         callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
-        this.onAnyInboxWebSocketMessageCallbacks.set(id, callback);
-        this.inboundQueueEngine.wake();
+        this.inboundDelivery.onAnyInboxMessageDo(id, callback);
         return this;
     }
 
@@ -331,32 +385,37 @@ export class WsQueueBoxServerService {
         id: string,
         callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
-        this.onInboxWebSocketMessageCallbacks.set(id, callback);
-        this.inboundQueueEngine.wake();
+        this.inboundDelivery.onInboxMessageDo(id, callback);
         return this;
     }
 
     removeInboxMessageCallback(id: string): boolean {
-        return this.onInboxWebSocketMessageCallbacks.delete(id);
+        return this.inboundDelivery.removeInboxMessageCallback(id);
     }
 
     removeAnyInboxMessageCallback(id: string): boolean {
-        return this.onAnyInboxWebSocketMessageCallbacks.delete(id);
+        return this.inboundDelivery.removeAnyInboxMessageCallback(id);
     }
 
-    /**
-     * `admittedAudience` is the room audience a router admitted the message to. It travels with the
-     * outbound row, never on the wire, and narrows every later plan of the message to that audience.
-     */
+    resolveOutboundPolicy(message: ALMessage): ALQosNormalizationResult {
+        return this.outboundPlanning.resolvePolicy(message);
+    }
+
+    getInboundNamespace(): string {
+        return this.inboundNamespace;
+    }
+
+    /** Without an authority the message is the server's own, addressed by its wire targets alone. */
     async enqueueOutboxIfAbsent(
         message: ALMessage,
-        admittedAudience?: readonly string[]
+        authority?: WsQueueBoxServerService.EnqueueAuthority
     ): Promise<ALOutboundEnqueueResult> {
         const dispatchPlan = this.outboundPlanning.planOutboundMessage({
             message,
             phase: 'immediate',
             clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-            admittedAudience
+            admittedAudience: authority?.admittedAudience,
+            recipientScope: authority?.recipientScope
         });
         const outgoingMessage = dispatchPlan.persist
             ? decodePersistedALMessageValue(message)
@@ -384,87 +443,39 @@ export class WsQueueBoxServerService {
         return result;
     }
 
-    private sendControlMessage(message: ALMessage): Promise<void> {
-        const toPeerId = message.targets?.mode === 'unicast'
-            ? message.targets.toPeerId
-            : undefined;
-        if (!toPeerId) {
-            console.warn(
-                `Cannot send WS server control message without unicast target: ${message.payload.typeId}`
-            );
-            return Promise.resolve();
-        }
-
-        const sent = this.liveDelivery.sendToResolvedPeer(toPeerId, message);
-        if (sent === 0) {
-            console.warn(
-                `Cannot resolve WS server control target ${toPeerId} for ${message.payload.typeId}`
-            );
-        }
-        return Promise.resolve();
-    }
-
     async acceptIncomingMessage(
         value: unknown,
         connectionId: string
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
-        if (this.disposed) {
-            return Either.ofRight({ kind: 'disposed' });
+        const decision = await this.inboundAuthority.readSocketAdmission(decodeALMessageValue(value), connectionId);
+        if (decision.kind === 'finished') {
+            return decision.result;
         }
-        const decoded = decodeALMessageValue(value);
-        if (decoded.left) {
-            return Either.ofLeft(decoded.left);
+        const current = this.inboundAuthority.resolveAuthorizedSocketAdmission(decision.value, connectionId);
+        if (current.kind === 'refused') {
+            return await this.inboundAuthority.rejectIncomingMessage(current.message, current.refusal);
         }
-        const message = decoded.right!;
-        const connection = this.socket.connections.get(connectionId);
-        const fromPeerId = this.targetResolution.resolvePeerIdForConnection(connectionId, message);
-        if (!connection?.isOpen || !fromPeerId || message.id.senderId !== fromPeerId) {
-            return Either.ofLeft({
-                code: 'unauthorized',
-                message: 'AL origin must match an authenticated live WS connection'
-            });
+        if (current.kind === 'finished') {
+            return current.result;
         }
-        const protocol = validateALInboundMessage(
-            message,
-            { kind: 'ws-client', peerId: fromPeerId },
-            toALInboundReceiver(this.name, (ack) => this.receipts.readRelayedAckRejection(ack))
-        );
-        if (protocol.left) {
-            return Either.ofLeft(protocol.left);
-        }
-        const validation = this.validateInboundMessage(message);
-        if (validation.left) {
-            return Either.ofLeft(validation.left);
-        }
-        if (isRoomScopedALMessage(message) && !this.inboundAuthorizer) {
-            return Either.ofLeft({ code: 'unsupported', message: 'Room messages require a server authority provider' });
-        }
-        const authorization = toWsQueueBoxServerAddresseeAuthorization({
-            message,
-            serverPeerId: this.name,
-            sendNack: this.inboundAuthorizer?.sendNacks ?? false,
-            authorization: await this.inboundAuthorizer?.authorize(message) ?? { authorized: true }
-        });
-        if (this.disposed) {
-            return Either.ofRight({ kind: 'disposed' });
-        }
-        if (this.socket.connections.get(connectionId) !== connection || !connection.isOpen) {
-            return Either.ofLeft({ code: 'unauthorized', message: 'WS connection changed during authorization' });
-        }
-        if (!authorization.authorized) {
-            return await this.rejectIncomingMessage(message, authorization);
-        }
-        return await this.admitAuthorizedMessage(message, fromPeerId, authorization);
+        return await this.admitAuthorizedMessage(current.value);
     }
 
     private async admitAuthorizedMessage(
-        message: ALMessage,
-        fromPeerId: string,
-        authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>
+        input: WsQueueBoxServerInboundAuthority.AuthorizedMessage
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        const { message, fromPeerId, authorization, proof } = input;
+        const relayed = await this.ackRelay.relayUnownedAck(message);
+        if (relayed.left !== undefined) {
+            return Either.ofLeft(relayed.left);
+        }
+        if (relayed.right) {
+            return Either.ofRight({ kind: 'control', handled: false });
+        }
         const admitted = await this.inboundRuntime.admitIncomingMessage(message, {
             kind: 'ws-client',
             peerId: fromPeerId,
+            authenticatedScope: { applicationId: proof.scope.applicationId, workspaceId: proof.scope.workspaceId },
             ...(authorization.roomAudience === undefined
                 ? {}
                 : { groupRecipientPeerIds: [...authorization.roomAudience.recipientPeerIds] })
@@ -479,162 +490,43 @@ export class WsQueueBoxServerService {
         return admitted;
     }
 
-    private async rejectIncomingMessage(
-        message: ALMessage,
-        authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
-    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
-        await this.sendAdvisoryNack(message, authorization);
-        if (authorization.reason !== 'not-yet-in-sync') {
-            return Either.ofLeft({
-                code: authorization.rejectionCode ?? 'unauthorized',
-                message: authorization.logMessage
-            });
-        }
-        return Either.ofRight({ kind: 'not-admitted', reason: authorization.reason });
-    }
-
-    private async sendAdvisoryNack(
-        message: ALMessage,
-        authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
-    ): Promise<void> {
-        if (!authorization.sendNack) {
-            return;
-        }
-        const observedAtEpochMs = this.clock.nowMs();
-        const payload: ALNackPayload = {
-            fromPeerId: this.name,
-            toPeerId: message.id.senderId,
-            msgId: message.id.msgId,
-            reason: authorization.reason,
-            observedAtEpochMs,
-            ...(authorization.serverSnapshotVersion === undefined
-                ? {}
-                : { serverSnapshotVersion: authorization.serverSnapshotVersion })
-        };
-        const prepared = prepareALNackControlMessage(
-            { v: 2, msgId: this.newControlId(), senderId: this.name, ts: observedAtEpochMs },
-            payload
-        );
-        if (!prepared.right) {
-            return;
-        }
-        await this.sendControlMessage(prepared.right);
-    }
-
-    private planIncomingMessage(
-        message: ALMessage,
-        source: ALInboundMessageRuntime.Source,
-        observations: ALMessagePlanningObservations
-    ): ALMessageHandlingPlan {
-        const fromPeerId = source.kind === 'trusted-server' ? message.id.senderId : source.peerId;
-        const resolvedPeerIds = this.targetResolution.resolveInboundRecipients(message)
-            .map((recipient) => recipient.peerId);
-        const { recipientPeerIds, groupMemberPeerIds } = resolveWsQueueBoxServerInboundRecipients({
-            message,
-            source,
-            resolvedPeerIds,
-            serverPeerId: this.name
-        });
-        return toWsQueueBoxServerInboundPlan({
-            plan: planALMessageHandling(
-                message,
-                {
-                    ...observations,
-                    selfPeerId: this.name,
-                    fromPeerId,
-                    connectedPeerIds: recipientPeerIds,
-                    groupMemberPeerIds,
-                    overlayNeighborPeerIds: recipientPeerIds
-                },
-                resolveALQosNormalizationInput(
-                    message,
-                    { selfPeerId: this.name, fromPeerId, direction: 'inbound' },
-                    this.qosProvider
-                )
-            ),
-            message,
-            source,
-            serverPeerId: this.name,
-            routerOwnsRoomFanout: !this.forwardsRoomScopedMessages
-        });
-    }
-
-    private hasInboxConsumer(message: ALMessage): boolean {
-        return this.onInboxWebSocketMessageCallbacks.has(message.payload.typeId) ||
-            this.onInboxWebSocketMessageCallbacks.has(WsQueueBoxServerService.ALL_IN) ||
-            this.onAnyInboxWebSocketMessageCallbacks.size > 0;
-    }
-
-    private async dispatchInboxEntry(
-        entry: ResourceEntry,
-        plan: ALMessageHandlingPlan,
-        source: ALInboundMessageRuntime.Source
-    ): Promise<void | 'completed' | 'retry'> {
-        const message = decodePersistedALMessage(entry.resource);
-        const authority = await this.readCurrentDispatchAuthority(message);
-        if (typeof authority === 'string') {
-            return authority;
-        }
-
-        if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
-            throw new NonRetryableException('Inbound message expired during authorization');
-        }
-
-        const context: WebSocketServerMessageContext = { server: this.socket, source };
-        const selected = this.onInboxWebSocketMessageCallbacks.get(message.payload.typeId) ??
-            (plan.ownership.exclusive
-                ? this.onInboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN)
-                : undefined);
-        await selected?.onMessage(message, entry, context);
-        const wildcard = plan.ownership.exclusive
-            ? undefined
-            : this.onInboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN);
-        if (wildcard !== undefined) {
-            if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
-                throw new NonRetryableException('Inbound message expired before wildcard delivery');
-            }
-            await wildcard.onMessage(message, entry, context);
-        }
-
-        for (const callback of this.onAnyInboxWebSocketMessageCallbacks.values()) {
-            if (entry.audit.expiryTs.epochMilliseconds <= this.clock.nowMs()) {
-                throw new NonRetryableException('Inbound message expired before observer delivery');
-            }
-            await callback.onMessage(message, entry, context);
-        }
-
-        if (
-            selected === undefined &&
-            wildcard === undefined &&
-            this.onAnyInboxWebSocketMessageCallbacks.size === 0
-        ) {
-            return 'retry';
-        }
+    /** A receiver ACK another instance handed over: counted here only against this instance's aggregate. */
+    async acceptRelayedAck(message: ALMessage): Promise<void> {
+        await this.ackRelay.acceptRelayedAck(message);
     }
 
     sendToTargets(message: ALMessage): number {
         return this.liveDelivery.sendToTargets(message);
     }
 
-    sendToTargetsWithResult(
-        message: ALMessage,
-        recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[]
-    ): WsServerLiveSendResult {
-        return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds, admittedPeerIds);
+    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
+        return await this.dequeueAuthority.readCapturedPolicy(message, entry);
     }
 
-    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
-        return this.admissionStore.readAdmittedAudience(msgId);
+    sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
+        return this.liveDelivery.sendToTargetsWithResult(input);
     }
 
     private async sendPreparedMessage(
         prepared: WsQueueBoxServerPreparedMessage,
         lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundSettledSendResult> {
-        if (prepared.kind !== 'recipient') {
+        if (
+            prepared.kind !== 'recipient' && prepared.kind !== 'scoped-recipient' &&
+            prepared.kind !== 'room-recipient' && prepared.kind !== 'invalidated-session'
+        ) {
             return await this.clusterPublication.writePreparedMessage(prepared, lifecycle);
         }
+        return await this.sendPreparedRecipient(prepared, lifecycle);
+    }
+
+    private async sendPreparedRecipient(
+        prepared: Extract<
+            WsQueueBoxServerPreparedMessage,
+            { kind: 'recipient' | 'scoped-recipient' | 'room-recipient' | 'invalidated-session'; }
+        >,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): Promise<ALOutboundSettledSendResult> {
         const message = reconstructALOutboundTransportMessage(prepared.message, lifecycle.canonicalMessage);
         if (lifecycle.signal.aborted) {
             return { status: 'cancelled', submissionAttempted: false };
@@ -652,16 +544,21 @@ export class WsQueueBoxServerService {
                     reason: 'WS connection is not open before native submission'
                 };
             }
+            if (
+                (prepared.kind === 'scoped-recipient' || prepared.kind === 'room-recipient') &&
+                !this.isCurrentScopedRecipient(prepared, message)
+            ) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
+            if (
+                prepared.kind === 'invalidated-session' &&
+                (prepared.connectionId !== prepared.sessionInvalidation.sessionId ||
+                    this.socket.connections.get(prepared.connectionId)?.generationId !== prepared.generationId)
+            ) {
+                return { status: 'no-targets', submissionAttempted: false };
+            }
             this.socket.sendEncoded(prepared.connectionId, encoded);
-            this.deliveryReporting.recordOutcome({
-                status: 'sent',
-                messageId: message.id.msgId
-            });
-            this.deliveryReporting.recordDiagnostics({
-                kind: 'outbox-send',
-                topicId: message.route.topicId,
-                payloadBytes: encoded.text.length
-            });
+            this.recordPreparedRecipientSent(message, encoded.text.length);
             return { status: 'sent', submissionAttempted: true };
         }
         catch (error) {
@@ -675,99 +572,30 @@ export class WsQueueBoxServerService {
         }
     }
 
-    private async forwardIncomingMessage(
-        message: ALMessage,
-        fromPeerId: string,
-        plan: ALMessageHandlingPlan
-    ): Promise<void | 'completed' | 'retry'> {
-        const authority = await this.readCurrentDispatchAuthority(message);
-        if (typeof authority === 'string') {
-            return authority;
-        }
-        const expiresAtMs = resolveALMessageExpireAtMs(message, plan.effective);
-        if (expiresAtMs !== undefined && expiresAtMs <= this.clock.nowMs()) {
-            throw new NonRetryableException('Inbound message expired before forwarding');
-        }
-        const audience = authority.roomAudience?.recipientPeerIds;
-        const nextHopPeerIds = plan.forwarding.nextHopPeerIds
-            .filter((peerId) => peerId !== fromPeerId && (audience === undefined || audience.includes(peerId)));
-
-        if (nextHopPeerIds.length === 0) {
-            return Promise.resolve();
-        }
-
-        console.log(
-            `Forwarding WS server message ${message.id.msgId} (${message.payload.typeId}) from ${fromPeerId} to ${
-                nextHopPeerIds.join(', ')
-            }`
-        );
-
-        let sent = 0;
-        const encoded = this.liveDelivery.tryEncodeDirectMessage(message);
-        if (!encoded) {
-            return Promise.resolve();
-        }
-        for (const peerId of nextHopPeerIds) {
-            sent += this.liveDelivery.sendToResolvedPeer(peerId, message, encoded);
-        }
-
-        if (sent === 0) {
-            console.warn(
-                `No resolved WS server recipients for forwarded message ${message.id.msgId} to ${
-                    nextHopPeerIds.join(', ')
-                }`
-            );
-        }
-
-        return Promise.resolve();
+    private recordPreparedRecipientSent(message: ALMessage, payloadBytes: number): void {
+        this.deliveryReporting.recordOutcome({ status: 'sent', messageId: message.id.msgId });
+        this.deliveryReporting.recordDiagnostics({
+            kind: 'outbox-send',
+            topicId: message.route.topicId,
+            payloadBytes
+        });
     }
 
-    private async readPendingAdmissionAuthority(
-        message: ALMessage,
-        source: ALInboundMessageRuntime.Source
-    ): Promise<ALInboundMessageRuntime.PendingAuthority> {
-        const authority = await this.readCurrentDispatchAuthority(message);
-        if (typeof authority === 'string') {
-            return authority === 'retry'
-                ? { kind: 'retry', retryAfterMs: WsQueueBoxServerService.READINESS_RETRY_AFTER_MS }
-                : { kind: 'rejected' };
-        }
-        const audience = authority.roomAudience?.recipientPeerIds;
-        if (source.kind !== 'ws-client' || audience === undefined) {
-            return { kind: 'authorized', source };
-        }
-        const captured = source.groupRecipientPeerIds;
-        return {
-            kind: 'authorized',
-            source: {
-                ...source,
-                groupRecipientPeerIds: audience.filter((peerId) => captured === undefined || captured.includes(peerId))
-            }
-        };
-    }
-
-    private async readCurrentDispatchAuthority(
+    private isCurrentScopedRecipient(
+        prepared: Extract<WsQueueBoxServerPreparedMessage, { kind: 'scoped-recipient' | 'room-recipient'; }>,
         message: ALMessage
-    ): Promise<Extract<WsServerInboundAuthorization, { authorized: true; }> | 'completed' | 'retry'> {
-        if (this.disposed) {
-            return 'retry';
+    ): boolean {
+        const connection = this.socket.connections.get(prepared.connectionId);
+        if (!connection?.isOpen || connection.generationId !== prepared.generationId) {
+            return false;
         }
-        if (isRoomScopedALMessage(message) && !this.inboundAuthorizer) {
-            return 'completed';
-        }
-        const validation = this.validateInboundMessage(message);
-        if (validation.left) {
-            return 'completed';
-        }
-        const authorization = await this.inboundAuthorizer?.authorize(message) ?? { authorized: true };
-        if (this.disposed) {
-            return 'retry';
-        }
-        return authorization.authorized
-            ? authorization
-            : authorization.reason === 'not-yet-in-sync'
-            ? 'retry'
-            : 'completed';
+        const scope = prepared.kind === 'scoped-recipient' ? prepared.recipientScope : readALTargetGroupRef(message);
+        const principalTargetId = prepared.kind === 'scoped-recipient' ? prepared.principalTargetId : undefined;
+        const proof = this.readAuthenticatedConnectionScope(connection);
+        return scope !== undefined && proof !== undefined && proof.expiresAtEpochMs > this.clock.nowMs() &&
+            proof.scope.applicationId === scope.applicationId &&
+            proof.scope.workspaceId === scope.workspaceId &&
+            (principalTargetId === undefined || proof.principalId === principalTargetId);
     }
 }
 
@@ -777,6 +605,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         name: input.name,
         qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, input.qosProvider),
         targetResolver: input.targetResolver ?? {},
+        readProducerProvenance: input.readProducerProvenance,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             queueEngine: input.queueEngine,
@@ -796,6 +625,8 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,
+        readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope,
+        publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });
 }

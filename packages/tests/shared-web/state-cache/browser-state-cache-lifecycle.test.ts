@@ -1,4 +1,5 @@
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { adoptGroupSnapshotsFromHeartbeat } from '@shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts';
 import { createPagedSnapshotReceiver } from './browser-state-cache-lifecycle-fixtures.ts';
 // dprint-ignore
 import {
@@ -369,6 +370,122 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         unsubscribe();
+    });
+
+    it('does not amplify a lease-only group authority renewal to RTC or state-cache listeners', async () => {
+        const current = createGroupSnapshot({
+            groupId: 'quiet-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 1
+        });
+        const renewed: typeof current = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: 20_000,
+                expiresAtEpochMs: 120_000
+            }))
+        };
+        const manager = createWebRtcGroupManager();
+        const listener = vi.fn();
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData: {
+                clientId: 'session-a',
+                sessionId: 'session-a',
+                isOnline: true
+            },
+            clientSnapshots: [],
+            groupSnapshots: [current],
+            options: {
+                scope: { applicationId: 'app-1', workspaceId: 'workspace-b' }
+            }
+        });
+        manager.acceptGroupUpdate.mockClear();
+        manager.delete.mockClear();
+        listener.mockClear();
+        const rawKinds: string[] = [];
+        const unsubscribeRaw = groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
+            rawKinds.push(change.kind);
+        });
+
+        expect(
+            groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(
+                current,
+                renewed
+            )
+        ).toBe(true);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(current.group)).toBe(renewed);
+        expect(manager.acceptGroupUpdate).not.toHaveBeenCalled();
+        expect(manager.delete).not.toHaveBeenCalled();
+        expect(listener).not.toHaveBeenCalled();
+        expect(rawKinds).toEqual(['updated']);
+
+        unsubscribeRaw();
+        unsubscribe();
+    });
+
+    it('reconciles RTC peers when a TTL-crossing heartbeat restores a same-tuple room session', async () => {
+        const full = createGroupSnapshot({
+            groupId: 'renewed-room',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-b',
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion: 1
+        });
+        const heartbeatAtEpochMs = Date.now();
+        const observed = {
+            ...full,
+            activeSessions: [{
+                ...full.activeSessions[0]!,
+                lastHeartbeatAtEpochMs: heartbeatAtEpochMs - 1_000,
+                expiresAtEpochMs: heartbeatAtEpochMs + 60_000
+            }],
+            onlineMemberCount: 1
+        };
+        const renewed = {
+            ...full,
+            activeSessions: full.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: heartbeatAtEpochMs,
+                expiresAtEpochMs: heartbeatAtEpochMs + 120_000
+            }))
+        };
+        const manager = createWebRtcGroupManager();
+        const listener = vi.fn();
+        const unsubscribe = browserStateCacheLifecycle.onChange(listener);
+
+        await browserStateCacheLifecycle.hydrate({
+            webRtcGroupManager: manager,
+            clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
+            clientSnapshots: [],
+            groupSnapshots: [observed],
+            options: { scope: { applicationId: 'app-1', workspaceId: 'workspace-b' } }
+        });
+        manager.acceptGroupUpdate.mockClear();
+        listener.mockClear();
+
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(heartbeatAtEpochMs + 61_001);
+            expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBeUndefined();
+
+            adoptGroupSnapshotsFromHeartbeat([observed], [renewed]);
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+            expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(renewed);
+            expect(listener).toHaveBeenCalledWith({ clients: [], groups: [renewed] });
+        }
+        finally {
+            vi.useRealTimers();
+            unsubscribe();
+        }
     });
 
     it('retains durable incomparable recovery across initialise and hydrate', async () => {

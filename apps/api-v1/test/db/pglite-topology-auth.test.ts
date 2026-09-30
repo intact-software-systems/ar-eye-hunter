@@ -50,17 +50,6 @@ import {
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-/** Admission returns before the inbound worker delivers, so the topic consumer runs on a later batch. */
-async function waitForWsIngressCaptures(captured: readonly number[], expected: number): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (captured.length >= expected) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Timed out waiting for ${expected} inbound WS ingress captures`);
-}
-
 interface NumericCountRow {
     readonly count: string | number;
 }
@@ -511,17 +500,29 @@ Deno.test(
             });
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
-            wsServer.addConnection(new ConnectionContext({ id: authority.sessionId, socket: wsSocket }));
+            const wsConnection = new ConnectionContext({ id: authority.sessionId, socket: wsSocket });
+            wsServer.addConnection(wsConnection);
             const wsService = createDefaultWsQueueBoxServerService({
                 outbox: new InMemoryQueueBox(new Map()),
                 socket: wsServer,
+                readAuthenticatedConnectionScope: (connection) =>
+                    connection === wsConnection && wsServer.connections.get(connection.id) === connection
+                        ? {
+                            scope: { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
+                            expiresAtEpochMs: FUTURE_MS
+                        }
+                        : undefined,
                 name: 'pglite-ws-ingress'
             });
             try {
                 const wsIngressCapturedAt: number[] = [];
+                const secondIngressCaptured = Promise.withResolvers<number>();
                 installRtcRttSystemTopic(wsService, {
                     enqueueMutation: async (input) => {
                         wsIngressCapturedAt.push(input.capturedAtEpochMs);
+                        if (wsIngressCapturedAt.length === 2) {
+                            secondIngressCaptured.resolve(input.capturedAtEpochMs);
+                        }
                         return await rtcRttInbox.enqueue(input);
                     }
                 });
@@ -532,25 +533,60 @@ Deno.test(
                     createdAtEpochMs: nowEpochMs,
                     version: 1
                 };
+                const rttMessage = newALUntargetedMessage(
+                    authority.sessionId,
+                    newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                    AppTopics.rtt,
+                    rtt
+                );
                 const dispatchRtt = () =>
                     wsSocket.dispatchMessage(newALUntargetedMessage(
                         authority.sessionId,
-                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay-second'),
                         AppTopics.rtt,
                         rtt
                     ));
-                const rttPending = dispatchRtt();
+                const rttAdmission = await wsService.acceptIncomingMessage(rttMessage, authority.sessionId);
+                assert.deepEqual(rttAdmission.right, { kind: 'admitted' });
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
                     createApiV1TestQueueResilience()
                 );
-                await rttPending;
-                await new Promise((resolve) => setTimeout(resolve, 2));
+                assert.equal(wsIngressCapturedAt.length, 1);
+                const secondIngressStartedAtEpochMs = Date.now();
                 await dispatchRtt();
-                await waitForWsIngressCaptures(wsIngressCapturedAt, 2);
+                const captureDeadline = setTimeout(
+                    () => secondIngressCaptured.reject(new Error('Timed out waiting for the second RTT ingress')),
+                    5_000
+                );
+                try {
+                    const secondCapturedAtEpochMs = await secondIngressCaptured.promise;
+                    assert.equal(wsIngressCapturedAt.length, 2);
+                    assert.ok(secondCapturedAtEpochMs >= secondIngressStartedAtEpochMs);
+                }
+                finally {
+                    clearTimeout(captureDeadline);
+                }
+
+                wsServer.addConnection(
+                    new ConnectionContext({
+                        id: authority.sessionId,
+                        socket: new PGliteTestSocket()
+                    })
+                );
+                await dispatchRtt();
                 assert.equal(wsIngressCapturedAt.length, 2);
-                assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
+                const replacedAdmission = await wsService.acceptIncomingMessage(
+                    newALUntargetedMessage(
+                        authority.sessionId,
+                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replaced'),
+                        AppTopics.rtt,
+                        rtt
+                    ),
+                    authority.sessionId
+                );
+                assert.equal(replacedAdmission.left?.code, 'unauthorized');
 
                 assert.equal(
                     Number(

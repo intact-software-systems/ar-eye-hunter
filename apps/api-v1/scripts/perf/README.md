@@ -282,6 +282,22 @@ pools them into eighteen measured runs per workload for each role. It rejects
 equal approved-base and candidate commits, so an identical-code control needs
 two distinct commits whose runtime code does not differ.
 
+## Hosted order-balanced comparison
+
+`.github/workflows/api-v1-state-write-pr-measurement.yml` runs the order-balanced protocol above on one
+GitHub-hosted runner. Add the label `measure-state-write` to a pull request, or remove and add it again to
+measure a newer head. Once the workflow is on `main` it can also be dispatched with a `ref`.
+
+It measures the candidate against its merge base with `main` in A-B-B-A order. Both sides run the
+candidate's `apps/api-v1/scripts/perf` harness, and the pooled result goes through the unchanged comparator.
+The workflow refuses a candidate that changes the comparator or a module it imports, `package-lock.json`,
+`apps/api-v1/deno.json`, `apps/api-v1/deno.lock`, `docker-compose.perf-bench.yml`, or the
+`perf:api-v1:state-write` and `db:migrate` scripts.
+
+The artifact `state-write-comparison-<run>-<attempt>` keeps the four captures, their environment records,
+the harness overlay patch and `comparison.log`. The job log carries each position's workload summaries,
+including `sql.serializedResultBytes`.
+
 ## Interpreting Results
 
 Treat these scripts as validation tools, not production benchmarks.

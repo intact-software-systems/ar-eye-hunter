@@ -31,6 +31,7 @@ import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
 import { readApiV1Recipe } from './api-v1-recipe-test-fixture.ts';
 
 interface CompiledWebSocketInteraction {
+    readonly HTTP?: { readonly request: { readonly path?: string; }; };
     readonly SET?: { readonly request: { readonly transform?: { readonly concat?: readonly unknown[]; }; }; };
     readonly WS?: WsInteraction;
     readonly PARALLEL?: { readonly request: { readonly groups: readonly { readonly steps: readonly CompiledWebSocketInteraction[]; }[]; }; };
@@ -128,6 +129,82 @@ describe.each(['default', 'override'] as const)('%s recipe WebSocket scope', (sc
         socket?.open();
         expect(await opening).toMatchObject({ status: 'SUCCESS' });
     });
+});
+
+it.each([
+    { name: 'match-preset', groupCreation: 'createMatchLobbyGroup', groupResponse: 'createMatchLobbyGroup', urlCount: 4 },
+    { name: 'group-data-policy', groupCreation: 'createBlockedDataGroup', groupResponse: 'createBlockedDataGroup', urlCount: 2 },
+    { name: 'drop-in-social-preset', groupCreation: 'createDropInGroup', groupResponse: 'createDropInGroup', urlCount: 2 },
+    { name: 'websocket-addressed-sends', groupCreation: 'aliceCreatesTheRoom', groupResponse: 'aliceCreatesTheRoom', urlCount: 2 },
+    { name: 'websocket-topic-routing', groupCreation: 'createGroup', groupResponse: 'joinAliceToGroup', urlCount: 1 }
+])('$name URL scope matches the HTTP group with nested {runId} variables', ({ name, groupCreation, groupResponse, urlCount }) => {
+    const recipe = readApiV1Recipe(`tests/api-v1/api-v1-${name}.json`) as ScenarioRecipe;
+    const recipePath = fileURLToPath(new URL(`../../shared-test/black-box-runner/tests/api-v1/api-v1-${name}.json`, import.meta.url));
+    const expanded = readScenarioRecipeIncludes(recipe, recipePath, process.cwd()).config;
+    const variables = resolveBlackBoxVariables(expanded.variables, { RALLAR_BB_RUN_ID: 'scope-run' }).variables;
+    expect(variables.applicationId).toContain('{runId}');
+    expect(variables.workspaceId).toContain('{runId}');
+
+    const context = {
+        dependencies: createDefaultExecutionDependencies(),
+        variables,
+        correlation: toRunnerCorrelationConfig({ options: {}, createUuid: () => crypto.randomUUID() }),
+        outputs: {
+            aliceSessionId: 'session',
+            aliceWsTicket: 'ticket',
+            aliceElsewhereSessionId: 'session',
+            aliceElsewhereWsTicket: 'ticket',
+            bobSessionId: 'session',
+            bobWsTicket: 'ticket',
+            carolSessionId: 'session',
+            carolWsTicket: 'ticket',
+            danSessionId: 'session',
+            danWsTicket: 'ticket',
+            wsTicket: 'ticket'
+        },
+        resultsByName: {} as Record<string, unknown>
+    };
+    const interactions = flattenInteractions(toExecutableInteractions({ ...expanded, variables }) as CompiledWebSocketInteraction[]);
+    const createInteraction = interactions.find((interaction) => Object.hasOwn(interaction, groupCreation))?.HTTP;
+    expect(createInteraction).toBeDefined();
+    const createPath = resolvePlaceholders(createInteraction?.request.path, context) as string;
+    const httpScope = createPath.match(/\/apps\/([^/]+)\/workspaces\/([^/]+)\/groups\/requests\//);
+    expect(httpScope).not.toBeNull();
+    const createdGroup = { applicationId: httpScope?.[1], workspaceId: httpScope?.[2] };
+    expect(createdGroup.applicationId).not.toContain('{runId}');
+    expect(createdGroup.workspaceId).not.toContain('{runId}');
+    context.resultsByName[groupCreation] = name === 'websocket-topic-routing'
+        ? [{ actual: { body: { error: 'already exists' } } }]
+        : [{ actual: { body: { group: createdGroup } } }];
+    context.resultsByName[groupResponse] = [{ actual: { body: { group: createdGroup } } }];
+    if (name === 'match-preset') {
+        context.resultsByName.createMatchArenaGroup = [{ actual: { body: { group: createdGroup } } }];
+    }
+
+    const allUrlTransforms = interactions.flatMap((interaction) =>
+        interaction.SET?.request.transform?.concat?.includes('&applicationId=')
+            ? [interaction.SET.request.transform]
+            : []
+    );
+    const elsewhereMarker = '-elsewhere';
+    const urlTransforms = allUrlTransforms.filter((transform) => !JSON.stringify(transform).includes(elsewhereMarker));
+    expect(urlTransforms).toHaveLength(urlCount);
+    const elsewhereTransforms = allUrlTransforms.filter((transform) => JSON.stringify(transform).includes(elsewhereMarker));
+    expect(elsewhereTransforms).toHaveLength(name === 'websocket-addressed-sends' ? 1 : 0);
+    for (const transform of elsewhereTransforms) {
+        const url = new URL(evaluateScenarioTransform({ transform, context }));
+        expect(url.pathname).toBe('/api/ws/session');
+        expect([...url.searchParams.entries()]).toEqual([
+            ['ticket', 'ticket'],
+            ['applicationId', `${createdGroup.applicationId}-elsewhere`],
+            ['workspaceId', createdGroup.workspaceId]
+        ]);
+    }
+    for (const transform of urlTransforms) {
+        const url = new URL(evaluateScenarioTransform({ transform, context }));
+        expect(url.searchParams.get('applicationId')).toBe(createdGroup.applicationId);
+        expect(url.searchParams.get('workspaceId')).toBe(createdGroup.workspaceId);
+    }
 });
 
 it.each([

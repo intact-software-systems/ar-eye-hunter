@@ -135,7 +135,7 @@ export class ALOutboundStoreLane<TPrepared> {
         return this.toStoreComputed(result.computed);
     }
 
-    /** The dispatches of one sender admitted as one commit; one result per dispatch, in order. */
+    /** Members of one sender group may commit separately; results stay in dispatch order, with a wake after writes or before rethrow. */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {

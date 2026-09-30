@@ -149,6 +149,7 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(),
             socket: socket,
             name: 'server-1'
@@ -253,6 +254,7 @@ function emptyRead() {
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
+        publicationAuthority: null,
         featureDecision: {
             allowed: true,
             code: 'allowed' as const,

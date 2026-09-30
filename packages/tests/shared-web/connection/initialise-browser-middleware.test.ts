@@ -14,6 +14,8 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
+
 const SESSION: AuthSession = {
     clientId: 'client-1',
     sessionId: 'session-1',
@@ -69,12 +71,17 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
 });
 
 function createConnectionService(): WebRtcConnectionService {
-    return new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+    return new WebRtcConnectionService({
+        send: async () => undefined,
+        connect: async () => undefined
+    }, {
         sessionId: SESSION.sessionId,
         token: 'test-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
-        faultPort: createPassThroughTransportFaultPort(),
         rtcSignalingTopicId: 'rtc-signaling'
+    }, {
+        faultPort: createPassThroughTransportFaultPort(),
+        createOfferId: new DeterministicRtcOfferIds().createOfferId
     });
 }

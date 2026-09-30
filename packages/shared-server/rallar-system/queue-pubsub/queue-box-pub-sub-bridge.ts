@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALOutboundCapturedPolicy } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import {
     decodeALOutboundCanonicalMessage,
     decodeALOutboundIdentityEntry,
@@ -9,13 +10,24 @@ import {
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import {
+    isWsQueueBoxServerDirectScopedBroadcastRow,
+    isWsQueueBoxServerDirectWorldBroadcastRow,
+    validateWsQueueBoxServerRecipientAuthority
+} from '@shared/services/ws-queue-box-server/scope/requires-ws-queue-box-server-recipient-scope.ts';
+import { resolveWsQueueBoxServerRecipientScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
+import type {
+    WsServerLiveSendInputDto,
+    WsServerLiveSendResult
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { isWsQueueBoxServerReceiptRow } from '@shared/services/ws-queue-box-server/ws-queue-box-server-receipt-row.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
@@ -34,19 +46,16 @@ import { requeueRemoteWsOutboxDeliveryFailure } from './requeue-remote-ws-outbox
 export interface QueueBoxPubSubWsService {
     readonly outbox: QueueBoxResourceEntryRepository;
     onOutboxClusterPublishDo(
-        publisher: (
-            message: ALMessage,
-            entry: ResourceEntry,
-            admittedAudience: readonly string[] | undefined
-        ) => Promise<void>
+        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
     ): QueueBoxPubSubWsService;
-    sendToTargetsWithResult(
-        message: ALMessage,
-        recipientSessionIds?: readonly string[],
-        admittedPeerIds?: readonly string[]
-    ): WsServerLiveSendResult;
-    /** The audience the row was admitted to, captured in the shared admission store (D58, C9). */
-    readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined>;
+    readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy>;
+    sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult;
+}
+
+export interface CapturedWsRecipientEligibilityInputDto {
+    readonly message: ALMessage;
+    readonly candidateSessionIds: readonly string[];
+    readonly recipientScope: StateScope | undefined;
 }
 
 export interface InstallQueueBoxPubSubBridgeOptions {
@@ -59,6 +68,9 @@ export interface InstallQueueBoxPubSubBridgeOptions {
     readonly retryPolicy?: ResourceInboxRetryPolicy;
     readonly jitterUnit?: () => number;
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
+    readonly filterEligibleCapturedSessionIds?: (
+        input: CapturedWsRecipientEligibilityInputDto
+    ) => readonly string[];
     /**
      * Announces a requeued row to the engine that owns the outbox. A requeue writes outside every ALM
      * runtime, so absence leaves the row waiting out the owner's idle ceiling.
@@ -72,6 +84,7 @@ interface RegisterQueueBoxOutboxPublisherInput {
     readonly channel: string;
     readonly publisherId: string;
     readonly timing?: RallarTimingSink;
+    readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
 }
 
 interface ReceiveQueueBoxPubSubMessageDependencies {
@@ -84,6 +97,7 @@ interface ReceiveQueueBoxPubSubMessageDependencies {
     readonly jitterUnit: () => number;
     readonly onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     readonly wakeQueueEngine?: () => void;
+    readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
 }
 
 interface SendRemoteQueueBoxOutboxEntryDependencies {
@@ -93,6 +107,20 @@ interface SendRemoteQueueBoxOutboxEntryDependencies {
     readonly retryPolicy: ResourceInboxRetryPolicy;
     readonly jitterUnit: () => number;
     readonly wakeQueueEngine?: () => void;
+    readonly filterEligibleCapturedSessionIds?: InstallQueueBoxPubSubBridgeOptions['filterEligibleCapturedSessionIds'];
+}
+
+interface RequeueFailedRemoteOutboxEntryInput {
+    readonly message: QueueBoxPubSubMessage;
+    readonly entry: ResourceEntry;
+    readonly options: SendRemoteQueueBoxOutboxEntryDependencies;
+    readonly result: Pick<WsServerLiveSendResult, 'recipientCount' | 'failedCount'>;
+}
+
+interface SendToCapturedLocalTargetsInput {
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly policy: ALOutboundCapturedPolicy | undefined;
 }
 
 interface ResolveResourceEntryFromPubSubMessageDependencies {
@@ -122,7 +150,8 @@ export function installQueueBoxPubSubBridge(
         bridge,
         channel,
         publisherId,
-        timing
+        timing,
+        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
     });
     const readiness = timeRallarAsync(
         timing,
@@ -142,7 +171,8 @@ export function installQueueBoxPubSubBridge(
                     retryPolicy,
                     jitterUnit,
                     onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived,
-                    wakeQueueEngine: options.wakeQueueEngine
+                    wakeQueueEngine: options.wakeQueueEngine,
+                    filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
                 });
             });
         }
@@ -157,7 +187,7 @@ export function installQueueBoxPubSubBridge(
 function registerQueueBoxOutboxPublisher(
     options: RegisterQueueBoxOutboxPublisherInput
 ): void {
-    options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry, admittedAudience) => {
+    options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry) => {
         const envelope = toPubSubMessage({
             channel: options.channel,
             publisherId: options.publisherId,
@@ -172,7 +202,8 @@ function registerQueueBoxOutboxPublisher(
             operation: 'outbox-cluster-publish',
             message: envelope
         });
-        const result = options.wsQBoxServerService.sendToTargetsWithResult(message, undefined, admittedAudience);
+        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, message, entry);
+        const result = sendToCapturedLocalTargets({ message, entry, policy }, options);
         recordPubSubTiming({
             timing: options.timing,
             operation: 'outbox-direct-send',
@@ -236,7 +267,8 @@ async function receiveQueueBoxPubSubMessage(
         timing: options.timing,
         retryPolicy: options.retryPolicy,
         jitterUnit: options.jitterUnit,
-        wakeQueueEngine: options.wakeQueueEngine
+        wakeQueueEngine: options.wakeQueueEngine,
+        filterEligibleCapturedSessionIds: options.filterEligibleCapturedSessionIds
     });
 }
 
@@ -258,11 +290,23 @@ async function sendRemoteQueueBoxOutboxEntry(
     options: SendRemoteQueueBoxOutboxEntryDependencies
 ): Promise<void> {
     const remoteMessage = decodePersistedALMessage(entry.resource);
-    const result = options.wsQBoxServerService.sendToTargetsWithResult(
-        remoteMessage,
-        undefined,
-        await options.wsQBoxServerService.readAdmittedAudience(remoteMessage.id.msgId)
-    );
+    let result: WsServerLiveSendResult;
+    try {
+        const policy = await readCapturedPublicationPolicy(options.wsQBoxServerService, remoteMessage, entry);
+        result = sendToCapturedLocalTargets({ message: remoteMessage, entry, policy }, options);
+    }
+    catch (error) {
+        if (error instanceof ALAdmissionCorruptionError) {
+            throw error;
+        }
+        await requeueFailedRemoteOutboxEntry({
+            message,
+            entry,
+            options,
+            result: { recipientCount: 0, failedCount: 1 }
+        });
+        return;
+    }
     recordPubSubTiming({
         timing: options.timing,
         operation: 'outbox-direct-send',
@@ -279,6 +323,13 @@ async function sendRemoteQueueBoxOutboxEntry(
         return;
     }
 
+    await requeueFailedRemoteOutboxEntry({ message, entry, options, result });
+}
+
+async function requeueFailedRemoteOutboxEntry(
+    input: RequeueFailedRemoteOutboxEntryInput
+): Promise<void> {
+    const { message, entry, options, result } = input;
     const requeued = await requeueRemoteWsOutboxDeliveryFailure(
         options.wsQBoxServerService.outbox,
         entry,
@@ -302,6 +353,62 @@ async function sendRemoteQueueBoxOutboxEntry(
     if (requeued !== undefined) {
         options.wakeQueueEngine?.();
     }
+}
+
+/** A receipt row answers its origin and carries no captured policy of its own. */
+async function readCapturedPublicationPolicy(
+    service: QueueBoxPubSubWsService,
+    message: ALMessage,
+    entry: ResourceEntry
+): Promise<ALOutboundCapturedPolicy | undefined> {
+    return isWsQueueBoxServerReceiptRow(message)
+        ? undefined
+        : await service.readCapturedPolicy(message, entry);
+}
+
+function sendToCapturedLocalTargets(
+    input: SendToCapturedLocalTargetsInput,
+    options: Pick<SendRemoteQueueBoxOutboxEntryDependencies, 'wsQBoxServerService' | 'filterEligibleCapturedSessionIds'>
+): WsServerLiveSendResult {
+    const { message, entry, policy } = input;
+    if (
+        policy?.principalTargetId !== undefined &&
+        validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0
+    ) {
+        throw new ALAdmissionCorruptionError(
+            JSON.stringify(entry.key),
+            new TypeError('Captured WS recipient authority differs from the publication target')
+        );
+    }
+    const captured = policy?.admittedAudience;
+    const recipientScope = resolveWsQueueBoxServerRecipientScope(message, policy?.recipientScope);
+    const sessionInvalidation = policy?.sessionInvalidation;
+    if (sessionInvalidation !== undefined) {
+        return options.wsQBoxServerService.sendToTargetsWithResult({
+            message,
+            sessionInvalidation
+        });
+    }
+    const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, entry.key);
+    const eligible = (message.targets?.mode !== 'unicast' && !directBroadcast) ||
+            captured === undefined || options.filterEligibleCapturedSessionIds === undefined
+        ? undefined
+        : options.filterEligibleCapturedSessionIds({
+            message,
+            candidateSessionIds: captured,
+            recipientScope
+        });
+    return options.wsQBoxServerService.sendToTargetsWithResult({
+        message,
+        recipientSessionIds: eligible,
+        admittedPeerIds: captured,
+        inboundScope: message.targets?.mode === 'unicast' ? recipientScope : undefined,
+        recipientPrincipalId: policy?.principalTargetId,
+        recipientScope: directBroadcast || isWsQueueBoxServerDirectWorldBroadcastRow(message, entry.key) ||
+                policy?.principalTargetId !== undefined
+            ? recipientScope
+            : undefined
+    });
 }
 
 export interface ToPubSubMessageInput {

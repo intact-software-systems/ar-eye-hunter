@@ -39,7 +39,11 @@ export async function submitBlackBoxRawControl(
             `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.rawControlUnavailable}: no connected session.`
         );
     }
-    const result = await writeCarrierOutboxAdmission(context, control.carrier, toRawControlMessage(input, sessionId));
+    const result = await writeCarrierOutboxAdmission(
+        context,
+        { carrier: control.carrier, canFallback: false },
+        toRawControlMessage(input, sessionId)
+    );
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);
     return { msgId: control.msgId, verdict: result.verdict };
 }

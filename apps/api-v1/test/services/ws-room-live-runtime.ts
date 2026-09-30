@@ -64,6 +64,13 @@ export function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
         outbox: outboundStores.workQueue,
         outboundStores,
         socket,
+        readAuthenticatedConnectionScope: (connection) =>
+            socket.connections.get(connection.id) === connection
+                ? {
+                    scope: { applicationId: 'app-1', workspaceId: 'workspace-1' },
+                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+                }
+                : undefined,
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(socket, {
             findGroupSnapshotByRef: (ref) => state.cache.findByRef(ref),

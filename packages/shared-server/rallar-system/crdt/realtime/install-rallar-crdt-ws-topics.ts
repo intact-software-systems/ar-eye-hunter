@@ -175,7 +175,8 @@ async function respondToDurableCatchUpRequest(
     input: RespondToDurableCatchUpRequestInput
 ): Promise<void> {
     const repository = input.options.logRepository;
-    if (!repository) {
+    const scope = input.context.authenticatedScope;
+    if (!repository || scope === undefined) {
         return;
     }
 
@@ -197,9 +198,10 @@ async function respondToDurableCatchUpRequest(
         page
     };
 
-    await input.context.proxy.toPeer(
-        input.context.senderId,
-        newALUntargetedMessage(
+    await input.context.proxy.toPeer({
+        peerId: input.context.senderId,
+        scope,
+        message: newALUntargetedMessage(
             input.context.service.name,
             newALEventRoute(
                 input.accepted.raw.route.topicId,
@@ -209,8 +211,8 @@ async function respondToDurableCatchUpRequest(
             RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID,
             response
         ),
-        'live-only'
-    );
+        fanout: 'live-only'
+    });
 }
 
 interface AuthorizeAcceptedEnvelopeInput {

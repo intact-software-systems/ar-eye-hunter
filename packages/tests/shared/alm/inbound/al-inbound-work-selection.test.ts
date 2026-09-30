@@ -1,6 +1,14 @@
 import '../../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
@@ -21,6 +29,7 @@ import {
     createALInboundWorkSelector,
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
+import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler, type ALWorkBatchDiagnostics } from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -30,13 +39,7 @@ import {
     type ResourceEntry,
     type ResourceEntryKeyString
 } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
@@ -62,6 +65,8 @@ const DUE_SINCE_MS = 250;
 const SCAN_STATUS_COUNT = 3;
 /** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
 const ROTATION_ROUND_LIMIT = 16;
+/** Rows that are not due yet: with a commit's own row they fill three NEW pages. */
+const WAITING_NEW_ROWS = 40;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -91,21 +96,200 @@ describe('ALInboundWorkSelector readiness', () => {
         expect(selection.nextReadyAtMs).toBe(NOW_MS);
     });
 
-    it('drops the page a probe cached when a commit restarts the scan', async () => {
+    it('drops the page a probe cached when a commit asks for a head read', async () => {
         const fixture = createSelectorFixture();
 
         // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
         expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
 
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
-        fixture.selector.restartScan();
+        fixture.selector.requestHeadRead();
 
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         expect(selection.claims).toHaveLength(1);
     });
 });
 
+describe('ALInboundWorkSelector head read', () => {
+    it('reads the head of NEW for a commit and resumes the rotation where it stood', async () => {
+        // The order of page reads is the contract here: a head read reads NEW and stores no position, so
+        // the rotation read after it continues at RETRY. No other boundary exposes the rotation position.
+        const fixture = createSelectorFixture();
+        const scanned = recordScannedStatuses(fixture.port);
+        // An empty NEW page moves the rotation on to RETRY.
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toEqual([]);
+
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+        fixture.selector.requestHeadRead();
+        expect((await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims).toHaveLength(1);
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(scanned).toEqual([EntityStatus.NEW, EntityStatus.NEW, EntityStatus.RETRY]);
+    });
+
+    it('hands the head read a probe took to the batch that follows it', async () => {
+        const fixture = createSelectorFixture();
+        await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+        fixture.selector.requestHeadRead();
+
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        // A due row written after the probe, with no commit asking for a head read: a batch that read
+        // NEW again would claim it too, so claiming only the probe's row shows the batch took its page.
+        await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'after-probe'));
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(selection.claims).toHaveLength(1);
+        expect(fixture.selector.isHeadReadPending()).toBe(false);
+    });
+
+    it('runs at most one head read between two rotation reads', async () => {
+        // The order of page reads is the contract here: under back-to-back commits, head reads (NEW) and
+        // rotation reads (NEW, RETRY, RESERVED) alternate. No other boundary exposes which read ran.
+        const fixture = createSelectorFixture();
+        const scanned = recordScannedStatuses(fixture.port);
+
+        await readClaimsWhileCommitting(fixture, ['commit-1', 'commit-2', 'commit-3', 'commit-4', 'commit-5']);
+
+        // The first read is the rotation's own start, which is already the head of NEW.
+        expect(scanned).toEqual([
+            EntityStatus.NEW,
+            EntityStatus.NEW,
+            EntityStatus.RETRY,
+            EntityStatus.NEW,
+            EntityStatus.RESERVED
+        ]);
+    });
+
+    it('claims a due RETRY row and an expired RESERVED row within a bounded number of batches while commits keep arriving', async () => {
+        const fixture = createSelectorFixture();
+        await retainEntries(fixture.port, [
+            ...createWaitingEntries(fixture.namespace, WAITING_NEW_ROWS),
+            createRetryEntry(fixture.namespace, 'retry-row'),
+            createExpiredReservationEntry(fixture.namespace, 'reserved-row')
+        ]);
+
+        const claimedAtBatch = await readClaimsWhileCommitting(fixture, [
+            'commit-1',
+            'commit-2',
+            'commit-3',
+            'commit-4',
+            'commit-5',
+            'commit-6',
+            'commit-7',
+            'commit-8',
+            'commit-9',
+            'commit-10'
+        ]);
+
+        // Rewinding to NEW page 1 on every commit would never reach RETRY or RESERVED. Here head reads
+        // and rotation reads alternate, every commit is taken in its own batch or the next one, and
+        // the rotation walks three NEW pages, then RETRY and RESERVED, in the batches between.
+        expect(Object.fromEntries(claimedAtBatch)).toEqual({
+            'commit-1': 1,
+            'commit-2': 2,
+            'commit-3': 4,
+            'commit-4': 4,
+            'commit-5': 6,
+            'commit-6': 6,
+            'retry-row': 7,
+            'commit-7': 8,
+            'commit-8': 8,
+            'reserved-row': 9,
+            'commit-9': 10,
+            'commit-10': 10
+        });
+    });
+});
+
 describe('ALInboundWorkSelector phase measurement', () => {
+    it.each([4, AL_INBOUND_WORK_PAGE_SIZE])(
+        'separates original work and release from successor rediscovery behind %i held claims',
+        async (originalCount) => {
+            const fixture = createCostBoundaryFixture();
+            const originals: ResourceEntry[] = [];
+            for (let index = 0; index < originalCount; index += 1) {
+                const entry = createPendingAdmissionEntry(fixture.namespace, NOW_MS, `original-${String(index).padStart(2, '0')}`);
+                originals.push(entry);
+                await fixture.port.retainIfAbsent(entry);
+            }
+
+            let signalHeld: (() => void) | undefined;
+            const heldEntered = new Promise<void>((resolve) => {
+                signalHeld = resolve;
+            });
+            let releaseHeld: (() => void) | undefined;
+            const held = new Promise<void>((resolve) => {
+                releaseHeld = resolve;
+            });
+            const runIds: string[] = [];
+            const batches: ALWorkBatchDiagnostics[] = [];
+            const handler = new ALWorkHandler({
+                workerId: 'cost-boundary-worker',
+                port: fixture.port,
+                queueEngine: new InboxOutboxEngine(),
+                ownsQueueEngine: false,
+                clock: { nowMs: fixture.nowMs },
+                pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+                readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+                readNextReadyAtMs: fixture.selector.readNextReadyAtMs,
+                selectReady: fixture.selector.selectReady,
+                runClaim: async (claim) => {
+                    runIds.push(decodeALInboundWorkEntry(claim.entry, fixture.namespace).effectId);
+                    if (runIds.length === 1) {
+                        signalHeld?.();
+                        await held;
+                    }
+                    fixture.advance(17);
+                    return { status: 'completed' };
+                },
+                diagnostics: (event) => {
+                    if (event.kind === 'work-batch') {
+                        batches.push(event);
+                    }
+                }
+            });
+            try {
+                const originalBatch = handler.ready();
+                await heldEntered;
+                await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'successor-zz'));
+                releaseHeld?.();
+                await originalBatch;
+
+                expect(runIds).toHaveLength(originalCount);
+                expect(runIds.every((id) => id.includes('original-'))).toBe(true);
+                const originalStatuses = (await Promise.all(originals.map((entry) => fixture.port.readEntry(entry.key))))
+                    .map((entry) => entry?.status);
+                expect(originalStatuses).toEqual(Array(originalCount).fill(EntityStatus.COMPLETED));
+                expect(batches).toHaveLength(1);
+                expect(batches[0]).toMatchObject({
+                    claimedCount: originalCount,
+                    completedCount: originalCount,
+                    selectionDurationMs: 5,
+                    claimDurationMs: 3,
+                    runDurationMs: 17 * originalCount,
+                    releaseDurationMs: 23,
+                    durationMs: 5 + 3 + 17 * originalCount + 23
+                });
+
+                const rediscoveryStartedAtMs = fixture.nowMs();
+                let successorClaims: readonly ALWorkClaim[] = [];
+                for (let scan = 0; scan < 4 && successorClaims.length === 0; scan += 1) {
+                    successorClaims = (await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE)).claims;
+                }
+                expect(successorClaims).toHaveLength(1);
+                expect(decodeALInboundWorkEntry(successorClaims[0]!.entry, fixture.namespace).effectId).toContain('successor-zz');
+                expect(fixture.nowMs() - rediscoveryStartedAtMs).toBe(
+                    (originalCount === AL_INBOUND_WORK_PAGE_SIZE ? 1 : 3) * (5 + 3)
+                );
+            }
+            finally {
+                releaseHeld?.();
+                handler.dispose();
+            }
+        }
+    );
+
     it('times its page read apart from its reservation, and reports the wait of the row it claimed', async () => {
         const fixture = createTimedSelectorFixture();
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS - DUE_SINCE_MS));
@@ -225,7 +409,7 @@ describe('ALInboundWorkSelector claim order', () => {
         }
     );
 
-    it('sends each control of a batch alone once a commit restarted the scan mid-batch', async () => {
+    it('keeps the control batch intact when a commit arrives mid-batch', async () => {
         let releaseHeld: (() => void) | undefined;
         const held = new Promise<void>((resolve) => {
             releaseHeld = resolve;
@@ -244,18 +428,17 @@ describe('ALInboundWorkSelector claim order', () => {
             await fixture.queueEngine.executeOnce();
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        // A commit while the batch holds its first dispatch restarts the scan, which empties the
-        // claimed control sends of the batch: each of its control claims then sends alone.
+        // New committed work does not rewind the rotation or split its already claimed control batch.
         await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'late' }), INBOUND_TEST_SOURCE);
         releaseHeld?.();
 
-        await expect.poll(() => fixture.controlSends.length).toBeGreaterThanOrEqual(2);
-        expect(fixture.controlSends.slice(0, 2).map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg))))
-            .toEqual([['first-acknowledged'], ['second-acknowledged']]);
+        await expect.poll(() => fixture.controlSends.length).toBe(1);
+        expect(fixture.controlSends.map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg))))
+            .toEqual([['first-acknowledged', 'second-acknowledged']]);
     });
 
     it(
-        'pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running',
+        'pin: a commit reaches the engine wake, and lands at the latest in the second batch after one already running',
         async () => {
             let releaseHeld: (() => void) | undefined;
             const held = new Promise<void>((resolve) => {
@@ -301,8 +484,9 @@ describe('ALInboundWorkSelector claim order', () => {
             expect(wake).toHaveBeenCalledTimes(2);
 
             releaseHeld?.();
-            // No `start()` and no `executeOnce()` run in this test: `second` can only be dispatched by
-            // the follow-up batch `runBatch()`'s own `finally` schedules at the first batch's end.
+            // No `start()` and no `executeOnce()` run in this test. The running batch read the head of
+            // NEW, so its follow-up batch is a rotation read, and the head read `second` is owed runs
+            // in the batch the handler starts after that one.
             await expect.poll(() => dispatchedIds).toEqual(['held', 'second']);
         }
     );
@@ -311,7 +495,7 @@ describe('ALInboundWorkSelector claim order', () => {
         const claims = [
             createTestClaim('forward-message'),
             createTestClaim('send-control'),
-            createTestClaim('unknown'),
+            createTestClaim('undecoded'),
             createTestClaim('admit-control'),
             createTestClaim('admit-message'),
             createTestClaim('release-buffered'),
@@ -331,7 +515,7 @@ describe('ALInboundWorkSelector claim order', () => {
         expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual([
             'release-buffered',
             'dispatch-local',
-            'unknown',
+            'undecoded',
             'admit-control',
             'admit-message',
             'forward-message',
@@ -402,6 +586,58 @@ function createTimedSelectorFixture(): SelectorFixture {
             }
         },
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => nowMs })
+    };
+}
+
+/** Logical phase costs at real selector and queue-port seams; these are not IndexedDB timings. */
+function createCostBoundaryFixture() {
+    const namespace = 'cost-boundary';
+    let currentMs = NOW_MS;
+    const nowMs = () => currentMs;
+    const advance = (durationMs: number) => {
+        currentMs += durationMs;
+    };
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+    );
+    const admissionStore = createALInboundAdmissionStore({
+        nowMs,
+        namespace,
+        backend: new InMemoryAdmissionBackend(state, nowMs),
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention()
+    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, nowMs).delivery;
+    const originalPort = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs });
+    const port = createCostBoundaryPort(originalPort, advance);
+    return {
+        namespace,
+        port,
+        nowMs,
+        advance,
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs })
+    };
+}
+
+function createCostBoundaryPort(originalPort: ALWorkQueuePort, advance: (durationMs: number) => void): ALWorkQueuePort {
+    return {
+        ...originalPort,
+        readPage: async (input) => {
+            const page = await originalPort.readPage(input);
+            advance(5);
+            return page;
+        },
+        claim: async (input) => {
+            const claims = await originalPort.claim(input);
+            advance(3);
+            return claims;
+        },
+        releaseAll: async (releases) => {
+            await originalPort.releaseAll(releases);
+            advance(23);
+        }
     };
 }
 
@@ -494,26 +730,121 @@ function createTestClaim(resourceId: string): ALWorkClaim {
     };
 }
 
+/** Every status the port pages through from here on, in read order. */
+function recordScannedStatuses(port: ALWorkQueuePort): EntityStatus[] {
+    const scanned: EntityStatus[] = [];
+    const readPage = port.readPage.bind(port);
+    vi.spyOn(port, 'readPage').mockImplementation(async (input) => {
+        scanned.push(input.status);
+        return await readPage(input);
+    });
+    return scanned;
+}
+
+/**
+ * One batch per commit: each commit retains its row and asks for a head read before its batch's
+ * selection, as the lane's `commitWork()` does. Answers the batch that claimed each row, by msgId.
+ */
+async function readClaimsWhileCommitting(
+    fixture: SelectorFixture,
+    commits: readonly string[]
+): Promise<ReadonlyMap<string, number>> {
+    const claimedAtBatch = new Map<string, number>();
+    for (const [index, msgId] of commits.entries()) {
+        await fixture.port.retainIfAbsent(
+            createPendingAdmissionEntry(fixture.namespace, NOW_MS, msgId)
+        );
+        fixture.selector.requestHeadRead();
+        const selection = await fixture.selector.selectReady(
+            fixture.port,
+            AL_INBOUND_WORK_PAGE_SIZE
+        );
+        selection.claims.forEach((claim) =>
+            claimedAtBatch.set(
+                decodeALInboundWorkEntry(claim.entry, fixture.namespace).effectId.split(':').at(
+                    -1
+                )!,
+                index + 1
+            )
+        );
+    }
+    return claimedAtBatch;
+}
+
+async function retainEntries(
+    port: ALWorkQueuePort,
+    entries: readonly ResourceEntry[]
+): Promise<void> {
+    for (const entry of entries) {
+        await port.retainIfAbsent(entry);
+    }
+}
+
+/** Admissions that are not due yet: the rotation reads past them and claims none. */
+function createWaitingEntries(namespace: string, count: number): ResourceEntry[] {
+    return Array.from(
+        { length: count },
+        (_, index) =>
+            createPendingAdmissionEntry(
+                namespace,
+                NOW_MS + 30_000,
+                `waiting-${String(index).padStart(2, '0')}`
+            )
+    );
+}
+
+/** A retried row whose retry is already due. */
+function createRetryEntry(namespace: string, msgId: string): ResourceEntry {
+    return {
+        ...createPendingAdmissionEntry(namespace, NOW_MS - 1_000, msgId),
+        status: EntityStatus.RETRY,
+        dequeueAudit: {
+            attempts: 1,
+            nextTs: Temporal.Instant.fromEpochMilliseconds(NOW_MS - 1_000)
+        }
+    };
+}
+
+/** A reservation whose lease a crashed worker left to expire. */
+function createExpiredReservationEntry(namespace: string, msgId: string): ResourceEntry {
+    return {
+        ...createPendingAdmissionEntry(namespace, NOW_MS - 30_000, msgId),
+        status: EntityStatus.RESERVED,
+        dequeueAudit: {
+            attempts: 1,
+            startTs: Temporal.Instant.fromEpochMilliseconds(NOW_MS - 20_000)
+        }
+    };
+}
+
 /** A reservation with no lease start: timeout reservation can never reach it, so the page recovers it. */
 function createUnleasedReservationEntry(namespace: string, observedAtMs: number): ResourceEntry {
     return { ...createPendingAdmissionEntry(namespace, observedAtMs), status: EntityStatus.RESERVED };
 }
 
-function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS) {
+function createPendingAdmissionEntry(namespace: string, observedAtMs: number = NOW_MS, msgId = 'selection') {
     const original = newALUnicastMessage(
         'peer-1',
-        { topicId: 'chat', resourceId: 'selection', contextId: 'chat-1' },
+        { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
         'self',
         'chat.private-text.v1',
         { text: 'claimable' },
         { ttlMs: 60_000 }
     );
-    const msg = { ...original, constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 } };
+    const msg = {
+        ...original,
+        id: { ...original.id, msgId },
+        constraints: { ...original.constraints, expiresAtMs: NOW_MS + 60_000 }
+    };
     return computeALInboundWorkEntry({
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingAdmissionId(msg),
-        payload: { kind: 'admit-message', msg, source: { kind: 'ws-client', peerId: 'peer-1' } },
+        payload: {
+            kind: 'admit-message',
+            msg,
+            source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
+        },
         observedAtMs,
         expireAtTimestamp: NOW_MS + 60_000
     }).entry;

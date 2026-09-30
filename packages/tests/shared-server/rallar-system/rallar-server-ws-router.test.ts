@@ -1,5 +1,3 @@
-import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
-import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import {
     describe,
     expect,
@@ -43,10 +41,12 @@ import {
 } from '@shared/mod.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
-import { waitForALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
+import { waitForSettledALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
 
 describe('RallarServerWsRouter', () => {
     it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
@@ -56,7 +56,8 @@ describe('RallarServerWsRouter', () => {
             vi.restoreAllMocks();
         });
         const expiresAtMs = nowMs + 1_000;
-        const fixture = createIngressRouter({ defaultFanout: 'none' }, undefined, {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, stores, {
             defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } })
         });
         const delivered: string[] = [];
@@ -73,6 +74,17 @@ describe('RallarServerWsRouter', () => {
         const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
 
         await fixture.socket.receive(message);
+        const keys = await stores.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        if (offsetMs < 0) {
+            await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({
+                status: 'COMPLETED',
+                dequeueAudit: { attempts: 1 }
+            });
+        }
+        else {
+            await expect.poll(() => stores.workQueue.getItem(keys[0])).toBeUndefined();
+        }
 
         expect(observedDeadlines).toEqual([expiresAtMs]);
         expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
@@ -115,10 +127,14 @@ describe('RallarServerWsRouter', () => {
 
         const keys = await stores.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
-        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        const retry = await stores.workQueue.getItem(keys[0]);
+        if (retry?.dequeueAudit.nextTs === undefined) {
+            throw new Error('Expected the failed public consumer to retain a scheduled retry');
+        }
         available = true;
-        await vi.advanceTimersByTimeAsync(1_000);
-        expect(await stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        await vi.advanceTimersByTimeAsync(Math.max(0, retry.dequeueAudit.nextTs.epochMilliseconds - Date.now()));
+        await expect.poll(() => stores.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
         expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
     });
 
@@ -384,8 +400,9 @@ describe('RallarServerWsRouter', () => {
             { reliability: 'at-least-once', ack: 'none' }
         );
 
-        await router.route(roomUnicast);
-        await router.route(durable);
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUDIENCE_SCOPE };
+        await router.route(roomUnicast, source);
+        await router.route(durable, source);
 
         expect(handled).toEqual([roomUnicast.id.msgId]);
         expect(socket.sent.map((entry) => [entry.connectionId, entry.data.id.msgId])).toEqual([
@@ -425,7 +442,7 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('publishes a proxy room message with its full scoped identity', async () => {
-        const { router, outboundStores } = createRouter();
+        const { router, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
         const roomRef: GroupRef = {
             applicationId: 'proxy-application',
             workspaceId: 'proxy-workspace',
@@ -639,7 +656,7 @@ describe('RallarServerWsRouter', () => {
             }
             return await readIncomingMessage(input);
         });
-        const publishedSessionIds: string[][] = [];
+        const publishedAudiences: { readonly msgId: string; readonly sessionIds: readonly string[]; }[] = [];
         let authorizationCount = 0;
         const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const { router, service, socket } = createIngressRouter({
@@ -663,11 +680,12 @@ describe('RallarServerWsRouter', () => {
             }
         }, stores);
         const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
-        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((message, sessionIds) => {
-            publishedSessionIds.push([...sessionIds ?? []]);
-            return sendToTargetsWithResult(message, sessionIds);
+        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((input) => {
+            publishedAudiences.push({ msgId: input.message.id.msgId, sessionIds: [...input.recipientSessionIds ?? []] });
+            return sendToTargetsWithResult(input);
         });
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {
             router.install();
             const first = newALBroadcastMessage(
@@ -697,10 +715,17 @@ describe('RallarServerWsRouter', () => {
             await allAuthorizationsCompleted.promise;
             releaseFirstAdmission.resolve();
             await Promise.all([firstIngress, duplicateIngress, alteredIngress]);
+            const keys = await stores.workQueue.getAllKeys();
+            expect(keys.length).toBeGreaterThan(0);
+            await waitForSettledALInboundWork(stores.workQueue);
 
-            expect(publishedSessionIds).toEqual([['session-1']]);
+            expect(publishedAudiences).toEqual([{
+                msgId: first.id.msgId,
+                sessionIds: ['session-1']
+            }]);
         }
         finally {
+            error.mockRestore();
             warn.mockRestore();
         }
     });
@@ -749,7 +774,7 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
@@ -763,10 +788,55 @@ describe('RallarServerWsRouter', () => {
 
         await fixture.sockets['peer-1']!.receive(message);
 
-        expect(readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
         ]);
+    });
+
+    it('does not deliver an inbound unicast to a same-ID recipient reconnected in another scope', async () => {
+        const matching = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only'
+        });
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'live-only',
+            scopeBySessionId: { 'peer-2': { applicationId: 'other', workspaceId: 'workspace-1' } }
+        });
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('wrong-scope-unicast'),
+            targets: { mode: 'unicast', toPeerId: 'peer-2' }
+        };
+
+        await matching.sockets['peer-1']!.receive(message);
+        await expect.poll(() => readChatRecipients(matching)).toEqual(['peer-2']);
+        await fixture.sockets['peer-1']!.receive(message);
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toHaveLength(1);
+
+        expect(readChatRecipients(fixture)).toEqual([]);
+    });
+
+    it('carries authenticated inbound scope into public unicast outbox admission', async () => {
+        const fixture = createAudienceRouter({
+            admittedSessionIds: ['peer-2'],
+            currentSessionIds: ['peer-2'],
+            disconnectedSessionIds: [],
+            fanout: 'outbox'
+        });
+        const message: ALMessage = {
+            ...createReceiverRoomBroadcast('client-unicast-outbox'),
+            targets: { mode: 'unicast', toPeerId: 'peer-2' },
+            delivery: undefined,
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'local-outbox' } }
+        };
+        await fixture.router.route(message, { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUDIENCE_SCOPE });
+
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
     });
 
     // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
@@ -801,7 +871,7 @@ describe('RallarServerWsRouter', () => {
         await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
             expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
         ]);
-        expect(readChatRecipients(fixture)).toEqual(delivered);
+        await expect.poll(() => readChatRecipients(fixture)).toEqual(delivered);
     });
 
     it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {
@@ -837,7 +907,12 @@ describe('RallarServerWsRouter', () => {
             qos
         };
 
-        await fixture.router.route(message, { kind: 'ws-client', peerId: sessionIds[0]!, groupRecipientPeerIds: sessionIds });
+        await fixture.router.route(message, {
+            kind: 'ws-client',
+            peerId: sessionIds[0]!,
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupRecipientPeerIds: sessionIds
+        });
 
         await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
             sessionIds.length
@@ -857,7 +932,12 @@ describe('RallarServerWsRouter', () => {
             { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
         );
 
-        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', groupRecipientPeerIds: ['peer-2', 'departed-peer'] });
+        await router.route(message, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupRecipientPeerIds: ['peer-2', 'departed-peer']
+        });
 
         expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });
@@ -877,7 +957,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             }
         );
 
-        const result = await server.ws.publish(message, 'live-only');
+        const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'live-only' });
 
         expect(result).toMatchObject({
             fanout: 'live-only',
@@ -913,7 +993,7 @@ describe('RallarServer.ws.publish current behavior', () => {
                 { x: 1, y: 2 }
             );
 
-            const result = await server.ws.publish(message, 'live-only');
+            const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'live-only' });
 
             expect(result).toMatchObject({
                 fanout: 'live-only',
@@ -947,7 +1027,7 @@ describe('RallarServer.ws.publish current behavior', () => {
                 { x: 1, y: 2 }
             );
 
-            const result = await server.ws.publish(message, 'live-only');
+            const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'live-only' });
 
             expect(result).toMatchObject({
                 fanout: 'live-only',
@@ -994,7 +1074,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             }
         );
 
-        const result = await server.ws.publish(message, 'outbox');
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({
             fanout: 'outbox',
@@ -1042,7 +1122,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             trackedReceiptAlgo: 'none'
         });
 
-        const result = await server.ws.publish(message, 'outbox');
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({ fanout: 'outbox', status: 'skipped', verdict });
         expect(socket.sent).toHaveLength(0);
@@ -1079,7 +1159,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             trackedReceiptAlgo: 'none'
         });
 
-        const result = await server.ws.publish(message, 'outbox');
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({ fanout: 'outbox', status: expectedStatus, verdict });
         expect(socket.sent).toHaveLength(0);
@@ -1100,7 +1180,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             }
         );
 
-        await expect(server.ws.publish(message, 'outbox')).rejects.toThrow(
+        await expect(server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'outbox' })).rejects.toThrow(
             /room broadcast group ref/i
         );
 
@@ -1119,7 +1199,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             { title: 'No fanout', done: false }
         );
 
-        const result = await server.ws.publish(message, 'none');
+        const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'none' });
 
         expect(result).toMatchObject({
             fanout: 'none',
@@ -1168,6 +1248,9 @@ interface RouterFixture {
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
 
+const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const AUDIENCE_SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+
 function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ): RouterFixture {
@@ -1181,6 +1264,10 @@ function createRouter(
         outboundStores,
         socket,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            socket.connections.get(connection.id) === connection
+                ? { scope: AUDIENCE_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         targetResolver: createTargetResolver()
     });
     const router = new RallarServerWsRouter(service, options);
@@ -1213,6 +1300,10 @@ function createIngressRouter(
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: AUDIENCE_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         inboundStores,
         qosProvider,
         targetResolver: {
@@ -1228,10 +1319,9 @@ function createIngressRouter(
     return { router: new RallarServerWsRouter(service, options), service, socket };
 }
 
-const AUDIENCE_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-
 interface AudienceRouterFixture {
     readonly router: RallarServerWsRouter;
+    readonly service: WsQueueBoxServerService;
     readonly sockets: Readonly<Record<string, RouterIngressWebSocket>>;
     readonly outboundStores: ALOutboundRuntimeStores<WsQueueBoxServerPreparedMessage>;
 }
@@ -1242,6 +1332,7 @@ interface AudienceRouterInput {
     readonly disconnectedSessionIds: readonly string[];
     /** `outbox`: the room topic leaves through the server's own outbound owner, to every session connected here. */
     readonly fanout: 'live-only' | 'outbox';
+    readonly scopeBySessionId?: Readonly<Record<string, { applicationId: string; workspaceId: string; }>>;
 }
 
 /**
@@ -1264,6 +1355,13 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
         outboundStores,
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? {
+                    scope: input.scopeBySessionId?.[connection.id] ?? AUDIENCE_SCOPE,
+                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER
+                }
+                : undefined,
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
@@ -1293,7 +1391,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
         }
     });
     router.install().defineTopic({ topicId: 'room.chat', fanout: input.fanout });
-    return { router, sockets, outboundStores };
+    return { router, service, sockets, outboundStores };
 }
 
 /** A room of `sessionIds`, each connected here, whose room topic fans out through the server outbox. */
@@ -1309,6 +1407,10 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
         outboundStores,
         socket: server,
         name: 'server-1',
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: AUDIENCE_SCOPE, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => [{ peerId, connectionId: peerId }],
@@ -1329,7 +1431,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
             }
     });
     router.install().defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
-    return { router, sockets };
+    return { router, service, sockets };
 }
 
 function createReceiverRoomBroadcast(resourceId: string): ALMessage {
@@ -1402,7 +1504,6 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
                 await listener.handleEvent(event);
             }
         }
-        await waitForALInboundWork();
     }
 }
 
@@ -1438,6 +1539,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     });
     const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         outbox,
         outboundStores,
         socket,

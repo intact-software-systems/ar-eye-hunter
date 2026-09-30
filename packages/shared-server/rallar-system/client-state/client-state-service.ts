@@ -1,5 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
+import { GroupStateRepositoryReads } from '../group-state/persistence/group-state-repository-reads.ts';
 import { toClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
@@ -17,6 +18,8 @@ export function createClientStateService(
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
+    const groupRepository = new GroupStateRepositoryReads(runtimeRepository);
+    const nowMs = dependencies.nowMs ?? Date.now;
     const repositoryFor = (runtime: typeof runtimeRepository) =>
         new ClientStateRepository(runtime, dependencies.clientStateEventStore);
     const service: ClientStateService = {
@@ -28,7 +31,13 @@ export function createClientStateService(
         listRecentEvents: async (ref, query) => await repositoryFor(runtimeRepository).listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await repositoryFor(runtimeRepository).listEventPage(ref, query),
         read: async (command) =>
-            await readClientMutation(repositoryFor(runtimeRepository), authSessionRepository, command),
+            await readClientMutation({
+                repository: repositoryFor(runtimeRepository),
+                groupRepository,
+                authSessionRepository,
+                command,
+                audienceObservedAtEpochMs: nowMs()
+            }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {
             const page = await repositoryFor(runtimeRepository).readSessionPage({

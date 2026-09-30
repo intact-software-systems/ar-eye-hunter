@@ -9,6 +9,7 @@ import {
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
@@ -44,24 +45,10 @@ describe('Relic Hunter server browser contract', () => {
 
 function createFakeRallar(): Readonly<{
     rallar: Parameters<typeof installRelicHunterGame>[0];
-    published: Array<
-        Readonly<{
-            message: Readonly<{
-                route: Readonly<{ topicId: string; contextId: string; }>;
-                payload: Readonly<{ typeId: string; resource: string; }>;
-            }>;
-        }>
-    >;
+    published: RallarServerWsPublishInputDto[];
 }> {
     const store = new Map<string, RelicGameState>();
-    const published: Array<
-        Readonly<{
-            message: Readonly<{
-                route: Readonly<{ topicId: string; contextId: string; }>;
-                payload: Readonly<{ typeId: string; resource: string; }>;
-            }>;
-        }>
-    > = [];
+    const published: RallarServerWsPublishInputDto[] = [];
 
     const rallar = {
         appData: {
@@ -87,13 +74,8 @@ function createFakeRallar(): Readonly<{
             serverPeerId: 'relic-server',
             defineTopic: () => {},
             on: () => {},
-            publish: (
-                message: {
-                    route: { topicId: string; contextId: string; };
-                    payload: { typeId: string; resource: string; };
-                }
-            ) => {
-                published.push({ message });
+            publish: (publication: RallarServerWsPublishInputDto) => {
+                published.push(publication);
                 return Promise.resolve();
             }
         }

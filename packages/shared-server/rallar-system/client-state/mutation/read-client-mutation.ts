@@ -1,4 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { GroupStateRepositoryReads } from '../../group-state/persistence/group-state-repository-reads.ts';
+import { readGroupVisibility } from '../../group-state/policy/group-snapshot-visibility-policy.ts';
 import { StateSnapshotReadConflictError } from '../../state-events/state-snapshot-read.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import { ClientMutationRejectedError } from '../validation/client-mutation-rejection.ts';
@@ -20,11 +22,19 @@ interface ClientMutationTargetRefs {
     } | null;
 }
 
+export interface ReadClientMutationInput {
+    readonly repository: ClientStateRepository;
+    readonly groupRepository: GroupStateRepositoryReads;
+    readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
+    readonly command: ClientMutationCommand;
+    readonly audienceObservedAtEpochMs: number;
+}
+
 export async function readClientMutation(
-    repository: ClientStateRepository,
-    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>,
-    command: ClientMutationCommand
+    input: ReadClientMutationInput
 ): Promise<ClientMutationRead> {
+    const { repository, groupRepository, authSessionRepository, command } = input;
+    const audienceObservedAtEpochMs = input.audienceObservedAtEpochMs;
     const targets = toClientMutationTargetRefs(command);
     const [authoritySession, idempotency, principalSnapshot, instance, sessionRead] = await Promise.all([
         readAuthoritySession(authSessionRepository, command),
@@ -38,6 +48,40 @@ export async function readClientMutation(
 
     assertPrincipalSnapshotRevision(principalSnapshot);
     const receiptEvent = await readReceiptEvent(repository, command, idempotency);
+    const scope = {
+        applicationId: command.aggregateRef.applicationId,
+        workspaceId: command.aggregateRef.workspaceId
+    };
+    const audienceGroupSnapshots = idempotency
+        ? []
+        : await groupRepository.listSnapshotsForPrincipal(scope, command.aggregateRef.principalId);
+    const coGroupPrincipalIds = new Set<string>();
+    for (const snapshot of audienceGroupSnapshots) {
+        if (
+            readGroupVisibility({
+                snapshot,
+                actor: { principalId: command.aggregateRef.principalId },
+                nowEpochMs: audienceObservedAtEpochMs
+            }) !== 'full'
+        ) {
+            continue;
+        }
+        for (const member of snapshot.members) {
+            if (
+                member.principalId !== command.aggregateRef.principalId &&
+                readGroupVisibility({
+                        snapshot,
+                        actor: { principalId: member.principalId },
+                        nowEpochMs: audienceObservedAtEpochMs
+                    }) === 'full'
+            ) {
+                coGroupPrincipalIds.add(member.principalId);
+            }
+        }
+    }
+    const audienceClientSnapshots = await repository.readSnapshotsForPrincipals(
+        [...coGroupPrincipalIds].map((principalId) => ({ ...scope, principalId }))
+    );
 
     return {
         authoritySession: authoritySession ?? null,
@@ -47,7 +91,10 @@ export async function readClientMutation(
         session: sessionRead.value ?? null,
         expiredSessionEntry: sessionRead.expiredEntry ?? null,
         snapshot: principalSnapshot?.snapshot ?? null,
-        receiptEvent
+        receiptEvent,
+        audienceObservedAtEpochMs,
+        audienceGroupSnapshots,
+        audienceClientSnapshots
     };
 }
 

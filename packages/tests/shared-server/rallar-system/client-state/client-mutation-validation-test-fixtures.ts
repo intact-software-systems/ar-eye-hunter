@@ -14,12 +14,14 @@ export function clientMutationPrincipalRef(principalId: string) {
     return { ...CLIENT_MUTATION_TEST_SCOPE, principalId };
 }
 
-export function invalidSessionCommand(
-    base: Readonly<Record<string, unknown>>,
-    actor: Readonly<Record<string, unknown>>,
-    operation: string,
-    override: Readonly<Record<string, unknown>>
-): unknown {
+interface InvalidSessionCommandInput {
+    readonly base: Readonly<Record<string, unknown>>;
+    readonly actor: Readonly<Record<string, unknown>>;
+    readonly operation: string;
+    readonly override: Readonly<Record<string, unknown>>;
+}
+
+export function invalidSessionCommand({ base, actor, operation, override }: InvalidSessionCommandInput): unknown {
     const common = {
         ...base,
         operation,
@@ -116,7 +118,10 @@ export function emptyClientMutationRead(sessionId = 'session-1'): ClientMutation
         session: null,
         expiredSessionEntry: null,
         snapshot: null,
-        receiptEvent: null
+        receiptEvent: null,
+        audienceObservedAtEpochMs: 1_000,
+        audienceGroupSnapshots: [],
+        audienceClientSnapshots: []
     };
 }
 

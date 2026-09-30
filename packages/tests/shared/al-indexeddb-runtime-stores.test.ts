@@ -55,6 +55,12 @@ import {
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 import { waitForSettledALInboundWork } from './wait-for-al-inbound-work.ts';
 
+const SCOPED_PEER_1_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'peer-1',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
+
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -86,7 +92,11 @@ describe('IndexedDB AL runtime stores', () => {
                     value: {
                         msgId: 'message-default-schema',
                         senderId: 'peer-default-schema',
-                        source: { kind: 'ws-client', peerId: 'peer-default-schema' },
+                        source: {
+                            kind: 'ws-client',
+                            peerId: 'peer-default-schema',
+                            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+                        },
                         supersedenceKey: null
                     },
                     expireAtTimestamp: Date.now() + 60_000
@@ -124,7 +134,7 @@ describe('IndexedDB AL runtime stores', () => {
         );
 
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const restartedStores = createDefaultIndexedDbALInboundRuntimeStores({ dbName, namespace });
@@ -134,7 +144,7 @@ describe('IndexedDB AL runtime stores', () => {
             dispatchedMsgIds: dispatchedMsgIds,
             stores: restartedStores
         });
-        await runtime2.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
 
         // The redelivered duplicate must not dispatch again: settle every retained row before reading.
         await waitForSettledALInboundWork(restartedStores.workQueue);
@@ -155,7 +165,11 @@ describe('IndexedDB AL runtime stores', () => {
         const seq2 = createOrderedMulticastMessage(2, 'two');
         const seq1 = createOrderedMulticastMessage(1, 'one');
 
-        await runtime1.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(seq2, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         // A gap retains no deliverable work, so the settled queue is read beside the fence that holds it.
         await waitForSettledALInboundWork(stores.workQueue);
@@ -170,7 +184,11 @@ describe('IndexedDB AL runtime stores', () => {
         runtime1.dispose();
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime2.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime2.admitIncomingMessage(seq1, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
@@ -226,7 +244,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await inbox.getAllKeys();
         await runtime.ready();
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, SCOPED_PEER_1_SOURCE);
 
         await expect.poll(() => dispatchedMsgIds).toEqual([msg.id.msgId]);
         expect(await inbox.getAllKeys()).toEqual([]);
@@ -268,7 +286,11 @@ describe('IndexedDB AL runtime stores', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         runtime.dispose();
         pausedClaims.mockRestore();
 
@@ -338,7 +360,7 @@ describe('IndexedDB AL runtime stores', () => {
                         value: {
                             msgId: msg.id.msgId,
                             senderId: msg.id.senderId,
-                            source: { kind: 'ws-client', peerId: msg.id.senderId },
+                            source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
                             supersedenceKey: null
                         },
                         expireAtTimestamp: Date.now() + 20
@@ -393,7 +415,7 @@ describe('IndexedDB AL runtime stores', () => {
             { kind: 'trusted-server' }
         );
 
-        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
         const beforeReadAtMs = Date.now();
         const beforeExpiry = await stores.admissionStore.readIncomingMessage({
             msg,
@@ -926,7 +948,7 @@ function groupRef(groupId: string) {
 }
 
 async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessage) {
-    const source = { kind: 'ws-client' as const, peerId: msg.id.senderId };
+    const source = { kind: 'ws-client' as const, peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
         msg,

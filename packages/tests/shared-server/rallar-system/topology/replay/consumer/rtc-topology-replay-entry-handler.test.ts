@@ -226,7 +226,7 @@ function createHandler(
             acceptedSnapshots: {
                 findSnapshot: vi.fn(async () => fixture.acceptedSnapshot)
             },
-            sender: { sendToTargetsWithResult: send }
+            sender: { sendToTargetsWithResult: ({ message }) => send(message) }
         }),
         send
     };

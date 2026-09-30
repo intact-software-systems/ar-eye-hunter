@@ -25,34 +25,54 @@ export function validateRuntimeStateReadBatchSelectors(
             selector.namespace,
             `${label} namespace`
         );
-
-        if (selector.kind === 'key') {
-            requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'key'], label);
-            return {
-                selectorId,
-                kind: selector.kind,
-                namespace,
-                key: requireNonEmptyString(selector.key, `${label} key`)
-            };
-        }
-        if (selector.kind === 'prefix') {
-            requireExactKeys(
-                selector,
-                ['selectorId', 'kind', 'namespace', 'keyPrefix'],
-                label
-            );
-            return {
-                selectorId,
-                kind: selector.kind,
-                namespace,
-                keyPrefix: requireNonEmptyString(
-                    selector.keyPrefix,
-                    `${label} key prefix`
-                )
-            };
-        }
-        throw invalidReadBatch(`${label} kind is invalid`);
+        return toRuntimeStateReadBatchSelector({ selector, selectorId, namespace, label });
     });
+}
+
+interface RuntimeStateReadBatchSelectorInput {
+    readonly selector: JsonWireObject;
+    readonly selectorId: string;
+    readonly namespace: string;
+    readonly label: string;
+}
+
+function toRuntimeStateReadBatchSelector(
+    input: RuntimeStateReadBatchSelectorInput
+): RuntimeStateReadBatchSelector {
+    const { selector, selectorId, namespace, label } = input;
+    if (selector.kind === 'key') {
+        requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'key'], label);
+        return {
+            selectorId,
+            kind: selector.kind,
+            namespace,
+            key: requireNonEmptyString(selector.key, `${label} key`)
+        };
+    }
+    if (selector.kind === 'prefix') {
+        requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'keyPrefix'], label);
+        return {
+            selectorId,
+            kind: selector.kind,
+            namespace,
+            keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`)
+        };
+    }
+    if (selector.kind === 'prefix-suffix') {
+        requireExactKeys(
+            selector,
+            ['selectorId', 'kind', 'namespace', 'keyPrefix', 'keySuffix'],
+            label
+        );
+        return {
+            selectorId,
+            kind: selector.kind,
+            namespace,
+            keyPrefix: requireNonEmptyString(selector.keyPrefix, `${label} key prefix`),
+            keySuffix: requireNonEmptyString(selector.keySuffix, `${label} key suffix`)
+        };
+    }
+    throw invalidReadBatch(`${label} kind is invalid`);
 }
 
 function requireDenseArray(

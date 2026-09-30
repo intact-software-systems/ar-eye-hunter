@@ -47,6 +47,7 @@ describe('WS server outbound planning', () => {
         const context = new ConnectionContext({ id: 'connection', socket: native });
         server.addConnection(context);
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: server,
             outbox: new InMemoryQueueBox(),
@@ -78,7 +79,10 @@ describe('WS server outbound planning', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
-        expect((await service.enqueueOutboxIfAbsent(unicast)).verdict).toMatchObject({
+        expect(
+            (await service.enqueueOutboxIfAbsent(unicast, { admittedAudience: undefined, recipientScope: { applicationId: 'app', workspaceId: 'workspace' } }))
+                .verdict
+        ).toMatchObject({
             kind: 'refused',
             reason: 'unsupported',
             detail: 'ack receiver is unsupported for ws unicast targets'
@@ -204,6 +208,42 @@ describe('WS server outbound planning', () => {
         expect(repairRequestedBy('late-joiner')).toBeUndefined();
         expect(repairRequestedBy('b')?.preparedMessages).toMatchObject([{ kind: 'recipient', peerId: 'b' }]);
     });
+
+    it('merges a repair over the receipt it retains, so every peer the row expects and every confirmation stay', () => {
+        const planning = new WsQueueBoxServerOutboundPlanning({
+            serverPeerId: 'server',
+            qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
+            targetResolution: new WsQueueBoxServerTargetResolution({
+                socket: new JsonWebSocketServer(),
+                targetResolver: { resolveGroupRecipients: () => [{ peerId: 'b', connectionId: 'b' }] }
+            }),
+            deliveryReporting: new WsQueueBoxServerDeliveryReporting({})
+        });
+        const message = newALMulticastMessage(
+            'server',
+            { topicId: 'room.chat', contextId: ROOM.groupId, resourceId: 'repair-merge' },
+            ROOM,
+            'chat.message.v1',
+            {},
+            { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver' }
+        );
+
+        const repair = planning.planRepairMessage(message, {
+            trigger: 'repair',
+            requestedByPeerId: 'b',
+            failedPeerIds: [],
+            completedHopPeerIds: [],
+            missingSeqs: [],
+            repair: { enabled: true, algo: 'retransmit', maxAttempts: 3 },
+            admittedAudience: ['b', 'c']
+        });
+
+        expect(repair?.ackTracking).toMatchObject({
+            mode: 'receiver',
+            expectedPeerIds: ['b'],
+            expectedPeerIdsUpdate: 'merge'
+        });
+    });
 });
 
 interface PlanningFixture {
@@ -236,6 +276,7 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
     const roomRecipients: readonly WsServerResolvedRecipient[] = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: server,
         outbox: backend.workQueue,

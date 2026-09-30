@@ -10,6 +10,7 @@ import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
 } from '../../../state-sync/state-sync-entry-computation.ts';
+import { computePrincipalStateSyncAudience } from '../../../state-sync/state-sync-principal-audience.ts';
 import { compareClientStateInstanceStorageKeys } from '../../persistence/client-state-instance-storage-key.ts';
 import type { ClientMutationReceipt } from '../../persistence/client-state-persistence-contracts.ts';
 import { compareClientStateSessionStorageKeys } from '../../persistence/client-state-session-storage-key.ts';
@@ -51,6 +52,13 @@ export function computeClientMutationResult(
         stateRevision
     });
     const stateSync = toClientStateSync(command, snapshot, event);
+    const principalAudienceSessionIds = computePrincipalStateSyncAudience({
+        principalRef: command.aggregateRef,
+        ownSnapshot: snapshot,
+        clientSnapshots: read.audienceClientSnapshots,
+        groupSnapshots: read.audienceGroupSnapshots,
+        nowEpochMs: read.audienceObservedAtEpochMs
+    });
     const outboxWrites = stateSync
         .flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId))
         .map(computeAppOutboxInsert);
@@ -76,7 +84,8 @@ export function computeClientMutationResult(
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
         stateSync,
-        outboxWrites
+        outboxWrites,
+        principalAudienceSessionIds
     };
     return { ...computed, persistence: computeClientPersistence(computed) };
 }

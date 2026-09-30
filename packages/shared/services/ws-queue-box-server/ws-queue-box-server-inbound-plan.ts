@@ -2,6 +2,7 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
+import { AppTopics } from '../../api/api-config.ts';
 
 export interface ToWsQueueBoxServerInboundPlanInput {
     readonly plan: ALMessageHandlingPlan;
@@ -22,6 +23,17 @@ export function toWsQueueBoxServerInboundPlan(
     input: ToWsQueueBoxServerInboundPlanInput
 ): ALMessageHandlingPlan {
     const { source } = input;
+    if (
+        source.kind === 'ws-client' && input.message.route.topicId === AppTopics.rtcSignaling &&
+        input.message.payload.typeId === AppTopics.rtcSignaling && input.plan.dropReason === undefined &&
+        input.plan.effective.delivery.algo === 'best-effort'
+    ) {
+        return {
+            ...input.plan,
+            localDelivery: { ...input.plan.localDelivery, enabled: !input.plan.localDelivery.deferred },
+            forwarding: { enabled: false, nextHopPeerIds: [], persist: false }
+        };
+    }
     if (source.kind !== 'ws-client' || source.groupRecipientPeerIds === undefined) {
         return input.plan;
     }

@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rall
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import { readLiveRtcAgentApiUrls } from './live-rtc-agent-environment.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
@@ -487,7 +488,7 @@ async function connectFormationAgent(
             roomRef: toGroupRef(config, input.groupId),
             transport: input.transport,
             rallar: {
-                apiBaseUrl: config.apiBaseUrl,
+                apiBaseUrl: readLiveRtcAgentApiUrls(config.apiBaseUrl)[input.agent.prefix],
                 restoreSession: true,
                 logoutOnClose: false,
                 leaveRoomOnClose: false,

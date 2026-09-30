@@ -331,7 +331,7 @@ export const reviewedDispositions = Object.freeze([
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
         rule: 'boundary.unknown',
-        symbol: 'decodeRtcSignalingPayload'
+        symbol: 'decodeRtcSignal'
     }),
     Object.freeze({
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
@@ -671,6 +671,50 @@ export const reviewedDispositions = Object.freeze([
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 105
+    }),
+    // Admission decoding keeps the stored identity and the captured dispatch
+    // policy together. Retry, repair, supersedence and acknowledgement fields
+    // each have a direct decoder; none owns another lifecycle or store.
+    // This exact warning-tier cap records that cohesion review, not permission
+    // to grow or to change the persisted contract.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/admission/al-outbound-admission-validation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    // Live delivery owns the synchronous admission-to-socket attempt and its
+    // caller-visible result. Keeping generation capture, encoding, expiry,
+    // final authority checks and per-recipient failure accounting here exposes
+    // the one-attempt boundary without adding a transport facade or lifecycle.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    // These reviewed owners keep one optimistic admission lifecycle and one
+    // peer receive lifecycle respectively. Storage and heartbeat have direct
+    // named owners.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-dispatch-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 53
+    }),
+    // Promise rejection reasons are untrusted exception-boundary values. The
+    // owner normalizes them through the canonical toError before returning
+    // settlement evidence; no unknown reason is used as domain state.
+    Object.freeze({
+        path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions

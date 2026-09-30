@@ -35,6 +35,8 @@ import {
     holdOutboundClaims
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
+const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
+
 describe('Rallar middleware queue registration completeness', () => {
     it('activates the actual WS worker only after pending admission commits and never on duplicate replay', async () => {
         const engine = new InboxOutboxEngine();
@@ -70,7 +72,7 @@ describe('Rallar middleware queue registration completeness', () => {
             ttlMs: 60_000,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message);
+        const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
         expect(result.verdict).toEqual({ kind: 'pending' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         await admission.runnable();
@@ -89,7 +91,8 @@ describe('Rallar middleware queue registration completeness', () => {
         // Restore the original pending observation to model lost completion after the admission commit.
         await stores.workQueue.enqueue(pending);
         await admission.runnable();
-        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).verdict).toEqual({ kind: 'duplicate' });
+        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE })).verdict)
+            .toEqual({ kind: 'duplicate' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         await admission.runnable();
         expect(published).toEqual([message.id.msgId]);
@@ -128,7 +131,7 @@ describe('Rallar middleware queue registration completeness', () => {
                 qos: { durability: { algo: 'local-outbox' } }
             }
         );
-        const admitted = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message);
+        const admitted = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
         if (!admitted.entry) {
             throw new Error('Expected canonical admission');
         }
@@ -145,7 +148,8 @@ describe('Rallar middleware queue registration completeness', () => {
 
         expect((await queue.getItem(admitted.entry.key))?.resource).toBe(admitted.entry.resource);
         expect(await queue.getItem(toALOutboundIdentityKey(admitted.entry.key))).toBeDefined();
-        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).verdict).toEqual({ kind: 'duplicate' });
+        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE })).verdict)
+            .toEqual({ kind: 'duplicate' });
         expect(published).toHaveLength(1);
     });
 
@@ -204,6 +208,7 @@ function createQueueTaskInput(
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         outbox: queue,
         socket: new JsonWebSocketServer(),
         name: 'queue-registration-test',

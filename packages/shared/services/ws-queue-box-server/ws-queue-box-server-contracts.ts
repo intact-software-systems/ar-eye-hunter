@@ -1,6 +1,20 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALNackReason } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
+import type { ALSessionInvalidationAuthority } from '../../alm/outbound/admission/al-session-invalidation-authority.ts';
+import type { StateScope } from '../../api/state-types.ts';
+import type { ConnectionContext } from '../../websocket/json-web-socket-server.ts';
+
+export interface WsServerInboundConnectionScopeProof {
+    readonly scope: StateScope;
+    /** Present when the connection's authenticated principal is known. Required for principal publication. */
+    readonly principalId?: string;
+    readonly expiresAtEpochMs: number;
+}
+
+export interface WsServerInboundConnectionScopeReader {
+    readAuthenticatedConnectionScope(connection: ConnectionContext): WsServerInboundConnectionScopeProof | undefined;
+}
 
 export interface WsServerResolvedRecipient {
     readonly peerId: string;
@@ -28,6 +42,22 @@ export interface WsServerLiveSendResult {
     readonly sentCount: number;
     readonly failedCount: number;
     readonly failures: readonly WsServerLiveSendFailure[];
+}
+
+export interface WsServerLiveSendInputDto {
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly message: ALMessage;
+    /** A cluster notice's already resolved deadline; ordinary live sends derive one from the message. */
+    readonly expiresAtMs?: number;
+    readonly recipientSessionIds?: readonly string[];
+    readonly admittedPeerIds?: readonly string[];
+    /** The scope a producer proved for a unicast that names no group; a unicast naming a group takes its groupRef's. */
+    readonly inboundScope?: StateScope | null;
+    /** Rechecked at the final send for every fixed, scoped cluster notice audience. */
+    readonly recipientScope?: StateScope;
+    readonly recipientPrincipalId?: string;
+    /** Broad notices still require a current authenticated connection, without inventing a scope. */
+    readonly requireAuthenticatedRecipient?: boolean;
 }
 
 export interface WsServerTargetResolver {

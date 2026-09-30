@@ -124,33 +124,53 @@ describe('pull-request release workflow', () => {
         const workflow = readWorkflow(
             '.github/workflows/rtc-b06-performance-observation.yml'
         );
-        const capture = workflow.jobs.capture;
-        const diagnostic = capture.steps.find(
-            (step: Record<string, any>) => step.name === 'Exercise RTC-B06 branch candidate'
+        const diagnostic = workflow.jobs.diagnostic;
+        const exercise = diagnostic.steps.find(
+            (step: Record<string, any>) => step.name === 'Exercise RTC-B06 diagnostic cases'
         );
-        const upload = capture.steps.find(
+        const upload = diagnostic.steps.find(
             (step: Record<string, any>) => step.name === 'Retain RTC-B06 diagnostic output'
         );
 
+        expect(workflow.jobs.capture.if).toBe('${{ inputs.mode == \'publish\' }}');
         expect(diagnostic).toMatchObject({
-            if: '${{ inputs.mode == \'diagnostic\' }}'
-        });
-        expect(diagnostic.run).toContain('npm run test:rallar:full-stack:memory:live-rtc-3');
-        expect(diagnostic.run).toContain('-u DATABASE_URL');
-        expect(diagnostic.run).toContain('-u RALLAR_ICE_MODE');
-        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS');
-        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK');
-        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES');
-        expect(diagnostic.run).not.toContain('observe-live-rtc');
-        expect(upload).toMatchObject({
-            if: '${{ always() && inputs.mode == \'diagnostic\' }}',
-            uses: 'actions/upload-artifact@v7',
-            with: {
-                name: 'rtc-b06-diagnostic-gh${{ github.run_id }}-a${{ github.run_attempt }}',
-                path: expect.stringContaining('${{ runner.temp }}/rtc-b06-observation')
+            if: '${{ inputs.mode == \'diagnostic\' }}',
+            needs: 'source',
+            strategy: {
+                'fail-fast': false,
+                matrix: { runner: [1, 2, 3] }
             }
         });
-        expect(upload.with.path).toContain('apps/rallar-black-box/test-results');
+        expect(diagnostic.steps[0]).toMatchObject({
+            uses: 'actions/checkout@v7',
+            with: { ref: '${{ github.sha }}', 'fetch-depth': 0 }
+        });
+        expect(exercise.run.match(/npm run test:rallar:full-stack:memory:live-rtc-3/g))
+            .toHaveLength(3);
+        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1');
+        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1');
+        expect(exercise.run).toContain('RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100');
+        expect(exercise.run.match(/--retries=0/g)).toHaveLength(3);
+        expect(exercise.run).toContain('set -o pipefail');
+        expect(exercise.run).not.toContain('observe-live-rtc');
+        expect(upload).toMatchObject({
+            if: '${{ always() }}',
+            uses: 'actions/upload-artifact@v7',
+            with: {
+                name: 'rtc-b06-diagnostic-r${{ matrix.runner }}-gh${{ github.run_id }}-a${{ github.run_attempt }}',
+                path: '${{ runner.temp }}/rtc-b06-diagnostic-${{ matrix.runner }}'
+            }
+        });
+        expect(diagnostic.steps.some(
+            (step: Record<string, any>) => step.name === 'Capture RTC-B06 E3-memory observation'
+        )).toBe(false);
+        expect(diagnostic.steps.some(
+            (step: Record<string, any>) => step.name === 'Publish observation pull request'
+        )).toBe(false);
+        expect(workflow.jobs.publication).toMatchObject({
+            if: '${{ inputs.mode == \'publish\' }}',
+            needs: ['source', 'capture']
+        });
     });
 
     it('runs only for current pull-request changes and cancels only superseded runs of that PR', () => {

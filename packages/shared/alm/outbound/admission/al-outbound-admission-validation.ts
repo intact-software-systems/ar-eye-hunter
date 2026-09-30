@@ -6,7 +6,8 @@ import {
     requirePersistedALSafeInteger,
     type PersistedALValue
 } from '../../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import { decodeALAdmissionRecord } from '../../al-admission-value-validation.ts';
+import type { StateScope } from '../../../api/state-types.ts';
+import { decodeALAdmissionRecord, decodeALAdmissionString } from '../../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
@@ -15,6 +16,10 @@ import type {
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
+import {
+    decodeALSessionInvalidationAuthority,
+    type ALSessionInvalidationAuthority
+} from './al-session-invalidation-authority.ts';
 
 export interface ALStoredOutboundMessage {
     readonly msgId: string;
@@ -35,6 +40,9 @@ export interface ALOutboundCapturedPolicy {
     readonly supersedenceTracking: NonNullable<ALOutboundDispatchPlan<never>['supersedenceTracking']> | null;
     /** Kept only for a message a server admitted to an audience; absent for every other message. */
     readonly admittedAudience?: readonly string[];
+    readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
@@ -44,7 +52,14 @@ export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
         supersedenceTracking: plan.supersedenceTracking ?? null,
-        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience })
+        ...(plan.admittedAudience === undefined ? {} : { admittedAudience: plan.admittedAudience }),
+        ...(plan.sessionInvalidation === undefined
+            ? {}
+            : { sessionInvalidation: decodeALSessionInvalidationAuthority(plan.sessionInvalidation) }),
+        ...(plan.recipientScope === undefined
+            ? {}
+            : { recipientScope: decodeALOutboundRecipientScope(plan.recipientScope) }),
+        ...(plan.principalTargetId === undefined ? {} : { principalTargetId: plan.principalTargetId })
     };
 }
 
@@ -76,15 +91,21 @@ export function applyALOutboundCapturedPolicy<TPrepared>(
         ackTracking: policy.ackTracking
             ? {
                 ...policy.ackTracking,
-                expectedPeerIds: plan.ackTracking?.expectedPeerIds ?? [],
+                expectedPeerIds: plan.ackTracking?.expectedPeerIds ??
+                    (policy.ackTracking.mode === 'receiver'
+                        ? policy.ackTracking.expectedPeerIds
+                        : plan.receiptNextHopPeerIds ?? []),
                 expectedPeerIdsUpdate: plan.ackTracking?.expectedPeerIdsUpdate,
-                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? []
+                nextHopPeerIds: plan.ackTracking?.nextHopPeerIds ?? plan.receiptNextHopPeerIds ?? []
             }
             : undefined,
         retryTracking: policy.retryTracking ?? undefined,
         repairTracking: policy.repairTracking ?? undefined,
         supersedenceTracking: policy.supersedenceTracking ?? undefined,
-        admittedAudience: policy.admittedAudience
+        admittedAudience: policy.admittedAudience,
+        recipientScope: policy.recipientScope,
+        principalTargetId: policy.principalTargetId,
+        sessionInvalidation: policy.sessionInvalidation
     };
 }
 
@@ -120,68 +141,70 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         'retryTracking',
         'repairTracking',
         'supersedenceTracking'
-    ], ['admittedAudience']);
+    ], ['admittedAudience', 'recipientScope', 'principalTargetId', 'sessionInvalidation']);
+    if (policy.sessionInvalidation !== undefined) {
+        decodeALSessionInvalidationAuthority(policy.sessionInvalidation);
+        if (policy.recipientScope !== undefined) {
+            throw new TypeError('Session-global authority cannot carry a scoped authority');
+        }
+    }
     requireOptionalPersistedALUniqueStringArray(policy.admittedAudience, 'captured admitted audience');
+    if (policy.recipientScope !== undefined) {
+        decodeALOutboundRecipientScope(policy.recipientScope);
+    }
+    if (policy.principalTargetId !== undefined) {
+        requirePersistedALNonEmptyString(policy.principalTargetId, 'captured principal target');
+        if (policy.recipientScope === undefined || policy.admittedAudience === undefined) {
+            throw new TypeError('Captured principal target requires scope and frozen audience');
+        }
+    }
     if (typeof policy.persist !== 'boolean') {
         throw new TypeError('Captured outbound persistence policy is invalid');
     }
     if (policy.ackTracking !== null) {
-        const ack = decodeALAdmissionRecord(policy.ackTracking, [
-            'enabled',
-            'timeoutMs',
-            'maxAttempts',
-            'expectedPeerIds',
-            'nextHopPeerIds',
-            'mode'
-        ], ['expectedPeerIdsUpdate']);
-        requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
-        requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
-        requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
-        if (!Array.isArray(ack.expectedPeerIds)) {
-            throw new TypeError('Captured acknowledgement peers are missing');
-        }
-        requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
-        if (!Array.isArray(ack.nextHopPeerIds)) {
-            throw new TypeError('Captured acknowledgement next hops are missing');
-        }
-        requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
-        if (
-            ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
-            ack.expectedPeerIdsUpdate !== 'replace'
-        ) {
-            throw new TypeError('Captured acknowledgement peer update is invalid');
-        }
-        requirePersistedALReceiptMode(ack.mode, 'captured acknowledgement mode');
+        decodeALOutboundCapturedAcknowledgement(policy.ackTracking);
     }
-    if (policy.retryTracking !== null) {
-        const retry = decodeALAdmissionRecord(policy.retryTracking, ['enabled', 'maxAttempts'], ['retryDelayMs']);
-        requirePersistedALBoolean(retry.enabled, 'captured retry tracking flag');
-        requirePersistedALSafeInteger(retry.maxAttempts, 0, 'captured retry attempts');
-        if (retry.retryDelayMs !== undefined) {
-            requirePersistedALSafeInteger(retry.retryDelayMs, 0, 'captured retry delay');
-        }
-    }
-    if (policy.repairTracking !== null) {
-        const repair = decodeALAdmissionRecord(policy.repairTracking, ['enabled', 'algo', 'maxAttempts']);
-        requirePersistedALBoolean(repair.enabled, 'captured repair tracking flag');
-        requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
-        if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
-            throw new TypeError('Captured repair algorithm is invalid');
-        }
-    }
-    if (policy.supersedenceTracking !== null) {
-        const supersedence = decodeALAdmissionRecord(policy.supersedenceTracking, ['enabled', 'algo'], [
-            'key',
-            'replacesMsgId'
-        ]);
-        requirePersistedALBoolean(supersedence.enabled, 'captured supersedence tracking flag');
-        requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
-        requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
-        if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
-            throw new TypeError('Captured supersedence algorithm is invalid');
-        }
-    }
+    decodeALOutboundCapturedRetry(policy.retryTracking);
+    decodeALOutboundCapturedRepair(policy.repairTracking);
+    decodeALOutboundCapturedSupersedence(policy.supersedenceTracking);
     return value as ALOutboundCapturedPolicy;
+}
+
+function decodeALOutboundCapturedRetry(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const retry = decodeALAdmissionRecord(value, ['enabled', 'maxAttempts'], ['retryDelayMs']);
+    requirePersistedALBoolean(retry.enabled, 'captured retry tracking flag');
+    requirePersistedALSafeInteger(retry.maxAttempts, 0, 'captured retry attempts');
+    if (retry.retryDelayMs !== undefined) {
+        requirePersistedALSafeInteger(retry.retryDelayMs, 0, 'captured retry delay');
+    }
+}
+
+function decodeALOutboundCapturedRepair(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const repair = decodeALAdmissionRecord(value, ['enabled', 'algo', 'maxAttempts']);
+    requirePersistedALBoolean(repair.enabled, 'captured repair tracking flag');
+    requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
+    if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
+        throw new TypeError('Captured repair algorithm is invalid');
+    }
+}
+
+function decodeALOutboundCapturedSupersedence(value: PersistedALValue | undefined): void {
+    if (value === null) {
+        return;
+    }
+    const supersedence = decodeALAdmissionRecord(value, ['enabled', 'algo'], ['key', 'replacesMsgId']);
+    requirePersistedALBoolean(supersedence.enabled, 'captured supersedence tracking flag');
+    requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
+    requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
+    if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
+        throw new TypeError('Captured supersedence algorithm is invalid');
+    }
 }
 
 export function decodeALOutboundPendingAck(value: unknown, expectedMsgId: string): ALOutboundPendingAckSnapshot {
@@ -250,4 +273,51 @@ function requirePersistedALReceiptMode(value: PersistedALValue | undefined, labe
     if (value !== 'hop' && value !== 'subtree' && value !== 'receiver') {
         throw new TypeError(`Persisted AL ${label} is invalid`);
     }
+}
+
+export function decodeALOutboundRecipientScope(value: unknown): StateScope {
+    const scope = decodeALAdmissionRecord(value, ['applicationId', 'workspaceId']);
+    return {
+        applicationId: decodeALAdmissionString(scope.applicationId),
+        workspaceId: decodeALAdmissionString(scope.workspaceId)
+    };
+}
+
+export function validateALOutboundRecipientScope(value: StateScope | null | undefined): readonly string[] {
+    try {
+        decodeALOutboundRecipientScope(value);
+        return [];
+    }
+    catch {
+        return ['Public WS unicast requires explicit application and workspace scope'];
+    }
+}
+
+function decodeALOutboundCapturedAcknowledgement(value: PersistedALValue | undefined): void {
+    const ack = decodeALAdmissionRecord(value, [
+        'enabled',
+        'timeoutMs',
+        'maxAttempts',
+        'expectedPeerIds',
+        'nextHopPeerIds',
+        'mode'
+    ], ['expectedPeerIdsUpdate']);
+    requirePersistedALBoolean(ack.enabled, 'captured acknowledgement tracking flag');
+    requirePersistedALSafeInteger(ack.timeoutMs, 0, 'captured acknowledgement timeout');
+    requirePersistedALSafeInteger(ack.maxAttempts, 0, 'captured acknowledgement attempts');
+    if (!Array.isArray(ack.expectedPeerIds)) {
+        throw new TypeError('Captured acknowledgement peers are missing');
+    }
+    requireOptionalPersistedALUniqueStringArray(ack.expectedPeerIds, 'captured acknowledgement peers');
+    if (!Array.isArray(ack.nextHopPeerIds)) {
+        throw new TypeError('Captured acknowledgement next hops are missing');
+    }
+    requireOptionalPersistedALUniqueStringArray(ack.nextHopPeerIds, 'captured acknowledgement next hops');
+    if (
+        ack.expectedPeerIdsUpdate !== undefined && ack.expectedPeerIdsUpdate !== 'merge' &&
+        ack.expectedPeerIdsUpdate !== 'replace'
+    ) {
+        throw new TypeError('Captured acknowledgement peer update is invalid');
+    }
+    requirePersistedALReceiptMode(ack.mode, 'captured acknowledgement mode');
 }

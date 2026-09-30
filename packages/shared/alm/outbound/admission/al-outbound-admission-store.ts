@@ -6,9 +6,10 @@ import type {
 } from '../../../al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '../../../al-contracts/al-message-persistence-validation.ts';
 import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
+import type { StateScope } from '../../../api/state-types.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
-import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type Key, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type {
     ALAdmissionReadSession,
@@ -38,6 +39,7 @@ import {
     type ALOutboundCanonicalFactWrite
 } from '../al-outbound-canonical-storage.ts';
 import type {
+    ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundRepairTrigger
@@ -66,7 +68,7 @@ import {
     type ALOutboundStateWrite
 } from './al-outbound-admission-mutations.ts';
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
-import type { ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
@@ -83,16 +85,30 @@ export interface ALOutboundVersionedClientRecord {
     readonly version: number;
 }
 
-export type ALOutboundPreparedMessageDecoder<TPrepared> = (value: unknown, msg: ALMessage) => TPrepared;
+export type ALOutboundPreparedMessageDecoder<TPrepared> = (
+    value: unknown,
+    msg: ALMessage,
+    referenceKey: Key
+) => TPrepared;
+
+/** Transient authority from one verified observation; the physical key is never persisted again. */
+export interface ALOutboundPlanningAuthority {
+    readonly sessionInvalidation: ALOutboundDequeueAuthority['sessionInvalidation'] | undefined;
+    readonly admittedAudience: readonly string[] | undefined;
+    readonly recipientScope: StateScope | undefined;
+    readonly principalTargetId: string | undefined;
+    readonly referenceKey: Key | undefined;
+}
 
 /** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
     msg: ALMessage,
-    admittedAudience: readonly string[] | undefined
+    authority: ALOutboundPlanningAuthority | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly msg: ALMessage;
+    readonly dequeueAuthority?: ALOutboundDequeueAuthority;
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
@@ -265,10 +281,13 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** True while the admission fact is retained, including after the canonical payload expired. */
     readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
 
-    readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
+    /** Missing or mismatched admission fails closed. */
+    readonly readCapturedPolicy: (
+        message: ALMessage,
+        entry: ResourceEntry
+    ) => Promise<ALOutboundCapturedPolicy>;
 
-    /** The audience a server admitted the message to, captured with its policy; undefined for every other message (D58). */
-    readonly readAdmittedAudience: (msgId: string) => Promise<readonly string[] | undefined>;
+    readonly readSentMessage: (msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
     readonly readSentMessageByOrdering: (
         trackKey: string,
@@ -409,14 +428,12 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.hasSentMessageAdmission(session, msgId));
     }
 
-    async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
-        return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
+    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
+        return await this.backend.readWithin((session) => this.reads.readCapturedPolicy(session, message, entry));
     }
 
-    async readAdmittedAudience(msgId: string): Promise<readonly string[] | undefined> {
-        return await this.backend.readWithin(async (session) =>
-            (await this.reads.readStoredMessage(session, msgId))?.policy.admittedAudience
-        );
+    async readSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined> {
+        return await this.backend.readWithin((session) => this.reads.readSentMessage(session, msgId));
     }
 
     async readSentMessageByOrdering(trackKey: string, seq: number): Promise<ALOutboundSentMessageSnapshot | undefined> {
@@ -538,6 +555,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
         const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
+        const effects = candidates.flatMap((candidate) => candidate.effects);
+        const mutations = candidates.flatMap((candidate) => candidate.mutations);
         try {
             return await this.backend.write(async (tx) => {
                 // A deadline the reads above already crossed answers before any fence: the message is
@@ -552,8 +571,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 ) {
                     return 'expired';
                 }
-                this.effectStore.writeEffects(tx, candidates.flatMap((candidate) => candidate.effects));
-                await this.mutations.writeStateWrites(tx, candidates.flatMap((candidate) => candidate.mutations));
+                this.effectStore.writeEffects(tx, effects);
+                await this.mutations.writeStateWrites(tx, mutations);
                 await tx.set(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));

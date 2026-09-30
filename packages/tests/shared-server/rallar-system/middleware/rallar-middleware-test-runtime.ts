@@ -94,6 +94,7 @@ export function createRallarMiddlewareTestRuntime(
     const reconfigureMutation = topologyMutationOwners.reconfigureMutation;
 
     const options: CreateRallarMiddlewareOptions = {
+        readAuthenticatedConnectionScope: () => undefined,
         inbox,
         outbox,
         wsRuntimeName: input.wsRuntimeName,

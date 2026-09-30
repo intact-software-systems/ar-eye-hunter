@@ -175,7 +175,7 @@ async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) 
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
     const read = await store.readIncomingMessage({
         msg: message,
-        source: { kind: 'ws-client', peerId: message.id.senderId },
+        source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
         nowMs,
         prePlan: planALMessageHandling(message, context)
     });

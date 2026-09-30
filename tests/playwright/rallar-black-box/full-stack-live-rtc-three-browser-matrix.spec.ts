@@ -9,11 +9,12 @@ import {
     envValue,
     firstEnvValue,
     hasThreeAgentConfig,
-    numberEnv,
     openAgentTrio,
     rawEnvironmentValue,
+    readLiveRtcClusterApiOrigins,
     roomSeed,
-    workspaceId
+    workspaceId,
+    type LiveRtcAgentTrio
 } from './live-rtc-agent-environment.ts';
 import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
@@ -353,6 +354,19 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             commandIds.push(...realtime.commandIds);
             timings.push(...realtime.timings);
             scenarios.push(...realtime.scenarios);
+            const clusterOrigins = readLiveRtcClusterApiOrigins();
+            if (clusterOrigins) {
+                const cluster = await exchangeClusterDirectMessages({
+                    control,
+                    runId,
+                    agents: realtimeAgents,
+                    sessions: realtime.sessions,
+                    groupId,
+                    suffix
+                });
+                commandIds.push(...cluster.commandIds);
+                scenarios.push(...cluster.scenarios);
+            }
             const realtimeDiagnostics = await control.captureDiagnostics({
                 testInfo,
                 runId,
@@ -901,96 +915,153 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 agents: captured.checkpoint.agents
             });
         };
+        const runRetentionPhase = async <Result>(
+            phaseName: string,
+            operation: () => Promise<Result>
+        ): Promise<Result> => {
+            console.info(
+                `[retention-100] phase-start ${new Date().toISOString()} ${phaseName}`
+            );
+            return test.step(phaseName, operation);
+        };
 
         try {
-            const agents = await openAgentTrio(browser, {
-                runId,
-                groupId,
-                suffix,
-                label: 'live-retention'
-            });
-            openHandles.push(...agents);
-            commandIds.push(
-                ...(await liveRtcDeliveryOperations.setupGroupMembership({
-                    control,
-                    runId,
-                    owner: agents[0],
-                    members: agents,
-                    groupId,
-                    suffix
-                }))
+            const agents = await runRetentionPhase(
+                'retention-100: open the three browser agents',
+                async () => {
+                    const openedAgents = await openAgentTrio(browser, {
+                        runId,
+                        groupId,
+                        suffix,
+                        label: 'live-retention'
+                    });
+                    openHandles.push(...openedAgents);
+                    return openedAgents;
+                }
             );
-            const initialFormation = await liveRtcDeliveryOperations.runGroupFormation({
-                control,
-                runId,
-                agents,
-                transport: 'messages.rtc',
-                groupId,
-                suffix: `${suffix}-initial`,
-                readinessScope: 'all'
-            });
-            commandIds.push(...initialFormation.commandIds);
-            await captureCheckpoint(agents, 0);
+            await runRetentionPhase(
+                'retention-100: establish group membership',
+                async () => {
+                    commandIds.push(
+                        ...(await liveRtcDeliveryOperations.setupGroupMembership({
+                            control,
+                            runId,
+                            owner: agents[0],
+                            members: agents,
+                            groupId,
+                            suffix
+                        }))
+                    );
+                }
+            );
+            const initialFormation = await runRetentionPhase(
+                'retention-100: form the initial group and wait for readiness',
+                async () => {
+                    const formation = await liveRtcDeliveryOperations.runGroupFormation({
+                        control,
+                        runId,
+                        agents,
+                        transport: 'messages.rtc',
+                        groupId,
+                        suffix: `${suffix}-initial`,
+                        readinessScope: 'all'
+                    });
+                    commandIds.push(...formation.commandIds);
+                    return formation;
+                }
+            );
+            await runRetentionPhase(
+                'retention-100: capture initial checkpoint at cycle 0',
+                async () => captureCheckpoint(agents, 0)
+            );
 
             let currentSessionId = initialFormation.sessions.C;
             for (let cycle = 1; cycle <= 100; cycle += 1) {
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
-                await control.executeOk({
-                    runId,
-                    agentId: agents[2].agentId,
-                    commandId: closeCommandId,
-                    command: { kind: 'close' },
-                    timeoutMs: 45_000
-                });
-                commandIds.push(closeCommandId);
-                await Promise.all(
-                    agents.slice(0, 2).map((agent) =>
-                        control.waitForPeerAbsence({
+                await runRetentionPhase(
+                    `retention-100 cycle ${cycle}: close peer C`,
+                    async () => {
+                        await control.executeOk({
                             runId,
-                            agent,
-                            departedPeerIds: [currentSessionId],
-                            suffix: `${suffix}-${cycle}`
-                        })
-                    )
+                            agentId: agents[2].agentId,
+                            commandId: closeCommandId,
+                            command: { kind: 'close' },
+                            timeoutMs: 45_000
+                        });
+                        commandIds.push(closeCommandId);
+                    }
                 );
-                const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
-                    control,
-                    runId,
-                    reconnectingAgent: agents[2],
-                    survivingAgents: [agents[0], agents[1]],
-                    survivingSessionIds: [
-                        initialFormation.sessions.A,
-                        initialFormation.sessions.B
-                    ],
-                    transport: 'messages.rtc',
-                    groupId,
-                    suffix: `${suffix}-${cycle}`
-                });
-                commandIds.push(reconnected.commandId);
-                timings.push({
-                    kind: 'reconnect-ready',
-                    transport: 'messages.rtc',
-                    senderAgentId: agents[2].agentId,
-                    receiverAgentIds: [agents[0].agentId, agents[1].agentId],
-                    durationMs: reconnected.receiverReadinessDurationMs
-                });
-                currentSessionId = reconnected.sessionId;
+                await runRetentionPhase(
+                    `retention-100 cycle ${cycle}: wait for both surviving peers to observe absence`,
+                    async () => {
+                        await Promise.all(
+                            agents.slice(0, 2).map((agent) =>
+                                control.waitForPeerAbsence({
+                                    runId,
+                                    agent,
+                                    departedPeerIds: [currentSessionId],
+                                    suffix: `${suffix}-${cycle}`
+                                })
+                            )
+                        );
+                    }
+                );
+                await runRetentionPhase(
+                    `retention-100 cycle ${cycle}: reconnect peer C and wait for readiness`,
+                    async () => {
+                        const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
+                            control,
+                            runId,
+                            reconnectingAgent: agents[2],
+                            survivingAgents: [agents[0], agents[1]],
+                            survivingSessionIds: [
+                                initialFormation.sessions.A,
+                                initialFormation.sessions.B
+                            ],
+                            transport: 'messages.rtc',
+                            groupId,
+                            suffix: `${suffix}-${cycle}`
+                        });
+                        commandIds.push(reconnected.commandId);
+                        timings.push({
+                            kind: 'reconnect-ready',
+                            transport: 'messages.rtc',
+                            senderAgentId: agents[2].agentId,
+                            receiverAgentIds: [agents[0].agentId, agents[1].agentId],
+                            durationMs: reconnected.receiverReadinessDurationMs
+                        });
+                        currentSessionId = reconnected.sessionId;
+                    }
+                );
                 if (cycle % 10 === 0) {
-                    await captureCheckpoint(agents, cycle);
+                    await runRetentionPhase(
+                        `retention-100 cycle ${cycle}: capture every-tenth checkpoint`,
+                        async () => captureCheckpoint(agents, cycle)
+                    );
                 }
             }
             reconnectPassed = true;
             matrixPassed = true;
-            commandIds.push(
-                ...(await liveRtcDeliveryOperations.closeAndResetAgents({
-                    control,
-                    runId,
-                    agents,
-                    suffix: `${suffix}-final`
-                }))
+            await runRetentionPhase(
+                'retention-100: close and reset all agents after cycle 100',
+                async () => {
+                    commandIds.push(
+                        ...(await liveRtcDeliveryOperations.closeAndResetAgents({
+                            control,
+                            runId,
+                            agents,
+                            suffix: `${suffix}-final`
+                        }))
+                    );
+                }
             );
-            await control.expectArtifactBundle({ runId, commandIds });
-            artifactBundlePassed = true;
+            await runRetentionPhase(
+                'retention-100: assert the final artifact bundle',
+                async () => {
+                    await control.expectArtifactBundle({ runId, commandIds });
+                    artifactBundlePassed = true;
+                }
+            );
         }
         catch (error) {
             producerExitStatus = 1;
@@ -1000,29 +1071,34 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             throw toError(error);
         }
         finally {
-            await finalizeLiveRtcAttempt({
-                control,
-                testInfo,
-                runId,
-                agents: openHandles,
-                suffix,
-                context: evidenceContext,
-                producerExitStatus,
-                timings,
-                diagnostics,
-                failureDiagnostics,
-                retention: {
-                    cycles: 100,
-                    checkpoints,
-                    settledStateReturned: liveRtcRetentionStateReturned(checkpoints)
-                },
-                assertions: {
-                    matrixPassed,
-                    artifactBundlePassed,
-                    unexpectedDeliveryCount,
-                    reconnectPassed
+            await runRetentionPhase(
+                'retention-100: finalize attempt diagnostics and evidence',
+                async () => {
+                    await finalizeLiveRtcAttempt({
+                        control,
+                        testInfo,
+                        runId,
+                        agents: openHandles,
+                        suffix,
+                        context: evidenceContext,
+                        producerExitStatus,
+                        timings,
+                        diagnostics,
+                        failureDiagnostics,
+                        retention: {
+                            cycles: 100,
+                            checkpoints,
+                            settledStateReturned: liveRtcRetentionStateReturned(checkpoints)
+                        },
+                        assertions: {
+                            matrixPassed,
+                            artifactBundlePassed,
+                            unexpectedDeliveryCount,
+                            reconnectPassed
+                        }
+                    });
                 }
-            });
+            );
         }
     });
 });
@@ -1081,4 +1157,99 @@ function toLiveRtcRawEvidence(
         retention: input.retention,
         assertions: input.assertions
     };
+}
+
+interface ExchangeClusterDirectMessagesInput {
+    readonly control: LiveRtcControlClient;
+    readonly runId: string;
+    readonly agents: LiveRtcAgentTrio;
+    readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly groupId: string;
+    readonly suffix: string;
+}
+
+interface ClusterDirectMessage {
+    readonly commandId: string;
+    readonly scenario: LiveRtcControlClient.DeliveryScenario;
+}
+
+interface ClusterDirectMessageExchange {
+    readonly commandIds: readonly string[];
+    readonly scenarios: readonly LiveRtcControlClient.DeliveryScenario[];
+}
+
+async function exchangeClusterDirectMessages(
+    input: ExchangeClusterDirectMessagesInput
+): Promise<ClusterDirectMessageExchange> {
+    await waitForClusterPeerReadiness(input);
+    const sent: ClusterDirectMessage[] = [];
+    for (const sender of input.agents) {
+        for (
+            const receiver of input.agents.filter((agent) => agent.agentId !== sender.agentId)
+        ) {
+            sent.push(await sendClusterDirectMessage(input, sender, receiver));
+        }
+    }
+    return {
+        commandIds: sent.map((message) => message.commandId),
+        scenarios: sent.map((message) => message.scenario)
+    };
+}
+
+async function waitForClusterPeerReadiness(
+    input: ExchangeClusterDirectMessagesInput
+): Promise<void> {
+    for (const agent of input.agents) {
+        await input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent,
+            expectedPeerIds: input.agents
+                .filter((peer) => peer.agentId !== agent.agentId)
+                .map((peer) => input.sessions[peer.prefix]),
+            suffix: `cluster-${agent.prefix.toLowerCase()}-${input.suffix}`,
+            startedAtMs: performance.now()
+        });
+    }
+}
+
+async function sendClusterDirectMessage(
+    input: ExchangeClusterDirectMessagesInput,
+    sender: LiveRtcControlClient.Agent,
+    receiver: LiveRtcControlClient.Agent
+): Promise<ClusterDirectMessage> {
+    const matrixId =
+        `cluster-direct-${sender.prefix.toLowerCase()}-to-${receiver.prefix.toLowerCase()}-${input.suffix}`;
+    const startedAtMs = performance.now();
+    const [commandId] = await Promise.all([
+        liveRtcDeliveryOperations.sendMatrixPayload({
+            control: input.control,
+            runId: input.runId,
+            sender,
+            transport: 'realtime',
+            groupId: input.groupId,
+            suffix: input.suffix,
+            deliveryMode: 'direct',
+            targetSessionIds: [input.sessions[receiver.prefix]],
+            matrixId
+        }),
+        input.control.waitForMessage({
+            runId: input.runId,
+            senderAgentId: sender.agentId,
+            agentId: receiver.agentId,
+            transport: 'realtime',
+            matrixId,
+            deliveryMode: 'direct',
+            possibleReceiverAgentIds: [receiver.agentId],
+            startedAtMs
+        })
+    ]);
+    const scenario: LiveRtcControlClient.DeliveryScenario = {
+        matrixId,
+        transport: 'realtime',
+        deliveryMode: 'direct',
+        senderAgentId: sender.agentId,
+        expectedAgentIds: [receiver.agentId],
+        allowedAgentIds: [receiver.agentId]
+    };
+    return { commandId, scenario };
 }

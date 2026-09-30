@@ -36,6 +36,7 @@ import {
 import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
+import { createApiV1WsLivePublication } from './create-api-v1-ws-live-publication.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 
 export interface CreateDefaultRallarServerInput {
@@ -93,13 +94,15 @@ function constructDefaultRallarServer(
         crdtLogRepository
     });
 
+    const wsOptions = createDefaultRallarServerWsOptions(input, runtime, nowEpochMs);
     const systemInstallers = createApiV1SystemInstallers({
         database,
         serviceId: myServerId,
         nowEpochMs,
         topology,
         crdtLogRepository,
-        crdtPolicies: configuration.crdt.documentTypePolicies
+        crdtPolicies: configuration.crdt.documentTypePolicies,
+        livePublication: wsOptions.livePublication
     });
     const routeInstallers = createDefaultApiV1RouteInstallers({
         configuration,
@@ -116,19 +119,33 @@ function constructDefaultRallarServer(
         repositories: defaultRepositoryManager,
         appDataRepository: new PSqlAppDataRepository(database),
         nowEpochMs,
-        ws: {
-            authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
-                readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref)
-            }),
-            readServerPublishAudience: createServerPublishRoomAudienceReader({
-                readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
-                nowEpochMs
-            }),
-            ...input.ws
-        },
+        ws: wsOptions,
         systemInstallers,
         routeInstallers
     });
+}
+
+function createDefaultRallarServerWsOptions(
+    input: CreateDefaultRallarServerInput,
+    runtime: ApiV1Runtime,
+    nowEpochMs: () => number
+): RallarServerWsRouterOptions {
+    return {
+        authorizeRoomMessage: createApiV1RoomWsAuthorizer(runtime.groupStateService, {
+            readLifecyclePolicy: (ref) => runtime.topologyServices.groupStateRepository.readLifecyclePolicy(ref)
+        }),
+        readServerPublishAudience: createServerPublishRoomAudienceReader({
+            readGroupSnapshot: async (ref) => await runtime.groupStateService.readCurrentSnapshot(ref),
+            nowEpochMs
+        }),
+        livePublication: createApiV1WsLivePublication({
+            mode: input.configuration.database.pubSub,
+            notification: input.databaseLifecycle.notification,
+            nowEpochMs,
+            readClientSnapshot: (ref) => runtime.clientStateService.readCurrentSnapshot(ref)
+        }),
+        ...input.ws
+    };
 }
 
 interface ConfiguredApiV1RuntimeInput {

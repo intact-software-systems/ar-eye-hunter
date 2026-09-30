@@ -328,6 +328,18 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.workspaceId"
+            }
           }
         ]
       }
@@ -382,6 +394,18 @@
           {
             "urlEncode": {
               "path": "outputs.bobWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "resultsByName.createDropInGroup.0.actual.body.group.workspaceId"
             }
           }
         ]

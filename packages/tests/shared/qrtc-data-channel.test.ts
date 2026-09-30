@@ -6,6 +6,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 import { newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -986,7 +987,7 @@ function createNativeDataChannelFixture(): NativeDataChannelFixture {
         peerSessionId: 'peer-1',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
-    });
+    }, new DeterministicRtcOfferIds());
     peerConnection.connect();
     peers.push(peerConnection);
     const native = peerConnection.status.pc;

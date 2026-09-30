@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
@@ -17,6 +18,7 @@ import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts
 import { ALOutboundCommitPhases } from './al-outbound-commit-phases.ts';
 import type {
     ALOutboundCommitOrigin,
+    ALOutboundDequeueAuthority,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
@@ -46,6 +48,7 @@ export namespace ALOutboundDispatchAdmission {
 
     export interface Input<TPrepared> {
         readonly msg: ALMessage;
+        readonly dequeueAuthority?: ALOutboundDequeueAuthority;
         readonly planner: ALOutboundPlanner<TPrepared>;
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
@@ -104,7 +107,7 @@ interface ALOutboundGroupMember<TPrepared> {
     readonly phases: ALOutboundCommitPhases;
 }
 
-/** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
+/** Owns optimistic read/compute/commit; ordinary data serializes by sender, while initial controls bypass that wait. */
 export class ALOutboundDispatchAdmission<TPrepared> {
     private readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     private readonly commitQueuesBySenderId = new Map<string, ALOutboundDispatchAdmission.SenderCommitQueue>();
@@ -133,7 +136,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 
     /**
-     * The dispatches of one sender under one queue slot, one lock and one version fence. When a member
+     * The dispatches of one sender under one version fence. Ordinary data also holds one queue slot
+     * and browser lock; canonical initial controls use the same optimistic fence without those waits. When a member
      * settles before its write (it fails validation, finds its pending admission, has nothing to
      * commit), the store answers the group with anything but `committed`, or the group attempt throws,
      * every member commits again alone, one after another: a fresh read, compute and conflict
@@ -147,7 +151,14 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
-            const grouped = await this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members))
+            const controls = dispatches.filter((dispatch) => this.isInitialControlHandoff(dispatch));
+            if (controls.length > 0 && controls.length !== dispatches.length) {
+                return await this.commitEachAlone(members);
+            }
+            const attempt = controls.length === dispatches.length
+                ? this.commitGroupOnce(members)
+                : this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members));
+            const grouped = await attempt
                 .catch((error) => {
                     console.warn('AL outbound group commit threw; its members commit alone', error);
                     return undefined;
@@ -178,6 +189,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         try {
+            if (this.isInitialControlHandoff(dispatch)) {
+                return await this.commitDispatchOnce(dispatch, phases);
+            }
             return await this.withSenderCommitQueue(
                 dispatch,
                 () => this.commitDispatchOnce(dispatch, phases)
@@ -239,7 +253,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         });
     }
 
-    /** Every decision of the group, read under its lock; `undefined` once one of them settles before a write. */
+    /** Every optimistic group decision; `undefined` once one member settles before a write. */
     private async readGroupDecisions(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
@@ -266,7 +280,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         const { input, computed, bundle } = decision;
         const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
         if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
-            return await this.retainPendingDispatch(input, computed);
+            const retained = await this.retainPendingDispatch(input, computed, phases);
+            if (this.isInitialControlHandoff(dispatch) && retained.computed.verdict.kind === 'failed') {
+                throw new RetryableConflictError('Outbound control handoff conflict');
+            }
+            return retained;
         }
         if (status === 'conflict' && dispatch.options.pendingAdmission) {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
@@ -351,27 +369,31 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     private async retainPendingDispatch(
         input: ComputeALOutboundDispatchInput<TPrepared>,
-        computed: ALOutboundComputedDto<TPrepared>
+        computed: ALOutboundComputedDto<TPrepared>,
+        phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         const canonicalEntry = computed.bundle?.canonicalEntry;
         if (!canonicalEntry) {
             throw new NonRetryableException('Pending admission requires its validated canonical candidate');
         }
-        const status = await this.admissionStore.retainPendingAdmission({
-            canonicalEntry,
-            creationExpiry: input.read.creationExpiry,
-            payload: {
-                kind: 'admit-message',
-                message: toALOutboundMessageReference(
-                    this.admissionStore.canonicalScope,
-                    canonicalEntry,
-                    input.read.msg
-                ),
-                policy: captureALOutboundPolicy(input.read.plan),
-                preparedMessages: input.read.plan.preparedMessages
-            }
+        const status = await phases.withCommitPhase(async () => {
+            const retained = await this.admissionStore.retainPendingAdmission({
+                canonicalEntry,
+                creationExpiry: input.read.creationExpiry,
+                payload: {
+                    kind: 'admit-message',
+                    message: toALOutboundMessageReference(
+                        this.admissionStore.canonicalScope,
+                        canonicalEntry,
+                        input.read.msg
+                    ),
+                    policy: captureALOutboundPolicy(input.read.plan),
+                    preparedMessages: input.read.plan.preparedMessages
+                }
+            });
+            return retained === 'pending' ? 'committed' : retained;
         });
-        if (status !== 'pending') {
+        if (status !== 'committed') {
             return this.toCommitResult(status, { computed, msg: input.read.msg, intent: 'enqueue' });
         }
         return {
@@ -381,6 +403,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             ),
             committed: false
         };
+    }
+
+    private isInitialControlHandoff(dispatch: ALOutboundDispatchAdmission.Input<TPrepared>): boolean {
+        return dispatch.intent === 'enqueue' && dispatch.origin === 'send' &&
+            decodeALControlMessage(dispatch.msg).right !== undefined;
     }
 
     private toCommitResult(
@@ -452,6 +479,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             msg: dispatch.msg,
             planner: dispatch.planner,
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
+            dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent
         });
         const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);

@@ -164,7 +164,10 @@ export function emptyRead(command: ClientMutationCommand): ClientMutationRead {
         session: null,
         expiredSessionEntry: null,
         snapshot: null,
-        receiptEvent: null
+        receiptEvent: null,
+        audienceObservedAtEpochMs: command.facts.nowEpochMs,
+        audienceGroupSnapshots: [],
+        audienceClientSnapshots: []
     };
 }
 

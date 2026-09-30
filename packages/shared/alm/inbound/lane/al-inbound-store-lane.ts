@@ -182,15 +182,22 @@ export class ALInboundStoreLane {
         return acceptance;
     }
 
-    /** A commit lands behind the running rotation; the worker restarts it and never waits for delivery. */
     private commitWork(): void {
-        this.workSelector.restartScan();
+        this.workSelector.requestHeadRead();
         this.work.committed();
     }
 
+    /**
+     * A head read a commit was owed can become due at a rotation read, when the commit landed during
+     * the head batch before it. Announcing it here gives it the batch this batch's end runs.
+     */
     private async selectInboundWork(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection> {
         this.evictWhenDue();
-        return await this.workSelector.selectReady(port, pageSize);
+        const selection = await this.workSelector.selectReady(port, pageSize);
+        if (this.workSelector.isHeadReadPending()) {
+            this.work.committed();
+        }
+        return selection;
     }
 
     /** The memory pair has no eviction loop of its own: its round sweeps it, at most once per interval. */
@@ -341,8 +348,8 @@ export class ALInboundStoreLane {
 
     /**
      * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
-     * batch already read. Announcing it here is what gives that work the batch this batch's end runs,
-     * instead of the next round the rotation happens to reach.
+     * batch already read. Announcing it here gives that work a head read in the batch this batch's
+     * end runs, instead of the next round the rotation happens to reach.
      */
     private async runInboundEffect(effect: ALPersistedInboundEffect): Promise<ALWorkOutcome> {
         const payload = effect.payload;
@@ -374,7 +381,7 @@ export class ALInboundStoreLane {
     /**
      * The first control claim of a batch sends every control message that batch reserved, and the
      * rest await that one send. The round is the array the selection returned, so a retried row in a later
-     * batch never joins a finished round, and a claim a restarted scan left out of the array sends
+     * batch never joins a finished round, and a claim absent from the selected batch sends
      * alone. A round that throws sends the message of each claim alone too, so each claim settles on its
      * own message: the outbound admission is idempotent, so a message the round already admitted
      * answers `duplicate`.

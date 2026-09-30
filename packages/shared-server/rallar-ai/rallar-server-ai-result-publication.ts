@@ -12,6 +12,7 @@ import {
 } from '@shared/rallar-ai/mod.ts';
 import type {
     RallarServerWsFanout,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult
 } from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 
@@ -40,8 +41,7 @@ export type RallarServerAiResultPublicationTarget =
 
 export interface RallarServerAiResultPublicationPort {
     publish(
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
+        input: RallarServerWsPublishInputDto
     ): Promise<RallarServerWsPublishResult>;
 }
 
@@ -93,7 +93,7 @@ export function createRallarServerAiResultPublisher(
                 senderId: publisher.serverSenderId,
                 target
             });
-            const result = await publisher.publication.publish(message, input.fanout);
+            const result = await publisher.publication.publish({ message, fanout: input.fanout });
             await reportRallarServerAiPublication({
                 publisher,
                 result: input.result,

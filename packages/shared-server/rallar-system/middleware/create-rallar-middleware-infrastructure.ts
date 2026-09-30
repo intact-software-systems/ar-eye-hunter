@@ -6,17 +6,29 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
+import { installLiveWsNoticeSubscriber } from '../queue-pubsub/live-ws-notice-subscriber.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { installRelayedAckNoticeSubscriber } from '../queue-pubsub/relayed-ack-notice-subscriber.ts';
+import { createRelayedAckPublisher } from '../queue-pubsub/relayed-ack-notice.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
     CreateRallarMiddlewareOptions,
     RallarMiddlewareInfrastructure
 } from './rallar-middleware-construction.ts';
+
+interface InstallMiddlewareLiveWsNoticeSubscriberInput {
+    readonly options: CreateRallarMiddlewareOptions;
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly targetResolver: WsServerTargetResolver;
+    readonly wsQBoxServerService: RallarMiddlewareInfrastructure['wsQBoxServerService'];
+}
 
 export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
@@ -36,6 +48,8 @@ export function createRallarMiddlewareInfrastructure(
         socket: webSocketServer,
         name: options.wsRuntimeName ?? 'default-qbox-server',
         targetResolver,
+        readProducerProvenance: options.readWsOutboxProducerProvenance,
+        readAuthenticatedConnectionScope: options.readAuthenticatedConnectionScope,
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
         dequeueResilience: options.resilience.outbox ?? options.resilience.inbox,
@@ -44,6 +58,9 @@ export function createRallarMiddlewareInfrastructure(
         outboundSettlements: options.wsOutboundSettlements,
         inboundDiagnostics: options.wsInboundDiagnostics,
         validateInboundMessage: validateMiddlewareALIngress,
+        publishRelayedAck: options.relayedAckNotices
+            ? createRelayedAckPublisher(options.relayedAckNotices)
+            : undefined,
         forwardsRoomScopedMessages: false
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
@@ -53,6 +70,20 @@ export function createRallarMiddlewareInfrastructure(
             wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
         })
         : Promise.resolve();
+    const liveWsNoticeSubscriberReadiness = Promise.all([
+        installMiddlewareLiveWsNoticeSubscriber({
+            options,
+            webSocketServer,
+            targetResolver,
+            wsQBoxServerService
+        }),
+        options.relayedAckNotices
+            ? installRelayedAckNoticeSubscriber({
+                ...options.relayedAckNotices,
+                acceptRelayedAck: (message) => wsQBoxServerService.acceptRelayedAck(message)
+            })
+            : Promise.resolve()
+    ]).then(() => undefined);
 
     return {
         wsQBoxServerService,
@@ -64,8 +95,38 @@ export function createRallarMiddlewareInfrastructure(
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
+        liveWsNoticeSubscriberReadiness,
         wakeQueueEngine: () => queueEngine.wakeAfterExternalWrite()
     };
+}
+
+function installMiddlewareLiveWsNoticeSubscriber(
+    input: InstallMiddlewareLiveWsNoticeSubscriberInput
+): Promise<void> {
+    const { options, webSocketServer, targetResolver, wsQBoxServerService } = input;
+    if (!options.liveWsNoticeSubscriber) {
+        return Promise.resolve();
+    }
+    const targetResolution = new WsQueueBoxServerTargetResolution({ socket: webSocketServer, targetResolver });
+    return installLiveWsNoticeSubscriber({
+        ...options.liveWsNoticeSubscriber,
+        inboundStores: options.inboundStores ? [options.inboundStores.admissionStore] : [],
+        resolveBroadRecipientSessionIds: (message) =>
+            targetResolution.resolveOutboundRecipients(message).map((recipient) => recipient.connectionId),
+        sendToTargetsWithResult: ({ message, recipientSessionIds, notice, audience }) => {
+            wsQBoxServerService.sendToTargetsWithResult({
+                message,
+                expiresAtMs: notice.expiresAtMs,
+                recipientSessionIds,
+                inboundScope: message.targets?.mode === 'unicast' ? notice.scope : undefined,
+                recipientScope: notice.scope,
+                recipientPrincipalId: audience.mode === 'principal'
+                    ? audience.principalRef.principalId
+                    : undefined,
+                requireAuthenticatedRecipient: true
+            });
+        }
+    });
 }
 
 function validateMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {

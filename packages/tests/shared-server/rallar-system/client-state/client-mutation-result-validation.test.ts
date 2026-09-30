@@ -34,6 +34,7 @@ import {
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 
 import {
     connectCommand,
@@ -196,6 +197,97 @@ describe('client mutation result validation', () => {
 });
 
 describe('client mutation operation validation', () => {
+    it('rejects an unexpected unicast row even when accepted state sync has no live session', async () => {
+        const command = await principalCommand();
+        const read = emptyRead(command);
+        const input = {
+            command,
+            read,
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            lifecycle: undefined
+        };
+        const computed = await computeClientMutationOperation(input);
+        if (computed.outcome !== 'completed' || computed.mutation.outcome !== 'write') {
+            throw new Error('Expected completed mutation');
+        }
+        const mutation = computed.mutation;
+        const first = mutation.outboxWrites[0]!;
+        const message = decodePersistedALMessage(first.entry.resource);
+        const unexpectedUnicast = computeAppOutboxInsert({
+            ...first.entry,
+            resource: JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'late-session' } })
+        });
+        const forgedMutation = { ...mutation, outboxWrites: [unexpectedUnicast, ...mutation.outboxWrites.slice(1)] };
+        await expect(assertClientMutationOperation({
+            ...input,
+            computed: {
+                ...computed,
+                mutation: forgedMutation,
+                writes: [forgedMutation]
+            }
+        })).rejects.toThrow(/outboxWrites/);
+    });
+
+    it('rejects missing, duplicated, wrong-scope and wrong-recipient snapshot proof writes before transaction entry', async () => {
+        const command = await connectCommand();
+        const input = {
+            command,
+            read: emptyRead(command),
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            lifecycle: undefined
+        };
+        const computed = await computeClientMutationOperation(input);
+        if (computed.outcome !== 'completed') {
+            throw new Error('Expected a completed mutation');
+        }
+        const proofs = computed.sidecarWrites;
+        const proof = proofs.find((candidate) => JSON.parse(candidate.value).target.kind === 'scoped-unicast');
+        if (!proof) {
+            throw new Error('Expected a frozen unicast snapshot proof');
+        }
+        const variants = [
+            proofs.filter((candidate) => candidate !== proof),
+            [...proofs, proof],
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, value: proof.value.replace('workspace-1', 'wrong-workspace') }
+                    : candidate
+            ),
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, value: proof.value.replaceAll('session-1', 'late-session') }
+                    : candidate
+            ),
+            proofs.map((candidate) => candidate === proof ? { ...proof, key: 'wrong-slot' } : candidate),
+            proofs.map((candidate) =>
+                candidate === proof
+                    ? { ...proof, expiresAt: '1970-01-01T00:00:01Z' }
+                    : candidate
+            )
+        ];
+        for (const sidecarWrites of variants) {
+            await expect(assertClientMutationOperation({ ...input, computed: { ...computed, sidecarWrites } }))
+                .rejects.toThrow(/sidecarWrites/);
+        }
+    });
+
+    it('retains no sidecar writes when a fresh inbox delivery replays a durable client command', async () => {
+        const command = await connectCommand();
+        const connected = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
+        if (connected.idempotency === null) {
+            throw new Error('Expected an idempotent command');
+        }
+        const input = {
+            command,
+            read: { ...readAfterWrite(command, connected), idempotency: entryValue(connected.idempotency, 0) },
+            completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
+            lifecycle: undefined
+        };
+        const computed = await computeClientMutationOperation(input);
+        await assertClientMutationOperation({ ...input, computed });
+        expect(computed).toMatchObject({ outcome: 'completed', mutation: { outcome: 'replay' }, writes: [], sidecarWrites: [] });
+    });
+
     it('compares a mutation against the owner-computed value and rejects a changed prepared payload', async () => {
         const command = await principalCommand();
         const read = emptyRead(command);
@@ -222,18 +314,18 @@ describe('client mutation operation validation', () => {
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = computeClientMutationOperation(input);
+        const computed = await computeClientMutationOperation(input);
         if (computed.outcome !== 'completed') {
             throw new Error('Expected a completed operation');
         }
-        assertClientMutationOperation({ ...input, computed });
+        await assertClientMutationOperation({ ...input, computed });
         const variants = [
             { ...computed, completion: { ...computed.completion, encodedResult: 'altered' } },
             { ...computed, writes: [] },
             { ...computed, committedSnapshots: [] }
         ];
         for (const candidate of variants) {
-            expect(() => assertClientMutationOperation({ ...input, computed: candidate })).toThrow(TypeError);
+            await expect(assertClientMutationOperation({ ...input, computed: candidate })).rejects.toThrow(TypeError);
         }
     });
 
@@ -245,7 +337,7 @@ describe('client mutation operation validation', () => {
             completionFacts: { entry: createExecutionMetadata().entry, completedAtEpochMs: 8_000 },
             lifecycle: undefined
         };
-        const computed = computeClientMutationOperation(input);
+        const computed = await computeClientMutationOperation(input);
         let accessorRead = false;
         const candidate = Object.defineProperty({ ...computed }, 'mutation', {
             get: () => {
@@ -253,8 +345,8 @@ describe('client mutation operation validation', () => {
                 return computed.mutation;
             }
         });
-        expect(() => assertClientMutationOperation({ ...input, computed: candidate }))
-            .toThrow('Client mutation operation computed.mutation must be a data property');
+        await expect(assertClientMutationOperation({ ...input, computed: candidate }))
+            .rejects.toThrow('Client mutation operation computed.mutation must be a data property');
         expect(accessorRead).toBe(false);
     });
 
@@ -282,14 +374,14 @@ describe('client mutation operation validation', () => {
             reads: [{ command, read: readAfterWrite(command, connected) }],
             completionFacts: { entry: context.entry, completedAtEpochMs: 8_000 }
         };
-        const computed = computeExpiredSessionsOperation(input);
+        const computed = await computeExpiredSessionsOperation(input);
         if (computed.outcome !== 'completed') {
             throw new Error('Expected completed expiry');
         }
-        assertExpiredSessionsOperation({ ...input, computed });
+        await assertExpiredSessionsOperation({ ...input, computed });
         for (const mutations of [[], [...computed.mutations, ...computed.mutations]]) {
-            expect(() => assertExpiredSessionsOperation({ ...input, computed: { ...computed, mutations } }))
-                .toThrow(/Expired client sessions operation computed.mutations/);
+            await expect(assertExpiredSessionsOperation({ ...input, computed: { ...computed, mutations } }))
+                .rejects.toThrow(/Expired client sessions operation computed.mutations/);
         }
     });
 });

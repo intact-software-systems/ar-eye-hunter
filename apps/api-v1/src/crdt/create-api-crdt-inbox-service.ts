@@ -17,11 +17,6 @@ export interface CurrentMutationSession {
     readonly expiresAtEpochMs: number;
 }
 
-export interface CurrentMutationDocumentAuthorization {
-    readonly allowed: boolean;
-    readonly code: string;
-}
-
 export interface CurrentMutationAuthority {
     readSession(sessionId: string): Promise<
         | CurrentMutationSession
@@ -31,7 +26,7 @@ export interface CurrentMutationAuthority {
     authorizeDocument(
         command: Crdt.CrdtMutationCommand,
         session: CurrentMutationSession
-    ): Promise<CurrentMutationDocumentAuthorization>;
+    ): Promise<Crdt.CrdtMutationAuthorityDecision>;
     readonly adminClientIds: readonly string[];
 }
 
@@ -107,15 +102,15 @@ function createApiCrdtMutationAuthorizer(
     dependencies: ApiCrdtMutationAuthorizationDependencies
 ): (
     command: Crdt.CrdtMutationCommand
-) => Promise<CurrentMutationDocumentAuthorization> {
+) => Promise<Crdt.CrdtMutationAuthorityDecision> {
     return async (command) => {
         const session = await dependencies.currentAuthority.readSession(command.actor.sessionId);
         const nowEpochMs = dependencies.nowEpochMs();
         if (!session) {
-            return { allowed: false, code: 'authentication-missing' };
+            return { allowed: false, code: 'authentication-missing', publicationAuthority: null };
         }
         if (session.expiresAtEpochMs <= nowEpochMs) {
-            return { allowed: false, code: 'authentication-expired' };
+            return { allowed: false, code: 'authentication-expired', publicationAuthority: null };
         }
         if (
             session.clientId !== command.actor.actorId ||
@@ -123,11 +118,11 @@ function createApiCrdtMutationAuthorizer(
             session.sessionId !== command.actor.sessionId ||
             command.responseAudience.senderSessionId !== session.sessionId
         ) {
-            return { allowed: false, code: 'authorization-forbidden' };
+            return { allowed: false, code: 'authorization-forbidden', publicationAuthority: null };
         }
         if (command.responseAudience.kind === 'admin') {
             const allowed = dependencies.currentAuthority.adminClientIds.includes(session.clientId);
-            return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden' };
+            return { allowed, code: allowed ? 'allowed' : 'authorization-forbidden', publicationAuthority: null };
         }
         return await dependencies.currentAuthority.authorizeDocument(command, session);
     };

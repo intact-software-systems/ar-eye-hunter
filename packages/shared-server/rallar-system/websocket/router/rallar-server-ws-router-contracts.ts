@@ -1,7 +1,9 @@
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
     WsServerLiveSendFailure,
@@ -9,10 +11,24 @@ import type {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { LiveWsNoticeTransport } from '../../queue-pubsub/live-ws-notice.ts';
 
 export type RallarServerWsFanout = 'live-only' | 'outbox' | 'none';
 
+export interface RallarServerWsPublishInputDto {
+    readonly message: ALMessage;
+    /** Required for a unicast that names no group; refused beside targets that name one, which scope themselves. */
+    readonly scope?: StateScope;
+    readonly fanout?: RallarServerWsFanout;
+}
+
+export interface RallarServerWsUnicastInputDto extends RallarServerWsPublishInputDto {
+    readonly scope: StateScope;
+    readonly peerId: string;
+}
+
 export type RallarServerWsPublishStatus =
+    | 'cluster-published'
     | 'sent-live'
     | 'queued-outbox'
     | 'none'
@@ -160,6 +176,14 @@ export interface RallarServerWsRouterOptions {
     readonly readServerPublishAudience?: RallarServerWsPublishAudienceReader;
     readonly wakeOutbox?: () => void;
     readonly nowEpochMs?: () => number;
+    readonly livePublication?: {
+        readonly transport: LiveWsNoticeTransport;
+        readonly channel: string;
+        readonly publisherId: string;
+        readonly readPrincipalSessionIds?: (
+            principalRef: ClientPrincipalRef
+        ) => Promise<readonly string[] | undefined>;
+    };
 }
 
 export interface RallarServerWsMessageContext {
@@ -168,6 +192,7 @@ export interface RallarServerWsMessageContext {
     readonly roomId?: string;
     readonly roomRef?: GroupRef;
     readonly senderId: string;
+    readonly authenticatedScope: StateScope | undefined;
     readonly proxy: RallarServerWsProxyContext;
 }
 
@@ -177,9 +202,7 @@ export interface RallarServerWsProxyContext {
         fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult>;
     toPeer(
-        peerId: string,
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
+        input: RallarServerWsUnicastInputDto
     ): Promise<RallarServerWsPublishResult>;
     toRoom(
         roomRef: GroupRef,

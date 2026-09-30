@@ -301,6 +301,7 @@ function createMutationRead(overrides: Partial<CrdtMutationRead> = {}): CrdtMuta
         snapshot: null,
         authorized: true,
         authorizationCode: 'allowed',
+        publicationAuthority: null,
         featureDecision: {
             allowed: true,
             code: 'allowed',

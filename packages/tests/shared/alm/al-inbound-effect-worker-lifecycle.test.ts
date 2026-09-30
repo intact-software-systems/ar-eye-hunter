@@ -275,7 +275,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => runtime.dispose());
         const valid = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'valid-source', contextId: 'room' }, 'receiver', 'chat', {});
-        await runtime.admitIncomingMessage(valid, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(valid, INBOUND_TEST_SOURCE);
         await expect.poll(async () => {
             await engine.executeOnce();
             return resources.workQueue.getItem(work.entry.key);
@@ -364,7 +364,7 @@ describe('inbound durable effect worker lifecycle', () => {
             ordering: { orderingKey: 'stream', seq: 1 }
         };
         const trackKey = toALOrderingTrackKey(message)!;
-        await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         await expect.poll(async () => (await store.readOrderedDelivery(trackKey, 2)).completedThrough).toBe(1);
         runtime.dispose();
         expect(await store.readBufferedRelease({ trackKey, seq: 1, nowMs: Date.now() })).toBeUndefined();
@@ -440,7 +440,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => runtime.dispose());
 
-        await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
 
         await expect.poll(() => crashedKey).toBeDefined();
         await expect.poll(async () => (await resources.workQueue.getItem(crashedKey!))?.status)
@@ -474,7 +474,7 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'unawaited', contextId: 'room' }, 'receiver', 'chat', {});
 
-        const acceptance = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        const acceptance = await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
 
         expect(acceptance.right).toEqual({ kind: 'admitted' });
         await dispatchStarted.promise;
@@ -546,7 +546,7 @@ describe('inbound durable effect worker lifecycle', () => {
             carrier: 'ws'
         });
 
-        const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
+        const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
 
         expect(acceptance.right).toEqual({ kind: 'control', handled: true });
         await sendStarted.promise;
@@ -618,7 +618,7 @@ describe('inbound durable effect worker lifecycle', () => {
             carrier: 'ws'
         });
 
-        const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
+        const acceptance = await runtime.admitIncomingMessage(ack, INBOUND_TEST_SOURCE);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -691,7 +691,7 @@ describe('inbound durable effect worker lifecycle', () => {
             return 'conflict';
         });
 
-        const acceptance = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        const acceptance = await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -721,8 +721,7 @@ describe('inbound durable effect worker lifecycle', () => {
         expect(acceptance.right).toEqual({ kind: 'pending-admission' });
         // The replay runs inside a claim of the page that batch already read, so the dispatch it
         // commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the dispatch.
+        // here: a batch this commit schedules is the only thing that can have claimed the dispatch.
         await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
     });
 
@@ -760,8 +759,7 @@ describe('inbound durable effect worker lifecycle', () => {
 
         // The replay runs inside a claim of the page that batch already read, so the acknowledgement
         // it commits is behind that page. The engine is never started and no round is ever executed
-        // here: the batch this commit schedules for the end of the replaying one is the only thing
-        // that can have claimed the send.
+        // here: a batch this commit schedules is the only thing that can have claimed the send.
         await expect.poll(() => controls.map((control) => control.payload.typeId)).toHaveLength(1);
     });
 
@@ -850,9 +848,9 @@ describe('inbound durable effect worker lifecycle', () => {
         const first = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'first', contextId: 'room' }, 'receiver', 'chat', {});
         const second = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {});
         try {
-            const firstAdmission = runtime.admitIncomingMessage(first, { kind: 'ws-client', peerId: 'sender' });
+            const firstAdmission = runtime.admitIncomingMessage(first, INBOUND_TEST_SOURCE);
             await finalizationStarted.promise;
-            const secondAdmission = await runtime.admitIncomingMessage(second, { kind: 'ws-client', peerId: 'sender' });
+            const secondAdmission = await runtime.admitIncomingMessage(second, INBOUND_TEST_SOURCE);
             expect(secondAdmission.right).toEqual({ kind: 'admitted' });
             releaseFinalization.resolve();
             await firstAdmission;
@@ -920,7 +918,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const advertised = engine.executeOnce();
         await readStarted.promise;
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'overlapping-read', contextId: 'room' }, 'receiver', 'chat', {});
-        const admission = runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+        const admission = runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         await admissionWoke.promise;
         resumeRead.resolve();
         await Promise.all([advertised, admission]);
@@ -985,14 +983,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         try {
-            await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
             await expect.poll(() => attempts).toBe(1);
 
             runtime.dispose();
             vi.setSystemTime(Date.now() + 30_000);
             await resources.queueEngine.executeOnce();
             await runtime.ready();
-            await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
 
             expect(attempts).toBe(1);
         }
@@ -1116,7 +1114,12 @@ function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): 
         value: {
             msgId: message.id.msgId,
             senderId: message.id.senderId,
-            source: { kind: 'ws-client', peerId: message.id.senderId },
+            source: {
+                ...INBOUND_TEST_SOURCE,
+                kind: 'ws-client',
+                peerId: message.id.senderId,
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            },
             supersedenceKey: null
         },
         expireAtTimestamp
@@ -1161,7 +1164,12 @@ async function seedTrackedAcknowledgement(
     expectedFromPeerIds: readonly string[] = ['sender']
 ): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
-    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
+    const source = {
+        ...INBOUND_TEST_SOURCE,
+        kind: 'ws-client' as const,
+        peerId: message.id.senderId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+    };
     const read = await readAdmission(store, message);
     const committed = await store.commitBundle({
         admissionExpiresAtMs: null,
@@ -1200,7 +1208,12 @@ async function seedTrackedAcknowledgement(
 }
 
 async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage) {
-    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
+    const source = {
+        ...INBOUND_TEST_SOURCE,
+        kind: 'ws-client' as const,
+        peerId: message.id.senderId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+    };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
         msg: message,

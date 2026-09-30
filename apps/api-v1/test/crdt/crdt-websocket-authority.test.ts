@@ -235,6 +235,13 @@ async function createCrdtWebSocketAuthorityFixture(
     const wsService = createDefaultWsQueueBoxServerService({
         outbox: queue,
         socket: socketServer,
+        readAuthenticatedConnectionScope: (connection) =>
+            socketServer.connections.get(connection.id) === connection && sockets.has(connection.id)
+                ? {
+                    scope: { applicationId: DOCUMENT.applicationId, workspaceId: DEFAULT_STATE_WORKSPACE_ID },
+                    expiresAtEpochMs: NOW + 600_000
+                }
+                : undefined,
         name: 'server-1'
     });
     const router = new RallarServerWsRouter(wsService).install();

@@ -45,7 +45,7 @@ describe('message handle admission', () => {
         const admission = Promise.withResolvers<ALOutboundEnqueueResult>();
         const fixture = createBrowserMessageSenderFixture();
         let envelope: ALMessage | undefined;
-        fixture.middleware.middleware[carrier === 'rtc' ? 'rtcRxStreamer' : 'webSocketQueueBox'].enqueueOutboxIfAbsent = (message) => {
+        fixture.middleware.middleware[carrier === 'rtc' ? 'rtcRxStreamer' : 'webSocketQueueBox'].enqueueOutboxIfAbsent = (message: ALMessage) => {
             envelope = message;
             return admission.promise;
         };

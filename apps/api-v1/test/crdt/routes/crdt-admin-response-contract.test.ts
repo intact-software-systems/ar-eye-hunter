@@ -38,6 +38,7 @@ import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',
@@ -207,7 +208,7 @@ function createTestCrdtMutationService(
 ): CrdtMutationService {
     return createCrdtMutationService({
         repository: new PSqlCrdtMutationRepository(
-            { sql, authorize: () => Promise.resolve(true) },
+            { sql, authorize: authorizeTestCrdtCommand },
             { policies: [] }
         ),
         serviceId: 'server-1'

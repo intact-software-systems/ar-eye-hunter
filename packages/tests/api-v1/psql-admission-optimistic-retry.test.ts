@@ -1,5 +1,3 @@
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     describe,
     expect,
@@ -13,28 +11,31 @@ import {
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ALInboundAdmissionRead, ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
-import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
-import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
-import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import { decodeALOutboundWorkEntry, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
-import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
-    createALOutboundAdmissionStore,
-    newALUnicastMessage,
-    normalizeALRuntimeStoreRetention,
-    planALMessageHandling,
-    QueueBoxUtilities
-} from '@shared/mod.ts';
+    type ALInboundAdmissionRead,
+    type ALInboundAdmissionStore
+} from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { decodeALInboundWorkEntry, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { decodeALOutboundWorkEntry, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
+
+const AUTHENTICATED_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
 describe('PSql admission optimistic retry', () => {
     it('translates an inbound apply-time CAS loss to the owner conflict result', async () => {
@@ -60,7 +61,7 @@ describe('PSql admission optimistic retry', () => {
                 value: {
                     msgId: 'inbound-conflict',
                     senderId: 'peer-1',
-                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
                     supersedenceKey: null
                 },
                 expireAtTimestamp: Date.now() + 60_000
@@ -91,7 +92,7 @@ describe('PSql admission optimistic retry', () => {
                 value: {
                     msgId: 'inbound-error',
                     senderId: 'peer-1',
-                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE },
                     supersedenceKey: null
                 },
                 expireAtTimestamp: Date.now() + 60_000
@@ -117,7 +118,7 @@ describe('PSql admission optimistic retry', () => {
         });
         const msg = createInboundMessage('inbound-runtime-retry');
         conflictNextInboundCommit({ storage, namespace: store.namespace, msg, nowMs: Date.now });
-        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUTHENTICATED_SCOPE };
 
         const conflicted = await runtime.admitIncomingMessage(msg, source);
 
@@ -388,7 +389,7 @@ function createInboundMessage(msgId: string): ALMessage {
 async function readIncoming(store: ALInboundAdmissionStore, msg: ALMessage, nowMs: number): Promise<ALInboundAdmissionRead> {
     return await store.readIncomingMessage({
         msg,
-        source: { kind: 'ws-client', peerId: msg.id.senderId },
+        source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: AUTHENTICATED_SCOPE },
         nowMs,
         prePlan: planALMessageHandling(msg, { selfPeerId: 'self', nowMs })
     });
@@ -410,7 +411,7 @@ function conflictNextInboundCommit({ storage, namespace, msg, nowMs }: Conflicti
             JSON.stringify({
                 msgId: msg.id.msgId,
                 senderId: msg.id.senderId,
-                source: { kind: 'ws-client', peerId: msg.id.senderId },
+                source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: AUTHENTICATED_SCOPE },
                 supersedenceKey: null
             }),
             nowMs() + 60_000

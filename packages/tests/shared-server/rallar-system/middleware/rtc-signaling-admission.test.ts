@@ -6,6 +6,7 @@ import {
     onTestFinished
 } from 'vitest';
 
+import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import {
     newALEventRoute,
@@ -62,6 +63,10 @@ describe('middleware pre-admission', () => {
             const runtime = createRallarMiddleware({
                 ...fixture.options,
                 webSocketServer: socket,
+                readAuthenticatedConnectionScope: (connection) =>
+                    socket.connections.get(connection.id) === connection
+                        ? { scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                        : undefined,
                 inboundStores: {
                     admissionStore: createALInboundAdmissionStore({
                         nowMs: Date.now,
@@ -74,7 +79,12 @@ describe('middleware pre-admission', () => {
                     workQueue: signalingBackend.workQueue
                 }
             });
-            onTestFinished(() => runtime.wsQBoxServerService.dispose());
+            installRtcSignalingWsTopic(runtime.wsQBoxServerService, undefined, Date.now);
+            runtime.qboxEngine.start();
+            onTestFinished(() => {
+                runtime.wsQBoxServerService.dispose();
+                runtime.qboxEngine.stop();
+            });
             const valid = signalingMessage();
             const invalid = invalidMessage(valid, corruption);
 
@@ -103,6 +113,7 @@ function signalingMessage(): ALMessage {
         sessionId: 'sender',
         token: 'fixture-ticket',
         signalType: 'Offer',
+        offerId: 'offer-1',
         payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null }
     });
 }

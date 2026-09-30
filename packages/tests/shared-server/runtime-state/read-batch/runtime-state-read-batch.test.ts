@@ -3,7 +3,10 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { type RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
 import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createPrefixSuffixReadBatchFixture } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../test-support/fake-runtime-state-repository.ts';
 
 const ENTRY = {
     key: 'app=app:ws=workspace:group=room',
@@ -24,6 +27,14 @@ const SELECTORS = [{
     namespace: 'group-state:members',
     keyPrefix: `${ENTRY.key}:`
 }] as const satisfies readonly RuntimeStateReadBatchSelector[];
+
+const PRINCIPAL_MEMBERS = {
+    selectorId: 'principal-members',
+    kind: 'prefix-suffix',
+    namespace: 'group-state:members',
+    keyPrefix: 'app=app:ws=workspace:',
+    keySuffix: ':member=alice'
+} as const satisfies RuntimeStateReadBatchSelector;
 
 describe('runtime-state read batches', () => {
     it('accepts dense mandatory key and prefix selectors with caller-ordered results', () => {
@@ -56,6 +67,58 @@ describe('runtime-state read batches', () => {
         expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
             /runtime state read batch/iu
         );
+    });
+
+    it('accepts a prefix-suffix selector with exactly its declared fields', () => {
+        expect(validateRuntimeStateReadBatchSelectors([PRINCIPAL_MEMBERS])).toEqual([
+            PRINCIPAL_MEMBERS
+        ]);
+    });
+
+    it.each([
+        ['empty prefix-suffix prefix', [{ ...PRINCIPAL_MEMBERS, keyPrefix: '' }]],
+        ['empty prefix-suffix suffix', [{ ...PRINCIPAL_MEMBERS, keySuffix: '' }]],
+        ['prefix-suffix without a suffix', [{ ...SELECTORS[1], kind: 'prefix-suffix' }]],
+        ['prefix selector carrying a suffix', [{ ...SELECTORS[1], keySuffix: ':member=alice' }]],
+        ['prefix-suffix selector carrying an exact key', [{ ...PRINCIPAL_MEMBERS, key: ENTRY.key }]]
+    ])('rejects %s', (_label, input) => {
+        expect(() => validateRuntimeStateReadBatchSelectors(input)).toThrow(
+            /runtime state read batch/iu
+        );
+    });
+
+    it.each([
+        ['outside the prefix', 'app=app:ws=other:group=room:member=alice'],
+        ['without the literal suffix', 'app=app:ws=workspace:group=room:member=alicex'],
+        ['whose prefix and suffix overlap', 'app=app:ws=workspace:member=alice']
+    ])('rejects a prefix-suffix result entry %s', (_label, key) => {
+        expect(() =>
+            validateRuntimeStateReadBatchResult([PRINCIPAL_MEMBERS], [{
+                selectorId: 'principal-members',
+                entries: [{ ...ENTRY, key }]
+            }])
+        ).toThrow(/does not match prefix-suffix/iu);
+    });
+
+    it('selects literal prefix-suffix matches in memory in caller order and UTF-8 key order', async () => {
+        const namespace = 'read-batch-memory';
+        const fixture = createPrefixSuffixReadBatchFixture(namespace);
+        const repository = new FakeRuntimeStateRepository();
+        for (const [index, entry] of fixture.entries.entries()) {
+            await repository.upsert(
+                entry.namespace,
+                entry.key,
+                `value-${index}`,
+                ENTRY.expireAtTimestamp
+            );
+        }
+
+        const selections = await repository.readRuntimeStateBatch(fixture.selectors);
+
+        expect(selections.map((selection) => ({
+            selectorId: selection.selectorId,
+            keys: selection.entries.map((entry) => entry.key)
+        }))).toEqual(fixture.expectedSelections);
     });
 
     it('rejects sparse selectors and sparse or mismatched results', () => {
@@ -146,29 +209,33 @@ describe('runtime-state read batches', () => {
     });
 
     it('uses one fixed parameterized SELECT and returns one packed driver row', async () => {
+        const memberEntry = { ...ENTRY, key: 'app=app:ws=workspace:group=room:member=alice' };
         const captured: CapturedQuery[] = [];
         const sql = captureSql(captured, [{
             selections: [{
                 selectorId: 'group',
-                entries: [{
-                    ...ENTRY,
-                    expireAtTimestamp: String(ENTRY.expireAtTimestamp),
-                    revision: String(ENTRY.revision)
-                }]
+                entries: [toDriverEntry(ENTRY)]
             }, {
                 selectorId: 'members',
                 entries: []
+            }, {
+                selectorId: 'principal-members',
+                entries: [toDriverEntry(memberEntry)]
             }]
         }]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        await expect(repository.readRuntimeStateBatch(SELECTORS)).resolves.toEqual([{
-            selectorId: 'group',
-            entries: [ENTRY]
-        }, {
-            selectorId: 'members',
-            entries: []
-        }]);
+        await expect(repository.readRuntimeStateBatch([...SELECTORS, PRINCIPAL_MEMBERS])).resolves
+            .toEqual([{
+                selectorId: 'group',
+                entries: [ENTRY]
+            }, {
+                selectorId: 'members',
+                entries: []
+            }, {
+                selectorId: 'principal-members',
+                entries: [memberEntry]
+            }]);
 
         expect(captured).toHaveLength(1);
         const [query] = captured;
@@ -178,9 +245,23 @@ describe('runtime-state read batches', () => {
         expect(query.source).toMatch(/store_key\s*=\s*/iu);
         expect(query.source).toMatch(/store_key collate "C"\s*>=/iu);
         expect(query.source).toMatch(/store_key collate "C"\s*</iu);
+        expect(query.source).toContain(
+            'right(suffix_entry.store_key, char_length(selector.key_suffix)) collate "C" = selector.key_suffix'
+        );
+        expect(query.source).toContain(
+            'char_length(suffix_entry.store_key) >= char_length(selector.key_prefix) + char_length(selector.key_suffix)'
+        );
+        expect(query.source).not.toMatch(/\blike\b|\bsimilar\b|~/iu);
         expect(query.source).toMatch(/jsonb_agg/iu);
         expect(query.source).not.toMatch(/for\s+update|pg_advisory|lock\s+table/iu);
-        for (const secret of [ENTRY.key, 'group-state:groups', 'group-state:members']) {
+        for (
+            const secret of [
+                ENTRY.key,
+                'group-state:groups',
+                'group-state:members',
+                ':member=alice'
+            ]
+        ) {
             expect(query.source).not.toContain(secret);
         }
         expect(query.values).toEqual([[
@@ -190,6 +271,7 @@ describe('runtime-state read batches', () => {
                 namespace: 'group-state:groups',
                 key: ENTRY.key,
                 keyPrefix: null,
+                keySuffix: null,
                 prefixEnd: null
             },
             {
@@ -198,11 +280,29 @@ describe('runtime-state read batches', () => {
                 namespace: 'group-state:members',
                 key: null,
                 keyPrefix: `${ENTRY.key}:`,
+                keySuffix: null,
                 prefixEnd: `${ENTRY.key};`
+            },
+            {
+                selectorId: 'principal-members',
+                kind: 'prefix-suffix',
+                namespace: 'group-state:members',
+                key: null,
+                keyPrefix: 'app=app:ws=workspace:',
+                keySuffix: ':member=alice',
+                prefixEnd: 'app=app:ws=workspace;'
             }
         ]]);
     });
 });
+
+function toDriverEntry(entry: RuntimeStateEntry): PSqlRows[number] {
+    return {
+        ...entry,
+        expireAtTimestamp: String(entry.expireAtTimestamp),
+        revision: String(entry.revision)
+    };
+}
 
 type CapturedQuery = Readonly<{
     source: string;

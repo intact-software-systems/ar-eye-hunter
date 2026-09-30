@@ -231,6 +231,10 @@ async function createRelayFixture(
     const server = createDefaultWsQueueBoxServerService({
         outbox: new InMemoryQueueBox(new Map()),
         socket: socketServer,
+        readAuthenticatedConnectionScope: (connection) =>
+            socketServer.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'server-1',
         queueEngine: engine,
         forwardsRoomScopedMessages: false,

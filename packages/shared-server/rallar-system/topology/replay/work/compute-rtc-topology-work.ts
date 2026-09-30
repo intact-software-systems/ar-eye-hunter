@@ -107,7 +107,7 @@ export async function computeRtcTopologyWork(
     const accepted = await computeAcceptedRtcTopologyWork(input);
     return {
         accepted,
-        write: computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted))
+        write: await computeRtcTopologyWorkWrite(toRtcTopologyWorkWriteInput(input, accepted))
     };
 }
 

@@ -451,7 +451,8 @@
             "urlEncode": {
               "path": "outputs.betaWsTicket"
             }
-          }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
         ]
       },
       "secret": true,

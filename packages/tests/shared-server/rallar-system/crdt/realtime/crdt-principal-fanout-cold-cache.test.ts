@@ -41,6 +41,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         configureTestCacheRepositories();
         const repository = createTestClientStateRepository(new FakeRuntimeStateRepository());
         const snapshot = clientSnapshot();
+        const scope = { applicationId: snapshot.principal.applicationId, workspaceId: snapshot.principal.workspaceId };
         await putSnapshot(repository, snapshot);
         const cache = createClientStateSnapshotReadThroughCache({
             clientsRepository: repository,
@@ -51,13 +52,27 @@ describe('CRDT principal fanout from a cold cache', () => {
         for (const id of ['alice', 'session-a', 'session-b']) {
             const sent: string[] = [];
             sockets.set(id, sent);
-            webSocketServer.addConnection(new ConnectionContext({ id, socket: new RecordingWebSocket(sent) }));
+            webSocketServer.addConnection(
+                new ConnectionContext({
+                    id,
+                    socket: new RecordingWebSocket(sent),
+                    generationId: snapshot.activeSessions.find((session) => session.sessionId === id)?.generationId
+                })
+            );
         }
         const queue = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
             outbox: queue,
             socket: webSocketServer,
             name: 'server-1',
+            readAuthenticatedConnectionScope: (connection) => {
+                const session = snapshot.activeSessions.find((candidate) =>
+                    candidate.sessionId === connection.id && candidate.generationId === connection.generationId
+                );
+                return session && webSocketServer.connections.get(connection.id) === connection
+                    ? { scope: { applicationId: session.applicationId, workspaceId: session.workspaceId }, expiresAtEpochMs: session.expiresAtEpochMs }
+                    : undefined;
+            },
             targetResolver: createWsServerTargetResolver(webSocketServer, {
                 findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(cache, ref),
                 now: () => NOW
@@ -66,7 +81,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         onTestFinished(() => service.dispose());
         const message = principalMessage();
 
-        expect(service.sendToTargetsWithResult(message).sentCount).toBe(0);
+        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).sentCount).toBe(0);
         expect(sockets.get('alice')).toEqual([]);
 
         await cache.findOrLoadByRef({
@@ -75,13 +90,20 @@ describe('CRDT principal fanout from a cold cache', () => {
             principalId: 'alice'
         });
 
-        expect(service.sendToTargetsWithResult(message).recipients).toEqual([
+        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).recipients).toEqual([
             { peerId: 'session-a', connectionId: 'session-a' },
             { peerId: 'session-b', connectionId: 'session-b' }
         ]);
         expect(sockets.get('alice')).toEqual([]);
         expect(sockets.get('session-a')).toHaveLength(1);
         expect(sockets.get('session-b')).toHaveLength(1);
+
+        const replacementSends: string[] = [];
+        webSocketServer.addConnection(new ConnectionContext({ id: 'session-a', socket: new RecordingWebSocket(replacementSends) }));
+        expect(service.sendToTargetsWithResult({ message, inboundScope: scope }).recipients).toEqual([
+            { peerId: 'session-b', connectionId: 'session-b' }
+        ]);
+        expect(replacementSends).toEqual([]);
     });
 });
 

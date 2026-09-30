@@ -213,7 +213,11 @@ Deno.test('transformed proxy targets never inherit the source room authoritative
         });
         const message = roomMessage();
 
-        await harness.router.route(message);
+        await harness.router.route(message, {
+            kind: 'ws-client',
+            peerId: 'alice',
+            authenticatedScope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }
+        });
 
         assert.deepEqual(sourceFrames, []);
         assert.deepEqual(proxyFrames, [JSON.stringify({ ...message, targets: { mode: 'unicast', toPeerId: 'outsider' } })]);
@@ -382,6 +386,10 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     const service = createDefaultWsQueueBoxServerService({
         outbox,
         socket: server,
+        readAuthenticatedConnectionScope: (connection) =>
+            server.connections.get(connection.id) === connection
+                ? { scope: { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId }, expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                : undefined,
         name: 'room-authority-delivery',
         forwardsRoomScopedMessages: false,
         targetResolver: createWsServerTargetResolver(server, { findGroupSnapshotByRef: () => state.cached })

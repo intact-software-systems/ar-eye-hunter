@@ -432,7 +432,8 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
-          }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
         ]
       }
     },
@@ -487,7 +488,8 @@
             "urlEncode": {
               "path": "outputs.bobWsTicket"
             }
-          }
+          },
+          "&applicationId={applicationId}&workspaceId={workspaceId}"
         ]
       }
     },

@@ -51,25 +51,50 @@ const lifecycleActor = {
 
 function expectInvalidLifecycleCommands(): void {
     const invalidCommands = [
-        invalidSessionCommand(lifecycleBase, lifecycleActor, 'connectSession', {
-            authenticatedAtEpochMs: 1_001,
-            connectedAtEpochMs: 1_000
+        invalidSessionCommand({
+            base: lifecycleBase,
+            actor: lifecycleActor,
+            operation: 'connectSession',
+            override: {
+                authenticatedAtEpochMs: 1_001,
+                connectedAtEpochMs: 1_000
+            }
         }),
-        invalidSessionCommand(lifecycleBase, lifecycleActor, 'connectSession', {
-            connectedAtEpochMs: 1_001,
-            lastHeartbeatAtEpochMs: 1_000
+        invalidSessionCommand({
+            base: lifecycleBase,
+            actor: lifecycleActor,
+            operation: 'connectSession',
+            override: {
+                connectedAtEpochMs: 1_001,
+                lastHeartbeatAtEpochMs: 1_000
+            }
         }),
-        invalidSessionCommand(lifecycleBase, lifecycleActor, 'heartbeatSession', {
-            lastHeartbeatAtEpochMs: 2_001,
-            expiresAtEpochMs: 2_000
+        invalidSessionCommand({
+            base: lifecycleBase,
+            actor: lifecycleActor,
+            operation: 'heartbeatSession',
+            override: {
+                lastHeartbeatAtEpochMs: 2_001,
+                expiresAtEpochMs: 2_000
+            }
         }),
-        invalidSessionCommand(lifecycleBase, lifecycleActor, 'disconnectSession', {
-            disconnectedAtEpochMs: 999,
-            lastHeartbeatAtEpochMs: 1_000
+        invalidSessionCommand({
+            base: lifecycleBase,
+            actor: lifecycleActor,
+            operation: 'disconnectSession',
+            override: {
+                disconnectedAtEpochMs: 999,
+                lastHeartbeatAtEpochMs: 1_000
+            }
         }),
-        invalidSessionCommand(lifecycleBase, lifecycleActor, 'expireSession', {
-            observedExpiresAtEpochMs: 2_001,
-            expiresAtEpochMs: 2_000
+        invalidSessionCommand({
+            base: lifecycleBase,
+            actor: lifecycleActor,
+            operation: 'expireSession',
+            override: {
+                observedExpiresAtEpochMs: 2_001,
+                expiresAtEpochMs: 2_000
+            }
         })
     ];
     for (const command of invalidCommands) {
@@ -111,7 +136,10 @@ function expectCorruptReadAndComputedRejection(): void {
                 session: storedEntry(corruptSession) as never,
                 expiredSessionEntry: null,
                 snapshot: computed.snapshot,
-                receiptEvent: null
+                receiptEvent: null,
+                audienceObservedAtEpochMs: 1_000,
+                audienceGroupSnapshots: [],
+                audienceClientSnapshots: []
             }
         })
     ).toThrow(ClientMutationRejectedError);
@@ -197,21 +225,21 @@ async function expectCorruptStoredSessionRejection(): Promise<void> {
 }
 
 function validConnectCommand(): ClientMutationCommand {
-    return invalidSessionCommand(
-        { ...lifecycleBase, commandId: 'valid-connect', requestId: 'valid-connect' },
-        lifecycleActor,
-        'connectSession',
-        {}
-    ) as ClientMutationCommand;
+    return invalidSessionCommand({
+        base: { ...lifecycleBase, commandId: 'valid-connect', requestId: 'valid-connect' },
+        actor: lifecycleActor,
+        operation: 'connectSession',
+        override: {}
+    }) as ClientMutationCommand;
 }
 
 function heartbeatCorruptCommand(): ClientMutationCommand {
-    return invalidSessionCommand(
-        { ...lifecycleBase, commandId: 'heartbeat-corrupt', requestId: 'heartbeat-corrupt' },
-        lifecycleActor,
-        'heartbeatSession',
-        {}
-    ) as ClientMutationCommand;
+    return invalidSessionCommand({
+        base: { ...lifecycleBase, commandId: 'heartbeat-corrupt', requestId: 'heartbeat-corrupt' },
+        actor: lifecycleActor,
+        operation: 'heartbeatSession',
+        override: {}
+    }) as ClientMutationCommand;
 }
 
 function storedEntry<Value>(value: Value): RuntimeStateEntryValue<Value> {

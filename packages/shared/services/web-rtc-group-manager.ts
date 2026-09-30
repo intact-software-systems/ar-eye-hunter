@@ -17,7 +17,7 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
-import type { QRtcPeerDto, WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
 import {
@@ -37,7 +37,11 @@ import {
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
-import { WebRtcOutboundDialing, type OutboundDialsStarted } from './webrtc-outbound-dialing.ts';
+import {
+    disconnectUnansweredRetainedDials,
+    WebRtcOutboundDialing,
+    type OutboundDialsStarted
+} from './webrtc-outbound-dialing.ts';
 
 export type {
     WebRtcGroupManagerDeleteOptions,
@@ -143,7 +147,7 @@ export class WebRtcGroupManager {
         this.waitingDialCount = 0;
     }
 
-    private observePeerLanes(peer: QRtcPeerDto): void {
+    private observePeerLanes(peer: WebRtcConnectionService.Peer): void {
         for (const channel of peer.channels.values()) {
             channel.onRtcCallbacksDo(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID, {
                 onClose: async () => {
@@ -155,7 +159,7 @@ export class WebRtcGroupManager {
         }
     }
 
-    private stopObservingPeerLanes(peer: QRtcPeerDto): void {
+    private stopObservingPeerLanes(peer: WebRtcConnectionService.Peer): void {
         for (const channel of peer.channels.values()) {
             channel.removeRtcCallbackById(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID);
         }
@@ -439,10 +443,10 @@ export class WebRtcGroupManager {
         this.diagnostics.reconcileRunCount += 1;
         const ownership = this.readPeerOwnership();
         const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
+        this.removeRetainedDesiredPeers(desiredPeerIds);
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
-        this.removeRetainedDesiredPeers(desiredPeerIds);
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
         const dialPlan = computeOutboundDialPlan({
@@ -780,6 +784,11 @@ export class WebRtcGroupManager {
     }
 
     private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>): void {
+        disconnectUnansweredRetainedDials({
+            desiredPeerIds,
+            retainedPeerConnections: this.retainedPeerConnections,
+            rtcQBox: this.rtcQBox
+        });
         for (const peerId of desiredPeerIds) {
             this.retainedPeerConnections.delete(peerId);
         }

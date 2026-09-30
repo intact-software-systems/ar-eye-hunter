@@ -15,13 +15,15 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
-import { EntityStatus, NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
+
+import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
 
 interface ReadMessageWorkInput {
     readonly namespace: string;
@@ -30,6 +32,17 @@ interface ReadMessageWorkInput {
     readonly msgId: string;
     readonly seq: number;
 }
+
+interface OrderedRestartFixture {
+    readonly runtime: ALInboundMessageRuntime;
+    readonly engine: InboxOutboxEngine;
+}
+
+const SCOPED_WS_SOURCE = {
+    kind: 'ws-client' as const,
+    peerId: 'sender',
+    authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+};
 
 it('terminalizes a malformed reservation without starving independent timeout recovery', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -60,7 +73,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.admitIncomingMessage({ ...message(sequence), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), ordering: undefined }, SCOPED_WS_SOURCE);
     }
     const queue = resources.workQueue;
     const keys = await queue.getAllKeys();
@@ -124,7 +137,7 @@ it('retries durable local delivery after restart with a single admission work ow
         });
     const first = createRuntime();
     onTestFinished(() => first.dispose());
-    const incoming: ALMessage = { ...message(1), ordering: undefined, qos: { durability: { algo: 'local-inbox' } } };
+    const incoming: ALMessage = { ...createOrderedMessage(1), ordering: undefined, qos: { durability: { algo: 'local-inbox' } } };
 
     await first.admitIncomingMessage(incoming, { kind: 'rtc-peer', peerId: 'sender' });
 
@@ -185,7 +198,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
             });
         const initial = createRuntime();
         onTestFinished(() => initial.dispose());
-        await initial.admitIncomingMessage({ ...message(1), ordering: undefined }, { kind: 'ws-client', peerId: 'sender' });
+        await initial.admitIncomingMessage({ ...createOrderedMessage(1), ordering: undefined }, SCOPED_WS_SOURCE);
         await expect.poll(() => deliveries).toEqual(['message-1']);
         const keys = await resources.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
@@ -217,15 +230,17 @@ it.each([
     { toPeerId: 'next-hop', readDelayMs: 1_000, delivered: [] },
     { toPeerId: 'next-hop', readDelayMs: 1_001, delivered: [] }
 ])('enforces the message deadline for $toPeerId after $readDelayMs ms inside the claim window', async ({ toPeerId, readDelayMs, delivered }) => {
-    vi.useFakeTimers({ toFake: ['Date'] });
+    let nowMs = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
     onTestFinished(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
     });
-    const admittedAt = Date.now();
+    const admittedAt = nowMs;
+    const engine = new InboxOutboxEngine();
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
-        queueEngine: new InboxOutboxEngine(),
+        queueEngine: engine,
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox')
     });
     const reserve = resources.workQueue.reserveEntries.bind(resources.workQueue);
@@ -234,7 +249,7 @@ it.each([
         if (claimed.size > 0) {
             // The eligibility read cleared this row before the claim; of everything it decided, only
             // the message's deadline is decided again, against the clock this moves.
-            vi.setSystemTime(admittedAt + readDelayMs);
+            nowMs = admittedAt + readDelayMs;
         }
         return claimed;
     });
@@ -247,29 +262,31 @@ it.each([
         dispatchInboxEntry: async (entry) => {
             deliveries.push(`local:${decodePersistedALMessage(entry.resource).id.msgId}`);
         },
-        forwardMessage: async (incoming) => {
-            deliveries.push(`forward:${incoming.id.msgId}`);
+        forwardMessage: async ({ msg }) => {
+            deliveries.push(`forward:${msg.id.msgId}`);
         },
         sendControlMessages: async () => {},
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
     const incoming: ALMessage = {
-        ...message(1),
+        ...createOrderedMessage(1),
         ordering: undefined,
         targets: { mode: 'unicast', toPeerId },
         constraints: { expiresAtMs: admittedAt + 1_000 }
     };
 
-    await runtime.admitIncomingMessage(incoming, { kind: 'ws-client', peerId: 'sender' });
+    await runtime.admitIncomingMessage(incoming, SCOPED_WS_SOURCE);
 
-    await waitForSettledWork(resources.workQueue);
+    await waitForSettledALInboundWork(resources.workQueue);
     expect(deliveries).toEqual(delivered);
     expect(incoming.constraints?.expiresAtMs).toBe(admittedAt + 1_000);
 });
 
 it('retains predecessor completion through the longest admitted deadline across restart', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
+    let nowMs = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    vi.spyOn(Temporal.Now, 'instant').mockImplementation(() => Temporal.Instant.fromEpochMilliseconds(nowMs));
     onTestFinished(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
@@ -306,14 +323,18 @@ it('retains predecessor completion through the longest admitted deadline across 
         });
     const initial = createRuntime();
     onTestFinished(() => initial.dispose());
-    await initial.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
-    await expect.poll(() => delivered).toEqual(['message-1']);
+    await initial.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' });
+    await waitForSettledALInboundWork(state.workQueue);
+    expect(delivered).toEqual(['message-1']);
     const paused = vi.spyOn(state.workQueue, 'reserveEntries').mockResolvedValue(new Map());
-    await initial.admitIncomingMessage({ ...message(2), constraints: { expiresAtMs: admittedAt + 10_000 } }, { kind: 'rtc-peer', peerId: 'sender' });
-    await initial.admitIncomingMessage(message(3), { kind: 'rtc-peer', peerId: 'sender' });
+    await initial.admitIncomingMessage({ ...createOrderedMessage(2), constraints: { expiresAtMs: admittedAt + 10_000 } }, {
+        kind: 'rtc-peer',
+        peerId: 'sender'
+    });
+    await initial.admitIncomingMessage(createOrderedMessage(3), { kind: 'rtc-peer', peerId: 'sender' });
     initial.dispose();
     paused.mockRestore();
-    vi.setSystemTime(admittedAt + 1_000);
+    nowMs = admittedAt + 1_000;
     const resumed = createRuntime();
     onTestFinished(() => resumed.dispose());
     await resumed.ready();
@@ -321,12 +342,12 @@ it('retains predecessor completion through the longest admitted deadline across 
         await engine.executeOnce();
         return delivered;
     }).toEqual(['message-1', 'message-2']);
-    expect(await store.readOrderedDelivery(toALOrderingTrackKey(message(2))!, 3)).toEqual({
+    expect(await store.readOrderedDelivery(toALOrderingTrackKey(createOrderedMessage(2))!, 3)).toEqual({
         completedThrough: 2,
         predecessor: undefined
     });
-    vi.setSystemTime(admittedAt + 10_001);
-    expect((await store.readOrderedDelivery(toALOrderingTrackKey(message(2))!, 3)).completedThrough).toBe(0);
+    nowMs = admittedAt + 10_001;
+    expect((await store.readOrderedDelivery(toALOrderingTrackKey(createOrderedMessage(2))!, 3)).completedThrough).toBe(0);
 });
 
 it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct lost ordering evidence %s', async (loss) => {
@@ -340,7 +361,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
         retention: normalizeALRuntimeStoreRetention({ durableEffectTtlMs: 500 })
     });
     const engine = new InboxOutboxEngine();
-    const trackKey = toALOrderingTrackKey(message(1))!;
+    const trackKey = toALOrderingTrackKey(createOrderedMessage(1))!;
     const progressKey = `${store.namespace}:delivered:${trackKey}`;
     let available = false;
     const delivered: string[] = [];
@@ -367,10 +388,7 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
     });
     onTestFinished(() => runtime.dispose());
     for (const sequence of [1, 2]) {
-        await runtime.admitIncomingMessage({ ...message(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, {
-            kind: 'ws-client',
-            peerId: 'sender'
-        });
+        await runtime.admitIncomingMessage({ ...createOrderedMessage(sequence), constraints: { expiresAtMs: Date.now() + 10_000 } }, SCOPED_WS_SOURCE);
     }
     if (loss === 'before-delivery') {
         await backend.write(async (tx) => await tx.remove(progressKey));
@@ -440,9 +458,9 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
-    const second: ALMessage = { ...message(2), qos: { durability: { algo: durability } } };
+    const second: ALMessage = { ...createOrderedMessage(2), qos: { durability: { algo: durability } } };
     await runtime.admitIncomingMessage(second, { kind: 'rtc-peer', peerId: 'sender' });
-    const admittedFirst = runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
+    const admittedFirst = runtime.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' });
     const trackKey = toALOrderingTrackKey(second)!;
     await failedAttemptReleased.promise;
     const work = await readMessageWork({ namespace: store.namespace, backend, trackKey, msgId: second.id.msgId, seq: 2 });
@@ -513,7 +531,7 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
-        await runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' });
+        await runtime.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' });
         const keys = await backend.workQueue.getAllKeys();
         expect(keys).toHaveLength(1);
         const predecessor = (await backend.workQueue.getItem(keys[0]))!;
@@ -541,8 +559,8 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
             }).toBe(EntityStatus.NON_RETRYABLE);
         }
         available = true;
-        await runtime.admitIncomingMessage(message(2), { kind: 'rtc-peer', peerId: 'sender' });
-        const independent = { ...message(3), ordering: undefined };
+        await runtime.admitIncomingMessage(createOrderedMessage(2), { kind: 'rtc-peer', peerId: 'sender' });
+        const independent = { ...createOrderedMessage(3), ordering: undefined };
         await runtime.admitIncomingMessage(independent, { kind: 'rtc-peer', peerId: 'sender' });
         await expect.poll(async () => {
             await engine.executeOnce();
@@ -575,7 +593,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     });
     const delivered: number[] = [];
     let unavailable = true;
-    const createRuntime = () => {
+    const createRuntime = (): OrderedRestartFixture => {
         const engine = new InboxOutboxEngine();
         const runtime = new ALInboundMessageRuntime({
             carrier: 'rtc',
@@ -606,10 +624,10 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
     };
     const first = createRuntime();
     for (let sequence = 2; sequence <= 256; sequence++) {
-        expect((await first.runtime.admitIncomingMessage(message(sequence), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
+        expect((await first.runtime.admitIncomingMessage(createOrderedMessage(sequence), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
             .toBe('admitted');
     }
-    expect((await first.runtime.admitIncomingMessage(message(1), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
+    expect((await first.runtime.admitIncomingMessage(createOrderedMessage(1), { kind: 'rtc-peer', peerId: 'sender' })).right?.kind)
         .toBe('admitted');
 
     for (let cycle = 0; cycle < 30; cycle++) {
@@ -638,27 +656,17 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
         return [...delivered];
     }, { timeout: 30_000, interval: 5 }).toEqual(Array.from({ length: 256 }, (_, index) => index + 1));
     await expect.poll(async () => {
-        return (await store.readOrderedDelivery(toALOrderingTrackKey(message(1))!, 257)).completedThrough;
+        return (await store.readOrderedDelivery(toALOrderingTrackKey(createOrderedMessage(1))!, 257)).completedThrough;
     }).toBe(256);
     restarted.runtime.dispose();
     backend.workQueue.cleanup();
 
     const afterCleanup = createRuntime();
-    await afterCleanup.runtime.admitIncomingMessage(message(257), { kind: 'rtc-peer', peerId: 'sender' });
+    await afterCleanup.runtime.admitIncomingMessage(createOrderedMessage(257), { kind: 'rtc-peer', peerId: 'sender' });
     await expect.poll(() => delivered).toEqual(Array.from({ length: 257 }, (_, index) => index + 1));
 }, 45_000);
 
-/** The worker no longer drains inside admission: wait for every retained row to reach a terminal status. */
-async function waitForSettledWork(workQueue: QueueBoxResourceEntryRepository): Promise<void> {
-    await expect.poll(async () => {
-        const entries = await Promise.all(
-            (await workQueue.getAllKeys()).map((key) => workQueue.getItem(key))
-        );
-        return entries.every((entry) => entry === undefined || !NOT_COMPLETED_RETRYABLE_STATUSES.has(entry.status));
-    }).toBe(true);
-}
-
-async function readMessageWork(input: ReadMessageWorkInput) {
+async function readMessageWork(input: ReadMessageWorkInput): Promise<ALPersistedInboundEffect[]> {
     const work = [];
     for (const key of await input.backend.workQueue.getAllKeys()) {
         const entry = await input.backend.workQueue.getItem(key);
@@ -677,7 +685,7 @@ async function readMessageWork(input: ReadMessageWorkInput) {
     return work;
 }
 
-function message(sequence: number): ALMessage {
+function createOrderedMessage(sequence: number): ALMessage {
     return {
         id: { v: 2, msgId: `message-${sequence}`, senderId: 'sender', ts: Date.now() },
         route: { topicId: 'ordered-chat', resourceId: `message-${sequence}`, contextId: 'room' },

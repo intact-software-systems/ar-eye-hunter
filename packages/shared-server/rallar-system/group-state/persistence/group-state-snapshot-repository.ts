@@ -44,6 +44,7 @@ import { decodeGroupStateMemberStorageKey } from './membership/group-membership-
 import { canonicalStoredSession, canonicalStoredSummary } from './presence/group-presence-repository.ts';
 import { decodeGroupStatePresenceSessionStorageKey } from './presence/group-presence-storage-keys.ts';
 import { readGroupStateAuthorityBatch } from './read-group-state-authority.ts';
+import { readGroupStateSnapshotsForPrincipal } from './read-group-state-snapshots-for-principal.ts';
 
 export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
@@ -84,6 +85,19 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
             })
         );
         return snapshots.filter((snapshot): snapshot is GroupSnapshot => snapshot !== undefined);
+    }
+
+    async listSnapshotsForPrincipal(
+        scope: GroupScope,
+        principalId: string
+    ): Promise<readonly GroupSnapshot[]> {
+        return await readGroupStateSnapshotsForPrincipal({
+            repository: this.repository,
+            scope,
+            principalId,
+            observedAtEpochMs: Date.now(),
+            readSnapshot: async (ref) => await this.readSnapshot(ref)
+        });
     }
 
     private async readScopeSnapshot(scope: GroupScope): Promise<GroupStateScopeSnapshotRead> {

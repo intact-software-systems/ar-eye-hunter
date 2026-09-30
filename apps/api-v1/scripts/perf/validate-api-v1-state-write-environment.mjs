@@ -1,5 +1,9 @@
 const PINNED_POSTGRES_IMAGE = 'postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
-const PINNED_POSTGRES_IMAGE_ID = 'sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
+// The pinned OCI index selects a different image configuration digest per CPU architecture.
+const PINNED_POSTGRES_IMAGE_IDS = {
+    amd64: 'sha256:c6199d53bd7eb16a9e9eab402cc677468b0b6ed584c2fff8f17e20dafbb43f36',
+    arm64: 'sha256:f961d097a9cedd37779baef1aab3fe87ef1c63b3b34d361f90a98ea5c9b77e56'
+};
 
 export const ENVIRONMENT_FIELDS = [
     'image_ref',
@@ -56,7 +60,6 @@ export const ENVIRONMENT_FIELDS = [
 
 const EXACT_VALUES = {
     image_ref: PINNED_POSTGRES_IMAGE,
-    image_id: PINNED_POSTGRES_IMAGE_ID,
     repo_digest: PINNED_POSTGRES_IMAGE,
     platform: 'linux',
     image_os: 'linux',
@@ -163,8 +166,15 @@ function validateRuntimeValues(record, errors) {
     if (!/^16\./.test(record.server_version ?? '')) {
         errors.push('environment record server_version must identify PostgreSQL 16');
     }
-    if (record.image_architecture !== record.host_architecture) {
+    const hostArchitecture = record.host_architecture === 'x64'
+        ? 'amd64'
+        : record.host_architecture;
+    if (record.image_architecture !== hostArchitecture) {
         errors.push('environment record image and host architectures must match');
+    }
+    const pinnedImageId = PINNED_POSTGRES_IMAGE_IDS[record.image_architecture];
+    if (pinnedImageId === undefined || record.image_id !== pinnedImageId) {
+        errors.push(`environment record image_id does not match the pinned ${record.image_architecture} image`);
     }
     for (const field of NONEMPTY_FIELDS) {
         if (typeof record[field] !== 'string' || record[field].length === 0) {

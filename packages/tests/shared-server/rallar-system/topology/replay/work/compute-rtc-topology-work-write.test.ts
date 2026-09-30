@@ -1,4 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { computeTopologyMutation } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
 import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
@@ -19,11 +25,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+
 import {
     createGroupRef,
     createPublication,
@@ -32,6 +34,33 @@ import {
 import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology complete write computation', () => {
+    it('rejects a changed persistence-ready publication proof before transaction entry', async () => {
+        const fixture = createCompleteWorkInput();
+        const input = {
+            ...fixture,
+            publicationExpireAtTimestamp: 10_000,
+            facts: { ...fixture.facts, workEnvelope: { ...fixture.facts.workEnvelope, data: { ...fixture.facts.workEnvelope.data, publish: true } } }
+        };
+        const computed = await computeRtcTopologyWork(input);
+        if (computed.write.kind !== 'transaction' || !computed.write.transaction.delivery) {
+            throw new Error('Expected publication delivery');
+        }
+        expect(computed.write.transaction.delivery.provenanceWrites).toHaveLength(1);
+        const altered = {
+            ...computed,
+            write: {
+                ...computed.write,
+                transaction: {
+                    ...computed.write.transaction,
+                    delivery: { ...computed.write.transaction.delivery, provenanceWrites: [] }
+                }
+            }
+        };
+        expect(await validateRtcTopologyWork(input, altered)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ path: expect.stringContaining('provenanceWrites') })
+        ]));
+    });
+
     it('recomputes the complete decision and persistence-ready write from explicit input', async () => {
         const input = createCompleteWorkInput();
         const computed = await computeRtcTopologyWork(input);
@@ -53,9 +82,9 @@ describe('RTC topology complete write computation', () => {
         await expect(computeRtcTopologyWork(input)).resolves.toEqual(computed);
     });
 
-    it('rejects a write whose precomputed promotion request was removed', () => {
+    it('rejects a write whose precomputed promotion request was removed', async () => {
         const input = createWriteInput();
-        const computed = computeRtcTopologyWorkWrite(input);
+        const computed = await computeRtcTopologyWorkWrite(input);
         if (computed.kind !== 'transaction' || computed.transaction.promotionWrite === null) {
             throw new Error('Expected a promotion transaction fixture');
         }
@@ -67,11 +96,11 @@ describe('RTC topology complete write computation', () => {
             }
         } as const;
 
-        expect(validateRtcTopologyWorkWrite(input, altered)).not.toEqual([]);
-        expect(computeRtcTopologyWorkWrite(input)).toEqual(computed);
+        expect(await validateRtcTopologyWorkWrite(input, altered)).not.toEqual([]);
+        expect(await computeRtcTopologyWorkWrite(input)).toEqual(computed);
     });
 
-    it('gives each coalesced source generation a distinct publication wake identity', () => {
+    it('gives each coalesced source generation a distinct publication wake identity', async () => {
         const firstInput = {
             ...createWriteInput(),
             sourceWorkId: 'rtc-topology:group-1:coalesced-work:1',
@@ -82,8 +111,8 @@ describe('RTC topology complete write computation', () => {
             sourceWorkId: 'rtc-topology:group-1:coalesced-work:2'
         };
 
-        const first = computeRtcTopologyWorkWrite(firstInput);
-        const second = computeRtcTopologyWorkWrite(secondInput);
+        const first = await computeRtcTopologyWorkWrite(firstInput);
+        const second = await computeRtcTopologyWorkWrite(secondInput);
         if (first.kind !== 'transaction' || second.kind !== 'transaction') {
             throw new Error('Expected topology transaction fixtures');
         }
@@ -95,7 +124,7 @@ describe('RTC topology complete write computation', () => {
         );
     });
 
-    it('gives each coalesced source generation a distinct promotion request identity', () => {
+    it('gives each coalesced source generation a distinct promotion request identity', async () => {
         const firstInput = {
             ...createWriteInput(),
             sourceWorkId: 'rtc-topology:group-1:coalesced-work:1'
@@ -105,8 +134,8 @@ describe('RTC topology complete write computation', () => {
             sourceWorkId: 'rtc-topology:group-1:coalesced-work:2'
         };
 
-        const first = computeRtcTopologyWorkWrite(firstInput);
-        const second = computeRtcTopologyWorkWrite(secondInput);
+        const first = await computeRtcTopologyWorkWrite(firstInput);
+        const second = await computeRtcTopologyWorkWrite(secondInput);
         if (
             first.kind !== 'transaction' ||
             second.kind !== 'transaction' ||
@@ -160,9 +189,9 @@ describe('RTC topology complete write computation', () => {
 
         const computed = computeRtcTopologyReplayWrite(input);
 
-        expect(() => validateRtcTopologyReplayWrite(input, computed)).toThrow(
-            'has a conflicting durable outbox'
-        );
+        expect(validateRtcTopologyReplayWrite(input, computed)).toEqual([
+            expect.objectContaining({ message: expect.stringContaining('has a conflicting durable outbox') })
+        ]);
     });
 });
 

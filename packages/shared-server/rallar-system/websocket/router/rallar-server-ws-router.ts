@@ -13,20 +13,28 @@ import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import {
     authorizeRallarServerWsIngress,
+    computeAdmittedRallarServerWsMessage,
+    computeRallarServerWsRetainedAudience,
     decodeRallarServerWsIngress,
     readRallarServerWsRoomId,
     readRallarServerWsRoomRef,
+    toRallarServerWsMessage,
     toRallarServerWsTopicMetadata
 } from './decode-rallar-server-ws-ingress.ts';
-import { publishRallarServerWsMessage } from './publish-rallar-server-ws-message.ts';
+import {
+    assertRallarServerWsPublishInput,
+    publishRallarServerWsMessage
+} from './publish-rallar-server-ws-message.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -34,6 +42,7 @@ import type {
     RallarServerWsMessageContext,
     RallarServerWsPayload,
     RallarServerWsProxyRule,
+    RallarServerWsPublishInputDto,
     RallarServerWsPublishResult,
     RallarServerWsRoomAudience,
     RallarServerWsRouterOptions,
@@ -42,7 +51,6 @@ import type {
 } from './rallar-server-ws-router-contracts.ts';
 import { readRallarServerWsStatus, type RallarServerWsStatus } from './rallar-server-ws-status.ts';
 import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.ts';
-import { readRallarServerWsPublishAudience } from './read-rallar-server-ws-publish-audience.ts';
 
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
@@ -71,6 +79,15 @@ export namespace RallarServerWsRouter {
         readonly current: RallarServerWsRoomAudience | undefined;
         readonly admittedPeerIds: readonly string[] | undefined;
     }
+
+    export interface PublishToFanoutInputDto {
+        readonly message: ALMessage;
+        readonly fanout: RallarServerWsFanout;
+        readonly audience?: PublishAudience;
+        readonly inboundScope?: StateScope | null;
+        readonly origin?: 'server' | 'proxy' | 'admitted';
+        readonly inbound?: LiveWsInboundReference;
+    }
 }
 
 export class RallarServerWsRouter {
@@ -82,6 +99,7 @@ export class RallarServerWsRouter {
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
     private readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
+    private readonly livePublication: RallarServerWsRouterOptions['livePublication'];
     private readonly service: WsQueueBoxServerService;
     private readonly nowEpochMs: () => number;
     /** The peer id the WS server answers as: the id clients address it by and its own publishes carry (D57, D58). */
@@ -102,6 +120,7 @@ export class RallarServerWsRouter {
         this.authorizeRoomMessage = options.authorizeRoomMessage;
         this.readServerPublishAudience = options.readServerPublishAudience;
         this.wakeOutbox = options.wakeOutbox;
+        this.livePublication = options.livePublication;
         this.nowEpochMs = options.nowEpochMs ?? Date.now;
     }
 
@@ -146,18 +165,14 @@ export class RallarServerWsRouter {
         return this.registry.addProxy(rule);
     }
 
-    async publish(
-        message: ALMessage,
-        fanout?: RallarServerWsFanout
-    ): Promise<RallarServerWsPublishResult> {
-        const selected = fanout ?? this.defaultFanout;
-        const frozen = await readRallarServerWsPublishAudience({
-            message,
-            fanout: selected,
-            serverPeerId: this.serverPeerId,
-            readRoomAudience: this.readServerPublishAudience
+    async publish(input: RallarServerWsPublishInputDto): Promise<RallarServerWsPublishResult> {
+        assertRallarServerWsPublishInput(input);
+        return await this.publishToFanout({
+            message: input.message,
+            fanout: input.fanout ?? this.defaultFanout,
+            inboundScope: input.scope,
+            origin: 'server'
         });
-        return await this.publishToFanout(message, selected, frozen);
     }
 
     status(): RallarServerWsStatus {
@@ -169,7 +184,8 @@ export class RallarServerWsRouter {
             return;
         }
         const admittedPeerIds = source?.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
-        const admitted = await this.readAuthorizedIngress(message, admittedPeerIds);
+        const inboundScope = source?.kind === 'ws-client' ? source.authenticatedScope : undefined;
+        const admitted = await this.readAuthorizedIngress(message, admittedPeerIds, inboundScope);
         if (admitted.left) {
             this.reject(message, admitted.left);
             return;
@@ -180,13 +196,23 @@ export class RallarServerWsRouter {
             message: serverMessage,
             context,
             defaultFanout: this.defaultFanout,
-            publish: async (targetMessage, fanout) => await this.publishToFanout(targetMessage, fanout)
+            publish: async (targetMessage, fanout) =>
+                await this.publishToFanout({ message: targetMessage, fanout, inboundScope, origin: 'proxy' })
         });
         // A unicast addressed to the server ends at its handlers: the server is its recipient (D57 as applied).
         if (!suppressDefaultFanout && !isALUnicastAddressedTo(message, this.serverPeerId)) {
-            await this.publishToFanout(message, ingress.definition?.fanout ?? this.defaultFanout, {
-                current: audience,
-                admittedPeerIds
+            await this.publishToFanout({
+                message,
+                fanout: ingress.definition?.fanout ?? this.defaultFanout,
+                audience: { current: audience, admittedPeerIds },
+                inboundScope,
+                origin: 'admitted',
+                inbound: source?.kind === 'ws-client'
+                    ? {
+                        namespace: this.service.getInboundNamespace(),
+                        reference: { senderId: message.id.senderId, msgId: message.id.msgId }
+                    }
+                    : undefined
             });
         }
     }
@@ -221,14 +247,15 @@ export class RallarServerWsRouter {
 
     private async readAuthorizedIngress(
         message: ALMessage,
-        groupRecipientPeerIds?: readonly string[]
+        groupRecipientPeerIds?: readonly string[],
+        inboundScope?: StateScope | null
     ): Promise<Either<RallarServerWsRouter.Rejection, RallarServerWsRouter.AuthorizedIngress>> {
         const decoded = this.decodeIngress(message);
         if (decoded.left) {
             return Either.ofLeft(decoded.left);
         }
         const ingress = decoded.right!;
-        const context = this.toMessageContext(ingress.definition, message);
+        const context = this.toMessageContext(ingress.definition, message, inboundScope);
         const authorization = await authorizeRallarServerWsIngress({
             message,
             definition: ingress.definition,
@@ -246,14 +273,7 @@ export class RallarServerWsRouter {
         if (topic.left) {
             return Either.ofLeft(topic.left);
         }
-        const audience = authorization.audience === undefined || groupRecipientPeerIds === undefined
-            ? authorization.audience
-            : {
-                ...authorization.audience,
-                sessions: authorization.audience.sessions.filter((session) =>
-                    groupRecipientPeerIds.includes(session.sessionId)
-                )
-            };
+        const audience = computeRallarServerWsRetainedAudience(authorization.audience, groupRecipientPeerIds);
         return Either.ofRight({ ingress, message: topic.right!, context, audience });
     }
 
@@ -334,27 +354,32 @@ export class RallarServerWsRouter {
         return Either.ofRight(serverMessage);
     }
 
-    private publishToFanout(
-        message: ALMessage,
-        fanout: RallarServerWsFanout,
-        audience?: RallarServerWsRouter.PublishAudience
+    private async publishToFanout(
+        input: RallarServerWsRouter.PublishToFanoutInputDto
     ): Promise<RallarServerWsPublishResult> {
-        return publishRallarServerWsMessage({
+        const { message, fanout, audience, inboundScope } = input;
+        return await publishRallarServerWsMessage({
             service: this.service,
             message,
             fanout,
             audience: audience?.current,
             admittedPeerIds: audience?.admittedPeerIds,
+            inboundScope,
             nowEpochMs: this.nowEpochMs(),
-            wakeOutbox: this.wakeOutbox
+            wakeOutbox: this.wakeOutbox,
+            livePublication: this.livePublication,
+            readServerPublishAudience: this.readServerPublishAudience,
+            inbound: input.inbound,
+            origin: input.origin,
+            authorizeRoomMessage: this.authorizeRoomMessage
         });
     }
 
     private toMessageContext(
         definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined,
-        message: ALMessage
+        message: ALMessage,
+        inboundScope?: StateScope | null
     ): RallarServerWsMessageContext {
-        const fanout = definition?.fanout ?? this.defaultFanout;
         return {
             service: this.service,
             definition: definition
@@ -363,16 +388,36 @@ export class RallarServerWsRouter {
             roomId: readRallarServerWsRoomId(message),
             roomRef: readRallarServerWsRoomRef(message),
             senderId: message.id.senderId,
-            proxy: {
-                toTargets: async (targetMessage, selectedFanout) =>
-                    await this.publishToFanout(targetMessage, selectedFanout ?? fanout),
-                toPeer: async (peerId, targetMessage, selectedFanout) =>
-                    await this.publishToFanout({
-                        ...targetMessage,
-                        targets: { mode: 'unicast', toPeerId: peerId }
-                    }, selectedFanout ?? fanout),
-                toRoom: async (roomRef, targetMessage, options) =>
-                    await this.publishToFanout({
+            authenticatedScope: inboundScope ?? undefined,
+            proxy: this.toMessageProxy(definition?.fanout ?? this.defaultFanout, inboundScope)
+        };
+    }
+
+    private toMessageProxy(
+        fanout: RallarServerWsFanout,
+        inboundScope: StateScope | null | undefined
+    ): RallarServerWsMessageContext['proxy'] {
+        return {
+            toTargets: async (targetMessage, selectedFanout) =>
+                await this.publishToFanout({
+                    message: targetMessage,
+                    fanout: selectedFanout ?? fanout,
+                    inboundScope,
+                    origin: 'proxy'
+                }),
+            toPeer: async (input) =>
+                await this.publishToFanout({
+                    message: {
+                        ...input.message,
+                        targets: { mode: 'unicast', toPeerId: input.peerId }
+                    },
+                    fanout: input.fanout ?? fanout,
+                    inboundScope: input.scope,
+                    origin: 'proxy'
+                }),
+            toRoom: async (roomRef, targetMessage, options) =>
+                await this.publishToFanout({
+                    message: {
                         ...targetMessage,
                         route: { ...targetMessage.route, contextId: roomRef.groupId },
                         targets: {
@@ -381,17 +426,25 @@ export class RallarServerWsRouter {
                             groupRef: roomRef,
                             exceptPeerIds: options?.exceptPeerIds
                         }
-                    }, options?.fanout ?? fanout),
-                toAll: async (targetMessage, options) =>
-                    await this.publishToFanout({
+                    },
+                    fanout: options?.fanout ?? fanout,
+                    inboundScope,
+                    origin: 'proxy'
+                }),
+            toAll: async (targetMessage, options) =>
+                await this.publishToFanout({
+                    message: {
                         ...targetMessage,
                         targets: {
                             mode: 'broadcast',
                             scope: 'all',
                             exceptPeerIds: options?.exceptPeerIds
                         }
-                    }, options?.fanout ?? fanout)
-            }
+                    },
+                    fanout: options?.fanout ?? fanout,
+                    inboundScope,
+                    origin: 'proxy'
+                })
         };
     }
 
@@ -448,23 +501,4 @@ export class RallarServerWsRouter {
             );
         }
     }
-}
-
-function toRallarServerWsMessage<T extends RallarServerWsPayload>(
-    payload: T,
-    raw: ALMessage,
-    receivedAtEpochMs: number
-): RallarServerWsMessage<T> {
-    return { payload, raw, receivedAtEpochMs };
-}
-
-/** Carries the retained admission deadline into handlers and downstream publications. */
-function computeAdmittedRallarServerWsMessage(message: ALMessage, expiresAtMs: number): ALMessage {
-    return {
-        ...message,
-        constraints: {
-            ...message.constraints,
-            expiresAtMs: Math.min(message.constraints?.expiresAtMs ?? expiresAtMs, expiresAtMs)
-        }
-    };
 }

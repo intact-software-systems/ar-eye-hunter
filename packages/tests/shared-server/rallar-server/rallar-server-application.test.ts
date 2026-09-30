@@ -31,6 +31,7 @@ describe('RallarServerApplication', () => {
     it('exposes direct owners and invokes each explicit application phase once', async () => {
         const events: string[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketServer(),
             name: 'server-1'

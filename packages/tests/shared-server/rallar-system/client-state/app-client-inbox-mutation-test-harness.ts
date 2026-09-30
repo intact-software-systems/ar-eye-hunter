@@ -200,13 +200,14 @@ export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntr
 export function createAutoAuthorizingClientStateService(
     runtimeRepository: FakeRuntimeStateRepository,
     database: AppInboxTestDatabase,
-    eventStore: ClientStateEventStore = database.clientEventStore
+    options: { readonly eventStore?: ClientStateEventStore; readonly nowMs?: () => number; } = {}
 ): ClientStateService {
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const durable = createClientStateService({
         runtimeRepository,
-        clientStateEventStore: eventStore,
-        serviceId: 'server-12345678'
+        clientStateEventStore: options.eventStore ?? database.clientEventStore,
+        serviceId: 'server-12345678',
+        nowMs: options.nowMs
     });
     return {
         ...durable,

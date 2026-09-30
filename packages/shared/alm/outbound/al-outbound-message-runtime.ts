@@ -1,9 +1,15 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../al-contracts/al-control.ts';
-import type { ALAckAlgo, ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type {
+    ALAckAlgo,
+    ALReceiptMode,
+    ALRepairAlgo,
+    ALSupersedenceAlgo
+} from '../../al-contracts/al-policy.ts';
+import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type {
@@ -19,6 +25,7 @@ import type {
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
+import type { ALSessionInvalidationAuthority } from './admission/al-session-invalidation-authority.ts';
 import type { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts';
 import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
@@ -34,6 +41,20 @@ export type {
 export type { ALOutboundCancelOutcome, ALOutboundHandOverOutcome } from './lane/al-outbound-send-controls.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
+
+/** Carrier-owned first-dequeue authority; a later stored admission always wins over this read. */
+export interface ALOutboundDequeueAuthority {
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
+    readonly admittedAudience: readonly string[] | undefined;
+    readonly recipientScope: StateScope | undefined;
+    readonly principalTargetId?: string;
+}
+
+/** Runs once per dequeue attempt before dispatch admission; failures return to the existing work owner. */
+export type ALOutboundDequeueAuthorityReader = (
+    message: ALMessage,
+    entry: ResourceEntry
+) => Promise<ALOutboundDequeueAuthority | undefined>;
 
 export interface ALOutboundSettledSendResult {
     readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
@@ -89,6 +110,11 @@ export interface ALOutboundSupersedenceTrackingPlan {
 export type ALOutboundRepairTrigger = 'ack-timeout' | 'nack' | 'repair';
 
 export interface ALOutboundRepairRequest {
+    readonly referenceKey?: Key;
+    readonly admittedAudience?: readonly string[];
+    readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
     readonly trigger: ALOutboundRepairTrigger;
     readonly repair: ALOutboundRepairTrackingPlan;
     readonly requestedByPeerId?: string;
@@ -97,7 +123,6 @@ export interface ALOutboundRepairRequest {
     readonly completedHopPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingSeqs: readonly number[];
-    readonly admittedAudience: readonly string[] | undefined;
 }
 
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
@@ -120,6 +145,11 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly persist: boolean;
     readonly preparedMessages: readonly TPrepared[];
     readonly ackTracking?: ALOutboundAckTrackingPlan;
+    /**
+     * Independent current-hop observations for planners whose default receipt policy may change on replay.
+     * Absent means the planner supplies only ackTracking; no extra topology observation is available.
+     */
+    readonly receiptNextHopPeerIds?: readonly string[];
     readonly retryTracking?: ALOutboundRetryTrackingPlan;
     readonly repairTracking?: ALOutboundRepairTrackingPlan;
     readonly supersedenceTracking?: ALOutboundSupersedenceTrackingPlan;
@@ -129,6 +159,9 @@ export interface ALOutboundDispatchPlan<TPrepared> {
      * hands it to its planners on every later plan. Absent when nothing admitted the message to an audience.
      */
     readonly admittedAudience?: readonly string[];
+    readonly recipientScope?: StateScope;
+    readonly principalTargetId?: string;
+    readonly sessionInvalidation?: ALSessionInvalidationAuthority;
 }
 
 export interface ALOutboundRuntimeStores<TPrepared> {
@@ -309,14 +342,16 @@ export namespace ALOutboundMessageRuntime {
         /** Which transport this owner drives; every settlement it states is stamped with it. */
         readonly carrier: ALDeliveryCarrier;
         readonly dequeue: DequeueSource;
+        /** Read before a retained admission replays (with its prepared copies) and before a dequeued message plans (with none). */
         readonly readPendingAdmissionAuthority?: (
             msg: ALMessage,
             preparedMessages: readonly TPrepared[]
         ) => Promise<PendingAdmissionAuthority>;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
-        readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<TPrepared>;
+        readonly planOutgoingMessage: ALOutboundPlanner<TPrepared>;
         readonly planDequeuedMessage: ALOutboundPlanner<TPrepared>;
+        readonly readDequeueAuthority?: ALOutboundDequeueAuthorityReader;
         readonly afterDequeueAdmission:
             | ((msg: ALMessage, entry: ResourceEntry) => void | Promise<void>)
             | undefined;
@@ -345,8 +380,8 @@ export namespace ALOutboundMessageRuntime {
  *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
  *   is computed once and handed to that lane's admission of the same message, so the admission never
  *   plans the message twice. The lane over the memory pair states no admission durable.
- * - A group whose members differ in durability commits as one group per lane: there is no
- *   cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
+ * - Members with different durability plans stay in one logical enqueue group but route to separate store lanes.
+ *   Each lane may commit its members together or individually; there is no cross-store atomicity.
  * - A control, a receipt and a retransmission go to the volatile lane when it owns the target
  *   message (a memory read), else to the durable lane.
  * - `cancel(msgId)` and `handOver(msgId)` are runtime-wide: one set of send controls serves both lanes.
@@ -480,7 +515,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return ALOutboundMessageRuntime.toEnqueueResult(computed, retransmission.msg);
     }
 
-    /** The messages of one sender admitted as one commit per lane, each planned once; one result per message, in order. */
+    /** One sender's logical group; each message is planned once, commits may split by lane or member, and results keep input order. */
     async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
@@ -540,7 +575,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
         let plan: ALOutboundDispatchPlan<TPrepared>;
         try {
-            plan = planOutgoingMessage(msg);
+            plan = planOutgoingMessage(msg, undefined);
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };
@@ -638,6 +673,8 @@ function toPlannedOnce<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     planner: ALOutboundPlanner<TPrepared>
 ): ALOutboundPlanner<TPrepared> {
-    return (msg, admittedAudience) =>
-        msg === planned && admittedAudience === undefined ? plan : planner(msg, admittedAudience);
+    return (msg, authority) =>
+        msg === planned && authority === undefined
+            ? plan
+            : planner(msg, authority);
 }

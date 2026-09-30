@@ -158,7 +158,7 @@ export class BrowserRallarMessageDispatch {
     private async admitCapturedMessage(
         delivery: BrowserRallarMessageDispatch.Delivery
     ): Promise<CapturedMessageAdmission> {
-        const { message, context, carrier } = delivery;
+        const { message, context } = delivery;
         const validated = decodeALMessageValue(message);
         const issue = delivery.payloadIssues[0];
         if (issue) {
@@ -178,7 +178,7 @@ export class BrowserRallarMessageDispatch {
             });
         }
         try {
-            return await writeCarrierOutboxAdmission(context, carrier, message);
+            return await writeCarrierOutboxAdmission(context, delivery, message);
         }
         catch (caught) {
             return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
@@ -196,14 +196,22 @@ function isCarrierOwnedVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
         verdict.kind === 'pending';
 }
 
+export interface CarrierOutboxLeg {
+    readonly carrier: ALDeliveryCarrier;
+    readonly canFallback: boolean;
+}
+
 /** One carrier's own outbound admission of an envelope: the call a first send and its fallback both make. */
 export async function writeCarrierOutboxAdmission(
     context: ApiMiddleware,
-    carrier: ALDeliveryCarrier,
+    leg: CarrierOutboxLeg,
     message: ALMessage
 ): Promise<ALOutboundEnqueueResult> {
-    return carrier === 'rtc'
-        ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message)
+    return leg.carrier === 'rtc'
+        ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(
+            message,
+            leg.canFallback ? 'hand-over' : 'hold'
+        )
         : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 

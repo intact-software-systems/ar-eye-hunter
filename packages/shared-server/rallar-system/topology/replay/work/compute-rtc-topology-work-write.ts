@@ -1,6 +1,7 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
@@ -13,11 +14,15 @@ import {
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
-import { assertRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import {
+    assertRtcTopologyPublicationOutbox,
+    computeRtcTopologyPublicationOutbox
+} from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyPlanningObservation } from '../../runtime/rtc-topology-metrics.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
 import {
     assertRtcTopologyDeliveryLogEntry,
+    computeRtcTopologyDeliveryAppend,
     RtcTopologyDeliveryCorruptionError
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import { computePublicationConnectTriggerRequests } from './group-connect-trigger-requests.ts';
@@ -120,9 +125,9 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly publisherStreamId: string | undefined;
 }
 
-export function computeRtcTopologyWorkWrite(
+export async function computeRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput
-): AcceptedRtcTopologyWorkWrite {
+): Promise<AcceptedRtcTopologyWorkWrite> {
     const { accepted, entry, reservationFinish } = input;
     if (
         accepted.decision === 'skipped-rtt-refinement' ||
@@ -159,7 +164,7 @@ export function computeRtcTopologyWorkWrite(
             }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),
             delivery: accepted.decision === 'accepted' && accepted.publication
-                ? computeRtcTopologyPublicationDeliveryWrite(
+                ? await computeRtcTopologyPublicationDeliveryWrite(
                     accepted.publication,
                     input.publisherStreamId
                 )
@@ -169,11 +174,11 @@ export function computeRtcTopologyWorkWrite(
     };
 }
 
-export function validateRtcTopologyWorkWrite(
+export async function validateRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput,
     computed: AcceptedRtcTopologyWorkWrite
-): ReturnType<typeof validateComputedProjection> {
-    return validateComputedProjection(computeRtcTopologyWorkWrite(input), computed, 'computed');
+): Promise<ReturnType<typeof validateComputedProjection>> {
+    return validateComputedProjection(await computeRtcTopologyWorkWrite(input), computed, 'computed');
 }
 
 export function computeRtcTopologyReplayWrite(
@@ -201,12 +206,18 @@ export function validateRtcTopologyReplayWrite(
     input: ComputeRtcTopologyReplayWriteInput,
     computed: ComputedRtcTopologyReplayWrite
 ): ReturnType<typeof validateComputedProjection> {
-    const expected = computeRtcTopologyReplayWrite(input);
-    validateRtcTopologyReplayRead(input, expected.loaded);
-    return validateComputedProjection(expected, computed, 'computed');
+    try {
+        const expected = computeRtcTopologyReplayWrite(input);
+        assertRtcTopologyReplayRead(input, expected.loaded);
+        return validateComputedProjection(expected, computed, 'computed');
+    }
+    catch (error) {
+        const cause = toError(error);
+        return [{ path: 'read', message: cause.message, cause }];
+    }
 }
 
-function validateRtcTopologyReplayRead(
+function assertRtcTopologyReplayRead(
     input: ComputeRtcTopologyReplayWriteInput,
     loaded: Extract<RtcTopologyMutationComputed, { outcome: 'loaded'; }>
 ): void {
@@ -224,10 +235,11 @@ function validateRtcTopologyReplayRead(
             `RTC topology publication ${loaded.publication.publicationId} has a conflicting durable outbox`
         );
     }
-    const expectedDelivery = computeRtcTopologyPublicationDeliveryWrite(
+    const expectedDelivery = input.publisherStreamId === undefined ? null : computeRtcTopologyDeliveryAppend(
+        input.publisherStreamId,
         loaded.publication,
-        input.publisherStreamId
-    ).deliveryAppend;
+        computeRtcTopologyPublicationOutbox(loaded.publication)
+    );
     if (expectedDelivery === null) {
         return;
     }
