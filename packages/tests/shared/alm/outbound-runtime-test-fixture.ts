@@ -7,6 +7,8 @@ import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundRuntimeDiagnosticsSink,
@@ -44,6 +46,7 @@ import {
     type ALWorkOutcome,
     type ALWorkQueuePort
 } from '@shared/alm/work/al-work-queue-port.ts';
+import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
@@ -411,4 +414,31 @@ export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMes
             carrier: 'ws'
         }
     );
+}
+
+export function createIndexedDbOutboundCountStores(
+    observer: IndexedDbOperationObserver,
+    name: string
+): ALOutboundRuntimeStores<OutboundTestPayload> {
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `${name}-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer
+    });
+    return {
+        admissionStore: createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: name,
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: name,
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue: backend.workQueue
+    };
 }

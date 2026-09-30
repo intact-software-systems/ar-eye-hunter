@@ -9,13 +9,10 @@ import {
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -52,10 +49,11 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import {
     createDefaultOutboundTestRuntime,
+    createIndexedDbOutboundCountStores,
     createOutboundMessage,
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -354,33 +352,6 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         runtime.dispose();
     });
 });
-
-function createIndexedDbOutboundCountStores(
-    observer: IndexedDbOperationObserver,
-    name: string
-): ALOutboundRuntimeStores<OutboundTestPayload> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName: `${name}-${crypto.randomUUID()}`,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer
-    });
-    return {
-        admissionStore: createALOutboundAdmissionStore({
-            nowMs: Date.now,
-            canonicalScope: name,
-            decodePrepared: decodeOutboundTestPayload,
-            namespace: name,
-            backend,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
-    };
-}
 
 describe('inbound work owner IndexedDB scan volume', () => {
     it('drains the dispatch-local row its rotation finds', async () => {
