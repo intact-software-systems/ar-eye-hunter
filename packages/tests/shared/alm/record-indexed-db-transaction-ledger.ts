@@ -31,11 +31,15 @@ export interface IndexedDbLedgerOperation extends IndexedDbOperation {
 export interface IndexedDbTransactionLedger {
     readonly transactions: readonly IndexedDbLedgerTransaction[];
     readonly operations: readonly IndexedDbLedgerOperation[];
+    /** The phase of every request issued on a transaction the ledger did not record. */
+    readonly droppedRequestPhases: readonly IndexedDbLedgerPhase[];
 }
 
 export interface IndexedDbLedgerTotals {
     readonly transactions: number;
     readonly requests: number;
+    /** Requests in these phases that no transaction row holds, so the request figure misses them. */
+    readonly droppedRequests: number;
     readonly byOwner: Readonly<Record<IndexedDbOperationOwner, number>>;
 }
 
@@ -59,6 +63,7 @@ interface LedgerState {
     readonly transactions: LedgerTransactionState[];
     readonly byTransaction: Map<IDBTransaction, LedgerTransactionState>;
     readonly operations: IndexedDbLedgerOperation[];
+    readonly droppedRequestPhases: IndexedDbLedgerPhase[];
     /** Operations observed before any request of theirs: the next request's transaction takes them. */
     pendingOperations: string[];
 }
@@ -102,6 +107,11 @@ const INDEX_REQUEST_METHODS = [
  * joins the newest transaction when that one is a readonly read no operation has joined yet, and
  * otherwise the transaction its next request is issued on. The join holds for a run with one chain of
  * work in flight; it only labels the table, and no count depends on it.
+ *
+ * Two kinds of request are not in a transaction's row. A request on a transaction the ledger never
+ * saw opened, such as the `versionchange` transaction of a database upgrade, is counted in
+ * `droppedRequests` so it cannot hide. A cursor's `continue` and `advance` steps are not patched and
+ * are not counted: only the store and index calls that start a read or a write are requests here.
  */
 export function recordIndexedDbTransactionLedger(): RecordedIndexedDbTransactionLedger {
     const state: LedgerState = {
@@ -109,6 +119,7 @@ export function recordIndexedDbTransactionLedger(): RecordedIndexedDbTransaction
         transactions: [],
         byTransaction: new Map(),
         operations: [],
+        droppedRequestPhases: [],
         pendingOperations: []
     };
     recordOpenedTransactions(state);
@@ -126,7 +137,8 @@ export function recordIndexedDbTransactionLedger(): RecordedIndexedDbTransaction
                 requests: [...entry.requests],
                 operations: [...entry.operations]
             })),
-            operations: [...state.operations]
+            operations: [...state.operations],
+            droppedRequestPhases: [...state.droppedRequestPhases]
         })
     };
 }
@@ -143,6 +155,7 @@ export function computeIndexedDbLedgerTotals(
             (count, transaction) => count + transaction.requests.length,
             0
         ),
+        droppedRequests: ledger.droppedRequestPhases.filter((phase) => phases.includes(phase)).length,
         byOwner: {
             'al-admission': operations.filter((operation) => operation.owner === 'al-admission').length,
             'al-work': operations.filter((operation) => operation.owner === 'al-work').length
@@ -217,6 +230,7 @@ function recordRequest(state: LedgerState, source: IDBObjectStore | IDBIndex, ca
     const store = source instanceof IDBIndex ? source.objectStore : source;
     const recorded = state.byTransaction.get(store.transaction);
     if (recorded === undefined) {
+        state.droppedRequestPhases.push(state.phase);
         return;
     }
     const name = source instanceof IDBIndex ? `${store.name}.${source.name}` : store.name;

@@ -57,6 +57,8 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toBe(14);
         expect(total.requests, 'every get, getAll and put those 14 transactions issue' + table)
             .toBe(46);
+        expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
+            .toBe(0);
         expect(
             total.byOwner['al-admission'],
             '7 decision reads, the supersedence read, the receipt read and the commit' + table
@@ -87,6 +89,8 @@ describe('inbound warm admit-and-deliver IndexedDB transaction ledger', () => {
         ).toBe(11);
         expect(total.requests, 'every get, getAll and put those 11 transactions issue' + table)
             .toBe(34);
+        expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
+            .toBe(0);
         expect(
             total.byOwner['al-admission'],
             '5 decision reads, the commit and the 2 readiness reads the dispatch reuses' + table
@@ -108,6 +112,8 @@ describe('inbound warm admit-and-deliver IndexedDB transaction ledger', () => {
                 'batch: the 11, plus that rotation batch\'s exhaustion sweep and page read' + table
         ).toBe(13);
         expect(total.requests, 'the 34, plus the rotation batch\'s 2 getAll' + table).toBe(36);
+        expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
+            .toBe(0);
         expect(
             total.byOwner['al-admission'],
             'the rotation batch reads no admission row: 8, as after a rotation read' + table
@@ -143,27 +149,31 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
 }
 
 /**
- * The commit's own batch sends the message; the owner is idle once the readiness probe the batch's
- * end schedules has read storage after the release. Waiting for that probe keeps it out of the next
- * send's chain.
+ * The commit's own batch sends the message; the owner is idle once this send's release has been
+ * followed by the readiness probe the batch's end schedules. Waiting for that probe keeps it out of
+ * the next send's chain.
  */
 async function sendUntilOwnerIdle(
     runtime: ALOutboundMessageRuntime<OutboundTestPayload>,
     recorded: RecordedIndexedDbTransactionLedger,
     resourceId: string
 ): Promise<void> {
+    const releasesBefore = countOperations(recorded.getLedger(), 'work-release');
     const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage(resourceId));
     expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
+    // The warm-up's release and probe are already in the ledger, so only counts taken before this
+    // send can tell its own release and probe from theirs.
     await vi.waitFor(() => {
-        expect(isProbedAfterRelease(recorded.getLedger())).toBe(true);
+        expect(isProbedAfterNthRelease(recorded.getLedger(), releasesBefore + 1)).toBe(true);
         expect(recorded.liveCount()).toBe(0);
     });
 }
 
-function isProbedAfterRelease(ledger: IndexedDbTransactionLedger): boolean {
+function isProbedAfterNthRelease(ledger: IndexedDbTransactionLedger, nth: number): boolean {
     const kinds = ledger.operations.map((operation) => operation.kind);
-    const release = kinds.lastIndexOf('work-release');
-    return release >= 0 && kinds.lastIndexOf('work-page') > release;
+    const releaseIndexes = kinds.flatMap((kind, index) => kind === 'work-release' ? [index] : []);
+    const release = releaseIndexes[nth - 1];
+    return release !== undefined && kinds.lastIndexOf('work-page') > release;
 }
 
 /**
