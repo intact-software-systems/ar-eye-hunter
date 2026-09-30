@@ -442,7 +442,7 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('publishes a proxy room message with its full scoped identity', async () => {
-        const { router, outboundStores } = createRouter();
+        const { router, outboundStores } = createRouter({ authorizeRoomMessage: () => true });
         const roomRef: GroupRef = {
             applicationId: 'proxy-application',
             workspaceId: 'proxy-workspace',
@@ -907,7 +907,12 @@ describe('RallarServerWsRouter', () => {
             qos
         };
 
-        await fixture.router.route(message, { kind: 'ws-client', peerId: sessionIds[0]!, groupRecipientPeerIds: sessionIds });
+        await fixture.router.route(message, {
+            kind: 'ws-client',
+            peerId: sessionIds[0]!,
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupRecipientPeerIds: sessionIds
+        });
 
         await expect.poll(() => Object.values(fixture.sockets).filter((socket) => socket.sent.some((sent) => sent.id.msgId === 'large-room-1')).length).toBe(
             sessionIds.length
@@ -927,7 +932,12 @@ describe('RallarServerWsRouter', () => {
             { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
         );
 
-        await router.route(message, { kind: 'ws-client', peerId: 'peer-1', groupRecipientPeerIds: ['peer-2', 'departed-peer'] });
+        await router.route(message, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupRecipientPeerIds: ['peer-2', 'departed-peer']
+        });
 
         expect(socket.sent.map((entry) => entry.connectionId)).toEqual(['conn-2']);
     });
@@ -1529,6 +1539,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}): Publ
     });
     const outbox = outboundStores.workQueue;
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         outbox,
         outboundStores,
         socket,

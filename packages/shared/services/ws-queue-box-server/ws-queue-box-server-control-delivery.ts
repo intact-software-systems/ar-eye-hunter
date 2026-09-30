@@ -1,5 +1,4 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { decodePersistedALMessageValue } from '../../al-contracts/al-message-persistence-validation.ts';
 import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime
@@ -14,7 +13,7 @@ const WS_QUEUE_BOX_SERVER_HANDED_OFF_CONTROL_LIFETIME_MS = 30_000;
 export namespace WsQueueBoxServerControlDelivery {
     export interface Dependencies {
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly liveDelivery: WsQueueBoxServerLiveDelivery;
+        readonly liveDelivery: Pick<WsQueueBoxServerLiveDelivery, 'sendToResolvedPeer'>;
         readonly clusterPublication: Pick<WsQueueBoxServerClusterPublication, 'hasPublisher'>;
         readonly outbound: Pick<ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>, 'enqueueIfAbsent'>;
     }
@@ -68,13 +67,13 @@ export class WsQueueBoxServerControlDelivery {
 }
 
 function toWsQueueBoxServerHandedOffControl(message: ALMessage, nowMs: number): ALMessage {
-    return decodePersistedALMessageValue({
+    return {
         ...message,
         constraints: {
             ...message.constraints,
             expiresAtMs: message.constraints?.expiresAtMs ?? nowMs + WS_QUEUE_BOX_SERVER_HANDED_OFF_CONTROL_LIFETIME_MS
         }
-    });
+    };
 }
 
 /** As a receipt's: a durable row whose immediate phase sends nothing, so its dequeue publishes it. */

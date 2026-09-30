@@ -164,7 +164,7 @@ describe('live WS notice subscriber', () => {
         const message: ALMessage = { ...roomMessage(), targets: { mode: 'broadcast', scope: 'world' } };
         receiver.readDeliverySurface.mockResolvedValue({
             msg: message,
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -186,7 +186,7 @@ describe('live WS notice subscriber', () => {
         expect(receiver.sent).toEqual([{ message, ids: ['remote-session'] }]);
         receiver.readDeliverySurface.mockResolvedValue({
             msg: { ...message, targets: { mode: 'broadcast', scope: 'all' } },
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -213,7 +213,12 @@ describe('live WS notice subscriber', () => {
         }
         receiver.readDeliverySurface.mockResolvedValue({
             msg: largeMessage,
-            source: { kind: 'ws-client', peerId: 'sender', groupRecipientPeerIds: ['remote-session'] },
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupRecipientPeerIds: ['remote-session']
+            },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -242,6 +247,7 @@ describe('live WS notice subscriber', () => {
             source: {
                 kind: 'ws-client',
                 peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
                 groupRecipientPeerIds: ['remote-session', 'late-joiner', 'excluded']
             },
             nowMs: 1,
@@ -263,6 +269,7 @@ describe('live WS notice subscriber', () => {
             source: {
                 kind: 'ws-client',
                 peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
                 groupRecipientPeerIds: ['sender', 'remote-session']
             },
             nowMs: 1,
@@ -292,7 +299,7 @@ describe('live WS notice subscriber', () => {
         await receiver.receive(key);
         receiver.readDeliverySurface.mockResolvedValue({
             msg: roomMessage(),
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -301,7 +308,12 @@ describe('live WS notice subscriber', () => {
         await receiver.receive(key);
         receiver.readDeliverySurface.mockResolvedValue({
             msg: roomMessage(),
-            source: { kind: 'ws-client', peerId: 'sender', groupRecipientPeerIds: ['remote-session'] },
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupRecipientPeerIds: ['remote-session']
+            },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -327,7 +339,12 @@ describe('live WS notice subscriber', () => {
         };
         const base: ALInboundStoredPlanningRead = {
             msg: roomMessage(),
-            source: { kind: 'ws-client', peerId: 'sender', groupRecipientPeerIds: ['remote-session'] },
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupRecipientPeerIds: ['remote-session']
+            },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -335,7 +352,15 @@ describe('live WS notice subscriber', () => {
         };
         for (
             const surface of [
-                { ...base, source: { kind: 'ws-client' as const, peerId: 'another', groupRecipientPeerIds: ['remote-session'] } },
+                {
+                    ...base,
+                    source: {
+                        kind: 'ws-client' as const,
+                        peerId: 'another',
+                        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                        groupRecipientPeerIds: ['remote-session']
+                    }
+                },
                 { ...base, msg: { ...roomMessage(), targets: { mode: 'multicast' as const, groupRef: { ...groupRef, workspaceId: 'other' } } } },
                 { ...base, msg: { ...roomMessage(), id: { ...roomMessage().id, msgId: 'another' } } }
             ]
@@ -351,7 +376,7 @@ describe('live WS notice subscriber', () => {
         const principalRef = { ...scope, principalId: 'principal-1' };
         receiver.readDeliverySurface.mockResolvedValue({
             msg: { ...roomMessage(), targets: { mode: 'broadcast', scope: 'principal', principalRef } },
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -376,7 +401,7 @@ describe('live WS notice subscriber', () => {
         const message: ALMessage = { ...roomMessage(), targets: { mode: 'unicast', toPeerId: 'remote-session' } };
         receiver.readDeliverySurface.mockResolvedValue({
             msg: message,
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},
@@ -439,10 +464,6 @@ describe('live WS notice subscriber', () => {
         await receiver.receive(notice);
         expect(receiver.sent).toEqual([]);
 
-        receiver.readDeliverySurface.mockResolvedValue({ ...canonical, source: { kind: 'ws-client', peerId: 'sender' } });
-        await receiver.receive(notice);
-        expect(receiver.sent).toEqual([]);
-
         receiver.readDeliverySurface.mockResolvedValue(canonical);
         await receiver.receive({ ...notice, expiresAtMs: 1 });
         expect(receiver.sent).toEqual([]);
@@ -454,7 +475,12 @@ describe('live WS notice subscriber', () => {
         const message: ALMessage = withoutExpiry;
         receiver.readDeliverySurface.mockResolvedValue({
             msg: message,
-            source: { kind: 'ws-client', peerId: 'sender', groupRecipientPeerIds: ['remote-session'] },
+            source: {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupRecipientPeerIds: ['remote-session']
+            },
             nowMs: 1,
             supersedenceKey: null,
             supersedence: {},

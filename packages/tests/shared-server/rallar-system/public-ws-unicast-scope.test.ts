@@ -9,7 +9,12 @@ import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts
 describe('public WS publication scope', () => {
     it('refuses the old unscoped public publication before enqueue', async () => {
         const outbox = new InMemoryQueueBox();
-        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+        const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
+            name: 'server',
+            socket: new JsonWebSocketServer(),
+            outbox
+        });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service);
         const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
@@ -22,7 +27,12 @@ describe('public WS publication scope', () => {
         'rejects malformed public publication input %j before enqueue',
         async (publication) => {
             const outbox = new InMemoryQueueBox();
-            const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+            const service = createDefaultWsQueueBoxServerService({
+                readAuthenticatedConnectionScope: () => undefined,
+                name: 'server',
+                socket: new JsonWebSocketServer(),
+                outbox
+            });
             onTestFinished(() => service.dispose());
             const router = new RallarServerWsRouter(service);
 
@@ -34,7 +44,12 @@ describe('public WS publication scope', () => {
         'fails a unicast with missing or malformed explicit scope %j before admission',
         async (scope) => {
             const outbox = new InMemoryQueueBox();
-            const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+            const service = createDefaultWsQueueBoxServerService({
+                readAuthenticatedConnectionScope: () => undefined,
+                name: 'server',
+                socket: new JsonWebSocketServer(),
+                outbox
+            });
             onTestFinished(() => service.dispose());
             const router = new RallarServerWsRouter(service);
             const message = newALUnicastMessage('server', { topicId: 'app.message', contextId: 'direct', resourceId: 'scope' }, 'peer', 'message.v1', {}, {
@@ -52,7 +67,12 @@ describe('public WS publication scope', () => {
     );
     it('fails a group-addressed publication that also carries a scope', async () => {
         const outbox = new InMemoryQueueBox();
-        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+        const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
+            name: 'server',
+            socket: new JsonWebSocketServer(),
+            outbox
+        });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service);
 
@@ -63,7 +83,12 @@ describe('public WS publication scope', () => {
     });
     it('queues a room unicast without a DTO scope: its groupRef scopes it', async () => {
         const outbox = new InMemoryQueueBox();
-        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox });
+        const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
+            name: 'server',
+            socket: new JsonWebSocketServer(),
+            outbox
+        });
         onTestFinished(() => service.dispose());
         const router = new RallarServerWsRouter(service);
 

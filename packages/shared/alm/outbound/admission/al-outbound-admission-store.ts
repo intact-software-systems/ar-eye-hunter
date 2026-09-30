@@ -88,22 +88,22 @@ export interface ALOutboundVersionedClientRecord {
 export type ALOutboundPreparedMessageDecoder<TPrepared> = (
     value: unknown,
     msg: ALMessage,
-    referenceKey?: Key
+    referenceKey: Key
 ) => TPrepared;
 
 /** Transient authority from one verified observation; the physical key is never persisted again. */
 export interface ALOutboundPlanningAuthority {
-    readonly sessionInvalidation?: ALOutboundDequeueAuthority['sessionInvalidation'];
+    readonly sessionInvalidation: ALOutboundDequeueAuthority['sessionInvalidation'] | undefined;
     readonly admittedAudience: readonly string[] | undefined;
     readonly recipientScope: StateScope | undefined;
-    readonly principalTargetId?: string;
+    readonly principalTargetId: string | undefined;
     readonly referenceKey: Key | undefined;
 }
 
 /** Plans a message; a retained message is planned again with the admitted audience its captured policy kept. */
 export type ALOutboundPlanner<TPrepared> = (
     msg: ALMessage,
-    authority?: ALOutboundPlanningAuthority
+    authority: ALOutboundPlanningAuthority | undefined
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export interface ALOutboundOutgoingReadInput<TPrepared> {

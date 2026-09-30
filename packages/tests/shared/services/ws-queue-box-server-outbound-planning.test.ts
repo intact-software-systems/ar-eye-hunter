@@ -47,6 +47,7 @@ describe('WS server outbound planning', () => {
         const context = new ConnectionContext({ id: 'connection', socket: native });
         server.addConnection(context);
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: server,
             outbox: new InMemoryQueueBox(),
@@ -78,7 +79,10 @@ describe('WS server outbound planning', () => {
         );
 
         await service.enqueueOutboxIfAbsent(message);
-        expect((await service.enqueueOutboxIfAbsent(unicast, undefined, { applicationId: 'app', workspaceId: 'workspace' })).verdict).toMatchObject({
+        expect(
+            (await service.enqueueOutboxIfAbsent(unicast, { admittedAudience: undefined, recipientScope: { applicationId: 'app', workspaceId: 'workspace' } }))
+                .verdict
+        ).toMatchObject({
             kind: 'refused',
             reason: 'unsupported',
             detail: 'ack receiver is unsupported for ws unicast targets'
@@ -272,6 +276,7 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
     const roomRecipients: readonly WsServerResolvedRecipient[] = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: server,
         outbox: backend.workQueue,

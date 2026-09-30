@@ -28,6 +28,7 @@ it('answers the audience a WS client message was frozen to over PostgreSQL, and 
     await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'with-audience' }), {
         kind: 'ws-client',
         peerId: INBOUND_TEST_SENDER_PEER_ID,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
         groupRecipientPeerIds: ['sender', 'peer-b']
     });
     await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'without-audience' }), INBOUND_TEST_SOURCE);

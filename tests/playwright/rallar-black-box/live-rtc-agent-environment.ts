@@ -47,8 +47,7 @@ export function readLiveRtcClusterApiOrigins(): readonly string[] | undefined {
         return undefined;
     }
     const urls = readLiveRtcAgentApiUrls(apiBaseUrl);
-    const origins = [urls.A, urls.B, urls.C].map((url) => new URL(url).origin);
-    return origins;
+    return [urls.A, urls.B, urls.C].map((url) => new URL(url).origin);
 }
 
 export function readLiveRtcAgentApiUrls(baseApiUrl: string | undefined): Readonly<Record<AgentPrefix, string>> {

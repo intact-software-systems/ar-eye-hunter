@@ -28,6 +28,9 @@ interface LiveDeliveryFixture {
     readonly live: WsQueueBoxServerLiveDelivery;
 }
 
+/** The key of an admitted canonical row, which is never a direct producer row. */
+const CANONICAL_ROW_KEY = { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'message', contextId: 'server' };
+
 describe('public WS unicast scope', () => {
     it.each([
         { entry: 'targets', expiresAtEpochMs: 0 },
@@ -91,11 +94,16 @@ describe('public WS unicast scope', () => {
             observedAtEpochMs: Date.now()
         });
         const prepared = { kind: 'recipient', peerId: 'peer', connectionId: 'peer', message: toALOutboundTransportMessage(message) };
-        expect(decodeWsQueueBoxServerPreparedMessage(prepared, message)).toEqual(prepared);
+        expect(decodeWsQueueBoxServerPreparedMessage(prepared, message, CANONICAL_ROW_KEY)).toEqual(prepared);
     });
 
     it('fails closed unproven auth logout until the direct producer carries explicit provenance', async () => {
-        const service = createDefaultWsQueueBoxServerService({ name: 'server', socket: new JsonWebSocketServer(), outbox: new InMemoryQueueBox() });
+        const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
+            name: 'server',
+            socket: new JsonWebSocketServer(),
+            outbox: new InMemoryQueueBox()
+        });
         onTestFinished(() => service.dispose());
         const message = newALUnicastMessage(
             'server',
@@ -111,12 +119,16 @@ describe('public WS unicast scope', () => {
         );
         expect((await service.enqueueOutboxIfAbsent(message)).verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
         expect(() =>
-            decodeWsQueueBoxServerPreparedMessage({
-                kind: 'recipient',
-                peerId: 'peer',
-                connectionId: 'peer',
-                message: toALOutboundTransportMessage(message)
-            }, message)
+            decodeWsQueueBoxServerPreparedMessage(
+                {
+                    kind: 'recipient',
+                    peerId: 'peer',
+                    connectionId: 'peer',
+                    message: toALOutboundTransportMessage(message)
+                },
+                message,
+                CANONICAL_ROW_KEY
+            )
         ).toThrow();
     });
     it('captures full recipient scope beside the wire message', () => {
@@ -138,26 +150,34 @@ describe('public WS unicast scope', () => {
     it('refuses persisted public unicast recipient effects without scope proof', () => {
         const message = createMessage();
         expect(() =>
-            decodeWsQueueBoxServerPreparedMessage({
-                kind: 'recipient',
-                peerId: 'peer',
-                connectionId: 'peer',
-                message: toALOutboundTransportMessage(message)
-            }, message)
+            decodeWsQueueBoxServerPreparedMessage(
+                {
+                    kind: 'recipient',
+                    peerId: 'peer',
+                    connectionId: 'peer',
+                    message: toALOutboundTransportMessage(message)
+                },
+                message,
+                CANONICAL_ROW_KEY
+            )
         ).toThrow();
     });
 
     it.each([undefined, {}, { applicationId: 'app', workspaceId: '' }])('refuses malformed prepared scope %j', (recipientScope) => {
         const message = createMessage();
         expect(() =>
-            decodeWsQueueBoxServerPreparedMessage({
-                kind: 'scoped-recipient',
-                peerId: 'peer',
-                connectionId: 'peer',
-                generationId: 'generation',
-                recipientScope,
-                message: toALOutboundTransportMessage(message)
-            }, message)
+            decodeWsQueueBoxServerPreparedMessage(
+                {
+                    kind: 'scoped-recipient',
+                    peerId: 'peer',
+                    connectionId: 'peer',
+                    generationId: 'generation',
+                    recipientScope,
+                    message: toALOutboundTransportMessage(message)
+                },
+                message,
+                CANONICAL_ROW_KEY
+            )
         ).toThrow();
     });
 
@@ -171,7 +191,7 @@ describe('public WS unicast scope', () => {
             recipientScope: SCOPE,
             message: toALOutboundTransportMessage(message)
         };
-        expect(decodeWsQueueBoxServerPreparedMessage(JSON.parse(JSON.stringify(prepared)), message))
+        expect(decodeWsQueueBoxServerPreparedMessage(JSON.parse(JSON.stringify(prepared)), message, CANONICAL_ROW_KEY))
             .toEqual(prepared);
     });
 
@@ -210,7 +230,7 @@ describe('public WS unicast scope', () => {
                 }
                 return encode(message);
             });
-            await service.enqueueOutboxIfAbsent(createMessage(), undefined, SCOPE);
+            await service.enqueueOutboxIfAbsent(createMessage(), { admittedAudience: undefined, recipientScope: SCOPE });
             await expect.poll(() => settled.length).toBe(1);
             expect(native.sent).toHaveLength(boundary === 'same-scope' ? 1 : 0);
             expect(replacement.sent).toEqual([]);

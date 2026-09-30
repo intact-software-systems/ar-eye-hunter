@@ -79,6 +79,7 @@ describe('durable WS outbox owner misses', () => {
         const misses: WsOutboxDeliveryOutcome[] = [];
         const nonOwnerEngine = new InboxOutboxEngine();
         const nonOwner = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: createSocket().socket,
@@ -548,7 +549,7 @@ function createSharedOutboundStores(outbox: InMemoryQueueBox): ALOutboundRuntime
 }
 
 async function enqueueDurableOutboxEntry(service: WsQueueBoxServerService, message: ALMessage): Promise<ResourceEntry> {
-    const admission = await service.enqueueOutboxIfAbsent(message, undefined, RECIPIENT_SCOPE);
+    const admission = await service.enqueueOutboxIfAbsent(message, { admittedAudience: undefined, recipientScope: RECIPIENT_SCOPE });
     expect(admission.verdict.kind).toBe('admitted');
     expect(admission.entries).toHaveLength(1);
     expect(admission.entries[0]).toMatchObject({ typeId: EnqueuedType.WS_OUTBOX });

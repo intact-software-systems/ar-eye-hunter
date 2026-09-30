@@ -16,9 +16,9 @@ import type { JsonWebSocketServer } from '../../websocket/json-web-socket-server
 import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import type { WsQueueBoxServerInboundAuthority } from './ws-queue-box-server-inbound-authority.ts';
+import { toWsQueueBoxServerInboundPlan } from './ws-queue-box-server-inbound-plan.ts';
 import { resolveWsQueueBoxServerInboundRecipients } from './ws-queue-box-server-inbound-recipients.ts';
 import type { WsQueueBoxServerLiveDelivery } from './ws-queue-box-server-live-delivery.ts';
-import { toWsQueueBoxServerInboundPlan } from './ws-queue-box-server-inbound-plan.ts';
 import type { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-resolution.ts';
 
 export namespace WsQueueBoxServerInboundDelivery {
@@ -208,7 +208,7 @@ export class WsQueueBoxServerInboundDelivery {
                 peerId,
                 message,
                 encoded,
-                inboundScope: source.kind === 'ws-client' ? source.authenticatedScope ?? null : undefined
+                inboundScope: source.kind === 'ws-client' ? source.authenticatedScope : undefined
             });
         }
         if (sent === 0) {

@@ -34,6 +34,9 @@ import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceE
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
+/** The key of an admitted canonical row, which is never a direct producer row. */
+const CANONICAL_ROW_KEY = { topicId: 'AL_OUTBOUND_MESSAGE', resourceId: 'message', contextId: 'server' };
+
 describe('outbound admission persisted-record validation', () => {
     it('recovers a malformed reservation when persisting its terminal rejection fails', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
@@ -340,7 +343,7 @@ describe('outbound admission persisted-record validation', () => {
         const foreign = { ...toALOutboundTransportMessage(msg), targets: { mode: 'unicast', toPeerId: 'foreign-peer' } };
         const prepared = toALOutboundTransportMessage(msg);
         expect(() => decodeALOutboundTransportMessage(foreign, msg)).toThrow(TypeError);
-        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', message: msg }, msg)).toThrow(TypeError);
+        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'recipient', peerId: 'peer', message: msg }, msg, CANONICAL_ROW_KEY)).toThrow(TypeError);
         const scoped = {
             kind: 'scoped-recipient',
             peerId: 'peer',
@@ -349,8 +352,8 @@ describe('outbound admission persisted-record validation', () => {
             generationId: 'generation',
             recipientScope: { applicationId: 'app', workspaceId: 'workspace' }
         };
-        expect(decodeWsQueueBoxServerPreparedMessage(scoped, msg)).toEqual(scoped);
-        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'cluster-local-complete', message: prepared }, msg)).not.toThrow();
+        expect(decodeWsQueueBoxServerPreparedMessage(scoped, msg, CANONICAL_ROW_KEY)).toEqual(scoped);
+        expect(() => decodeWsQueueBoxServerPreparedMessage({ kind: 'cluster-local-complete', message: prepared }, msg, CANONICAL_ROW_KEY)).not.toThrow();
     });
 
     it('rejects a prepared transport copy that removes durable relay diagnostics', () => {

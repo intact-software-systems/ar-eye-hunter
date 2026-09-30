@@ -109,7 +109,7 @@ describe('PostgreSQL inbound admission', () => {
                     value: {
                         msgId: 'msg-1',
                         senderId: 'peer-1',
-                        source: { kind: 'ws-client', peerId: 'peer-1' },
+                        source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                         supersedenceKey: null
                     },
                     expireAtTimestamp: Date.now() + 60_000
@@ -147,7 +147,7 @@ describe('PostgreSQL inbound admission', () => {
                     value: {
                         msgId: 'msg-1',
                         senderId: 'peer-1',
-                        source: { kind: 'ws-client', peerId: 'peer-1' },
+                        source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                         supersedenceKey: null
                     },
                     expireAtTimestamp
@@ -197,14 +197,14 @@ describe('PostgreSQL inbound admission', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
         );
 
         expect(admitted).toMatchObject({ kind: 'committed', acceptance: { handled: true } });
         const pending = await repository.findEntry(namespace, `${namespace}:control:pending:msg-1:peer-1`);
         expect(JSON.parse(pending!.value)).toMatchObject({ value: { ackedFromPeerIds: ['peer-2'] } });
         const owner = await readInboundTestMessageOwner({ backend, namespace, msgId: 'msg-1', senderId: 'peer-1' });
-        expect(owner?.source).toEqual({ kind: 'ws-client', peerId: 'peer-1' });
+        expect(owner?.source).toEqual({ kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } });
 
         const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1:peer-1`);
         expect(ackEntry).toBeDefined();
@@ -446,7 +446,7 @@ async function readIncoming(store: ALInboundAdmissionStore) {
     const nowMs = Date.now();
     return await store.readIncomingMessage({
         msg,
-        source: { kind: 'ws-client', peerId: msg.id.senderId },
+        source: { kind: 'ws-client', peerId: msg.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
         nowMs,
         prePlan: planALMessageHandling(msg, { selfPeerId: 'self', nowMs })
     });

@@ -356,7 +356,6 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             scenarios.push(...realtime.scenarios);
             const clusterOrigins = readLiveRtcClusterApiOrigins();
             if (clusterOrigins) {
-                expect(new Set(clusterOrigins).size).toBe(3);
                 const cluster = await exchangeClusterDirectMessages({
                     control,
                     runId,

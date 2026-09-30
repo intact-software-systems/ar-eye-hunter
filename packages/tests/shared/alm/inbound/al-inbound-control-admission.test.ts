@@ -88,7 +88,11 @@ async function seedPendingAcknowledgement(
     admissionStore: ALInboundAdmissionStore,
     controlOwners: ALInboundControlOwnerIndex = TRACKED_CONTROL_OWNERS,
     /** Absent seeds a message that arrived from its sender over WS. */
-    source: ALInboundMessageRuntime.Source = { kind: 'ws-client', peerId: message.id.senderId }
+    source: ALInboundMessageRuntime.Source = {
+        kind: 'ws-client',
+        peerId: message.id.senderId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+    }
 ): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
     const nowMs = Date.now();
@@ -505,7 +509,7 @@ describe('inbound control admission', () => {
             owner: {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
-                source: { kind: 'ws-client', peerId: message.id.senderId },
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                 supersedenceKey: null
             },
             pending: {
@@ -549,7 +553,7 @@ describe('inbound control admission', () => {
             owner: {
                 msgId: message.id.msgId,
                 senderId: message.id.senderId,
-                source: { kind: 'ws-client', peerId: message.id.senderId },
+                source: { kind: 'ws-client', peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
                 supersedenceKey: null
             },
             pending: {

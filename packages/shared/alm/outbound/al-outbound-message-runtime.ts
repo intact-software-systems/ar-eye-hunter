@@ -575,7 +575,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         const planOutgoingMessage = this.dependencies.planOutgoingMessage;
         let plan: ALOutboundDispatchPlan<TPrepared>;
         try {
-            plan = planOutgoingMessage(msg);
+            plan = planOutgoingMessage(msg, undefined);
         }
         catch {
             return { lane: this.durable, planner: planOutgoingMessage };

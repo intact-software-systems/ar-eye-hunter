@@ -1,6 +1,7 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
 import type { ALOutboundAdmissionStore } from '../../alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundCapturedPolicy } from '../../alm/outbound/admission/al-outbound-admission-validation.ts';
 import { toALOutboundIdentityKey } from '../../alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundDequeueAuthority } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
@@ -80,10 +81,7 @@ export class WsQueueBoxServerDequeueAuthority {
             throw toDequeueCorruption(entry, 'Unexpected WS outbox row type');
         }
         if (await admissionStore.hasSentMessageAdmission(message.id.msgId)) {
-            const policy = await admissionStore.readCapturedPolicy(message, entry);
-            if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
-                throw toDequeueCorruption(entry, 'Captured recipient authority differs from the WS row');
-            }
+            const policy = await this.readCapturedPolicy(message, entry);
             return {
                 admittedAudience: policy.admittedAudience,
                 recipientScope: policy.recipientScope,
@@ -102,6 +100,15 @@ export class WsQueueBoxServerDequeueAuthority {
             throw toDequeueCorruption(entry, 'Producer authority differs from final WS target');
         }
         return authority;
+    }
+
+    /** The row's captured policy, refused as corruption unless it still authorizes the row's recipients. */
+    async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
+        const policy = await this.dependencies.admissionStore.readCapturedPolicy(message, entry);
+        if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
+            throw toDequeueCorruption(entry, 'Captured recipient authority differs from the WS row');
+        }
+        return policy;
     }
 }
 

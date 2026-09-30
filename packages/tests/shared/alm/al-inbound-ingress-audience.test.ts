@@ -35,6 +35,7 @@ describe('inbound ingress audience read', () => {
             await fixture.runtime.admitIncomingMessage(audienceMessage, {
                 kind: 'ws-client',
                 peerId: INBOUND_TEST_SENDER_PEER_ID,
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
                 groupRecipientPeerIds: AUDIENCE
             });
             await fixture.runtime.admitIncomingMessage(plainMessage, INBOUND_TEST_SOURCE);

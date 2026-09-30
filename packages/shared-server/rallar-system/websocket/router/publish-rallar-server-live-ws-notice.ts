@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs, type ALQosEffectivePolicy } from '@shared/al-contracts/al-policy.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { resolveWsQueueBoxServerUnicastScope } from '@shared/services/ws-queue-box-server/scope/resolve-ws-queue-box-server-recipient-scope.ts';
 import {
     encodeLiveWsNotice,
@@ -39,7 +40,7 @@ export async function publishRallarServerLiveWsNotice(
         if (expiresAtMs <= input.nowEpochMs) {
             return { fanout: input.fanout, status: 'expired', message: input.message, entries: [] };
         }
-        const noticeInput = toLiveWsPublicationInput({
+        const notice = toLiveWsPublicationInput({
             message: input.message,
             audience,
             channel: publication.channel,
@@ -48,6 +49,10 @@ export async function publishRallarServerLiveWsNotice(
             inbound: input.inbound,
             inboundScope: input.inboundScope
         });
+        if (notice.left !== undefined) {
+            return failedLivePublication(input, notice.left);
+        }
+        const noticeInput = notice.right!;
         const encoded = encodeLiveWsNotice(noticeInput);
         if (encoded.kind === 'oversize') {
             return failedLivePublication(input, `Live WS notice is oversized (${encoded.inlineBytes} bytes).`);
@@ -67,7 +72,7 @@ export async function publishRallarServerLiveWsNotice(
     }
 }
 
-function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): LiveWsPublicationInput {
+function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): Either<string, LiveWsPublicationInput> {
     const common = {
         channel: input.channel,
         publisherId: input.publisherId,
@@ -76,13 +81,13 @@ function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): LiveWsPublic
         ...(input.inbound === undefined ? {} : { inbound: input.inbound })
     };
     if (input.audience.mode === 'broad') {
-        return { ...common, audience: input.audience };
+        return Either.ofRight({ ...common, audience: input.audience });
     }
-    return {
-        ...common,
-        audience: input.audience,
-        scope: readLiveWsPublicationScope(input.message, input.inboundScope)
-    };
+    const scope = resolveLiveWsPublicationScope(input.message, input.inboundScope);
+    if (scope.left !== undefined) {
+        return Either.ofLeft(scope.left);
+    }
+    return Either.ofRight({ ...common, audience: input.audience, scope: scope.right! });
 }
 
 function sendLocalPublishedLiveWsNotice(
@@ -156,22 +161,27 @@ async function readLiveWsPublicationAudience(
     return { mode: 'broad', targetMode: targets.scope };
 }
 
-function readLiveWsPublicationScope(message: ALMessage, inboundScope: StateScope | null | undefined): StateScope {
+function resolveLiveWsPublicationScope(
+    message: ALMessage,
+    inboundScope: StateScope | null | undefined
+): Either<string, StateScope> {
     const targets = message.targets;
     if (targets?.mode === 'multicast' || (targets?.mode === 'broadcast' && targets.scope === 'room')) {
-        if (!targets.groupRef) {
-            throw new TypeError('Room live WS publication requires a full group reference.');
-        }
-        return { applicationId: targets.groupRef.applicationId, workspaceId: targets.groupRef.workspaceId };
+        return targets.groupRef
+            ? Either.ofRight({
+                applicationId: targets.groupRef.applicationId,
+                workspaceId: targets.groupRef.workspaceId
+            })
+            : Either.ofLeft('Room live WS publication requires a full group reference.');
     }
     if (targets?.mode === 'broadcast' && targets.scope === 'principal' && targets.principalRef) {
-        return { applicationId: targets.principalRef.applicationId, workspaceId: targets.principalRef.workspaceId };
+        const { applicationId, workspaceId } = targets.principalRef;
+        return Either.ofRight({ applicationId, workspaceId });
     }
     const unicastScope = resolveWsQueueBoxServerUnicastScope(message, inboundScope);
-    if (unicastScope) {
-        return unicastScope;
-    }
-    throw new TypeError('Scoped live WS publication has no full recipient scope.');
+    return unicastScope
+        ? Either.ofRight(unicastScope)
+        : Either.ofLeft('Scoped live WS publication has no full recipient scope.');
 }
 
 function failedLivePublication(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {

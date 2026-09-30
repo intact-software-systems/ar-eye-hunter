@@ -320,6 +320,7 @@ Deno.test('generic custom authorization retains its configured resolver without 
         name: 'custom-policy-test',
         outbox: new InMemoryQueueBox(),
         socket: runtime.socket,
+        readAuthenticatedConnectionScope: () => undefined,
         targetResolver: { resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
     });
     const router = new RallarServerWsRouter(

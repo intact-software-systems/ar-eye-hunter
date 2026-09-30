@@ -1,4 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { filterLiveWsRoomRecipientSessionIds } from '../../queue-pubsub/live-ws-audience.ts';
 import { authorizeRallarServerWsIngress } from './decode-rallar-server-ws-ingress.ts';
@@ -16,21 +17,29 @@ export interface ReadRallarServerWsPublicationAudienceInput {
     readonly readServerPublishAudience: RallarServerWsRouterOptions['readServerPublishAudience'];
 }
 
+/** The audience a publish is frozen to; none leaves its addressing to the wire targets. */
+export interface RallarServerWsPublicationAudience {
+    readonly frozen: RallarServerWsRoomAudience | undefined;
+}
+
+/** The left value is the room authorizer's refusal of a proxy publish, which then sends nothing. */
 export async function readRallarServerWsPublicationAudience(
     input: ReadRallarServerWsPublicationAudienceInput
-): Promise<RallarServerWsRoomAudience | undefined> {
+): Promise<Either<string, RallarServerWsPublicationAudience>> {
     const groupRef = readALTargetGroupRef(input.message);
     if (!groupRef || input.origin === 'admitted' || input.fanout === 'none') {
-        return undefined;
+        return Either.ofRight({ frozen: undefined });
     }
     if (input.origin === 'proxy') {
         const authorization = await authorizeRallarServerWsIngress({
             message: input.message,
             authorizeRoomMessage: input.authorizeRoomMessage
         });
-        return authorization.authorized ? authorization.audience : undefined;
+        return authorization.authorized
+            ? Either.ofRight({ frozen: authorization.audience })
+            : Either.ofLeft(authorization.logMessage);
     }
-    return await input.readServerPublishAudience?.(input.message);
+    return Either.ofRight({ frozen: await input.readServerPublishAudience?.(input.message) });
 }
 
 export interface ResolveAuthorizedRoomSessionIdsInput {

@@ -21,8 +21,8 @@ import {
     QRtcSignalingTransportCallbacks,
     QRtcSignalingType
 } from '../webrtc/qrtc-signaling-contracts.ts';
+import { toPeerLaneOpenResultFromError, waitForRtcPeerLane } from '../webrtc/wait-for-rtc-peer-lane.ts';
 import { RtcPeerConnectionAttemptBudget } from './rtc-peer-connection-attempt-budget.ts';
-import { toPeerLaneOpenResultFromError, waitForRtcPeerLane } from './wait-for-rtc-peer-lane.ts';
 
 export const DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY: WebRtcConnectionService.PeerEstablishmentTimeoutPolicy =
     {

@@ -83,7 +83,7 @@ async function readWorkStatuses(stores: ALInboundRuntimeStores, carrier: ALDeliv
 it.each(
     [
         [{ kind: 'rtc-peer', peerId: 'p1' }, 'rtc'],
-        [{ kind: 'ws-client', peerId: 's1' }, 'ws'],
+        [{ kind: 'ws-client', peerId: 's1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }, 'ws'],
         [TRUSTED_SERVER, 'ws']
     ] as const
 )('names the carrier a %o source arrived on', (source, carrier) => {

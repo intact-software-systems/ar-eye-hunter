@@ -1114,7 +1114,12 @@ function toMessageOwnerMutation(message: ALMessage, expireAtTimestamp: number): 
         value: {
             msgId: message.id.msgId,
             senderId: message.id.senderId,
-            source: { ...INBOUND_TEST_SOURCE, kind: 'ws-client', peerId: message.id.senderId },
+            source: {
+                ...INBOUND_TEST_SOURCE,
+                kind: 'ws-client',
+                peerId: message.id.senderId,
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            },
             supersedenceKey: null
         },
         expireAtTimestamp
@@ -1159,7 +1164,12 @@ async function seedTrackedAcknowledgement(
     expectedFromPeerIds: readonly string[] = ['sender']
 ): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
-    const source = { ...INBOUND_TEST_SOURCE, kind: 'ws-client' as const, peerId: message.id.senderId };
+    const source = {
+        ...INBOUND_TEST_SOURCE,
+        kind: 'ws-client' as const,
+        peerId: message.id.senderId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+    };
     const read = await readAdmission(store, message);
     const committed = await store.commitBundle({
         admissionExpiresAtMs: null,
@@ -1198,7 +1208,12 @@ async function seedTrackedAcknowledgement(
 }
 
 async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage) {
-    const source = { ...INBOUND_TEST_SOURCE, kind: 'ws-client' as const, peerId: message.id.senderId };
+    const source = {
+        ...INBOUND_TEST_SOURCE,
+        kind: 'ws-client' as const,
+        peerId: message.id.senderId,
+        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+    };
     const nowMs = Date.now();
     return await store.readIncomingMessage({
         msg: message,

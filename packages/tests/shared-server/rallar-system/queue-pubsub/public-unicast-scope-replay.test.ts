@@ -27,7 +27,7 @@ describe('persisted public unicast scope replay', () => {
             qos: { durability: { algo: 'local-outbox' } }
         });
         const scope = { ...SCOPE };
-        const admission = fixture.service.enqueueOutboxIfAbsent(message, ['peer'], scope);
+        const admission = fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['peer'], recipientScope: scope });
         scope.workspaceId = 'changed-during-admission';
         const admitted = await admission;
         expect(admitted.verdict.kind).toBe('admitted');

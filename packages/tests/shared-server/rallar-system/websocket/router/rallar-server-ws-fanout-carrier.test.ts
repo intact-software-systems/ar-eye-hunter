@@ -179,6 +179,7 @@ describe('Rallar server WS fanout carriers', () => {
             }
         });
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(new Map()),
             socket: new JsonWebSocketServer(),
             name: 'server-1'

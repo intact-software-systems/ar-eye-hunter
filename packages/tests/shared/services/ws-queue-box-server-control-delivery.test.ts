@@ -6,7 +6,7 @@ import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server
 import { isRoomScopedALMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALAckPayload } from '@shared/al-contracts/al-control-value-codec.ts';
-import type { ALAckPayload } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -18,10 +18,12 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
+import { WsQueueBoxServerControlDelivery } from '@shared/services/ws-queue-box-server/ws-queue-box-server-control-delivery.ts';
 import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { createOutboundTestRuntimeFor } from '../alm/outbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 /** Every instance of one deployment shares this server peer id, as `wsRuntimeName` does in production. */
@@ -119,6 +121,87 @@ describe('WS server control sends across instances', () => {
         expect(readAcks(fixture.alice)).toEqual([]);
     });
 });
+
+describe('the cluster hand-off row of a server control', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('lives until the control\'s own expiry when it has one, else for 30 s', async () => {
+        const handOff = createHandOffFixture();
+        const lasting = { ...serverAck('ack-lasting'), constraints: { expiresAtMs: HAND_OFF_NOW_MS + 5_000 } };
+
+        await handOff.delivery.sendControlMessage(serverAck('ack-default'));
+        await handOff.delivery.sendControlMessage(lasting);
+
+        expect(await handOff.readRowExpiry('ack-default')).toBe(HAND_OFF_NOW_MS + 30_000);
+        expect(await handOff.readRowExpiry('ack-lasting')).toBe(HAND_OFF_NOW_MS + 5_000);
+    });
+
+    it('writes one row for a control handed off twice, deduplicated by its msgId', async () => {
+        const handOff = createHandOffFixture();
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        await handOff.delivery.sendControlMessage(serverAck('ack-twice'));
+        const rowsAfterFirst = await handOff.readRowKeys();
+        await handOff.delivery.sendControlMessage(serverAck('ack-twice'));
+
+        expect(log.mock.calls.map(([line]) => String(line).match(/\((\w+)\)$/)?.[1])).toEqual([
+            'admitted',
+            'duplicate'
+        ]);
+        expect(rowsAfterFirst.length).toBeGreaterThan(0);
+        expect(await handOff.readRowKeys()).toEqual(rowsAfterFirst);
+    });
+});
+
+const HAND_OFF_NOW_MS = 1_800_000_000_000;
+
+interface HandOffFixture {
+    readonly delivery: WsQueueBoxServerControlDelivery;
+    readRowExpiry(msgId: string): Promise<number | undefined>;
+    readRowKeys(): Promise<readonly string[]>;
+}
+
+/** A control delivery on an instance without the target's socket, whose outbound owner is real. */
+function createHandOffFixture(): HandOffFixture {
+    const stores = createDefaultInMemoryALOutboundRuntimeStores({
+        nowMs: () => HAND_OFF_NOW_MS,
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage
+    });
+    const runtime = createOutboundTestRuntimeFor<WsQueueBoxServerPreparedMessage>({
+        decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
+        stores,
+        nowMs: () => HAND_OFF_NOW_MS,
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const delivery = new WsQueueBoxServerControlDelivery({
+        clock: { nowMs: () => HAND_OFF_NOW_MS },
+        liveDelivery: { sendToResolvedPeer: () => 0 },
+        clusterPublication: { hasPublisher: () => true },
+        outbound: runtime
+    });
+    return {
+        delivery,
+        readRowExpiry: async (msgId) => (await stores.admissionStore.readSentMessage(msgId))?.msg.constraints?.expiresAtMs,
+        readRowKeys: async () => (await stores.workQueue.getAllKeys()).map((key) => JSON.stringify(key))
+    };
+}
+
+function serverAck(msgId: string): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId, senderId: SERVER_ID, ts: HAND_OFF_NOW_MS },
+        {
+            ackedMsgId: 'to-server',
+            fromPeerId: SERVER_ID,
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: SERVER_ID,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: HAND_OFF_NOW_MS
+        }
+    );
+}
 
 async function createControlClusterFixture(
     options: Readonly<{ cluster: boolean; holdOwnerClaims?: boolean; }>

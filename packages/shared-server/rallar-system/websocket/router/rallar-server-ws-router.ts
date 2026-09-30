@@ -184,7 +184,7 @@ export class RallarServerWsRouter {
             return;
         }
         const admittedPeerIds = source?.kind === 'ws-client' ? source.groupRecipientPeerIds : undefined;
-        const inboundScope = source?.kind === 'ws-client' ? source.authenticatedScope ?? null : undefined;
+        const inboundScope = source?.kind === 'ws-client' ? source.authenticatedScope : undefined;
         const admitted = await this.readAuthorizedIngress(message, admittedPeerIds, inboundScope);
         if (admitted.left) {
             this.reject(message, admitted.left);

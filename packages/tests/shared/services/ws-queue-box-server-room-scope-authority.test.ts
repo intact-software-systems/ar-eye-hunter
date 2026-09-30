@@ -26,8 +26,7 @@ describe('WS room unicast scope authority', () => {
         const fixture = createFixture(SCOPE);
         const result = await fixture.service.enqueueOutboxIfAbsent(
             createRoomUnicast(),
-            ['peer'],
-            SCOPE
+            { admittedAudience: ['peer'], recipientScope: SCOPE }
         );
         expect(result.verdict).toMatchObject({ kind: 'refused', reason: 'unauthorized' });
         expect(fixture.native.sent).toEqual([]);
@@ -37,9 +36,10 @@ describe('WS room unicast scope authority', () => {
         'sends an admitted room unicast to a connection $connection only if it is in scope',
         async ({ connectionScope, sent }) => {
             const fixture = createFixture(connectionScope);
-            const result = await fixture.service.enqueueOutboxIfAbsent(createRoomUnicast(), [
-                'peer'
-            ]);
+            const result = await fixture.service.enqueueOutboxIfAbsent(createRoomUnicast(), {
+                admittedAudience: ['peer'],
+                recipientScope: undefined
+            });
             expect(result.verdict.kind).toBe('admitted');
             await expect.poll(() => fixture.settled.length).toBe(1);
             expect(fixture.native.sent).toHaveLength(sent);

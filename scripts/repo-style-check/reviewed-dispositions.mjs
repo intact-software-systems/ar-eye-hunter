@@ -32,16 +32,12 @@ export const reviewedDispositions = Object.freeze([
     }),
     // Scenario composition, provider selection, recipe expansion, execution
     // and reporting have distinct linked owners beneath this public runner
-    // root. The group-delta command is a direct three-process acceptance entry:
-    // it reuses managed API and WS owners, then writes its proof artifact here.
-    // Recipe examples are JSON fixtures, while topology and managed-API folders
-    // own helpers rather than this scenario. The exact cap keeps new growth
-    // reviewable without moving a runnable entry away from its command peers.
+    // root. Five navigation probes support retaining the current entry files.
     Object.freeze({
         path: 'packages/shared-test/black-box-runner',
         rule: 'layout.directory-density',
         symbol: 'black-box-runner',
-        maximumMagnitude: 23
+        maximumMagnitude: 22
     }),
     // The receipt validator accepts raw artifact input before narrowing its
     // fields. Its malformed-artifact test deliberately crosses that same
@@ -695,32 +691,16 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-live-delivery.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 57
+        maximumMagnitude: 51
     }),
-    // Initial dispatch and repair share one frozen-audience planning owner.
-    // Recipient resolution, prepared delivery and receipt expectations remain
-    // adjacent so local socket availability cannot silently redefine the
-    // captured logical audience. The business workflow uses direct branches.
-    Object.freeze({
-        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-outbound-planning.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 50
-    }),
-    // These reviewed owners keep one optimistic admission lifecycle, one RTC
-    // carrier coordinator, and one peer receive lifecycle respectively.
-    // Storage, native submission and heartbeat have direct named owners.
+    // These reviewed owners keep one optimistic admission lifecycle and one
+    // peer receive lifecycle respectively. Storage and heartbeat have direct
+    // named owners.
     Object.freeze({
         path: 'packages/shared/alm/outbound/al-outbound-dispatch-admission.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
         maximumMagnitude: 59
-    }),
-    Object.freeze({
-        path: 'packages/shared/multicast/web-rtc-overlay-multicast-manager.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 123
     }),
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
@@ -735,27 +715,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared/alm/outbound-control-handoff.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
-    }),
-    // Lane waiting owns channel open/abort/failure translation beside its
-    // connection-service caller. These exact sibling service/policy clusters
-    // expose distinct direct entry owners, not fragments of that wait flow.
-    Object.freeze({
-        path: 'packages/shared/services',
-        rule: 'layout.directory-density',
-        symbol: 'services',
-        maximumMagnitude: 21
-    }),
-    Object.freeze({
-        path: 'packages/shared/services',
-        rule: 'layout.feature-prefix-cluster',
-        symbol: 'prefix:web',
-        maximumMagnitude: 5
-    }),
-    Object.freeze({
-        path: 'packages/shared/services',
-        rule: 'layout.feature-prefix-cluster',
-        symbol: 'prefix:webrtc',
-        maximumMagnitude: 5
     }),
     ...reviewedScenarioDispositions,
     ...reviewedBrowserDispositions

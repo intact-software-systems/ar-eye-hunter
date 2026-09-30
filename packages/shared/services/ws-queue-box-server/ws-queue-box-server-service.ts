@@ -11,7 +11,6 @@ import {
     type ALQosInputProvider,
     type ALQosNormalizationResult
 } from '../../al-contracts/al-policy.ts';
-import { ALAdmissionCorruptionError } from '../../alm/al-admission-decoder.ts';
 import type { ALDeliverySettlementSink } from '../../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -41,9 +40,6 @@ import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '../queue-box-utilities.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
-import {
-    validateWsQueueBoxServerRecipientAuthority
-} from './scope/requires-ws-queue-box-server-recipient-scope.ts';
 import { WsQueueBoxServerAckRelay, type WsServerAckRelayPublisher } from './ws-queue-box-server-ack-relay.ts';
 import { WsQueueBoxServerClusterPublication } from './ws-queue-box-server-cluster-publication.ts';
 import {
@@ -89,7 +85,8 @@ export namespace WsQueueBoxServerService {
         readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
         readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
         readonly validateInboundMessage?: (message: ALMessage) => Either<ALMessageRejection, ALMessage>;
-        readonly readAuthenticatedConnectionScope?:
+        /** A connection it proves no current scope for has every AL frame refused. */
+        readonly readAuthenticatedConnectionScope:
             WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
         /** Absent on a single instance: an ACK no aggregate here counts is then refused at ingress. */
         readonly publishRelayedAck?: WsServerAckRelayPublisher;
@@ -102,6 +99,16 @@ export namespace WsQueueBoxServerService {
          * it accepts).
          */
         readonly forwardsRoomScopedMessages?: boolean;
+    }
+
+    export interface EnqueueAuthority {
+        /**
+         * The room audience a router admitted the message to. It travels with the outbound row, never on
+         * the wire, and narrows every later plan of the message to that audience.
+         */
+        readonly admittedAudience: readonly string[] | undefined;
+        /** The scope a producer proved for a unicast that names no group. */
+        readonly recipientScope: StateScope | undefined;
     }
 
     export interface Dependencies {
@@ -138,6 +145,7 @@ export class WsQueueBoxServerService {
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
     private readonly admissionStore: WsQueueBoxServerService.Dependencies['outboundRuntime']['admissionStore'];
+    private readonly dequeueAuthority: WsQueueBoxServerDequeueAuthority;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
     private readonly liveDelivery: WsQueueBoxServerLiveDelivery;
     private readonly deliveryReporting: WsQueueBoxServerDeliveryReporting;
@@ -191,6 +199,11 @@ export class WsQueueBoxServerService {
             qosProvider: dependencies.qosProvider,
             targetResolution: this.targetResolution,
             deliveryReporting: this.deliveryReporting
+        });
+        this.dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
+            admissionStore: this.admissionStore,
+            outbox: this.outbox,
+            readProducerProvenance: dependencies.readProducerProvenance
         });
         this.outboundRuntime = this.createOutboundRuntime(dependencies);
         this.receipts = new WsQueueBoxServerReceiptAggregation({
@@ -258,11 +271,6 @@ export class WsQueueBoxServerService {
     private createOutboundRuntime(
         dependencies: WsQueueBoxServerService.Dependencies
     ): ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage> {
-        const dequeueAuthority = new WsQueueBoxServerDequeueAuthority({
-            admissionStore: this.admissionStore,
-            outbox: this.outbox,
-            readProducerProvenance: dependencies.readProducerProvenance
-        });
         return new ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>({
             decodePreparedMessage: decodeWsQueueBoxServerPreparedMessage,
             ...dependencies.outboundRuntime,
@@ -276,7 +284,7 @@ export class WsQueueBoxServerService {
             toOutboxEntry: (message: ALMessage) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-            readDequeueAuthority: (message, entry) => dequeueAuthority.readDequeueAuthority(message, entry),
+            readDequeueAuthority: (message, entry) => this.dequeueAuthority.readDequeueAuthority(message, entry),
             planOutgoingMessage: (message, authority) =>
                 this.outboundPlanning.planOutboundMessage({
                     message,
@@ -397,21 +405,17 @@ export class WsQueueBoxServerService {
         return this.inboundNamespace;
     }
 
-    /**
-     * `admittedAudience` is the room audience a router admitted the message to. It travels with the
-     * outbound row, never on the wire, and narrows every later plan of the message to that audience.
-     */
+    /** Without an authority the message is the server's own, addressed by its wire targets alone. */
     async enqueueOutboxIfAbsent(
         message: ALMessage,
-        admittedAudience?: readonly string[],
-        recipientScope?: StateScope
+        authority?: WsQueueBoxServerService.EnqueueAuthority
     ): Promise<ALOutboundEnqueueResult> {
         const dispatchPlan = this.outboundPlanning.planOutboundMessage({
             message,
             phase: 'immediate',
             clusterPublisherRegistered: this.clusterPublication.hasPublisher(),
-            admittedAudience,
-            recipientScope
+            admittedAudience: authority?.admittedAudience,
+            recipientScope: authority?.recipientScope
         });
         const outgoingMessage = dispatchPlan.persist
             ? decodePersistedALMessageValue(message)
@@ -496,14 +500,7 @@ export class WsQueueBoxServerService {
     }
 
     async readCapturedPolicy(message: ALMessage, entry: ResourceEntry): Promise<ALOutboundCapturedPolicy> {
-        const policy = await this.admissionStore.readCapturedPolicy(message, entry);
-        if (validateWsQueueBoxServerRecipientAuthority(message, policy, entry.key).length > 0) {
-            throw new ALAdmissionCorruptionError(
-                JSON.stringify(entry.key),
-                new TypeError('Persisted WS row has no valid captured recipient authority')
-            );
-        }
-        return policy;
+        return await this.dequeueAuthority.readCapturedPolicy(message, entry);
     }
 
     sendToTargetsWithResult(input: WsServerLiveSendInputDto): WsServerLiveSendResult {
@@ -628,7 +625,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,
         validateInboundMessage: input.validateInboundMessage ?? Either.ofRight,
-        readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope ?? (() => undefined),
+        readAuthenticatedConnectionScope: input.readAuthenticatedConnectionScope,
         publishRelayedAck: input.publishRelayedAck,
         forwardsRoomScopedMessages: input.forwardsRoomScopedMessages ?? true
     });

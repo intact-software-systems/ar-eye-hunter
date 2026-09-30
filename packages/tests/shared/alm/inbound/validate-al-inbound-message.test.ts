@@ -59,7 +59,7 @@ describe('inbound control addressing', () => {
 
     it.each(
         [
-            { kind: 'ws-client', peerId: 'server' },
+            { kind: 'ws-client', peerId: 'server', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             { kind: 'rtc-peer', peerId: 'server' }
         ] as const
     )('refuses a receipt from a $kind source as a typed rejection', (source) => {
@@ -103,7 +103,7 @@ describe('inbound frozen room audience', () => {
 });
 
 function fromClient(peerId: string): ALInboundMessageRuntime.Source {
-    return { kind: 'ws-client', peerId };
+    return { kind: 'ws-client', peerId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
 }
 
 function receiverAck(originPeerId: string): ALMessage {

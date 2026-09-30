@@ -72,11 +72,11 @@ describe('WS first dequeue authority', () => {
                     supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'snapshot' } }
                 }
             };
-            const admitted = await fixture.service.enqueueOutboxIfAbsent(older, [], SCOPE);
+            const admitted = await fixture.service.enqueueOutboxIfAbsent(older, { admittedAudience: [], recipientScope: SCOPE });
             expect(admitted.verdict.kind).toBe('admitted');
             const canonical = admitted.entries[0]!;
             const newer: ALMessage = { ...older, id: { ...older.id, msgId: `${older.id.msgId}-newer` }, ordering: { seq: 2 } };
-            expect((await fixture.service.enqueueOutboxIfAbsent(newer, [], SCOPE)).verdict.kind).toBe('admitted');
+            expect((await fixture.service.enqueueOutboxIfAbsent(newer, { admittedAudience: [], recipientScope: SCOPE })).verdict.kind).toBe('admitted');
             expect(await fixture.stores.admissionStore.isMessageSuperseded(older)).toBe(true);
             await fixture.engine.executeOnce();
             await expect.poll(async () => (await fixture.stores.workQueue.getItem(canonical.key))?.status).toBe(EntityStatus.COMPLETED);

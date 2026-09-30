@@ -54,7 +54,7 @@ describe('verified direct room row delivery', () => {
             qos: { durability: { algo: 'local-outbox' } }
         });
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_OUTBOX);
-        const winner = await fixture.service.enqueueOutboxIfAbsent(message, ['winner-peer']);
+        const winner = await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['winner-peer'], recipientScope: undefined });
         expect(winner.verdict.kind).toBe('admitted');
         const authorities: (ALOutboundPlanningAuthority | undefined)[] = [];
         await fixture.stores.admissionStore.readOutgoingMessage({
@@ -85,6 +85,7 @@ describe('verified direct room row delivery', () => {
         });
         const winnerEngine = new InboxOutboxEngine();
         const winnerService = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             name: 'server',
             socket: new JsonWebSocketServer(),
             outbox: fixture.stores.workQueue,
@@ -98,7 +99,7 @@ describe('verified direct room row delivery', () => {
         const readProof = fixture.reader.readProducerProvenance.bind(fixture.reader);
         vi.spyOn(fixture.reader, 'readProducerProvenance').mockImplementationOnce(async (message, entry) => {
             const authority = await readProof(message, entry);
-            const winner = await winnerService.enqueueOutboxIfAbsent(message, ['session']);
+            const winner = await winnerService.enqueueOutboxIfAbsent(message, { admittedAudience: ['session'], recipientScope: undefined });
             expect(winner.verdict.kind).toBe('admitted');
             return authority;
         });
@@ -129,7 +130,7 @@ describe('verified direct room row delivery', () => {
             groupRef: ROOM,
             qos: { durability: { algo: 'local-outbox' } }
         });
-        await fixture.service.enqueueOutboxIfAbsent(message, ['session']);
+        await fixture.service.enqueueOutboxIfAbsent(message, { admittedAudience: ['session'], recipientScope: undefined });
         await fixture.engine.executeOnce();
         await expect.poll(() => bridge.published.length).toBe(1);
         expect(fixture.native.get('peer-socket')!.sent).toHaveLength(1);

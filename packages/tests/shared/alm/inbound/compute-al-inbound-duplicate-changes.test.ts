@@ -28,7 +28,7 @@ import {
 
 const SOURCES: Readonly<Record<ALDeliveryCarrier, ALInboundMessageRuntime.Source>> = {
     rtc: { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID },
-    ws: { kind: 'ws-client', peerId: INBOUND_TEST_SENDER_PEER_ID }
+    ws: { kind: 'ws-client', peerId: INBOUND_TEST_SENDER_PEER_ID, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
 };
 /** Two downstream peers, so the relay's first admission forwards and keeps a relay row. */
 const DOWNSTREAM_PEER_IDS = ['downstream-1', 'downstream-2'];

@@ -735,7 +735,12 @@ function createMessageContext(
     senderId: string,
     roomContext: Readonly<{ roomId: string; roomRef?: GroupRef; }>
 ): RallarServerWsMessageContext {
-    const service = createDefaultWsQueueBoxServerService({ name: 'authority-test', socket: new JsonWebSocketServer(), outbox: new InMemoryQueueBox() });
+    const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
+        name: 'authority-test',
+        socket: new JsonWebSocketServer(),
+        outbox: new InMemoryQueueBox()
+    });
     onTestFinished(() => service.dispose());
     return {
         service,

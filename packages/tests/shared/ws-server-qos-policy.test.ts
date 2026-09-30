@@ -108,7 +108,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await service.enqueueOutboxIfAbsent(msg, undefined, { applicationId: 'app-1', workspaceId: 'workspace-1' });
+        const result = await service.enqueueOutboxIfAbsent(msg, {
+            admittedAudience: undefined,
+            recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
         await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
@@ -126,6 +129,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outboundStores = createObservedOutboundStores(outbox);
         let providerEvaluationCount = 0;
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -183,6 +187,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -225,6 +230,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                 failingConnectionIds: ['conn-2']
             });
             const service = shared.createDefaultWsQueueBoxServerService({
+                readAuthenticatedConnectionScope: () => undefined,
                 outbox: new shared.InMemoryQueueBox(new Map()),
                 socket: socket,
                 name: 'server-1',
@@ -273,6 +279,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -312,6 +319,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox,
             outboundStores,
             socket: socket,
@@ -353,6 +361,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -385,7 +394,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await service.enqueueOutboxIfAbsent(msg, undefined, { applicationId: 'app-1', workspaceId: 'workspace-1' });
+        await service.enqueueOutboxIfAbsent(msg, { admittedAudience: undefined, recipientScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } });
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
@@ -421,6 +430,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',
@@ -454,6 +464,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const outbox = new shared.InMemoryQueueBox(new Map());
         const engine = new shared.InboxOutboxEngine();
         const service = shared.createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: outbox,
             socket: socket,
             name: 'server-1',

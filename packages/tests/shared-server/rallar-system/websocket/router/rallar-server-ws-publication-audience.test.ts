@@ -1,5 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { publishRallarServerWsMessage } from '@shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts';
 import { readRallarServerWsPublicationAudience } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-publication-audience.ts';
 import type {
     RallarServerWsPublishAudienceReader,
@@ -69,7 +70,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
             readServerPublishAudience: reader.read
         });
 
-        expect(audience).toBe(AUDIENCE);
+        expect(audience.right?.frozen).toBe(AUDIENCE);
         expect(reader.reads).toEqual([NOTIFICATION]);
     });
 
@@ -82,15 +83,15 @@ describe('the audience a server or proxy publish is frozen to', () => {
     ])('also freezes %s that names its room', async (_name, message, fanout) => {
         const reader = createAudienceReader();
 
-        expect(
-            await readRallarServerWsPublicationAudience({
-                message,
-                fanout,
-                origin: 'server',
-                authorizeRoomMessage: undefined,
-                readServerPublishAudience: reader.read
-            })
-        ).toBe(AUDIENCE);
+        const audience = await readRallarServerWsPublicationAudience({
+            message,
+            fanout,
+            origin: 'server',
+            authorizeRoomMessage: undefined,
+            readServerPublishAudience: reader.read
+        });
+
+        expect(audience.right?.frozen).toBe(AUDIENCE);
         expect(reader.reads).toEqual([message]);
     });
 
@@ -123,7 +124,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 },
                 readServerPublishAudience: reader.read
             })
-        ).toBeUndefined();
+        ).toEqual({ right: { frozen: undefined } });
         expect(reader.reads).toEqual([]);
         expect(authorizations).toEqual([]);
     });
@@ -137,7 +138,7 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 authorizeRoomMessage: undefined,
                 readServerPublishAudience: undefined
             })
-        ).toBeUndefined();
+        ).toEqual({ right: { frozen: undefined } });
         expect(
             await readRallarServerWsPublicationAudience({
                 message: NOTIFICATION,
@@ -146,24 +147,50 @@ describe('the audience a server or proxy publish is frozen to', () => {
                 authorizeRoomMessage: undefined,
                 readServerPublishAudience: async () => undefined
             })
-        ).toBeUndefined();
+        ).toEqual({ right: { frozen: undefined } });
     });
 
-    it('freezes a proxy publish to the audience the room authorizer grants, and to none when it refuses', async () => {
+    it('freezes a proxy publish to the audience the room authorizer grants, and refuses it when the authorizer does', async () => {
         const reader = createAudienceReader();
         const read = (authorized: boolean) =>
             readRallarServerWsPublicationAudience({
                 message: NOTIFICATION,
                 fanout: 'outbox',
                 origin: 'proxy',
-                authorizeRoomMessage: () => authorized ? { authorized: true, audience: AUDIENCE } : { authorized: false },
+                authorizeRoomMessage: () =>
+                    authorized
+                        ? { authorized: true, audience: AUDIENCE }
+                        : { authorized: false, logMessage: 'not a member of room-1' },
                 readServerPublishAudience: reader.read
             });
 
-        expect(await read(true)).toEqual(AUDIENCE);
-        expect(await read(false)).toBeUndefined();
+        expect(await read(true)).toEqual({ right: { frozen: AUDIENCE } });
+        expect(await read(false)).toEqual({ left: 'not a member of room-1' });
         expect(reader.reads).toEqual([]);
     });
+
+    it.each<'outbox' | 'live-only'>(['outbox', 'live-only'])(
+        'fails a %s proxy publish the room authorizer refuses and sends nothing',
+        async (fanout) => {
+            const fixture = createServerFixture(['b', 'c']);
+
+            const result = await publishRallarServerWsMessage({
+                service: fixture.service,
+                message: NOTIFICATION,
+                fanout,
+                nowEpochMs: Date.now(),
+                origin: 'proxy',
+                authorizeRoomMessage: () => ({ authorized: false, logMessage: 'not a member of room-1' })
+            });
+            await drainEngine(fixture.engine);
+
+            expect(result).toMatchObject({ status: 'failed', reason: 'not a member of room-1' });
+            expect(fixture.sockets.get('b')!.sent).toEqual([]);
+            expect(fixture.sockets.get('c')!.sent).toEqual([]);
+            expect(await fixture.store.readReceiptState({ originPeerId: 'server', msgId: NOTIFICATION.id.msgId }))
+                .toBeUndefined();
+        }
+    );
 
     it('sends the server\'s outbox room notification to the frozen sessions only, and its receipt expects exactly them', async () => {
         const fixture = createServerFixture(['b', 'c', 'late-joiner']);
@@ -219,6 +246,7 @@ function createServerFixture(roomPeerIds: readonly string[]): ServerFixture {
     const roomRecipients = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: server,
         outbox: backend.workQueue,

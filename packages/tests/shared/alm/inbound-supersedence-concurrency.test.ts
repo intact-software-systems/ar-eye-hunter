@@ -245,7 +245,7 @@ function createMessage(senderId: string, version: number, supersedenceKey = 'sha
 
 async function readDecision(store: ALInboundAdmissionStore, message: ALMessage) {
     const nowMs = Date.now();
-    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
+    const source = { kind: 'ws-client' as const, peerId: message.id.senderId, authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } };
     const context = { selfPeerId: 'receiver', fromPeerId: message.id.senderId, nowMs };
     const prePlan = planALMessageHandling(message, context);
     const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });

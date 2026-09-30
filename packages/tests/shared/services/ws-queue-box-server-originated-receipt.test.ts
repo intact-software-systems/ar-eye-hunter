@@ -68,7 +68,7 @@ describe('receipts of the server\'s own room notifications', () => {
 
         const enqueued = await local.service.enqueueOutboxIfAbsent(
             serverNotification('snapshot-1'),
-            ['a', 'b']
+            { admittedAudience: ['a', 'b'], recipientScope: undefined }
         );
 
         expect(enqueued.verdict.kind).toBe('admitted');
@@ -117,7 +117,7 @@ describe('receipts of the server\'s own room notifications', () => {
             nowMs: () => clock.nowMs
         });
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-3'), ['a', 'b', 'c']);
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-3'), { admittedAudience: ['a', 'b', 'c'], recipientScope: undefined });
         await expect.poll(async () => {
             await local.engine.executeOnce();
             return ['a', 'b', 'c'].map((peerId) => countCopies(local.sockets[peerId], 'snapshot-3'));
@@ -155,7 +155,7 @@ describe('receipts of the server\'s own room notifications', () => {
             });
             const msgId = `snapshot-${ack}`;
 
-            await local.service.enqueueOutboxIfAbsent(serverNotification(msgId, ack), ['a', 'b']);
+            await local.service.enqueueOutboxIfAbsent(serverNotification(msgId, ack), { admittedAudience: ['a', 'b'], recipientScope: undefined });
             await expect.poll(async () => {
                 await local.engine.executeOnce();
                 return [countCopies(local.sockets.a, msgId), countCopies(local.sockets.b, msgId)];
@@ -189,7 +189,7 @@ describe('receipts of the server\'s own room notifications', () => {
         const remote = await createInstance({ outbox, state, peerIds: ['c'], recorder: undefined, nowMs: () => clock.nowMs });
         await joinCluster(local, remote);
 
-        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), []);
+        const enqueued = await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-empty'), { admittedAudience: [], recipientScope: undefined });
         for (let step = 0; step < 5; step += 1) {
             clock.nowMs += CLOCK_STEP_MS;
             await local.engine.executeOnce();
@@ -245,7 +245,7 @@ describe('receipts of the server\'s own room notifications', () => {
         });
         await joinCluster(local, remote);
 
-        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2'), ['a', 'c']);
+        await local.service.enqueueOutboxIfAbsent(serverNotification('snapshot-2'), { admittedAudience: ['a', 'c'], recipientScope: undefined });
 
         await expect.poll(async () => {
             await local.engine.executeOnce();

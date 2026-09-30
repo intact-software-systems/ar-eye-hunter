@@ -214,11 +214,13 @@ it('delivers WS work committed while a live scan holds an empty NEW page', async
     const emptyNewObserved = Promise.withResolvers<void>();
     const releaseEmptyNew = Promise.withResolvers<void>();
     const scanned: EntityStatus[] = [];
+    const pageSizes: number[] = [];
     const readPage = fixture.stores.workQueue.readWorkPage.bind(fixture.stores.workQueue);
     let held = false;
     vi.spyOn(fixture.stores.workQueue, 'readWorkPage').mockImplementation(async (request) => {
         const page = await readPage(request);
         scanned.push(request.status);
+        pageSizes.push(page.entries.length);
         if (!held && request.status === EntityStatus.NEW && page.entries.length === 0) {
             held = true;
             emptyNewObserved.resolve();
@@ -239,8 +241,10 @@ it('delivers WS work committed while a live scan holds an empty NEW page', async
         releaseEmptyNew.resolve();
     }
 
-    await expect.poll(() => fixture.delivered, { timeout: 500 }).toEqual(['dispatched']);
-    expect(scanned.slice(0, 3)).toEqual([EntityStatus.RETRY, EntityStatus.RESERVED, EntityStatus.NEW]);
+    await expect.poll(() => fixture.delivered).toEqual(['dispatched']);
+    // Progress is pinned by order, not by time: the page read right after the held empty one takes the row.
+    expect(scanned.slice(0, 4)).toEqual([EntityStatus.RETRY, EntityStatus.RESERVED, EntityStatus.NEW, EntityStatus.NEW]);
+    expect(pageSizes[3]).toBe(1);
 });
 
 it.each(['page-read', 'reservation'] as const)(

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS } from '@shared/alm/outbound/lane/read-al-outbound-dequeue-wait.ts';
@@ -21,6 +21,11 @@ describe('an RTC origin holding a durable send through a carrier gap', () => {
     it(
         're-checks the gap 40 times on one claim with one not-ready attempt and no IndexedDB operation',
         async () => {
+            // fake-indexeddb schedules on setImmediate, so faking the timers drives only the re-check loop.
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+            onTestFinished(() => {
+                vi.useRealTimers();
+            });
             const observer = createCountingIndexedDbOperationObserver();
             const fixture = createRtcOriginOverlayFixture({
                 snapshot: createOriginSnapshot(['a', 'b'], 4),
@@ -34,8 +39,10 @@ describe('an RTC origin holding a durable send through a carrier gap', () => {
                 'admitted'
             );
             await vi.waitFor(() => expect(readAttemptOutcomes(fixture, message)).toEqual(['not-ready']));
+            // The one work-page read that follows the attempt lands inside the first re-check period.
+            await vi.advanceTimersByTimeAsync(AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
             const held = structuredClone(observer.getCounts());
-            await new Promise((resolve) => setTimeout(resolve, HELD_RECHECKS * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS));
+            await vi.advanceTimersByTimeAsync(HELD_RECHECKS * AL_OUTBOUND_DEQUEUE_WAIT_RECHECK_MS);
             const afterRechecks = structuredClone(observer.getCounts());
 
             expect(readAttemptOutcomes(fixture, message)).toEqual(['not-ready']);
@@ -50,8 +57,7 @@ describe('an RTC origin holding a durable send through a carrier gap', () => {
                 ])
             );
             expect(readAttemptOutcomes(fixture, message)).toEqual(['not-ready', 'sent']);
-        },
-        15_000
+        }
     );
 });
 

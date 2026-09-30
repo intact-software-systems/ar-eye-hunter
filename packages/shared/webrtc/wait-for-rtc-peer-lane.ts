@@ -1,12 +1,12 @@
 import type { PeerId } from '../api/api-config.ts';
 import { CommandCancelledError, CommandTimedOutError } from '../cache/Command.ts';
-import type { QRtcDataChannel } from '../webrtc/qrtc-data-channel.ts';
+import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
+import type { QRtcDataChannel } from './qrtc-data-channel.ts';
 import {
     isClosedRtcChannelHealth,
     isOpenRtcChannelHealth,
     waitForRtcChannelOpenOrAbort
-} from '../webrtc/rtc-data-channel-open-state.ts';
-import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
+} from './rtc-data-channel-open-state.ts';
 
 interface PeerLaneIdentity {
     readonly peerId: PeerId;

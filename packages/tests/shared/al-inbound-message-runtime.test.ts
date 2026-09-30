@@ -44,56 +44,6 @@ afterEach(() => {
 });
 
 describe('ALInboundMessageRuntime', () => {
-    it('does not dispatch or forward an already admitted unscoped WS client unicast', async () => {
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
-        const message: ALMessage = {
-            ...createOrderedMessage(1, 'old unicast'),
-            ordering: undefined,
-            targets: { mode: 'unicast', toPeerId: 'self' }
-        };
-
-        await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'peer-1' });
-        await waitForSettledALInboundWork(stores.workQueue);
-
-        expect(dispatchedTexts).toEqual([]);
-        expect(forwardedIds).toEqual([]);
-    });
-
-    it('does not admit an old unscoped WS client unicast pending row on replay', async () => {
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
-        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
-        const message: ALMessage = {
-            ...createOrderedMessage(1, 'old pending unicast'),
-            ordering: undefined,
-            targets: { mode: 'unicast', toPeerId: 'self' }
-        };
-
-        expect((await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'peer-1' })).right?.kind)
-            .toBe('pending-admission');
-        await waitForSettledALInboundWork(stores.workQueue);
-
-        expect(dispatchedTexts).toEqual([]);
-        expect(forwardedIds).toEqual([]);
-    });
-
-    it('does not release an old unscoped ordered WS client unicast after its gap closes', async () => {
-        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness();
-        const seq2: ALMessage = {
-            ...createOrderedMessage(2, 'old buffered unicast'),
-            targets: { mode: 'unicast', toPeerId: 'self' }
-        };
-        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
-
-        expect((await runtime.admitIncomingMessage(seq2, source)).right?.kind).toBe('admitted');
-        expect(dispatchedTexts).toEqual([]);
-        expect((await runtime.admitIncomingMessage(createOrderedMessage(1, 'one'), source)).right?.kind).toBe('admitted');
-        await expect.poll(() => dispatchedTexts).toEqual(['one']);
-
-        expect(forwardedIds).not.toContain(seq2.id.msgId);
-    });
-
     it('buffers ordered gaps, emits negative controls, and releases buffered messages in order', async () => {
         const { runtime, dispatchedTexts, controlMessages, forwardedIds } = createInboundHarness();
 
@@ -144,7 +94,11 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(seq2, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId)).toEqual([
             'al.control.nack.v1',
@@ -152,7 +106,11 @@ describe('ALInboundMessageRuntime', () => {
         ]);
         expect(dispatchedTexts).toEqual([]);
 
-        await runtime.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(seq1, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
@@ -169,7 +127,11 @@ describe('ALInboundMessageRuntime', () => {
         );
         const msg = createOrderedMessage(1, 'kept-local', 'all-logical-recipients');
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => dispatchedTexts).toEqual(['kept-local']);
         await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
@@ -208,7 +170,7 @@ describe('ALInboundMessageRuntime', () => {
             return stored;
         });
         const seq2 = { ...createOrderedMessage(2, 'two'), constraints: { expiresAtMs: Date.now() + 60_000 } };
-        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } };
 
         const queued = await first.runtime.admitIncomingMessage(seq2, source);
 
@@ -255,7 +217,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await expect(runtime.admitIncomingMessage(
             createOrderedMessage(1, 'one'),
-            { kind: 'ws-client', peerId: 'peer-1' }
+            { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         ))
             .rejects.toBe(corruption);
     });
@@ -294,9 +256,17 @@ describe('ALInboundMessageRuntime', () => {
             }
         };
 
-        const firstAdmission = runtime.admitIncomingMessage(first, { kind: 'ws-client', peerId: 'peer-1' });
+        const firstAdmission = runtime.admitIncomingMessage(first, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await firstDeliveryStarted.promise;
-        const secondAdmission = runtime.admitIncomingMessage(second, { kind: 'ws-client', peerId: 'peer-2' });
+        const secondAdmission = runtime.admitIncomingMessage(second, {
+            kind: 'ws-client',
+            peerId: 'peer-2',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await secondAdmissionCommitted.promise;
         releaseFirstDelivery.resolve();
         await Promise.all([firstAdmission, secondAdmission]);
@@ -315,7 +285,7 @@ describe('ALInboundMessageRuntime', () => {
         const pendingMessage = { ...original, id: { ...original.id, msgId: 'missing-msg' } };
         const read = await stores.admissionStore.readIncomingMessage({
             msg: pendingMessage,
-            source: { kind: 'ws-client', peerId: 'peer-1' },
+            source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
             nowMs: Date.now(),
             prePlan: planALMessageHandling(pendingMessage, { selfPeerId: 'self', nowMs: Date.now() })
         });
@@ -327,7 +297,7 @@ describe('ALInboundMessageRuntime', () => {
                 value: {
                     msgId: 'missing-msg',
                     senderId: 'peer-1',
-                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } },
                     supersedenceKey: null
                 },
                 expireAtTimestamp
@@ -375,7 +345,11 @@ describe('ALInboundMessageRuntime', () => {
                 carrier: 'ws'
             }
         );
-        const pending = await runtime.admitIncomingMessage(control, { kind: 'ws-client', peerId: 'peer-2' });
+        const pending = await runtime.admitIncomingMessage(control, {
+            kind: 'ws-client',
+            peerId: 'peer-2',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         // The conflicted attempt reports nothing to the local control listener; the worker owns the retry.
         expect(pending.right).toEqual({ kind: 'pending-admission' });
@@ -392,7 +366,11 @@ describe('ALInboundMessageRuntime', () => {
         // The replayed admission owns the acceptance the conflicted attempt could not report.
         await expect.poll(() => controlAcceptances.map((acceptance) => acceptance.handled)).toEqual([true]);
 
-        const redelivered = await runtime.admitIncomingMessage(control, { kind: 'ws-client', peerId: 'peer-2' });
+        const redelivered = await runtime.admitIncomingMessage(control, {
+            kind: 'ws-client',
+            peerId: 'peer-2',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         expect(redelivered.right).toEqual({ kind: 'control', handled: false });
         expect(controlAcceptances.at(-1)).toEqual({ handled: false, completedPendingAcks: [] });
     });
@@ -425,10 +403,18 @@ describe('ALInboundMessageRuntime', () => {
 
         const { runtime, controlMessages, forwardedIds } = createInboundHarness(stores);
 
-        await runtime.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(seq2, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await expect.poll(() => forwardedIds).toEqual([seq2.id.msgId]);
 
-        const pendingRelease = runtime.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        const pendingRelease = runtime.admitIncomingMessage(seq1, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await releaseCommitReady.promise;
 
         await runtime.admitIncomingMessage(
@@ -445,7 +431,7 @@ describe('ALInboundMessageRuntime', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         releaseCommitBlocked.resolve();
@@ -498,7 +484,11 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
@@ -517,7 +507,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         // One ACK relayed for the downstream recipient and the terminal ACK of the relay itself.
@@ -547,7 +537,11 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             }
         });
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
-        const admission = runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        const admission = runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await forwardingStarted.promise;
         const accepted = await runtime.admitIncomingMessage(
             newALAckControlMessage(
@@ -563,7 +557,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
         expect(accepted.right).toEqual({ kind: 'control', handled: true });
         releaseForwarding.resolve();
@@ -613,7 +607,11 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
@@ -633,7 +631,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         expect(controlAcceptances).toHaveLength(1);
@@ -666,7 +664,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await runtime.admitIncomingMessage(
             createOrderedMessage(2, 'two'),
-            { kind: 'ws-client', peerId: 'peer-1' }
+            { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
 
         // The round carried both and failed; each claim then answered for its own message alone, so
@@ -721,7 +719,11 @@ describe('ALInboundMessageRuntime durable effects', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         expect(delivered).toEqual([]);
 
@@ -774,7 +776,11 @@ describe('ALInboundMessageRuntime durable effects', () => {
             }
         );
 
-        await runtime.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await expect.poll(() => attempts).toBe(1);
 
@@ -802,9 +808,17 @@ describe('ALInboundMessageRuntime durable effects', () => {
         };
         const seq1 = createOrderedMessage(1, 'one');
 
-        await runtime.admitIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(seq2, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await vi.advanceTimersByTimeAsync(30_000);
-        await runtime.admitIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime.admitIncomingMessage(seq1, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
 
         await vi.advanceTimersByTimeAsync(30_000);
         expect(dispatchedTexts).toEqual(['one']);
@@ -826,7 +840,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         await runtime1.admitIncomingMessage(
             createOrderedMessage(2, 'two'),
-            { kind: 'ws-client', peerId: 'peer-1' }
+            { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
         runtime1.dispose();
 
@@ -861,7 +875,11 @@ describe('ALInboundMessageRuntime durable effects', () => {
         ).runtime;
 
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
-        await runtime1.admitIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
+        await runtime1.admitIncomingMessage(msg, {
+            kind: 'ws-client',
+            peerId: 'peer-1',
+            authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
+        });
         await expect.poll(() => forwardedIds).toEqual([msg.id.msgId]);
 
         await runtime1.admitIncomingMessage(
@@ -878,7 +896,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
                     carrier: 'ws'
                 }
             ),
-            { kind: 'ws-client', peerId: 'peer-2' }
+            { kind: 'ws-client', peerId: 'peer-2', authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' } }
         );
         // The offline send releases both acknowledgement rows for retry before the restart. A runtime
         // disposed while its batch still holds a claim leaves that row reserved until its lease ends,

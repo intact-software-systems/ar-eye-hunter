@@ -7,7 +7,7 @@ import {
     vi
 } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createInitialALDeliveryLifecycle,
     type ALDeliveryLifecycle,
@@ -93,6 +93,30 @@ describe('an RTC origin room send in a carrier gap', () => {
         expect(handedOver.entries).toEqual([]);
         expect(await fixture.resources.workQueue.getAllKeys()).toEqual([]);
         expect(fixture.settlements).toEqual([]);
+    });
+
+    it('keeps a room unicast on a hand-over leg to its own admission, deferred without a room snapshot', async () => {
+        const fixture = createGapFixture();
+        fixture.groups.delete('room');
+        const message = newALUnicastMessage(
+            'a',
+            { topicId: 'chat', resourceId: 'unicast-gap', contextId: 'room' },
+            'b',
+            'chat.message.v1',
+            { text: 'unicast-gap' },
+            {
+                groupRef: ORIGIN_ROOM,
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: DEADLINE_MS,
+                qos: { durability: { algo: 'local-outbox' } }
+            }
+        );
+
+        const admitted = await fixture.manager.enqueueLegIfAbsent(message, 'hand-over');
+
+        expect(admitted.verdict).toMatchObject({ kind: 'deferred', reason: 'not-yet-in-sync' });
+        expect(fixture.channels.b!.sent).toEqual([]);
     });
 
     it('settles every attempt of admitted copies not-ready while their overlay is missing', async () => {

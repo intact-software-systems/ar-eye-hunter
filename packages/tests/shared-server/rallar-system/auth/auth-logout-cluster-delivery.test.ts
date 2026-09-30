@@ -253,6 +253,7 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
     const target = addSocket(remoteSocket, sessionId);
     const outsider = addSocket(remoteSocket, 'outsider');
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'A',
         socket: cluster ? new JsonWebSocketServer() : remoteSocket,
         outbox: stores.workQueue,
@@ -262,6 +263,7 @@ async function createCluster(repository: FakeRuntimeStateRepository, sessionId: 
         readProducerProvenance: (message, entry) => reader.readProducerProvenance(message, entry)
     });
     const remoteService = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'B',
         socket: remoteSocket,
         outbox: stores.workQueue,

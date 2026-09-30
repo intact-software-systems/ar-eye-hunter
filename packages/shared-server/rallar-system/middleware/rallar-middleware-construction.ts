@@ -84,8 +84,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly wsRuntimeName?: string;
     readonly targetResolver?: WsServerTargetResolver;
     readonly readWsOutboxProducerProvenance?: WsOutboxProducerProvenanceReader;
-    readonly readAuthenticatedConnectionScope?:
-        WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
+    readonly readAuthenticatedConnectionScope: WsServerInboundConnectionScopeReader['readAuthenticatedConnectionScope'];
     readonly findGroupSnapshotByRef?: WsServerTargetResolutionOptions['findGroupSnapshotByRef'];
     readonly findClientSnapshotByRef?: WsServerTargetResolutionOptions['findClientSnapshotByRef'];
     readonly now?: WsServerTargetResolutionOptions['now'];

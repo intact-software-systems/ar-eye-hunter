@@ -1,13 +1,15 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
 import { publishRallarServerLiveWsNotice } from './publish-rallar-server-live-ws-notice.ts';
 import {
     isAuthorizedRoomAudience,
     readRallarServerWsPublicationAudience,
-    resolveAuthorizedRoomSessionIds
+    resolveAuthorizedRoomSessionIds,
+    type RallarServerWsPublicationAudience
 } from './rallar-server-ws-publication-audience.ts';
 import {
     toRallarServerWsLivePublishResult,
@@ -56,26 +58,30 @@ export function assertRallarServerWsPublishInput(input: RallarServerWsPublishInp
 export async function publishRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
-    let audience = input.audience;
-    if (audience === undefined) {
-        try {
-            audience = await readRallarServerWsPublicationAudience({
-                message: input.message,
-                fanout: input.fanout,
-                origin: input.origin,
-                authorizeRoomMessage: input.authorizeRoomMessage,
-                readServerPublishAudience: input.readServerPublishAudience
-            });
-        }
-        catch (error) {
-            // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
-            if (input.origin === 'proxy' || input.origin === 'admitted') {
-                throw error;
-            }
-            return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
-        }
+    if (input.audience !== undefined) {
+        return await publishAuthorizedRallarServerWsMessage(input);
     }
-    return await publishAuthorizedRallarServerWsMessage({ ...input, audience });
+    let audience: Either<string, RallarServerWsPublicationAudience>;
+    try {
+        audience = await readRallarServerWsPublicationAudience({
+            message: input.message,
+            fanout: input.fanout,
+            origin: input.origin,
+            authorizeRoomMessage: input.authorizeRoomMessage,
+            readServerPublishAudience: input.readServerPublishAudience
+        });
+    }
+    catch (error) {
+        // A public publish reports a failed operation; admitted/proxy dispatch keeps its retry signal.
+        if (input.origin === 'proxy' || input.origin === 'admitted') {
+            throw error;
+        }
+        return toFailedPublishResult(input, error instanceof Error ? error.message : String(error));
+    }
+    if (audience.left !== undefined) {
+        return toFailedPublishResult(input, audience.left);
+    }
+    return await publishAuthorizedRallarServerWsMessage({ ...input, audience: audience.right!.frozen });
 }
 
 /** The topic's fanout alone picks the carrier; the message's QoS never moves it to another one. */
@@ -117,13 +123,13 @@ async function publishRallarServerWsFanout(
         case 'none':
             return { fanout: 'none', status: 'none', message: input.message, sentCount: 0, entries: [] };
         case 'outbox': {
-            const result = await input.service.enqueueOutboxIfAbsent(
-                input.message,
-                toAdmittedAudience(input),
-                input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
-                    ? input.inboundScope ?? undefined
-                    : undefined
-            );
+            const result = await input.service.enqueueOutboxIfAbsent(input.message, {
+                admittedAudience: toAdmittedAudience(input),
+                recipientScope:
+                    input.message.targets?.mode === 'unicast' && input.message.targets.groupRef === undefined
+                        ? input.inboundScope ?? undefined
+                        : undefined
+            });
             if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }

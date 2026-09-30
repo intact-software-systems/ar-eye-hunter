@@ -117,7 +117,7 @@ function toRecoveredAudience(
             message.route.topicId !== AppTopics.rtcSignaling ||
             message.payload.typeId !== AppTopics.rtcSignaling ||
             targets?.mode !== 'unicast' ||
-            source.authenticatedScope?.applicationId !== notice.scope.applicationId ||
+            source.authenticatedScope.applicationId !== notice.scope.applicationId ||
             source.authenticatedScope.workspaceId !== notice.scope.workspaceId
         ) {
             return undefined;

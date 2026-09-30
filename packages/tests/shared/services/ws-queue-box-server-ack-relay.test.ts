@@ -34,6 +34,7 @@ const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId
 
 interface ServerInstance {
     readonly service: WsQueueBoxServerService;
+    readonly engine: InboxOutboxEngine;
     readonly sockets: Readonly<Record<string, SimulatedWebSocket>>;
     /** Every ACK this instance handed to the others. */
     readonly relayed: ALMessage[];
@@ -46,6 +47,8 @@ interface ServerInstanceInput {
     readonly peers: ServerInstance[];
     /** The inbound admission store every instance of one deployment shares. */
     readonly inboundStores: ALInboundRuntimeStores;
+    /** The sessions the room authorizer freezes every room message to. */
+    readonly roomAudience: readonly string[];
 }
 
 describe('WS server ACK relay across instances', () => {
@@ -137,7 +140,8 @@ describe('WS server ACK relay across instances', () => {
             peerIds: ['c'],
             relay: 'none',
             peers: [],
-            inboundStores: createSharedInboundStores()
+            inboundStores: createSharedInboundStores(),
+            roomAudience: ['a', 'b', 'c']
         });
 
         const refused = await single.service.acceptIncomingMessage(receiverAck('c'), 'c');
@@ -202,7 +206,7 @@ describe('WS server ACK relay across instances', () => {
         onTestFinished(() => {
             vi.useRealTimers();
         });
-        const { owner, other } = await createCluster();
+        const { owner, other } = await createCluster(['a', 'b', 'c', 'd']);
         await admitRoomMessage(owner, Date.now() + 30_000);
         const outcomes = [];
         for (let index = 0; index < RELAY_BUDGET + 1; index += 1) {
@@ -219,15 +223,20 @@ describe('WS server ACK relay across instances', () => {
         });
 
         const otherSession = await other.service.acceptIncomingMessage(repeatedAck('d', 0), 'd');
-        expect(otherSession.left?.message).toBe(NO_ADMITTED_MESSAGE);
+        expect(otherSession.right).toEqual({ kind: 'control', handled: false });
+        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
 
         vi.setSystemTime(Date.now() + 60_001);
         const nextWindow = await other.service.acceptIncomingMessage(repeatedAck('c', 0), 'c');
         expect(nextWindow.right).toEqual({ kind: 'control', handled: false });
-        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
+        expect(other.relayed).toHaveLength(RELAY_BUDGET + 2);
     });
 
     it('ends the receipt timed out, naming the recipient, when the relay could not be sent', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const owners: ServerInstance[] = [];
         const inboundStores = createSharedInboundStores();
@@ -235,22 +244,26 @@ describe('WS server ACK relay across instances', () => {
             peerIds: ['a', 'b'],
             relay: 'none',
             peers: [],
-            inboundStores
+            inboundStores,
+            roomAudience: ['a', 'b', 'c']
         });
         owners.push(owner);
         const other = await createServerInstance({
             peerIds: ['c'],
             relay: 'fails',
             peers: owners,
-            inboundStores
+            inboundStores,
+            roomAudience: ['a', 'b', 'c']
         });
-        await admitRoomMessage(owner, Date.now() + 400);
+        await admitRoomMessage(owner, Date.now() + 30_000);
         await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
 
         expect((await other.service.acceptIncomingMessage(receiverAck('c'), 'c')).right)
             .toEqual({ kind: 'control', handled: false });
+        vi.setSystemTime(Date.now() + 30_001);
+        owner.engine.wake();
 
-        await expect.poll(() => readReceipts(owner.sockets.a!), { timeout: 5_000 }).toEqual([
+        await expect.poll(() => readReceipts(owner.sockets.a!)).toEqual([
             { phase: 'admitted', expected: ['b', 'c'], confirmed: [] },
             { phase: 'timed-out', expected: ['b', 'c'], confirmed: ['b'] }
         ]);
@@ -265,20 +278,24 @@ function createSharedInboundStores(): ALInboundRuntimeStores {
     });
 }
 
-async function createCluster(): Promise<{ readonly owner: ServerInstance; readonly other: ServerInstance; }> {
+async function createCluster(
+    roomAudience: readonly string[] = ['a', 'b', 'c']
+): Promise<{ readonly owner: ServerInstance; readonly other: ServerInstance; }> {
     const instances: ServerInstance[] = [];
     const inboundStores = createSharedInboundStores();
     const owner = await createServerInstance({
         peerIds: ['a', 'b'],
         relay: 'to-peers',
         peers: instances,
-        inboundStores
+        inboundStores,
+        roomAudience
     });
     const other = await createServerInstance({
         peerIds: ['c', 'd'],
         relay: 'to-peers',
         peers: instances,
-        inboundStores
+        inboundStores,
+        roomAudience
     });
     instances.push(owner, other);
     return { owner, other };
@@ -317,7 +334,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
             isRoomScopedALMessage(message)
                 ? {
                     authorized: true,
-                    roomAudience: { recipientPeerIds: ['a', 'b', 'c'], snapshotVersion: 7 }
+                    roomAudience: { recipientPeerIds: input.roomAudience, snapshotVersion: 7 }
                 }
                 : { authorized: true }
     });
@@ -326,7 +343,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
         engine.stop();
         vi.restoreAllMocks();
     });
-    return { service, sockets, relayed };
+    return { service, engine, sockets, relayed };
 }
 
 function toRelayPort(

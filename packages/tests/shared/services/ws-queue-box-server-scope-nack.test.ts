@@ -46,6 +46,40 @@ describe('WS ingress scope refusal', () => {
         expect(fixture.delivered).toEqual([]);
     });
 
+    it('refuses a room in another scope before the room authorizer can read it', async () => {
+        const fixture = await createServerIngressFixture(undefined, 'session-1', () => ({
+            scope: OTHER_WORKSPACE,
+            expiresAtEpochMs: Date.now() + 60_000
+        }));
+        const authorized: string[] = [];
+        fixture.service.authorizeInboundMessagesWith({
+            sendNacks: true,
+            authorize: async (message) => {
+                authorized.push(message.id.msgId);
+                return {
+                    authorized: false,
+                    reason: 'unauthorized',
+                    logMessage: 'not a member of the foreign room',
+                    sendNack: true,
+                    serverSnapshotVersion: 41
+                };
+            }
+        });
+
+        const result = await fixture.service.acceptIncomingMessage(createRoomMessage(), 'session-1');
+
+        expect(result.left?.message).toBe(
+            'AL message message-1 addresses app/workspace, outside its connection\'s authenticated scope'
+        );
+        expect(authorized).toEqual([]);
+        const controls = fixture.socket.sent.map((frame) => decodePersistedALMessage(String(frame)));
+        expect(controls).toHaveLength(1);
+        const nack = decodeALNackPayload(JSON.parse(controls[0]!.payload.resource));
+        expect(nack).toMatchObject({ msgId: 'message-1', reason: 'unauthorized' });
+        expect(nack).not.toHaveProperty('serverSnapshotVersion');
+        expect(fixture.admission.data.size).toBe(0);
+    });
+
     it('stays silent when the wrapped authorizer sends no NACKs', async () => {
         const fixture = await createServerIngressFixture(undefined, 'session-1', () => ({
             scope: OTHER_WORKSPACE,

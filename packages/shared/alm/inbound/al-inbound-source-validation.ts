@@ -60,9 +60,7 @@ export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.S
         return {
             kind: 'ws-client',
             peerId: decodeALAdmissionString(source.peerId),
-            ...(source.authenticatedScope === undefined
-                ? {}
-                : { authenticatedScope: decodeAuthenticatedScope(source.authenticatedScope) }),
+            authenticatedScope: decodeAuthenticatedScope(source.authenticatedScope),
             ...(source.groupRecipientPeerIds === undefined
                 ? {}
                 : { groupRecipientPeerIds: decodeFrozenGroupAudience(source.groupRecipientPeerIds) })
@@ -82,7 +80,7 @@ function decodeAuthenticatedScope(value: unknown): StateScope {
     };
 }
 
-/** Old stored WS client unicast has no recipient-scope proof and cannot produce an effect. */
+/** A stored WS client message produces an effect only inside the scope its connection authenticated. */
 export function isAuthorizedStoredWsClientDelivery(
     message: ALMessage,
     source: ALInboundMessageRuntime.Source
@@ -90,13 +88,10 @@ export function isAuthorizedStoredWsClientDelivery(
     if (source.kind !== 'ws-client' || isALControlTypeId(message.payload.typeId)) {
         return true;
     }
-    if (message.targets?.mode === 'unicast' && source.authenticatedScope === undefined) {
-        return false;
-    }
     const target = message.targets;
     const targetScope = readALTargetGroupRef(message) ??
         (target?.mode === 'broadcast' && target.scope === 'principal' ? target.principalRef : undefined);
-    return source.authenticatedScope === undefined || targetScope === undefined ||
+    return targetScope === undefined ||
         (source.authenticatedScope.applicationId === targetScope.applicationId &&
             source.authenticatedScope.workspaceId === targetScope.workspaceId);
 }

@@ -840,7 +840,11 @@ function createPendingAdmissionEntry(namespace: string, observedAtMs: number = N
         carrier: 'ws',
         namespace,
         effectId: toALInboundPendingAdmissionId(msg),
-        payload: { kind: 'admit-message', msg, source: { kind: 'ws-client', peerId: 'peer-1' } },
+        payload: {
+            kind: 'admit-message',
+            msg,
+            source: { kind: 'ws-client', peerId: 'peer-1', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } }
+        },
         observedAtMs,
         expireAtTimestamp: NOW_MS + 60_000
     }).entry;

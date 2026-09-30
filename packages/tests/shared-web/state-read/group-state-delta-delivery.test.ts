@@ -136,7 +136,8 @@ describe('produced group delta delivery through durable AL admission', () => {
 
         const result = await receiver.receive(toProducedMessage(cached, toSnapshot(8, 4, 5)), {
             kind: 'ws-client',
-            peerId: 'untrusted-peer'
+            peerId: 'untrusted-peer',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
         });
 
         expect(result.left?.code).toBe('unauthorized');

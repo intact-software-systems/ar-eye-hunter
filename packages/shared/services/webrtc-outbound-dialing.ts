@@ -139,11 +139,10 @@ function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): n
 }
 
 /**
- * A dial kept through the overlay grace while its remote side was gone offered to a session that could not take it.
- * Only the offering side negotiates, and only its unanswered offer can be the lost one; an answer to it that still
- * arrives is discarded by its offer id once the redial owns the peer. The caller ends the retention in the same
- * pass, so each reappearance redials at most once. The redial keeps the attempt budget: it is not reset, so the
- * redial counts as an attempt.
+ * Drops a desired peer's dial that is still in flight under an `overlay-transition` retention, on the offering side,
+ * with its own offer unanswered, so the peer is dialled again. The rule keys on the retention reason, not on whether
+ * the remote side went away. A late answer to the dropped offer is discarded by its offer id. The attempt budget is
+ * kept, so the redial counts as an attempt.
  */
 export function disconnectUnansweredRetainedDials(input: UnansweredRetainedDialsInput): void {
     for (const peerId of resolveUnansweredRetainedDialPeerIds(input)) {

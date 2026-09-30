@@ -8,6 +8,7 @@ import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
 import {
     toWsQueueBoxServerScopeAuthorization,
+    type WsQueueBoxServerScopeAuthorization,
     type WsQueueBoxServerScopeRefusal
 } from './scope/to-ws-queue-box-server-scope-authorization.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
@@ -53,12 +54,16 @@ export namespace WsQueueBoxServerInboundAuthority {
         readonly authorization: Extract<WsServerInboundAuthorization, { authorized: true; }>;
     }
 
+    export interface FinishedDecision {
+        readonly kind: 'finished';
+        readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
+    }
+
+    export type SocketOriginDecision = { readonly kind: 'origin'; readonly value: SocketOrigin; } | FinishedDecision;
+
     export type SocketAdmissionDecision =
         | { readonly kind: 'candidate'; readonly value: AuthorizedCandidate; }
-        | {
-            readonly kind: 'finished';
-            readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
-        };
+        | FinishedDecision;
 
     export type AdmissionDecision =
         | { readonly kind: 'authorized'; readonly value: AuthorizedMessage; }
@@ -67,10 +72,7 @@ export namespace WsQueueBoxServerInboundAuthority {
             readonly message: ALMessage;
             readonly refusal: WsQueueBoxServerScopeRefusal;
         }
-        | {
-            readonly kind: 'finished';
-            readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
-        };
+        | FinishedDecision;
 }
 
 export class WsQueueBoxServerInboundAuthority {
@@ -123,9 +125,9 @@ export class WsQueueBoxServerInboundAuthority {
             return { kind: 'finished', result: Either.ofLeft(decoded.left) };
         }
         const message = decoded.right!;
-        const origin = this.readValidatedSocketOrigin(message, connectionId);
-        if (origin.left) {
-            return { kind: 'finished', result: Either.ofLeft(origin.left) };
+        const origin = await this.readScopedSocketOrigin(message, connectionId);
+        if (origin.kind === 'finished') {
+            return origin;
         }
         if (isRoomScopedALMessage(message) && !this.#authorizer) {
             return {
@@ -142,25 +144,14 @@ export class WsQueueBoxServerInboundAuthority {
             sendNack: this.#authorizer?.sendNacks ?? false,
             authorization: await this.#authorizer?.authorize(message) ?? { authorized: true }
         });
-        if (this.#disposed) {
-            return { kind: 'finished', result: Either.ofRight({ kind: 'disposed' }) };
-        }
-        if (
-            this.#socket.connections.get(connectionId) !== origin.right!.connection ||
-            !origin.right!.connection.isOpen
-        ) {
-            return {
-                kind: 'finished',
-                result: Either.ofLeft({
-                    code: 'unauthorized',
-                    message: 'WS connection changed during authorization'
-                })
-            };
+        const current = this.readCurrentConnectionRefusal(connectionId, origin.value.connection);
+        if (current) {
+            return current;
         }
         if (!authorization.authorized) {
             return { kind: 'finished', result: await this.rejectIncomingMessage(message, authorization) };
         }
-        return { kind: 'candidate', value: { origin: origin.right!, authorization } };
+        return { kind: 'candidate', value: { origin: origin.value, authorization } };
     }
 
     resolveAuthorizedSocketAdmission(
@@ -168,24 +159,11 @@ export class WsQueueBoxServerInboundAuthority {
         connectionId: string
     ): WsQueueBoxServerInboundAuthority.AdmissionDecision {
         const { message, connection, fromPeerId } = candidate.origin;
-        if (this.#disposed) {
-            return { kind: 'finished', result: Either.ofRight({ kind: 'disposed' }) };
+        const current = this.readCurrentConnectionRefusal(connectionId, connection);
+        if (current) {
+            return current;
         }
-        if (this.#socket.connections.get(connectionId) !== connection || !connection.isOpen) {
-            return {
-                kind: 'finished',
-                result: Either.ofLeft({
-                    code: 'unauthorized',
-                    message: 'WS connection changed during authorization'
-                })
-            };
-        }
-        const scope = toWsQueueBoxServerScopeAuthorization({
-            message,
-            proof: this.#readAuthenticatedConnectionScope(connection),
-            nowMs: this.#clock.nowMs(),
-            sendNack: this.#authorizer?.sendNacks ?? false
-        });
+        const scope = this.readScopeAuthorization(message, connection);
         if (!scope.authorized) {
             return { kind: 'refused', message, refusal: scope };
         }
@@ -195,31 +173,64 @@ export class WsQueueBoxServerInboundAuthority {
         };
     }
 
-    private readValidatedSocketOrigin(
+    /** The scope is checked before anything reads the addressed room, so a foreign scope learns nothing of it. */
+    private async readScopedSocketOrigin(
         message: ALMessage,
         connectionId: string
-    ): Either<ALMessageRejection, WsQueueBoxServerInboundAuthority.SocketOrigin> {
+    ): Promise<WsQueueBoxServerInboundAuthority.SocketOriginDecision> {
         const connection = this.#socket.connections.get(connectionId);
         const fromPeerId = this.#targetResolution.resolvePeerIdForConnection(connectionId, message);
         if (!connection?.isOpen || !fromPeerId || message.id.senderId !== fromPeerId) {
-            return Either.ofLeft({
+            return toFinishedRejection({
                 code: 'unauthorized',
                 message: 'AL origin must match an authenticated live WS connection'
             });
         }
+        const scope = this.readScopeAuthorization(message, connection);
+        if (!scope.authorized) {
+            return { kind: 'finished', result: await this.rejectIncomingMessage(message, scope) };
+        }
         const protocol = validateALInboundMessage(
             message,
-            { kind: 'ws-client', peerId: fromPeerId },
+            { kind: 'ws-client', peerId: fromPeerId, authenticatedScope: scope.proof.scope },
             toALInboundReceiver(this.#serverPeerId, (ack) => this.#ackRelay.readRelayedAckRejection(ack))
         );
         if (protocol.left) {
-            return Either.ofLeft(protocol.left);
+            return toFinishedRejection(protocol.left);
         }
         const validation = this.#validateInboundMessage(message);
         if (validation.left) {
-            return Either.ofLeft(validation.left);
+            return toFinishedRejection(validation.left);
         }
-        return Either.ofRight({ message, connection, fromPeerId });
+        return { kind: 'origin', value: { message, connection, fromPeerId } };
+    }
+
+    private readScopeAuthorization(
+        message: ALMessage,
+        connection: ConnectionContext
+    ): WsQueueBoxServerScopeAuthorization {
+        return toWsQueueBoxServerScopeAuthorization({
+            message,
+            proof: this.#readAuthenticatedConnectionScope(connection),
+            nowMs: this.#clock.nowMs(),
+            sendNack: this.#authorizer?.sendNacks ?? false
+        });
+    }
+
+    private readCurrentConnectionRefusal(
+        connectionId: string,
+        connection: ConnectionContext
+    ): WsQueueBoxServerInboundAuthority.FinishedDecision | undefined {
+        if (this.#disposed) {
+            return { kind: 'finished', result: Either.ofRight({ kind: 'disposed' }) };
+        }
+        if (this.#socket.connections.get(connectionId) !== connection || !connection.isOpen) {
+            return toFinishedRejection({
+                code: 'unauthorized',
+                message: 'WS connection changed during authorization'
+            });
+        }
+        return undefined;
     }
 
     async readPendingAdmissionAuthority(
@@ -309,4 +320,8 @@ export class WsQueueBoxServerInboundAuthority {
             await this.#controlDelivery.sendControlMessage(prepared.right);
         }
     }
+}
+
+function toFinishedRejection(rejection: ALMessageRejection): WsQueueBoxServerInboundAuthority.FinishedDecision {
+    return { kind: 'finished', result: Either.ofLeft(rejection) };
 }

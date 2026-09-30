@@ -52,8 +52,7 @@ export namespace ALInboundMessageRuntime {
         | {
             readonly kind: 'ws-client';
             readonly peerId: string;
-            /** Absent only for previously retained work without authenticated scope proof. */
-            readonly authenticatedScope?: StateScope;
+            readonly authenticatedScope: StateScope;
             readonly groupRecipientPeerIds?: readonly string[];
         }
         | { readonly kind: 'trusted-server'; };

@@ -13,10 +13,17 @@ import {
     it
 } from 'vitest';
 
+const ICE_PAYLOAD = { description: null, candidate: { candidate: 'candidate:1 1 udp 1 10.0.0.1 9 typ host', sdpMid: '0' } };
+
 describe('RTC signaling route authority', () => {
     it('routes an offer from its authenticated origin to its bound recipient', () => {
         const message = createSignal({});
         expect(decodeRtcSignalingRoute(message).right).toEqual({ toId: 'receiver' });
+        expect(validateRtcSignalingMessage(message).right).toBe(message);
+    });
+
+    it('routes an ICE candidate, which names no offer', () => {
+        const message = createSignal({ signalType: 'IceCandidate', offerId: undefined, payload: ICE_PAYLOAD });
         expect(validateRtcSignalingMessage(message).right).toBe(message);
     });
 
@@ -39,7 +46,8 @@ describe('RTC signaling route authority', () => {
         { signalType: 'Renegotiate' },
         { payload: { description: { type: 'offer', sdp: 'sdp', extra: true }, candidate: null } },
         { payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null, extra: true } },
-        { payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } }
+        { payload: { description: { type: 'answer', sdp: 'sdp' }, candidate: null } },
+        { signalType: 'IceCandidate', payload: ICE_PAYLOAD }
     ])('rejects a malformed signaling value: %j', (replacement) => {
         expect(validateRtcSignalingMessage(createSignal(replacement)).left?.code).toBe('malformed');
     });

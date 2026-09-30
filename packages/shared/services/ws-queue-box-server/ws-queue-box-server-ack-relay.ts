@@ -93,10 +93,7 @@ export class WsQueueBoxServerAckRelay {
     /** A handed-over ACK: counted against this instance's aggregate, or dropped without an answer. */
     async acceptRelayedAck(message: ALMessage): Promise<void> {
         const control = decodeALControlMessage(message).right;
-        if (
-            control?.type !== 'ack' || control.payload.toPeerId === this.#serverPeerId ||
-            message.id.senderId !== control.payload.fromPeerId
-        ) {
+        if (control?.type !== 'ack' || control.payload.toPeerId === this.#serverPeerId) {
             return;
         }
         await this.#receipts.acceptControlMessage(message);

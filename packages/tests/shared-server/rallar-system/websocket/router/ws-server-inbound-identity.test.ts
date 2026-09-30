@@ -73,6 +73,7 @@ describe('WS server inbound identity', () => {
         server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         const service = createDefaultWsQueueBoxServerService({
+            readAuthenticatedConnectionScope: () => undefined,
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1',

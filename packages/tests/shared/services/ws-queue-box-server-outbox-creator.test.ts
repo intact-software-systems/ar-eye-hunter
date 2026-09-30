@@ -15,6 +15,7 @@ it('enqueues a browser room message with a queue creator that fits the durable c
     const browserSessionId = 'browser-session-12345678901234567890';
     const outbox = new InMemoryQueueBox();
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: 'server',
         socket: new JsonWebSocketServer(),
         outbox,
@@ -39,7 +40,7 @@ it('enqueues a browser room message with a queue creator that fits the durable c
         }
     );
 
-    const result = await service.enqueueOutboxIfAbsent(message, ['recipient']);
+    const result = await service.enqueueOutboxIfAbsent(message, { admittedAudience: ['recipient'], recipientScope: undefined });
     const row = result.entry === undefined ? undefined : await outbox.getItem(result.entry.key);
 
     expect(result.verdict.kind).toBe('admitted');
@@ -54,6 +55,7 @@ it('enqueues a server receipt with a queue creator that fits the durable column'
     const serverId = 'server-instance-12345678901234567890';
     const outbox = new InMemoryQueueBox();
     const service = createDefaultWsQueueBoxServerService({
+        readAuthenticatedConnectionScope: () => undefined,
         name: serverId,
         socket: new JsonWebSocketServer(),
         outbox,

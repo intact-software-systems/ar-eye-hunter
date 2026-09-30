@@ -76,7 +76,11 @@ describe('inbound admission preparation boundary', () => {
         };
         try {
             expect(decodeALMessageValue(message).right).toBeDefined();
-            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            });
             expect(result.left).toBeUndefined();
             await expect.poll(() => controls.map((control) => decodeALControlMessage(control).right!.type))
                 .toEqual(expect.arrayContaining(seq === 1 ? ['ack'] : ['nack', 'repair']));
@@ -113,7 +117,7 @@ describe('inbound admission preparation boundary', () => {
         expect(first.mutations.find((mutation) => mutation.kind === 'set-msg-owner')?.value).toEqual({
             msgId: prepared.read.msg.id.msgId,
             senderId: 'sender',
-            source: { kind: 'ws-client', peerId: 'sender' },
+            source: { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
             supersedenceKey: null
         });
     });
@@ -303,7 +307,11 @@ describe('inbound admission preparation boundary', () => {
             diagnostics: undefined
         });
         try {
-            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            });
             expect(result.left?.code).toBe('oversized');
             const untouched = await readAdmission({ store: stores.admissionStore, message });
             expect(untouched.read.observations.messageOwner).toBeUndefined();
@@ -331,7 +339,13 @@ describe('inbound admission preparation boundary', () => {
         try {
             for (let seq = 2; seq <= 9; seq++) {
                 const message = toMessageWithEnvelopeSize(createMessage(seq), 130_000);
-                expect((await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' })).right?.kind)
+                expect(
+                    (await runtime.admitIncomingMessage(message, {
+                        kind: 'ws-client',
+                        peerId: 'sender',
+                        authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+                    })).right?.kind
+                )
                     .toBe('admitted');
             }
             const message = toMessageWithEnvelopeSize(createMessage(10), AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes - 8 * 130_000);
@@ -345,7 +359,11 @@ describe('inbound admission preparation boundary', () => {
             expect(validateALInboundCommitBundle(candidate, prepared.read.namespace).left?.code).toBe('oversized');
 
             freshnessEnabled = true;
-            const result = await runtime.admitIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
+            const result = await runtime.admitIncomingMessage(message, {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            });
             expect(result.right?.kind).toBe('resync-required');
             const remaining = await readAdmission({ store: stores.admissionStore, message });
             expect(remaining.read.observations.messageOwner).toBeUndefined();
@@ -373,6 +391,7 @@ describe('inbound admission preparation boundary', () => {
         const source = {
             kind: 'ws-client' as const,
             peerId: 'sender',
+            authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' },
             groupRecipientPeerIds: ['receiver', 'peer-b']
         };
         const prepared = await readAdmission({ store: stores.admissionStore, message, source, nowMs: admittedAtMs });
@@ -431,7 +450,11 @@ describe('inbound admission preparation boundary', () => {
             diagnostics: undefined
         });
         try {
-            const first = await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
+            const first = await runtime.admitIncomingMessage(createMessage(1), {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            });
             expect(first.right).toEqual({ kind: 'pending-admission' });
             expect(controls).toEqual([]);
 
@@ -465,7 +488,11 @@ describe('inbound admission preparation boundary', () => {
             diagnostics: undefined
         });
         try {
-            await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
+            await runtime.admitIncomingMessage(createMessage(1), {
+                kind: 'ws-client',
+                peerId: 'sender',
+                authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' }
+            });
             await expect.poll(() => controls.some((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID)).toBe(true);
             const firstAck = controls.find((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
             vi.setSystemTime(Date.now() + 10_000);
@@ -517,7 +544,12 @@ interface AdmissionReadInput {
 }
 
 async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmission> {
-    const { store, message, source = { kind: 'ws-client', peerId: 'sender' }, nowMs = Date.now() } = input;
+    const {
+        store,
+        message,
+        source = { kind: 'ws-client', peerId: 'sender', authenticatedScope: { applicationId: 'app', workspaceId: 'workspace' } },
+        nowMs = Date.now()
+    } = input;
     const prePlan = planIncomingMessage(message, source, { nowMs });
     const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });
     const plan = planIncomingMessage(message, source, computeALInboundPlanningObservations(read));
