@@ -208,6 +208,8 @@ export class WsQueueBoxServerService {
         this.ackRelay = new WsQueueBoxServerAckRelay({
             serverPeerId: dependencies.name,
             clock: this.clock,
+            readIngressAudience: (msgId, originPeerId) =>
+                dependencies.inboundRuntime.admissionStore.readIngressAudience(msgId, originPeerId),
             receipts: this.receipts,
             publishRelayedAck: dependencies.publishRelayedAck
         });

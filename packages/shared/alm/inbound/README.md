@@ -187,9 +187,9 @@ aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
 lives, the ACK speaks for its own sender, and it confirms an uncounted
 member of the frozen audience. Every other such ACK is refused at ingress as
 a typed value, except on an instance that holds no aggregate for it: with a
-cluster relay channel, an ACK that speaks for its own sender and is addressed
-to the origin it names is handed to the instance that holds the aggregate
-instead (D106; outbound README, "Server receipts on WS").
+cluster relay channel, an ACK that speaks for its own sender, is addressed
+to the origin it names and names a message the shared inbound store froze to
+that sender is handed to the instance that holds the aggregate instead (D106; outbound README, "Server receipts on WS").
 
 The receipt row the ACK completes against is the origin's outbound
 pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row

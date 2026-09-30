@@ -17,6 +17,8 @@ export namespace WsQueueBoxServerAckRelay {
     export interface Dependencies {
         readonly serverPeerId: string;
         readonly clock: { nowMs(): number; };
+        /** The audience the origin's message was frozen to, read from the admission store every instance shares. */
+        readonly readIngressAudience: (msgId: string, originPeerId: string) => Promise<readonly string[] | undefined>;
         readonly receipts: WsQueueBoxServerReceiptAggregation;
         readonly publishRelayedAck: WsServerAckRelayPublisher | undefined;
     }
@@ -26,20 +28,22 @@ export namespace WsQueueBoxServerAckRelay {
  * A receiver ACK counts only on the instance whose socket admitted the message, where its receipt aggregate
  * lives. An instance that holds no aggregate for the ACK hands it once to the others, and an instance that
  * receives a handed-over ACK counts it only against an aggregate of its own: it never hands it on again.
- * The outbound admission store knows no message a WS client sent to a live-only topic, so nothing here can tell
- * a forged ACK from a genuine one before it is published; each session may hand over a fixed number of ACKs per
- * window, and a notice costs one NOTIFY.
+ * A notice costs one NOTIFY, so it is bounded twice before it is published: the inbound admission store must
+ * hold the origin's message with the ACK's sender in its frozen audience, and each session may hand over a
+ * fixed number of ACKs per window.
  */
 export class WsQueueBoxServerAckRelay {
     readonly #serverPeerId: string;
     readonly #receipts: WsQueueBoxServerReceiptAggregation;
     readonly #publishRelayedAck: WsServerAckRelayPublisher | undefined;
     readonly #clock: { nowMs(): number; };
+    readonly #readIngressAudience: WsQueueBoxServerAckRelay.Dependencies['readIngressAudience'];
     readonly #budgets = new Map<string, { windowEndsAtMs: number; used: number; }>();
 
     constructor(dependencies: WsQueueBoxServerAckRelay.Dependencies) {
         this.#serverPeerId = dependencies.serverPeerId;
         this.#clock = dependencies.clock;
+        this.#readIngressAudience = dependencies.readIngressAudience;
         this.#receipts = dependencies.receipts;
         this.#publishRelayedAck = dependencies.publishRelayedAck;
     }
@@ -64,6 +68,12 @@ export class WsQueueBoxServerAckRelay {
         const ack = publish === undefined ? undefined : this.readUnownedAck(message);
         if (publish === undefined || ack === undefined) {
             return Either.ofRight(false);
+        }
+        if (!await this.isAdmittedTo(ack)) {
+            return Either.ofLeft({
+                code: 'unauthorized',
+                message: 'AL acknowledgement names no message its origin admitted to this sender'
+            });
         }
         if (!this.takeRelayBudget(message.id.senderId)) {
             return Either.ofLeft({
@@ -98,6 +108,18 @@ export class WsQueueBoxServerAckRelay {
                 !this.#receipts.holdsReceiptFor(control.payload)
             ? control.payload
             : undefined;
+    }
+
+    /** Fails closed: a missing row, another origin, a sender outside the audience or an unreadable store all refuse. */
+    private async isAdmittedTo(ack: ALAckPayload): Promise<boolean> {
+        try {
+            const audience = await this.#readIngressAudience(ack.ackedMsgId, ack.originPeerId);
+            return audience?.includes(ack.fromPeerId) === true;
+        }
+        catch (error) {
+            console.warn(`AL acknowledgement ${ack.ackedMsgId} could not be checked against its admission:`, error);
+            return false;
+        }
     }
 
     private takeRelayBudget(sessionId: string): boolean {

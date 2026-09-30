@@ -342,6 +342,9 @@ export interface ALInboundAdmissionStore extends ALReadyable {
     /** Absent when the owner index names no single original sender for the acknowledging peer. */
     readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined>;
 
+    /** The audience a WS client's message was frozen to at ingress; absent for any other message or a missing row. */
+    readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined>;
+
     commitMutations(
         request: ALInboundWriteRequest
     ): Promise<'committed' | 'conflict' | 'expired'>;
@@ -793,6 +796,15 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
         return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, ack));
+    }
+
+    async readIngressAudience(msgId: string, originPeerId: string): Promise<readonly string[] | undefined> {
+        const owner = await this.backend.readWithin((session) =>
+            readALInboundMessageOwner({ database: session, namespace: this.namespace, msgId, senderId: originPeerId })
+        );
+        return owner?.source.kind === 'ws-client' && owner.source.peerId === originPeerId
+            ? owner.source.groupRecipientPeerIds
+            : undefined;
     }
 
     private toDedupKey(dedupKey: string): string {

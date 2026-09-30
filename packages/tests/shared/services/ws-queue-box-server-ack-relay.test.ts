@@ -9,6 +9,8 @@ import {
     type ALReceiptPayload
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -22,10 +24,12 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { createInboundTestStores } from '../alm/inbound-runtime-test-fixture.ts';
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const RELAY_BUDGET = 60;
+const NO_ADMITTED_MESSAGE = 'AL acknowledgement names no message its origin admitted to this sender';
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
 
 interface ServerInstance {
@@ -40,6 +44,8 @@ interface ServerInstanceInput {
     /** `none`: a single-instance deployment; `fails`: the notice channel is down. */
     readonly relay: 'to-peers' | 'fails' | 'none';
     readonly peers: ServerInstance[];
+    /** The inbound admission store every instance of one deployment shares. */
+    readonly inboundStores: ALInboundRuntimeStores;
 }
 
 describe('WS server ACK relay across instances', () => {
@@ -72,8 +78,7 @@ describe('WS server ACK relay across instances', () => {
         const { owner, other } = await createCluster();
         await admitRoomMessage(owner, Date.now() + 30_000);
 
-        expect((await other.service.acceptIncomingMessage(receiverAck('d'), 'd')).right)
-            .toEqual({ kind: 'control', handled: false });
+        await owner.service.acceptRelayedAck(receiverAck('d'));
         await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
         await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
 
@@ -81,7 +86,6 @@ describe('WS server ACK relay across instances', () => {
             { phase: 'admitted', expected: ['b', 'c'], confirmed: [] },
             { phase: 'complete', expected: ['b', 'c'], confirmed: ['b', 'c'] }
         ]);
-        expect(other.relayed.map((message) => message.id.msgId)).toEqual(['ack-d', 'ack-c']);
     });
 
     it('counts a relayed ACK once when it arrives twice', async () => {
@@ -129,7 +133,12 @@ describe('WS server ACK relay across instances', () => {
     });
 
     it('refuses an ACK no aggregate counts, as before, on an instance with no relay', async () => {
-        const single = await createServerInstance({ peerIds: ['c'], relay: 'none', peers: [] });
+        const single = await createServerInstance({
+            peerIds: ['c'],
+            relay: 'none',
+            peers: [],
+            inboundStores: createSharedInboundStores()
+        });
 
         const refused = await single.service.acceptIncomingMessage(receiverAck('c'), 'c');
 
@@ -155,17 +164,49 @@ describe('WS server ACK relay across instances', () => {
         expect(other.relayed).toEqual([]);
     });
 
-    it('relays at most a fixed number of ACKs per session per window, whatever message they name', async () => {
+    it('refuses, and publishes nothing for, an ACK that names a message no origin admitted', async () => {
+        const { owner, other } = await createCluster();
+        await admitRoomMessage(owner, Date.now() + 30_000);
+
+        const refused = await other.service.acceptIncomingMessage(forgedAck('c', 0), 'c');
+
+        expect(refused.left).toEqual({ code: 'unauthorized', message: NO_ADMITTED_MESSAGE });
+        expect(other.relayed).toEqual([]);
+    });
+
+    it('refuses, and publishes nothing for, an ACK from a session outside the frozen audience', async () => {
+        const { owner, other } = await createCluster();
+        await admitRoomMessage(owner, Date.now() + 30_000);
+
+        const refused = await other.service.acceptIncomingMessage(receiverAck('d'), 'd');
+
+        expect(refused.left).toEqual({ code: 'unauthorized', message: NO_ADMITTED_MESSAGE });
+        expect(other.relayed).toEqual([]);
+    });
+
+    it('refuses, and publishes nothing for, an ACK whose origin did not send the message it names', async () => {
+        const { owner, other } = await createCluster();
+        await admitRoomMessage(owner, Date.now() + 30_000);
+
+        const refused = await other.service.acceptIncomingMessage(
+            receiverAck('c', { toPeerId: 'b', originPeerId: 'b' }),
+            'c'
+        );
+
+        expect(refused.left).toEqual({ code: 'unauthorized', message: NO_ADMITTED_MESSAGE });
+        expect(other.relayed).toEqual([]);
+    });
+
+    it('relays at most a fixed number of genuine ACKs per session per window', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
             vi.useRealTimers();
         });
-        const { other } = await createCluster();
+        const { owner, other } = await createCluster();
+        await admitRoomMessage(owner, Date.now() + 30_000);
         const outcomes = [];
         for (let index = 0; index < RELAY_BUDGET + 1; index += 1) {
-            outcomes.push(
-                await other.service.acceptIncomingMessage(forgedAck('c', index), 'c')
-            );
+            outcomes.push(await other.service.acceptIncomingMessage(repeatedAck('c', index), 'c'));
         }
 
         expect(other.relayed).toHaveLength(RELAY_BUDGET);
@@ -177,39 +218,32 @@ describe('WS server ACK relay across instances', () => {
             message: 'AL acknowledgement relay budget of this session is used up'
         });
 
-        const otherSession = await other.service.acceptIncomingMessage(forgedAck('d', 0), 'd');
-        expect(otherSession.right).toEqual({ kind: 'control', handled: false });
-        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
+        const otherSession = await other.service.acceptIncomingMessage(repeatedAck('d', 0), 'd');
+        expect(otherSession.left?.message).toBe(NO_ADMITTED_MESSAGE);
 
         vi.setSystemTime(Date.now() + 60_001);
-        const nextWindow = await other.service.acceptIncomingMessage(forgedAck('c', 0), 'c');
+        const nextWindow = await other.service.acceptIncomingMessage(repeatedAck('c', 0), 'c');
         expect(nextWindow.right).toEqual({ kind: 'control', handled: false });
-        expect(other.relayed).toHaveLength(RELAY_BUDGET + 2);
-    });
-
-    it('spends no relay budget on an ACK its own aggregate counts', async () => {
-        const { owner, other } = await createCluster();
-        await admitRoomMessage(owner, Date.now() + 30_000);
-        for (let index = 0; index < RELAY_BUDGET; index += 1) {
-            await owner.service.acceptIncomingMessage(forgedAck('b', index), 'b');
-        }
-
-        await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
-        await other.service.acceptIncomingMessage(receiverAck('c'), 'c');
-
-        expect(owner.relayed).toHaveLength(RELAY_BUDGET);
-        await expect.poll(() => readReceipts(owner.sockets.a!)).toEqual([
-            { phase: 'admitted', expected: ['b', 'c'], confirmed: [] },
-            { phase: 'complete', expected: ['b', 'c'], confirmed: ['b', 'c'] }
-        ]);
+        expect(other.relayed).toHaveLength(RELAY_BUDGET + 1);
     });
 
     it('ends the receipt timed out, naming the recipient, when the relay could not be sent', async () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const owners: ServerInstance[] = [];
-        const owner = await createServerInstance({ peerIds: ['a', 'b'], relay: 'none', peers: [] });
+        const inboundStores = createSharedInboundStores();
+        const owner = await createServerInstance({
+            peerIds: ['a', 'b'],
+            relay: 'none',
+            peers: [],
+            inboundStores
+        });
         owners.push(owner);
-        const other = await createServerInstance({ peerIds: ['c'], relay: 'fails', peers: owners });
+        const other = await createServerInstance({
+            peerIds: ['c'],
+            relay: 'fails',
+            peers: owners,
+            inboundStores
+        });
         await admitRoomMessage(owner, Date.now() + 400);
         await owner.service.acceptIncomingMessage(receiverAck('b'), 'b');
 
@@ -223,17 +257,28 @@ describe('WS server ACK relay across instances', () => {
     });
 });
 
+function createSharedInboundStores(): ALInboundRuntimeStores {
+    return createInboundTestStores({
+        namespace: 'ack-relay-inbound',
+        storage: 'memory',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+}
+
 async function createCluster(): Promise<{ readonly owner: ServerInstance; readonly other: ServerInstance; }> {
     const instances: ServerInstance[] = [];
+    const inboundStores = createSharedInboundStores();
     const owner = await createServerInstance({
         peerIds: ['a', 'b'],
         relay: 'to-peers',
-        peers: instances
+        peers: instances,
+        inboundStores
     });
     const other = await createServerInstance({
         peerIds: ['c', 'd'],
         relay: 'to-peers',
-        peers: instances
+        peers: instances,
+        inboundStores
     });
     instances.push(owner, other);
     return { owner, other };
@@ -263,6 +308,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
             resolvePeerRecipients: (peerId) => sockets[peerId] === undefined ? [] : [{ peerId, connectionId: peerId }],
             resolveBroadcastRecipients: () => input.peerIds.map((peerId) => ({ peerId, connectionId: peerId }))
         },
+        inboundStores: input.inboundStores,
         publishRelayedAck: toRelayPort(input, relayed)
     });
     service.authorizeInboundMessagesWith({
@@ -335,6 +381,22 @@ function receiverAck(
             toPeerId: address.toPeerId ?? 'a',
             originPeerId: address.originPeerId ?? 'a',
             logicalRecipientPeerId: address.logicalRecipientPeerId ?? recipient,
+            carrier: 'ws',
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}
+
+function repeatedAck(recipient: string, index: number): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId: `repeated-ack-${recipient}-${index}`, senderId: recipient, ts: Date.now() },
+        {
+            ackedMsgId: 'room-message-1',
+            fromPeerId: recipient,
+            toPeerId: 'a',
+            originPeerId: 'a',
+            logicalRecipientPeerId: recipient,
             carrier: 'ws',
             status: 'delivered',
             observedAtEpochMs: Date.now()

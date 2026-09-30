@@ -11,6 +11,8 @@ import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type
 import { decodeALReceiptPayload } from '@shared/al-contracts/al-control-value-codec.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -20,6 +22,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { createInboundTestStores } from '../../../shared/alm/inbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
@@ -33,8 +36,13 @@ interface MiddlewareInstance {
 describe('middleware relayed ACK notices', () => {
     it('completes a receipt on the origin instance from an ACK its recipient sent to another instance', async () => {
         const transport = createMemoryTransport();
-        const owner = await createMiddlewareInstance(transport, 'server-a', ['a']);
-        const other = await createMiddlewareInstance(transport, 'server-b', ['c']);
+        const inboundStores = createInboundTestStores({
+            namespace: 'relayed-ack-inbound',
+            storage: 'memory',
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const owner = await createMiddlewareInstance({ transport, inboundStores, publisherId: 'server-a', sessionIds: ['a'] });
+        const other = await createMiddlewareInstance({ transport, inboundStores, publisherId: 'server-b', sessionIds: ['c'] });
         const message: ALMessage = {
             id: { v: 2, msgId: 'room-message-1', ts: Date.now(), senderId: 'a' },
             route: {
@@ -82,11 +90,16 @@ function createMemoryTransport(): RelayedAckNoticeTransport & {
     };
 }
 
-async function createMiddlewareInstance(
-    transport: RelayedAckNoticeTransport,
-    publisherId: string,
-    sessionIds: readonly string[]
-): Promise<MiddlewareInstance> {
+interface MiddlewareInstanceInput {
+    readonly transport: RelayedAckNoticeTransport;
+    /** The inbound admission store every instance of one deployment shares. */
+    readonly inboundStores: ALInboundRuntimeStores;
+    readonly publisherId: string;
+    readonly sessionIds: readonly string[];
+}
+
+async function createMiddlewareInstance(input: MiddlewareInstanceInput): Promise<MiddlewareInstance> {
+    const { transport, inboundStores, publisherId, sessionIds } = input;
     const socket = new JsonWebSocketServer();
     const sockets: Record<string, TestWebSocket> = {};
     for (const sessionId of sessionIds) {
@@ -110,6 +123,7 @@ async function createMiddlewareInstance(
     const runtime = createRallarMiddlewareInfrastructure({
         ...fixture.options,
         webSocketServer: socket,
+        inboundStores,
         targetResolver: {
             resolvePeerIdForConnection: (connectionId) => connectionId,
             resolvePeerRecipients: (peerId) => sockets[peerId] === undefined ? [] : [{ peerId, connectionId: peerId }]
