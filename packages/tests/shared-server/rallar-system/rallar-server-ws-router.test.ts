@@ -770,26 +770,28 @@ describe('RallarServerWsRouter', () => {
             disconnectedSessionIds: [],
             fanout: 'live-only'
         });
-        const message = createBestEffortRoomBroadcast('left-after-admission');
+        const message = createReceiverRoomBroadcast('left-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
 
         await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2', 'peer-3']);
     });
 
-    it('sends best-effort only to the connected part of the admitted audience', async () => {
+    it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
         const fixture = createAudienceRouter({
             admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             disconnectedSessionIds: ['peer-3'],
             fanout: 'live-only'
         });
-        const message = createBestEffortRoomBroadcast('disconnected-after-admission');
+        const message = createReceiverRoomBroadcast('disconnected-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
 
         await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-1', 'peer-2']);
-        expect(readReceipts(fixture.sockets['peer-1']!)).toEqual([]);
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
+            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2', 'peer-3'] })
+        ]);
     });
 
     it('does not deliver an inbound unicast to a same-ID recipient reconnected in another scope', async () => {
@@ -837,19 +839,22 @@ describe('RallarServerWsRouter', () => {
         await expect.poll(() => readChatRecipients(fixture)).toEqual(['peer-2']);
     });
 
-    // Best-effort fallback delivers only current authorized members named by the frozen audience.
+    // The receipt keeps a frozen audience verbatim, so a frozen non-member is expected, never delivered to, and reads
+    // unconfirmed (Q12, C11, R-S3c-i-11); delivery stays the authorized sessions.
     it.each([
         {
             frozen: ['peer-2'],
             delivered: ['peer-2'],
+            expected: ['peer-2'],
             label: 'honours a frozen audience narrower than the room'
         },
         {
             frozen: ['peer-2', 'stranger'],
             delivered: ['peer-2'],
-            label: 'delivers a frozen audience naming a non-member to members only'
+            expected: ['peer-2', 'stranger'],
+            label: 'delivers a frozen audience naming a non-member to members only and expects all of it'
         }
-    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, delivered }) => {
+    ])('$label on an RTC-frozen multicast that fell back to WS', async ({ frozen, delivered, expected }) => {
         const fixture = createAudienceRouter({
             admittedSessionIds: ['peer-1', 'peer-2', 'peer-3'],
             currentSessionIds: ['peer-1', 'peer-2', 'peer-3'],
@@ -857,14 +862,16 @@ describe('RallarServerWsRouter', () => {
             fanout: 'live-only'
         });
         const message: ALMessage = {
-            ...createBestEffortRoomBroadcast('fell-back'),
+            ...createReceiverRoomBroadcast('fell-back'),
             targets: { mode: 'multicast', groupRef: AUDIENCE_ROOM, recipientPeerIds: frozen, snapshotVersion: 3 }
         };
 
         await fixture.sockets['peer-1']!.receive(message);
 
+        await expect.poll(() => readReceipts(fixture.sockets['peer-1']!)).toEqual([
+            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: expected })
+        ]);
         await expect.poll(() => readChatRecipients(fixture)).toEqual(delivered);
-        expect(readReceipts(fixture.sockets['peer-1']!)).toEqual([]);
     });
 
     it('sends an outbox-fanned room broadcast to its admission audience and expects exactly it, never a later local session', async () => {
@@ -1424,17 +1431,6 @@ function createReceiverRoomBroadcast(resourceId: string): ALMessage {
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };
-}
-
-function createBestEffortRoomBroadcast(resourceId: string): ALMessage {
-    return newALBroadcastMessage(
-        'peer-1',
-        newALRoute('room.chat', 'room-1', resourceId),
-        'room',
-        'chat.message.v1',
-        {},
-        { groupRef: AUDIENCE_ROOM }
-    );
 }
 
 function readChatRecipients(fixture: AudienceRouterFixture): readonly string[] {

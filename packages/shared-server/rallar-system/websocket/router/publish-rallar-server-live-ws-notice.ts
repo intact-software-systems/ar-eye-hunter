@@ -7,7 +7,7 @@ import {
     type LiveWsInboundReference,
     type LiveWsPublicationInput
 } from '../../queue-pubsub/live-ws-notice.ts';
-import type { ResolvedRallarServerWsPublication } from './publish-rallar-server-ws-message.ts';
+import type { PublishRallarServerWsMessageInput } from './publish-rallar-server-ws-message.ts';
 import { resolveAuthorizedRoomSessionIds } from './rallar-server-ws-publication-audience.ts';
 import type { RallarServerWsPublishResult } from './rallar-server-ws-router-contracts.ts';
 
@@ -22,7 +22,7 @@ interface ToLiveWsPublicationInput {
 }
 
 export async function publishRallarServerLiveWsNotice(
-    input: ResolvedRallarServerWsPublication,
+    input: PublishRallarServerWsMessageInput,
     effective: ALQosEffectivePolicy
 ): Promise<RallarServerWsPublishResult> {
     const publication = input.livePublication;
@@ -85,7 +85,7 @@ function toLiveWsPublicationInput(input: ToLiveWsPublicationInput): LiveWsPublic
 }
 
 function sendLocalPublishedLiveWsNotice(
-    input: ResolvedRallarServerWsPublication,
+    input: PublishRallarServerWsMessageInput,
     notice: LiveWsPublicationInput
 ): string | undefined {
     try {
@@ -111,7 +111,7 @@ function sendLocalPublishedLiveWsNotice(
 }
 
 async function readLiveWsPublicationAudience(
-    input: ResolvedRallarServerWsPublication
+    input: PublishRallarServerWsMessageInput
 ): Promise<LiveWsAudience | undefined> {
     const targets = input.message.targets;
     if (!targets) {
@@ -172,11 +172,11 @@ function readLiveWsPublicationScope(message: ALMessage, inboundScope: StateScope
     throw new TypeError('Scoped live WS publication has no full recipient scope.');
 }
 
-function failedLivePublication(input: ResolvedRallarServerWsPublication, reason: string): RallarServerWsPublishResult {
+function failedLivePublication(input: PublishRallarServerWsMessageInput, reason: string): RallarServerWsPublishResult {
     if (input.origin) {
         console.error(
             `Rallar server WS ${input.origin} publication failed for ` +
-            `${input.message.route.topicId} (${input.message.id.msgId}): ${reason}`
+                `${input.message.route.topicId} (${input.message.id.msgId}): ${reason}`
         );
     }
     return { fanout: input.fanout, status: 'failed', message: input.message, entries: [], reason };

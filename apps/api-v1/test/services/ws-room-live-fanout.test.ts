@@ -258,7 +258,7 @@ Deno.test('a WS-carried room multicast reaches the other admitted members live a
             {
                 ttlMs: 30_000,
                 orderingKey: toALGroupTargetKey(snapshot.group),
-                reliability: 'best-effort',
+                reliability: 'at-least-once',
                 ack: 'none',
                 ownership: 'shared',
                 overlayId: toScopedOverlayId(snapshot.group)
@@ -281,7 +281,7 @@ Deno.test('a WS-carried room multicast reaches the other admitted members live a
     }
 });
 
-Deno.test('receiver room admission records its audience and completes after acknowledgments', async () => {
+Deno.test('a live-only receiver room multicast answers its origin with the admitted audience and the complete receipt', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {

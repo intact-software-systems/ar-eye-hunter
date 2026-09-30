@@ -352,6 +352,17 @@ admits the control here as one durable `WS_OUTBOX` row that expires 30 s after t
 receipt, its first dequeue publishes it once and completes, so a target connected to no instance
 costs one publication and no retry.
 
+A room topic's declared fanout picks the carrier, whatever the message's QoS (D71, D99). On an `outbox` topic the
+server's own outbound owner sends the message and keeps the `receiver` row described below. On a `live-only` topic
+the router sends once and keeps no copy to retry: to this instance's sockets and, with Postgres pub/sub, as one
+cluster notice
+([`publishRallarServerLiveWsNotice`](../../../shared-server/rallar-system/websocket/router/publish-rallar-server-live-ws-notice.ts))
+that every other instance hands to its own sockets without running a handler. The notice is best effort and one
+attempt: an instance whose listener is down misses it. A live-only publication whose notice would reach the
+NOTIFY limit and that has no canonical inbound row to point at is refused `failed`, never moved to the outbox.
+Either way the receipt is the aggregate above, so a recipient the one send did not reach, or that never
+acknowledged, reads unconfirmed and the receipt ends `timed-out` naming it. A `none` topic runs its handlers only.
+
 Since S3c-i a WS origin knows its server: `/api/config` names it as `serverPeerId`, and the WS client plans against it
 ([`toWsQueueBoxClientAckTrackingPlan`](../../services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts)).
 A unicast addressed to the server, and every `hop` or `subtree` send, expects the server's own ACK: the server is the

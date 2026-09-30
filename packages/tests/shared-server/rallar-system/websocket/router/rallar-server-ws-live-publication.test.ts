@@ -109,16 +109,17 @@ describe('Rallar server WS live cluster publication', () => {
         }
     );
 
-    it('refuses explicit live-only publication when effective delivery requires durable outbound work', async () => {
-        let notices = 0;
+    it('publishes an explicit live-only message whose QoS asks for durable work as one notice', async () => {
+        const notices: LiveWsNotice[] = [];
         const transport: LiveWsNoticeTransport = {
-            publish: async () => {
-                notices += 1;
+            publish: async (notice) => {
+                notices.push(notice);
             },
             subscribe: async () => {}
         };
+        const outbox = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
-            outbox: new InMemoryQueueBox(new Map()),
+            outbox,
             socket: new JsonWebSocketServer(),
             name: 'server-a'
         });
@@ -127,22 +128,25 @@ describe('Rallar server WS live cluster publication', () => {
             nowEpochMs: () => 100,
             livePublication: { transport, channel: 'ws-channel', publisherId: 'server-a' }
         });
-        const message = newALBroadcastMessage(
+        const base = newALBroadcastMessage(
             'server-a',
             newALRoute('app.durable', 'message', 'all'),
             'all',
             'app.durable.v1',
             { text: 'hello' }
         );
+        const message = {
+            ...base,
+            qos: { delivery: { algo: 'at-least-once' as const }, durability: { algo: 'local-outbox' as const } }
+        };
 
-        const result = await router.publish({
-            message: { ...message, qos: { delivery: { algo: 'at-least-once' }, durability: { algo: 'local-outbox' } } },
-            fanout: 'live-only'
-        });
+        const result = await router.publish({ message, fanout: 'live-only' });
 
-        expect(result.status).toBe('failed');
-        expect(result.reason).toContain('durable');
-        expect(notices).toBe(0);
+        expect(result).toMatchObject({ fanout: 'live-only', status: 'cluster-published' });
+        expect(result.reason).toBeUndefined();
+        expect(notices).toHaveLength(1);
+        expect(notices[0]).toMatchObject({ delivery: 'inline', message: { id: message.id, qos: message.qos } });
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('reports a failed cluster publication instead of remote success', async () => {

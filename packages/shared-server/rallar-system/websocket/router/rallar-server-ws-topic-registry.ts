@@ -23,10 +23,10 @@ interface RegisteredHandler {
 export interface DispatchRallarServerWsProxyRulesInput {
     readonly message: RallarServerWsMessage<JsonWireValue>;
     readonly context: RallarServerWsMessageContext;
-    readonly defaultFanout: RallarServerWsFanout | undefined;
+    readonly defaultFanout: RallarServerWsFanout;
     readonly publish: (
         message: ALMessage,
-        fanout: RallarServerWsFanout | undefined
+        fanout: RallarServerWsFanout
     ) => Promise<RallarServerWsPublishResult>;
 }
 
