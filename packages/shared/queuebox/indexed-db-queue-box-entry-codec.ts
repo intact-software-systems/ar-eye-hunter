@@ -52,38 +52,49 @@ interface DataRecordFields {
     readonly optional?: readonly string[];
 }
 
+const ROW_FIELDS: DataRecordFields = {
+    required: [
+        'keyString',
+        'revision',
+        'key',
+        'resource',
+        'typeId',
+        'audit',
+        'expiryEpochMs',
+        'status',
+        'dequeueAudit',
+        'endEpochMs'
+    ],
+    optional: ['fairnessDueEpochMs']
+};
+const KEY_FIELDS: DataRecordFields = { required: ['topicId', 'resourceId', 'contextId'] };
+const AUDIT_FIELDS: DataRecordFields = { required: ['date', 'createdBy', 'createdTs', 'expiryTs'] };
+const DEQUEUE_AUDIT_FIELDS: DataRecordFields = {
+    required: ['attempts'],
+    optional: ['startTs', 'endTs', 'nextTs']
+};
+
+interface StoredResourceEntryTimestamps {
+    readonly date: Temporal.PlainTime;
+    readonly createdTs: Temporal.PlainDateTime;
+    readonly expiryTs: Temporal.Instant;
+    readonly startTs: Temporal.Instant | undefined;
+    readonly endTs: Temporal.Instant | undefined;
+    readonly nextTs: Temporal.Instant | undefined;
+}
+
+/** Frozen rows whose timestamp strings and epoch-ms mirrors were produced from, or checked against, these values. */
+const verifiedTimestamps = new WeakMap<object, StoredResourceEntryTimestamps>();
+
 export function encodeStoredResourceEntry(
     entry: ResourceEntry,
     revision: number
 ): StoredResourceEntry {
-    const expiryTs = toInstant(entry.audit.expiryTs);
-    const endTs = toOptionalInstant(entry.dequeueAudit.endTs);
-    const nextTs = toOptionalInstant(entry.dequeueAudit.nextTs);
-    const stored: StoredResourceEntry = {
-        keyString: toKeyAsString(entry.key),
-        revision,
-        fairnessDueEpochMs: nextTs === undefined ? undefined : Number(nextTs.epochMilliseconds),
-        key: { ...entry.key },
-        resource: entry.resource,
-        typeId: entry.typeId,
-        audit: {
-            date: toPlainTime(entry.audit.date).toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
-            expiryTs: expiryTs.toString()
-        },
-        expiryEpochMs: Number(expiryTs.epochMilliseconds),
-        status: entry.status,
-        dequeueAudit: {
-            startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
-            endTs: endTs?.toString(),
-            nextTs: nextTs?.toString({ fractionalSecondDigits: 9 }),
-            attempts: entry.dequeueAudit.attempts
-        },
-        endEpochMs: toExpectedEndEpochMs(entry.status, endTs)
-    };
-    validateStoredResourceEntry(stored);
-    return stored;
+    const timestamps = toStoredResourceEntryTimestamps(entry);
+    return freezeVerifiedStoredResourceEntry(
+        toStoredResourceEntry(entry, revision, timestamps),
+        timestamps
+    );
 }
 
 export function decodeStoredResourceEntry(stored: StoredResourceEntry): ResourceEntry {
@@ -112,98 +123,94 @@ export function decodeStoredResourceEntry(stored: StoredResourceEntry): Resource
 }
 
 export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResourceEntry {
-    const stored = requireDataRecord(value, 'IndexedDB queue row', {
-        required: [
-            'keyString',
-            'revision',
-            'key',
-            'resource',
-            'typeId',
-            'audit',
-            'expiryEpochMs',
-            'status',
-            'dequeueAudit',
-            'endEpochMs'
-        ],
-        optional: ['fairnessDueEpochMs']
-    });
-    const key = requireDataRecord(stored.key, 'IndexedDB queue key', {
-        required: ['topicId', 'resourceId', 'contextId']
-    });
-    const audit = requireDataRecord(stored.audit, 'IndexedDB queue audit', {
-        required: ['date', 'createdBy', 'createdTs', 'expiryTs']
-    });
-    const dequeueAudit = requireDataRecord(stored.dequeueAudit, 'IndexedDB queue dequeue audit', {
-        required: ['attempts'],
-        optional: ['startTs', 'endTs', 'nextTs']
-    });
-    const canonical = {
-        keyString: requireString(stored.keyString, 'IndexedDB queue key string'),
-        revision: requireNonNegativeInteger(stored.revision, 'IndexedDB queue revision'),
-        ...(stored.fairnessDueEpochMs === undefined
-            ? {}
-            : {
-                fairnessDueEpochMs: requireSafeInteger(
-                    stored.fairnessDueEpochMs,
-                    'IndexedDB queue fairness timestamp'
-                )
-            }),
-        key: {
-            topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
-            resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
-            contextId: requireString(key.contextId, 'IndexedDB queue context id')
-        },
-        resource: requireString(stored.resource, 'IndexedDB queue resource'),
-        typeId: requireString(stored.typeId, 'IndexedDB queue type id'),
-        audit: {
-            date: requireString(audit.date, 'IndexedDB queue audit date'),
-            createdBy: requireString(audit.createdBy, 'IndexedDB queue creator'),
-            createdTs: requireString(audit.createdTs, 'IndexedDB queue creation timestamp'),
-            expiryTs: requireString(audit.expiryTs, 'IndexedDB queue expiry timestamp')
-        },
-        expiryEpochMs: requireSafeInteger(stored.expiryEpochMs, 'IndexedDB queue expiry timestamp (ms)'),
-        status: requireEntityStatus(stored.status),
-        dequeueAudit: {
-            ...(dequeueAudit.startTs === undefined
-                ? {}
-                : { startTs: requireString(dequeueAudit.startTs, 'IndexedDB queue start timestamp') }),
-            ...(dequeueAudit.endTs === undefined
-                ? {}
-                : { endTs: requireString(dequeueAudit.endTs, 'IndexedDB queue end timestamp') }),
-            ...(dequeueAudit.nextTs === undefined
-                ? {}
-                : { nextTs: requireString(dequeueAudit.nextTs, 'IndexedDB queue next timestamp') }),
-            attempts: requireNonNegativeInteger(
-                dequeueAudit.attempts,
-                'IndexedDB queue attempt count'
-            )
-        },
-        endEpochMs: requireSafeIntegerOrNull(stored.endEpochMs, 'IndexedDB queue end timestamp (ms)')
-    } satisfies StoredResourceEntry;
-    validateStoredResourceEntry(canonical);
+    const canonical = decodeStoredResourceEntryFields(value);
+    if (getVerifiedTimestamps(value) === undefined) {
+        decodeStoredResourceEntryTimestamps(canonical);
+    }
     return canonical;
 }
 
-function validateStoredResourceEntry(stored: StoredResourceEntry): void {
-    if (stored.keyString !== toKeyAsString(stored.key)) {
-        throw new TypeError('IndexedDB queue row key differs from its canonical key');
-    }
-    toPlainTime(stored.audit.date);
-    toPlainDateTime(stored.audit.createdTs);
+function toStoredResourceEntryTimestamps(entry: ResourceEntry): StoredResourceEntryTimestamps {
+    const expiryTs = toInstant(entry.audit.expiryTs);
+    const endTs = toOptionalInstant(entry.dequeueAudit.endTs);
+    const nextTs = toOptionalInstant(entry.dequeueAudit.nextTs);
+    return {
+        date: toPlainTime(entry.audit.date),
+        createdTs: toPlainDateTime(entry.audit.createdTs),
+        expiryTs,
+        startTs: toOptionalInstant(entry.dequeueAudit.startTs),
+        endTs,
+        nextTs
+    };
+}
+
+function toStoredResourceEntry(
+    entry: ResourceEntry,
+    revision: number,
+    timestamps: StoredResourceEntryTimestamps
+): StoredResourceEntry {
+    const { expiryTs, endTs, nextTs } = timestamps;
+    return {
+        keyString: toKeyAsString(entry.key),
+        revision,
+        fairnessDueEpochMs: toOptionalEpochMs(nextTs),
+        key: { ...entry.key },
+        resource: entry.resource,
+        typeId: entry.typeId,
+        audit: {
+            date: timestamps.date.toString(),
+            createdBy: entry.audit.createdBy,
+            createdTs: timestamps.createdTs.toString(),
+            expiryTs: expiryTs.toString()
+        },
+        expiryEpochMs: Number(expiryTs.epochMilliseconds),
+        status: entry.status,
+        dequeueAudit: {
+            startTs: timestamps.startTs?.toString(),
+            endTs: endTs?.toString(),
+            nextTs: nextTs?.toString({ fractionalSecondDigits: 9 }),
+            attempts: entry.dequeueAudit.attempts
+        },
+        endEpochMs: toExpectedEndEpochMs(entry.status, endTs)
+    };
+}
+
+function decodeStoredResourceEntryTimestamps(
+    stored: StoredResourceEntry
+): StoredResourceEntryTimestamps {
+    const date = toPlainTime(stored.audit.date);
+    const createdTs = toPlainDateTime(stored.audit.createdTs);
     const expiryTs = toInstant(stored.audit.expiryTs);
     if (stored.expiryEpochMs !== Number(expiryTs.epochMilliseconds)) {
-        throw new TypeError('IndexedDB queue expiry timestamp (ms) differs from its expiry instant');
+        throw new TypeError(
+            'IndexedDB queue expiry timestamp (ms) differs from its expiry instant'
+        );
     }
-    toOptionalInstant(stored.dequeueAudit.startTs);
+    const startTs = toOptionalInstant(stored.dequeueAudit.startTs);
     const endTs = toOptionalInstant(stored.dequeueAudit.endTs);
     if (stored.endEpochMs !== toExpectedEndEpochMs(stored.status, endTs)) {
         throw new TypeError('IndexedDB queue end timestamp (ms) differs from its dequeue audit');
     }
-    const next = toOptionalInstant(stored.dequeueAudit.nextTs);
-    const expectedFairness = next === undefined ? undefined : Number(next.epochMilliseconds);
-    if (stored.fairnessDueEpochMs !== expectedFairness) {
+    const nextTs = toOptionalInstant(stored.dequeueAudit.nextTs);
+    if (stored.fairnessDueEpochMs !== toOptionalEpochMs(nextTs)) {
         throw new TypeError('IndexedDB queue fairness timestamp differs from its next timestamp');
     }
+    return { date, createdTs, expiryTs, startTs, endTs, nextTs };
+}
+
+function freezeVerifiedStoredResourceEntry(
+    stored: StoredResourceEntry,
+    timestamps: StoredResourceEntryTimestamps
+): StoredResourceEntry {
+    Object.freeze(stored.key);
+    Object.freeze(stored.audit);
+    Object.freeze(stored.dequeueAudit);
+    verifiedTimestamps.set(Object.freeze(stored), timestamps);
+    return stored;
+}
+
+function getVerifiedTimestamps<Value>(value: Value): StoredResourceEntryTimestamps | undefined {
+    return typeof value === 'object' && value !== null ? verifiedTimestamps.get(value) : undefined;
 }
 
 /**
@@ -222,22 +229,35 @@ function toExpectedEndEpochMs(
     return COMPLETED_STATUSES.has(status) ? 0 : null;
 }
 
+function toOptionalEpochMs(instant: Temporal.Instant | undefined): number | undefined {
+    return instant === undefined ? undefined : Number(instant.epochMilliseconds);
+}
+
 function toPlainTime(value: string | Temporal.PlainTime): Temporal.PlainTime {
-    if (typeof value !== 'string' && !(value instanceof Temporal.PlainTime)) {
+    if (value instanceof Temporal.PlainTime) {
+        return value;
+    }
+    if (typeof value !== 'string') {
         throw new TypeError('IndexedDB queue audit date must be a plain time');
     }
     return Temporal.PlainTime.from(value);
 }
 
 function toPlainDateTime(value: string | Temporal.PlainDateTime): Temporal.PlainDateTime {
-    if (typeof value !== 'string' && !(value instanceof Temporal.PlainDateTime)) {
+    if (value instanceof Temporal.PlainDateTime) {
+        return value;
+    }
+    if (typeof value !== 'string') {
         throw new TypeError('IndexedDB queue creation timestamp must be a plain date-time');
     }
     return Temporal.PlainDateTime.from(value);
 }
 
 function toInstant(value: string | Temporal.Instant): Temporal.Instant {
-    if (typeof value !== 'string' && !(value instanceof Temporal.Instant)) {
+    if (value instanceof Temporal.Instant) {
+        return value;
+    }
+    if (typeof value !== 'string') {
         throw new TypeError('IndexedDB queue timestamp must be an instant');
     }
     return Temporal.Instant.from(value);
@@ -247,6 +267,77 @@ function toOptionalInstant(
     value: string | Temporal.Instant | undefined
 ): Temporal.Instant | undefined {
     return value === undefined ? undefined : toInstant(value);
+}
+
+function decodeStoredResourceEntryFields<Value>(value: Value): StoredResourceEntry {
+    const stored = requireDataRecord(value, 'IndexedDB queue row', ROW_FIELDS);
+    const key = requireDataRecord(stored.key, 'IndexedDB queue key', KEY_FIELDS);
+    const audit = requireDataRecord(stored.audit, 'IndexedDB queue audit', AUDIT_FIELDS);
+    const dequeueAudit = requireDataRecord(
+        stored.dequeueAudit,
+        'IndexedDB queue dequeue audit',
+        DEQUEUE_AUDIT_FIELDS
+    );
+    const canonical = {
+        keyString: requireString(stored.keyString, 'IndexedDB queue key string'),
+        revision: requireNonNegativeInteger(stored.revision, 'IndexedDB queue revision'),
+        ...(stored.fairnessDueEpochMs === undefined
+            ? {}
+            : {
+                fairnessDueEpochMs: requireSafeInteger(
+                    stored.fairnessDueEpochMs,
+                    'IndexedDB queue fairness timestamp'
+                )
+            }),
+        key: {
+            topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
+            resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
+            contextId: requireString(key.contextId, 'IndexedDB queue context id')
+        },
+        resource: requireString(stored.resource, 'IndexedDB queue resource'),
+        typeId: requireString(stored.typeId, 'IndexedDB queue type id'),
+        audit: toStoredAudit(audit),
+        expiryEpochMs: requireSafeInteger(
+            stored.expiryEpochMs,
+            'IndexedDB queue expiry timestamp (ms)'
+        ),
+        status: requireEntityStatus(stored.status),
+        dequeueAudit: toStoredDequeueAudit(dequeueAudit),
+        endEpochMs: requireSafeIntegerOrNull(
+            stored.endEpochMs,
+            'IndexedDB queue end timestamp (ms)'
+        )
+    } satisfies StoredResourceEntry;
+    if (canonical.keyString !== toKeyAsString(canonical.key)) {
+        throw new TypeError('IndexedDB queue row key differs from its canonical key');
+    }
+    return canonical;
+}
+
+function toStoredAudit(audit: IndexedDbQueueDataRecord): StoredResourceEntry['audit'] {
+    return {
+        date: requireString(audit.date, 'IndexedDB queue audit date'),
+        createdBy: requireString(audit.createdBy, 'IndexedDB queue creator'),
+        createdTs: requireString(audit.createdTs, 'IndexedDB queue creation timestamp'),
+        expiryTs: requireString(audit.expiryTs, 'IndexedDB queue expiry timestamp')
+    };
+}
+
+function toStoredDequeueAudit(
+    dequeueAudit: IndexedDbQueueDataRecord
+): StoredResourceEntry['dequeueAudit'] {
+    return {
+        ...(dequeueAudit.startTs === undefined
+            ? {}
+            : { startTs: requireString(dequeueAudit.startTs, 'IndexedDB queue start timestamp') }),
+        ...(dequeueAudit.endTs === undefined
+            ? {}
+            : { endTs: requireString(dequeueAudit.endTs, 'IndexedDB queue end timestamp') }),
+        ...(dequeueAudit.nextTs === undefined
+            ? {}
+            : { nextTs: requireString(dequeueAudit.nextTs, 'IndexedDB queue next timestamp') }),
+        attempts: requireNonNegativeInteger(dequeueAudit.attempts, 'IndexedDB queue attempt count')
+    };
 }
 
 function requireDataRecord<Value>(
