@@ -1,7 +1,8 @@
 # Playwright Suite Map
 
 Playwright configs are app-owned. Run suites through the app config so the
-right tests, dev server, ports, and browser options are selected.
+right tests, dev server, ports, and browser options are selected. The ALM
+durable-send harness serves no app, so its config sits beside its suite.
 
 | App                         | Tests                                                    | Config                                                  | Command                                                                   | Ports                                                      |
 | --------------------------- | -------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -11,6 +12,7 @@ right tests, dev server, ports, and browser options are selected.
 | Relic Hunters               | `tests/playwright/relic-hunters`                         | `apps/relic-hunters-v1/playwright.config.ts`            | `npm run test:playwright:relic`                                           | SPA `5175`                                                 |
 | Relic Hunters full stack    | `tests/playwright/relic-hunters/full-stack-*.spec.ts`    | `apps/relic-hunters-v1/playwright.full-stack.config.ts` | `npm run test:playwright:relic:full-stack`                                | SPA `5175`, API `8090`                                     |
 | AR Eye Hunter               | `tests/playwright/ar-eye-hunter`                         | `apps/ar-eye-hunter-v1/playwright.config.ts`            | `npx playwright test --config apps/ar-eye-hunter-v1/playwright.config.ts` | SPA `5186`                                                 |
+| ALM durable-send harness    | `tests/playwright/alm`                                   | `tests/playwright/alm/playwright.config.ts`             | `npm run perf:alm:durable-send`                                           | none: the page is served by a route                        |
 
 Avoid bare `npx playwright test` from the repository root. There is no root
 config because a root default can silently start the wrong app for a test path.
