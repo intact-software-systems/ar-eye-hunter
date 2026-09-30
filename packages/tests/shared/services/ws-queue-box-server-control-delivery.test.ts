@@ -138,16 +138,13 @@ describe('the cluster hand-off row of a server control', () => {
 
     it('writes one row for a control handed off twice, deduplicated by its msgId', async () => {
         const handOff = createHandOffFixture();
-        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
         await handOff.delivery.sendControlMessage(serverAck('ack-twice'));
         const rowsAfterFirst = await handOff.readRowKeys();
         await handOff.delivery.sendControlMessage(serverAck('ack-twice'));
 
-        expect(log.mock.calls.map(([line]) => String(line).match(/\((\w+)\)$/)?.[1])).toEqual([
-            'admitted',
-            'duplicate'
-        ]);
+        expect(await handOff.readRowExpiry('ack-twice')).toBe(HAND_OFF_NOW_MS + 30_000);
         expect(rowsAfterFirst.length).toBeGreaterThan(0);
         expect(await handOff.readRowKeys()).toEqual(rowsAfterFirst);
     });
