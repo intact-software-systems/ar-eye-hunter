@@ -9,6 +9,9 @@ import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
+    ALOutboundMessageReadDto,
+    ALOutboundObservedDecision,
+    ALOutboundOutgoingReadInput,
     ALOutboundPlanner,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
@@ -272,13 +275,13 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        const decision = await this.readDispatchDecision(dispatch, phases);
+        const { decision, observation } = await this.readObservedDispatchDecision(dispatch, phases);
         if (decision.kind === 'settled') {
             return decision.result;
         }
 
         const { input, computed, bundle } = decision;
-        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
+        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle, observation));
         if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
             const retained = await this.retainPendingDispatch(input, computed, phases);
             if (this.isInitialControlHandoff(dispatch) && retained.computed.verdict.kind === 'failed') {
@@ -294,7 +297,26 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return result;
     }
 
-    /** Everything one dispatch decides before its write: the read, its retained pending admission, compute and validate. */
+    /** A single send decides inside its decision read, so that read also holds what its commit fences. */
+    private async readObservedDispatchDecision(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundObservedDecision<TPrepared, ALOutboundDispatchDecision<TPrepared>>> {
+        if (this.disposed) {
+            return {
+                decision: { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() },
+                observation: undefined
+            };
+        }
+        return await phases.withReadPhase(() =>
+            this.admissionStore.readOutgoingDecision(
+                this.toOutgoingReadInput(dispatch),
+                (read) => this.decideDispatch(dispatch, this.toDispatchInput(dispatch, read))
+            )
+        );
+    }
+
+    /** One group member's decision; the group reads the observation of every bundle in its own commit. */
     private async readDispatchDecision(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         phases: ALOutboundCommitPhases
@@ -302,8 +324,18 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         if (this.disposed) {
             return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
         }
-        const input = await phases.withReadPhase(() => this.readDispatch(dispatch));
-        const pending = await phases.withReadPhase(() => this.readPendingDispatch(input));
+        return await phases.withReadPhase(async () => {
+            const read = await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch));
+            return await this.decideDispatch(dispatch, this.toDispatchInput(dispatch, read));
+        });
+    }
+
+    /** Everything one dispatch decides on its read: its retained pending admission, compute and validate. */
+    private async decideDispatch(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        input: ComputeALOutboundDispatchInput<TPrepared>
+    ): Promise<ALOutboundDispatchDecision<TPrepared>> {
+        const pending = await this.readPendingDispatch(input);
         if (pending) {
             return toALOutboundSettledDecision(pending.verdict, {
                 msg: input.read.msg,
@@ -472,16 +504,22 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         };
     }
 
-    private async readDispatch(
+    private toOutgoingReadInput(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
-    ): Promise<ComputeALOutboundDispatchInput<TPrepared>> {
-        const read = await this.admissionStore.readOutgoingMessage({
+    ): ALOutboundOutgoingReadInput<TPrepared> {
+        return {
             msg: dispatch.msg,
             planner: dispatch.planner,
             observedCanonicalEntry: dispatch.options.observedOutboxEntry,
             dequeueAuthority: dispatch.dequeueAuthority,
             intent: dispatch.intent
-        });
+        };
+    }
+
+    private toDispatchInput(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        read: ALOutboundMessageReadDto<TPrepared>
+    ): ComputeALOutboundDispatchInput<TPrepared> {
         const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);
         return {
             read,

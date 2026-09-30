@@ -17,8 +17,10 @@ afterEach(() => {
 it('retries the inbound ACK owner when RTC control handoff conflicts', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const { receiver, sender } = createConnectedEndpoints();
-    vi.spyOn(receiver.outbound.admissionStore, 'commitBundles').mockResolvedValueOnce('conflict');
-    vi.spyOn(receiver.outbound.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+    // The handoff and its one retry both conflict; a single send commits through `commitBundle` alone.
+    vi.spyOn(receiver.outbound.admissionStore, 'commitBundle')
+        .mockResolvedValueOnce('conflict')
+        .mockResolvedValueOnce('conflict');
     vi.spyOn(receiver.outbound.admissionStore, 'retainPendingAdmission')
         .mockResolvedValue('conflict');
     const message = newALUnicastMessage(

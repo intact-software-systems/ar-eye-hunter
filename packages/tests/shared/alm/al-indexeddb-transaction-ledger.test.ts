@@ -30,6 +30,10 @@ const OUTBOUND_NAMESPACE = 'outbound-ledger';
 const INBOUND_NAMESPACE = 'al-inbound-ledger';
 const INBOUND_WORKER_ID = 'al-inbound:ledger';
 
+const SINGLE_SEND_OBSERVATION_REASON = 'a single send\'s decision read also reads the effect row its commit writes and ' +
+    'holds the canonical pair, so the commit opens no observation read (-1 transaction, -2 al-work, ' +
+    '-2 requests)';
+
 // Each run warms its owner first and lets the warm-up's work finish, so the pinned message's window
 // holds its own transactions only. Every message carries the ledger table, so a failed pin shows
 // which transaction appeared or went away.
@@ -38,7 +42,7 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         vi.restoreAllMocks();
     });
 
-    it('reaches the carrier in 11 transactions and the idle owner in 14', async () => {
+    it('reaches the carrier in 10 transactions and the idle owner in 13', async () => {
         const ledger = await readWarmOutboundSendLedger();
         const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
@@ -46,17 +50,20 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
 
         expect(
             chain.transactions,
-            'enqueue to carrier: the decision read, the commit observation read, the fence snapshot and ' +
-                'the commit; then the batch\'s exhaustion sweep, claim read, claim write, lease-recovery ' +
-                'read, canonical read, supersedence read and receipt read' + table
-        ).toBe(11);
+            'enqueue to carrier: the decision read, the fence snapshot and the commit; then the batch\'s ' +
+                'exhaustion sweep, claim read, claim write, lease-recovery read, canonical read, ' +
+                'supersedence read and receipt read; ' + SINGLE_SEND_OBSERVATION_REASON + table
+        ).toBe(10);
         expect(
             total.transactions,
             'the chain, then the release read, the release write and the readiness probe the batch\'s ' +
-                'end owes' + table
-        ).toBe(14);
-        expect(total.requests, 'every get, getAll and put those 14 transactions issue' + table)
-            .toBe(46);
+                'end owes; one fewer than before: ' + SINGLE_SEND_OBSERVATION_REASON + table
+        ).toBe(13);
+        expect(
+            total.requests,
+            'every get, getAll and put those 13 transactions issue; 2 fewer than before: ' +
+                SINGLE_SEND_OBSERVATION_REASON + table
+        ).toBe(44);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
@@ -65,9 +72,9 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toBe(10);
         expect(
             total.byOwner['al-work'],
-            '7 work reads (2 decision, 3 commit observation, 2 canonical), 2 empty probes, the ' +
-                'reservation, the release and the readiness page' + table
-        ).toBe(12);
+            '5 work reads (3 decision, 2 canonical), 2 empty probes, the reservation, the release and ' +
+                'the readiness page; 2 fewer than before: ' + SINGLE_SEND_OBSERVATION_REASON + table
+        ).toBe(10);
     });
 });
 

@@ -101,7 +101,7 @@ every server message keeps its one backend.
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 15 `al-work` IndexedDB operations, unchanged by S3a; one
+one durable send spends 10 `al-admission` and 13 `al-work` IndexedDB operations; one
 volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
 idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
@@ -124,17 +124,24 @@ guards that write carries, and applies it inside the transaction;
 [`al-outbound-admission-keys.ts`](./admission/al-outbound-admission-keys.ts) owns
 every admission key string;
 [`ALOutboundAdmissionEffectStore`](./admission/al-outbound-admission-effect-store.ts)
-owns durable effect rows; and
+owns durable effect rows;
+[`ALOutboundDecisionReadSession`](./admission/al-outbound-decision-read-session.ts)
+is the read session of a single send's decision, which answers a work row it already read from that
+read; and
 [`al-outbound-admission-validation.ts`](./admission/al-outbound-admission-validation.ts)
 decodes the persisted snapshots. Every fence — the sender version, the pending-admission
 row, an observed effect row, and a moved supersedence observation — resolves a conflict
 the same way: the guard throws `ALAdmissionBackendConflictError` inside the transaction so
 the backend aborts without writing, leaving every row at the revision and write token it
 already had, and the store catches it at its public boundary and returns the typed
-`'conflict'` result. Only a write conflicts. A read chain's expiry eviction that finds its row
-moved by another writer leaves the row to that writer and answers from its snapshot (the inbound
-README's decision-surface section), so `ALOutboundControlAdmission.admit` never loses an
-acknowledgement to a throw out of `readControlAdmission` or its effect read.
+`'conflict'` result. A single send (`readOutgoingDecision`) reads its decision surface, decides on
+it, and reads the effect rows and canonical pair its bundle's commit fences in one readonly session,
+so its commit opens only the write phase's fence snapshot and the write; `commitBundle` without that
+observation, and a group's `commitBundles`, read it in a readonly session of their own first. Every
+observation is re-read inside the write, however old it is. Only a write conflicts. A read chain's
+expiry eviction that finds its row moved by another writer leaves the row to that writer and answers
+from its snapshot (the inbound README's decision-surface section), so `ALOutboundControlAdmission.admit`
+never loses an acknowledgement to a throw out of `readControlAdmission` or its effect read.
 
 ## Canonical message storage
 
@@ -548,7 +555,8 @@ which hands it to WS, where the shared budget admits it.
 `enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`
 takes one sender-queue slot and one browser lock for an ordinary data group. Canonical initial
 controls bypass those waits and use the same optimistic group commit; a mixed group settles each
-member alone. Each member uses the single-message decision. `commitBundles` fences the sender version once, runs every
+member alone. Each member uses the single-message decision in a read of its own; `commitBundles` then reads
+every bundle's effect rows and canonical pair in one observation read, fences the sender version once, runs every
 bundle's own pending, effect, observation and identity fences, writes every bundle and bumps the version
 once. The group falls back when a member settles before its write (it fails validation, finds its own
 pending admission, or has nothing to commit), when a version moved between the members' reads, when two

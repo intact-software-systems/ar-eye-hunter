@@ -69,6 +69,7 @@ import {
 } from './al-outbound-admission-mutations.ts';
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
 import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
+import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
@@ -114,9 +115,21 @@ export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly intent: ALOutboundComputeIntent;
 }
 
-interface ALOutboundCommitObservation<TPrepared> {
+/** What one bundle's commit fences: the effect rows it may replace and the canonical pair it may write. */
+export interface ALOutboundCommitObservation<TPrepared> {
     readonly effects: readonly ALOutboundEffectObservation<TPrepared>[];
     readonly canonicalWrites: readonly ALOutboundCanonicalFactWrite[];
+}
+
+/** What a single send decided on its decision surface: `commit` names the bundle its commit writes. */
+export type ALOutboundOutgoingDecision<TPrepared> =
+    | Readonly<{ kind: 'settled'; }>
+    | Readonly<{ kind: 'commit'; bundle: ALOutboundCommitBundle<TPrepared>; }>;
+
+/** A single send's decision, and the observation its commit fences when that commit writes. */
+export interface ALOutboundObservedDecision<TPrepared, TDecision> {
+    readonly decision: TDecision;
+    readonly observation: ALOutboundCommitObservation<TPrepared> | undefined;
 }
 
 interface ALOutboundCommitCandidate<TPrepared> {
@@ -268,6 +281,16 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         input: ALOutboundOutgoingReadInput<TPrepared>
     ) => Promise<ALOutboundMessageReadDto<TPrepared>>;
 
+    /**
+     * One session for a single send: the decision surface, the decision `decide` takes on it, and the
+     * observation the commit of that decision fences. A group decides member by member and reads
+     * its observation in `commitBundles`.
+     */
+    readonly readOutgoingDecision: <TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
+        input: ALOutboundOutgoingReadInput<TPrepared>,
+        decide: (read: ALOutboundMessageReadDto<TPrepared>) => Promise<TDecision>
+    ) => Promise<ALOutboundObservedDecision<TPrepared, TDecision>>;
+
     /** Admission-store read round trips issued so far, so a commit can report its own read cost. */
     readonly getReadOperationCount: () => number;
 
@@ -304,8 +327,10 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** Decodes one claimed work row of this scope, including the canonical message its payload references. */
     readonly readWorkSnapshot: (entry: ResourceEntry) => Promise<ALOutboundEffectSnapshot<TPrepared>>;
 
+    /** Without the `observation` its decision read already holds, the commit reads its own first. */
     readonly commitBundle: (
-        bundle: ALOutboundCommitBundle<TPrepared>
+        bundle: ALOutboundCommitBundle<TPrepared>,
+        observation?: ALOutboundCommitObservation<TPrepared>
     ) => Promise<'committed' | 'conflict' | 'expired'>;
 
     /** Commits bundles decided against one read of the version of one sender under one version fence. */
@@ -413,6 +438,20 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readOutgoingMessage(session, input));
     }
 
+    async readOutgoingDecision<TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
+        input: ALOutboundOutgoingReadInput<TPrepared>,
+        decide: (read: ALOutboundMessageReadDto<TPrepared>) => Promise<TDecision>
+    ): Promise<ALOutboundObservedDecision<TPrepared, TDecision>> {
+        return await this.backend.readWithin(async (backendSession) => {
+            const session = new ALOutboundDecisionReadSession(backendSession);
+            const decision = await decide(await this.reads.readOutgoingMessage(session, input));
+            const observation = decision.kind === 'commit' && hasALOutboundBundleWrites(decision.bundle)
+                ? await this.readCommitObservation(session, decision.bundle)
+                : undefined;
+            return { decision, observation };
+        });
+    }
+
     async readRepairMessage(
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
@@ -460,8 +499,16 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.effectStore.readWorkSnapshot(entry);
     }
 
-    async commitBundle(bundle: ALOutboundCommitBundle<TPrepared>): Promise<'committed' | 'conflict' | 'expired'> {
-        return await this.commitBundles([bundle]);
+    async commitBundle(
+        bundle: ALOutboundCommitBundle<TPrepared>,
+        observation?: ALOutboundCommitObservation<TPrepared>
+    ): Promise<'committed' | 'conflict' | 'expired'> {
+        if (observation === undefined) {
+            return await this.commitBundles([bundle]);
+        }
+        return hasALOutboundBundleWrites(bundle)
+            ? await this.commitObserved([bundle], [observation], this.nowMs())
+            : 'committed';
     }
 
     /**
@@ -474,7 +521,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         bundles: readonly ALOutboundCommitBundle<TPrepared>[]
     ): Promise<'committed' | 'conflict' | 'expired'> {
         assertALOutboundBundleGroup(bundles);
-        const writing = bundles.filter((bundle) => bundle.mutations.length > 0 || bundle.durableEffects.length > 0);
+        const writing = bundles.filter(hasALOutboundBundleWrites);
         if (writing.length === 0) {
             return 'committed';
         }
@@ -488,13 +535,29 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const observed = await this.backend.readWithin(async (session) => {
             const reads: ALOutboundCommitObservation<TPrepared>[] = [];
             for (const bundle of writing) {
-                reads.push({
-                    effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
-                    canonicalWrites: await this.readCanonicalWrites(session, bundle)
-                });
+                reads.push(await this.readCommitObservation(session, bundle));
             }
             return reads;
         });
+        return await this.commitObserved(writing, observed, nowMs);
+    }
+
+    private async readCommitObservation(
+        session: ALAdmissionReadSession,
+        bundle: ALOutboundCommitBundle<TPrepared>
+    ): Promise<ALOutboundCommitObservation<TPrepared>> {
+        return {
+            effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
+            canonicalWrites: await this.readCanonicalWrites(session, bundle)
+        };
+    }
+
+    /** `writing` is one non-empty group, each bundle paired with the observation at its index. */
+    private async commitObserved(
+        writing: readonly ALOutboundCommitBundle<TPrepared>[],
+        observed: readonly ALOutboundCommitObservation<TPrepared>[],
+        nowMs: number
+    ): Promise<'committed' | 'conflict' | 'expired'> {
         const candidates = writing.map((bundle, index) => this.computeCommitCandidate(bundle, observed[index]!, nowMs));
         if (this.hasExpiredWork(candidates)) {
             return 'expired';
@@ -651,6 +714,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             decodePrepared: this.decodePrepared
         }, input);
     }
+}
+
+function hasALOutboundBundleWrites<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): boolean {
+    return bundle.mutations.length > 0 || bundle.durableEffects.length > 0;
 }
 
 /** Every bundle of one group was decided against the same read of the version of one sender. */
