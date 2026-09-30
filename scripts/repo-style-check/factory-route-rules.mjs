@@ -145,6 +145,7 @@ function findOptionalFields(lines, typeName) {
         'u'
     );
 
+    let maskedLines;
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
         if (!startPattern.test(lines[lineIndex])) {
             continue;
@@ -152,7 +153,7 @@ function findOptionalFields(lines, typeName) {
 
         const optionalFields = [];
         let depth = 0;
-        const maskedLines = maskNonCodeLines(lines);
+        maskedLines ??= maskNonCodeLines(lines);
 
         for (let fieldLineIndex = lineIndex; fieldLineIndex < lines.length; fieldLineIndex += 1) {
             const clean = maskedLines[fieldLineIndex];

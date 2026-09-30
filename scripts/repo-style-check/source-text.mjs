@@ -56,8 +56,14 @@ export function skipWhitespaceAndComments(raw, start) {
     return index;
 }
 
+// One source is scanned many times: each unknown usage re-reads every function body.
+// Masking the whole source on every brace scan is what pushed check:repo-style past
+// the governance gate's 10 minute limit.
+let cachedBraceSource;
+let cachedBraceMask = '';
+
 export function findMatchingBrace(raw, startIndex) {
-    const masked = maskNonCodeText(raw);
+    const masked = braceMask(raw);
     let depth = 0;
     for (let index = startIndex; index < masked.length; index += 1) {
         if (masked[index] === '{') {
@@ -72,6 +78,14 @@ export function findMatchingBrace(raw, startIndex) {
     }
 
     return -1;
+}
+
+function braceMask(raw) {
+    if (raw !== cachedBraceSource) {
+        cachedBraceSource = raw;
+        cachedBraceMask = maskNonCodeText(raw);
+    }
+    return cachedBraceMask;
 }
 
 export function maskNonCodeLines(lines) {
