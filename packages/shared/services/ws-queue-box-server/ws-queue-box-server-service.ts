@@ -449,6 +449,9 @@ export class WsQueueBoxServerService {
             return decision.result;
         }
         const current = this.inboundAuthority.resolveAuthorizedSocketAdmission(decision.value, connectionId);
+        if (current.kind === 'refused') {
+            return await this.inboundAuthority.rejectIncomingMessage(current.message, current.refusal);
+        }
         if (current.kind === 'finished') {
             return current.result;
         }

@@ -308,6 +308,7 @@ describe('Rallar Game Authority server installer', () => {
             toPeerId: 'peer-a'
         });
         expect(fake.published[0].scope).toEqual({ applicationId: roomRef.applicationId, workspaceId: roomRef.workspaceId });
+        expect(fake.published[1].scope).toBeUndefined();
         expect(fake.published[1].message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
@@ -453,8 +454,8 @@ describe('Rallar Game Authority server installer', () => {
     it.each(
         [
             { routerStatus: 'sent-live', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
-            { routerStatus: 'cluster-published', gameStatus: 'accepted', count: 1, routerReason: undefined, gameReason: undefined },
-            { routerStatus: 'queued-outbox', gameStatus: 'accepted', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'cluster-published', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
+            { routerStatus: 'queued-outbox', gameStatus: 'sent', count: 1, routerReason: undefined, gameReason: undefined },
             { routerStatus: 'none', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'none' },
             { routerStatus: 'no-recipients', gameStatus: 'skipped', count: 0, routerReason: undefined, gameReason: 'no-recipients' },
             { routerStatus: 'skipped', gameStatus: 'skipped', count: 0, routerReason: 'policy-denied', gameReason: 'policy-denied' },

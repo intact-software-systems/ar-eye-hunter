@@ -119,9 +119,14 @@ describe('Rallar Game authority server through the real WS router', () => {
             event: { kind: 'clustered' }
         });
 
-        // Pins the router result; the game status of a cluster notice belongs to the status mapping.
-        expect(snapshot.raw).toMatchObject({ fanout: 'live-only', status: 'cluster-published' });
-        expect(event.raw).toMatchObject({ fanout: 'live-only', status: 'cluster-published' });
+        expect(snapshot).toMatchObject({
+            status: 'sent',
+            raw: { fanout: 'live-only', status: 'cluster-published' }
+        });
+        expect(event).toMatchObject({
+            status: 'sent',
+            raw: { fanout: 'live-only', status: 'cluster-published' }
+        });
         expect(server.status()).toMatchObject({
             publishedSnapshotCount: 1,
             publishedEventCount: 1

@@ -1,6 +1,5 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { hasALDeliveryDurableWork } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { validateALOutboundRecipientScope } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import type { LiveWsInboundReference } from '../../queue-pubsub/live-ws-notice.ts';
@@ -21,6 +20,7 @@ import type {
     RallarServerWsRoomAudience,
     RallarServerWsRouterOptions
 } from './rallar-server-ws-router-contracts.ts';
+import { validateRallarServerWsPublishScope } from './validate-rallar-server-ws-publish-scope.ts';
 
 export interface PublishRallarServerWsMessageInput {
     readonly service: WsQueueBoxServerService;
@@ -82,8 +82,9 @@ export async function publishRallarServerWsMessage(
 async function publishAuthorizedRallarServerWsMessage(
     input: PublishRallarServerWsMessageInput
 ): Promise<RallarServerWsPublishResult> {
-    if (input.message.targets?.mode === 'unicast' && validateALOutboundRecipientScope(input.inboundScope).length > 0) {
-        return { fanout: input.fanout, status: 'skipped', message: input.message, sentCount: 0, entries: [] };
+    const scopeIssues = validateRallarServerWsPublishScope(input);
+    if (scopeIssues.length > 0) {
+        return toFailedPublishResult(input, scopeIssues.join('; '));
     }
     if (input.fanout === 'none') {
         return await publishRallarServerWsFanout(input);

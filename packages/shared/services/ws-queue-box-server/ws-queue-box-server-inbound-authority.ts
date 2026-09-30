@@ -1,4 +1,4 @@
-import { isRoomScopedALMessage, readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
+import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import { prepareALNackControlMessage, type ALNackPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
@@ -6,6 +6,7 @@ import { toALInboundReceiver, validateALInboundMessage } from '../../alm/inbound
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '../../websocket/json-web-socket-server.ts';
+import { toWsQueueBoxServerScopeAuthorization } from './scope/to-ws-queue-box-server-scope-authorization.ts';
 import { toWsQueueBoxServerAddresseeAuthorization } from './to-ws-queue-box-server-addressee-authorization.ts';
 import type { WsQueueBoxServerAckRelay } from './ws-queue-box-server-ack-relay.ts';
 import type {
@@ -58,6 +59,11 @@ export namespace WsQueueBoxServerInboundAuthority {
 
     export type AdmissionDecision =
         | { readonly kind: 'authorized'; readonly value: AuthorizedMessage; }
+        | {
+            readonly kind: 'refused';
+            readonly message: ALMessage;
+            readonly refusal: Extract<WsServerInboundAuthorization, { authorized: false; }>;
+        }
         | {
             readonly kind: 'finished';
             readonly result: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>;
@@ -171,17 +177,19 @@ export class WsQueueBoxServerInboundAuthority {
                 })
             };
         }
-        const proof = this.#readAuthenticatedConnectionScope(connection);
-        if (!proof || proof.expiresAtEpochMs <= this.#clock.nowMs() || !matchesInboundTargetScope(message, proof)) {
-            return {
-                kind: 'finished',
-                result: Either.ofLeft({
-                    code: 'unauthorized',
-                    message: 'Authenticated WS scope is unavailable or mismatched'
-                })
-            };
+        const scope = toWsQueueBoxServerScopeAuthorization({
+            message,
+            proof: this.#readAuthenticatedConnectionScope(connection),
+            nowMs: this.#clock.nowMs(),
+            sendNack: this.#authorizer?.sendNacks ?? false
+        });
+        if (!scope.authorized) {
+            return { kind: 'refused', message, refusal: scope };
         }
-        return { kind: 'authorized', value: { message, fromPeerId, authorization: candidate.authorization, proof } };
+        return {
+            kind: 'authorized',
+            value: { message, fromPeerId, authorization: candidate.authorization, proof: scope.proof }
+        };
     }
 
     private readValidatedSocketOrigin(
@@ -258,7 +266,7 @@ export class WsQueueBoxServerInboundAuthority {
         return authorization.reason === 'not-yet-in-sync' ? 'retry' : 'completed';
     }
 
-    private async rejectIncomingMessage(
+    async rejectIncomingMessage(
         message: ALMessage,
         authorization: Extract<WsServerInboundAuthorization, { authorized: false; }>
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
@@ -298,12 +306,4 @@ export class WsQueueBoxServerInboundAuthority {
             await this.#controlDelivery.sendControlMessage(prepared.right);
         }
     }
-}
-
-function matchesInboundTargetScope(message: ALMessage, proof: WsServerInboundConnectionScopeProof): boolean {
-    const target = message.targets;
-    const scope = readALTargetGroupRef(message) ??
-        (target?.mode === 'broadcast' && target.scope === 'principal' ? target.principalRef : undefined);
-    return scope === undefined ||
-        (scope.applicationId === proof.scope.applicationId && scope.workspaceId === proof.scope.workspaceId);
 }

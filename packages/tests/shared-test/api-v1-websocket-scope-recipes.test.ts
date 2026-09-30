@@ -152,6 +152,8 @@ it.each([
         outputs: {
             aliceSessionId: 'session',
             aliceWsTicket: 'ticket',
+            aliceElsewhereSessionId: 'session',
+            aliceElsewhereWsTicket: 'ticket',
             bobSessionId: 'session',
             bobWsTicket: 'ticket',
             carolSessionId: 'session',
@@ -179,12 +181,21 @@ it.each([
         context.resultsByName.createMatchArenaGroup = [{ actual: { body: { group: createdGroup } } }];
     }
 
-    const urlTransforms = interactions.flatMap((interaction) =>
+    const allUrlTransforms = interactions.flatMap((interaction) =>
         interaction.SET?.request.transform?.concat?.includes('&applicationId=')
             ? [interaction.SET.request.transform]
             : []
     );
+    const elsewhereMarker = 'elsewhereApplicationId';
+    const urlTransforms = allUrlTransforms.filter((transform) => !JSON.stringify(transform).includes(elsewhereMarker));
     expect(urlTransforms).toHaveLength(urlCount);
+    const elsewhereTransforms = allUrlTransforms.filter((transform) => JSON.stringify(transform).includes(elsewhereMarker));
+    expect(elsewhereTransforms).toHaveLength(name === 'websocket-addressed-sends' ? 1 : 0);
+    for (const transform of elsewhereTransforms) {
+        const url = new URL(evaluateScenarioTransform({ transform, context }));
+        expect(url.searchParams.get('applicationId')).not.toBe(createdGroup.applicationId);
+        expect(url.searchParams.get('workspaceId')).toBe(createdGroup.workspaceId);
+    }
     for (const transform of urlTransforms) {
         const url = new URL(evaluateScenarioTransform({ transform, context }));
         expect(url.searchParams.get('applicationId')).toBe(createdGroup.applicationId);

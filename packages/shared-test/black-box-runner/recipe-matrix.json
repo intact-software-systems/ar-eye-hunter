@@ -1052,7 +1052,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config and the server-addressed receipt."
+      "description": "No-browser API-v1 WebSocket addressed sends: a room unicast's one-member receipt, the out-of-audience refusal, serverPeerId on /api/config, the server-addressed receipt, and the NACK for a room send from another scope."
     },
     {
       "id": "api-v1-websocket-topic-routing",

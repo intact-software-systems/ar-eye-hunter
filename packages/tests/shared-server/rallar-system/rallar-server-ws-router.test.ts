@@ -1064,7 +1064,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             }
         );
 
-        const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'outbox' });
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({
             fanout: 'outbox',
@@ -1112,7 +1112,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             trackedReceiptAlgo: 'none'
         });
 
-        const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'outbox' });
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({ fanout: 'outbox', status: 'skipped', verdict });
         expect(socket.sent).toHaveLength(0);
@@ -1149,7 +1149,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             trackedReceiptAlgo: 'none'
         });
 
-        const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'outbox' });
+        const result = await server.ws.publish({ message, fanout: 'outbox' });
 
         expect(result).toMatchObject({ fanout: 'outbox', status: expectedStatus, verdict });
         expect(socket.sent).toHaveLength(0);

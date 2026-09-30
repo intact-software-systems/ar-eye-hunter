@@ -188,10 +188,7 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
         );
         runtime.sent.length = 0;
         assert.equal(
-            (await runtime.router.publish({
-                message,
-                scope: { applicationId: snapshot.group.applicationId, workspaceId: snapshot.group.workspaceId }
-            })).status,
+            (await runtime.router.publish({ message })).status,
             'no-recipients'
         );
         assert.deepEqual(runtime.sent, []);

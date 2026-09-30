@@ -7,9 +7,9 @@ import {
     type RelicExpeditionSetupMetadata,
     type RelicGameState
 } from '@relic-hunters/mod.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { expect } from '@std/expect';
 import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
@@ -97,6 +97,7 @@ describe('Relic Hunter server game service', () => {
                 delivery: { reliability: 'at-least-once', ack: 'receiver' }
             }
         });
+        expect(fake.published[0].scope).toBeUndefined();
         const expiresAtMs = fake.published[0].message.constraints?.expiresAtMs ?? 0;
         expect(expiresAtMs).toBeGreaterThanOrEqual(publishedAfterMs + RELIC_SNAPSHOT_TTL_MS);
         expect(expiresAtMs).toBeLessThanOrEqual(Date.now() + RELIC_SNAPSHOT_TTL_MS);

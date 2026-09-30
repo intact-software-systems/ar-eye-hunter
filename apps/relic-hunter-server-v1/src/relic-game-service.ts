@@ -20,7 +20,11 @@ import type {
 } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { applyRelicWsCommand, toRelicWsCommandWarning, type RelicCommandApplication } from './apply-relic-ws-command.ts';
+import {
+    applyRelicWsCommand,
+    toRelicWsCommandWarning,
+    type RelicCommandApplication
+} from './apply-relic-ws-command.ts';
 import { decodeRelicGameStateAppData } from './decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from './encode-relic-game-state-app-data.ts';
 import type { RelicInitialStateFactory } from './relic-expedition-ai.ts';
@@ -112,7 +116,6 @@ class RelicGameService implements RelicHunterGameService {
     private async publishSnapshot(state: RelicGameState): Promise<void> {
         const { rallar } = this.dependencies;
         await rallar.ws.publish({
-            scope: { applicationId: DEFAULT_STATE_APPLICATION_ID, workspaceId: DEFAULT_STATE_WORKSPACE_ID },
             message: toRelicSnapshotMessage(state, rallar.ws.serverPeerId),
             fanout: 'outbox'
         });

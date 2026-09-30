@@ -149,8 +149,8 @@ const DEFAULT_RALLAR_GAME_AUTHORITY_SERVER_EPOCH = 1;
 const DEFAULT_RALLAR_GAME_AUTHORITY_TTL_MS = 15_000;
 const GAME_PUBLICATION_STATUS = {
     'sent-live': 'sent',
-    'cluster-published': 'accepted',
-    'queued-outbox': 'accepted',
+    'cluster-published': 'sent',
+    'queued-outbox': 'sent',
     none: 'skipped',
     'no-recipients': 'skipped',
     skipped: 'skipped',
@@ -163,10 +163,6 @@ const GAME_PUBLICATION_STATUS = {
     'circuit-open': 'failed',
     failed: 'failed'
 } as const satisfies Record<RallarServerWsPublishResult['status'], RallarGameAuthoritySendResult['status']>;
-const COUNTED_PUBLICATION_STATUSES: ReadonlySet<RallarGameAuthoritySendResult['status']> = new Set([
-    'sent',
-    'accepted'
-]);
 
 export function installRallarGameAuthorityServer<TCommand, TSnapshot, TEvent>(
     config: RallarGameAuthorityServerConfig<TCommand, TSnapshot, TEvent>
@@ -369,7 +365,7 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
             toPeerId: input.toPeerId,
             fanout: this.config.snapshotFanout ?? 'live-only'
         });
-        if (COUNTED_PUBLICATION_STATUSES.has(result.status)) {
+        if (result.status === 'sent') {
             this.publishedSnapshotCount += 1;
         }
         return result;
@@ -387,7 +383,7 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
             toPeerId: input.toPeerId,
             fanout: this.config.eventFanout ?? 'live-only'
         });
-        if (COUNTED_PUBLICATION_STATUSES.has(result.status)) {
+        if (result.status === 'sent') {
             this.publishedEventCount += 1;
         }
         return result;
@@ -419,7 +415,9 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
         });
         const result = await this.config.rallar.ws.publish({
             message: publication.message,
-            scope: { applicationId: input.roomRef.applicationId, workspaceId: input.roomRef.workspaceId },
+            ...(publication.message.targets?.mode === 'unicast'
+                ? { scope: { applicationId: input.roomRef.applicationId, workspaceId: input.roomRef.workspaceId } }
+                : {}),
             fanout: input.fanout
         });
         const status = GAME_PUBLICATION_STATUS[result.status];
@@ -429,7 +427,7 @@ class RallarGameAuthorityServer<TCommand, TSnapshot, TEvent>
             transport: 'server',
             seq: publication.envelope.seq,
             raw: result,
-            reason: result.reason ?? (status === 'sent' || status === 'accepted' ? undefined : result.status)
+            reason: result.reason ?? (status === 'sent' ? undefined : result.status)
         };
     }
 
