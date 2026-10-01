@@ -727,6 +727,10 @@ Every receipt this owner tracks ends in a settlement (S3b, D63, D64):
   `not-yet-in-sync-exhausted`. It ends nothing on its own -- the receipt budget still ends the message --
   and is one of the declared retryable outcomes below.
 
+A receipt that a control ends -- a complete ACK or a terminal NACK -- completes the send's `ack-timeout`
+work row in the commit that ends it, so no no-op timeout batch follows; a row a batch already leased is
+left to that batch, which reads the ended receipt and completes.
+
 **The hand-over (D66).** `ALOutboundMessageRuntime.handOver(msgId)` gives a message to another carrier's
 owner: it remembers the id for the owner's lifetime, aborts the live attempt (which still settles its own
 `attempt-settled`), completes every later effect of the message silently and deletes the receipt rows in

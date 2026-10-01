@@ -55,6 +55,7 @@ import {
 } from '../compute-al-outbound-control-admission.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
 import { validateALOutboundControlAdmission } from '../validate-al-outbound-control-admission.ts';
+import { writeALOutboundAckTimeoutCompletion } from './write-al-outbound-ack-timeout-completion.ts';
 
 export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
@@ -400,6 +401,9 @@ export class ALOutboundControlAdmission<TPrepared> {
         }
         if (candidate.removeRepairAttempt) {
             await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
+        }
+        if (candidate.endedAckTimeoutEffectId !== undefined) {
+            await writeALOutboundAckTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
         }
         await tx.set(
             toALOutboundVersionKey(this.namespace, read.owner!),

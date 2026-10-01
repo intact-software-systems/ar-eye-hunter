@@ -30,7 +30,7 @@ import type {
 } from './control/al-outbound-control-admission.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './control/write-al-outbound-control-admission-diagnostic.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundAckRetryScheduleEndTimestamp
@@ -360,12 +360,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         messageExpiresAtMs: number
     ): ALOutboundDurableEffectWrite<TPrepared> {
         return {
-            effectId: toALOutboundEffectId([
-                'ack-timeout',
-                pending.msgId,
-                pending.attempts + 1,
-                pending.deadlineAtMs
-            ]),
+            effectId: toALOutboundAckTimeoutEffectId(pending),
             retryAtMs: pending.deadlineAtMs,
             expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
             payload: {

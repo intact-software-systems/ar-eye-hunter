@@ -18,7 +18,7 @@ import type {
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
 import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
     isALOutboundReceiptComplete,
@@ -72,6 +72,8 @@ export interface ALControlAdmissionCandidate {
     readonly history: ALControlHistory;
     readonly pending: ALPendingAckWrite;
     readonly removeRepairAttempt: boolean;
+    /** The timeout check of a receipt this control ended, which the same commit completes; undefined otherwise. */
+    readonly endedAckTimeoutEffectId: string | undefined;
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
@@ -86,12 +88,16 @@ export function computeALOutboundControlAdmission(
     const history = appendControlHistory(read);
     const pending = computePendingAckWrite(read, history);
     const terminal = read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload);
+    const receiptEnded = terminal || pending.kind === 'remove' ||
+        (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value));
     return {
         read,
         history,
         pending,
-        removeRepairAttempt: terminal || pending.kind === 'remove' ||
-            (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value)),
+        removeRepairAttempt: receiptEnded,
+        endedAckTimeoutEffectId: receiptEnded && read.pending !== undefined
+            ? toALOutboundAckTimeoutEffectId(read.pending)
+            : undefined,
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs
             : Math.max(
