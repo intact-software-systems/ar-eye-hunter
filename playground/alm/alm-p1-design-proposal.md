@@ -209,7 +209,8 @@ pins; the probe cadence changes recovery timing and is judged on the first PR's 
   (`al-indexeddb-operation-counts.test.ts:148-178`, `outbound-readiness-probe-diagnostics.test.ts`,
   `indexeddb-queuebox-operation-counts.test.ts:59-86`). A fake-clock unit test per probe proves the
   bound.
-- The harness's after-figures are D89's reading (section 5).
+- The harness's after-figures include the receipted reading, recorded as I2b evidence, not as a
+  gate (section 5; revised 2026-10-01, D115).
 
 ## 3. Recommendation
 
@@ -268,11 +269,11 @@ first in each case, and each took it.
    count. (a) because the chain count is what the render-loop finding prices and the operations keep
    the existing pins honest. D109.
 8. **The latency proof.** (a) Rebuild the spike's plain-page harness as a Playwright manual suite,
-   run locally before and after each lever, figures in the PR body; D89's gate is measured there
-   instead of the lane's slow regime; the lane stays the correctness authority with no
-   send-to-dispatch field; (b) a send-to-dispatch field and reducer in the lane artifact; (c) both;
-   (d) counts only, no latency claim. (a) because the lane's storage is incognito and measures its
-   harness page (1.6). D111; amends D89.
+   run locally before and after each lever, figures in the PR body; D89's reading is measured
+   there instead of the lane's slow regime, as evidence only (revised 2026-10-01, D115); the lane
+   stays the correctness authority with no send-to-dispatch field; (b) a send-to-dispatch field and
+   reducer in the lane artifact; (c) both; (d) counts only, no latency claim. (a) because the lane's
+   storage is incognito and measures its harness page (1.6). D111; amends D89.
 
 ## 5. Acceptance evidence
 
@@ -288,10 +289,11 @@ first in each case, and each took it.
 - **Bundle figures** for `rallar.ts` and the headless agent, with any budget raise reported.
 - **Unchanged behaviour.** The ALM conformance lane green on every carrier, `durable-opt-in` and
   `delivery-baseline` included; Hetzner manifests 18 and 22 green from the PR branch.
-- **The D89 reading.** After P1b, the harness's send-to-dispatch p95 for a `local-outbox` send at
-  4x CPU under the frame load is D89's figure. Above 100 ms, I2b goes ahead; otherwise Relic's
-  commands move to `local-outbox` and a recorded decision withdraws I2b. The spike's pre-P1 p95 on
-  this machine is 93.7 ms, so the reading also states the machine and that it is not a phone.
+- **The receipted reading** (revised 2026-10-01, D115). After P1b, the harness's send-to-dispatch
+  p95 for a receipted `command`-shaped send at 4x CPU under the frame load is recorded as evidence
+  for I2b's consumer send, not as a gate: I2b proceeds after I2a whatever it reads, and Relic's
+  commands move to `local-outbox` with I2a. The spike's pre-P1 p95 on this machine is 93.7 ms, so
+  the reading also states the machine and that it is not a phone.
 
 ## 6. Rough task decomposition (for sizing only)
 

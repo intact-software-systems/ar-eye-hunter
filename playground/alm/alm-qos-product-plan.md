@@ -81,6 +81,17 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   The ACK confirms protocol acceptance under the promised durability policy, and only `local-inbox`
   promises the receiver's storage.
 
+### 3.1 Realtime QoS demands the tiers must serve
+
+Realtime data puts three demands on every tier, and I2b's and A1's designs are judged against them
+(D118).
+
+| Demand                                | Mechanism today                                                                                                                                                                                                                                                 | Gap                                                                                                                                                                                                                                                                                                                                                  | Owner slice                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| A strict low TTL                      | The per-send deadline (`deadlineMs` from the QoS defaults, shorter by option): past it the sender settles `expired`, a receiver drops the row, and the volatile lane sweeps at the deadline plus the receipt grace; `LatestRepository` takes a per-entry expiry | None.                                                                                                                                                                                                                                                                                                                                                | Covered; I2b keeps it across a restore (section 4) |
+| Replace an unsent outgoing copy       | `latest-wins` supersedence on a `supersedenceKey` (`packages/shared/al-contracts/al-policy.ts:44,82`): the older unsent message settles `superseded`                                                                                                            | `local-checkpoint` refuses latest-wins (D85), though a superseded unsent copy was never seen outside the runtime                                                                                                                                                                                                                                     | I2b narrows D85 (section 4)                        |
+| Keep only the last N copies of a type | None. The cache keeps one latest value per key; a memento value keeps undo and redo stacks of one value, bounded by `undoDepth` and `redoDepth` (`packages/shared/cache/MementoValue.ts`); a queue keeps every admitted message until its deadline              | Receiving side: a bounded history per key, as a `maxHistory` on the memento value or a generic bounded FIFO in `packages/shared/cache` shared with the memento history and the motion sample window (`packages/shared/rallar-motion/buffer.ts:306-309`). Sending side: supersedence generalised from one survivor to N, a per-key bound in the queue | I2b's plan decides the bounded FIFO                |
+
 ## 4. The `local-checkpoint` contract
 
 - **Recovery unit.** One session's `local-checkpoint` lane: its admission rows (sent, pending-ACK,
@@ -111,7 +122,9 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   - Restored messages have no handle, like a resumed durable message (D13, D64).
 - **Restrictions.** A send with an ordering key or sequence (`seq`, `orderingKey`) or with
   latest-wins supersedence is refused with a typed `unsupported` on `local-checkpoint`. Such
-  traffic uses `volatile` or `local-outbox` (D85).
+  traffic uses `volatile` or `local-outbox` (D85). A superseded unsent copy was never seen outside
+  the runtime, so I2b's design revisits the latest-wins refusal and narrows it to sequence and
+  ordering keys (D118, section 3.1).
 - **Wire.**
   - `local-checkpoint` joins `AL_DURABILITY_ALGOS`, so the persisted-QoS validator and the
     envelope's `qos.durability` accept it.
