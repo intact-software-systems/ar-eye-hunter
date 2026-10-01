@@ -18,6 +18,7 @@ import {
     openIndexedDbAdmissionDatabase,
     type ALStorageResetEvent
 } from '@shared/alm/open-indexed-db-admission-database.ts';
+import type { ALOutboundCommitBundle } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
@@ -79,18 +80,20 @@ function recordHandoffCommits(): Key[] {
     const setCommitted = ALOutboundCanonicalHandoff.prototype.setCommitted;
     vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted').mockImplementation(function (
         this: ALOutboundCanonicalHandoff,
-        bundle
+        bundle,
+        nowMs
     ) {
         if (bundle.canonicalEntry !== undefined) {
             committed.push(bundle.canonicalEntry.key);
         }
-        setCommitted.call(this, bundle);
+        setCommitted.call(this, bundle, nowMs);
     });
     return committed;
 }
 
 describe('the canonical hand-off bound', () => {
     it('keeps the newest committed sends up to its limit and gives each one up once', async () => {
+        const nowMs = Date.now();
         const store = createDefaultOutboundTestStores().admissionStore;
         const peers = Array.from(
             { length: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1 },
@@ -108,18 +111,19 @@ describe('the canonical hand-off bound', () => {
             limit: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT
         });
 
-        handoff.setCommitted(bundle);
+        handoff.setCommitted(bundle, nowMs);
 
         const oldest = toALOutboundWorkKey(store.namespace, sends[0]!.effectId);
         const newest = toALOutboundWorkKey(store.namespace, sends.at(-1)!.effectId);
-        expect(handoff.takeCanonical(oldest), 'the oldest send past the limit is dropped')
+        expect(handoff.takeCanonical(oldest, nowMs), 'the oldest send past the limit is dropped')
             .toBeUndefined();
-        expect(handoff.takeCanonical(newest)).toBe(bundle.canonicalEntry);
-        expect(handoff.takeCanonical(newest), 'a claim consumes what it was handed')
+        expect(handoff.takeCanonical(newest, nowMs)).toBe(bundle.canonicalEntry);
+        expect(handoff.takeCanonical(newest, nowMs), 'a claim consumes what it was handed')
             .toBeUndefined();
     });
 
     it('holds nothing after it is cleared', async () => {
+        const nowMs = Date.now();
         const store = createDefaultOutboundTestStores().admissionStore;
         const bundle = await computeOutboundTestAdmission(
             store,
@@ -128,14 +132,59 @@ describe('the canonical hand-off bound', () => {
         );
         const [send] = bundle.durableEffects;
         const handoff = new ALOutboundCanonicalHandoff({ namespace: store.namespace, limit: 4 });
-        handoff.setCommitted(bundle);
+        handoff.setCommitted(bundle, nowMs);
 
         handoff.clear();
 
-        expect(handoff.takeCanonical(toALOutboundWorkKey(store.namespace, send!.effectId)))
+        expect(handoff.takeCanonical(toALOutboundWorkKey(store.namespace, send!.effectId), nowMs))
             .toBeUndefined();
     });
+
+    it('neither returns nor retains a row past its send\'s deadline', async () => {
+        const store = createDefaultOutboundTestStores().admissionStore;
+        const handoff = new ALOutboundCanonicalHandoff({ namespace: store.namespace, limit: 4 });
+        const expiring = await computeOutboundTestAdmission(
+            store,
+            createOutboundMessage('expiring', { ttlMs: 1_000 }),
+            OUTBOUND_TEST_SEND_PLANNER
+        );
+        const [send] = expiring.durableEffects;
+        const workKey = toALOutboundWorkKey(store.namespace, send!.effectId);
+        const deadlineMs = toSendDeadlineMs(expiring);
+        handoff.setCommitted(expiring, deadlineMs - 1_000);
+
+        expect(
+            handoff.takeCanonical(workKey, deadlineMs),
+            'at its deadline the row is not handed over'
+        )
+            .toBeUndefined();
+
+        handoff.setCommitted(expiring, deadlineMs - 1_000);
+        const later = await computeOutboundTestAdmission(
+            store,
+            createOutboundMessage('committed-after-the-deadline'),
+            OUTBOUND_TEST_SEND_PLANNER
+        );
+        const laterKey = toALOutboundWorkKey(store.namespace, later.durableEffects[0]!.effectId);
+        handoff.setCommitted(later, deadlineMs + 10_000);
+
+        // Read on an instant before the deadline: only a row that is gone can miss here.
+        expect(
+            handoff.takeCanonical(workKey, deadlineMs - 1),
+            'a later commit sweeps the expired row'
+        )
+            .toBeUndefined();
+        expect(handoff.takeCanonical(laterKey, deadlineMs + 10_000)).toBe(later.canonicalEntry);
+    });
 });
+
+function toSendDeadlineMs(bundle: ALOutboundCommitBundle<OutboundTestPayload>): number {
+    const [send] = bundle.durableEffects;
+    if (send?.payload.kind !== 'send-prepared') {
+        throw new Error('expected a prepared send');
+    }
+    return send.payload.message.expiresAtMs;
+}
 
 describe('the committed canonical message handed to dispatch', () => {
     it('reaches the claim of the tab that committed it without reading the canonical pair back', async () => {
@@ -281,11 +330,11 @@ describe('the committed canonical message handed to dispatch', () => {
         const [held, dropped] = setCommitted.mock.calls.map(([bundle]) =>
             toALOutboundWorkKey(stores.admissionStore.namespace, bundle.durableEffects[0]!.effectId)
         );
-        expect(handoff!.takeCanonical(held!), 'held while the runtime lives').toBeDefined();
+        expect(handoff!.takeCanonical(held!, Date.now()), 'held while the runtime lives').toBeDefined();
 
         runtime.dispose();
 
-        expect(handoff!.takeCanonical(dropped!)).toBeUndefined();
+        expect(handoff!.takeCanonical(dropped!, Date.now())).toBeUndefined();
         await claims.release();
     });
 

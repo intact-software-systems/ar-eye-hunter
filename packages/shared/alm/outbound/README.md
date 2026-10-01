@@ -174,10 +174,12 @@ they do not overwrite a predecessor's envelope.
 
 A claim reads the canonical pair its work row references unless the durable lane's own commit
 handed it over. [`ALOutboundCanonicalHandoff`](./lane/al-outbound-canonical-handoff.ts) holds the
-committed canonical row for each prepared send the commit wrote, keyed by that send's work slot and
-bounded to four work pages, oldest dropped first; the claim takes it and checks it against the
-reference exactly as it checks a stored pair. It is a cache of an immutable row, never a source:
-another tab's claim, a reload, a replayed pending admission, a retried claim and a row at its
+committed canonical row for each prepared send the commit wrote, keyed by that send's work slot,
+in a `LatestRepository` capped at four work pages (`maxEntries`, oldest dropped first) whose
+entries each expire at their send's deadline on the lane clock; the claim takes a live one and
+checks it against the reference exactly as it checks a stored pair. It is a cache of an
+immutable row, never a source: another tab's claim, a reload, a replayed pending admission, a
+retried claim and a row at its
 deadline read storage. Its safety rests on its key and on the reference check, not on hearing of
 resets: an entry is found only for a work row committed with the same effect id, and a held row
 that does not match that work row's reference fails closed as corruption and is never sent. Dispose

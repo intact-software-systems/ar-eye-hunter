@@ -168,7 +168,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
         // A commit that resolves after dispose must not refill what dispose cleared.
         if (!this.disposed && result.committed && result.computed.bundle !== undefined) {
-            this.input.canonicalHandoff?.setCommitted(result.computed.bundle);
+            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.readNowMs());
         }
     }
 
@@ -284,7 +284,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ? toALOutboundDequeueWork(entry, this.input.runtime.readMessageFromEntry)
             : await this.input.stores.admissionStore.readWorkSnapshot(
                 entry,
-                this.input.canonicalHandoff?.takeCanonical(entry.key)
+                this.input.canonicalHandoff?.takeCanonical(entry.key, this.readNowMs())
             );
     }
 
