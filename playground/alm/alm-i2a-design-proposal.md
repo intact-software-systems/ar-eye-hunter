@@ -129,14 +129,14 @@ downgrade, the channel setting, the storage event union, the storage fault, the 
 the cross-tab message. The halves carry different risks: the first changes what the application is
 told, the second changes which tab does the work. One review should not hold both.
 
-### 2.2 Option (a), recommended: I2a-i storage truth, then I2a-ii one durable owner
+### 2.2 Decided (D119): I2a-i storage truth, then I2a-ii one durable owner
 
 - **I2a-i, storage truth** (3.a to 3.e, 3.h per lane, 3.i, 3.j without the takeover): the typed
   `storage-unavailable` outcome and `onStorageUnavailable` (D86); availability decided per connect
   and re-decided on a storage error; `navigator.storage.persist()` on the first durable admission;
-  the storage port with reset, recovery, health and persist events; the per-scope database with a
-  one-time delete of the legacy name (a D3 reset, no migration code); the purge on login over a
-  session; dedup retention covering deadline plus grace; the storage fault port;
+  the storage port with reset, recovery, health and persist events; the per-scope database, with
+  no migration or delete code; the purge on login over a session; dedup retention covering
+  deadline plus grace; the storage fault port;
   `storage-unavailable`; `delivery-reload` reading the recovery outcome.
 - **I2a-ii, one durable owner** (3.f, 3.g, 3.h per owner, the takeover of 3.j, 3.k): the per-session
   owner claim on Web Locks with takeover on release, over the session's outbound and inbound durable
@@ -218,7 +218,7 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
 
 - `RallarDiagnosticsPortsInput` is public (exported from `sw/rallar.ts` and `sw/rallar-core.ts`,
   pinned by `t/shared-web/shared-web-public-api-snapshots.test.ts`).
-- **Recommended: widen `onStorageReset` into `storage: (event: ALStorageEvent) => void`.** Each arm
+- **Decided (D121): widen `onStorageReset` into `storage: (event: ALStorageEvent) => void`.** Each arm
   names its `storeId`:
   - `reset`, carrying today's `ALStorageResetEvent` unchanged;
   - `recovery`, with `outcome` one of `restored { claimed, expired }`,
@@ -241,7 +241,7 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
 
 ### 3.c Scope (I2a-i)
 
-- **Recommended: one database per scope**, `ar-eye-hunter-al-runtime:${applicationId}:${workspaceId}`,
+- **Decided (D120): one database per scope**, `rallar-al-runtime:${applicationId}:${workspaceId}`,
   from the scope the connect resolves (`initialise-browser-middleware.ts:91`, `:631`) and passed to
   `configureBrowserALRuntimeStores` (`:274-283`). Keys inside stay session-scoped.
 - **Against one database with scoped keys.**
@@ -253,15 +253,13 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
     `:110`, `:123`) and the cleanup's delete (`browser-al-runtime-cleanup.ts:66`, constant at `:186`,
     `:406`); scoped keys would change every builder in `browser-al-runtime-identity.ts` and lengthen
     hashed keys.
-- **Cutover.** No row shape changes, so `AL_ADMISSION_SCHEMA_ID` stays. The legacy database is deleted
-  once at the first scoped open through `deleteIndexedDbDatabase`
-  (`open-indexed-db-admission-database.ts:210-233`) and reported as `reset` with a new reason
-  `legacy-database`. A blocked delete (a tab on the old build) is retried at the next open, never
-  awaited by the connect.
+- **Cutover.** No row shape changes, so `AL_ADMISSION_SCHEMA_ID` stays; only the name changes. The
+  legacy database `ar-eye-hunter-al-runtime` is left to the browser's eviction, with no delete code
+  (decision 9).
 - Without `databases()` the purge covers the current and the default scope, and the rest age out
   under the 60 s sweep; rows of a session id no later connect uses are never claimed.
 - **Evidence.** `t/shared-web/al-runtime/browser-al-runtime-stores.test.ts`: two scopes of one session
-  see disjoint rows; the legacy database is deleted once and reported.
+  see disjoint rows.
 
 ### 3.d Purge (I2a-i)
 
@@ -315,7 +313,7 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
   recovered at its lease end plus at most 19.1 s (D113).
 - **A non-owner's handles.** Today a tab usually dispatches its own rows, since its `committed()`
   starts a batch (`alm/work/al-work-handler.ts:216-225`). With one owner they dispatch in the owner
-  tab, whose settlements never reach the sending tab. Decision 11 recommends a relay.
+  tab, whose settlements never reach the sending tab. Decision 11 takes the relay (D123).
 - **Inbound.** A durable inbound row a non-owner admitted reaches the owner tab's handlers, as it does
   today whenever the other tab claims first.
 - **Without the Locks API** every tab owns, as today. The server changes nothing.
@@ -327,7 +325,7 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
 
 ### 3.g Cross-tab wake (I2a-ii)
 
-- **Recommended: one `BroadcastChannel` per session and scope**, `rallar-alm:${applicationId}:
+- **Decided (D123): one `BroadcastChannel` per session and scope**, `rallar-alm:${applicationId}:
   ${workspaceId}:${sessionId}`, after the `rallar-data:` and `rallar-crdt:` channels and their guard
   (`sw/data/install-browser-rallar-data-broadcast-sync.ts:8-12`, `sw/crdt/browser-crdt-tab-sync.ts:24-31`).
 - A non-owner posts the `ALWorkCommittedRows` its commit computed. The owner hands them to its own
@@ -399,51 +397,52 @@ where absence has domain meaning, as on `ALDeliveryEvidence` today
 - No idempotency key in I2a; I2b's Relic Playwright proof decides whether AppInbox request-id
   idempotency must join (decision 8).
 
-## 4. Open decisions for the maintainer
+## 4. Maintainer decisions (2026-10-01)
 
-The recommended option is first and marked (R).
+The maintainer took the twelve decisions on 2026-10-01. The [roadmap](alm-improvement-plan.md)
+records them as D119 to D128.
 
-1. **The PR split.** (a) (R) Two serial PRs, I2a-i then I2a-ii; cost: two gate and manifest runs.
-   (b) Three PRs; cost: a third run for six files. (c) One PR; cost: one review holds two risks.
-   Amends D88's I2a line, as D108 did for P1.
-2. **Where the scope goes.** (a) (R) One database per scope, keys unchanged inside; cost: a connection
-   per scope a tab uses and a purge across databases. (b) One database, scoped keys; cost: every
-   identity builder changes and the purge needs a scope index row. Amends the roadmap's "Storage,
-   cutover" section and QoS 8.
-3. **The storage port.** (a) (R) Widen `onStorageReset` into one `storage` port of four kinds; cost:
-   one public rename, the API snapshot, about fifteen files. (b) Add `storage` beside it; cost: two
-   ports for one concern. Creates a decision; amends D86's sink wording.
-4. **The typed outcome.** (a) (R) A new verdict kind, state `failed` with a new failure arm; cost:
-   one arm in two unions. (b) A `refused` reason; cost: it reads as the sender's fault and carries no
-   cause. (c) A new state; cost: every state decoder and the capability prose. Amends D86.
-5. **Foreign rows.** (a) (R) The cross-tab wake into `work.committed(rows)`; cost: one message per
-   foreign commit. (b) The idle bound; cost: a second tab's send waits up to 6.6 s. Amends D112 for
-   the browser.
-6. **`durable-takeover` placement.** (a) (R) Playwright lane only, `full`, a family the hosted
-   entries skip; cost: no hosted takeover evidence. (b) Also hosted; cost: multi-page agents in the
-   headless worker and new manifest entries. Creates a decision.
-7. **Dedup retention.** (a) (R) `max(window, deadline + grace)` for identity dedup, the deadline term
-   capped at `msgOwnerTtlMs`, `semantic-key` unchanged; cost: deadlines beyond 60 min uncovered,
-   stated. (b) No cap; cost: a client's deadline sets server row lifetime. (c) Replace the window;
-   cost: `windowMs` loses its meaning and `semantic-key` changes. Amends D85 ("replacing").
-8. **Relic idempotency.** (a) (R) Later: msgId dedup now, I2b's proof decides; cost: none found,
-   since a replay past deadline plus grace is dropped `expired`. (b) A command id now; cost: a model
-   and server change no failure needs. Amends D115's Relic line.
-9. **The legacy database.** (a) (R) Delete it once at the first scoped open, reported as `reset`;
-   cost: one call, possibly blocked by an old tab. (b) Leave it; cost: stale rows at rest until
-   eviction. Moot under 2(b). Applies D3.
-10. **When to ask for persistence.** (a) (R) On the session's first durable admission; cost: the ask
-    lands mid-session. (b) At connect; cost: apps that never send durably ask too, and Firefox asks
-    the user. Restates QoS 8.
-11. **A non-owner's handles.** (a) (R) The owner relays settlements of messages it holds no handle
-    for on the session channel; cost: one message per settlement of a foreign send. (b) Settle
-    `unobservable` after admission, as after a reload (D13); cost: second tabs lose evidence they
-    have today. (c) Each tab dispatches its own fresh rows, the owner only recovers; cost: two
-    drainers again. Creates a decision beside D13.
-12. **AR Eye Hunter's I2a proof.** (a) (R) Drop "multi-tab claim of the match session": its channels
-    are volatile since S3c-ii, so there is no durable store to claim; `durable-takeover` and Relic's
-    move prove I2a. (b) Add a durable AR Eye channel for it; cost: a game change for a proof the lane
-    gives. Amends the roadmap's consumer-proof row and QoS 10.4.
+1. **The PR split (D119).** Two serial PRs, I2a-i then I2a-ii, each passing the full gate alone.
+   Declined: three PRs, a third gate and manifest run for six files; one PR, one review holding two
+   risks. Amends D88's I2a line, as D108 did for P1.
+2. **Where the scope goes (D120).** One database per scope,
+   `rallar-al-runtime:${applicationId}:${workspaceId}`, keys unchanged inside. Declined: one
+   database with scoped keys, every identity builder changed and a scope index row for the purge.
+   The maintainer's adjustment: the name prefix is `rallar`, not `ar-eye-hunter`. Amends the
+   roadmap's "Storage, cutover" section and QoS 8.
+3. **The storage port (D121).** `onStorageReset` widens into one `storage` port of four kinds:
+   `reset`, `recovery`, `health` and `persist`. Declined: a `storage` port beside it, two ports for
+   one concern. Amends D86's sink wording.
+4. **The typed outcome (D122).** A new verdict kind, read as state `failed` with a new failure arm
+   carrying the cause. Declined: a `refused` reason, which reads as the sender's fault and carries
+   no cause; a new state, which touches every state decoder and the capability prose. Applies D86.
+5. **Foreign rows (D123).** The cross-tab wake hands a non-owner's commit to the owner's
+   `work.committed(rows)`. Declined: the idle bound, a second tab's send waiting up to 6.6 s. Amends
+   D112 for the browser.
+6. **`durable-takeover` placement (D124).** The Playwright lane only, `full`, a family the hosted
+   entries skip. Declined: hosted as well, multi-page agents in the headless worker and new manifest
+   entries.
+7. **Dedup retention (D125).** `max(window, deadline + grace)` for identity dedup, the deadline term
+   capped at `msgOwnerTtlMs`, `semantic-key` unchanged; deadlines beyond 60 min stay uncovered,
+   stated. Declined: no cap, a client's deadline setting server row lifetime; replacing the window,
+   `windowMs` losing its meaning and `semantic-key` changing. Amends D85 ("replacing").
+8. **Relic idempotency (D126).** Later: msgId dedup now, I2b's proof decides. Declined: a command
+   id now, a model and server change no failure needs. Amends D115's Relic line.
+9. **The legacy database (D120).** Left: `ar-eye-hunter-al-runtime` is not deleted, and no delete
+   code is written; its stale rows sit at rest until the browser evicts them. Declined: a one-time
+   delete at the first scoped open, reported as `reset`. The maintainer's adjustment: option (b)
+   over the recommended (a). Applies D3.
+10. **When to ask for persistence (D127).** On the session's first durable admission, not awaited,
+    reported as `persist`. Declined: at connect, where apps that never send durably ask too and
+    Firefox asks the user. Restates QoS 8.
+11. **A non-owner's handles (D123).** The owner relays settlements of messages it holds no handle
+    for on the session channel. Declined: settling `unobservable` after admission, second tabs
+    losing evidence they have today; each tab dispatching its own fresh rows, two drainers again.
+    Beside D13.
+12. **AR Eye Hunter's I2a proof (D128).** Dropped: its channels are volatile since S3c-ii, so there
+    is no durable store to claim; `durable-takeover` and Relic's move prove I2a. Declined: a durable
+    AR Eye channel, a game change for a proof the lane gives. Amends the roadmap's consumer-proof
+    row and QoS 10.4.
 
 ## 5. Acceptance evidence
 
@@ -459,8 +458,7 @@ next whole KiB and reported; the storage snapshot per message state.
 **I2a-i.** Unit, by behaviour (QoS 9.2): a typed outcome per cause; `refuse` and `volatile` at the
 dispatch with the downgrade; a recovery outcome per kind; the sink per event kind; a replay after
 60 s inside the deadline is not delivered twice; `semantic-key` keeps its window; login over a
-session and a session switch leave no rows; two scopes see disjoint rows; the legacy database deleted
-once. Lane: `storage-unavailable`, `delivery-reload` reading the outcome. The public API snapshot and
+session and a session switch leave no rows; two scopes see disjoint rows. Lane: `storage-unavailable`, `delivery-reload` reading the outcome. The public API snapshot and
 the bundle-boundary checks for the port.
 
 **I2a-ii.** Unit: one of two runtimes drains and the other takes over on dispose, each row sent once;
@@ -478,7 +476,7 @@ relayed settlement reaches the sending tab's handle; takeover reports `restored`
 3. `onStorageUnavailable`: definition, validator, policy, the dispatch decision, the downgrade.
 4. Availability per connect, the end of the silent fallback, the persistence request.
 5. The `storage` port and union, the rename across `sw/`, the harness topic.
-6. The per-scope database, the legacy delete, the purge on login and session switch.
+6. The per-scope database, the purge on login and session switch.
 7. Dedup retention with its cap, the moved tests, the server gates.
 8. The storage fault port and `carrier: 'storage'`.
 9. `storage-unavailable`, `delivery-reload`'s read, pins, bundle, manifests, PR body.
@@ -501,8 +499,8 @@ relayed settlement reaches the sending tab's handle; takeover reports `restored`
 2. QoS 8's "blocked upgrade" cannot happen: the open names no version, so the only blocking is the
    reset's delete (`open-indexed-db.ts:182-203`); the cause is `reset-blocked`.
 3. QoS 8 calls the scope rename "a D3 reset", and the roadmap says the keys and the name take the
-   scope. Under 2(a) only the name does, no schema id is bumped, and the legacy database is deleted
-   once (3.c).
+   scope. Under 2(a) only the name does and no schema id is bumped; the legacy database is left to
+   the browser's eviction (3.c, decision 9).
 4. D85 says deadline dedup "replaces" the 60 s default; under 7(a) the window is the floor and
    `semantic-key` keeps it, as QoS 5 and 6 already say "floors".
 5. QoS 8's `storage-created` holds for a first open; a creation on a reopen within a document is
