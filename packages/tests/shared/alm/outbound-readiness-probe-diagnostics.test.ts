@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { expect, it } from 'vitest';
 
 import {
@@ -15,6 +16,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -32,7 +34,12 @@ const ACK_TIMEOUT_MS = 1_000;
 
 function createStores(kind: 'memory' | 'indexeddb', nowMs: () => number) {
     const backend = kind === 'memory'
-        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), nowMs)
+        ? new InMemoryAdmissionBackend(
+            createInMemoryALAdmissionState(
+                new InMemoryQueueBox(new Map(), () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+            ),
+            nowMs
+        )
         : new IndexedDbAdmissionBackend({
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {},
@@ -97,6 +104,8 @@ interface ProbedRuntimeInput {
     readonly clock: { atMs: number; };
     readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     readonly ackTracking: ALOutboundAckTrackingPlan | undefined;
+    /** How far the clock moves while a send's commit runs, before the batch it starts. */
+    readonly sendCommitLatencyMs: number;
 }
 
 function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
@@ -104,7 +113,12 @@ function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntim
         stores: createStores(input.kind, () => input.clock.atMs),
         queueEngine: input.engine,
         nowMs: () => input.clock.atMs,
-        diagnostics: (event) => input.diagnostics.push(event),
+        diagnostics: (event) => {
+            input.diagnostics.push(event);
+            if (event.kind === 'commit-phases' && event.origin === 'send') {
+                input.clock.atMs += input.sendCommitLatencyMs;
+            }
+        },
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
@@ -127,7 +141,8 @@ it.each(['memory', 'indexeddb'] as const)(
             engine,
             clock,
             diagnostics,
-            ackTracking: undefined
+            ackTracking: undefined,
+            sendCommitLatencyMs: 0
         });
 
         await runtime.ready();
@@ -185,7 +200,8 @@ it.each(['memory', 'indexeddb'] as const)(
                 expectedPeerIds: ['peer-1'],
                 nextHopPeerIds: ['peer-1'],
                 mode: 'hop'
-            }
+            },
+            sendCommitLatencyMs: 0
         });
 
         await runtime.ready();
@@ -202,6 +218,49 @@ it.each(['memory', 'indexeddb'] as const)(
     }
 );
 
+it.each(['memory', 'indexeddb'] as const)(
+    'finds the repair its acknowledgement timeout wrote at once, though that timeout ran in the send\'s own clean batch, over %s',
+    async (kind) => {
+        const clock = { atMs: CLOCK_START_MS };
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const engine = new InboxOutboxEngine();
+        const runtime = createProbedRuntime({
+            kind,
+            engine,
+            clock,
+            diagnostics,
+            ackTracking: {
+                enabled: true,
+                timeoutMs: ACK_TIMEOUT_MS,
+                maxAttempts: 3,
+                expectedPeerIds: ['peer-1'],
+                nextHopPeerIds: ['peer-1'],
+                mode: 'hop'
+            },
+            sendCommitLatencyMs: ACK_TIMEOUT_MS + 1
+        });
+
+        await runtime.ready();
+        await runProbedRound(engine, diagnostics);
+
+        // The commit outlasts the acknowledgement timeout, so its own batch claims and completes both
+        // rows it wrote: the send, and the timeout, whose attempt commits the next timeout and an
+        // immediately-due repair hint. No acknowledgement ever arrives, and the clock stops here.
+        const drained = drainsOf(diagnostics).length;
+        const drain = await sendThroughOwnBatch(runtime, diagnostics, 'msg-unacknowledged');
+        expect(drain).toMatchObject({ lane: 'durable', claimedCount: 2, completedCount: 2 });
+        // The repair hint, then the retransmission it commits, are claimed without the clock moving.
+        await expect.poll(async () => {
+            await engine.executeOnce();
+            return drainsOf(diagnostics).slice(drained).reduce((claimed, { claimedCount }) => claimed + claimedCount, 0);
+        }).toBeGreaterThanOrEqual(4);
+
+        expect(clock.atMs).toBe(CLOCK_START_MS + ACK_TIMEOUT_MS + 1);
+        expect(probesOf(diagnostics).map((probe) => probe.cause).slice(0, 2)).toEqual(['no-memory', 'own-commit']);
+        runtime.dispose();
+    }
+);
+
 it('reports the idle owner\'s probes even where its batch has nothing to report', async () => {
     const clock = { atMs: CLOCK_START_MS };
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
@@ -211,7 +270,8 @@ it('reports the idle owner\'s probes even where its batch has nothing to report'
         engine,
         clock,
         diagnostics,
-        ackTracking: undefined
+        ackTracking: undefined,
+        sendCommitLatencyMs: 0
     });
 
     await runtime.ready();

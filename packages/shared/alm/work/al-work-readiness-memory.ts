@@ -14,7 +14,10 @@ export type ALWorkReadinessProbeCause =
 export interface ALWorkCommittedRows {
     /** When the last row the commit wrote becomes claimable, or undefined when the owner cannot say. */
     readonly dueByMs: number | undefined;
-    /** Every work row the commit wrote: the batch it runs must claim at least as many. */
+    /**
+     * Every work row the commit stated; an existing row is counted once more at worst, which costs one
+     * probe. The batch it runs must claim at least as many.
+     */
     readonly writtenCount: number;
 }
 
@@ -153,14 +156,15 @@ function isALWorkReadinessAnswerStanding(
 
 /**
  * The suspended answer still describes storage only when the commit's batch claimed every row the
- * commit wrote and finished each one: it started once they were all due, claimed at least as many
- * rows as the commit wrote, so a row the queue did not return for any reason refuses the restore,
+ * commit wrote and finished each one. The commit described its rows: an undescribed commit never
+ * restores. The batch started once those rows were all due, and claimed at least as many rows as
+ * the commit wrote, so a row the queue did not return, for any reason, refuses the restore. It
  * claimed fewer than a page, completed every claim, rejected and retained nothing, and no commit
- * landed behind it. The answer
- * must also still stand when the batch started, and not be due by then: a due answer would start a
- * batch that claims nothing on every engine round. This rests on completing a claim writing no work
- * row that is due before the batch started: the next acknowledgement timeout a timeout attempt
- * writes is due a full timeout after that attempt, so it is later than the batch start.
+ * landed behind it. The answer still stood when the batch started and was not due by then: a due
+ * answer would start a batch that claims nothing on every engine round.
+ *
+ * This rests on every claim that may write work rows outside a commit announcing it: such a claim
+ * empties the set-aside answer, so a clean batch's completed claims wrote nothing unannounced.
  */
 function resolveALWorkRestoredReadiness(
     suspended: ALWorkSuspendedReadiness | undefined,

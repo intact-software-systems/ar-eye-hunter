@@ -216,6 +216,15 @@ export class ALWorkHandler {
         }
     }
 
+    /**
+     * A claim of the running batch committed work rows of this owner: the batch's end restores no
+     * answer and the next round probes, as after any batch. It starts no batch of its own: the
+     * running batch's end wakes the engine.
+     */
+    claimCommitted(): void {
+        this.readiness.forget('batch');
+    }
+
     private async hasReadyWork(): Promise<boolean> {
         if (this.shutdown.signal.aborted || this.batch !== undefined) {
             return false;

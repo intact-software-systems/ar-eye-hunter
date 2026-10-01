@@ -250,7 +250,13 @@ export class ALOutboundStoreLane<TPrepared> {
     private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
         try {
             const work = await this.readExpirableOutboundWork(claim.entry);
-            return work === undefined ? { status: 'completed' } : await this.runDurableEffect(work);
+            if (work === undefined) {
+                return { status: 'completed' };
+            }
+            if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
+                this.work.claimCommitted();
+            }
+            return await this.runDurableEffect(work);
         }
         catch (error) {
             // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
@@ -534,6 +540,16 @@ function computeALOutboundCommittedRows<TPrepared>(
         }
     }
     return { dueByMs, writtenCount };
+}
+
+/**
+ * The effect kinds whose claim may commit work rows without the lane's own commit, which announces
+ * what it writes: a timeout attempt writes the next timeout and a repair hint, a repair or retry
+ * commits a fresh dispatch, a retained admission commits its message, and a replayed control its
+ * repair and retry schedule.
+ */
+function commitsALOutboundWorkOutsideLane<TPrepared>(kind: ALOutboundDurableEffect<TPrepared>['kind']): boolean {
+    return kind !== 'send-prepared' && kind !== 'dequeue-message';
 }
 
 /** The effect kinds whose queue row expires exactly when the message it carries does. */

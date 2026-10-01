@@ -1158,10 +1158,11 @@ interface RestoreFixture {
     readonly wakeAtCalls: (number | undefined)[];
 }
 
-/** What a claim may reach while it runs: the engine it shares and its own owner's commit. */
+/** What a claim may reach while it runs: the engine it shares, its own owner's commit, and its own writes. */
 interface RestoreFixtureClaimScope {
     readonly engine: InboxOutboxEngine;
     readonly commit: () => void;
+    readonly claimCommitted: () => void;
 }
 
 interface RestoreFixtureInput {
@@ -1212,6 +1213,15 @@ const UNCLEAN_BATCHES: readonly UncleanBatchCase[] = [
         }
     },
     {
+        name: 'a claim that committed work rows',
+        pageSize: 16,
+        exhaustedRows: [],
+        runClaim: async (_claim, scope) => {
+            scope.claimCommitted();
+            return { status: 'completed' };
+        }
+    },
+    {
         name: 'a commit behind it',
         pageSize: 16,
         exhaustedRows: [],
@@ -1250,7 +1260,12 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
         readinessMemoryMs: input.readinessMemoryMs,
         readNextReadyAtMs: async () => storage.readyAtMs,
         selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
-        runClaim: (claim) => input.runClaim(claim, { engine, commit: () => handler.committed({ dueByMs: clock.atMs, writtenCount: 0 }) }),
+        runClaim: (claim) =>
+            input.runClaim(claim, {
+                engine,
+                commit: () => handler.committed({ dueByMs: clock.atMs, writtenCount: 0 }),
+                claimCommitted: () => handler.claimCommitted()
+            }),
         diagnostics: (event) => collectProbe(probes, event)
     });
     return { handler, engine, clock, storage, pending, exhausted, released, probes, wakeAtCalls };
