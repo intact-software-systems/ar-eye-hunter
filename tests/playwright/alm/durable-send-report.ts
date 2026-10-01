@@ -8,7 +8,7 @@ import {
     computePercentile,
     computeSendToDispatchPercentiles
 } from './compute-send-to-dispatch-percentiles.ts';
-import type { DurableSendRun } from './harness/durable-send-harness-contract.ts';
+import type { DurableSendPlan, DurableSendRun } from './harness/durable-send-harness-contract.ts';
 import type { DurableSendConfiguration } from './run-durable-send-configuration.ts';
 
 const REPORT_DIRECTORY = resolve(
@@ -17,13 +17,16 @@ const REPORT_DIRECTORY = resolve(
 );
 
 export interface DurableSendRunFigures {
+    readonly plan: DurableSendPlan;
     readonly p50Ms: number;
     readonly p95Ms: number;
     readonly unsettledCount: number;
-    /** What ended each send's wait for its batch to go idle, counted; the suite expects only `effect-drain`. */
+    /** What ended each send's wait for its batch to go idle, counted; the suite expects one end per plan. */
     readonly batchEnds: Readonly<Record<string, number>>;
     /** Every durable probe seen during those waits, counted by cause. */
     readonly observedProbeCauses: Readonly<Record<string, number>>;
+    /** How each send's server receipt ended, counted; `none` for a plan that tracks no receipt. */
+    readonly receiptEnds: Readonly<Record<string, number>>;
     /** Share of sends faster than one frame interval; null on an idle page. */
     readonly fastModeShare: number | null;
     readonly frameLoadBusyShare: number | null;
@@ -34,6 +37,7 @@ export interface DurableSendRunFigures {
 }
 
 export interface DurableSendConfigurationFigures extends DurableSendConfiguration {
+    readonly plan: DurableSendPlan;
     readonly runs: readonly DurableSendRunFigures[];
     readonly medianP50Ms: number;
     readonly medianP95Ms: number;
@@ -62,12 +66,14 @@ export interface DurableSendMethod {
 
 export function toConfigurationFigures(
     configuration: DurableSendConfiguration,
+    plan: DurableSendPlan,
     runs: readonly DurableSendRun[]
 ): DurableSendConfigurationFigures {
-    const figures = runs.map((run) => toRunFigures(configuration, run));
+    const figures = runs.map((run) => toRunFigures(configuration, plan, run));
     const fastModeShares = figures.map((run) => run.fastModeShare);
     return {
         ...configuration,
+        plan,
         runs: figures,
         medianP50Ms: computeMedian(figures.map((run) => run.p50Ms), 10),
         medianP95Ms: computeMedian(figures.map((run) => run.p95Ms), 10),
@@ -79,15 +85,18 @@ export function toConfigurationFigures(
 
 function toRunFigures(
     configuration: DurableSendConfiguration,
+    plan: DurableSendPlan,
     run: DurableSendRun
 ): DurableSendRunFigures {
     const sendToDispatchMs = run.samples.map((sample) => sample.sendToDispatchMs);
     const frameIntervalMs = configuration.frameLoad?.frameIntervalMs;
     return {
+        plan,
         ...computeSendToDispatchPercentiles(sendToDispatchMs),
         unsettledCount: run.samples.filter((sample) => sample.batchEnd === 'timeout').length,
         batchEnds: computeCountByKey(run.samples.map((sample) => sample.batchEnd)),
         observedProbeCauses: computeCountByKey(run.samples.flatMap((sample) => sample.observedProbeCauses)),
+        receiptEnds: computeCountByKey(run.samples.map((sample) => sample.receiptEnd)),
         fastModeShare: frameIntervalMs === undefined
             ? null
             : toFastModeShare(sendToDispatchMs, frameIntervalMs),
@@ -123,11 +132,12 @@ export async function writeDurableSendReport(report: DurableSendReport): Promise
     return path;
 }
 
-/** One line per configuration, each naming its figures, so a `grep p50` of the log keeps every row. */
+/** One line per configuration and plan, each naming its figures, so a `grep p50` of the log keeps every row. */
 export function toDurableSendTable(report: DurableSendReport): string {
     const rows = report.configurations.map((configuration) => {
         const runs = configuration.runs.map(toRunCell).join('  ');
-        return `${configuration.name.padEnd(18)} p50 ${String(configuration.medianP50Ms).padStart(5)} ms  ` +
+        const label = `${configuration.name.padEnd(18)} ${configuration.plan.padEnd(17)}`;
+        return `${label} p50 ${String(configuration.medianP50Ms).padStart(5)} ms  ` +
             `p95 ${String(configuration.medianP95Ms).padStart(5)} ms  ` +
             `fast ${configuration.medianFastModeShare ?? '-'}  runs p50/p95: ${runs}`;
     });
@@ -137,7 +147,7 @@ export function toDurableSendTable(report: DurableSendReport): string {
         `send-to-dispatch, median of ${report.method.runCount} runs of ${report.method.measuredCount} sends, ` +
         `${report.browser}, ${report.commit.slice(0, 9)}${tree}`,
         ...rows,
-        `idle CPU profile over ${report.method.profiledCount} sends: busy ${profile.busyMs} ms; ` +
+        `idle CPU profile of the minimal plan over ${report.method.profiledCount} sends: busy ${profile.busyMs} ms; ` +
         `polyfill ${profile.temporalPolyfillPercent} % + JSBI ${profile.jsbiPercent} % = ${profile.temporalPercent} %; ` +
         `codec self ${profile.codecSelfPercent} %, inclusive ${profile.codecInclusivePercent} %; ` +
         `polyfill + JSBI under the codec ${profile.temporalUnderCodecPercent} %`,

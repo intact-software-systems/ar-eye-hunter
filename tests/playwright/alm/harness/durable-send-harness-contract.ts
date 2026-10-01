@@ -1,5 +1,16 @@
 import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-readiness-memory.ts';
 
+/**
+ * What a page sends: the ledger's minimal durable plan, or a receipted command, a durable WS unicast to the
+ * server on the `command` channel, planned as the WS client plans it and acknowledged as the server does.
+ */
+export type DurableSendPlan = 'minimal' | 'receipted-command';
+
+export const DURABLE_SEND_PLANS: readonly DurableSendPlan[] = ['minimal', 'receipted-command'];
+
+/** The page URL's query parameter that names its plan, so each page composes one runtime for one plan. */
+export const DURABLE_SEND_PLAN_PARAMETER = 'plan';
+
 export interface DurableSendRunInput {
     readonly runId: string;
     readonly warmupCount: number;
@@ -19,8 +30,12 @@ export interface FrameLoadObservation {
     readonly frameLatenessMs: readonly number[];
 }
 
-/** How a send's wait for its own batch ended: on that batch's durable `effect-drain`, or at the bound. */
-export type DurableSendBatchEnd = 'effect-drain' | 'timeout';
+/**
+ * How a send's wait for its own batch ended: on that batch's durable `effect-drain`, on the readiness probe that
+ * follows the drain, or at the bound. A receipted send ends on the probe: its commit also wrote the ACK-timeout row
+ * due later, so the owner reads storage again after the batch instead of restoring its answer.
+ */
+export type DurableSendBatchEnd = 'effect-drain' | 'readiness-probe' | 'timeout';
 
 export interface DurableSendSample {
     /** `enqueueIfAbsent` call to the carrier's `sendPreparedMessage`. */
@@ -33,7 +48,15 @@ export interface DurableSendSample {
     readonly batchEnd: DurableSendBatchEnd;
     /** Every durable probe seen from the dispatch to the end of that wait. */
     readonly observedProbeCauses: readonly ALWorkReadinessProbeCause[];
+    /** How the server's receipt, handed over once the batch went idle, ended. */
+    readonly receiptEnd: DurableSendReceiptEnd;
 }
+
+/**
+ * `acknowledged`: the receipt settled complete and the batch its commit woke drained, so the next send starts
+ * on an idle owner with no receipt open. `none` for a plan that tracks no receipt.
+ */
+export type DurableSendReceiptEnd = 'none' | 'acknowledged' | 'unacknowledged' | 'undrained';
 
 export interface DurableSendRun {
     readonly samples: readonly DurableSendSample[];
