@@ -63,7 +63,7 @@ describe('outbound lease recovery on the lane clock', () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
-        const leaseEndMs = await writeCrashedLease(run, 'crashed', 1);
+        const leaseEndMs = await writeCrashedLease(run, { resourceId: 'crashed', attempts: 1, startMs: Date.now() });
         await vi.advanceTimersByTimeAsync(AL_OUTBOUND_WORK_LEASE_MS - ENGINE_PASS_MS);
         // This send's batch sweeps a moment before the lease ends, so the window stays closed past it.
         await run.runtime.enqueueIfAbsent(createOutboundMessage('spends-the-window', { ttlMs: MESSAGE_TTL_MS }));
@@ -79,7 +79,7 @@ describe('outbound lease recovery on the lane clock', () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
-        const leaseEndMs = await writeCrashedLease(run, 'exhausted', 20);
+        const leaseEndMs = await writeCrashedLease(run, { resourceId: 'exhausted', attempts: 20, startMs: Date.now() });
         await vi.advanceTimersByTimeAsync(AL_OUTBOUND_WORK_LEASE_MS - ENGINE_PASS_MS);
         await run.runtime.enqueueIfAbsent(createOutboundMessage('spends-the-window', { ttlMs: MESSAGE_TTL_MS }));
 
@@ -95,7 +95,7 @@ describe('outbound lease recovery on the lane clock', () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
-        const leaseEndMs = await writeCrashedLease(run, 'crashed', 1);
+        const leaseEndMs = await writeCrashedLease(run, { resourceId: 'crashed', attempts: 1, startMs: Date.now() });
         await vi.advanceTimersByTimeAsync(AL_OUTBOUND_WORK_LEASE_MS - ENGINE_PASS_MS);
         await run.runtime.enqueueIfAbsent(createOutboundMessage('spends-the-window', { ttlMs: MESSAGE_TTL_MS }));
         await vi.advanceTimersByTimeAsync(ENGINE_PASS_MS);
@@ -114,7 +114,11 @@ describe('outbound lease recovery on the lane clock', () => {
         await vi.advanceTimersByTimeAsync(13_000);
         let leaseEndMs = 0;
         for (let index = 0; index < BACKLOG_SIZE; index += 1) {
-            leaseEndMs = await writeCrashedLease(run, `crashed-${String(index).padStart(2, '0')}`, 1);
+            leaseEndMs = await writeCrashedLease(run, {
+                resourceId: `crashed-${String(index).padStart(2, '0')}`,
+                attempts: 1,
+                startMs: Date.now()
+            });
         }
         await vi.advanceTimersByTimeAsync(AL_OUTBOUND_WORK_LEASE_MS - ENGINE_PASS_MS);
         await run.runtime.enqueueIfAbsent(createOutboundMessage('spends-the-window', { ttlMs: MESSAGE_TTL_MS }));
@@ -131,9 +135,17 @@ describe('outbound lease recovery on the lane clock', () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
-        await writeCrashedLease(run, 'z-crashed', 1, Date.now() - AL_OUTBOUND_WORK_LEASE_MS - 1);
+        await writeCrashedLease(run, {
+            resourceId: 'z-crashed',
+            attempts: 1,
+            startMs: Date.now() - AL_OUTBOUND_WORK_LEASE_MS - 1
+        });
         for (let index = 0; index < 16; index += 1) {
-            await writeCrashedLease(run, `a-live-${String(index).padStart(2, '0')}`, 1);
+            await writeCrashedLease(run, {
+                resourceId: `a-live-${String(index).padStart(2, '0')}`,
+                attempts: 1,
+                startMs: Date.now()
+            });
         }
 
         // The scan reads 16 reserved rows and the sweep 64: a send's batch reaches past the live page.
@@ -226,19 +238,20 @@ function recordLeaseSweeps(
     return recorded;
 }
 
+interface CrashedLeaseInput {
+    readonly resourceId: string;
+    readonly attempts: number;
+    readonly startMs: number;
+}
+
 /** A dequeue row an owner reserved at `startMs` and never released, as a crashed owner leaves it; returns its lease end. */
-async function writeCrashedLease(
-    run: LeaseRecoveryRun,
-    resourceId: string,
-    attempts: number,
-    startMs = Date.now()
-): Promise<number> {
+async function writeCrashedLease(run: LeaseRecoveryRun, input: CrashedLeaseInput): Promise<number> {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
-        createOutboundMessage(resourceId, { ttlMs: MESSAGE_TTL_MS }),
+        createOutboundMessage(input.resourceId, { ttlMs: MESSAGE_TTL_MS }),
         DEQUEUE_TYPE
     );
-    await run.queue.enqueueIfAbsent(toReservedEntry(entry, startMs, attempts));
-    return startMs + AL_OUTBOUND_WORK_LEASE_MS;
+    await run.queue.enqueueIfAbsent(toReservedEntry(entry, input.startMs, input.attempts));
+    return input.startMs + AL_OUTBOUND_WORK_LEASE_MS;
 }
 
 function toReservedEntry(entry: ResourceEntry, startMs: number, attempts: number): ResourceEntry {

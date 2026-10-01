@@ -15,7 +15,11 @@ import type {
     ALOutboundRuntimeDiagnosticsEvent
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    createPassThroughIndexedDbOperationObserver,
+    type IndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
@@ -31,8 +35,19 @@ type EffectDrainEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'effe
 
 const CLOCK_START_MS = 1_760_000_000_000;
 const ACK_TIMEOUT_MS = 1_000;
+/** The engine's fixed pass delay, so every instant a timer could defer work to is visited. */
+const IDLE_PASS_MS = 100;
+/** Past the memory bound several times and past the bootstrap sweeps' window reopening. */
+const IDLE_WINDOW_MS = 20_000;
+const IDLE_WINDOW_REASON = 'after a warm send the idle owner reads storage only when the answer its batch restored ' +
+    'reaches the age bound: work a timer defers past the send\'s ledger window -- a reopened sweep window, the ' +
+    'restored wake time, a probe after the batch -- would add a sweep, a reservation or a batch here';
 
-function createStores(kind: 'memory' | 'indexeddb', nowMs: () => number) {
+function createStores(
+    kind: 'memory' | 'indexeddb',
+    nowMs: () => number,
+    observer: IndexedDbOperationObserver = createPassThroughIndexedDbOperationObserver()
+) {
     const backend = kind === 'memory'
         ? new InMemoryAdmissionBackend(
             createInMemoryALAdmissionState(
@@ -47,7 +62,7 @@ function createStores(kind: 'memory' | 'indexeddb', nowMs: () => number) {
             storeName: 'entries',
             nowMs,
             newWriteToken: crypto.randomUUID.bind(crypto),
-            observer: createPassThroughIndexedDbOperationObserver()
+            observer
         });
     const admissionStore = createALOutboundAdmissionStore({
         nowMs,
@@ -106,11 +121,12 @@ interface ProbedRuntimeInput {
     readonly ackTracking: ALOutboundAckTrackingPlan | undefined;
     /** How far the clock moves while a send's commit runs, before the batch it starts. */
     readonly sendCommitLatencyMs: number;
+    readonly observer?: IndexedDbOperationObserver;
 }
 
 function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
     return createDefaultOutboundTestRuntime({
-        stores: createStores(input.kind, () => input.clock.atMs),
+        stores: createStores(input.kind, () => input.clock.atMs, input.observer),
         queueEngine: input.engine,
         nowMs: () => input.clock.atMs,
         diagnostics: (event) => {
@@ -260,6 +276,43 @@ it.each(['memory', 'indexeddb'] as const)(
         runtime.dispose();
     }
 );
+
+it('spends only age-bound probes over twenty idle seconds after a warm send over indexeddb', async () => {
+    const clock = { atMs: CLOCK_START_MS };
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    const engine = new InboxOutboxEngine();
+    const observer = createCountingIndexedDbOperationObserver();
+    const runtime = createProbedRuntime({
+        kind: 'indexeddb',
+        engine,
+        clock,
+        diagnostics,
+        ackTracking: undefined,
+        sendCommitLatencyMs: 0,
+        observer
+    });
+    await runtime.ready();
+    await runProbedRound(engine, diagnostics);
+    await sendThroughOwnBatch(runtime, diagnostics, 'msg-idle-window');
+    const probed = probesOf(diagnostics).length;
+    const drained = drainsOf(diagnostics).length;
+    observer.reset();
+
+    for (let elapsedMs = IDLE_PASS_MS; elapsedMs <= IDLE_WINDOW_MS; elapsedMs += IDLE_PASS_MS) {
+        clock.atMs = CLOCK_START_MS + elapsedMs;
+        await engine.executeOnce();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    // The answer the send's batch restored was taken by the warm-up probe at the start, so one probe
+    // falls due per memory bound from there, and every one of them is that bound's.
+    const ageBoundProbes = Math.floor(IDLE_WINDOW_MS / AL_WORK_READINESS_MEMORY_MS);
+    expect(probesOf(diagnostics).slice(probed).map((probe) => probe.cause), IDLE_WINDOW_REASON)
+        .toEqual(Array.from({ length: ageBoundProbes }, () => 'age-bound'));
+    expect(observer.getCounts().byKind, IDLE_WINDOW_REASON).toEqual({ 'work-page': ageBoundProbes });
+    expect(drainsOf(diagnostics).slice(drained), IDLE_WINDOW_REASON).toEqual([]);
+    runtime.dispose();
+});
 
 it('reports the idle owner\'s probes even where its batch has nothing to report', async () => {
     const clock = { atMs: CLOCK_START_MS };

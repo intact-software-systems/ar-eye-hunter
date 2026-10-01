@@ -65,7 +65,7 @@ describe('Postgres AL outbound effect claims', () => {
             expect(claimed).toHaveLength(1);
             const [oldClaim] = claimed;
             await new Promise((resolve) => setTimeout(resolve, 10_010));
-            // The second owner's empty first claim spent its lease-timeout sweep; its lane clock steps past the
+            // The second owner's empty first claim may have spent its lease-timeout sweep; its lane clock steps past the
             // recovery bound, so its next claim sweeps for the lapsed lease again.
             secondClockAheadMs = OUTBOUND_LEASE_RECOVERY_BOUND_MS;
             const [newClaim] = await second.port.claim(input);

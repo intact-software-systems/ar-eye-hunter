@@ -29,7 +29,11 @@ import {
     type ALOutboundAdmissionStore,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import {
+    INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
+    INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
+    InboxOutboxEngine
+} from '@shared/services/InboxOutboxEngine.ts';
 
 import type {
     ALOutboundEffectSnapshot,
@@ -42,7 +46,10 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
-import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
+import {
+    AL_WORK_LEASE_SWEEP_WINDOW_LEASES,
+    createLimitedALWorkLeaseRecovery
+} from '@shared/alm/work/al-work-lease-recovery.ts';
 import {
     createALWorkQueuePort,
     type ALWorkOutcome,
@@ -53,11 +60,6 @@ import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
-/** A spent sweep window stays closed up to 1.25 leases: the limiter counts in quarter-window buckets. */
-const LEASE_SWEEP_WINDOW_LEASES = 1.25;
-/** The engine stretches each idle pass by up to this share (`InboxOutboxEngine`'s schedule jitter). */
-const ENGINE_IDLE_JITTER_RATIO = 0.2;
-
 /**
  * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst, a
  * backlog larger than one sweep included: a sweep that comes back with room to spare closes its window for
@@ -65,8 +67,8 @@ const ENGINE_IDLE_JITTER_RATIO = 0.2;
  * batches once the window reopens. Then the remembered readiness answer ages and the idle engine waits
  * at most one jittered idle pass.
  */
-export const OUTBOUND_LEASE_RECOVERY_BOUND_MS = AL_OUTBOUND_WORK_LEASE_MS * LEASE_SWEEP_WINDOW_LEASES +
-    AL_WORK_READINESS_MEMORY_MS + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS * (1 + ENGINE_IDLE_JITTER_RATIO);
+export const OUTBOUND_LEASE_RECOVERY_BOUND_MS = AL_OUTBOUND_WORK_LEASE_MS * AL_WORK_LEASE_SWEEP_WINDOW_LEASES +
+    AL_WORK_READINESS_MEMORY_MS + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS * (1 + INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO);
 
 interface OutboundTestRuntimeInput<TPrepared> {
     readonly queueEngine?: InboxOutboxEngine;

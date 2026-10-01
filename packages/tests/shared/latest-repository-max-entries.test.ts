@@ -4,10 +4,42 @@ import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent
 } from '@shared/cache/RepositoryInterfaces.ts';
-import { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
-import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, it } from 'vitest';
+import type { WriteBehindObservableLatestRepositoryOptions } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+import type { WriteThroughObservableLatestRepositoryOptions } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest';
+
+/** The write paths both repositories share, each adding `key` when it is absent. */
+interface CappedRepository {
+    set(key: string, value: number): void;
+    setIfAbsent(key: string, creator: () => number): number;
+    getAndSet(key: string, update: number): number | undefined;
+    updateIfNewer(key: string, next: number, options: { versionOf: (value: number) => number; }): boolean;
+    compareAndSet(key: string, expect: number | undefined, update: number): boolean;
+    latest(key: string): void;
+    keys(): IterableIterator<string>;
+}
+
+interface AddingPath {
+    readonly name: string;
+    readonly add: (repository: CappedRepository, key: string) => void;
+}
+
+const ADDING_PATHS: readonly AddingPath[] = [
+    { name: 'set', add: (repository, key) => repository.set(key, 1) },
+    { name: 'setIfAbsent', add: (repository, key) => repository.setIfAbsent(key, () => 1) },
+    { name: 'getAndSet', add: (repository, key) => repository.getAndSet(key, 1) },
+    { name: 'updateIfNewer', add: (repository, key) => repository.updateIfNewer(key, 1, { versionOf: (value) => value }) },
+    { name: 'compareAndSet', add: (repository, key) => repository.compareAndSet(key, undefined, 1) },
+    { name: 'latest', add: (repository, key) => repository.latest(key) }
+];
+
+const CAPPED_CLASSES = [
+    { name: 'LatestRepository', create: (): CappedRepository => new LatestRepository<string, number>({ maxEntries: 1 }) },
+    {
+        name: 'ObservableLatestRepository',
+        create: (): CappedRepository => new ObservableLatestRepository<string, number>({ maxEntries: 1 })
+    }
+] as const;
 
 describe('LatestRepository maxEntries', () => {
     it('keeps the two newest first insertions and drops the oldest', () => {
@@ -51,6 +83,28 @@ describe('LatestRepository maxEntries', () => {
         expect([...repository.keys()]).toEqual(['b', 'c']);
     });
 
+    it('caps the readOrAcceptAt path', () => {
+        const repository = new LatestRepository<string, number>({ maxEntries: 1 });
+
+        repository.acceptAt({ key: 'a', value: 1, nowEpochMs: 0 });
+        expect(repository.readOrAcceptAt({ key: 'b', nowEpochMs: 0, create: () => 2 })).toBe(2);
+
+        expect([...repository.keys()]).toEqual(['b']);
+    });
+
+    // Deleting a key ends its first insertion, so adding it again counts as the newest.
+    it('moves a deleted then re-added key to the end', () => {
+        const repository = new LatestRepository<string, number>({ maxEntries: 2 });
+
+        repository.set('a', 1);
+        repository.set('b', 2);
+        repository.delete('a');
+        repository.set('a', 10);
+        repository.set('c', 3);
+
+        expect([...repository.keys()]).toEqual(['a', 'c']);
+    });
+
     it('leaves the repository unbounded without a cap', () => {
         const repository = new LatestRepository<string, number>();
 
@@ -88,6 +142,17 @@ describe('LatestRepository maxEntries', () => {
             );
         }
     );
+});
+
+describe.each(CAPPED_CLASSES)('$name maxEntries on every adding path', ({ create }) => {
+    it.each(ADDING_PATHS)('keeps only the newest key added through $name', ({ add }) => {
+        const repository = create();
+
+        add(repository, 'a');
+        add(repository, 'b');
+
+        expect([...repository.keys()]).toEqual(['b']);
+    });
 });
 
 describe('ObservableLatestRepository maxEntries', () => {
@@ -131,6 +196,46 @@ describe('ObservableLatestRepository maxEntries', () => {
         expect(deleted).toEqual(['a']);
     });
 
+    it('routes a delete listener that throws on an eviction to onObserverError', async () => {
+        const failures: Array<ObservableKeyedValueEvent<string, number>> = [];
+        const repository = new ObservableLatestRepository<string, number>({
+            maxEntries: 1,
+            onObserverError: (_error, event) => {
+                failures.push(event);
+            }
+        });
+        repository.onDeletedDo(() => {
+            throw new Error('listener failed');
+        });
+
+        repository.set('a', 1);
+        repository.set('b', 2);
+        await repository.whenIdle();
+
+        expect([...repository.keys()]).toEqual(['b']);
+        expect(failures).toEqual([expect.objectContaining({ key: 'a', type: ObservableValueEventType.Deleted })]);
+    });
+
+    // An expiry sweep frees room under the cap, and the cap then counts only the entries that remain.
+    it('applies the cap and deleteExpired together', () => {
+        vi.useFakeTimers({ toFake: ['Date'], now: 0 });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const repository = new ObservableLatestRepository<string, number>({ maxEntries: 2, ttlMs: 100 });
+
+        repository.set('a', 1);
+        vi.setSystemTime(50);
+        repository.set('b', 2);
+        vi.setSystemTime(110);
+        expect(repository.deleteExpired()).toBe(1);
+
+        repository.set('c', 3);
+        expect([...repository.keys()]).toEqual(['b', 'c']);
+        repository.set('d', 4);
+        expect([...repository.keys()]).toEqual(['c', 'd']);
+    });
+
     it('leaves the repository unbounded without a cap', () => {
         const repository = new ObservableLatestRepository<string, number>();
 
@@ -149,17 +254,10 @@ describe('ObservableLatestRepository maxEntries', () => {
 });
 
 describe('persisted repositories', () => {
-    // A cache cap must never delete stored rows, so these option types refuse it at compile time.
+    // A cache cap must never delete stored rows, so these option types refuse it. The expectations are
+    // type-level only: the tests typecheck gate holds them, and they assert nothing at run time.
     it('do not accept maxEntries', () => {
-        const refuseMaxEntries = (): void => {
-            const persistence = new InMemoryPersistenceProvider<string, number>();
-
-            // @ts-expect-error maxEntries is not an option of the write-through repository
-            new WriteThroughObservableLatestRepository<string, number>({ persistence, maxEntries: 1 });
-            // @ts-expect-error maxEntries is not an option of the write-behind repository
-            new WriteBehindObservableLatestRepository<string, number>({ persistence, maxEntries: 1 });
-        };
-
-        expect(refuseMaxEntries).toBeTypeOf('function');
+        expectTypeOf<WriteThroughObservableLatestRepositoryOptions<string, number>>().not.toHaveProperty('maxEntries');
+        expectTypeOf<WriteBehindObservableLatestRepositoryOptions<string, number>>().not.toHaveProperty('maxEntries');
     });
 });

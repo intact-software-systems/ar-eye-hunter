@@ -23,8 +23,14 @@ export interface ALWorkLeaseSweepState {
 }
 
 /**
- * Of each kind, at most one sweep that comes back with room to spare per 1 to 1.25 leases. A fresh pair holds
- * both allowances, so the owner's first batch sweeps.
+ * How many leases a spent sweep window stays closed at most: the limiter counts its one-lease window in
+ * quarter-window buckets, so a spend late in a bucket holds until that bucket leaves the window.
+ */
+export const AL_WORK_LEASE_SWEEP_WINDOW_LEASES = 1.25;
+
+/**
+ * Of each kind, at most one sweep that comes back with room to spare per 1 to `AL_WORK_LEASE_SWEEP_WINDOW_LEASES`
+ * leases. A fresh pair holds both allowances, so the owner's first batch sweeps.
  */
 export function createLimitedALWorkLeaseRecovery(leaseMs: number, nowMs: number): ALWorkLeaseRecovery {
     return {

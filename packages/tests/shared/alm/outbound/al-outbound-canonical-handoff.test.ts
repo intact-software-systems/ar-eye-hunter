@@ -53,6 +53,8 @@ afterEach(() => {
 });
 
 const HANDOFF_NAMESPACE = 'canonical-handoff';
+/** The lane clock the hand-off's own tests pass; every send's deadline lies well after it. */
+const HANDOFF_CLOCK_MS = 1_700_000_000_000;
 
 interface HandoffTestPair {
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
@@ -93,7 +95,7 @@ function recordHandoffCommits(): Key[] {
 
 describe('the canonical hand-off bound', () => {
     it('keeps the newest committed sends up to its limit and gives each one up once', async () => {
-        const nowMs = Date.now();
+        const nowMs = HANDOFF_CLOCK_MS;
         const store = createDefaultOutboundTestStores().admissionStore;
         const peers = Array.from(
             { length: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1 },
@@ -123,7 +125,7 @@ describe('the canonical hand-off bound', () => {
     });
 
     it('holds nothing after it is cleared', async () => {
-        const nowMs = Date.now();
+        const nowMs = HANDOFF_CLOCK_MS;
         const store = createDefaultOutboundTestStores().admissionStore;
         const bundle = await computeOutboundTestAdmission(
             store,
@@ -166,6 +168,8 @@ describe('the canonical hand-off bound', () => {
             OUTBOUND_TEST_SEND_PLANNER
         );
         const laterKey = toALOutboundWorkKey(store.namespace, later.durableEffects[0]!.effectId);
+        // A commit's expiry sweep is rate limited, and the two commits above spent its allowance: this one
+        // lands 10 s on, past that window, so its sweep runs.
         handoff.setCommitted(later, deadlineMs + 10_000);
 
         // Read on an instant before the deadline: only a row that is gone can miss here.

@@ -11,6 +11,9 @@ const NOT_SET = -1;
  */
 export const INBOX_OUTBOX_ENGINE_MAX_IDLE_MS = 3_000;
 
+/** The share by which the engine stretches or shortens each scheduled pass, so owners sharing a clock drift apart. */
+export const INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO = 0.2;
+
 export class InboxOutboxEngine {
     private static readonly MAX_BACKOFF: Temporal.Duration = Temporal.Duration.from({ milliseconds: 100 });
     private static readonly MAX_IS_WORK_CHECKS: number = 1_000;
@@ -22,7 +25,6 @@ export class InboxOutboxEngine {
     private static readonly MAX_IDLE_SCHEDULED_ENGINE: Temporal.Duration = Temporal.Duration.from({
         milliseconds: INBOX_OUTBOX_ENGINE_MAX_IDLE_MS
     });
-    private static readonly SCHEDULE_JITTER_RATIO = 0.2;
 
     private static readonly defaultDuration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 });
     private static readonly defaultSlidingWindowDuration: Temporal.Duration = Temporal.Duration.from({ minutes: 1 });
@@ -292,7 +294,7 @@ export class InboxOutboxEngine {
     }
 
     private static withJitter(delayMs: number): number {
-        const jitterRangeMs = delayMs * InboxOutboxEngine.SCHEDULE_JITTER_RATIO;
+        const jitterRangeMs = delayMs * INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO;
         const jitterMs = Math.round((Math.random() * 2 - 1) * jitterRangeMs);
 
         return Math.max(0, delayMs + jitterMs);
