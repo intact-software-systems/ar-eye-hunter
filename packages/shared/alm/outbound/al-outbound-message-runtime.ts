@@ -20,7 +20,7 @@ import type {
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
-import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
+import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundPlanner,

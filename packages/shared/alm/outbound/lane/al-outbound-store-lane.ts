@@ -13,6 +13,7 @@ import {
     type ALWorkReadySelection
 } from '../../work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '../../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -142,7 +143,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
-            this.work.committed(computeALOutboundWrittenDueByMs([result]));
+            this.work.committed(computeALOutboundCommittedRows([result], this.readNowMs()));
         }
 
         return this.toStoreComputed(result.computed);
@@ -154,12 +155,12 @@ export class ALOutboundStoreLane<TPrepared> {
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {
         const results = await this.dispatchAdmission.commitAll(dispatches).catch((error) => {
             // A group rethrows only after every member ran, so members before the throw may have landed.
-            this.work.committed(undefined);
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
             throw error;
         });
         results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
-            this.work.committed(computeALOutboundWrittenDueByMs(results));
+            this.work.committed(computeALOutboundCommittedRows(results, this.readNowMs()));
         }
         return results.map((result) => this.toStoreComputed(result.computed));
     }
@@ -179,7 +180,7 @@ export class ALOutboundStoreLane<TPrepared> {
         const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
-            this.work.committed(undefined);
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
         }
         return admitted;
     }
@@ -510,27 +511,32 @@ function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TP
 }
 
 /**
- * When the last work row these commits wrote becomes claimable, or undefined when one of them wrote
- * work its result does not describe: a receipted send's acknowledgement timeout is due after its
- * send, so the batch that sends it cannot have claimed it.
+ * The work rows these commits wrote, as their batch must account for them, or an undescribed commit
+ * when one of them wrote work its result does not describe. A row counts as due at once when it is
+ * due by `handedOverAtMs`, read after every commit: that holds each row due at its own dispatch. A
+ * receipted send's acknowledgement timeout is due after its send, so the batch that sends it cannot
+ * have claimed it.
  */
-function computeALOutboundWrittenDueByMs<TPrepared>(
-    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
-): number | undefined {
-    let writtenDueByMs = 0;
+function computeALOutboundCommittedRows<TPrepared>(
+    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[],
+    handedOverAtMs: number
+): ALWorkCommittedRows {
+    let dueByMs = 0;
+    let dueNowCount = 0;
     for (const result of results.filter(hasWrittenWork)) {
         const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
         if (effects === undefined) {
-            return undefined;
+            return AL_WORK_UNDESCRIBED_COMMIT;
         }
         for (const { retryAtMs } of effects) {
             if (retryAtMs === undefined) {
-                return undefined;
+                return AL_WORK_UNDESCRIBED_COMMIT;
             }
-            writtenDueByMs = Math.max(writtenDueByMs, retryAtMs);
+            dueByMs = Math.max(dueByMs, retryAtMs);
+            dueNowCount += retryAtMs <= handedOverAtMs ? 1 : 0;
         }
     }
-    return writtenDueByMs;
+    return { dueByMs, dueNowCount };
 }
 
 /** The effect kinds whose queue row expires exactly when the message it carries does. */

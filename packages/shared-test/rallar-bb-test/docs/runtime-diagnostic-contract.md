@@ -189,11 +189,17 @@ every session the page opens. The event's `data` is the event itself:
   `batch` and `retained-release` are this owner's own progress, `external-wake`
   is the announcement another writer made to every owner on the engine,
   `age-bound` is the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and
-  `no-memory` is an owner that has not probed yet, or whose last probe failed.
-  The first of these since the last probe names the next one. A commit whose
-  own batch claims fewer than a page, completes every claim and starts once
-  every row the commit wrote is due restores the answer the commit set aside,
-  so a plain send reports no probe after its `effect-drain`. `readyAtMs` is the answer: an
+  `no-memory` is an owner with no answer that has not probed yet, or whose last
+  probe failed after taking the cause it owed; an aged answer survives a failed
+  probe, so the probe after it reports `age-bound` again.
+  The first of these since the last probe names the next one. A commit sets its
+  owner's answer aside, and the batch the commit runs restores it when that
+  batch claimed fewer than a page, rejected nothing, completed every claim and
+  claimed at least the rows the commit made due at once; no external wake,
+  retained release or further commit reached the owner since the commit; the
+  answer was neither due nor aged out when the batch started; and every row
+  the commit wrote was due by then. A plain send therefore reports no probe
+  after its `effect-drain`. `readyAtMs` is the answer: an
   epoch-ms time work is next due, or `none` for no work at all. `durationMs` is
   what that read cost, and this is where it is charged: an owner whose probe
   answers "due now" holds the page for the batch that follows, which reads none

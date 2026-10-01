@@ -3,7 +3,12 @@ import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
-import { ALWorkReadinessMemory, type ALWorkReadinessAnswer } from './al-work-readiness-memory.ts';
+import {
+    ALWorkReadinessMemory,
+    type ALWorkCommittedRows,
+    type ALWorkReadinessAnswer,
+    type ALWorkReadinessProbeCause
+} from './al-work-readiness-memory.ts';
 
 export type ALWorkAttemptResult =
     | ALWorkOutcome
@@ -93,18 +98,6 @@ export interface ALWorkBatchDiagnostics {
      */
     readonly startedAtMs: number;
 }
-
-/**
- * Why a probe had no remembered answer to give: one of the four invalidations, the memory reaching
- * its bound, or no memory ever taken. Every storage read this owner spends on readiness has one.
- */
-export type ALWorkReadinessProbeCause =
-    | 'no-memory'
-    | 'external-wake'
-    | 'own-commit'
-    | 'batch'
-    | 'retained-release'
-    | 'age-bound';
 
 export interface ALWorkReadinessProbeDiagnostics {
     readonly kind: 'readiness-probe';
@@ -208,12 +201,12 @@ export class ALWorkHandler {
     /**
      * After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of
      * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
-     * made outside `runBatch`. `writtenDueByMs` is when the last row the commit wrote becomes
-     * claimable, or undefined when the owner cannot say: only a batch that starts by then can have
-     * claimed every one of them.
+     * made outside `runBatch`. `written` says when the last row the commit wrote becomes claimable
+     * and how many it made claimable at once: only a batch that starts at or after then, and claims
+     * at least those, can have claimed every one of them.
      */
-    committed(writtenDueByMs: number | undefined): void {
-        this.readiness.suspend(writtenDueByMs);
+    committed(written: ALWorkCommittedRows): void {
+        this.readiness.suspend(written);
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
             void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
@@ -262,8 +255,8 @@ export class ALWorkHandler {
      * ways a change reaches the memory are `committed()`, a retained claim's settlement, and the
      * engine wake every writer that is not this owner announces its row with.
      */
-    private settleReadiness(ended: ALWorkBatchEnd | undefined): ALWorkReadinessAnswer | undefined {
-        if (ended?.run === undefined) {
+    private settleReadiness(ended: ALWorkBatchEnd): ALWorkReadinessAnswer | undefined {
+        if (ended.run === undefined) {
             return this.readiness.settle(undefined);
         }
         const { claimedCount, completedCount, rejectedCount } = ended.progress;
@@ -304,7 +297,7 @@ export class ALWorkHandler {
     }
 
     private failBatch(error: Error): void {
-        this.settleReadiness(undefined);
+        this.readiness.settle(undefined);
         if (error instanceof ALAdmissionCorruptionError) {
             throw error;
         }

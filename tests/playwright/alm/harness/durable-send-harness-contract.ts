@@ -1,4 +1,4 @@
-import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-handler.ts';
+import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-readiness-memory.ts';
 
 export interface DurableSendRunInput {
     readonly runId: string;

@@ -91,13 +91,15 @@ async function sendThroughOwnBatch(
     return drainsOf(diagnostics)[drained];
 }
 
-function createProbedRuntime(input: {
+interface ProbedRuntimeInput {
     readonly kind: 'memory' | 'indexeddb';
     readonly engine: InboxOutboxEngine;
     readonly clock: { atMs: number; };
     readonly diagnostics: ALOutboundRuntimeDiagnosticsEvent[];
     readonly ackTracking: ALOutboundAckTrackingPlan | undefined;
-}): ALOutboundMessageRuntime<OutboundTestPayload> {
+}
+
+function createProbedRuntime(input: ProbedRuntimeInput): ALOutboundMessageRuntime<OutboundTestPayload> {
     return createDefaultOutboundTestRuntime({
         stores: createStores(input.kind, () => input.clock.atMs),
         queueEngine: input.engine,

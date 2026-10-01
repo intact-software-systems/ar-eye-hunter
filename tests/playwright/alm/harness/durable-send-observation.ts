@@ -1,5 +1,5 @@
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-handler.ts';
+import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-readiness-memory.ts';
 
 import type { DurableSendBatchEnd } from './durable-send-harness-contract.ts';
 import type { PacedFrameLoad } from './paced-frame-load.ts';

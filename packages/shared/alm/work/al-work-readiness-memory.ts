@@ -1,4 +1,25 @@
-import type { ALWorkReadinessProbeCause } from './al-work-handler.ts';
+/**
+ * Why a probe had no remembered answer to give: one of the four invalidations, the memory reaching
+ * its bound, or no memory ever taken. Every storage read this owner spends on readiness has one.
+ */
+export type ALWorkReadinessProbeCause =
+    | 'no-memory'
+    | 'external-wake'
+    | 'own-commit'
+    | 'batch'
+    | 'retained-release'
+    | 'age-bound';
+
+/** What a commit wrote, as the batch it runs must account for before the answer it set aside comes back. */
+export interface ALWorkCommittedRows {
+    /** When the last row the commit wrote becomes claimable, or undefined when the owner cannot say. */
+    readonly dueByMs: number | undefined;
+    /** The rows the commit made claimable at once: the batch it runs must claim at least these. */
+    readonly dueNowCount: number;
+}
+
+/** A commit that cannot describe the rows it wrote: its batch never restores the answer it set aside. */
+export const AL_WORK_UNDESCRIBED_COMMIT: ALWorkCommittedRows = { dueByMs: undefined, dueNowCount: 0 };
 
 /** One probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
 export interface ALWorkReadinessAnswer {
@@ -26,10 +47,11 @@ export interface ALWorkReadinessBatch {
     readonly commitPending: boolean;
 }
 
-/** An answer a commit set aside, and when the last row that commit wrote becomes claimable. */
+/** An answer a commit set aside, and what that commit wrote. */
 interface ALWorkSuspendedReadiness {
     readonly answer: ALWorkReadinessAnswer;
-    readonly writtenDueByMs: number;
+    readonly dueByMs: number;
+    readonly dueNowCount: number;
 }
 
 /**
@@ -94,12 +116,13 @@ export class ALWorkReadinessMemory {
     }
 
     /** A commit invalidates the answer, but keeps it aside for the batch it runs to restore. */
-    suspend(writtenDueByMs: number | undefined): void {
+    suspend(written: ALWorkCommittedRows): void {
         const standing = this.answer;
+        const { dueByMs, dueNowCount } = written;
         this.forget('own-commit');
-        this.suspended = standing === undefined || writtenDueByMs === undefined
+        this.suspended = standing === undefined || dueByMs === undefined
             ? undefined
-            : { answer: standing, writtenDueByMs };
+            : { answer: standing, dueByMs, dueNowCount };
     }
 
     /**
@@ -130,10 +153,13 @@ function isALWorkReadinessAnswerStanding(
 
 /**
  * The suspended answer still describes storage only when the commit's batch could claim every row
- * the commit wrote and finished each one: it started once they were all due, claimed fewer than a
- * page, completed every claim, rejected and retained nothing, and no commit landed behind it. The
- * answer must also still stand when the batch started, and not be due by then: a due answer would
- * start a batch that claims nothing on every engine round.
+ * the commit wrote and finished each one: it started once they were all due, claimed at least the
+ * rows the commit made due at once, whatever clock the queue claims by, claimed fewer than a page,
+ * completed every claim, rejected and retained nothing, and no commit landed behind it. The answer
+ * must also still stand when the batch started, and not be due by then: a due answer would start a
+ * batch that claims nothing on every engine round. This rests on completing a claim writing no work
+ * row that is due before the batch started: the next acknowledgement timeout a timeout attempt
+ * writes is due a full timeout after that attempt, so it is later than the batch start.
  */
 function resolveALWorkRestoredReadiness(
     suspended: ALWorkSuspendedReadiness | undefined,
@@ -142,13 +168,13 @@ function resolveALWorkRestoredReadiness(
 ): ALWorkReadinessAnswer | undefined {
     if (
         suspended === undefined || batch.commitPending ||
-        suspended.writtenDueByMs > batch.startedAtMs
+        suspended.dueByMs > batch.startedAtMs
     ) {
         return undefined;
     }
     const { answer } = suspended;
-    const clean = batch.claimedCount < batch.pageSize && batch.rejectedCount === 0 &&
-        batch.completedCount === batch.claimedCount;
+    const clean = batch.claimedCount >= suspended.dueNowCount && batch.claimedCount < batch.pageSize &&
+        batch.rejectedCount === 0 && batch.completedCount === batch.claimedCount;
     const notDue = answer.readyAtMs === undefined || answer.readyAtMs > batch.startedAtMs;
     return clean && notDue && isALWorkReadinessAnswerStanding(answer, batch.startedAtMs, memoryMs)
         ? answer
