@@ -24,8 +24,8 @@ import {
     type DurableSendMethod
 } from './durable-send-report.ts';
 import {
+    DURABLE_SEND_PLAN_BATCH_ENDS,
     DURABLE_SEND_PLANS,
-    type DurableSendBatchEnd,
     type DurableSendPlan,
     type DurableSendReceiptEnd
 } from './harness/durable-send-harness-contract.ts';
@@ -60,12 +60,10 @@ const CONFIGURATIONS: readonly DurableSendConfiguration[] = [
     }
 ];
 
-/** Where the batch of each plan goes idle and how its receipt ends; a receipted send is followed by a probe. */
-const PLAN_EXPECTATIONS: Readonly<
-    Record<DurableSendPlan, { readonly batchEnd: DurableSendBatchEnd; readonly receiptEnd: DurableSendReceiptEnd; }>
-> = {
-    minimal: { batchEnd: 'effect-drain', receiptEnd: 'none' },
-    'receipted-command': { batchEnd: 'readiness-probe', receiptEnd: 'acknowledged' }
+/** How each plan's receipt ends; where its batch goes idle is the page's own table. */
+const PLAN_RECEIPT_ENDS: Readonly<Record<DurableSendPlan, DurableSendReceiptEnd>> = {
+    minimal: 'none',
+    'receipted-command': 'acknowledged'
 };
 
 function computeCountSum(counts: Readonly<Record<string, number>>): number {
@@ -147,19 +145,19 @@ function expectRunsSettled(configurations: readonly DurableSendConfigurationFigu
             `${label}: every measured send was dispatched and its batch went idle`
         )
             .toEqual(Array(METHOD.runCount).fill([METHOD.measuredCount, 0]));
-        const expected = PLAN_EXPECTATIONS[configuration.plan];
+        const batchEnd = DURABLE_SEND_PLAN_BATCH_ENDS[configuration.plan];
         expect(
             configuration.runs.map((run) => run.batchEnds),
             `${label}: every wait ended where the batch of its plan goes idle`
-        ).toEqual(Array(METHOD.runCount).fill({ [expected.batchEnd]: METHOD.measuredCount }));
+        ).toEqual(Array(METHOD.runCount).fill({ [batchEnd]: METHOD.measuredCount }));
         expect(
             configuration.runs.map((run) => computeCountSum(run.observedProbeCauses)),
             `${label}: a wait saw only the probe it ended on`
-        ).toEqual(Array(METHOD.runCount).fill(expected.batchEnd === 'readiness-probe' ? METHOD.measuredCount : 0));
+        ).toEqual(Array(METHOD.runCount).fill(batchEnd === 'readiness-probe' ? METHOD.measuredCount : 0));
         expect(
             configuration.runs.map((run) => run.receiptEnds),
             `${label}: every receipt ended as its plan expects`
-        ).toEqual(Array(METHOD.runCount).fill({ [expected.receiptEnd]: METHOD.measuredCount }));
+        ).toEqual(Array(METHOD.runCount).fill({ [PLAN_RECEIPT_ENDS[configuration.plan]]: METHOD.measuredCount }));
     }
 }
 

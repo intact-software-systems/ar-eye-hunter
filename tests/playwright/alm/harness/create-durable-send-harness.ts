@@ -25,15 +25,15 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 import { acceptWsQueueBoxClientControlMessage } from '@shared/services/ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 
-import type {
-    DurableSendBatchEnd,
-    DurableSendHarness,
-    DurableSendPlan,
-    DurableSendReceiptEnd,
-    DurableSendRun,
-    DurableSendRunInput,
-    DurableSendSample,
-    FrameLoadInput
+import {
+    DURABLE_SEND_PLAN_BATCH_ENDS,
+    type DurableSendHarness,
+    type DurableSendPlan,
+    type DurableSendReceiptEnd,
+    type DurableSendRun,
+    type DurableSendRunInput,
+    type DurableSendSample,
+    type FrameLoadInput
 } from './durable-send-harness-contract.ts';
 import { DurableSendObservation, type DurableSendDispatch } from './durable-send-observation.ts';
 import { PacedFrameLoad, type FramePhase } from './paced-frame-load.ts';
@@ -54,15 +54,21 @@ interface DurableSendStart {
     readonly dispatch: Promise<DurableSendDispatch>;
 }
 
+/**
+ * What the server answers once it admits a send: nothing for a plan that tracks no receipt, which then keeps no
+ * settlement sink either, or its own acknowledgement.
+ */
+type DurableSendServerReceipt =
+    | Readonly<{ kind: 'none'; }>
+    | Readonly<{ kind: 'acknowledgement'; createReceipt: (msg: ALMessage) => ALMessage; }>;
+
 /** How one plan builds its message, plans its send, and what the server answers once it admits it. */
 interface DurableSendPlanShape {
-    readonly batchEnd: Exclude<DurableSendBatchEnd, 'timeout'>;
     readonly toMessage: (resourceId: string) => ALMessage;
     readonly planOutgoingMessage: (
         msg: ALMessage
     ) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
-    /** Undefined for a plan that tracks no receipt. */
-    readonly toServerReceipt: ((msg: ALMessage) => ALMessage) | undefined;
+    readonly serverReceipt: DurableSendServerReceipt;
 }
 
 namespace PlainPageDurableSendHarness {
@@ -132,7 +138,7 @@ class PlainPageDurableSendHarness implements DurableSendHarness {
             framesStraddled: dispatch.framesStarted - start.phase.framesStarted,
             batchEnd: batchDrain.endedOn,
             observedProbeCauses: batchDrain.observedProbeCauses,
-            receiptEnd: await this.answerServerReceipt(msg)
+            receiptEnd: await this.writeServerReceipt(msg)
         };
     }
 
@@ -149,12 +155,13 @@ class PlainPageDurableSendHarness implements DurableSendHarness {
     }
 
     /** The receipt reaches the client's own control path, as the WS client hands a control from its server. */
-    private async answerServerReceipt(msg: ALMessage): Promise<DurableSendReceiptEnd> {
-        if (this.shape.toServerReceipt === undefined) {
+    private async writeServerReceipt(msg: ALMessage): Promise<DurableSendReceiptEnd> {
+        const { serverReceipt } = this.shape;
+        if (serverReceipt.kind === 'none') {
             return 'none';
         }
         const receiptEnd = this.observation.waitForReceiptEnd(msg.id.msgId);
-        await acceptWsQueueBoxClientControlMessage(this.runtime, this.shape.toServerReceipt(msg));
+        await acceptWsQueueBoxClientControlMessage(this.runtime, serverReceipt.createReceipt(msg));
         return await receiptEnd;
     }
 }
@@ -192,10 +199,9 @@ function toDurablePlan(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTranspo
 /** The ledger's minimal durable plan: no receipt, no retry, no supersedence. */
 function toMinimalPlanShape(sessionId: string): DurableSendPlanShape {
     return {
-        batchEnd: 'effect-drain',
         toMessage: (resourceId) => toHarnessMessage(sessionId, resourceId),
         planOutgoingMessage: toDurablePlan,
-        toServerReceipt: undefined
+        serverReceipt: { kind: 'none' }
     };
 }
 
@@ -203,7 +209,6 @@ function toMinimalPlanShape(sessionId: string): DurableSendPlanShape {
 function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
     const qosProvider = toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, undefined);
     return {
-        batchEnd: 'readiness-probe',
         toMessage: (resourceId) =>
             createBrowserUnicastMessage({
                 creation: { createUnicast: newALUnicastMessage, newResourceId: () => resourceId },
@@ -230,12 +235,15 @@ function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
                 socketOpen: true,
                 qosProvider
             }),
-        toServerReceipt: (msg) => toServerAcknowledgement(sessionId, msg)
+        serverReceipt: {
+            kind: 'acknowledgement',
+            createReceipt: (msg) => createServerAcknowledgement(sessionId, msg)
+        }
     };
 }
 
 /** The server's own ACK for a command addressed to it: it speaks for itself as the recipient. */
-function toServerAcknowledgement(sessionId: string, msg: ALMessage): ALMessage {
+function createServerAcknowledgement(sessionId: string, msg: ALMessage): ALMessage {
     const observedAtEpochMs = Date.now();
     return newALAckControlMessage(
         {
@@ -273,7 +281,7 @@ export async function createDurableSendHarness(
 ): Promise<DurableSendHarness> {
     const frameLoad = new PacedFrameLoad();
     const shape = toDurableSendPlanShape(plan, sessionId);
-    const observation = new DurableSendObservation({ frameLoad, batchEnd: shape.batchEnd });
+    const observation = new DurableSendObservation({ frameLoad, batchEnd: DURABLE_SEND_PLAN_BATCH_ENDS[plan] });
     const stores = createBrowserALOutboundRuntimeStores(
         toBrowserWsClientALRuntimeStoreId(sessionId),
         { canonicalScope: `browser-session:${sessionId}` }
@@ -288,7 +296,7 @@ export async function createDurableSendHarness(
         planOutgoingMessage: shape.planOutgoingMessage,
         diagnostics: (event) => observation.observeDiagnostics(event),
         // The minimal plan keeps no settlement sink, so its chain stays the one earlier heads measured.
-        settlements: shape.toServerReceipt === undefined
+        settlements: shape.serverReceipt.kind === 'none'
             ? undefined
             : (settlement) => observation.observeSettlement(settlement),
         sendPreparedMessage: async (_prepared, _phase, lifecycle) => {

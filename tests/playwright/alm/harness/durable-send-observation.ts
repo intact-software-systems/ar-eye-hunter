@@ -45,7 +45,13 @@ namespace DurableSendObservation {
     }
 }
 
-/** The carrier's send calls, the durable lane's drains and readiness probes, and its settlements, as the page observes them. */
+/**
+ * The carrier's send calls, the durable lane's drains and readiness probes, and its settlements, as the page observes
+ * them. A send's wait runs from its dispatch to its batch's drain, or the probe after it, so a probe that came back
+ * after a minimal send's batch would pass here unseen: the probe-diagnostics and ledger unit tests pin that, not this
+ * harness. A receipt's wait takes the first durable drain after the acknowledgement, not one keyed to the ACK's batch,
+ * and relies on IndexedDB ordering that batch's trailing probe before the next send's dispatch.
+ */
 export class DurableSendObservation {
     private readonly frameLoad: PacedFrameLoad;
     private readonly batchEnd: Exclude<DurableSendBatchEnd, 'timeout'>;

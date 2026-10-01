@@ -37,6 +37,13 @@ export interface FrameLoadObservation {
  */
 export type DurableSendBatchEnd = 'effect-drain' | 'readiness-probe' | 'timeout';
 
+/** Where each plan's batch goes idle: the one table the page waits on and the suite expects. */
+export const DURABLE_SEND_PLAN_BATCH_ENDS: Readonly<Record<DurableSendPlan, Exclude<DurableSendBatchEnd, 'timeout'>>> =
+    {
+        minimal: 'effect-drain',
+        'receipted-command': 'readiness-probe'
+    };
+
 export interface DurableSendSample {
     /** `enqueueIfAbsent` call to the carrier's `sendPreparedMessage`. */
     readonly sendToDispatchMs: number;
