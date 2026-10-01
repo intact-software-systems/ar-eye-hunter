@@ -17,3 +17,6 @@ and it has no status list.
 - One group-formation acceptance scenario remains unpinned in
   `docs/rallar-group-formation-architecture.md`: `pacing-sweep`, which needs a
   headless parallelism sweep over `maxConcurrentEdgeSetups`.
+- A generic bounded FIFO in `packages/shared`, if a third keyless user appears
+  beside the cache cap (`maxEntries` on `LatestRepository`, ALM P1b, D114) and
+  the motion sample window (`packages/shared/rallar-motion/buffer.ts`).

@@ -135,9 +135,15 @@ question.
 | D106 | #566: an ACK with no receipt aggregate on its API process is relayed once, kind `relayed-ack`, over the cluster notice (Postgres pub/sub only, best effort, no retry) to the owner. Bounds: the relay first checks the shared inbound admission store's ingress audience, fail closed, and sends at most 60 per session per 60 s. A lost notice leaves the receipt `timed-out`. ACKs only: a NACK stays refused, an ACK to the server is never relayed. Amends D37 (2026-09-29).                                           |
 | D107 | #566: a server control (ACK, NACK, repair) whose claiming process has no socket for its target goes to the cluster outbound route: one durable `WS_OUTBOX` row, deduplicated by msgId, living to the control's expiry, else 30 s, whose first dequeue publishes it to every API process; the one holding the socket sends it, locally if it claims the row itself. A reclaim after the lease can resend; receivers drop the copy by msgId. Without a cluster publisher the control is dropped with a warning (2026-09-30). |
 | D108 | P1 ships as two serial PRs: P1a, the codec fix (D110) and three zero-semantics merges (decision read with commit observation read; the committed canonical message handed to dispatch in memory, read back on a miss; dispatch's three readonly sessions as one), then P1b, the probe cadence with stated recovery bounds, decided on P1a's figures. Commit batching leaves P1 for D86's conditional batch window (amends D90); the fence-snapshot fold is a later candidate; inbound gets pins only (2026-09-30).         |
-| D109 | P1's target (D87): a warm durable send spends at most 8 IndexedDB transactions from `enqueueIfAbsent` to the carrier send and 18 operations (10 `al-admission`, 8 `al-work`) after P1a, at most 6 and 15 after P1b; today 11 and 22. The ledger pin `al-indexeddb-transaction-ledger.test.ts` records every transaction and request of one warm send; the cold 10 plus 15 pin stays and falls when it can. A warm inbound pin holds today's 11 to 13 transactions and 5 to 7 `al-work`, which may only fall (2026-09-30).  |
+| D109 | P1's target (D87): a warm durable send spends at most 8 IndexedDB transactions from `enqueueIfAbsent` to the carrier send and 18 operations (10 `al-admission`, 8 `al-work`) after P1a, 6 and 15 after P1b; today 11 and 22. Pinned by `al-indexeddb-transaction-ledger.test.ts`; the cold 10 plus 15 pin falls when it can; a warm inbound pin holds 11 to 13 transactions and 5 to 7 `al-work` (2026-09-30). **Amended by D117:** after P1b also at most 8 in all, on a lane clock; the cold pin by measurement.         |
 | D110 | P1's Temporal fix is codec-local: the IndexedDB queue codec parses each field once, validates and compares on the stored epoch-ms mirrors, never re-parses its output, and `isStoredQueueEntryExpired` reads `expiryEpochMs`; ResourceEntry, the stored row, the schema id and the server PostgreSQL codec are unchanged, in every engine. The polyfill stays in the bundle: removal (27 modules, -39.7 KiB brotli) is a later slice, a native alias a later option; a crossed budget is raised and reported (2026-09-30). |
 | D111 | P1's latency proof: a Playwright manual suite in `tests/manual-suites.json`, the spike's plain page rebuilt with a persistent profile, 4x CPU, a 10-in-16 ms frame load and the real durable outbound path, reporting send-to-dispatch p50 and p95 and the CPU share of the polyfill and the codec, run before and after each lever, figures in the PR body. D89's gate is read there, not in the lane's slow regime (amends D89); the lane stays the correctness authority, with no send-to-dispatch field (2026-09-30).  |
+| D112 | P1b, readiness after a batch: the commit suspends the readiness memory, and a clean batch (claimed less than a page, rejected nothing, completed every claim, no external wake or retained release since) restores it with its age and hands it to the engine through `wakeAt`. A batch that writes a RETRY or `not-ready` row or retains a claim still probes (0 ms added); a row another tab or a reload added is found within the idle bound, at most 6.6 s. `readinessInvalidation` is reset exactly (2026-10-01).     |
+| D113 | P1b's two sweeps (finalize-exhausted, lease-timeout reserve) take the ResourceInbox dequeuer's design: a lock-limiter pair per outbound store lane, 1 sweep per `leaseMs` on the lane clock through `RateLimiter`'s public API; lease ends are not due while a limiter is closed (no batch loop); the first batch after bootstrap sweeps. Recovery at most lease end + 19.1 s (was + 6.6 s). Every outbound lane, browser and api-v1; inbound sweeps every batch; ALM keeps its claim, no DequeueController (2026-10-01).  |
+| D114 | P1b's first task: `LatestRepository` and `ObservableLatestRepository` gain `maxEntries`, evicting the oldest insertion on accept or set (the observable one emits its delete event); then the canonical hand-off moves onto `LatestRepository` with `maxEntries: 64` and the send's `expiresAtMs` as its per-entry deadline. No ALM wrapper and no ring buffer: the cap uses the repository's insertion-ordered map, and a generic bounded FIFO waits in the backlog for a third keyless user (2026-10-01).                |
+| D115 | P1b reads D89 on a receipted `command`-shaped send (a WS unicast with a hop receipt) added to the plain-page harness: p95 at 4x CPU under the frame load, machine stated. Unless it exceeds 100 ms, P1b's PR withdraws I2b in the documents (`local-checkpoint` out of the QoS plan and product description, D84 to D89 amended, the I2b release rows, matrix Q3). Relic's commands stay volatile until I2a moves them to `local-outbox` with the recovery outcome its UI proof needs (2026-10-01).                        |
+| D116 | P1b is one PR, tasks in order: A the cache cap and hand-off migration; B the readiness restore and invalidation fix; C the sweeps behind the limiter pair and clamp; D the harness's receipted-command configuration, the D89 reading and the I2b documents; E the pins, the api-v1 cluster profile and Postgres medium-scale proofs, manifests 18 and 22, the PR body. The maintainer's notes bind the plan: no migration code, avoid duplications, reuse existing repo patterns, use repo guidance (2026-10-01).         |
+| D117 | P1b's target, restating D109: a warm durable send spends at most 6 transactions from `enqueueIfAbsent` to the carrier send, 8 in all and 15 operations (10 `al-admission`, 5 `al-work`), pinned by the ledger test on a lane-controlled clock; the cold pin is set by measurement; the warm inbound pins do not move. The readiness probe is off the chain: the sweeps take the chain 8 to 6 and the total 11 to 9, the restore the total to 8. Amends D109 (2026-10-01).                                                  |
 
 ### Standing direction
 
@@ -321,7 +327,7 @@ S3b, S3c; D52–D61); later releases are named by outcome with exit evidence.
 | 3 Slice 2     | S2c Receipted audiences                               | large  | 1, 3, 6, 9                 |
 | 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
 | 4 Performance | P1a The codec and the send chain                      | medium | 5, 8                       |
-| 4 Performance | P1b Probes on a cadence                               | small  | 5, 8                       |
+| 4 Performance | P1b Probes on the engine's cadence                    | small  | 5, 8                       |
 | 4 Performance | I2a Storage lifetime and recovery                     | medium | 10                         |
 | 4 Performance | I2b Checkpointed durability (conditional, D89)        | medium | 4, 5, 10                   |
 | 5 Arbitration | R1 Shared-key proof and range repair                  | medium | 8                          |
@@ -914,7 +920,7 @@ dead-RTC-peer reconnect race (a maintainer chip).
 ### Release 4, P1a: the codec and the send chain
 
 Designed in [alm-p1-design-proposal.md](alm-p1-design-proposal.md) from a code survey of `main` at
-`c85d99cdd`; decisions D108 to D111. P1 is two serial PRs, and P1a is the concrete one.
+`c85d99cdd`; decisions D108 to D111. P1 is two serial PRs: P1a, delivered by #627, then P1b below.
 
 - **The codec (D110).** QueueBox's IndexedDB entry codec
   (`packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts`) holds 165 of a warm durable
@@ -938,17 +944,41 @@ Designed in [alm-p1-design-proposal.md](alm-p1-design-proposal.md) from a code s
   a crossed budget is raised to the next whole KiB. The ALM lane and Hetzner manifests 18 and 22 show
   behaviour unchanged.
 
-P1b follows on P1a's measured figures: the readiness probe after a batch, the finalize-exhausted
-sweep and the lease-timeout reserve run on a cadence, each with a stated bound on how late a due row,
-an exhausted row or a crashed lease is noticed, for at most 6 chain transactions and 15 operations.
-Its harness figure is D89's reading. Commit batching, the fence-snapshot fold, a native Temporal
-alias and removing the polyfill from the bundle are not in P1 (proposal section 8).
+Commit batching, the fence-snapshot fold, a native Temporal alias and removing the polyfill from the
+bundle are not in P1 (proposal section 8).
+
+### Release 4, P1b: probes on the engine's cadence
+
+Designed in [alm-p1-design-proposal.md](alm-p1-design-proposal.md) sections 9 to 13 from a code
+survey of `main` at `90d358f7f` and a re-survey of the two sweeps against QueueBox's resilience
+design; decisions D112 to D117. One PR, tasks A to E in order (D116), bound by the maintainer's
+notes: no migration code, avoid duplications, reuse existing repo patterns, use repo guidance.
+
+- **The hand-off on the cache library (D114).** `LatestRepository` and `ObservableLatestRepository`
+  gain `maxEntries`; the canonical hand-off moves onto `LatestRepository` with 64 entries and the
+  send's deadline per entry, with no ALM wrapper.
+- **Readiness after a batch (D112).** A clean batch restores the readiness memory its commit
+  suspended and hands it to `InboxOutboxEngine.wakeAt`; a batch that writes a RETRY or `not-ready`
+  row or retains a claim still probes. Another tab's row meets the idle bound, at most 6.6 s.
+- **The two sweeps (D113).** The finalize-exhausted sweep and the lease-timeout reserve run behind a
+  lock-limiter pair per outbound store lane, the ResourceInbox dequeuer's design, at most once per
+  `leaseMs` on the lane clock; the first batch after bootstrap sweeps. The readiness scan treats a
+  lease end as not due while its limiter is closed. A crashed lease or an exhausted row is recovered
+  by lease end plus 19.1 s (today 6.6 s), in the browser and on api-v1's Postgres lane; inbound
+  sweeps every batch.
+- **The pins (D117).** The ledger falls from 8 to 6 chain transactions, 11 to 8 in all and 8 to 5
+  `al-work`, on a lane-controlled clock; the cold pin is set by measurement; the inbound pins hold.
+  Fake-clock unit tests pin each bound, and a new idle-window pin follows a send.
+- **The evidence.** D89 is read on a receipted `command`-shaped harness send (D115); unless its p95
+  exceeds 100 ms, the PR withdraws I2b in the documents, and Relic moves to `local-outbox` with
+  I2a. The api-v1 cluster black-box profile, the Postgres medium-scale gate, the ALM lane and
+  Hetzner manifests 18 and 22 show recovery and behaviour; bundle figures are reported.
 
 ### Releases 4 to 8: outcomes and exit evidence
 
 | Release | Outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Exit evidence                                                                                                                                                                                                                                                                                                       |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4 P1    | P1a: the IndexedDB queue codec parses each field once and compares on its stored epoch-ms mirrors (D110), and three zero-semantics merges take a warm durable send from 11 to at most 8 transactions between `enqueueIfAbsent` and the carrier send and from 22 to at most 18 operations; P1b runs the readiness, finalize and lease-timeout probes on a cadence with stated recovery bounds, to 6 and 15 (D108, D109). No guarantee changes; inbound gains pins only. | `al-indexeddb-transaction-ledger.test.ts` at the target, the cold 10 plus 15 pin beside it, the warm inbound pin; plain-page harness send-to-dispatch p50 and p95 and the polyfill and codec CPU shares before and after each lever (D111); bundle figures; the ALM lane and Hetzner manifests 18 and 22 unchanged. |
+| 4 P1    | P1a: the IndexedDB queue codec parses each field once and compares on its stored epoch-ms mirrors (D110), and three zero-semantics merges take a warm durable send from 11 to at most 8 chain transactions and from 22 to at most 18 operations; P1b restores readiness after each clean batch and rate-limits its two sweeps per outbound lane on QueueBox's own limiter design, to 6, 8 in all and 15 (D112 to D117). No guarantee changes; inbound gains pins only. | The ledger pin at the target, the cold and warm inbound pins; fake-clock recovery bounds; harness send-to-dispatch p50 and p95, polyfill and codec CPU shares per lever (D111), D89 on a receipted command; bundle figures; the ALM lane, the api-v1 cluster and medium-scale gates, manifests 18 and 22 unchanged. |
 | 4 I2a   | Per-session durable-work claim across tabs on Web Locks; quota, eviction, blocked upgrade, missing storage and restart as typed outcomes, a channel whose policy allows it degrading to volatile with a handle note; recovery outcomes and storage health on the public sink; scoped keys, one purge; dedup retention covering the deadline.                                                                                                                           | Two tabs, one drains, takeover on release; `storage-unavailable` and reload recovery through the storage fault port; a replay after 60 s inside its deadline is not delivered twice.                                                                                                                                |
 | 4 I2b   | Conditional on D89. `local-checkpoint`: admission and dispatch from memory, one coherent checkpoint per readwrite at the interval target and on hide, restore before the first work batch, ordered and latest-wins sends refused typed; Relic Hunters commands as the consumer.                                                                                                                                                                                        | Checkpoint recovery, lag and flush-on-hide scenarios on every carrier; the zero send-path storage pin; a Relic command survives a reload mid-command in the Playwright spec.                                                                                                                                        |
 | 5 R1    | Cross-backend shared-key arbitration proved; range and page repair replace individual sequence lists; resynchronization invokes the topic's declared recovery owner with bounded cursor information.                                                                                                                                                                                                                                                                   | A/B stale-read then sequential-commit schedule has one winner on memory, IndexedDB, and PostgreSQL; a gap beyond the window yields `resync-required` and the owner is invoked once; exhausted repair terminates.                                                                                                    |
@@ -1142,8 +1172,9 @@ Read this roadmap, then the open pull request's Goal, Acceptance, Validation, an
 sections, then run `npm run pr:delivery -- status`. The S2 outcome is delivered (S2a, S2b, S2c-i
 and S2c-ii, the last from branch `claude/alm-s2c-ii-frozen-audience` with its plan
 `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md`); the earlier ticked
-plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. S3 and #566 are delivered. P1a is the
-active slice, from [alm-p1-design-proposal.md](alm-p1-design-proposal.md), decisions D108–D111; its
+plans (F1, F2, F2b, F2c, S1, S2a, S2b, S2c-i) sit beside it. S3 and #566 are delivered. P1a is
+delivered by #627 as `90d358f7f`. P1b is the active slice, from
+[alm-p1-design-proposal.md](alm-p1-design-proposal.md) sections 9 to 13, decisions D112–D117; its
 plan is written next. Recover the current owner, entry,
 dataflow, failure boundary, and tests from the repository before editing; this roadmap is not a
 navigation map. When a release completes, move the next two slices into the concrete horizon here
@@ -1214,3 +1245,10 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
   ledger pin; the codec-local Temporal fix; the plain-page manual harness); D89 amended by D111 and
   D90 by D108; the release map splits P1; the P1a section added; matrix row Q1 and the storage-budget
   paragraph name the cold pin and the ledger pin.
+- 2026-10-01 (P1b): P1b designed in `alm-p1-design-proposal.md` sections 9 to 13 from a code survey
+  of `90d358f7f` (P1a merged, #627) and a re-survey of the two sweeps against QueueBox's
+  ResourceInbox resilience design: D112 to D117 recorded (the readiness restore; the sweeps on a
+  lock-limiter pair per outbound lane; the cache cap and hand-off migration; D89 read on a receipted
+  command send; one PR under the maintainer's four notes; the target restated); D109 amended by
+  D117; the P1b section added, the release map and "Releases 4 to 8" P1 rows updated, the backlog
+  names a generic bounded FIFO.

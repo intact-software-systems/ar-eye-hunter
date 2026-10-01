@@ -219,10 +219,19 @@ D90), and each lands only with before-and-after pins and harness figures (D111):
      one readonly session. The committed canonical message reaches dispatch in memory, with a read
      on a miss. Dispatch's three readonly sessions (canonical read, supersedence check,
      receipt-state read) become one.
-   - **P1b, 8 to 6, probes on a cadence.** The readiness probe after a batch, the finalize-exhausted
-     sweep and the lease-timeout reserve run on a cadence instead of every batch. Each states a bound
-     on how late an exhausted row or a crashed lease is noticed. P1b is decided on P1a's measured
-     figures.
+   - **P1b, 8 to 6 on the chain and 11 to 8 in all, probes on the engine's cadence (D112, D113).**
+     The finalize-exhausted sweep and the lease-timeout reserve guard one condition, a RESERVED row
+     past its lease, and take the chain from 8 to 6. They run behind a lock-limiter pair per
+     outbound store lane, the design QueueBox's ResourceInbox dequeuer already uses
+     (`ResourceInboxResilience` on `RateLimiter`), at most once per `leaseMs` (10 s) on the lane's
+     clock. The first batch after bootstrap sweeps. While a limiter is closed, the readiness scan
+     treats the lease ends it would recover as not due, so no batch loops. A crashed lease or an
+     exhausted row is recovered by lease end plus 19.1 s (today 6.6 s), in every outbound lane,
+     api-v1's Postgres lane included; inbound sweeps every batch. The readiness probe after a batch
+     is off the chain: a clean batch restores the memory its commit suspended through the engine's
+     `wakeAt`, which takes the total from 9 to 8. A batch that writes a RETRY or `not-ready` row or
+     retains a claim still probes, so a due retry gains 0 ms; another tab's row meets the idle
+     bound, at most 6.6 s.
    - Reads are merged, never skipped. No code proof shows that a receipt cannot complete before the
      first attempt.
 3. **Commit batching is not a P1 lever (D108).** `commitAll` batches one caller's
@@ -483,7 +492,9 @@ Release 4 follows Release 3 and precedes the arbitration, audience, scale and in
 which the roadmap renumbers 5 to 8 (D88). Its slices are:
 
 - **P1a, the codec and the send chain:** section 7.3, D108 to D111.
-- **P1b, probes on a cadence:** section 7.3, decided on P1a's measured figures.
+- **P1b, probes on the engine's cadence:** section 7.3, D112 to D117; the readiness restore, the two
+  sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and D89's
+  reading.
 - **I2a, storage lifetime:** section 8.
 - **I2b, checkpointed durability:** sections 4 and 5, behind the gate below.
 
@@ -493,14 +504,19 @@ The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evide
 
 I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch still
 exceeds 100 ms, the interactive response budget (D89). It is measured in the plain-page harness
-(section 9.1) at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111). The
-spike's figure there is 93.7 ms on a desktop machine, so the reading states its machine.
+(section 9.1) at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111). P1b
+takes the reading on a receipted `command`-shaped send configuration it adds to the harness, the
+send D89 names, since P1a's harness sends a minimal plan without a hop receipt (D115). The spike's
+figure of 93.7 ms came from its own instrument; the harness read a p95 of 49.3 to 54.1 ms before P1a
+and 44.1 to 50.1 ms after on the minimal plan. The reading states its machine and that it is not a
+phone.
 
 - **Consumer.** Relic Hunters' server-addressed commands (S3c-i) are the consumer. A reload
   mid-command resumes the command, and the server's ALM dedup and AppInbox request-id idempotency
   absorb the repeat.
-- **If P1 closes the gap.** Relic's commands move to `local-outbox`, and a recorded decision
-  withdraws I2b and removes `local-checkpoint` from this plan.
+- **If P1 closes the gap.** A recorded decision withdraws I2b and removes `local-checkpoint` from
+  this plan, in P1b's PR. Relic's commands move to `local-outbox` with I2a, whose recovery outcome
+  the reload proof needs (D115).
 
 ### 10.3 Beside S3c, now
 
