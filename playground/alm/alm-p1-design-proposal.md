@@ -465,15 +465,22 @@ builds on QueueBox's existing engine designs (`DequeueController`, `ResourceInbo
    (c) The migration as its own PR before P1b, or (d) after P1b. (e) No count cap, relying on
    deadlines, which bounds memory only by deadline times send rate. (a) because one cap in the
    library serves every keyed user, where a wrapper would be ALM-specific. D114.
-4. **D89 and I2b.** (a) P1b adds a receipted `command`-shaped send configuration to the harness,
-   the send D89 names, and reads D89 on it: the p95 at 4x CPU under the frame load, machine stated.
-   Unless it exceeds 100 ms, P1b withdraws I2b in the documents: `local-checkpoint` leaves the QoS
-   plan's sections 1 to 7, 9, 10 and 12; D84 to D89 are amended; the release map row, the "Releases
-   4 to 8" I2b row and matrix row Q3 change; the product description loses its 7 lines. Relic's
-   commands stay volatile until I2a moves them to `local-outbox` with the recovery outcome its UI
-   proof needs. (b) Read D89 on the minimal plan, withdraw I2b and move Relic in P1b. (c) Defer the
-   reading until a phone or a receipted figure exists. (a) because the gate reads the send it names,
-   and a message resumed after a reload has no handle (D13), so Relic's proof needs I2a's recovery
+4. **D89 and I2b (revised).** (a) `local-checkpoint` (I2b) is built regardless of the D89
+   reading, and D89's gate is retired. P1b adds a receipted `command`-shaped send configuration to
+   the harness, the send D89 names, and records its reading, the p95 at 4x CPU under the frame load
+   with the machine stated, as evidence for I2b's consumer send, not as a gate. No document loses
+   `local-checkpoint`. Relic's commands stay volatile until I2a moves them to `local-outbox` with
+   the recovery outcome its UI proof needs; I2b's own consumer proof comes with I2b. (b) Read D89
+   on the receipted send and, unless its p95 exceeds 100 ms, withdraw I2b in the documents:
+   `local-checkpoint` out of the QoS plan's sections 1 to 7, 9, 10 and 12, D84 to D89 amended, the
+   release map row, the "Releases 4 to 8" I2b row and matrix row Q3 changed, the product
+   description's 7 lines removed. (c) Read D89 on the minimal plan, withdraw I2b and move Relic in
+   P1b. (d) Defer the reading until a phone or a receipted figure exists. The first answer was (b),
+   recorded in the design commit; the maintainer replaced it with (a) after reading the design.
+   (a) because the tier's other QoS properties, zero storage on the send path with crash-tolerant
+   checkpoints and a bounded recovery lag, serve a wide range of apps that want cheap sends and
+   reload survival without per-message durability, whatever one send's latency reads; and a
+   message resumed after a reload has no handle (D13), so Relic's proof needs I2a's recovery
    outcome. D115.
 5. **The sweep window.** (a) One sweep per `leaseMs` (10 s) per store lane, on the lane's injected
    clock, through a limiter pair per lane built on `ResourceInboxResilience`'s status checks and
@@ -505,10 +512,10 @@ builds on QueueBox's existing engine designs (`DequeueController`, `ResourceInbo
    outbound code path keeps one bound. D113.
 7. **The PR count.** (a) One PR, tasks in order: A, the cache cap and the hand-off migration; B,
    the readiness restore and the invalidation fix; C, the sweeps behind the limiter pair and the
-   clamp; D, the harness's receipted-command configuration, the D89 reading and the I2b withdrawal
-   documents; E, the pins, the cluster and medium-scale proofs, the hosted manifests and the PR
-   body. (b) Two PRs, the cache migration on its own. The maintainer's four notes bind the plan
-   (section 12). (a) because each piece is small and the D89 reading must follow the cadence. D116.
+   clamp; D, the harness's receipted-command configuration and its recorded reading; E, the pins,
+   the cluster and medium-scale proofs, the hosted manifests and the PR body. (b) Two PRs, the
+   cache migration on its own. The maintainer's four notes bind the plan (section 12). (a) because
+   each piece is small and the receipted reading must follow the cadence. D116.
 8. **A generic ring buffer for the count cap.** (a) No: the cap uses the repository's own
    insertion-ordered map, and a backlog line records a generic bounded FIFO if a third keyless user
    appears beside the cache cap and the motion sample window
@@ -622,7 +629,7 @@ One PR, five task groups in order (D116). Pins only fall; a rise needs a stated 
   ports (`packages/shared-test/shared/create-test-al-outbound-work-port.ts`, its inbound twin) and
   the 14 test files that build a port or handler take the new input.
 
-### 11.D The D89 reading and the I2b documents (D115)
+### 11.D The receipted reading as I2b evidence (D115)
 
 - **The configuration.** The manual harness (`tests/playwright/alm/`, `npm run
   perf:alm:durable-send`, owned in `tests/manual-suites.json`) gains a receipted `command`-shaped
@@ -631,11 +638,9 @@ One PR, five task groups in order (D116). Pins only fall; a rise needs a stated 
 - **The reading.** Send-to-dispatch p50 and p95 on both configurations after tasks A to C, with the
   machine and browser stated and the note that it is not a phone. The minimal plan's p95 after P1a
   is 44.1 to 50.1 ms; the receipted chain is unmeasured.
-- **The outcome.** Unless the receipted p95 exceeds 100 ms, the PR withdraws I2b in the documents:
-  `local-checkpoint` leaves the QoS plan's sections 1 to 7, 9, 10 and 12 (section 5's dedup
-  retention is I2a's and stays); D84 to D89 are amended; the release map row, the "Releases 4 to 8"
-  I2b row and matrix row Q3 change; the product description loses its 7 lines. No code carries
-  `local-checkpoint`. Above 100 ms, I2b goes ahead as D89 states.
+- **Evidence, not a gate.** D115 retires D89's gate: the receipted p95 is recorded in the PR body
+  as evidence for I2b's consumer send, and I2b proceeds after I2a whatever it reads. The PR
+  withdraws nothing and removes no `local-checkpoint` text from any document.
 - **Relic** keeps `volatile` (`apps/relic-hunters-v1/src/game/send-relic-ws-command.ts:27-34`)
   until I2a moves it to `local-outbox`.
 
@@ -655,8 +660,9 @@ One PR, five task groups in order (D116). Pins only fall; a rise needs a stated 
   and `npm run test:api-v1:black-box:postgres:medium-scale` for the server lane's lease recovery;
   Hetzner manifests 18 (with `delivery-reload`) and 22 green from the PR branch.
 - **The PR body.** The ledger and cold figures before and after, the harness figures for both
-  configurations, the D89 reading and its outcome, the recovery bounds with the tests that pin
-  them, and the bundle figures for `rallar.ts` and the headless agent with any raised budget.
+  configurations with the receipted reading as I2b evidence, the recovery bounds with the tests
+  that pin them, and the bundle figures for `rallar.ts` and the headless agent with any raised
+  budget.
 
 ## 12. P1b constraints
 
@@ -683,6 +689,8 @@ existing repo patterns, use repo guidance". They bind P1b beside section 3's con
 - **Split inbound's observed list by status.** A zero-semantic cut of one transaction per inbound
   batch, left as a candidate.
 - **Move Relic to `local-outbox`.** That moves with I2a (decision 4).
+- **Withdraw I2b or read D89 as a gate.** D115 retires the gate; the receipted reading is evidence
+  for I2b's consumer send, and `local-checkpoint` stays in every document (decision 4).
 - **Add a generic ring buffer.** A backlog line waits for a third keyless user (decision 8).
 - **Add cross-tab wakes.** Another tab's row meets the idle bound; a cross-tab wake is I2a's
   territory.

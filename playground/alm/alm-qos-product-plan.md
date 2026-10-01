@@ -27,7 +27,9 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
 - **Release 4, performance and lifetime** (D88):
   - P1 makes the durable tiers cheaper without weakening any guarantee.
   - I2a makes storage lifetime deterministic and observable for every durable tier.
-  - I2b adds `local-checkpoint` only if P1 leaves a measured gap and a consumer needs it (D89).
+  - I2b adds `local-checkpoint` after I2a, regardless of the D89 reading: zero storage on the send
+    path with crash-tolerant checkpoints and a bounded recovery lag serves a wide range of apps
+    (D115).
 - **One recovery rule** (D85): recovery never re-issues what the outside world has seen and never
   retracts a delivery.
 - **The test plan is ALM's evidence structure** (section 9): semantic tests through real owners,
@@ -56,7 +58,7 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   from code_ or _needs measurement_. No optimization lands without before-and-after pins and
   plain-page harness figures (D111).
 - **Two concrete slices.** P1 and I2a become concrete once Release 3 is complete. I2b stays
-  outcome-shaped until its gate is decided.
+  outcome-shaped until I2a is delivered.
 
 ## 3. The durability tiers
 
@@ -338,14 +340,14 @@ What the findings suggest, and where each stands:
      the enqueue-to-carrier chain; an admission has three readonly sessions, not two; dispatch runs
      three more; lever 3 does not touch a first send; and the empty control, receipt and effect reads
      are 7 by call site, not 6, so "13 of 22 avoidable" is an upper bound.
-2. **Move D89's gate out of the lane.** Decided as D111. The plain-page harness of section 9.1
-   measures it with a persistent profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is
-   93.7 ms today. The lane's slow regime measures its harness page.
+2. **Move D89's reading out of the lane.** Decided as D111; D115 later retired the gate, so the
+   reading is evidence only. The plain-page harness of section 9.1 measures it with a persistent
+   profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow
+   regime measures its harness page.
 3. **Take storage-cost evidence from a persistent profile.** Decided as D111 for latency. The lane's
    IndexedDB is in memory, so the lane stays the correctness authority but cannot measure storage
    cost.
-4. **Checkpoint only changed rows if I2b goes ahead.** H4 is refuted, so section 7.4 already
-   provides this.
+4. **Checkpoint only changed rows in I2b.** H4 is refuted, so section 7.4 already provides this.
 
 ### 7.6 Later outcomes
 
@@ -493,30 +495,31 @@ which the roadmap renumbers 5 to 8 (D88). Its slices are:
 
 - **P1a, the codec and the send chain:** section 7.3, D108 to D111.
 - **P1b, probes on the engine's cadence:** section 7.3, D112 to D117; the readiness restore, the two
-  sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and D89's
-  reading.
+  sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and the
+  receipted reading recorded as I2b evidence.
 - **I2a, storage lifetime:** section 8.
-- **I2b, checkpointed durability:** sections 4 and 5, behind the gate below.
+- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115).
 
 The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evidence.
 
-### 10.2 The I2b gate
+### 10.2 The I2b reading
 
-I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch still
-exceeds 100 ms, the interactive response budget (D89). It is measured in the plain-page harness
-(section 9.1) at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111). P1b
-takes the reading on a receipted `command`-shaped send configuration it adds to the harness, the
-send D89 names, since P1a's harness sends a minimal plan without a hop receipt (D115). The spike's
-figure of 93.7 ms came from its own instrument; the harness read a p95 of 49.3 to 54.1 ms before P1a
-and 44.1 to 50.1 ms after on the minimal plan. The reading states its machine and that it is not a
-phone.
+D89 made I2b conditional on the p95 from a `local-outbox` send to its first dispatch exceeding
+100 ms, the interactive response budget, after P1. D115 retires that gate: I2b proceeds after I2a
+whatever the reading, because zero storage on the send path with crash-tolerant checkpoints and a
+bounded recovery lag serves a wide range of apps that want cheap sends and reload survival without
+per-message durability. P1b still takes the reading, as evidence for I2b's consumer send: a
+receipted `command`-shaped send configuration it adds to the plain-page harness (section 9.1), the
+send D89 names, at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111).
+P1a's harness sends a minimal plan without a hop receipt. The spike's figure of 93.7 ms came from
+its own instrument; the harness read a p95 of 49.3 to 54.1 ms before P1a and 44.1 to 50.1 ms after
+on the minimal plan. The reading states its machine and that it is not a phone.
 
 - **Consumer.** Relic Hunters' server-addressed commands (S3c-i) are the consumer. A reload
   mid-command resumes the command, and the server's ALM dedup and AppInbox request-id idempotency
   absorb the repeat.
-- **If P1 closes the gap.** A recorded decision withdraws I2b and removes `local-checkpoint` from
-  this plan, in P1b's PR. Relic's commands move to `local-outbox` with I2a, whose recovery outcome
-  the reload proof needs (D115).
+- **Relic before I2b.** Relic's commands move to `local-outbox` with I2a, whose recovery outcome
+  the reload proof needs; I2b's own consumer proof comes with I2b (D115).
 
 ### 10.3 Beside S3c, now
 

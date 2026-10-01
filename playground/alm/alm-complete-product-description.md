@@ -642,7 +642,7 @@ degraded to `volatile` with a note on the handle. It is never weakened silently.
   replaces today's silent memory fallback when IndexedDB is missing with the
   typed outcome, and adds typed recovery outcomes and one storage-health
   vocabulary.
-- I2b adds `local-checkpoint` behind the D89 gate.
+- I2b adds `local-checkpoint` after I2a (D115).
 
 The [persistence and performance QoS plan](./alm-qos-product-plan.md) holds the
 contract and its evidence.
