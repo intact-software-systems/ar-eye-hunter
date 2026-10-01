@@ -159,10 +159,14 @@ every session the page opens. The event's `data` is the event itself:
   offer, say -- can be followed from the commit that admitted it to the drain
   that sent it, and a lane's commits can be counted apart from the rest
 - `commit-phases` splits what `browser-lock-hold` measures as one number:
-  `readDurationMs` and `readOperationCount` for the admission read chain
-  (`readOutgoingMessage` plus the pending-admission probe and the decision;
-  for a single send also the effect rows its commit fences, read in the same
-  session; and the admission-store round trips observed while they ran), then
+  `readDurationMs` and `readOperationCount` for the admission read chain.
+  `readDurationMs` covers the whole decision read (`readOutgoingMessage` plus
+  the pending-admission probe and the decision; for a single send also the
+  effect rows and the canonical pair its commit fences, read in the same
+  session). `readOperationCount` counts only the admission reads that go
+  through `ALOutboundAdmissionReads` (`readValue` and `readQueueItem`); the
+  work-store rows the session reads (the effect rows and the canonical pair)
+  are timed but not counted. Then come
   `commitDurationMs` and `commitOutcome` for the write transaction —
   `committed`, `conflict`, `expired`, or `not-attempted` when the admission
   settled before opening one

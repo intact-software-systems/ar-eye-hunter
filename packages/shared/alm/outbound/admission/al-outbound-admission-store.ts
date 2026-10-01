@@ -285,7 +285,8 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /**
      * One session for a single send: the decision surface, the decision `decide` takes on it, and the
      * observation the commit of that decision fences. A group decides member by member and reads
-     * its observation in `commitBundles`.
+     * its observation in `commitBundles`. `decide` runs while the session is open: it may read
+     * through the work port (the pending-admission probe) and must not write.
      */
     readonly readOutgoingDecision: <TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
         input: ALOutboundOutgoingReadInput<TPrepared>,
@@ -321,6 +322,7 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         seq: number
     ) => Promise<ALOutboundSentMessageSnapshot | undefined>;
 
+    /** The receipt state in its own session, beside the dequeue path's `isMessageSuperseded`; only tests read it. */
     readonly readReceiptState: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     readonly readPendingAck: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundPendingAckSnapshot | undefined>;
@@ -448,6 +450,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         return await this.backend.readWithin((session) => this.reads.readOutgoingMessage(session, input));
     }
 
+    /** `decide` runs inside the open session: it may read through the work port and must not write. */
     async readOutgoingDecision<TDecision extends ALOutboundOutgoingDecision<TPrepared>>(
         input: ALOutboundOutgoingReadInput<TPrepared>,
         decide: (read: ALOutboundMessageReadDto<TPrepared>) => Promise<TDecision>

@@ -101,7 +101,7 @@ every server message keeps its one backend.
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 13 `al-work` IndexedDB operations; one
+one durable send spends 10 `al-admission` and 11 `al-work` IndexedDB operations; one
 volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
 idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
@@ -178,11 +178,16 @@ committed canonical row for each prepared send the commit wrote, keyed by that s
 bounded to four work pages, oldest dropped first; the claim takes it and checks it against the
 reference exactly as it checks a stored pair. It is a cache of an immutable row, never a source:
 another tab's claim, a reload, a replayed pending admission, a retried claim and a row at its
-deadline read storage. Dispose and a storage reset drop it (the IndexedDB pair's composition tells
-the lane through `ALStorageResetListeners`); the memory pair's lane has none. After `attempt-started`
-the claim reads its guards, supersedence and then (unless superseded) receipt state, in one readonly
-session (`readSendGuards`), so a hand-off hit costs the claim one read session and a miss two: the
-canonical read stays its own session before the attempt starts.
+deadline read storage. Its safety rests on its key and on the reference check, not on hearing of
+resets: an entry is found only for a work row committed with the same effect id, and a held row
+that does not match that work row's reference fails closed as corruption and is never sent. Dispose
+clears it. A storage reset clears it only when the lane hears of it: the IndexedDB pair's own open
+tells the lane through `ALStorageResetListeners`, while the browser session cleanup's and expiry
+eviction's reset events (and another tab's reset) do not reach it; the memory pair's lane has none.
+After `attempt-started` the claim reads its guards, supersedence and then (unless superseded)
+receipt state, in one readonly session (`readSendGuards`), so a hand-off hit costs the claim one
+admission read session and a miss two: the canonical read stays its own session before the
+attempt starts.
 
 A validated initial AL control enqueue runs the normal read, computation, validation,
 and optimistic commit without entering the sender queue or browser Web Lock (D105). An
