@@ -19,7 +19,7 @@ export type PersistenceErrorHandler<K, V> = (
 ) => void | Promise<void>;
 
 export type WriteBehindObservableLatestRepositoryOptions<K, V> =
-    & ObservableLatestRepositoryOptions<K, V>
+    & Omit<ObservableLatestRepositoryOptions<K, V>, 'maxEntries'>
     & Readonly<{
         persistence: PersistenceProvider<K, V>;
         onPersistenceError?: PersistenceErrorHandler<K, V>;

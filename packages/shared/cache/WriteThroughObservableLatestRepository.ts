@@ -8,7 +8,7 @@ import {
 } from './RepositoryInterfaces.ts';
 
 export type WriteThroughObservableLatestRepositoryOptions<K, V> =
-    & ObservableLatestRepositoryOptions<K, V>
+    & Omit<ObservableLatestRepositoryOptions<K, V>, 'maxEntries'>
     & Readonly<{
         persistence: PersistenceProvider<K, V>;
         /**
