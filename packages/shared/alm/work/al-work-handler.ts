@@ -1,4 +1,5 @@
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -150,6 +151,8 @@ interface ALWorkBatchEnd {
     readonly progress: ALWorkBatchProgress;
     readonly run: ALWorkClaimedRun | undefined;
     readonly startedAtMs: number;
+    /** The queue key of every claim the batch completed. */
+    readonly completedKeys: ReadonlySet<string>;
 }
 
 /**
@@ -207,8 +210,8 @@ export class ALWorkHandler {
      * After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of
      * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
      * made outside `runBatch`. `written` says when the last row the commit wrote becomes claimable
-     * and how many rows it wrote: only a batch that starts at or after then, and claims at least that
-     * many, can have claimed every one of them.
+     * and which rows it wrote: only a batch that starts at or after then, and completes a claim of
+     * each, can have claimed every one of them.
      */
     committed(written: ALWorkCommittedRows): void {
         this.readiness.suspend(written);
@@ -278,6 +281,7 @@ export class ALWorkHandler {
             claimedCount,
             completedCount,
             rejectedCount,
+            completedKeys: ended.completedKeys,
             pageSize: this.dependencies.pageSize,
             startedAtMs: ended.startedAtMs,
             commitPending: this.commitPending
@@ -364,7 +368,7 @@ export class ALWorkHandler {
         if (run !== undefined) {
             this.reportBatch(run, startedAtMs, progress);
         }
-        return { progress, run, startedAtMs };
+        return { progress, run, startedAtMs, completedKeys: toALWorkCompletedKeys(releases) };
     }
 
     /**
@@ -501,6 +505,14 @@ function computeALWorkQueueWaitMs(
     batchStartedAtMs: number
 ): number {
     return earliestDueAtMs === undefined ? 0 : computeElapsedMs(earliestDueAtMs, batchStartedAtMs);
+}
+
+function toALWorkCompletedKeys(releases: readonly ALWorkRelease[]): ReadonlySet<string> {
+    return new Set(
+        releases
+            .filter((release) => release.outcome.status === 'completed')
+            .map((release) => toKeyAsString(release.claim.entry.key))
+    );
 }
 
 /** The one place a thrown claim becomes an outcome; the caught value is normalized before it. */

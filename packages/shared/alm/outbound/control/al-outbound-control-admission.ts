@@ -380,6 +380,25 @@ export class ALOutboundControlAdmission<TPrepared> {
                 read.sent?.reference.expiresAtMs
             )
         );
+        await this.writePendingAckChange(tx, candidate);
+        if (candidate.removeRepairAttempt) {
+            await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
+        }
+        if (candidate.endedAckTimeoutEffectId !== undefined) {
+            await writeALOutboundAckTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
+        }
+        await tx.set(
+            toALOutboundVersionKey(this.namespace, read.owner!),
+            candidate.nextVersion!,
+            candidate.versionExpireAtTimestamp
+        );
+    }
+
+    private async writePendingAckChange(
+        tx: ALAdmissionWorkWriteContext,
+        candidate: ALControlAdmissionCandidate
+    ): Promise<void> {
+        const { read } = candidate;
         const pendingAckKey = toALOutboundPendingAckKey({
             namespace: this.namespace,
             originPeerId: read.owner!,
@@ -399,17 +418,6 @@ export class ALOutboundControlAdmission<TPrepared> {
                 )
             );
         }
-        if (candidate.removeRepairAttempt) {
-            await tx.remove(toALOutboundRepairAttemptKey(this.namespace, read.targetMsgId));
-        }
-        if (candidate.endedAckTimeoutEffectId !== undefined) {
-            await writeALOutboundAckTimeoutCompletion(tx, this.namespace, candidate.endedAckTimeoutEffectId);
-        }
-        await tx.set(
-            toALOutboundVersionKey(this.namespace, read.owner!),
-            candidate.nextVersion!,
-            candidate.versionExpireAtTimestamp
-        );
     }
 
     private async retainPendingControl(msg: ALMessage, source: ALOutboundControlSource, nowMs: number): Promise<void> {

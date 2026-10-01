@@ -63,7 +63,7 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     public constructor(
         options: WriteBehindObservableLatestRepositoryOptions<K, V>
     ) {
-        this.memory = new ObservableLatestRepository<K, V>(options);
+        this.memory = new ObservableLatestRepository<K, V>({ ...options, maxEntries: undefined });
         this.persistence = options.persistence;
         this.onPersistenceError = options.onPersistenceError;
 

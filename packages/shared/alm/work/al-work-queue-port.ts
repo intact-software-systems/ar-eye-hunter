@@ -18,6 +18,8 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../qu
 import { toError } from '../../resilience/to-error.ts';
 import { isALWorkLeaseSweepOpen, spendALWorkLeaseSweep, type ALWorkLeaseRecovery } from './al-work-lease-recovery.ts';
 
+const AL_WORK_MAX_ATTEMPTS = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts;
+
 export type ALWorkOutcome =
     | Readonly<{ status: 'completed'; }>
     | Readonly<{ status: 'non-retryable'; }>
@@ -125,7 +127,7 @@ async function claimALWork(
     const pending = await input.queue.reserveEntries({
         typeIds: new Set(input.workTypes),
         statusIds: new Set(NEW_AND_RETRY_STATUSES),
-        reservationInput: { maxToReserve: maxCount, maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts },
+        reservationInput: { maxToReserve: maxCount, maxAttempts: AL_WORK_MAX_ATTEMPTS },
         observedEntries
     });
     const recovered = await reserveALWorkTimeouts(input, maxCount - pending.size, observedEntries);
@@ -133,8 +135,8 @@ async function claimALWork(
 }
 
 /**
- * The lease-timeout sweep reads only for the room the claim left, and only while its window is open; a sweep that
- * comes back with room to spare closes it.
+ * The lease-timeout sweep reads only for the room the claim left, only while its window is open, and not when the
+ * selection observed nothing; a sweep that comes back with room to spare closes it.
  */
 async function reserveALWorkTimeouts(
     input: CreateALWorkQueuePortInput,
@@ -150,7 +152,7 @@ async function reserveALWorkTimeouts(
     }
     const reserved = await input.queue.reserveTimeoutEntries({
         typeIds: new Set(input.workTypes),
-        reservationInput: { maxToReserve: maxToRecover, maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts },
+        reservationInput: { maxToReserve: maxToRecover, maxAttempts: AL_WORK_MAX_ATTEMPTS },
         timeSinceStartTs: Temporal.Duration.from({ milliseconds: input.leaseMs }),
         observedEntries
     });
@@ -170,7 +172,7 @@ async function finalizeExhaustedALWork(
         return [];
     }
     const reserved = await queue.reserveRetryExhaustionFinalizations(new Set(workTypes), {
-        processingAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        processingAttempts: AL_WORK_MAX_ATTEMPTS,
         maxToReserve: maxCount,
         staleAfterMs: leaseMs
     });

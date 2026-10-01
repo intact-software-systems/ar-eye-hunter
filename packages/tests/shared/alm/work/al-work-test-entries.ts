@@ -7,6 +7,7 @@ import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/wo
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
+    toKeyAsString,
     toResourceEntryWithKey,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -106,4 +107,9 @@ export function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
 
 export function toFakeALWorkClaim(effectId: string): ALWorkClaim {
     return { entry: newWorkEntry('AL_TEST', effectId), attempts: 0, leaseUntilMs: 0 };
+}
+
+/** The queue key of the fake claim for `effectId`, as a commit names the rows it wrote. */
+export function toFakeALWorkKey(effectId: string): string {
+    return toKeyAsString(toFakeALWorkClaim(effectId).entry.key);
 }

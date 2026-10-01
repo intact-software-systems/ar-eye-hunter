@@ -4,8 +4,15 @@ import {
     ObservableValueEventType,
     type ObservableKeyedValueEvent
 } from '@shared/cache/RepositoryInterfaces.ts';
-import type { WriteBehindObservableLatestRepositoryOptions } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
-import type { WriteThroughObservableLatestRepositoryOptions } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import {
+    WriteBehindObservableLatestRepository,
+    type WriteBehindObservableLatestRepositoryOptions
+} from '@shared/cache/WriteBehindObservableLatestRepository.ts';
+import {
+    WriteThroughObservableLatestRepository,
+    type WriteThroughObservableLatestRepositoryOptions
+} from '@shared/cache/WriteThroughObservableLatestRepository.ts';
+import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest';
 
 /** The write paths both repositories share, each adding `key` when it is absent. */
@@ -134,6 +141,18 @@ describe('LatestRepository maxEntries', () => {
         expect([...repository.keys()]).toEqual(['c', 'd']);
     });
 
+    // The expiry sweep's rate limiter starts at the first acceptAt; a clock that then steps back must
+    // not make the sweep throw, and the cap still holds.
+    it('accepts at a time before its first acceptAt and still caps', () => {
+        const repository = new LatestRepository<string, number>({ maxEntries: 1 });
+
+        repository.acceptAt({ key: 'a', value: 1, nowEpochMs: 10_000 });
+        repository.acceptAt({ key: 'b', value: 2, nowEpochMs: 9_000 });
+
+        expect([...repository.keys()]).toEqual(['b']);
+        expect(repository.readAt('b', 9_000)).toBe(2);
+    });
+
     it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
         'refuses maxEntries %s',
         (maxEntries) => {
@@ -259,5 +278,31 @@ describe('persisted repositories', () => {
     it('do not accept maxEntries', () => {
         expectTypeOf<WriteThroughObservableLatestRepositoryOptions<string, number>>().not.toHaveProperty('maxEntries');
         expectTypeOf<WriteBehindObservableLatestRepositoryOptions<string, number>>().not.toHaveProperty('maxEntries');
+    });
+
+    // A caller the type does not reach (a cast, or JavaScript) still gets an uncapped memory.
+    it.each([
+        {
+            name: 'write-through',
+            create: (options: object) =>
+                new WriteThroughObservableLatestRepository<string, number>(
+                    options as WriteThroughObservableLatestRepositoryOptions<string, number>
+                )
+        },
+        {
+            name: 'write-behind',
+            create: (options: object) =>
+                new WriteBehindObservableLatestRepository<string, number>(
+                    options as WriteBehindObservableLatestRepositoryOptions<string, number>
+                )
+        }
+    ])('keep every key when a $name caller passes maxEntries anyway', async ({ create }) => {
+        const repository = create({ persistence: new InMemoryPersistenceProvider<string, number>(), maxEntries: 1 });
+        onTestFinished(() => repository.dispose());
+
+        await repository.set('a', 1);
+        await repository.set('b', 2);
+
+        expect([...repository.keys()]).toEqual(['a', 'b']);
     });
 });

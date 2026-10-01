@@ -48,7 +48,7 @@ export class WriteThroughObservableLatestRepository<K, V> implements ObservableK
     public constructor(
         options: WriteThroughObservableLatestRepositoryOptions<K, V>
     ) {
-        this.memory = new ObservableLatestRepository<K, V>(options);
+        this.memory = new ObservableLatestRepository<K, V>({ ...options, maxEntries: undefined });
         this.persistence = options.persistence;
 
         const ttlMs = options.ttlMs;

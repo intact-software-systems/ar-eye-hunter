@@ -488,19 +488,27 @@ export class RateLimiter {
     }
 
     allowAt(nowEpochMs: number): boolean {
-        if (
-            SlidingWindowCounter.sumInWindowWithNow(this.slidingWindow, nowEpochMs) >=
-                this.policy.maxNumberToAllow
-        ) {
+        if (!this.isAllowedAt(nowEpochMs)) {
             return false;
         }
 
-        SlidingWindowCounter.updateWithNow(this.slidingWindow, 1, nowEpochMs);
+        SlidingWindowCounter.updateWithNow(this.slidingWindow, 1, this.toWindowNowMs(nowEpochMs));
         return true;
     }
 
     isAllowed(): boolean {
         return this.slidingWindow.sumInWindow() < this.policy.maxNumberToAllow;
+    }
+
+    /** Whether `allowAt` would allow at `nowEpochMs`, without spending. */
+    isAllowedAt(nowEpochMs: number): boolean {
+        return SlidingWindowCounter.sumInWindowWithNow(this.slidingWindow, this.toWindowNowMs(nowEpochMs)) <
+            this.policy.maxNumberToAllow;
+    }
+
+    /** The window has no bucket before its creation, so a clock that stepped back behind it reads as the creation. */
+    private toWindowNowMs(nowEpochMs: number): number {
+        return Math.max(nowEpochMs, this.slidingWindow.createdTs);
     }
 }
 

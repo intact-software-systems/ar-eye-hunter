@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
-import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
@@ -38,6 +38,7 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
+    toALOutboundWorkKey,
     toALOutboundWorkType,
     type ALOutboundDequeueDeferral,
     type ALOutboundWorkDeferral
@@ -81,6 +82,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
+    /** The sweep limiter pair this lane's work port spends and its readiness scan peeks. */
     private readonly leaseRecovery: ALWorkLeaseRecovery;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
@@ -151,7 +153,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
-            this.work.committed(computeALOutboundCommittedRows([result]));
+            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, [result]));
         }
 
         return this.toStoreComputed(result.computed);
@@ -168,7 +170,7 @@ export class ALOutboundStoreLane<TPrepared> {
         });
         results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
-            this.work.committed(computeALOutboundCommittedRows(results));
+            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, results));
         }
         return results.map((result) => this.toStoreComputed(result.computed));
     }
@@ -246,18 +248,18 @@ export class ALOutboundStoreLane<TPrepared> {
 
     private async readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined> {
         const nowMs = this.readNowMs();
-        return await readALOutboundWorkReadyAt(port, nowMs, this.readWorkDeferral(nowMs));
+        return await readALOutboundWorkReadyAt(port, nowMs, this.getWorkDeferral(nowMs));
     }
 
-    private readWorkDeferral(nowMs: number): ALOutboundWorkDeferral {
+    private getWorkDeferral(nowMs: number): ALOutboundWorkDeferral {
         return {
-            dequeue: this.readDequeueDeferral(nowMs),
+            dequeue: this.getDequeueDeferral(nowMs),
             leaseSweeps: computeALWorkLeaseSweepState(this.leaseRecovery, nowMs)
         };
     }
 
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
-    private readDequeueDeferral(nowMs: number): ALOutboundDequeueDeferral {
+    private getDequeueDeferral(nowMs: number): ALOutboundDequeueDeferral {
         const { resilience } = this.input.runtime.dequeue;
         return {
             types: this.input.dequeueTypes,
@@ -549,24 +551,25 @@ function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TP
  * timeout is due after its send, so the batch that sends it cannot have claimed it.
  */
 function computeALOutboundCommittedRows<TPrepared>(
+    namespace: string,
     results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
 ): ALWorkCommittedRows {
     let dueByMs = 0;
-    let writtenCount = 0;
+    const writtenKeys: string[] = [];
     for (const result of results.filter(hasWrittenWork)) {
         const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
         if (effects === undefined) {
             return AL_WORK_UNDESCRIBED_COMMIT;
         }
-        for (const { retryAtMs } of effects) {
+        for (const { effectId, retryAtMs } of effects) {
             if (retryAtMs === undefined) {
                 return AL_WORK_UNDESCRIBED_COMMIT;
             }
             dueByMs = Math.max(dueByMs, retryAtMs);
-            writtenCount += 1;
+            writtenKeys.push(toKeyAsString(toALOutboundWorkKey(namespace, effectId)));
         }
     }
-    return { dueByMs, writtenCount };
+    return { dueByMs, writtenKeys };
 }
 
 /**

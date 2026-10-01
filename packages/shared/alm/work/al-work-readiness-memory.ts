@@ -15,14 +15,14 @@ export interface ALWorkCommittedRows {
     /** When the last row the commit wrote becomes claimable, or undefined when the owner cannot say. */
     readonly dueByMs: number | undefined;
     /**
-     * Every work row the commit stated; an existing row is counted once more at worst, which costs one
-     * probe. The batch it runs must claim at least as many.
+     * The queue key (`toKeyAsString`) of every work row the commit wrote. The batch it runs must
+     * complete a claim of each one, whatever clock the queue claims by.
      */
-    readonly writtenCount: number;
+    readonly writtenKeys: readonly string[];
 }
 
 /** A commit that cannot describe the rows it wrote: its batch never restores the answer it set aside. */
-export const AL_WORK_UNDESCRIBED_COMMIT: ALWorkCommittedRows = { dueByMs: undefined, writtenCount: 0 };
+export const AL_WORK_UNDESCRIBED_COMMIT: ALWorkCommittedRows = { dueByMs: undefined, writtenKeys: [] };
 
 /** One probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
 export interface ALWorkReadinessAnswer {
@@ -44,6 +44,8 @@ export interface ALWorkReadinessBatch {
     readonly claimedCount: number;
     readonly completedCount: number;
     readonly rejectedCount: number;
+    /** The queue key (`toKeyAsString`) of every claim the batch completed. */
+    readonly completedKeys: ReadonlySet<string>;
     readonly pageSize: number;
     readonly startedAtMs: number;
     /** A commit landed while the batch ran, so its page may not hold that commit's rows. */
@@ -54,7 +56,7 @@ export interface ALWorkReadinessBatch {
 interface ALWorkSuspendedReadiness {
     readonly answer: ALWorkReadinessAnswer;
     readonly dueByMs: number;
-    readonly writtenCount: number;
+    readonly writtenKeys: readonly string[];
 }
 
 /**
@@ -122,11 +124,11 @@ export class ALWorkReadinessMemory {
     /** A commit invalidates the answer, but keeps it aside for the batch it runs to restore. */
     suspend(written: ALWorkCommittedRows): void {
         const standing = this.answer;
-        const { dueByMs, writtenCount } = written;
+        const { dueByMs, writtenKeys } = written;
         this.forget('own-commit');
         this.suspended = standing === undefined || dueByMs === undefined
             ? undefined
-            : { answer: standing, dueByMs, writtenCount };
+            : { answer: standing, dueByMs, writtenKeys };
     }
 
     /**
@@ -158,11 +160,12 @@ function isALWorkReadinessAnswerStanding(
 /**
  * The suspended answer still describes storage only when the commit's batch claimed every row the
  * commit wrote and finished each one. The commit described its rows: an undescribed commit never
- * restores. The batch started once those rows were all due, and claimed at least as many rows as
- * the commit wrote, so a row the queue did not return, for any reason, refuses the restore. It
- * claimed fewer than a page, completed every claim, rejected and retained nothing, and no commit
- * landed behind it. The answer still stood when the batch started and was not due by then: a due
- * answer would start a batch that claims nothing on every engine round.
+ * restores. The batch started once those rows were all due, and completed a claim of every row the
+ * commit wrote, so a row the queue did not return, for any reason, refuses the restore, even when
+ * the batch claimed another in its place. It claimed fewer than a page, completed every claim,
+ * rejected and retained nothing, and no commit landed behind it. The answer still stood when the
+ * batch started and was not due by then: a due answer would start a batch that claims nothing on
+ * every engine round.
  *
  * This rests on every claim that may write work rows outside a commit announcing it: such a claim
  * empties the set-aside answer, so a clean batch's completed claims wrote nothing unannounced.
@@ -179,8 +182,9 @@ function resolveALWorkRestoredReadiness(
         return undefined;
     }
     const { answer } = suspended;
-    const clean = batch.claimedCount >= suspended.writtenCount && batch.claimedCount < batch.pageSize &&
-        batch.rejectedCount === 0 && batch.completedCount === batch.claimedCount;
+    const clean = suspended.writtenKeys.every((key) => batch.completedKeys.has(key)) &&
+        batch.claimedCount < batch.pageSize && batch.rejectedCount === 0 &&
+        batch.completedCount === batch.claimedCount;
     const notDue = answer.readyAtMs === undefined || answer.readyAtMs > batch.startedAtMs;
     return clean && notDue && isALWorkReadinessAnswerStanding(answer, batch.startedAtMs, memoryMs)
         ? answer

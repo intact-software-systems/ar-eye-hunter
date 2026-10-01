@@ -1,6 +1,6 @@
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '../../queuebox/ResourceInboxRetryPolicy.ts';
-import { RateLimiter, SlidingWindowCounter } from '../../resilience/Resilience.ts';
+import { RateLimiter } from '../../resilience/Resilience.ts';
 
 /**
  * One lock limiter per lease sweep, in the role `lockEntryRateLimiter` plays in the ResourceInbox
@@ -48,7 +48,7 @@ export function isALWorkLeaseSweepOpen(
     sweep: keyof ALWorkLeaseSweepLimiters,
     nowMs: number
 ): boolean {
-    return recovery.kind === 'every-batch' || isLeaseSweepOpen(recovery.limiters[sweep], nowMs);
+    return recovery.kind === 'every-batch' || recovery.limiters[sweep].isAllowedAt(nowMs);
 }
 
 /**
@@ -61,8 +61,7 @@ export function spendALWorkLeaseSweep(
     nowMs: number
 ): void {
     if (recovery.kind === 'limited') {
-        const limiter = recovery.limiters[sweep];
-        limiter.allowAt(toLimiterNowMs(limiter, nowMs));
+        recovery.limiters[sweep].allowAt(nowMs);
     }
 }
 
@@ -85,14 +84,4 @@ export function isALWorkLeaseSweepDeferred(entry: ResourceEntry, state: ALWorkLe
     return entry.dequeueAudit.attempts >= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         ? !state.isFinalizationOpen
         : !state.isTimeoutOpen;
-}
-
-function isLeaseSweepOpen(limiter: RateLimiter, nowMs: number): boolean {
-    return SlidingWindowCounter.sumInWindowWithNow(limiter.slidingWindow, toLimiterNowMs(limiter, nowMs)) <
-        limiter.policy.maxNumberToAllow;
-}
-
-/** The limiter finds no bucket for a time before its creation, so a clock stepped back reads as its creation. */
-function toLimiterNowMs(limiter: RateLimiter, nowMs: number): number {
-    return Math.max(nowMs, limiter.slidingWindow.createdTs);
 }

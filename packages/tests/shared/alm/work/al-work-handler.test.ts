@@ -21,6 +21,7 @@ import {
     newWorkEntry,
     readTestALWorkReadyAtMs,
     toFakeALWorkClaim,
+    toFakeALWorkKey,
     toTestALWorkReadySelection
 } from './al-work-test-entries.ts';
 
@@ -59,7 +60,7 @@ describe('ALWorkHandler', () => {
         expect(released).toEqual(['w-1:completed', 'w-2:retry']);
 
         const before = Date.now();
-        handler.committed({ dueByMs: 1_000, writtenCount: 0 });
+        handler.committed({ dueByMs: 1_000, writtenKeys: [] });
         expect(Date.now() - before).toBeLessThan(5);
         handler.dispose();
     });
@@ -457,12 +458,12 @@ describe('ALWorkHandler', () => {
         // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
         // for the claim() call of this batch to run and capture it before the second entry exists.
         pending.push(toFakeALWorkClaim('first'));
-        handler.committed({ dueByMs: 1_000, writtenCount: 1 });
+        handler.committed({ dueByMs: 1_000, writtenKeys: [toFakeALWorkKey('first')] });
         await firstClaimEntered;
 
         // A second commit lands, and its work becomes claimable, while the first entry is still in flight.
         pending.push(toFakeALWorkClaim('second'));
-        handler.committed({ dueByMs: 1_000, writtenCount: 1 });
+        handler.committed({ dueByMs: 1_000, writtenKeys: [toFakeALWorkKey('second')] });
 
         releaseFirst?.();
         await expect.poll(() => released).toEqual(['first:completed', 'second:completed']);
@@ -783,7 +784,7 @@ describe('ALWorkHandler', () => {
         // A commit of this owner's own sets the answer aside; the batch it runs claims and completes the
         // row it wrote, which leaves storage as the answer saw it.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed({ dueByMs: 10_000, writtenCount: 1 });
+        handler.committed({ dueByMs: 10_000, writtenKeys: [toFakeALWorkKey('committed-row')] });
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(released).toEqual(['committed-row:completed']);
         for (let round = 0; round < 25; round += 1) {
@@ -833,7 +834,7 @@ describe('ALWorkHandler', () => {
 
         // A commit whose batch completes everything it claimed costs no probe at all.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed({ dueByMs: nowMs, writtenCount: 1 });
+        handler.committed({ dueByMs: nowMs, writtenKeys: [toFakeALWorkKey('committed-row')] });
         await new Promise((resolve) => setTimeout(resolve, 0));
         await engine.executeOnce();
 
@@ -848,7 +849,7 @@ describe('ALWorkHandler', () => {
         // A commit whose batch leaves a row behind runs that batch, and the batch's own invalidation
         // must not take the commit's credit.
         pending.push(toFakeALWorkClaim('retried-row'));
-        handler.committed({ dueByMs: nowMs, writtenCount: 1 });
+        handler.committed({ dueByMs: nowMs, writtenKeys: [toFakeALWorkKey('retried-row')] });
         await new Promise((resolve) => setTimeout(resolve, 0));
         await engine.executeOnce();
 
@@ -1138,7 +1139,7 @@ describe('ALWorkHandler', () => {
         try {
             await handler.ready();
             shouldCorrupt = true;
-            handler.committed({ dueByMs: 1_000, writtenCount: 0 });
+            handler.committed({ dueByMs: 1_000, writtenKeys: [] });
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             expect(unhandled).toEqual([]);
