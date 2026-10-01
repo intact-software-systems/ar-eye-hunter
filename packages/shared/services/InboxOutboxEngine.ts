@@ -125,8 +125,8 @@ export class InboxOutboxEngine {
 
     /**
      * The announcement that a writer this engine does not own put work in a queue: a server AppInbox
-     * transaction, a pub/sub requeue, another tab. Such a writer cannot say which owner the row
-     * belongs to, so every owner drops its remembered readiness and re-reads storage once.
+     * transaction or a pub/sub requeue; no browser code makes it. Such a writer cannot say which owner
+     * the row belongs to, so every owner drops its remembered readiness and re-reads storage once.
      */
     wakeAfterExternalWrite(): void {
         this.notifyWake();

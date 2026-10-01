@@ -1,7 +1,10 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsEvent
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { IndexedDbOperationKind } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
@@ -36,6 +39,8 @@ const CANONICAL_HANDOFF_REASON = 'no canonical read: the claim takes the canonic
     'over instead of reading it back';
 const SEND_GUARDS_SESSION_REASON = 'one guard read: a prepared send reads its supersedence and receipt guards in ' +
     'one session';
+const READINESS_RESTORE_REASON = 'no readiness probe after the batch: the batch claimed and completed the one row ' +
+    'its commit wrote, so it restores the answer that commit set aside';
 const WORK_ROW_PARSES = 'each read that decodes the work row parses its 4 timestamps (date, created, expiry and ' +
     'its one dequeue instant) once; a row the owner wrote is never parsed back';
 
@@ -47,7 +52,7 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         vi.restoreAllMocks();
     });
 
-    it('reaches the carrier in 8 transactions and the idle owner in 11', async () => {
+    it('reaches the carrier in 8 transactions and the idle owner in 10', async () => {
         const ledger = await readWarmOutboundSendLedger();
         const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
@@ -62,14 +67,13 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toBe(8);
         expect(
             total.transactions,
-            'the chain\'s 8, then the release read, the release write and the readiness probe the ' +
-                'batch\'s end owes' + table
-        ).toBe(11);
+            'the chain\'s 8, then the release read and the release write; ' + READINESS_RESTORE_REASON + table
+        ).toBe(10);
         expect(
             total.requests,
-            'every get, getAll and put those 11 transactions issue; the guard read issues its 2 gets ' +
+            'every get, getAll and put those 10 transactions issue; the guard read issues its 2 gets ' +
                 'in one session' + table
-        ).toBe(42);
+        ).toBe(39);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
@@ -79,9 +83,9 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toBe(10);
         expect(
             total.byOwner['al-work'],
-            '3 decision work reads, 2 empty probes, the reservation, the release and the readiness ' +
-                'page; ' + CANONICAL_HANDOFF_REASON + table
-        ).toBe(8);
+            '3 decision work reads, 2 empty probes, the reservation and the release; ' +
+                CANONICAL_HANDOFF_REASON + '; ' + READINESS_RESTORE_REASON + table
+        ).toBe(7);
     });
 
     it('parses 9 timestamps up to the carrier and 13 up to the idle owner', async () => {
@@ -95,8 +99,8 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toEqual({ instant: 5, plainTime: 2, plainDateTime: 2 });
         expect(
             computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']).temporalParses,
-            'the chain\'s 9, then the release read decodes the work row (4); the release write and ' +
-                'the readiness probe parse nothing' + table
+            'the chain\'s 9, then the release read decodes the work row (4); the release write parses ' +
+                'nothing' + table
         ).toEqual({ instant: 7, plainTime: 3, plainDateTime: 3 });
     });
 });
@@ -185,9 +189,11 @@ describe('inbound warm admit-and-deliver IndexedDB transaction ledger', () => {
 
 async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger> {
     const recorded = recordIndexedDbTransactionLedger();
+    const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     let phaseAtSend: IndexedDbLedgerPhase = 'before';
     const runtime = createDefaultOutboundTestRuntime({
         stores: createIndexedDbOutboundTestStores({ observer: recorded.observer, namespace: OUTBOUND_NAMESPACE }),
+        diagnostics: (event) => diagnostics.push(event),
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
@@ -199,39 +205,48 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
             return { status: 'sent' as const, submissionAttempted: true };
         }
     });
-    await sendUntilOwnerIdle(runtime, recorded, 'msg-ledger-warm-up');
+    // The owner's first probe takes the answer each send's commit sets aside and its batch restores.
+    await runtime.ready();
+    await vi.waitFor(() => {
+        expect(diagnostics.some((event) => event.kind === 'readiness-probe')).toBe(true);
+        expect(recorded.liveCount()).toBe(0);
+    });
+    await sendUntilOwnerIdle({ runtime, recorded, diagnostics, resourceId: 'msg-ledger-warm-up' });
     recorded.setPhase('chain');
     phaseAtSend = 'after-send';
-    await sendUntilOwnerIdle(runtime, recorded, 'msg-ledger-pinned');
+    await sendUntilOwnerIdle({ runtime, recorded, diagnostics, resourceId: 'msg-ledger-pinned' });
     return recorded.getLedger();
 }
 
+interface OutboundSendUntilIdleInput {
+    readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
+    readonly recorded: RecordedIndexedDbTransactionLedger;
+    readonly diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
+    readonly resourceId: string;
+}
+
 /**
- * The commit's own batch sends the message; the owner is idle once this send's release has been
- * followed by the readiness probe the batch's end schedules. Waiting for that probe keeps it out of
- * the next send's chain.
+ * The commit's own batch sends the message; the owner is idle once that batch has released the row,
+ * reported its drain and left no transaction open. A clean batch restores the readiness answer its
+ * commit set aside, so no probe follows it.
  */
-async function sendUntilOwnerIdle(
-    runtime: ALOutboundMessageRuntime<OutboundTestPayload>,
-    recorded: RecordedIndexedDbTransactionLedger,
-    resourceId: string
-): Promise<void> {
+async function sendUntilOwnerIdle(input: OutboundSendUntilIdleInput): Promise<void> {
+    const { recorded, diagnostics } = input;
     const releasesBefore = computeOperationCount(recorded.getLedger(), 'work-release');
-    const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage(resourceId));
+    const drainsBefore = computeEffectDrainCount(diagnostics);
+    const enqueued = await input.runtime.enqueueIfAbsent(createOutboundMessage(input.resourceId));
     expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
-    // The warm-up's release and probe are already in the ledger, so only counts taken before this
-    // send can tell its own release and probe from theirs.
+    // The warm-up's release and drain are already recorded, so only counts taken before this send
+    // can tell its own from theirs.
     await vi.waitFor(() => {
-        expect(isProbedAfterNthRelease(recorded.getLedger(), releasesBefore + 1)).toBe(true);
+        expect(computeOperationCount(recorded.getLedger(), 'work-release')).toBe(releasesBefore + 1);
+        expect(computeEffectDrainCount(diagnostics)).toBe(drainsBefore + 1);
         expect(recorded.liveCount()).toBe(0);
     });
 }
 
-function isProbedAfterNthRelease(ledger: IndexedDbTransactionLedger, nth: number): boolean {
-    const kinds = ledger.operations.map((operation) => operation.kind);
-    const releaseIndexes = kinds.flatMap((kind, index) => kind === 'work-release' ? [index] : []);
-    const release = releaseIndexes[nth - 1];
-    return release !== undefined && kinds.lastIndexOf('work-page') > release;
+function computeEffectDrainCount(diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]): number {
+    return diagnostics.filter((event) => event.kind === 'effect-drain' && event.lane === 'durable').length;
 }
 
 /**

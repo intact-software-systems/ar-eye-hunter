@@ -184,7 +184,7 @@ export class ALInboundStoreLane {
 
     private commitWork(): void {
         this.workSelector.requestHeadRead();
-        this.work.committed();
+        this.work.committed(undefined);
     }
 
     /**
@@ -195,7 +195,7 @@ export class ALInboundStoreLane {
         this.evictWhenDue();
         const selection = await this.workSelector.selectReady(port, pageSize);
         if (this.workSelector.isHeadReadPending()) {
-            this.work.committed();
+            this.work.committed(undefined);
         }
         return selection;
     }

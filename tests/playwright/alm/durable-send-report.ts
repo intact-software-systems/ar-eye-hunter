@@ -20,8 +20,8 @@ export interface DurableSendRunFigures {
     readonly p50Ms: number;
     readonly p95Ms: number;
     readonly unsettledCount: number;
-    /** Ending cause of each send's wait for its batch to go idle, counted; the suite expects only send-owned causes. */
-    readonly probeCauses: Readonly<Record<string, number>>;
+    /** What ended each send's wait for its batch to go idle, counted; the suite expects only `effect-drain`. */
+    readonly batchEnds: Readonly<Record<string, number>>;
     /** Every durable probe seen during those waits, counted by cause. */
     readonly observedProbeCauses: Readonly<Record<string, number>>;
     /** Share of sends faster than one frame interval; null on an idle page. */
@@ -85,8 +85,8 @@ function toRunFigures(
     const frameIntervalMs = configuration.frameLoad?.frameIntervalMs;
     return {
         ...computeSendToDispatchPercentiles(sendToDispatchMs),
-        unsettledCount: run.samples.filter((sample) => sample.probeEnd === 'timeout').length,
-        probeCauses: computeCountByKey(run.samples.map((sample) => sample.probeEnd)),
+        unsettledCount: run.samples.filter((sample) => sample.batchEnd === 'timeout').length,
+        batchEnds: computeCountByKey(run.samples.map((sample) => sample.batchEnd)),
         observedProbeCauses: computeCountByKey(run.samples.flatMap((sample) => sample.observedProbeCauses)),
         fastModeShare: frameIntervalMs === undefined
             ? null

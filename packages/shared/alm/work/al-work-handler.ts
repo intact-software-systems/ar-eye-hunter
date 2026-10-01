@@ -3,6 +3,7 @@ import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
+import { ALWorkReadinessMemory, type ALWorkReadinessAnswer } from './al-work-readiness-memory.ts';
 
 export type ALWorkAttemptResult =
     | ALWorkOutcome
@@ -116,10 +117,10 @@ export interface ALWorkReadinessProbeDiagnostics {
 }
 
 /**
- * How long an owner that has neither committed nor run a batch keeps answering from its last probe.
- * It is the engine's own idle ceiling, derived from it so the two cannot drift apart: work another
- * tab wrote, or a row a crashed owner's lease still holds, is discovered on that idle cadence
- * instead of costing a storage read on every engine round.
+ * How long one probe's answer stands, counted from that probe whatever batches ran since. It is the
+ * engine's own idle ceiling, derived from it so the two cannot drift apart: work another tab wrote,
+ * or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of
+ * costing a storage read on every engine round.
  */
 export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
 
@@ -129,12 +130,6 @@ export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
  * scan position -- has no answer that can stand for any length of time.
  */
 export const AL_WORK_PROBE_EVERY_ROUND = 0;
-
-/** The last probe's answer; `readyAtMs` undefined is the probe reporting no work at all. */
-interface ALWorkReadinessMemory {
-    readonly readyAtMs: number | undefined;
-    readonly observedAtMs: number;
-}
 
 interface ALWorkCounts {
     claimedCount: number;
@@ -155,22 +150,26 @@ interface ALWorkBatchProgress extends ALWorkCounts {
     releaseDurationMs: number;
 }
 
+/** A batch that flushed its releases: what it counted, and its run unless disposal cut the claims short. */
+interface ALWorkBatchEnd {
+    readonly progress: ALWorkBatchProgress;
+    readonly run: ALWorkClaimedRun | undefined;
+    readonly startedAtMs: number;
+}
+
 /** Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task, the batch lifecycle, and how long a probe's answer stands. */
 export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
     private bootstrapped = false;
-    private readiness: ALWorkReadinessMemory | undefined;
-    /** Bumped by every invalidation, so a probe that started before one cannot store its stale answer. */
-    private readinessGeneration = 0;
-    /** What emptied the memory the next probe replaces; `no-memory` until the first invalidation. */
-    private readinessInvalidation: ALWorkReadinessProbeCause = 'no-memory';
+    private readonly readiness: ALWorkReadinessMemory;
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
     private readonly shutdown = new AbortController();
 
     constructor(dependencies: ALWorkHandlerDependencies) {
         this.dependencies = dependencies;
+        this.readiness = new ALWorkReadinessMemory(dependencies.readinessMemoryMs);
         dependencies.queueEngine.includeTask(dependencies.workerId, {
             name: dependencies.workerId,
             maxConcurrency: () => 1,
@@ -178,15 +177,11 @@ export class ALWorkHandler {
             runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
             ongoingTasks: []
         });
-        // Every writer this engine does not own announces its row with an external-write wake -- a
-        // server AppInbox transaction, a pub/sub requeue, another tab. That wake is the moment the
-        // remembered answer stopped describing storage, and it reaches every owner sharing the
-        // engine, because the writer cannot say which of them the row belongs to. Only those wakes
-        // do: the owners' own progress reaches `wake`, which reschedules and announces nothing, so
-        // one owner running a batch no longer costs every other owner its memory.
+        // Only the server announces a write this engine did not make; a row another tab or a reload
+        // wrote is found when the remembered answer reaches its age bound.
         dependencies.queueEngine.includeWakeListener(
             dependencies.workerId,
-            () => this.forgetReadiness('external-wake')
+            () => this.readiness.forget('external-wake')
         );
     }
 
@@ -213,10 +208,12 @@ export class ALWorkHandler {
     /**
      * After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of
      * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
-     * made outside `runBatch`.
+     * made outside `runBatch`. `writtenDueByMs` is when the last row the commit wrote becomes
+     * claimable, or undefined when the owner cannot say: only a batch that starts by then can have
+     * claimed every one of them.
      */
-    committed(): void {
-        this.forgetReadiness('own-commit');
+    committed(writtenDueByMs: number | undefined): void {
+        this.readiness.suspend(writtenDueByMs);
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {
             void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
@@ -238,51 +235,46 @@ export class ALWorkHandler {
 
     /**
      * Storage answers only when memory cannot. A remembered "ready at T" answers every round until T
-     * arrives without reading anything; a remembered "no work" stands until this owner commits, runs a
-     * batch, or the memory ages out.
+     * arrives without reading anything; a remembered "no work" stands until an invalidation empties it
+     * or the memory ages out.
      */
     private async readReadyAtMs(nowMs: number): Promise<number | undefined> {
-        const remembered = this.readiness;
-        if (
-            remembered !== undefined && nowMs >= remembered.observedAtMs &&
-            nowMs - remembered.observedAtMs < this.dependencies.readinessMemoryMs
-        ) {
-            return remembered.readyAtMs;
+        const { clock, diagnostics, port, readNextReadyAtMs, workerId } = this.dependencies;
+        const standing = this.readiness.getStandingAnswer(nowMs);
+        if (standing !== undefined) {
+            return standing.readyAtMs;
         }
-        const cause = remembered === undefined ? this.readinessInvalidation : 'age-bound';
-        const generation = this.readinessGeneration;
-        const probedAtMs = this.dependencies.clock.nowMs();
-        const readyAtMs = await this.dependencies.readNextReadyAtMs(this.dependencies.port);
-        if (generation === this.readinessGeneration) {
-            this.readiness = { readyAtMs, observedAtMs: nowMs };
-        }
-        this.dependencies.diagnostics?.({
+        const probedAtMs = clock.nowMs();
+        const probe = await this.readiness.readProbe(nowMs, () => readNextReadyAtMs(port));
+        diagnostics?.({
             kind: 'readiness-probe',
-            workerId: this.dependencies.workerId,
-            cause,
-            readyAtMs: readyAtMs ?? 'none',
-            durationMs: computeElapsedMs(probedAtMs, this.dependencies.clock.nowMs())
+            workerId,
+            cause: probe.cause,
+            readyAtMs: probe.readyAtMs ?? 'none',
+            durationMs: computeElapsedMs(probedAtMs, clock.nowMs())
         });
-        return readyAtMs;
+        return probe.readyAtMs;
     }
 
     /**
-     * A commit and a batch both change the rows a probe read, so the answer they invalidate is
-     * dropped. That is the rule the memory rests on: **any change to this owner's rows performed
-     * outside `runBatch` must reach this method**, or the owner keeps answering from a picture
-     * storage no longer supports. The three ways it does are `committed()`, a retained claim's
-     * settlement, and the engine wake every writer that is not this owner announces its row with.
+     * The batch's end settles the readiness memory: a commit and a batch both change the rows a probe
+     * read, so the answer is dropped unless the batch restores the one its commit set aside. The other
+     * ways a change reaches the memory are `committed()`, a retained claim's settlement, and the
+     * engine wake every writer that is not this owner announces its row with.
      */
-    private forgetReadiness(
-        cause: 'external-wake' | 'own-commit' | 'batch' | 'retained-release'
-    ): void {
-        if (this.readiness !== undefined) {
-            // The one that emptied a standing memory owns the probe that replaces it: a commit runs
-            // a batch, and that batch's own invalidation must not take the credit from the commit.
-            this.readinessInvalidation = cause;
+    private settleReadiness(ended: ALWorkBatchEnd | undefined): ALWorkReadinessAnswer | undefined {
+        if (ended?.run === undefined) {
+            return this.readiness.settle(undefined);
         }
-        this.readiness = undefined;
-        this.readinessGeneration += 1;
+        const { claimedCount, completedCount, rejectedCount } = ended.progress;
+        return this.readiness.settle({
+            claimedCount,
+            completedCount,
+            rejectedCount,
+            pageSize: this.dependencies.pageSize,
+            startedAtMs: ended.startedAtMs,
+            commitPending: this.commitPending
+        });
     }
 
     private runBatch(): Promise<void> {
@@ -292,17 +284,31 @@ export class ALWorkHandler {
         if (this.batch !== undefined) {
             return this.batch;
         }
-        this.batch = this.runSelectedWork().then((counts) => this.wakeAfterProgress(counts)).catch((error) => {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
-            }
-            this.reportBatchFailure(toError(error));
-        }).finally(() => {
-            this.batch = undefined;
-            this.forgetReadiness('batch');
-            this.runPendingCommit();
-        });
+        this.batch = this.runSelectedWork()
+            .then((ended) => this.endBatch(ended))
+            .catch((error) => this.failBatch(toError(error)))
+            .finally(() => {
+                this.batch = undefined;
+                this.runPendingCommit();
+            });
         return this.batch;
+    }
+
+    private endBatch(ended: ALWorkBatchEnd): void {
+        const restored = this.settleReadiness(ended);
+        if (ended.run !== undefined) {
+            const { queueEngine, workerId } = this.dependencies;
+            queueEngine.wakeAt(workerId, ended.run.selection.nextReadyAtMs ?? restored?.readyAtMs);
+        }
+        this.wakeAfterProgress(ended.progress);
+    }
+
+    private failBatch(error: Error): void {
+        this.settleReadiness(undefined);
+        if (error instanceof ALAdmissionCorruptionError) {
+            throw error;
+        }
+        this.reportBatchFailure(error);
     }
 
     /**
@@ -325,8 +331,8 @@ export class ALWorkHandler {
         void this.runBatch().catch((error) => this.reportBatchFailure(toError(error)));
     }
 
-    private async runSelectedWork(): Promise<ALWorkBatchProgress> {
-        const { clock, workerId, queueEngine } = this.dependencies;
+    private async runSelectedWork(): Promise<ALWorkBatchEnd> {
+        const { clock } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const progress: ALWorkBatchProgress = {
             claimedCount: 0,
@@ -348,12 +354,10 @@ export class ALWorkHandler {
             // throws must not leave them waiting for their leases to expire.
             await this.flushReleases(releases, progress);
         }
-        if (run === undefined) {
-            return progress;
+        if (run !== undefined) {
+            this.reportBatch(run, startedAtMs, progress);
         }
-        queueEngine.wakeAt(workerId, run.selection.nextReadyAtMs);
-        this.reportBatch(run, startedAtMs, progress);
-        return progress;
+        return { progress, run, startedAtMs };
     }
 
     /**
@@ -469,7 +473,7 @@ export class ALWorkHandler {
             .finally(() => {
                 // This release lands after its batch ended, so it is the one row change no batch
                 // boundary covers: the remembered answer still describes the row as reserved.
-                this.forgetReadiness('retained-release');
+                this.readiness.forget('retained-release');
                 this.dependencies.queueEngine.wake();
             });
     }

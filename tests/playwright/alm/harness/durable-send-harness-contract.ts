@@ -19,17 +19,8 @@ export interface FrameLoadObservation {
     readonly frameLatenessMs: readonly number[];
 }
 
-/**
- * The causes a send's own progress gives the durable probe that follows its batch: its commit emptied
- * the owner's readiness memory (and keeps the credit over the batch that ran behind it).
- * Probes from an external wake, the age bound, a retained release or a first read are not its own.
- */
-export const DURABLE_SEND_OWN_PROBE_CAUSES: readonly ALWorkReadinessProbeCause[] = [
-    'own-commit',
-    'batch'
-];
-
-export type DurableSendProbeEnd = ALWorkReadinessProbeCause | 'timeout';
+/** How a send's wait for its own batch ended: on that batch's durable `effect-drain`, or at the bound. */
+export type DurableSendBatchEnd = 'effect-drain' | 'timeout';
 
 export interface DurableSendSample {
     /** `enqueueIfAbsent` call to the carrier's `sendPreparedMessage`. */
@@ -38,8 +29,8 @@ export interface DurableSendSample {
     readonly phaseOffsetMs: number | undefined;
     /** Frame starts between the send's start and its dispatch. */
     readonly framesStraddled: number;
-    /** The durable probe that ended the wait for the send's batch to go idle, or the bound. */
-    readonly probeEnd: DurableSendProbeEnd;
+    /** What ended the wait for the send's batch to go idle. */
+    readonly batchEnd: DurableSendBatchEnd;
     /** Every durable probe seen from the dispatch to the end of that wait. */
     readonly observedProbeCauses: readonly ALWorkReadinessProbeCause[];
 }

@@ -23,7 +23,6 @@ import {
     type DurableSendConfigurationFigures,
     type DurableSendMethod
 } from './durable-send-report.ts';
-import { DURABLE_SEND_OWN_PROBE_CAUSES } from './harness/durable-send-harness-contract.ts';
 import {
     DURABLE_SEND_HARNESS_SCRIPT_URL,
     profileDurableSends,
@@ -116,9 +115,9 @@ function expectProfileAttribution(
 
 function expectRunsSettled(configurations: readonly DurableSendConfigurationFigures[]): void {
     // Evidence, not a gate: the suite fails only when a run lost figures, a send started before its
-    // predecessor's own batch was idle again (a wait ends only on a probe that send earned), a wait
-    // saw a probe it did not end on, or the profile could not attribute its samples; never on a
-    // latency value.
+    // predecessor's own batch was idle again (a wait ends only on the drain of the batch that sent),
+    // a durable probe ran inside a send's batch, or the profile could not attribute its samples;
+    // never on a latency value.
     for (const configuration of configurations) {
         expect(
             configuration.runs.map((run) => [run.sendToDispatchMs.length, run.unsettledCount]),
@@ -126,14 +125,13 @@ function expectRunsSettled(configurations: readonly DurableSendConfigurationFigu
         )
             .toEqual(Array(METHOD.runCount).fill([METHOD.measuredCount, 0]));
         expect(
-            configuration.runs.flatMap((run) => Object.keys(run.probeCauses))
-                .filter((cause) => !DURABLE_SEND_OWN_PROBE_CAUSES.includes(cause as never)),
-            `${configuration.name}: every wait ended on a probe its own send earned`
-        ).toEqual([]);
+            configuration.runs.map((run) => run.batchEnds),
+            `${configuration.name}: every wait ended on its own batch's drain`
+        ).toEqual(Array(METHOD.runCount).fill({ 'effect-drain': METHOD.measuredCount }));
         expect(
             configuration.runs.map((run) => run.observedProbeCauses),
-            `${configuration.name}: each send's wait saw exactly the one probe it ended on`
-        ).toEqual(configuration.runs.map((run) => run.probeCauses));
+            `${configuration.name}: no send's wait saw a durable probe`
+        ).toEqual(Array(METHOD.runCount).fill({}));
     }
 }
 

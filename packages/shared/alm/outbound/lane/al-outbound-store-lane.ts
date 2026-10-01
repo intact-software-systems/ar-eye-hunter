@@ -142,7 +142,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
-            this.work.committed();
+            this.work.committed(computeALOutboundWrittenDueByMs([result]));
         }
 
         return this.toStoreComputed(result.computed);
@@ -154,12 +154,12 @@ export class ALOutboundStoreLane<TPrepared> {
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {
         const results = await this.dispatchAdmission.commitAll(dispatches).catch((error) => {
             // A group rethrows only after every member ran, so members before the throw may have landed.
-            this.work.committed();
+            this.work.committed(undefined);
             throw error;
         });
         results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
-            this.work.committed();
+            this.work.committed(computeALOutboundWrittenDueByMs(results));
         }
         return results.map((result) => this.toStoreComputed(result.computed));
     }
@@ -179,7 +179,7 @@ export class ALOutboundStoreLane<TPrepared> {
         const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
-            this.work.committed();
+            this.work.committed(undefined);
         }
         return admitted;
     }
@@ -507,6 +507,30 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
 
 function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
     return result.committed || result.computed.verdict.kind === 'pending';
+}
+
+/**
+ * When the last work row these commits wrote becomes claimable, or undefined when one of them wrote
+ * work its result does not describe: a receipted send's acknowledgement timeout is due after its
+ * send, so the batch that sends it cannot have claimed it.
+ */
+function computeALOutboundWrittenDueByMs<TPrepared>(
+    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
+): number | undefined {
+    let writtenDueByMs = 0;
+    for (const result of results.filter(hasWrittenWork)) {
+        const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
+        if (effects === undefined) {
+            return undefined;
+        }
+        for (const { retryAtMs } of effects) {
+            if (retryAtMs === undefined) {
+                return undefined;
+            }
+            writtenDueByMs = Math.max(writtenDueByMs, retryAtMs);
+        }
+    }
+    return writtenDueByMs;
 }
 
 /** The effect kinds whose queue row expires exactly when the message it carries does. */

@@ -82,7 +82,7 @@ class PlainPageDurableSendHarness implements DurableSendHarness {
         return samples;
     }
 
-    /** One durable send, then the wait for the probe its own commit earns so the next send starts on an idle owner. */
+    /** One durable send, then the wait for its own batch's drain so the next send starts on an idle owner. */
     private async sendOnce(input: DurableSendRunInput, index: number): Promise<DurableSendSample> {
         const msg = toHarnessMessage(this.sessionId, `${input.runId}-${index}`);
         const start = await new Promise<DurableSendStart>((resolve) =>
@@ -93,13 +93,13 @@ class PlainPageDurableSendHarness implements DurableSendHarness {
         );
         const [admission, dispatch] = await Promise.all([start.admission, start.dispatch]);
         assertDurableAdmission(admission);
-        const ownProbe = await dispatch.ownProbe;
+        const batchDrain = await dispatch.batchDrain;
         return {
             sendToDispatchMs: dispatch.atMs - start.startedAtMs,
             phaseOffsetMs: start.phase.offsetMs,
             framesStraddled: dispatch.framesStarted - start.phase.framesStarted,
-            probeEnd: ownProbe.endedOn,
-            observedProbeCauses: ownProbe.observedCauses
+            batchEnd: batchDrain.endedOn,
+            observedProbeCauses: batchDrain.observedProbeCauses
         };
     }
 

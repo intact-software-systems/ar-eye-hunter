@@ -1,10 +1,7 @@
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-handler.ts';
 
-import {
-    DURABLE_SEND_OWN_PROBE_CAUSES,
-    type DurableSendProbeEnd
-} from './durable-send-harness-contract.ts';
+import type { DurableSendBatchEnd } from './durable-send-harness-contract.ts';
 import type { PacedFrameLoad } from './paced-frame-load.ts';
 
 const SETTLE_BOUND_MS = 2_000;
@@ -16,28 +13,28 @@ export class DurableSendDispatchTimeoutError extends Error {
     }
 }
 
-export interface DurableSendOwnProbe {
-    readonly endedOn: DurableSendProbeEnd;
-    readonly observedCauses: readonly ALWorkReadinessProbeCause[];
+export interface DurableSendBatchDrain {
+    readonly endedOn: DurableSendBatchEnd;
+    readonly observedProbeCauses: readonly ALWorkReadinessProbeCause[];
 }
 
 export interface DurableSendDispatch {
     readonly atMs: number;
     readonly framesStarted: number;
-    /** Armed at the dispatch, so it ends only on a send-owned probe that came after it. */
-    readonly ownProbe: Promise<DurableSendOwnProbe>;
+    /** Armed at the dispatch, so it ends on the drain of the batch that dispatched it. */
+    readonly batchDrain: Promise<DurableSendBatchDrain>;
 }
 
-interface OwnProbeWaiter {
-    readonly observedCauses: ALWorkReadinessProbeCause[];
-    readonly end: (endedOn: DurableSendProbeEnd) => void;
+interface BatchDrainWaiter {
+    readonly observedProbeCauses: ALWorkReadinessProbeCause[];
+    readonly end: (endedOn: DurableSendBatchEnd) => void;
 }
 
-/** The carrier's send calls and the durable lane's readiness probes, as the page observes them. */
+/** The carrier's send calls and the durable lane's drains and readiness probes, as the page observes them. */
 export class DurableSendObservation {
     private readonly frameLoad: PacedFrameLoad;
     private readonly dispatchWaiters = new Map<string, (dispatch: DurableSendDispatch) => void>();
-    private ownProbeWaiters: OwnProbeWaiter[] = [];
+    private batchDrainWaiters: BatchDrainWaiter[] = [];
 
     constructor(frameLoad: PacedFrameLoad) {
         this.frameLoad = frameLoad;
@@ -53,18 +50,19 @@ export class DurableSendObservation {
         resolveDispatch({
             atMs,
             framesStarted: this.frameLoad.getFramesStarted(),
-            ownProbe: this.startOwnProbeWait()
+            batchDrain: this.startBatchDrainWait()
         });
     }
 
     observeDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
-        if (event.kind !== 'readiness-probe' || event.lane !== 'durable') {
-            return;
+        if (event.kind === 'readiness-probe' && event.lane === 'durable') {
+            for (const waiter of this.batchDrainWaiters) {
+                waiter.observedProbeCauses.push(event.cause);
+            }
         }
-        for (const waiter of [...this.ownProbeWaiters]) {
-            waiter.observedCauses.push(event.cause);
-            if (DURABLE_SEND_OWN_PROBE_CAUSES.includes(event.cause)) {
-                waiter.end(event.cause);
+        else if (event.kind === 'effect-drain' && event.lane === 'durable') {
+            for (const waiter of [...this.batchDrainWaiters]) {
+                waiter.end('effect-drain');
             }
         }
     }
@@ -82,16 +80,16 @@ export class DurableSendObservation {
         });
     }
 
-    private startOwnProbeWait(): Promise<DurableSendOwnProbe> {
+    private startBatchDrainWait(): Promise<DurableSendBatchDrain> {
         return new Promise((resolve) => {
-            const observedCauses: ALWorkReadinessProbeCause[] = [];
-            const end = (endedOn: DurableSendProbeEnd) => {
+            const observedProbeCauses: ALWorkReadinessProbeCause[] = [];
+            const end = (endedOn: DurableSendBatchEnd) => {
                 clearTimeout(timer);
-                this.ownProbeWaiters = this.ownProbeWaiters.filter((waiter) => waiter.end !== end);
-                resolve({ endedOn, observedCauses });
+                this.batchDrainWaiters = this.batchDrainWaiters.filter((waiter) => waiter.end !== end);
+                resolve({ endedOn, observedProbeCauses });
             };
             const timer = setTimeout(() => end('timeout'), SETTLE_BOUND_MS);
-            this.ownProbeWaiters.push({ observedCauses, end });
+            this.batchDrainWaiters.push({ observedProbeCauses, end });
         });
     }
 }
