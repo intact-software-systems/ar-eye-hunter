@@ -159,7 +159,8 @@ export function createIndexedDbALInboundRuntimeStores(
 export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
     input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
-    const storageResets = new ALStorageResetListeners();
+    // Only a backend this factory opens reports its resets here; a supplied one reports to its opener.
+    const storageResets = input.outboundBackend === undefined ? new ALStorageResetListeners() : undefined;
     const backend = input.outboundBackend ??
         new IndexedDbAdmissionBackend({
             dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
@@ -169,7 +170,7 @@ export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
             observer: input.observer,
             schemaId: input.schemaId,
             onStorageReset: (event) => {
-                storageResets.notify(event);
+                storageResets?.notify(event);
                 input.onStorageReset(event);
             }
         });

@@ -297,16 +297,16 @@ function decodeStoredResourceEntryFields<Value>(value: Value): StoredResourceEnt
                     'IndexedDB queue fairness timestamp'
                 )
             }),
-        key: toStoredKey(key),
+        key: decodeStoredKey(key),
         resource: requireString(stored.resource, 'IndexedDB queue resource'),
         typeId: requireString(stored.typeId, 'IndexedDB queue type id'),
-        audit: toStoredAudit(audit),
+        audit: decodeStoredAudit(audit),
         expiryEpochMs: requireSafeInteger(
             stored.expiryEpochMs,
             'IndexedDB queue expiry timestamp (ms)'
         ),
         status: requireEntityStatus(stored.status),
-        dequeueAudit: toStoredDequeueAudit(dequeueAudit),
+        dequeueAudit: decodeStoredDequeueAudit(dequeueAudit),
         endEpochMs: requireSafeIntegerOrNull(
             stored.endEpochMs,
             'IndexedDB queue end timestamp (ms)'
@@ -318,7 +318,7 @@ function decodeStoredResourceEntryFields<Value>(value: Value): StoredResourceEnt
     return canonical;
 }
 
-function toStoredKey(key: IndexedDbQueueDataRecord): Key {
+function decodeStoredKey(key: IndexedDbQueueDataRecord): Key {
     return {
         topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
         resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
@@ -326,7 +326,7 @@ function toStoredKey(key: IndexedDbQueueDataRecord): Key {
     };
 }
 
-function toStoredAudit(audit: IndexedDbQueueDataRecord): StoredResourceEntry['audit'] {
+function decodeStoredAudit(audit: IndexedDbQueueDataRecord): StoredResourceEntry['audit'] {
     return {
         date: requireString(audit.date, 'IndexedDB queue audit date'),
         createdBy: requireString(audit.createdBy, 'IndexedDB queue creator'),
@@ -335,7 +335,7 @@ function toStoredAudit(audit: IndexedDbQueueDataRecord): StoredResourceEntry['au
     };
 }
 
-function toStoredDequeueAudit(
+function decodeStoredDequeueAudit(
     dequeueAudit: IndexedDbQueueDataRecord
 ): StoredResourceEntry['dequeueAudit'] {
     return {

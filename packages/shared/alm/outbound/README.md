@@ -181,7 +181,7 @@ another tab's claim, a reload, a replayed pending admission, a retried claim and
 deadline read storage. Its safety rests on its key and on the reference check, not on hearing of
 resets: an entry is found only for a work row committed with the same effect id, and a held row
 that does not match that work row's reference fails closed as corruption and is never sent. Dispose
-clears it. A storage reset clears it only when the lane hears of it: the IndexedDB pair's own open
+clears it, and a commit that resolves after dispose records nothing. A storage reset clears it only when the lane hears of it: the IndexedDB pair's own open
 tells the lane through `ALStorageResetListeners`, while the browser session cleanup's and expiry
 eviction's reset events (and another tab's reset) do not reach it; the memory pair's lane has none.
 After `attempt-started` the claim reads its guards, supersedence and then (unless superseded)

@@ -26,8 +26,12 @@ export class ALOutboundDecisionReadSession implements ALAdmissionReadSession {
 
     readWork(key: Key): Promise<ResourceEntry | undefined> {
         const keyString = toKeyAsString(key);
-        const held = this.#workReads.get(keyString) ?? this.#session.readWork(key);
-        this.#workReads.set(keyString, held);
-        return held;
+        const held = this.#workReads.get(keyString);
+        if (held !== undefined) {
+            return held;
+        }
+        const read = this.#session.readWork(key);
+        this.#workReads.set(keyString, read);
+        return read;
     }
 }

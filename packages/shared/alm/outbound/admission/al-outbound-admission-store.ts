@@ -72,6 +72,8 @@ import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-out
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
 import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
+export type { ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
+
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
     readonly canonicalScope: string;

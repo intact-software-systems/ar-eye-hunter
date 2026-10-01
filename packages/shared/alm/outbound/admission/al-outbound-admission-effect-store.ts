@@ -201,7 +201,7 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
             return undefined;
         }
         if (handedOffCanonical !== undefined && reference.expiresAtMs > this.nowMs()) {
-            return this.toCandidateMessage(reference, handedOffCanonical);
+            return this.decodeCandidateMessage(reference, handedOffCanonical);
         }
         return await this.backend.readWithin((session) => this.readReferencedMessage(session, reference));
     }
@@ -212,7 +212,7 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         candidate?: ResourceEntry
     ): Promise<ALMessage> {
         if (candidate !== undefined) {
-            return this.toCandidateMessage(reference, candidate);
+            return this.decodeCandidateMessage(reference, candidate);
         }
         this.assertOwnCanonicalScope(reference);
         const canonical = await session.readWork(reference.key);
@@ -221,7 +221,7 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
     }
 
     /** A canonical row already in hand, checked against the reference exactly as a stored pair is. */
-    private toCandidateMessage(reference: ALOutboundMessageReference, candidate: ResourceEntry): ALMessage {
+    private decodeCandidateMessage(reference: ALOutboundMessageReference, candidate: ResourceEntry): ALMessage {
         this.assertOwnCanonicalScope(reference);
         const creationExpiry = captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource));
         return decodeALOutboundCanonicalMessage(

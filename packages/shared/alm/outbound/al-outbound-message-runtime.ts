@@ -172,7 +172,10 @@ export interface ALOutboundDispatchPlan<TPrepared> {
 export interface ALOutboundRuntimeStores<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly workQueue: QueueBoxResourceEntryRepository;
-    /** Told when the pair's database is deleted and recreated; absent for a pair no reset reaches. */
+    /**
+     * Told when the pair's database is deleted and recreated; absent when no reset of the pair is
+     * relayed here (a memory or PostgreSQL pair, or a backend its caller opened).
+     */
     readonly storageResets?: ALStorageResetListeners;
 }
 

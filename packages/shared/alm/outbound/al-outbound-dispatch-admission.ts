@@ -262,7 +262,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
         const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
         for (const { dispatch, phases } of members) {
-            const decision = await this.readDispatchDecision(dispatch, phases);
+            const decision = await this.readMemberDispatchDecision(dispatch, phases);
             if (decision.kind === 'settled') {
                 return undefined;
             }
@@ -311,13 +311,13 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return await phases.withReadPhase(() =>
             this.admissionStore.readOutgoingDecision(
                 this.toOutgoingReadInput(dispatch),
-                (read) => this.decideDispatch(dispatch, this.toDispatchInput(dispatch, read))
+                (read) => this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()))
             )
         );
     }
 
     /** One group member's decision; the group reads the observation of every bundle in its own commit. */
-    private async readDispatchDecision(
+    private async readMemberDispatchDecision(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchDecision<TPrepared>> {
@@ -326,12 +326,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         return await phases.withReadPhase(async () => {
             const read = await this.admissionStore.readOutgoingMessage(this.toOutgoingReadInput(dispatch));
-            return await this.decideDispatch(dispatch, this.toDispatchInput(dispatch, read));
+            return await this.readDispatchDecision(dispatch, this.toDispatchInput(dispatch, read, this.readNowMs()));
         });
     }
 
-    /** Everything one dispatch decides on its read: its retained pending admission, compute and validate. */
-    private async decideDispatch(
+    /** Everything one dispatch decides on its read: its retained pending admission (read), compute and validate. */
+    private async readDispatchDecision(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         input: ComputeALOutboundDispatchInput<TPrepared>
     ): Promise<ALOutboundDispatchDecision<TPrepared>> {
@@ -518,7 +518,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
 
     private toDispatchInput(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
-        read: ALOutboundMessageReadDto<TPrepared>
+        read: ALOutboundMessageReadDto<TPrepared>,
+        dispatchAtMs: number
     ): ComputeALOutboundDispatchInput<TPrepared> {
         const entry = read.canonicalEntry ?? this.dependencies.toOutboxEntry(read.msg);
         return {
@@ -528,7 +529,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 key: read.canonicalEntry?.key ?? read.sentSnapshot?.outboxKey ??
                     toALOutboundCanonicalKey(this.admissionStore.canonicalScope, read.msg)
             },
-            dispatchAtMs: this.readNowMs(),
+            dispatchAtMs,
             intent: dispatch.intent,
             phase: dispatch.phase,
             options: dispatch.options

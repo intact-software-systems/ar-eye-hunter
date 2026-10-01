@@ -77,6 +77,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
+    private disposed = false;
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
@@ -110,7 +111,10 @@ export class ALOutboundStoreLane<TPrepared> {
             sendSignal: input.sendControls.signal,
             settlements
         });
-        this.removeStorageResetListener = stores.storageResets?.add(() => input.canonicalHandoff?.clear());
+        const { canonicalHandoff } = input;
+        this.removeStorageResetListener = canonicalHandoff === undefined
+            ? undefined
+            : stores.storageResets?.add(() => canonicalHandoff.clear());
     }
 
     async ready(): Promise<void> {
@@ -119,6 +123,7 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     dispose(): void {
+        this.disposed = true;
         this.work.dispose();
         this.dispatchAdmission.dispose();
         this.removeStorageResetListener?.();
@@ -161,7 +166,8 @@ export class ALOutboundStoreLane<TPrepared> {
 
     /** Before the wake: the batch it starts claims what this commit wrote and finds its canonical row here. */
     private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
-        if (result.committed && result.computed.bundle !== undefined) {
+        // A commit that resolves after dispose must not refill what dispose cleared.
+        if (!this.disposed && result.committed && result.computed.bundle !== undefined) {
             this.input.canonicalHandoff?.setCommitted(result.computed.bundle);
         }
     }

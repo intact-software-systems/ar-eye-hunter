@@ -29,6 +29,7 @@ import {
     createCountingIndexedDbOperationObserver,
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
@@ -70,6 +71,22 @@ function openHandoffTestPair(
         storageResets
     });
     return { stores, counting };
+}
+
+/** The canonical key of every bundle a lane's hand-off is given, in order; the hand-off still holds each. */
+function recordHandoffCommits(): Key[] {
+    const committed: Key[] = [];
+    const setCommitted = ALOutboundCanonicalHandoff.prototype.setCommitted;
+    vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted').mockImplementation(function (
+        this: ALOutboundCanonicalHandoff,
+        bundle
+    ) {
+        if (bundle.canonicalEntry !== undefined) {
+            committed.push(bundle.canonicalEntry.key);
+        }
+        setCommitted.call(this, bundle);
+    });
+    return committed;
 }
 
 describe('the canonical hand-off bound', () => {
@@ -354,21 +371,30 @@ describe('the committed canonical message handed to dispatch', () => {
         );
         vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'takeCanonical')
             .mockReturnValue(other.canonicalEntry);
-        const readWorkSnapshot = vi.spyOn(stores.admissionStore, 'readWorkSnapshot');
+        const readWorkSnapshot = stores.admissionStore.readWorkSnapshot.bind(stores.admissionStore);
+        const claimedReads: string[] = [];
+        vi.spyOn(stores.admissionStore, 'readWorkSnapshot').mockImplementation(async (entry, handedOff) => {
+            try {
+                const snapshot = await readWorkSnapshot(entry, handedOff);
+                claimedReads.push('decoded');
+                return snapshot;
+            }
+            catch (error) {
+                claimedReads.push(error instanceof ALAdmissionCorruptionError ? 'corruption' : 'other');
+                throw error;
+            }
+        });
 
         await claims.release();
         await runOutboundWorkTask(runtime);
 
         expect(sent).toEqual([]);
-        expect(readWorkSnapshot).toHaveBeenCalledTimes(1);
-        await expect(readWorkSnapshot.mock.results[0]!.value).rejects.toBeInstanceOf(
-            ALAdmissionCorruptionError
-        );
+        expect(claimedReads).toEqual(['corruption']);
     });
 
     it('holds the canonical row of every member a group commit wrote', async () => {
         const { stores, counting } = openHandoffTestPair(`handoff-group-${crypto.randomUUID()}`);
-        const setCommitted = vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted');
+        const handedOff = recordHandoffCommits();
         const sent: ALMessage[] = [];
         const runtime = createRecordingOutboundTestRuntime(stores, sent);
         const claims = holdOutboundClaims(stores);
@@ -381,7 +407,7 @@ describe('the committed canonical message handed to dispatch', () => {
             { kind: 'admitted', durable: true }
         ]);
         expect(
-            setCommitted.mock.calls.map(([bundle]) => bundle.canonicalEntry?.key),
+            handedOff,
             'one hand-off per committed member'
         ).toEqual(members.map((member) => toALOutboundCanonicalKey(HANDOFF_NAMESPACE, member)));
         counting.reset();
@@ -396,7 +422,7 @@ describe('the committed canonical message handed to dispatch', () => {
     });
 
     it('is not kept by the volatile lane', async () => {
-        const setCommitted = vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted');
+        const handedOff = recordHandoffCommits();
         const sent: ALMessage[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             volatileStores: createVolatileOutboundTestStores(),
@@ -414,6 +440,53 @@ describe('the committed canonical message handed to dispatch', () => {
         });
         await vi.waitFor(() => expect(sent).toEqual([message]));
 
-        expect(setCommitted, 'the memory pair\'s lane has no hand-off to record into').not.toHaveBeenCalled();
+        expect(handedOff, 'the memory pair\'s lane has no hand-off to record into').toEqual([]);
+    });
+
+    it('relays no reset for a backend its caller opened', async () => {
+        const stores = createDefaultIndexedDbALOutboundRuntimeStores({
+            dbName: `handoff-supplied-${crypto.randomUUID()}`,
+            decodePrepared: decodeOutboundTestPayload,
+            outboundBackend: createDefaultOutboundTestStores().backend
+        });
+
+        expect(stores.storageResets, 'no reset of a supplied backend reaches these listeners')
+            .toBeUndefined();
+    });
+
+    it('registers no reset listener for a lane that has no hand-off', async () => {
+        const storageResets = new ALStorageResetListeners();
+        const added: string[] = [];
+        const add = storageResets.add.bind(storageResets);
+        vi.spyOn(storageResets, 'add').mockImplementation((listener) => {
+            added.push('listener');
+            return add(listener);
+        });
+        createDefaultOutboundTestRuntime({
+            volatileStores: { ...createVolatileOutboundTestStores(), storageResets },
+            planOutgoingMessage: OUTBOUND_TEST_SEND_PLANNER,
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+        });
+
+        expect(added).toEqual([]);
+    });
+
+    it('records nothing from a commit that resolves after its runtime was disposed', async () => {
+        const { stores } = openHandoffTestPair(`handoff-late-commit-${crypto.randomUUID()}`);
+        const handedOff = recordHandoffCommits();
+        const runtime = createRecordingOutboundTestRuntime(stores, []);
+        const claims = holdOutboundClaims(stores);
+        const commit = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+        // The commit lands, then the runtime is disposed before its result reaches the lane.
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle, observation) => {
+            const committed = await commit(bundle, observation);
+            runtime.dispose();
+            return committed;
+        });
+
+        await runtime.enqueueIfAbsent(createOutboundMessage('handoff-late-commit'));
+
+        expect(handedOff, 'a disposed lane holds nothing a claim could reach').toEqual([]);
+        await claims.release();
     });
 });
