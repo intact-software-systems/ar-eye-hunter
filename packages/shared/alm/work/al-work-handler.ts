@@ -202,8 +202,8 @@ export class ALWorkHandler {
      * After a commit: wakes the engine and runs one batch if idle; never blocks on delivery of
      * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
      * made outside `runBatch`. `written` says when the last row the commit wrote becomes claimable
-     * and how many it made claimable at once: only a batch that starts at or after then, and claims
-     * at least those, can have claimed every one of them.
+     * and how many rows it wrote: only a batch that starts at or after then, and claims at least that
+     * many, can have claimed every one of them.
      */
     committed(written: ALWorkCommittedRows): void {
         this.readiness.suspend(written);

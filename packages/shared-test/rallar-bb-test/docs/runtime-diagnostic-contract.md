@@ -195,7 +195,7 @@ every session the page opens. The event's `data` is the event itself:
   The first of these since the last probe names the next one. A commit sets its
   owner's answer aside, and the batch the commit runs restores it when that
   batch claimed fewer than a page, rejected nothing, completed every claim and
-  claimed at least the rows the commit made due at once; no external wake,
+  claimed at least as many rows as the commit wrote; no external wake,
   retained release or further commit reached the owner since the commit; the
   answer was neither due nor aged out when the batch started; and every row
   the commit wrote was due by then. A plain send therefore reports no probe

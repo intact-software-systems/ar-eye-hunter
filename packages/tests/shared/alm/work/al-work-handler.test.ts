@@ -53,7 +53,7 @@ describe('ALWorkHandler', () => {
         expect(released).toEqual(['w-1:completed', 'w-2:retry']);
 
         const before = Date.now();
-        handler.committed({ dueByMs: 1_000, dueNowCount: 0 });
+        handler.committed({ dueByMs: 1_000, writtenCount: 0 });
         expect(Date.now() - before).toBeLessThan(5);
         handler.dispose();
     });
@@ -451,12 +451,12 @@ describe('ALWorkHandler', () => {
         // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
         // for the claim() call of this batch to run and capture it before the second entry exists.
         pending.push(toFakeALWorkClaim('first'));
-        handler.committed({ dueByMs: 1_000, dueNowCount: 1 });
+        handler.committed({ dueByMs: 1_000, writtenCount: 1 });
         await firstClaimEntered;
 
         // A second commit lands, and its work becomes claimable, while the first entry is still in flight.
         pending.push(toFakeALWorkClaim('second'));
-        handler.committed({ dueByMs: 1_000, dueNowCount: 1 });
+        handler.committed({ dueByMs: 1_000, writtenCount: 1 });
 
         releaseFirst?.();
         await expect.poll(() => released).toEqual(['first:completed', 'second:completed']);
@@ -776,7 +776,7 @@ describe('ALWorkHandler', () => {
         // A commit of this owner's own sets the answer aside; the batch it runs claims and completes the
         // row it wrote, which leaves storage as the answer saw it.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed({ dueByMs: 10_000, dueNowCount: 1 });
+        handler.committed({ dueByMs: 10_000, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(released).toEqual(['committed-row:completed']);
         for (let round = 0; round < 25; round += 1) {
@@ -826,7 +826,7 @@ describe('ALWorkHandler', () => {
 
         // A commit whose batch completes everything it claimed costs no probe at all.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed({ dueByMs: nowMs, dueNowCount: 1 });
+        handler.committed({ dueByMs: nowMs, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         await engine.executeOnce();
 
@@ -841,7 +841,7 @@ describe('ALWorkHandler', () => {
         // A commit whose batch leaves a row behind runs that batch, and the batch's own invalidation
         // must not take the commit's credit.
         pending.push(toFakeALWorkClaim('retried-row'));
-        handler.committed({ dueByMs: nowMs, dueNowCount: 1 });
+        handler.committed({ dueByMs: nowMs, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         await engine.executeOnce();
 
@@ -1130,7 +1130,7 @@ describe('ALWorkHandler', () => {
         try {
             await handler.ready();
             shouldCorrupt = true;
-            handler.committed({ dueByMs: 1_000, dueNowCount: 0 });
+            handler.committed({ dueByMs: 1_000, writtenCount: 0 });
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             expect(unhandled).toEqual([]);
@@ -1250,7 +1250,7 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
         readinessMemoryMs: input.readinessMemoryMs,
         readNextReadyAtMs: async () => storage.readyAtMs,
         selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
-        runClaim: (claim) => input.runClaim(claim, { engine, commit: () => handler.committed({ dueByMs: clock.atMs, dueNowCount: 0 }) }),
+        runClaim: (claim) => input.runClaim(claim, { engine, commit: () => handler.committed({ dueByMs: clock.atMs, writtenCount: 0 }) }),
         diagnostics: (event) => collectProbe(probes, event)
     });
     return { handler, engine, clock, storage, pending, exhausted, released, probes, wakeAtCalls };
@@ -1258,7 +1258,7 @@ function createRestoreFixture(input: RestoreFixtureInput): RestoreFixture {
 
 /** One row this owner wrote, due now, and announced, and the batch its commit runs, to the end. */
 async function commitRow(fixture: RestoreFixture, effectId: string): Promise<void> {
-    await commitRowWriting(fixture, effectId, { dueByMs: fixture.clock.atMs, dueNowCount: 1 });
+    await commitRowWriting(fixture, effectId, { dueByMs: fixture.clock.atMs, writtenCount: 1 });
 }
 
 /** One row the queue hands the batch, from a commit that says it wrote `written`. */
@@ -1320,7 +1320,7 @@ describe('ALWorkHandler readiness restore', () => {
     });
 
     it.each([
-        { name: 'a row due only after its batch started', written: { dueByMs: 10_001, dueNowCount: 1 } },
+        { name: 'a row due only after its batch started', written: { dueByMs: 10_001, writtenCount: 1 } },
         { name: 'work it cannot describe', written: AL_WORK_UNDESCRIBED_COMMIT }
     ])('probes after a clean batch whose commit wrote $name', async ({ written }) => {
         const fixture = createRestoreFixture({
@@ -1342,7 +1342,7 @@ describe('ALWorkHandler readiness restore', () => {
         fixture.handler.dispose();
     });
 
-    it('probes after a clean batch that claimed none of the rows its commit made due', async () => {
+    it('probes after a clean batch that claimed none of the rows its commit wrote', async () => {
         const fixture = createRestoreFixture({
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
@@ -1354,7 +1354,7 @@ describe('ALWorkHandler readiness restore', () => {
 
         // The queue claims by its own clock, which lags this owner's: the commit's batch claims
         // nothing although the commit wrote a row due now, and the row appears to the next read.
-        fixture.handler.committed({ dueByMs: fixture.clock.atMs, dueNowCount: 1 });
+        fixture.handler.committed({ dueByMs: fixture.clock.atMs, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(fixture.released).toEqual([]);
         fixture.pending.push(toFakeALWorkClaim('lagging-row'));
@@ -1370,7 +1370,7 @@ describe('ALWorkHandler readiness restore', () => {
         fixture.handler.dispose();
     });
 
-    it('restores after a clean batch that claimed every row its commit made due at once, though the commit wrote more', async () => {
+    it('probes after a clean batch that claimed fewer rows than its commit wrote, though all were due', async () => {
         const fixture = createRestoreFixture({
             pageSize: 16,
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
@@ -1381,14 +1381,35 @@ describe('ALWorkHandler readiness restore', () => {
         await fixture.engine.executeOnce();
 
         // The commit dispatched at 10 000 and wrote one row due then and one due at 10 500; it hands
-        // them over at 11 000, and the batch claims the one it made due at once.
+        // them over at 11 000, and the queue returns only the first to the batch.
         fixture.clock.atMs = 11_000;
-        await commitRowWriting(fixture, 'due-row', { dueByMs: 10_500, dueNowCount: 1 });
+        await commitRowWriting(fixture, 'due-row', { dueByMs: 10_500, writtenCount: 2 });
+        await fixture.engine.executeOnce();
+
+        expect(fixture.released).toEqual(['due-row:completed']);
+        expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory', 'own-commit']);
+        fixture.handler.dispose();
+    });
+
+    it('restores after a clean batch that claimed and completed every row its commit wrote', async () => {
+        const fixture = createRestoreFixture({
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            probedReadyAtMs: undefined,
+            runClaim: async () => ({ status: 'completed' })
+        });
+        await fixture.handler.ready();
+        await fixture.engine.executeOnce();
+
+        // Both rows the commit wrote were due by the time it handed them over, and the batch takes both.
+        fixture.clock.atMs = 11_000;
+        fixture.pending.push(toFakeALWorkClaim('first-row'));
+        await commitRowWriting(fixture, 'second-row', { dueByMs: 10_500, writtenCount: 2 });
         for (let round = 0; round < 25; round += 1) {
             await fixture.engine.executeOnce();
         }
 
-        expect(fixture.released).toEqual(['due-row:completed']);
+        expect(fixture.released).toEqual(['first-row:completed', 'second-row:completed']);
         expect(fixture.probes.map((probe) => probe.cause)).toEqual(['no-memory']);
         fixture.handler.dispose();
     });
@@ -1497,7 +1518,7 @@ describe('ALWorkHandler readiness restore', () => {
 
         nowMs = 11_000;
         await queue.enqueue(newWorkEntry('AL_TEST', 'own-row'));
-        handler.committed({ dueByMs: nowMs, dueNowCount: 1 });
+        handler.committed({ dueByMs: nowMs, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(claimed).toEqual(['own-row']);
 
@@ -1555,7 +1576,7 @@ describe('ALWorkHandler readiness invalidation label', () => {
         // The commit lands while the external wake's probe is reading: that answer is discarded, and
         // the commit, not the wake the discarded probe already reported, owes the next one.
         pending.push(toFakeALWorkClaim('mid-probe-row'));
-        handler.committed({ dueByMs: 10_000, dueNowCount: 1 });
+        handler.committed({ dueByMs: 10_000, writtenCount: 1 });
         await new Promise((resolve) => setTimeout(resolve, 0));
         releaseProbe?.();
         await probing;

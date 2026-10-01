@@ -143,7 +143,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
-            this.work.committed(computeALOutboundCommittedRows([result], this.readNowMs()));
+            this.work.committed(computeALOutboundCommittedRows([result]));
         }
 
         return this.toStoreComputed(result.computed);
@@ -160,7 +160,7 @@ export class ALOutboundStoreLane<TPrepared> {
         });
         results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
-            this.work.committed(computeALOutboundCommittedRows(results, this.readNowMs()));
+            this.work.committed(computeALOutboundCommittedRows(results));
         }
         return results.map((result) => this.toStoreComputed(result.computed));
     }
@@ -512,17 +512,14 @@ function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TP
 
 /**
  * The work rows these commits wrote, as their batch must account for them, or an undescribed commit
- * when one of them wrote work its result does not describe. A row counts as due at once when it is
- * due by `handedOverAtMs`, read after every commit: that holds each row due at its own dispatch. A
- * receipted send's acknowledgement timeout is due after its send, so the batch that sends it cannot
- * have claimed it.
+ * when one of them wrote work its result does not describe. A receipted send's acknowledgement
+ * timeout is due after its send, so the batch that sends it cannot have claimed it.
  */
 function computeALOutboundCommittedRows<TPrepared>(
-    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[],
-    handedOverAtMs: number
+    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
 ): ALWorkCommittedRows {
     let dueByMs = 0;
-    let dueNowCount = 0;
+    let writtenCount = 0;
     for (const result of results.filter(hasWrittenWork)) {
         const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
         if (effects === undefined) {
@@ -533,10 +530,10 @@ function computeALOutboundCommittedRows<TPrepared>(
                 return AL_WORK_UNDESCRIBED_COMMIT;
             }
             dueByMs = Math.max(dueByMs, retryAtMs);
-            dueNowCount += retryAtMs <= handedOverAtMs ? 1 : 0;
+            writtenCount += 1;
         }
     }
-    return { dueByMs, dueNowCount };
+    return { dueByMs, writtenCount };
 }
 
 /** The effect kinds whose queue row expires exactly when the message it carries does. */
