@@ -159,7 +159,7 @@ export function isStoredQueueEntryExpired(
     stored: StoredResourceEntry,
     now: Temporal.Instant
 ): boolean {
-    return Temporal.Instant.compare(now, Temporal.Instant.from(stored.audit.expiryTs)) >= 0;
+    return isAtOrAfterStoredInstant(now, stored.expiryEpochMs, stored.audit.expiryTs);
 }
 
 interface StoredQueueEntryReservationInput {
@@ -182,7 +182,7 @@ export function isStoredQueueEntryReservable(input: StoredQueueEntryReservationI
         return false;
     }
     return !stored.dequeueAudit.nextTs ||
-        Temporal.Instant.compare(now, Temporal.Instant.from(stored.dequeueAudit.nextTs)) >= 0;
+        isAtOrAfterStoredInstant(now, stored.fairnessDueEpochMs, stored.dequeueAudit.nextTs);
 }
 
 interface StoredQueueEntryTimeoutInput {
@@ -204,6 +204,19 @@ export function isStoredQueueEntryTimedOut(input: StoredQueueEntryTimeoutInput):
     }
     const startTs = Temporal.Instant.from(stored.dequeueAudit.startTs);
     return Temporal.Instant.compare(now, startTs.add(duration)) >= 0;
+}
+
+/** An epoch-ms mirror is its instant floored to the millisecond, so only a tie needs the instant itself. */
+function isAtOrAfterStoredInstant(
+    now: Temporal.Instant,
+    epochMs: number | undefined,
+    instant: string
+): boolean {
+    const nowMs = Number(now.epochMilliseconds);
+    if (epochMs === undefined || nowMs === epochMs) {
+        return Temporal.Instant.compare(now, Temporal.Instant.from(instant)) >= 0;
+    }
+    return nowMs > epochMs;
 }
 
 function toIndexedDbQueueExpectedState(

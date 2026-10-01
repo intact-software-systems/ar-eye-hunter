@@ -366,7 +366,7 @@ it('observes a retained pending admission without storage reads and wakes on the
     const retained = await Promise.all((await backend.workQueue.getAllKeys()).map(async (key) => {
         const entry = await backend.workQueue.getItem(key);
         return entry?.typeId === toALOutboundWorkType('pending-observation')
-            ? (await admissionStore.readWorkSnapshot(entry)).payload
+            ? (await admissionStore.readWorkSnapshot(entry, undefined)).payload
             : undefined;
     }));
     expect(retained).toContainEqual(

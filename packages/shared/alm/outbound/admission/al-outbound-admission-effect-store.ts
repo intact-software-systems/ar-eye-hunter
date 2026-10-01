@@ -98,11 +98,14 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         }));
     }
 
-    /** Decodes one claimed queue row, reading the canonical message the payload references. */
-    async readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
+    /** Decodes one claimed queue row with the canonical message its payload references. */
+    async readWorkSnapshot(
+        entry: ResourceEntry,
+        handedOffCanonical: ResourceEntry | undefined
+    ): Promise<ALOutboundEffectSnapshot<TPrepared>> {
         return decodeALOutboundWorkEntry(entry, this.namespace, {
             decodePrepared: this.decodePrepared,
-            message: await this.backend.readWithin((session) => this.readWorkCanonicalMessage(session, entry))
+            message: await this.readWorkCanonicalMessage(entry, handedOffCanonical)
         });
     }
 
@@ -185,12 +188,22 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         }
     }
 
+    /**
+     * A canonical row the lane's own commit handed over answers only while it is live: past its
+     * deadline a stored row reads as absent, so the read decides then, exactly as without a hand-off.
+     */
     private async readWorkCanonicalMessage(
-        session: ALAdmissionReadSession,
-        entry: ResourceEntry
+        entry: ResourceEntry,
+        handedOffCanonical: ResourceEntry | undefined
     ): Promise<ALMessage | undefined> {
         const reference = readALOutboundWorkMessageReference(entry);
-        return reference === undefined ? undefined : await this.readReferencedMessage(session, reference);
+        if (reference === undefined) {
+            return undefined;
+        }
+        if (handedOffCanonical !== undefined && reference.expiresAtMs > this.nowMs()) {
+            return this.decodeCandidateMessage(reference, handedOffCanonical);
+        }
+        return await this.backend.readWithin((session) => this.readReferencedMessage(session, reference));
     }
 
     private async readReferencedMessage(
@@ -198,21 +211,33 @@ export class ALOutboundAdmissionEffectStore<TPrepared> {
         reference: ALOutboundMessageReference,
         candidate?: ResourceEntry
     ): Promise<ALMessage> {
+        if (candidate !== undefined) {
+            return this.decodeCandidateMessage(reference, candidate);
+        }
+        this.assertOwnCanonicalScope(reference);
+        const canonical = await session.readWork(reference.key);
+        const identity = await session.readWork(toALOutboundIdentityKey(reference.key));
+        return decodeALOutboundCanonicalMessage(reference, canonical, identity);
+    }
+
+    /** A canonical row already in hand, checked against the reference exactly as a stored pair is. */
+    private decodeCandidateMessage(reference: ALOutboundMessageReference, candidate: ResourceEntry): ALMessage {
+        this.assertOwnCanonicalScope(reference);
+        const creationExpiry = captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource));
+        return decodeALOutboundCanonicalMessage(
+            reference,
+            candidate,
+            toALOutboundIdentityEntry(reference, candidate, creationExpiry)
+        );
+    }
+
+    private assertOwnCanonicalScope(reference: ALOutboundMessageReference): void {
         if (reference.scope !== this.canonicalScope) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(reference.key),
                 new TypeError('Outbound reference belongs to another local scope')
             );
         }
-        const canonical = candidate ?? await session.readWork(reference.key);
-        const identity = candidate
-            ? toALOutboundIdentityEntry(
-                reference,
-                candidate,
-                captureALOutboundCreationExpiry(decodePersistedALMessage(candidate.resource))
-            )
-            : await session.readWork(toALOutboundIdentityKey(reference.key));
-        return decodeALOutboundCanonicalMessage(reference, canonical, identity);
     }
 }
 

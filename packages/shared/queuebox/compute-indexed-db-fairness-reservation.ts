@@ -1,4 +1,4 @@
-import { Temporal } from '@js-temporal/polyfill';
+import type { Temporal } from '@js-temporal/polyfill';
 import {
     decodeStoredResourceEntry,
     type StoredResourceEntry
@@ -48,8 +48,9 @@ export function computeIndexedDbFairnessReservation(
             !isStoredQueueEntryExpired(stored, input.now) &&
             stored.dequeueAudit.attempts < input.maxAttempts
         ) {
-            const selectedDueTs = Temporal.Instant.from(stored.dequeueAudit.nextTs!);
-            const entry = computeReservedQueueEntry(decodeStoredResourceEntry(stored), input.now);
+            const decoded = decodeStoredResourceEntry(stored);
+            const selectedDueTs = decoded.dequeueAudit.nextTs!;
+            const entry = computeReservedQueueEntry(decoded, input.now);
             result.set(entry.key, { entry, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, entry));
         }

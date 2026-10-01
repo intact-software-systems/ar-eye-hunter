@@ -717,11 +717,11 @@ it.each(BACKEND_KINDS)(
             }
         });
         const message = createOutboundMessage('msg-cancelled-pre-transport');
-        // The abort lands mid-await, inside `writeAttemptedSend`'s own reads -- before its carrier runs.
-        const readReceiptState = stores.admissionStore.readReceiptState.bind(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementationOnce(async (receipt) => {
-            runtime.cancel(receipt.msgId);
-            return await readReceiptState(receipt);
+        // The abort lands mid-await, inside `writeAttemptedSend`'s own read -- before its carrier runs.
+        const readSendGuards = stores.admissionStore.readSendGuards.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readSendGuards').mockImplementationOnce(async (sent) => {
+            runtime.cancel(sent.id.msgId);
+            return await readSendGuards(sent);
         });
 
         await enqueueOutboundOrThrow(runtime, message);

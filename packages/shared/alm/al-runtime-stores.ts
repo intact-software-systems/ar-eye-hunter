@@ -24,6 +24,7 @@ import type {
 import { IndexedDbAdmissionBackend } from './indexed-db-admission-backend.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
+    ALStorageResetListeners,
     createPassThroughALStorageResetSink,
     type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
@@ -158,6 +159,8 @@ export function createIndexedDbALInboundRuntimeStores(
 export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
     input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
+    // Only a backend this factory opens reports its resets here; a supplied one reports to its opener.
+    const storageResets = input.outboundBackend === undefined ? new ALStorageResetListeners() : undefined;
     const backend = input.outboundBackend ??
         new IndexedDbAdmissionBackend({
             dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
@@ -166,9 +169,13 @@ export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
             newWriteToken: crypto.randomUUID.bind(crypto),
             observer: input.observer,
             schemaId: input.schemaId,
-            onStorageReset: input.onStorageReset
+            onStorageReset: (event) => {
+                storageResets?.notify(event);
+                input.onStorageReset(event);
+            }
         });
     return {
+        storageResets,
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,

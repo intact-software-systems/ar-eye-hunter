@@ -762,7 +762,7 @@ async function readRetainedWork(
         cursor: null
     });
     return await Promise.all(
-        page.entries.map(async (entry) => (await admissionStore.readWorkSnapshot(entry)).payload)
+        page.entries.map(async (entry) => (await admissionStore.readWorkSnapshot(entry, undefined)).payload)
     );
 }
 

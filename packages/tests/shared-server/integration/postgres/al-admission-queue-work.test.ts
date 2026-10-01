@@ -556,7 +556,7 @@ function createOutboundWork(stores: ALOutboundRuntimeStores<ALOutboundTransportM
             const claims = await port.claim({ maxCount, observedEntries: undefined });
             return await Promise.all(claims.map(async (claim) => ({
                 claim,
-                work: await stores.admissionStore.readWorkSnapshot(claim.entry)
+                work: await stores.admissionStore.readWorkSnapshot(claim.entry, undefined)
             })));
         }
     };

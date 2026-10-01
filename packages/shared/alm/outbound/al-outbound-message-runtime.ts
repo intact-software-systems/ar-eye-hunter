@@ -18,6 +18,7 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-handler.ts';
 import type {
@@ -31,6 +32,10 @@ import { controlTargetMsgId, type ALOutboundControlSource } from './compute-al-o
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
 import { admitALOutboundVolatileBudget } from './lane/admit-al-outbound-volatile-budget.ts';
+import {
+    AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT,
+    ALOutboundCanonicalHandoff
+} from './lane/al-outbound-canonical-handoff.ts';
 import { ALOutboundSendControls, type ALOutboundCancelOutcome } from './lane/al-outbound-send-controls.ts';
 import { ALOutboundStoreLane } from './lane/al-outbound-store-lane.ts';
 
@@ -167,6 +172,11 @@ export interface ALOutboundDispatchPlan<TPrepared> {
 export interface ALOutboundRuntimeStores<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
     readonly workQueue: QueueBoxResourceEntryRepository;
+    /**
+     * Told when the pair's database is deleted and recreated; absent when no reset of the pair is
+     * relayed here (a memory or PostgreSQL pair, or a backend its caller opened).
+     */
+    readonly storageResets?: ALStorageResetListeners;
 }
 
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
@@ -322,6 +332,8 @@ export namespace ALOutboundMessageRuntime {
         /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
         readonly workQueue: QueueBoxResourceEntryRepository;
+        /** The durable pair's resets; `undefined` for a pair no reset reaches (memory, PostgreSQL). */
+        readonly storageResets: ALStorageResetListeners | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
@@ -414,6 +426,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
             dequeueTypes: dependencies.dequeue.types,
             browserLocks: dependencies.browserLocks,
             evictExpired: undefined,
+            canonicalHandoff: new ALOutboundCanonicalHandoff({
+                namespace: dependencies.admissionStore.namespace,
+                limit: AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT
+            }),
             runtime: dependencies,
             sendControls: this.sendControls,
             settlements
@@ -425,6 +441,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             dequeueTypes: new Set<string>(),
             browserLocks: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
+            canonicalHandoff: undefined,
             runtime: dependencies,
             sendControls: this.sendControls,
             settlements

@@ -9,13 +9,10 @@ import {
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -52,10 +49,11 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import {
     createDefaultOutboundTestRuntime,
+    createIndexedDbOutboundTestStores,
     createOutboundMessage,
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 import { toTestALWorkReadySelection } from './work/al-work-test-entries.ts';
 
 const NOW_MS = 1_700_000_000_000;
@@ -214,10 +212,10 @@ describe('outbound work owner IndexedDB scan volume', () => {
 });
 
 describe('outbound default send IndexedDB volume', () => {
-    it('sends one durable message in 10 al-admission and 15 al-work operations', async () => {
+    it('sends one durable message in 10 al-admission and 11 al-work operations', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         const runtime = createDefaultOutboundTestRuntime({
-            stores: createIndexedDbOutboundCountStores(observer, 'outbound-default-send'),
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -229,7 +227,12 @@ describe('outbound default send IndexedDB volume', () => {
         const counts = observer.getCounts();
         // These figures protect the default send's admission and work I/O budget.
         expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
-        expect(counts.byOwner['al-work'], 'one default send spends 15 al-work operations today').toBe(15);
+        expect(
+            counts.byOwner['al-work'],
+            'one default send spends 11 al-work operations: its decision read holds the effect row ' +
+                'and canonical pair its commit fences, so the commit re-reads neither, and its claim ' +
+                'takes the committed canonical pair in memory instead of two work reads'
+        ).toBe(11);
         runtime.dispose();
     });
 });
@@ -240,7 +243,7 @@ describe('outbound volatile send IndexedDB volume', () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: createIndexedDbOutboundCountStores(observer, 'outbound-volatile-send'),
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-volatile-send' }),
             volatileStores: createVolatileALOutboundRuntimeStores({
                 decodePrepared: decodeOutboundTestPayload
             }, budget),
@@ -286,7 +289,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: createIndexedDbOutboundCountStores(observer, 'outbound-cold-durable-owner'),
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-cold-durable-owner' }),
             volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined),
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -323,7 +326,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: createIndexedDbOutboundCountStores(observer, 'outbound-idle-durable-owner'),
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-idle-durable-owner' }),
             volatileStores: createVolatileALOutboundRuntimeStores({ decodePrepared: decodeOutboundTestPayload }, undefined),
             planOutgoingMessage: (msg) => ({
                 msg,
@@ -354,33 +357,6 @@ describe('an idle durable outbound owner beside a volatile send', () => {
         runtime.dispose();
     });
 });
-
-function createIndexedDbOutboundCountStores(
-    observer: IndexedDbOperationObserver,
-    name: string
-): ALOutboundRuntimeStores<OutboundTestPayload> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName: `${name}-${crypto.randomUUID()}`,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer
-    });
-    return {
-        admissionStore: createALOutboundAdmissionStore({
-            nowMs: Date.now,
-            canonicalScope: name,
-            decodePrepared: decodeOutboundTestPayload,
-            namespace: name,
-            backend,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
-    };
-}
 
 describe('inbound work owner IndexedDB scan volume', () => {
     it('drains the dispatch-local row its rotation finds', async () => {

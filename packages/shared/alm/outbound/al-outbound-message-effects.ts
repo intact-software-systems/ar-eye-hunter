@@ -189,10 +189,10 @@ export class ALOutboundMessageEffects<TPrepared> {
     private async writeAttemptedSend(
         send: ALOutboundMessageEffects.PreparedSend<TPrepared>
     ): Promise<ALWorkAttemptResult> {
-        const runtime = this.dependencies.runtime;
         const { lifecycle } = send;
         const msgId = send.payload.message.msgId;
-        if (await this.dependencies.admissionStore.isMessageSuperseded(lifecycle.canonicalMessage)) {
+        const guards = await this.dependencies.admissionStore.readSendGuards(lifecycle.canonicalMessage);
+        if (guards.kind === 'superseded') {
             this.dependencies.settlements({
                 kind: 'attempt-settled',
                 msgId,
@@ -205,11 +205,7 @@ export class ALOutboundMessageEffects<TPrepared> {
             return { status: 'completed' };
         }
         // A complete receipt already stated the delivery; this attempt owes no settlement of its own.
-        const receipts = await this.dependencies.admissionStore.readReceiptState({
-            originPeerId: lifecycle.canonicalMessage.id.senderId,
-            msgId
-        });
-        if (receipts && isALOutboundReceiptComplete(receipts)) {
+        if (guards.receiptState && isALOutboundReceiptComplete(guards.receiptState)) {
             return { status: 'completed' };
         }
         if (lifecycle.expiresAtMs !== undefined && lifecycle.expiresAtMs <= this.readNowMs()) {
@@ -220,12 +216,20 @@ export class ALOutboundMessageEffects<TPrepared> {
             });
             return { status: 'completed' };
         }
-        // The abort can land here -- inside these pre-transport reads -- before the carrier ever runs;
+        // The abort can land here -- inside the pre-transport read -- before the carrier ever runs;
         // this attempt already stated `attempt-started`, so it terminates its own settlement here, the
         // same way a throwing carrier does (`writePreparedMessage`'s catch), instead of leaving it open.
         if (lifecycle.signal.aborted) {
             return this.writeCancelledBeforeTransport(send, msgId);
         }
+        return await this.writeTransportAttempt(send);
+    }
+
+    private async writeTransportAttempt(
+        send: ALOutboundMessageEffects.PreparedSend<TPrepared>
+    ): Promise<ALWorkAttemptResult> {
+        const runtime = this.dependencies.runtime;
+        const { lifecycle } = send;
         const retry = retryAfterAttempt(DEFAULT_RESOURCE_INBOX_RETRY_POLICY, send.attempts, runtime.random());
         const sendResult = await runtime.sendPreparedMessage(send.payload.prepared, send.payload.phase, lifecycle);
         const timing = {

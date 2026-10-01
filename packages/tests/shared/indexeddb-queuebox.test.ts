@@ -101,6 +101,21 @@ describe('IndexedDbQueueBox', () => {
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
 
+    it('hands each caller of getAllKeys a key of its own', async () => {
+        const typeId = 'presence.state.v1';
+        const queue = new IndexedDbQueueBox({
+            dbName: `indexeddb-queue-keys-${crypto.randomUUID()}`,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        const entry = createEntry(typeId, 'resource-keys');
+        await queue.enqueue(entry);
+
+        const [key] = await queue.getAllKeys();
+
+        expect(key).toEqual(entry.key);
+        expect(Object.isFrozen(key), 'a caller may change the key it was given').toBe(false);
+    });
+
     it('returns one durable winner from concurrent enqueueIfAbsent calls', async () => {
         const dbName = `indexeddb-queue-concurrent-insert-${crypto.randomUUID()}`;
         const firstQueue = new IndexedDbQueueBox({ dbName, observer: createPassThroughIndexedDbOperationObserver() });

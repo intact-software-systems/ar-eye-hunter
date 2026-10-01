@@ -12,23 +12,17 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { shouldPersistOutbox } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createCountingIndexedDbOperationObserver,
-    type IndexedDbOperationCounts,
-    type IndexedDbOperationObserver
+    type IndexedDbOperationCounts
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { createDefaultOutboundTestRuntime } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import {
-    decodeOutboundTestPayload,
-    type OutboundTestPayload
-} from '../../shared/alm/outbound-test-payload.ts';
+    createDefaultOutboundTestRuntime,
+    createIndexedDbOutboundTestStores
+} from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 import { createBrowserMessageSenderFixture } from '../messages/browser-message-sender-fixture.ts';
 
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -59,7 +53,7 @@ describe('director command browser storage volume (D60, D87)', () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
-            stores: createIndexedDbOutboundCountStores(observer, 'director-command-volume'),
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'director-command-volume' }),
             volatileStores: createVolatileALOutboundRuntimeStores(
                 { decodePrepared: decodeOutboundTestPayload },
                 undefined
@@ -157,34 +151,6 @@ function recordDirectorReceipt(
         unconfirmedRecipientPeerIds: [],
         complete: true
     });
-}
-
-// The durable pair the count pins observe (al-indexeddb-operation-counts.test.ts), kept private there.
-function createIndexedDbOutboundCountStores(
-    observer: IndexedDbOperationObserver,
-    name: string
-): ALOutboundRuntimeStores<OutboundTestPayload> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName: `${name}-${crypto.randomUUID()}`,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer
-    });
-    return {
-        admissionStore: createALOutboundAdmissionStore({
-            nowMs: Date.now,
-            canonicalScope: name,
-            decodePrepared: decodeOutboundTestPayload,
-            namespace: name,
-            backend,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
-    };
 }
 
 function computeNonProbeWorkOperations(counts: IndexedDbOperationCounts): number {

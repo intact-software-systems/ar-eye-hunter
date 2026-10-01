@@ -49,9 +49,11 @@ describe('AL outbound durable effect lifecycle', () => {
         vi.setSystemTime(1_000);
         const stores = createDefaultOutboundTestStores();
         const send = vi.fn(async () => ({ status: 'sent' as const, submissionAttempted: true }));
-        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementation(async () => {
+        const readSendGuards = stores.admissionStore.readSendGuards.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readSendGuards').mockImplementation(async (message) => {
+            const guards = await readSendGuards(message);
             vi.setSystemTime(2_000);
-            return undefined;
+            return guards;
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores,
@@ -757,7 +759,7 @@ async function hasAckTimeoutWork(
     const payloads = await Promise.all(
         entries
             .filter((entry) => entry.typeId === toALOutboundWorkType(stores.admissionStore.namespace))
-            .map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry)).payload)
+            .map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry, undefined)).payload)
     );
     return payloads.some((payload) => payload.kind === 'ack-timeout');
 }
@@ -770,6 +772,6 @@ async function readRetainedWorkKinds(stores: OutboundTestStores): Promise<readon
         cursor: null
     });
     return await Promise.all(
-        page.entries.map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry)).payload.kind)
+        page.entries.map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry, undefined)).payload.kind)
     );
 }

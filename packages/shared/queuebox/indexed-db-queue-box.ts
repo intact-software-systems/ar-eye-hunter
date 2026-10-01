@@ -690,7 +690,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 mutations.push(computeIndexedDbQueueDelete(stored));
             }
             else {
-                keys.push(stored.key);
+                keys.push({ ...stored.key });
             }
         }
         return await this.#write(db, { mutations, result: keys });

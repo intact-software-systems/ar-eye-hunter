@@ -3,7 +3,7 @@
 Prepared: 2026-09-28\
 Reviewed source: `bdb3ecd8b` (`main` after S3b) and `bf03c965b` (the S3c-i branch, PR #605); S3c-ii (this PR)
 delivers the volatile bound its section 6 and hypothesis H4 name\
-Decisions: D83 to D89 in the [roadmap's decision record](alm-improvement-plan.md#decision-record)
+Decisions: D83 to D90, and D108 to D111 for P1, in the [roadmap's decision record](alm-improvement-plan.md#decision-record)
 
 The [complete product description](alm-complete-product-description.md) owns the product contract
 and the [delivery roadmap](alm-improvement-plan.md) owns sequencing and decisions. This plan is the
@@ -32,7 +32,7 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   retracts a delivery.
 - **The test plan is ALM's evidence structure** (section 9): semantic tests through real owners,
   named storage-budget pins, the conformance lane, a storage fault port, regime-classified lane
-  figures, and a Relic Hunters Playwright proof.
+  figures, a plain-page latency harness, and a Relic Hunters Playwright proof.
 
 ## 2. Principles
 
@@ -53,19 +53,19 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   `AL_ADMISSION_SCHEMA_ID`, and incompatible browser storage is deleted on mismatch and reported.
   Web and API deploy together.
 - **Evidence before optimization.** Every performance claim here is labelled _measured_, _proven
-  from code_ or _needs measurement_. No optimization lands without before-and-after pins and lane
-  figures.
+  from code_ or _needs measurement_. No optimization lands without before-and-after pins and
+  plain-page harness figures (D111).
 - **Two concrete slices.** P1 and I2a become concrete once Release 3 is complete. I2b stays
   outcome-shaped until its gate is decided.
 
 ## 3. The durability tiers
 
-| Tier                     | Admission                  | Dispatch         | After a reload                                                                       | Send-path storage                                        | Receiver's store |
-| ------------------------ | -------------------------- | ---------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------- | ---------------- |
-| `volatile` (default)     | in memory                  | from memory      | lost                                                                                 | none                                                     | memory           |
-| `local-checkpoint` (I2b) | in memory                  | from memory      | the last checkpoint; admissions after it may be lost, work finished after it repeats | none                                                     | memory           |
-| `local-outbox`           | after the IndexedDB commit | after the commit | kept until its receipt or terminal outcome                                           | 10 `al-admission` and 15 `al-work` operations; P1 lowers | memory           |
-| `local-inbox`            | after the IndexedDB commit | after the commit | as `local-outbox`; the receiver also commits before it acknowledges                  | as `local-outbox`, plus 8 per inbound admission          | IndexedDB        |
+| Tier                     | Admission                  | Dispatch         | After a reload                                                                       | Send-path storage                                             | Receiver's store |
+| ------------------------ | -------------------------- | ---------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ---------------- |
+| `volatile` (default)     | in memory                  | from memory      | lost                                                                                 | none                                                          | memory           |
+| `local-checkpoint` (I2b) | in memory                  | from memory      | the last checkpoint; admissions after it may be lost, work finished after it repeats | none                                                          | memory           |
+| `local-outbox`           | after the IndexedDB commit | after the commit | kept until its receipt or terminal outcome                                           | 10 `al-admission` and 15 `al-work` operations cold; P1 lowers | memory           |
+| `local-inbox`            | after the IndexedDB commit | after the commit | as `local-outbox`; the receiver also commits before it acknowledges                  | as `local-outbox`, plus 8 per inbound admission               | IndexedDB        |
 
 - **Acceptance after a durable commit.** A caller who needs it waits on a durable tier for the
   handle's admitted states (`AL_DELIVERY_ADMITTED_STATES`), which follow the commit.
@@ -167,49 +167,88 @@ In the browser, a durable decision costs its IndexedDB operations times the main
 each operation. It also waits in the queue behind the per-sender commit Web Lock
 (`rallar:al-outbound-commit:<senderId>`).
 
-| Fact                                                                                                                | Evidence                                                          | Label             |
-| ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------- |
-| A durable send spends 10 `al-admission` and 15 `al-work` operations                                                 | `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts` | measured          |
-| A durable inbound admission spends 8 operations, and a volatile one spends none                                     | the same test                                                     | measured          |
-| The hosted RTC cell passes below about 30 ms per operation and fails above 35 ms; slow runners measured 48 to 55 ms | the roadmap's "Conformance lane" section                          | measured          |
-| The whole ALM runtime runs on the main thread, and no Rallar package starts a worker                                | code search at `bf03c965b`                                        | proven from code  |
-| No IndexedDB transaction sets a durability hint, and `QuotaExceededError` is never handled                          | code search at `bf03c965b`                                        | proven from code  |
-| The lane's per-operation figure overstates a plain page's, because of the Playwright bridge                         | H1                                                                | needs measurement |
+| Fact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Evidence                                                                                             | Label                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------- |
+| A durable send spends 10 `al-admission` and 15 `al-work` operations on a cold runtime (the pin). A warm send spends 10 and 12, in 14 transactions (11 between `enqueueIfAbsent` and the carrier send) and 46 requests                                                                                                                                                                                                                                                                                                                                        | `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`; the P1 code survey's ledger probe | measured (survey 2026-09-30) |
+| A durable inbound admission spends 8 `al-admission` operations, and a volatile one spends none. A warm admit-and-deliver adds 5 to 7 `al-work` in 11 to 13 transactions                                                                                                                                                                                                                                                                                                                                                                                      | the same test; the P1 code survey's ledger probe                                                     | measured (survey 2026-09-30) |
+| After P1a a warm durable send spends 10 `al-admission` and 8 `al-work` operations in 11 transactions (8 between `enqueueIfAbsent` and the carrier send) and 42 requests, and a cold send 10 and 11. Its pinned window parses 9 Temporal timestamps up to the carrier and 13 up to the idle owner. The warm inbound admit-and-deliver is unchanged (11 or 13 transactions, 8 `al-admission`, 5 or 7 `al-work`) and parses 16                                                                                                                                  | `al-indexeddb-transaction-ledger.test.ts`; `al-indexeddb-operation-counts.test.ts`                   | measured (P1a, 6cfcf872c)    |
+| Send-to-dispatch p50 / p95 on the plain-page harness (Apple M2 Max, HeadlessChrome 149; per invocation the median of three runs, ranged over three invocations) after P1a: idle 2.8-3.0 / 3.3-3.5 ms, 4x CPU 9.5-9.7 / 10.7-11.0 ms, 1x frame load 8.8-10.6 / 22.8-23.0 ms, 4x frame load 28.2-29.0 / 47.0-48.9 ms; before (f7902b5ac, same session): 3.3-3.4 / 3.8, 11.5-11.8 / 13.0-13.8, 10.0-12.5 / 23.4-23.6, 31.6-32.5 / 50.3-52.8 ms. The polyfill and JSBI fall from 36 % to 22-24 % of an idle page's busy CPU (0.78-0.80 to 0.37-0.39 ms per send) | `npm run perf:alm:durable-send`, three invocations per head; P1a's PR body                           | measured (P1a, 6cfcf872c)    |
+| The hosted RTC cell passes below about 30 ms per operation and fails above 35 ms; slow runners measured 48 to 55 ms                                                                                                                                                                                                                                                                                                                                                                                                                                          | the roadmap's "Conformance lane" section                                                             | measured                     |
+| The whole ALM runtime runs on the main thread, and no Rallar package starts a worker                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | code search at `bf03c965b`                                                                           | proven from code             |
+| No IndexedDB transaction sets a durability hint, and `QuotaExceededError` is never handled                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | code search at `bf03c965b`                                                                           | proven from code             |
+| The lane's per-operation figure overstates a plain page's, because of the Playwright bridge                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | H1                                                                                                   | needs measurement            |
 
 ### 7.2 Budgets per tier
 
-| Tier                          | Send-path storage budget                                                                  | Background budget                                                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `volatile`                    | zero `al-admission` and zero non-probe `al-work` operations (the D55 pin)                 | the durable owners' idle probes, reported                                                                         |
-| `local-checkpoint`            | the same zero                                                                             | at most one readwrite transaction per checkpoint and none while clean; bytes and duration reported per checkpoint |
-| `local-outbox`, `local-inbox` | today's pins, which may only fall; P1's target is recorded as a decision before P1's plan | idle probes, reported                                                                                             |
+| Tier                          | Send-path storage budget                                                  | Background budget                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `volatile`                    | zero `al-admission` and zero non-probe `al-work` operations (the D55 pin) | the durable owners' idle probes, reported                                                                         |
+| `local-checkpoint`            | the same zero                                                             | at most one readwrite transaction per checkpoint and none while clean; bytes and duration reported per checkpoint |
+| `local-outbox`, `local-inbox` | today's pins, which may only fall; P1's target is D109 (section 7.3)      | idle probes, reported                                                                                             |
 
 - **Latency.** It is judged under the runner-regime rule: a red counts only against a same-regime
   green baseline. Every tier's scenario reports p50 and p95 per regime for admission to dispatch and
-  admission to receipt.
+  admission to receipt. P1's send-to-dispatch figures come from the plain-page harness (section 9.1,
+  D111); the lane gains no send-to-dispatch field.
 - **Reporting.** Every ALM PR body reports the storage figures beside the bundle figures (D87).
 
 ### 7.3 P1: the durable path's cost
 
-P1 weakens no guarantee. Its levers come in the order the spike ranks them (section 7.5, D90), and
-each lands only with before-and-after pins and figures:
+P1 weakens no guarantee. It ships as two serial PRs, P1a then P1b (D108), designed in the
+[P1 design proposal](alm-p1-design-proposal.md). Its levers keep the spike's order (section 7.5,
+D90), and each lands only with before-and-after pins and harness figures (D111):
 
-1. **Take the Temporal polyfill off the storage hot path.**
-   - The polyfill and its BigInt shim take about 32 % of a durable send's CPU. Most of that is in the
-     date conversions of QueueBox's IndexedDB entry codec.
-   - The fix is native Temporal where the browser has it, or epoch-millisecond values in the codec.
-     P1's plan chooses between them.
-2. **Run fewer sequential transactions.** A durable send runs 14 IndexedDB transactions today.
-   Wherever the per-row fence (D17) allows it:
-   - merge one admission's two read sessions;
-   - skip the empty probes;
-   - hand the committed canonical message to dispatch in memory;
-   - skip the control reads that are empty on a first dispatch.
+1. **Take the Temporal polyfill off the storage hot path (P1a, D110).**
+   - A warm durable send makes 233 public polyfill calls, 165 of them (71 %) in QueueBox's IndexedDB
+     entry codec (`packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts`); measured (survey
+     2026-09-30). The spike puts the polyfill and its BigInt shim at about 32 % of a durable send's
+     CPU.
+   - The codec re-parses what it produced. Encode validates by parsing every string it just wrote,
+     decode parses every field twice, a computed put is decoded again, and
+     `isStoredQueueEntryExpired` parses the expiry although the row stores `expiryEpochMs`.
+   - The fix is codec-local: parse once, validate and compare on the stored epoch-ms mirrors, never
+     re-parse the codec's own output. `ResourceEntry`, the stored row, `AL_ADMISSION_SCHEMA_ID` and
+     the server PostgreSQL codec are unchanged, and it works in every engine.
+   - The polyfill stays in the browser bundle (section 7.6). A native alias stays a later option,
+     taken only on evidence.
+2. **Run fewer sequential transactions.** A warm durable send runs 14 IndexedDB transactions, and 11
+   lie between `enqueueIfAbsent` and the carrier's send. Under a render loop each of those waits for
+   a gap between frames, so in a game page this is the lever that matters. Two steps, each allowed
+   by the per-row fence (D17):
+   - **P1a, 11 to 8, no semantic change.** The decision read and the commit's observation read become
+     one readonly session. The committed canonical message reaches dispatch in memory, with a read
+     on a miss. Dispatch's three readonly sessions (canonical read, supersedence check,
+     receipt-state read) become one.
+   - **P1b, 8 to 6, probes on a cadence.** The readiness probe after a batch, the finalize-exhausted
+     sweep and the lease-timeout reserve run on a cadence instead of every batch. Each states a bound
+     on how late an exhausted row or a crashed lease is noticed. P1b is decided on P1a's measured
+     figures.
+   - Reads are merged, never skipped. No code proof shows that a receipt cannot complete before the
+     first attempt.
+3. **Commit batching is not a P1 lever (D108).** `commitAll` batches one caller's
+   `enqueueAllIfAbsent` group, and a work batch's first dispatches commit nothing, so batching across
+   a work batch leaves a durable send's figures unchanged. Its admission-side analogue, a commit
+   batch window for back-to-back single sends from one sender, stays D86's conditional setting
+   (section 6).
 
-   Under a render loop each transaction waits for a gap between frames, so in a game page this is
-   the lever that matters.
-3. **Batch commits across a work batch.** Today `commitAll` batches one sender's dispatches; P1
-   extends it to the whole batch.
+**A recorded candidate: the fence-snapshot fold.** An admission opens a third readonly session, the
+D17 fence snapshot, because the session reads drop each row's `(revision, writeToken)`. A read
+session that carries them lets the snapshot merge into the decision read, one transaction less per
+admission on both owners. It changes the backend contract shared with inbound, so it is decided
+after P1's figures exist.
+
+**The target (D109).** Pinned by `al-indexeddb-transaction-ledger.test.ts`, which records every
+IndexedDB transaction and request of one warm durable send:
+
+| Warm durable send | Transactions, enqueue to carrier send | Transactions in all | `al-admission` + `al-work` |
+| ----------------- | ------------------------------------: | ------------------: | -------------------------- |
+| Today (measured)  |                                    11 |                  14 | 10 + 12 = 22               |
+| After P1a         |                             at most 8 |       11, from code | at most 10 + 8 = 18        |
+| After P1b         |                             at most 6 |        8, from code | at most 10 + 5 = 15        |
+
+- The cold pin (10 plus 15) stays beside it and falls when it can.
+- Inbound gains a warm pin at today's 11 to 13 transactions and 5 to 7 `al-work` per
+  admit-and-deliver, which may only fall. P1 changes no inbound-only path.
 
 The transaction durability hint is not a lever (D90):
 
@@ -286,11 +325,16 @@ What the findings suggest, and where each stands:
      - skip the first-dispatch control reads.
    - **Drop the transaction durability hint as a lever.** D86's condition, a measured gain, is not
      met.
-2. **Move D89's gate out of the lane.** Still open. Measure it in a plain page with a persistent
-   profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow
-   regime measures its harness page.
-3. **Take storage-cost evidence from a persistent profile.** Still open. The lane's IndexedDB is in
-   memory, so the lane stays the correctness authority but cannot measure storage cost.
+   - **Corrected 2026-09-30 by the P1 code survey** (D108, D109): 11 of the 14 transactions lie on
+     the enqueue-to-carrier chain; an admission has three readonly sessions, not two; dispatch runs
+     three more; lever 3 does not touch a first send; and the empty control, receipt and effect reads
+     are 7 by call site, not 6, so "13 of 22 avoidable" is an upper bound.
+2. **Move D89's gate out of the lane.** Decided as D111. The plain-page harness of section 9.1
+   measures it with a persistent profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is
+   93.7 ms today. The lane's slow regime measures its harness page.
+3. **Take storage-cost evidence from a persistent profile.** Decided as D111 for latency. The lane's
+   IndexedDB is in memory, so the lane stays the correctness authority but cannot measure storage
+   cost.
 4. **Checkpoint only changed rows if I2b goes ahead.** H4 is refuted, so section 7.4 already
    provides this.
 
@@ -299,7 +343,10 @@ What the findings suggest, and where each stands:
 These stay outcome-shaped until evidence earns them:
 
 - a durable owner hosted in a worker;
-- a per-message persistence barrier.
+- a per-message persistence barrier;
+- the polyfill leaves the browser bundle: 27 modules of `rallar.ts` import it, and removal saves an
+  estimated 39.7 KiB brotli (D110);
+- the fence-snapshot fold (section 7.3).
 
 ## 8. Storage lifetime (I2a)
 
@@ -362,7 +409,8 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
   independently of production helpers, as `rallar-testing` requires.
 - **Storage-budget pins.** The existing operation-count tests are named interaction assertions:
   `al-indexeddb-operation-counts.test.ts`, `al-storage-snapshot.test.ts` and
-  `indexeddb-queuebox-operation-counts.test.ts`. Each count is the budget of section 7.2. A rise
+  `indexeddb-queuebox-operation-counts.test.ts`. P1 adds `al-indexeddb-transaction-ledger.test.ts`,
+  which also pins a warm send's transactions (D109). Each count is the budget of section 7.2. A rise
   needs a recorded reason, and a fall lowers the pin.
 - **The conformance lane** remains the acceptance authority. One scenario catalog runs over every
   carrier, and its figures are classified by runner regime.
@@ -371,8 +419,17 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
     extending the operation-observer seam.
   - It is a harness capability, never product behaviour, like D34's harness fields.
   - Today the lane can drop frames and hold readiness, but it cannot fault storage.
+- **A plain-page latency harness** (D111).
+  - The spike's plain page rebuilt as a Playwright manual suite: a persistent browser profile, 4x
+    CPU throttle, a 10-in-16 ms frame load and the real durable outbound path.
+  - It reports send-to-dispatch p50 and p95 and the CPU-profile share of the polyfill and of the
+    codec. It runs locally before and after each P1 lever, and its figures go in the PR body.
+  - It is owned in `tests/manual-suites.json`. It is not CI and not the lane: the lane stays the
+    correctness authority, its storage is incognito, and its `perOperation` figure covers the
+    admission read chain only.
 - **Performance evidence:**
   - the pins;
+  - the plain-page harness figures;
   - the lane observation's p50 and p95 per tier and regime;
   - the roadmap's standard storage-snapshot workload in every PR;
   - the Hetzner manifests at V1 scale.
@@ -381,26 +438,27 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
 
 ### 9.2 Requirement to evidence
 
-| Requirement                                                                                                  | Slice | Evidence                                                                                       |
-| ------------------------------------------------------------------------------------------------------------ | ----- | ---------------------------------------------------------------------------------------------- |
-| Durable send and inbound admission costs fall to P1's recorded target                                        | P1    | budget pins; `durable-opt-in` and `delivery-baseline` figures per regime                       |
-| The Temporal polyfill leaves the storage hot path                                                            | P1    | before-and-after CPU profile and send-to-dispatch figures for the durable-send workload        |
-| Sequential transactions per durable send fall from 14 to P1's recorded target                                | P1    | a pin on transactions per durable send, beside the budget pins                                 |
-| One durable owner per session store, with takeover on release                                                | I2a   | unit: two owners on a lock fake; lane: `durable-takeover`                                      |
-| Quota, a blocked upgrade or missing storage ends typed or degrades with a note, never silently               | I2a   | a unit test per cause; lane: `storage-unavailable` through the fault port                      |
-| Recovery outcomes `restored`, `expired-at-recovery`, `storage-created` and `storage-reset`                   | I2a   | a unit test per outcome; lane: `delivery-reload` reads the outcome                             |
-| Dedup retention covers the deadline plus the receipt grace                                                   | I2a   | unit: a replay after 60 s and inside the deadline is re-acknowledged without a second delivery |
-| A purge reaches memory, storage and checkpoint, and nothing replays across sessions                          | I2a   | unit: a checkpoint after a purge writes nothing back; login over a session leaves no rows      |
-| Storage health reaches the public sink                                                                       | I2a   | a unit test on the sink; the lane observation reads it                                         |
-| A checkpoint is one coherent state, and an interrupted write keeps the prior point                           | I2b   | unit: abort the readwrite, then restore the prior point                                        |
-| A mutation during a write reaches the next checkpoint, and an older completion never marks newer state saved | I2b   | a unit test with a held write                                                                  |
-| No storage work on the `local-checkpoint` send path                                                          | I2b   | the D55 zero pin, extended to the tier                                                         |
-| Checkpoint cost stays within budget, and nothing runs while clean                                            | I2b   | pin: one readwrite per checkpoint; an idle window reads zero                                   |
-| The interval target holds under continuous change, and the page flushes on hide                              | I2b   | a unit test with a fake clock; lane: `flush-on-hide`                                           |
-| Restore: reserved rows are retryable, expired rows settle `expired`, and there is no handle                  | I2b   | unit; lane: `checkpoint-recovery` on the reload pair                                           |
-| Ordered and latest-wins sends are refused typed on `local-checkpoint`                                        | I2b   | a unit test at admission                                                                       |
-| Lag beyond the bound follows `onStorageUnavailable`                                                          | I2b   | lane: `checkpoint-lag` through the fault port                                                  |
-| A Relic command survives a reload mid-command                                                                | I2b   | the Relic Playwright spec; the server's dedup absorbs the replay                               |
+| Requirement                                                                                                  | Slice    | Evidence                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A warm durable send's operations fall from 22 to at most 18 (P1a) and 15 (P1b); inbound costs never rise     | P1a, P1b | `al-indexeddb-transaction-ledger.test.ts` (warm send and warm inbound admit-and-deliver); the cold pin in `al-indexeddb-operation-counts.test.ts` beside it |
+| Transactions from `enqueueIfAbsent` to the carrier send fall from 11 to at most 8 (P1a) and 6 (P1b)          | P1a, P1b | the ledger pin; `durable-opt-in` and `delivery-baseline` unchanged in the lane                                                                              |
+| The Temporal polyfill leaves the storage hot path                                                            | P1a      | the harness's CPU-profile share of the polyfill and the codec, and send-to-dispatch p50 and p95, before and after                                           |
+| A probe on a cadence notices a due row, an exhausted row or a crashed lease within its stated bound          | P1b      | a fake-clock unit test per probe; the harness figures                                                                                                       |
+| One durable owner per session store, with takeover on release                                                | I2a      | unit: two owners on a lock fake; lane: `durable-takeover`                                                                                                   |
+| Quota, a blocked upgrade or missing storage ends typed or degrades with a note, never silently               | I2a      | a unit test per cause; lane: `storage-unavailable` through the fault port                                                                                   |
+| Recovery outcomes `restored`, `expired-at-recovery`, `storage-created` and `storage-reset`                   | I2a      | a unit test per outcome; lane: `delivery-reload` reads the outcome                                                                                          |
+| Dedup retention covers the deadline plus the receipt grace                                                   | I2a      | unit: a replay after 60 s and inside the deadline is re-acknowledged without a second delivery                                                              |
+| A purge reaches memory, storage and checkpoint, and nothing replays across sessions                          | I2a      | unit: a checkpoint after a purge writes nothing back; login over a session leaves no rows                                                                   |
+| Storage health reaches the public sink                                                                       | I2a      | a unit test on the sink; the lane observation reads it                                                                                                      |
+| A checkpoint is one coherent state, and an interrupted write keeps the prior point                           | I2b      | unit: abort the readwrite, then restore the prior point                                                                                                     |
+| A mutation during a write reaches the next checkpoint, and an older completion never marks newer state saved | I2b      | a unit test with a held write                                                                                                                               |
+| No storage work on the `local-checkpoint` send path                                                          | I2b      | the D55 zero pin, extended to the tier                                                                                                                      |
+| Checkpoint cost stays within budget, and nothing runs while clean                                            | I2b      | pin: one readwrite per checkpoint; an idle window reads zero                                                                                                |
+| The interval target holds under continuous change, and the page flushes on hide                              | I2b      | a unit test with a fake clock; lane: `flush-on-hide`                                                                                                        |
+| Restore: reserved rows are retryable, expired rows settle `expired`, and there is no handle                  | I2b      | unit; lane: `checkpoint-recovery` on the reload pair                                                                                                        |
+| Ordered and latest-wins sends are refused typed on `local-checkpoint`                                        | I2b      | a unit test at admission                                                                                                                                    |
+| Lag beyond the bound follows `onStorageUnavailable`                                                          | I2b      | lane: `checkpoint-lag` through the fault port                                                                                                               |
+| A Relic command survives a reload mid-command                                                                | I2b      | the Relic Playwright spec; the server's dedup absorbs the replay                                                                                            |
 
 ### 9.3 Conformance scenarios
 
@@ -424,7 +482,8 @@ The roadmap's recipe rules apply unchanged:
 Release 4 follows Release 3 and precedes the arbitration, audience, scale and integration releases,
 which the roadmap renumbers 5 to 8 (D88). Its slices are:
 
-- **P1, durable-path cost:** section 7.3.
+- **P1a, the codec and the send chain:** section 7.3, D108 to D111.
+- **P1b, probes on a cadence:** section 7.3, decided on P1a's measured figures.
 - **I2a, storage lifetime:** section 8.
 - **I2b, checkpointed durability:** sections 4 and 5, behind the gate below.
 
@@ -432,8 +491,10 @@ The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evide
 
 ### 10.2 The I2b gate
 
-I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch, in the
-lane's slow regime, still exceeds 100 ms, the interactive response budget (D89).
+I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch still
+exceeds 100 ms, the interactive response budget (D89). It is measured in the plain-page harness
+(section 9.1) at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111). The
+spike's figure there is 93.7 ms on a desktop machine, so the reading states its machine.
 
 - **Consumer.** Relic Hunters' server-addressed commands (S3c-i) are the consumer. A reload
   mid-command resumes the command, and the server's ALM dedup and AppInbox request-id idempotency
@@ -455,7 +516,7 @@ lane's slow regime, still exceeds 100 ms, the interactive response budget (D89).
 
 - **I2a:** AR Eye Hunter's multi-tab claim of the match session, moved from I2's former row.
 - **I2b:** Relic Hunters' commands (section 10.2).
-- **P1:** no game changes. The lane figures are its proof.
+- **P1:** no game changes. The ledger pins and the harness figures are its proof.
 
 ## 11. Boundaries
 

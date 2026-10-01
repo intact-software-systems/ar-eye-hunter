@@ -24,5 +24,13 @@
     "owner": "Knut-Helge Vik",
     "command": "npm run test:playwright:ar-eye",
     "reason": "Passes locally (4 passed, 4 skipped) but on the Linux runner three specs hit the 45 s timeout waiting for canvas effects (mobile-controls.spec.ts:33, director-capability-delivery.spec.ts:55), so wiring it into e2e-app turned the gate red. Fix the headless rendering dependency before wiring a lane."
+  },
+  {
+    "paths": [
+      "tests/playwright/alm/durable-send-plain-page.spec.ts"
+    ],
+    "owner": "Knut-Helge Vik",
+    "command": "npm run perf:alm:durable-send",
+    "reason": "Latency evidence, not a gate: send-to-dispatch p50/p95 and the Temporal polyfill and codec CPU shares of a durable ALM send in Chromium with an on-disk profile. Run locally before and after each durable-path lever and compare against a baseline from the same machine; hosted-runner timings are not comparable, and a lane that fails on a latency figure would be noise."
   }
 ]

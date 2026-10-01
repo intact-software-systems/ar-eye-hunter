@@ -7,6 +7,8 @@ import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID, type ALStorageResetListeners } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundRuntimeDiagnosticsSink,
@@ -44,6 +46,7 @@ import {
     type ALWorkOutcome,
     type ALWorkQueuePort
 } from '@shared/alm/work/al-work-queue-port.ts';
+import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
@@ -248,7 +251,7 @@ export async function claimOutboundTestWork<TPrepared>(
 ): Promise<readonly ALOutboundEffectSnapshot<TPrepared>[]> {
     const port = createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace);
     const claims = await port.claim({ maxCount, observedEntries: undefined });
-    return await Promise.all(claims.map((claim) => stores.admissionStore.readWorkSnapshot(claim.entry)));
+    return await Promise.all(claims.map((claim) => stores.admissionStore.readWorkSnapshot(claim.entry, undefined)));
 }
 
 /** Releases one claimed row the way the owner's attempt does. */
@@ -411,4 +414,67 @@ export function toOutboundTestAck(message: ALMessage, fromPeerId: string): ALMes
             carrier: 'ws'
         }
     );
+}
+
+export interface IndexedDbOutboundTestStoresInput {
+    readonly observer: IndexedDbOperationObserver;
+    /** The admission namespace and canonical scope of the pair. */
+    readonly namespace: string;
+    /** A database another pair shares, as a second tab would; absent, the pair opens one of its own. */
+    readonly dbName?: string;
+    readonly storageResets?: ALStorageResetListeners;
+}
+
+/** A durable outbound pair over fake-indexeddb, reporting every logical operation to `observer`. */
+export function createIndexedDbOutboundTestStores(
+    input: IndexedDbOutboundTestStoresInput
+): ALOutboundRuntimeStores<OutboundTestPayload> {
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: input.observer
+    });
+    return {
+        admissionStore: createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: input.namespace,
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: input.namespace,
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        }),
+        workQueue: backend.workQueue,
+        storageResets: input.storageResets
+    };
+}
+
+/** One durable copy to a single peer, with no ack, retry or supersedence tracking. */
+export const OUTBOUND_TEST_SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg,
+    dropReasonCode: undefined,
+    persist: true,
+    preparedMessages: [{ peer: 'receiver' }]
+});
+
+/**
+ * A runtime that sends with `OUTBOUND_TEST_SEND_PLANNER` and records each canonical message its
+ * carrier ran; like every fixture-built runtime it is disposed when the test finishes.
+ */
+export function createRecordingOutboundTestRuntime(
+    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
+    sent: ALMessage[]
+): ALOutboundMessageRuntime<OutboundTestPayload> {
+    return createDefaultOutboundTestRuntime({
+        stores,
+        planOutgoingMessage: OUTBOUND_TEST_SEND_PLANNER,
+        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+            sent.push(lifecycle.canonicalMessage);
+            return { status: 'sent', submissionAttempted: true };
+        }
+    });
 }
