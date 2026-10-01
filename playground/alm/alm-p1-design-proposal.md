@@ -495,7 +495,8 @@ builds on QueueBox's existing engine designs (`DequeueController`, `ResourceInbo
      batches a minute; (c) 1 per 60 s, worst lease end plus 81.6 s;
    - first batch: only when the scan saw a RESERVED row;
    - the advertisement half: a separate 1-per-window `isEntryRateLimiter` on the probe, as on the
-     server, or none, which loops probe and claim reads every 100 ms for up to 12.5 s;
+     server, or none, which runs a zero-delay loop (a past lease end re-arms the engine at delay 0)
+     for up to 12.5 s;
    - limiter owner: `dequeue.resilience`'s `StatusChecks`, shared by the durable and volatile lanes
      and, on the server fallback, with AppInbox;
    - API: add `RateLimiter.isAllowedAt` and a clock-taking `createResourceInboxStatusChecks` export;
@@ -608,12 +609,15 @@ One PR, five task groups in order (D116). Pins only fall; a rise needs a stated 
   not due. It reads the limiter without spending (`SlidingWindowCounter.sumInWindowWithNow`) and
   sits beside the circuit-open `ALOutboundDequeueDeferral` (`al-outbound-store-lane.ts:239-247`).
   It plays the dequeuer's `isEntryRateLimiter` role for ALM's own scan. Without it a denied sweep
-  loops probe and claim reads every 100 ms until the window reopens.
+  runs a zero-delay loop: a past lease end re-arms the engine at delay 0 until the window reopens.
 - **The first batch.** A fresh limiter holds its allowance, so the bootstrap batch sweeps both, and
   the cold pin keeps both sweeps once.
 - **The bound.** A crashed lease or an exhausted row is recovered by lease end plus 19.1 s at most:
   the window reopens at most 1.25 `leaseMs` (12.5 s) after the last sweep (measured; `RateLimiter`
   counts in quarter-window buckets), then 3 s of memory and one pass. Today: lease end plus 6.6 s.
+  The bound assumes the readiness scan (16 rows per type) or a sweep (64 rows) sees the row: a
+  crashed row hidden behind 16 live leases is recovered at the first batch that sweeps with its
+  window open.
   After a reload (D98) the bootstrap sweep sees the live lease, and recovery lands at most 19.1 s
   after the bootstrap.
 - **Every outbound lane.** The browser lanes and api-v1's Postgres ALM lane
