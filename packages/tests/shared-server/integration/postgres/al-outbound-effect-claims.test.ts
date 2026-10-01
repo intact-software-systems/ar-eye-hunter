@@ -5,7 +5,10 @@ import {
     expect,
     it
 } from 'vitest';
-import { peekOutboundWorkReadyAt } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    OUTBOUND_LEASE_RECOVERY_BOUND_MS,
+    peekOutboundWorkReadyAt
+} from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -28,8 +31,17 @@ describe('Postgres AL outbound effect claims', () => {
         const namespace = `alm-claim-${crypto.randomUUID()}`;
         const databaseUrl = requirePostgresDatabaseUrl();
         await withPostgresClients({ namespace: namespace, clientCount: 2, createClient: () => createRuntimeStatePostgresSql(databaseUrl) }, async (clients) => {
-            const first = createAdmission(new PSqlRuntimeStateRepository(requirePostgresClient(clients, 0)), namespace);
-            const second = createAdmission(new PSqlRuntimeStateRepository(requirePostgresClient(clients, 1)), namespace);
+            const first = createAdmission(
+                new PSqlRuntimeStateRepository(requirePostgresClient(clients, 0)),
+                namespace,
+                Date.now
+            );
+            let secondClockAheadMs = 0;
+            const second = createAdmission(
+                new PSqlRuntimeStateRepository(requirePostgresClient(clients, 1)),
+                namespace,
+                () => Date.now() + secondClockAheadMs
+            );
             const nowMs = Date.now();
             await first.admissionStore.commitBundle({
                 senderId: 'sender',
@@ -53,6 +65,9 @@ describe('Postgres AL outbound effect claims', () => {
             expect(claimed).toHaveLength(1);
             const [oldClaim] = claimed;
             await new Promise((resolve) => setTimeout(resolve, 10_010));
+            // The second owner's empty first claim spent its lease-timeout sweep; its lane clock steps past the
+            // recovery bound, so its next claim sweeps for the lapsed lease again.
+            secondClockAheadMs = OUTBOUND_LEASE_RECOVERY_BOUND_MS;
             const [newClaim] = await second.port.claim(input);
 
             await first.port.releaseAll([{ claim: oldClaim!, outcome: { status: 'completed' } }]);
@@ -68,7 +83,7 @@ describe('Postgres AL outbound effect claims', () => {
     }, 60_000);
 });
 
-function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string) {
+function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string, laneNowMs: () => number) {
     const backend = new PSqlAdmissionWorkBackend(repository.sql, namespace);
     const admissionStore = createALOutboundAdmissionStore({
         decodePrepared: decodeALOutboundTransportMessage,
@@ -82,7 +97,7 @@ function createAdmission(repository: PSqlRuntimeStateRepository, namespace: stri
     const stores = { admissionStore, workQueue: backend.workQueue };
     return {
         admissionStore,
-        port: createTestALOutboundWorkPort({ ...stores, nowMs: Date.now }),
+        port: createTestALOutboundWorkPort({ ...stores, nowMs: laneNowMs }),
         peek: async () => await peekOutboundWorkReadyAt(backend.workQueue, namespace)
     };
 }
