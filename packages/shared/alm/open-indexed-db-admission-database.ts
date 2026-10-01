@@ -1,13 +1,16 @@
 import { readIndexedDbRequest } from '../persistence/indexed-db-request.ts';
 import {
     openIndexedDbWithValidatedStores,
-    type IndexedDbStoreDefinition
+    type IndexedDbStoreDefinition,
+    type OpenedIndexedDb
 } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { toIndexedDbQueueStoreDefinition } from '../queuebox/indexed-db-queue-box-store.ts';
+import { toError } from '../resilience/to-error.ts';
 import { decodeALAdmissionStoredValue } from './al-admission-backend.ts';
 import { decodeALAdmissionValue } from './al-admission-decoder.ts';
 import { decodeALAdmissionString } from './al-admission-value-validation.ts';
+import { ALStorageUnavailableError } from './storage/al-storage-unavailable.ts';
 
 export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
 
@@ -34,9 +37,12 @@ export interface OpenIndexedDbAdmissionDatabaseInput {
 }
 
 /** Thrown when `indexedDB.deleteDatabase` stays blocked by another open connection past its timeout. */
-export class ALStorageResetBlockedError extends Error {
+export class ALStorageResetBlockedError extends ALStorageUnavailableError {
     constructor(dbName: string) {
-        super(`IndexedDB database "${dbName}" delete is blocked by an open connection`);
+        super({
+            cause: 'reset-blocked',
+            detail: `IndexedDB database "${dbName}" delete is blocked by an open connection`
+        });
         this.name = 'ALStorageResetBlockedError';
     }
 }
@@ -81,6 +87,12 @@ export class ALStorageResetListeners {
 export async function openIndexedDbAdmissionDatabase(
     input: OpenIndexedDbAdmissionDatabaseInput
 ): Promise<IDBDatabase> {
+    if (typeof indexedDB === 'undefined') {
+        throw new ALStorageUnavailableError({
+            cause: 'missing',
+            detail: 'IndexedDB is not available in this environment'
+        });
+    }
     const first = await openOrReset(input, undefined);
     if (first.kind === 'open') {
         return first.db;
@@ -97,10 +109,7 @@ async function openOrReset(
     input: OpenIndexedDbAdmissionDatabaseInput,
     attempt: OpenOrResetAttempt
 ): Promise<OpenOrResetResult> {
-    const opened = await openIndexedDbWithValidatedStores(
-        input.dbName,
-        toAdmissionStoreDefinitions(input.storeName, input.schemaId)
-    );
+    const opened = await openAdmissionStores(input);
     if (opened.schemaIssues.length === 0) {
         return await toSchemaIdMismatchReset(input, attempt, opened.db);
     }
@@ -109,6 +118,26 @@ async function openOrReset(
         throw new Error(`ALM storage ${input.dbName} schema mismatch: ${opened.schemaIssues[0]}`);
     }
     return await toStoreSchemaMismatchReset(input);
+}
+
+/** Only the open request's own failure is `open-failed`; what the opened stores hold is checked after it. */
+async function openAdmissionStores(input: OpenIndexedDbAdmissionDatabaseInput): Promise<OpenedIndexedDb> {
+    try {
+        return await openIndexedDbWithValidatedStores(
+            input.dbName,
+            toAdmissionStoreDefinitions(input.storeName, input.schemaId)
+        );
+    }
+    catch (error) {
+        throw toOpenFailedError(input.dbName, toError(error));
+    }
+}
+
+function toOpenFailedError(dbName: string, error: Error): ALStorageUnavailableError {
+    return new ALStorageUnavailableError(
+        { cause: 'open-failed', detail: `IndexedDB open of "${dbName}" failed: ${error.name}: ${error.message}` },
+        { cause: error }
+    );
 }
 
 async function toStoreSchemaMismatchReset(
