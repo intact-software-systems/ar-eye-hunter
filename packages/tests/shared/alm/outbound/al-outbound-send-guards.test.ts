@@ -9,26 +9,26 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
-import {
-    createALOutboundAdmissionStore,
-    type ALOutboundAdmissionStore,
-    type ALOutboundPlanner
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { toALOutboundPendingAckKey } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
     computeOutboundTestAdmission,
-    createDefaultOutboundTestRuntime,
+    createIndexedDbOutboundTestStores,
     createOutboundMessage,
+    createRecordingOutboundTestRuntime,
     holdOutboundClaims,
+    OUTBOUND_TEST_SEND_PLANNER,
     runOutboundWorkTask,
     trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
-import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
+import type { OutboundTestPayload } from '../outbound-test-payload.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
 
 afterEach(() => {
@@ -38,43 +38,48 @@ afterEach(() => {
 const GUARDS_NAMESPACE = 'send-guards';
 const STATE_STORE_NAME = 'entries';
 
-const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
-    msg,
-    dropReasonCode: undefined,
-    persist: true,
-    preparedMessages: [{ peer: 'receiver' }]
-});
-
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
-    ...SEND_PLANNER(msg, undefined),
+    ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined),
     supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
 });
 
 const ACKED_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
-    ...SEND_PLANNER(msg, undefined),
+    ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined),
     ackTracking: trackOutboundTestAcks(['receiver'])
 });
 
 function createGuardsTestStores(dbName: string): ALOutboundRuntimeStores<OutboundTestPayload> {
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName,
-        storeName: STATE_STORE_NAME,
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer: createPassThroughIndexedDbOperationObserver()
-    });
-    const admissionStore = createALOutboundAdmissionStore({
-        nowMs: Date.now,
-        canonicalScope: GUARDS_NAMESPACE,
-        decodePrepared: decodeOutboundTestPayload,
+    return createIndexedDbOutboundTestStores({
+        observer: createPassThroughIndexedDbOperationObserver(),
         namespace: GUARDS_NAMESPACE,
-        backend,
-        supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        dbName
     });
-    return { admissionStore, workQueue: backend.workQueue };
+}
+
+/** Writes a row the receipt decoder rejects straight into the state store, past every admission check. */
+async function writeCorruptReceiptRow(dbName: string, message: ALMessage): Promise<void> {
+    const key = toALOutboundPendingAckKey({
+        namespace: GUARDS_NAMESPACE,
+        originPeerId: message.id.senderId,
+        msgId: message.id.msgId
+    });
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(dbName);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(STATE_STORE_NAME, 'readwrite');
+        transaction.objectStore(STATE_STORE_NAME).put({
+            key,
+            value: 'not a receipt',
+            writeToken: 'corrupt',
+            expireAtTimestamp: Date.now() + 60_000
+        });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
 }
 
 async function admitGuardedMessage(
@@ -118,7 +123,7 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
             `send-guards-first-${crypto.randomUUID()}`
         );
         const message = createOutboundMessage('first-dispatch');
-        await admitGuardedMessage(admissionStore, message, SEND_PLANNER);
+        await admitGuardedMessage(admissionStore, message, OUTBOUND_TEST_SEND_PLANNER);
 
         const recorded = recordIndexedDbTransactions();
         const guards = await admissionStore.readSendGuards(message);
@@ -144,9 +149,8 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
     });
 
     it('answers superseded for a replaced tracked message without reading its receipt', async () => {
-        const { admissionStore } = createGuardsTestStores(
-            `send-guards-superseded-${crypto.randomUUID()}`
-        );
+        const dbName = `send-guards-superseded-${crypto.randomUUID()}`;
+        const { admissionStore } = createGuardsTestStores(dbName);
         const older = createOutboundMessage('older');
         const newer = {
             ...createOutboundMessage('newer'),
@@ -154,6 +158,11 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
         };
         await admitGuardedMessage(admissionStore, older, SUPERSEDING_PLANNER);
         await admitGuardedMessage(admissionStore, newer, SUPERSEDING_PLANNER);
+        // A read of the older message's receipt would throw, so only a skipped read answers.
+        await writeCorruptReceiptRow(dbName, older);
+        await expect(
+            admissionStore.readReceiptState({ originPeerId: older.id.senderId, msgId: older.id.msgId })
+        ).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
         const recorded = recordIndexedDbTransactions();
         const [olderGuards, newerGuards] = [
@@ -172,14 +181,7 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
             const dbName = `send-guards-${handoff}-${crypto.randomUUID()}`;
             const committing = createGuardsTestStores(dbName);
             const sent: ALMessage[] = [];
-            const committer = createDefaultOutboundTestRuntime({
-                stores: committing,
-                planOutgoingMessage: SEND_PLANNER,
-                sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-                    sent.push(lifecycle.canonicalMessage);
-                    return { status: 'sent', submissionAttempted: true };
-                }
-            });
+            const committer = createRecordingOutboundTestRuntime(committing, sent);
             const claims = holdOutboundClaims(committing);
             const message = createOutboundMessage(`guards-${handoff}`);
             expect((await committer.enqueueIfAbsent(message)).verdict).toMatchObject({
@@ -192,14 +194,9 @@ describe('the guards a prepared send rechecks before its carrier runs', () => {
             }
             const readSessions = recordAdmissionReadSessions();
             // A miss: a restarted runtime over the same database claims what the first one committed.
-            const claimant = handoff === 'hit' ? committer : createDefaultOutboundTestRuntime({
-                stores: createGuardsTestStores(dbName),
-                planOutgoingMessage: SEND_PLANNER,
-                sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-                    sent.push(lifecycle.canonicalMessage);
-                    return { status: 'sent', submissionAttempted: true };
-                }
-            });
+            const claimant = handoff === 'hit'
+                ? committer
+                : createRecordingOutboundTestRuntime(createGuardsTestStores(dbName), sent);
 
             await claimant.ready();
             await runOutboundWorkTask(claimant);

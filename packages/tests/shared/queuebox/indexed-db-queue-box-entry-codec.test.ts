@@ -187,6 +187,15 @@ describe('IndexedDB queue entry codec', () => {
             ]);
     });
 
+    it('keeps a decoded row immutable, like an encoded one', () => {
+        const decoded = decodeStoredResourceEntryValue(
+            structuredClone(encodeStoredResourceEntry(createRetryEntry(), 0))
+        );
+
+        expect([decoded, decoded.key, decoded.audit, decoded.dequeueAudit].map(Object.isFrozen))
+            .toEqual([true, true, true, true]);
+    });
+
     it('decodes a row back to the timestamps it was encoded from', () => {
         const entry = createRetryEntry();
         const decoded = decodeStoredResourceEntry(

@@ -13,7 +13,7 @@ import {
 } from './inbound-runtime-test-fixture.ts';
 import {
     createDefaultOutboundTestRuntime,
-    createIndexedDbOutboundCountStores,
+    createIndexedDbOutboundTestStores,
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
 import type { OutboundTestPayload } from './outbound-test-payload.ts';
@@ -30,13 +30,14 @@ const OUTBOUND_NAMESPACE = 'outbound-ledger';
 const INBOUND_NAMESPACE = 'al-inbound-ledger';
 const INBOUND_WORKER_ID = 'al-inbound:ledger';
 
-const SINGLE_SEND_OBSERVATION_REASON = 'a single send\'s decision read also reads the effect row its commit writes and ' +
-    'holds the canonical pair, so the commit opens no observation read (-1 transaction, -2 al-work, ' +
-    '-2 requests)';
-const CANONICAL_HANDOFF_REASON = 'the claim takes the canonical pair its own commit handed over instead of reading it ' +
-    'back (-1 transaction, -2 al-work, -2 requests)';
-const SEND_GUARDS_SESSION_REASON = 'a prepared send reads its supersedence and receipt guards in one session ' +
-    '(-1 transaction)';
+const SINGLE_SEND_OBSERVATION_REASON = 'no observation read: a single send\'s decision read also reads the effect ' +
+    'row its commit writes and holds the canonical pair, so the commit re-reads neither';
+const CANONICAL_HANDOFF_REASON = 'no canonical read: the claim takes the canonical pair its own commit handed ' +
+    'over instead of reading it back';
+const SEND_GUARDS_SESSION_REASON = 'one guard read: a prepared send reads its supersedence and receipt guards in ' +
+    'one session';
+const WORK_ROW_PARSES = 'each read that decodes the work row parses its 4 timestamps (date, created, expiry and ' +
+    'its one dequeue instant) once; a row the owner wrote is never parsed back';
 
 // Each run warms its owner first and lets the warm-up's work finish, so the pinned message's window
 // holds its own transactions only. Every message carries the ledger table, so a failed pin shows
@@ -56,18 +57,18 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
             chain.transactions,
             'enqueue to carrier: the decision read, the fence snapshot and the commit; then the batch\'s ' +
                 'exhaustion sweep, claim read, claim write, lease-recovery read and guard read; ' +
-                SINGLE_SEND_OBSERVATION_REASON + '; no canonical read: ' + CANONICAL_HANDOFF_REASON +
-                '; ' + SEND_GUARDS_SESSION_REASON + table
+                SINGLE_SEND_OBSERVATION_REASON + '; ' + CANONICAL_HANDOFF_REASON + '; ' +
+                SEND_GUARDS_SESSION_REASON + table
         ).toBe(8);
         expect(
             total.transactions,
-            'the chain, then the release read, the release write and the readiness probe the batch\'s ' +
-                'end owes; one fewer than before: ' + SEND_GUARDS_SESSION_REASON + table
+            'the chain\'s 8, then the release read, the release write and the readiness probe the ' +
+                'batch\'s end owes' + table
         ).toBe(11);
         expect(
             total.requests,
-            'every get, getAll and put those 11 transactions issue; the guard read issues the same 2 ' +
-                'gets in one session: ' + SEND_GUARDS_SESSION_REASON + table
+            'every get, getAll and put those 11 transactions issue; the guard read issues its 2 gets ' +
+                'in one session' + table
         ).toBe(42);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
@@ -79,8 +80,24 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         expect(
             total.byOwner['al-work'],
             '3 decision work reads, 2 empty probes, the reservation, the release and the readiness ' +
-                'page; 2 fewer than before: ' + CANONICAL_HANDOFF_REASON + table
+                'page; ' + CANONICAL_HANDOFF_REASON + table
         ).toBe(8);
+    });
+
+    it('parses 9 timestamps up to the carrier and 13 up to the idle owner', async () => {
+        const ledger = await readWarmOutboundSendLedger();
+        const table = `\n${toIndexedDbLedgerTable(ledger)}`;
+
+        expect(
+            computeIndexedDbLedgerTotals(ledger, ['chain']).temporalParses,
+            'the claim read and the lease-recovery read decode the work row (4 each), and the lease ' +
+                'check parses the reservation\'s start once; ' + WORK_ROW_PARSES + table
+        ).toEqual({ instant: 5, plainTime: 2, plainDateTime: 2 });
+        expect(
+            computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']).temporalParses,
+            'the chain\'s 9, then the release read decodes the work row (4); the release write and ' +
+                'the readiness probe parse nothing' + table
+        ).toEqual({ instant: 7, plainTime: 3, plainDateTime: 3 });
     });
 });
 
@@ -91,14 +108,19 @@ describe('inbound warm admit-and-deliver IndexedDB transaction ledger', () => {
 
     it('admits and delivers the fourth message, whose commit takes a plain head read, in 11 transactions', async () => {
         const ledger = await readWarmInboundDeliveryLedger(3);
+        const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
         const table = `\n${toIndexedDbLedgerTable(ledger)}`;
 
         expect(
+            chain.transactions,
+            'admission to dispatch: the decision read, the fence snapshot and the commit; the ' +
+                'commit\'s batch: exhaustion sweep, head page read, readiness read, claim read, claim ' +
+                'write and lease-recovery read' + table
+        ).toBe(9);
+        expect(
             total.transactions,
-            'the decision read, the fence snapshot and the commit; the commit\'s batch: exhaustion sweep, ' +
-                'head page read, readiness read, claim read, claim write and lease-recovery read; then ' +
-                'the release read and write' + table
+            'the chain\'s 9, then the release read and write' + table
         ).toBe(11);
         expect(total.requests, 'every get, getAll and put those 11 transactions issue' + table)
             .toBe(34);
@@ -112,29 +134,52 @@ describe('inbound warm admit-and-deliver IndexedDB transaction ledger', () => {
             total.byOwner['al-work'],
             '2 empty probes, the page read, the reservation and the release' + table
         ).toBe(5);
+        expect(
+            total.temporalParses,
+            'the head page read, the claim read and the lease-recovery read decode the work row before ' +
+                'dispatch (12), and the release read after it (4); ' + WORK_ROW_PARSES + table
+        ).toEqual({ instant: 8, plainTime: 4, plainDateTime: 4 });
     });
 
     it('admits and delivers the second message, whose head read waits one rotation batch, in 13 transactions', async () => {
         const ledger = await readWarmInboundDeliveryLedger(1);
+        const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
         const table = `\n${toIndexedDbLedgerTable(ledger)}`;
 
         expect(
-            total.transactions,
+            chain.transactions,
             'a head read ran since the last rotation read, so the commit\'s head read waits one ' +
-                'batch: the 11, plus that rotation batch\'s exhaustion sweep and page read' + table
+                'batch: the decision read, the fence snapshot and the commit; that rotation batch\'s ' +
+                'exhaustion sweep and page read; then the head batch\'s exhaustion sweep, head page ' +
+                'read, readiness read, claim read, claim write and lease-recovery read' + table
+        ).toBe(11);
+        expect(
+            total.transactions,
+            'the chain\'s 11, then the release read and write' + table
         ).toBe(13);
-        expect(total.requests, 'the 34, plus the rotation batch\'s 2 getAll' + table).toBe(36);
+        expect(
+            total.requests,
+            'every get, getAll and put those 13 transactions issue: the rotation batch adds its 2 getAll' +
+                table
+        ).toBe(36);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
             total.byOwner['al-admission'],
-            'the rotation batch reads no admission row: 8, as after a rotation read' + table
+            'the rotation batch reads no admission row: 5 decision reads, the commit and the 2 ' +
+                'readiness reads' + table
         ).toBe(8);
         expect(
             total.byOwner['al-work'],
-            'the 5, plus the rotation batch\'s empty probe and page read' + table
+            '2 empty probes, the page read, the reservation and the release, plus the rotation ' +
+                'batch\'s empty probe and page read' + table
         ).toBe(7);
+        expect(
+            total.temporalParses,
+            'the rotation batch\'s page read decodes no row, so the same 16 as the fourth message: ' +
+                WORK_ROW_PARSES + table
+        ).toEqual({ instant: 8, plainTime: 4, plainDateTime: 4 });
     });
 });
 
@@ -142,7 +187,7 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
     const recorded = recordIndexedDbTransactionLedger();
     let phaseAtSend: IndexedDbLedgerPhase = 'before';
     const runtime = createDefaultOutboundTestRuntime({
-        stores: createIndexedDbOutboundCountStores(recorded.observer, OUTBOUND_NAMESPACE),
+        stores: createIndexedDbOutboundTestStores({ observer: recorded.observer, namespace: OUTBOUND_NAMESPACE }),
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,

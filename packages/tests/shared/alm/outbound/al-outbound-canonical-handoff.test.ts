@@ -9,19 +9,16 @@ import {
 } from 'vitest';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultIndexedDbALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     ALStorageResetListeners,
     openIndexedDbAdmissionDatabase,
     type ALStorageResetEvent
 } from '@shared/alm/open-indexed-db-admission-database.ts';
-import {
-    createALOutboundAdmissionStore,
-    type ALOutboundPlanner
-} from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import { toALOutboundCanonicalKey } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
@@ -38,24 +35,22 @@ import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
+    createIndexedDbOutboundTestStores,
     createOutboundMessage,
+    createRecordingOutboundTestRuntime,
+    createVolatileOutboundTestStores,
     holdOutboundClaims,
+    OUTBOUND_TEST_SEND_PLANNER,
     runOutboundWorkTask
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
 afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
 });
 
 const HANDOFF_NAMESPACE = 'canonical-handoff';
-
-const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
-    msg,
-    dropReasonCode: undefined,
-    persist: true,
-    preparedMessages: [{ peer: 'receiver' }]
-});
 
 interface HandoffTestPair {
     readonly stores: ALOutboundRuntimeStores<OutboundTestPayload>;
@@ -68,39 +63,13 @@ function openHandoffTestPair(
     storageResets?: ALStorageResetListeners
 ): HandoffTestPair {
     const counting = createCountingIndexedDbOperationObserver();
-    const backend = new IndexedDbAdmissionBackend({
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: () => {},
-        dbName,
-        storeName: 'entries',
-        nowMs: Date.now,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer: counting
-    });
-    const admissionStore = createALOutboundAdmissionStore({
-        nowMs: Date.now,
-        canonicalScope: HANDOFF_NAMESPACE,
-        decodePrepared: decodeOutboundTestPayload,
+    const stores = createIndexedDbOutboundTestStores({
+        observer: counting,
         namespace: HANDOFF_NAMESPACE,
-        backend,
-        supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention()
+        dbName,
+        storageResets
     });
-    return { stores: { admissionStore, workQueue: backend.workQueue, storageResets }, counting };
-}
-
-function createHandoffTestRuntime(
-    stores: ALOutboundRuntimeStores<OutboundTestPayload>,
-    sent: ALMessage[]
-) {
-    return createDefaultOutboundTestRuntime({
-        stores,
-        planOutgoingMessage: SEND_PLANNER,
-        sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
-            sent.push(lifecycle.canonicalMessage);
-            return { status: 'sent', submissionAttempted: true };
-        }
-    });
+    return { stores, counting };
 }
 
 describe('the canonical hand-off bound', () => {
@@ -138,7 +107,7 @@ describe('the canonical hand-off bound', () => {
         const bundle = await computeOutboundTestAdmission(
             store,
             createOutboundMessage('cleared'),
-            SEND_PLANNER
+            OUTBOUND_TEST_SEND_PLANNER
         );
         const [send] = bundle.durableEffects;
         const handoff = new ALOutboundCanonicalHandoff({ namespace: store.namespace, limit: 4 });
@@ -155,7 +124,7 @@ describe('the committed canonical message handed to dispatch', () => {
     it('reaches the claim of the tab that committed it without reading the canonical pair back', async () => {
         const { stores, counting } = openHandoffTestPair(`handoff-hit-${crypto.randomUUID()}`);
         const sent: ALMessage[] = [];
-        const runtime = createHandoffTestRuntime(stores, sent);
+        const runtime = createRecordingOutboundTestRuntime(stores, sent);
         const claims = holdOutboundClaims(stores);
         const message = createOutboundMessage('handoff-hit');
         expect((await runtime.enqueueIfAbsent(message)).verdict).toMatchObject({
@@ -180,7 +149,7 @@ describe('the committed canonical message handed to dispatch', () => {
         async (claimant) => {
             const dbName = `handoff-miss-${crypto.randomUUID()}`;
             const committing = openHandoffTestPair(dbName);
-            const committer = createHandoffTestRuntime(committing.stores, []);
+            const committer = createRecordingOutboundTestRuntime(committing.stores, []);
             // The committing tab never claims: only the claimant below can send the row.
             const claims = holdOutboundClaims(committing.stores);
             const message = createOutboundMessage('handoff-miss');
@@ -193,7 +162,7 @@ describe('the committed canonical message handed to dispatch', () => {
             }
             const claiming = openHandoffTestPair(dbName);
             const sent: ALMessage[] = [];
-            const runtime = createHandoffTestRuntime(claiming.stores, sent);
+            const runtime = createRecordingOutboundTestRuntime(claiming.stores, sent);
 
             await runtime.ready();
             await runOutboundWorkTask(runtime);
@@ -230,7 +199,7 @@ describe('the committed canonical message handed to dispatch', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             queueEngine: engine,
-            planOutgoingMessage: SEND_PLANNER,
+            planOutgoingMessage: OUTBOUND_TEST_SEND_PLANNER,
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage);
                 return { status: 'sent', submissionAttempted: true };
@@ -255,7 +224,7 @@ describe('the committed canonical message handed to dispatch', () => {
             storageResets
         );
         const sent: ALMessage[] = [];
-        const runtime = createHandoffTestRuntime(stores, sent);
+        const runtime = createRecordingOutboundTestRuntime(stores, sent);
         const claims = holdOutboundClaims(stores);
         const message = createOutboundMessage('handoff-reset');
         expect((await runtime.enqueueIfAbsent(message)).verdict).toMatchObject({
@@ -284,7 +253,7 @@ describe('the committed canonical message handed to dispatch', () => {
     it('is dropped when its runtime is disposed', async () => {
         const { stores } = openHandoffTestPair(`handoff-dispose-${crypto.randomUUID()}`);
         const setCommitted = vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted');
-        const runtime = createHandoffTestRuntime(stores, []);
+        const runtime = createRecordingOutboundTestRuntime(stores, []);
         const claims = holdOutboundClaims(stores);
         for (const resourceId of ['held-until-dispose', 'dropped-by-dispose']) {
             expect((await runtime.enqueueIfAbsent(createOutboundMessage(resourceId))).verdict)
@@ -325,5 +294,126 @@ describe('the committed canonical message handed to dispatch', () => {
 
         expect(reported).toHaveLength(1);
         expect(heard).toEqual(reported);
+    });
+
+    it('is not used for a row past its deadline: the claim reads storage and drops the work', async () => {
+        // One fake clock for the owner, both stores and Date.now: the guard reads the stores' clock.
+        vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+        const { stores, counting } = openHandoffTestPair(`handoff-deadline-${crypto.randomUUID()}`);
+        const settlements: ALDeliverySettlement[] = [];
+        const sent: ALMessage[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores,
+            settlements: (settlement) => settlements.push(settlement),
+            planOutgoingMessage: OUTBOUND_TEST_SEND_PLANNER,
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                sent.push(lifecycle.canonicalMessage);
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const claims = holdOutboundClaims(stores);
+        const message = createOutboundMessage('handoff-deadline', { ttlMs: 1_000 });
+        expect((await runtime.enqueueIfAbsent(message)).verdict).toMatchObject({
+            kind: 'admitted',
+            durable: true
+        });
+        const settledBefore = settlements.length;
+        const readWorkSnapshot = stores.admissionStore.readWorkSnapshot.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readWorkSnapshot').mockImplementation(async (entry, handedOff) => {
+            // The claim crosses the deadline after its reservation and before its read.
+            vi.setSystemTime(Date.now() + 5_000);
+            return await readWorkSnapshot(entry, handedOff);
+        });
+
+        counting.reset();
+        await claims.release();
+        await runOutboundWorkTask(runtime);
+
+        expect(sent).toEqual([]);
+        expect(
+            counting.getCounts().byKind['work-read'],
+            'past the deadline the claim reads the canonical pair, as without a hand-off'
+        ).toBe(2);
+        expect(
+            settlements.slice(settledBefore),
+            'the expired pair reads as absent and the work is dropped: no attempt, no expiry'
+        ).toEqual([]);
+    });
+
+    it('rejects a held row that does not match the claimed work row as corruption and never sends it', async () => {
+        const { stores } = openHandoffTestPair(`handoff-mismatch-${crypto.randomUUID()}`);
+        const sent: ALMessage[] = [];
+        const runtime = createRecordingOutboundTestRuntime(stores, sent);
+        const claims = holdOutboundClaims(stores);
+        expect((await runtime.enqueueIfAbsent(createOutboundMessage('handoff-mismatch'))).verdict)
+            .toMatchObject({ kind: 'admitted', durable: true });
+        const other = await computeOutboundTestAdmission(
+            stores.admissionStore,
+            createOutboundMessage('handoff-other-message'),
+            OUTBOUND_TEST_SEND_PLANNER
+        );
+        vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'takeCanonical')
+            .mockReturnValue(other.canonicalEntry);
+        const readWorkSnapshot = vi.spyOn(stores.admissionStore, 'readWorkSnapshot');
+
+        await claims.release();
+        await runOutboundWorkTask(runtime);
+
+        expect(sent).toEqual([]);
+        expect(readWorkSnapshot).toHaveBeenCalledTimes(1);
+        await expect(readWorkSnapshot.mock.results[0]!.value).rejects.toBeInstanceOf(
+            ALAdmissionCorruptionError
+        );
+    });
+
+    it('holds the canonical row of every member a group commit wrote', async () => {
+        const { stores, counting } = openHandoffTestPair(`handoff-group-${crypto.randomUUID()}`);
+        const setCommitted = vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted');
+        const sent: ALMessage[] = [];
+        const runtime = createRecordingOutboundTestRuntime(stores, sent);
+        const claims = holdOutboundClaims(stores);
+        const members = [createOutboundMessage('handoff-group-a'), createOutboundMessage('handoff-group-b')];
+
+        const results = await runtime.enqueueAllIfAbsent(members);
+
+        expect(results.map((result) => result.verdict)).toMatchObject([
+            { kind: 'admitted', durable: true },
+            { kind: 'admitted', durable: true }
+        ]);
+        expect(
+            setCommitted.mock.calls.map(([bundle]) => bundle.canonicalEntry?.key),
+            'one hand-off per committed member'
+        ).toEqual(members.map((member) => toALOutboundCanonicalKey(HANDOFF_NAMESPACE, member)));
+        counting.reset();
+        await claims.release();
+        await runOutboundWorkTask(runtime);
+        expect(sent).toHaveLength(2);
+        expect(sent).toEqual(expect.arrayContaining(members));
+        expect(
+            counting.getCounts().byKind['work-read'] ?? 0,
+            'both claims take their member\'s canonical row in memory'
+        ).toBe(0);
+    });
+
+    it('is not kept by the volatile lane', async () => {
+        const setCommitted = vi.spyOn(ALOutboundCanonicalHandoff.prototype, 'setCommitted');
+        const sent: ALMessage[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            volatileStores: createVolatileOutboundTestStores(),
+            planOutgoingMessage: (msg) => ({ ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined), persist: false }),
+            sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
+                sent.push(lifecycle.canonicalMessage);
+                return { status: 'sent', submissionAttempted: true };
+            }
+        });
+        const message = createOutboundMessage('handoff-volatile');
+
+        expect((await runtime.enqueueIfAbsent(message)).verdict).toMatchObject({
+            kind: 'admitted',
+            durable: false
+        });
+        await vi.waitFor(() => expect(sent).toEqual([message]));
+
+        expect(setCommitted, 'the memory pair\'s lane has no hand-off to record into').not.toHaveBeenCalled();
     });
 });

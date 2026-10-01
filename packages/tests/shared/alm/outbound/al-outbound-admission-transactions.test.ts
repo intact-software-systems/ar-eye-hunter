@@ -29,9 +29,10 @@ import {
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
-import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
+import { toKeyAsString, toResourceEntryWithKey, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import {
@@ -86,7 +87,7 @@ const AUTHORITY_BREAKING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg)
 /**
  * What the commit of a single send costs: the write phase's own snapshot, then the conditional write.
  * Its decision read already holds the effect rows and the canonical pair the commit fences, so the
- * commit opens no observation read of its own (it did until the two reads merged: three became two).
+ * commit opens no observation read of its own.
  * The snapshot is not a duplicate of the decision read — a fence re-read has to observe a store
  * state later than the surface it is fencing, so it can see a commit that landed in between.
  */
@@ -94,7 +95,8 @@ const COMMITTING_ADMISSION_TRANSACTIONS: readonly IDBTransactionMode[] = ['reado
 
 /**
  * A commit that holds no observation reads one first: a group, whose members decide in reads of
- * their own, and a bundle handed to `commitBundle` alone.
+ * their own, a bundle handed to `commitBundle` alone, and a control admission, whose decision read
+ * comes before this observation read.
  */
 const OBSERVING_ADMISSION_TRANSACTIONS: readonly IDBTransactionMode[] = [
     'readonly',
@@ -309,6 +311,51 @@ it('conflicts a single send whose canonical row was written after its decision r
     expect(await store.commitBundle(decision.bundle, observation)).toBe('conflict');
 });
 
+it('reads the canonical row a dequeue supplies inside the commit\'s observation, never trusting the supplied entry', async () => {
+    const { store, backend } = await createAdmissionFixture('dequeue-observation');
+    const message = createOutboundMessage('dequeue-observation');
+    const supplied = QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox');
+    await backend.workQueue.enqueue(supplied);
+
+    const { decision, observation } = await store.readOutgoingDecision({
+        msg: message,
+        planner: SEND_PLANNER,
+        observedCanonicalEntry: supplied,
+        intent: 'dequeue'
+    }, async (read) => ({ kind: 'commit', bundle: toTestDequeueBundle(read, supplied) }));
+
+    const canonicalWrite = observation?.canonicalWrites.find((write) => toKeyAsString(write.entry.key) === toKeyAsString(supplied.key));
+    expect(canonicalWrite?.expected, 'the session read the stored row, not the supplied entry')
+        .toEqual(await backend.workQueue.getItem(supplied.key));
+    expect(canonicalWrite?.expected).not.toEqual(supplied);
+    expect(await store.commitBundle(decision.bundle, observation)).toBe('committed');
+});
+
+it('conflicts a single send whose effect row was written after its decision read observed it empty', async () => {
+    const { store, backend } = await createAdmissionFixture('held-effect-slot');
+    const message = createOutboundMessage('held-effect-slot');
+    const { decision, observation } = await store.readOutgoingDecision({
+        msg: message,
+        planner: SEND_PLANNER,
+        observedCanonicalEntry: undefined,
+        intent: 'enqueue'
+    }, async (read) => ({ kind: 'commit', bundle: toTestBundle(store, read) }));
+    const [effect] = decision.bundle.durableEffects;
+    const nowMs = Date.now();
+
+    // Another owner writes the send's own effect row between the decision read and the commit.
+    await backend.workQueue.enqueue(computeALOutboundWorkEntry({
+        namespace: TRANSACTION_NAMESPACE,
+        effectId: effect!.effectId,
+        payload: effect!.payload,
+        observedAtMs: nowMs,
+        retryAtMs: nowMs,
+        expireAtTimestamp: nowMs + 60_000
+    }));
+
+    expect(await store.commitBundle(decision.bundle, observation)).toBe('conflict');
+});
+
 it('closes the fence snapshot of a commit that conflicts inside its own write phase', async () => {
     const { store } = await createAdmissionFixture('commit-conflict');
     const message = createOutboundMessage('commit-conflict');
@@ -499,6 +546,25 @@ function toTestBundle(
         intent: 'enqueue',
         phase: 'immediate',
         options: {}
+    });
+    if (!computed.bundle) {
+        throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);
+    }
+    return computed.bundle;
+}
+
+/** A dequeue's bundle: the supplied foreign row is the message's canonical entry. */
+function toTestDequeueBundle(
+    read: ALOutboundMessageReadDto<OutboundTestPayload>,
+    outboxEntry: ResourceEntry
+): ALOutboundCommitBundle<OutboundTestPayload> {
+    const computed = computeALOutboundDispatch({
+        read,
+        outboxEntry,
+        dispatchAtMs: Date.now(),
+        intent: 'dequeue',
+        phase: 'dequeue',
+        options: { observedOutboxEntry: outboxEntry }
     });
     if (!computed.bundle) {
         throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);

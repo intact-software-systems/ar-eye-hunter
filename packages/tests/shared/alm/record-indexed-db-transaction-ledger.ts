@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { vi } from 'vitest';
 
 import type {
@@ -5,6 +6,8 @@ import type {
     IndexedDbOperationObserver,
     IndexedDbOperationOwner
 } from '@shared/persistence/indexed-db-operation-observer.ts';
+
+import type { TemporalParseCounts } from '../queuebox/record-temporal-parses.ts';
 
 /**
  * `chain` runs from the call that admits the message to the carrier's send, `after-send` from that
@@ -28,11 +31,18 @@ export interface IndexedDbLedgerOperation extends IndexedDbOperation {
     readonly phase: IndexedDbLedgerPhase;
 }
 
+/** One `Temporal.Instant.from`, `PlainTime.from` or `PlainDateTime.from` call: a string parse. */
+export interface IndexedDbLedgerTemporalParse {
+    readonly kind: keyof TemporalParseCounts;
+    readonly phase: IndexedDbLedgerPhase;
+}
+
 export interface IndexedDbTransactionLedger {
     readonly transactions: readonly IndexedDbLedgerTransaction[];
     readonly operations: readonly IndexedDbLedgerOperation[];
     /** The phase of every request issued on a transaction the ledger did not record. */
     readonly droppedRequestPhases: readonly IndexedDbLedgerPhase[];
+    readonly temporalParses: readonly IndexedDbLedgerTemporalParse[];
 }
 
 export interface IndexedDbLedgerTotals {
@@ -41,6 +51,7 @@ export interface IndexedDbLedgerTotals {
     /** Requests in these phases that no transaction row holds, so the request figure misses them. */
     readonly droppedRequests: number;
     readonly byOwner: Readonly<Record<IndexedDbOperationOwner, number>>;
+    readonly temporalParses: TemporalParseCounts;
 }
 
 export interface RecordedIndexedDbTransactionLedger {
@@ -64,6 +75,7 @@ interface LedgerState {
     readonly byTransaction: Map<IDBTransaction, LedgerTransactionState>;
     readonly operations: IndexedDbLedgerOperation[];
     readonly droppedRequestPhases: IndexedDbLedgerPhase[];
+    readonly temporalParses: IndexedDbLedgerTemporalParse[];
     /** Operations observed before any request of theirs: the next request's transaction takes them. */
     pendingOperations: string[];
 }
@@ -99,8 +111,10 @@ const INDEX_REQUEST_METHODS = [
 ] as const;
 
 /**
- * Patches `IDBDatabase.prototype.transaction` and the object-store and index request methods for the
- * rest of the test: every suite using this needs `vi.restoreAllMocks()` in an `afterEach`.
+ * Patches `IDBDatabase.prototype.transaction`, the object-store and index request methods and the
+ * polyfill's `Temporal` string parsers for the rest of the test: every suite using this needs
+ * `vi.restoreAllMocks()` in an `afterEach`. Parses are counted by the phase they ran in, wherever
+ * they ran, so a figure covers the codec and every other caller in the window.
  *
  * An operation reports itself either before its first request (a read, a write, a page read) or
  * after the read that decided it (a reservation, or a probe that computed no write). So an operation
@@ -120,11 +134,13 @@ export function recordIndexedDbTransactionLedger(): RecordedIndexedDbTransaction
         byTransaction: new Map(),
         operations: [],
         droppedRequestPhases: [],
+        temporalParses: [],
         pendingOperations: []
     };
     recordOpenedTransactions(state);
     recordIssuedRequests(state, IDBObjectStore.prototype, 'store');
     recordIssuedRequests(state, IDBIndex.prototype, 'index');
+    recordTemporalParses(state);
     return {
         observer: { observe: (operation) => recordOperation(state, operation) },
         setPhase: (phase) => {
@@ -138,7 +154,8 @@ export function recordIndexedDbTransactionLedger(): RecordedIndexedDbTransaction
                 operations: [...entry.operations]
             })),
             operations: [...state.operations],
-            droppedRequestPhases: [...state.droppedRequestPhases]
+            droppedRequestPhases: [...state.droppedRequestPhases],
+            temporalParses: [...state.temporalParses]
         })
     };
 }
@@ -159,7 +176,20 @@ export function computeIndexedDbLedgerTotals(
         byOwner: {
             'al-admission': operations.filter((operation) => operation.owner === 'al-admission').length,
             'al-work': operations.filter((operation) => operation.owner === 'al-work').length
-        }
+        },
+        temporalParses: computeTemporalParseCounts(ledger, phases)
+    };
+}
+
+function computeTemporalParseCounts(
+    ledger: IndexedDbTransactionLedger,
+    phases: readonly IndexedDbLedgerPhase[]
+): TemporalParseCounts {
+    const parses = ledger.temporalParses.filter((parse) => phases.includes(parse.phase));
+    return {
+        instant: parses.filter((parse) => parse.kind === 'instant').length,
+        plainTime: parses.filter((parse) => parse.kind === 'plainTime').length,
+        plainDateTime: parses.filter((parse) => parse.kind === 'plainDateTime').length
     };
 }
 
@@ -205,6 +235,24 @@ function recordOpenedTransactions(state: LedgerState): void {
             });
         }
         return transaction;
+    });
+}
+
+function recordTemporalParses(state: LedgerState): void {
+    recordTemporalParse(state, Temporal.Instant, 'instant');
+    recordTemporalParse(state, Temporal.PlainTime, 'plainTime');
+    recordTemporalParse(state, Temporal.PlainDateTime, 'plainDateTime');
+}
+
+function recordTemporalParse(
+    state: LedgerState,
+    parser: { from(...args: unknown[]): unknown; },
+    kind: keyof TemporalParseCounts
+): void {
+    const parse = parser.from;
+    vi.spyOn(parser, 'from').mockImplementation((...args: unknown[]) => {
+        state.temporalParses.push({ kind, phase: state.phase });
+        return parse.apply(parser, args);
     });
 }
 
