@@ -49,9 +49,11 @@ describe('AL outbound durable effect lifecycle', () => {
         vi.setSystemTime(1_000);
         const stores = createDefaultOutboundTestStores();
         const send = vi.fn(async () => ({ status: 'sent' as const, submissionAttempted: true }));
-        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementation(async () => {
+        const readSendGuards = stores.admissionStore.readSendGuards.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'readSendGuards').mockImplementation(async (message) => {
+            const guards = await readSendGuards(message);
             vi.setSystemTime(2_000);
-            return undefined;
+            return guards;
         });
         const runtime = createDefaultOutboundTestRuntime({
             stores,

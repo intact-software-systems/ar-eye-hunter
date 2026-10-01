@@ -35,6 +35,8 @@ const SINGLE_SEND_OBSERVATION_REASON = 'a single send\'s decision read also read
     '-2 requests)';
 const CANONICAL_HANDOFF_REASON = 'the claim takes the canonical pair its own commit handed over instead of reading it ' +
     'back (-1 transaction, -2 al-work, -2 requests)';
+const SEND_GUARDS_SESSION_REASON = 'a prepared send reads its supersedence and receipt guards in one session ' +
+    '(-1 transaction)';
 
 // Each run warms its owner first and lets the warm-up's work finish, so the pinned message's window
 // holds its own transactions only. Every message carries the ledger table, so a failed pin shows
@@ -44,7 +46,7 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         vi.restoreAllMocks();
     });
 
-    it('reaches the carrier in 9 transactions and the idle owner in 12', async () => {
+    it('reaches the carrier in 8 transactions and the idle owner in 11', async () => {
         const ledger = await readWarmOutboundSendLedger();
         const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
@@ -53,25 +55,26 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         expect(
             chain.transactions,
             'enqueue to carrier: the decision read, the fence snapshot and the commit; then the batch\'s ' +
-                'exhaustion sweep, claim read, claim write, lease-recovery read, supersedence read and ' +
-                'receipt read; ' + SINGLE_SEND_OBSERVATION_REASON + '; no canonical read: ' +
-                CANONICAL_HANDOFF_REASON + table
-        ).toBe(9);
+                'exhaustion sweep, claim read, claim write, lease-recovery read and guard read; ' +
+                SINGLE_SEND_OBSERVATION_REASON + '; no canonical read: ' + CANONICAL_HANDOFF_REASON +
+                '; ' + SEND_GUARDS_SESSION_REASON + table
+        ).toBe(8);
         expect(
             total.transactions,
             'the chain, then the release read, the release write and the readiness probe the batch\'s ' +
-                'end owes; one fewer than before: ' + CANONICAL_HANDOFF_REASON + table
-        ).toBe(12);
+                'end owes; one fewer than before: ' + SEND_GUARDS_SESSION_REASON + table
+        ).toBe(11);
         expect(
             total.requests,
-            'every get, getAll and put those 12 transactions issue; 2 fewer than before: ' +
-                CANONICAL_HANDOFF_REASON + table
+            'every get, getAll and put those 11 transactions issue; the guard read issues the same 2 ' +
+                'gets in one session: ' + SEND_GUARDS_SESSION_REASON + table
         ).toBe(42);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
             total.byOwner['al-admission'],
-            '7 decision reads, the supersedence read, the receipt read and the commit' + table
+            '7 decision reads, the supersedence and receipt reads (one session, one op per key) and the ' +
+                'commit' + table
         ).toBe(10);
         expect(
             total.byOwner['al-work'],

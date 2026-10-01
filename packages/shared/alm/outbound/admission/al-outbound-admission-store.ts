@@ -70,6 +70,7 @@ import {
 import { ALOutboundAdmissionReads } from './al-outbound-admission-reads.ts';
 import type { ALOutboundCapturedPolicy, ALStoredOutboundMessage } from './al-outbound-admission-validation.ts';
 import { ALOutboundDecisionReadSession } from './al-outbound-decision-read-session.ts';
+import { readALOutboundSendGuards, type ALOutboundSendGuards } from './read-al-outbound-send-guards.ts';
 
 export interface CreateALOutboundAdmissionStoreInput<TPrepared> {
     readonly nowMs: () => number;
@@ -301,6 +302,9 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     readonly isMessageSuperseded: (msg: ALMessage) => Promise<boolean>;
 
+    /** The supersedence check and then the receipt state of one canonical message, read in one session. */
+    readonly readSendGuards: (message: ALMessage) => Promise<ALOutboundSendGuards>;
+
     /** True while the admission fact is retained, including after the canonical payload expired. */
     readonly hasSentMessageAdmission: (msgId: string) => Promise<boolean>;
 
@@ -467,6 +471,10 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 
     async isMessageSuperseded(msg: ALMessage): Promise<boolean> {
         return await this.backend.readWithin((session) => this.reads.isMessageSuperseded(session, msg));
+    }
+
+    async readSendGuards(message: ALMessage): Promise<ALOutboundSendGuards> {
+        return await this.backend.readWithin((session) => readALOutboundSendGuards(this.reads, session, message));
     }
 
     async hasSentMessageAdmission(msgId: string): Promise<boolean> {

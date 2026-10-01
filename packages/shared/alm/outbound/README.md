@@ -127,7 +127,8 @@ every admission key string;
 owns durable effect rows;
 [`ALOutboundDecisionReadSession`](./admission/al-outbound-decision-read-session.ts)
 is the read session of a single send's decision, which answers a work row it already read from that
-read; and
+read; [`read-al-outbound-send-guards.ts`](./admission/read-al-outbound-send-guards.ts) reads the
+guards a prepared send rechecks before its carrier runs; and
 [`al-outbound-admission-validation.ts`](./admission/al-outbound-admission-validation.ts)
 decodes the persisted snapshots. Every fence — the sender version, the pending-admission
 row, an observed effect row, and a moved supersedence observation — resolves a conflict
@@ -178,7 +179,10 @@ bounded to four work pages, oldest dropped first; the claim takes it and checks 
 reference exactly as it checks a stored pair. It is a cache of an immutable row, never a source:
 another tab's claim, a reload, a replayed pending admission, a retried claim and a row at its
 deadline read storage. Dispose and a storage reset drop it (the IndexedDB pair's composition tells
-the lane through `ALStorageResetListeners`); the memory pair's lane has none.
+the lane through `ALStorageResetListeners`); the memory pair's lane has none. After `attempt-started`
+the claim reads its guards, supersedence and then (unless superseded) receipt state, in one readonly
+session (`readSendGuards`), so a hand-off hit costs the claim one read session and a miss two: the
+canonical read stays its own session before the attempt starts.
 
 A validated initial AL control enqueue runs the normal read, computation, validation,
 and optimistic commit without entering the sender queue or browser Web Lock (D105). An
@@ -226,7 +230,7 @@ transport action and does not confirm the logical audience; a server receipt doe
 | `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                                                                                                                    | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK.                                                                                                                             |
 | `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                                                                                                                    | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                                                                                       |
 | `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` first reads the carrier's pending admission authority with no prepared copies, then rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                            | Circuit-open resilience reschedules; a `not-ready` authority holds the claim (one `not-ready` attempt, re-checks in memory); `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and runs the configured `afterDequeueAdmission` port. |
-| `send-prepared` work         | `ALOutboundMessageEffects` rechecks supersedence, receipt completion, deadline, and abort before calling the transport.                                                                                                                                                                                                                      | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                                                                             |
+| `send-prepared` work         | `ALOutboundMessageEffects` rechecks supersedence and receipt completion from one read session (`readSendGuards`), then the deadline and abort, before calling the transport.                                                                                                                                                                 | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                                                                             |
 | `ack-timeout` work           | Repair admission rereads the receipt snapshot. Before the deadline it recommits the next timeout; at it, it charges one attempt and commits the next timeout plus a `repair-hint`, clears a complete receipt, and out of budget schedules nothing more.                                                                                      | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                                                                            |
 | `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached message (by ordering track when the hint names missing sequences), applies repair policy, and commits a fresh dispatch through dispatch admission.                                                                                                                                               | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                                                                                  |
 | Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row with the canonical message it references, handed over by the lane's own commit or else read (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available. | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim.                                                           |
@@ -642,11 +646,11 @@ that moves the key's latest-supersedence pointer states it; a later commit of th
 message, or a predecessor the admission observed already replaced, states nothing again. By
 the time a superseded predecessor's own queued work next runs, the lifecycle this settlement
 named is already terminal, so its own attempt-time and dequeue-time supersedence checks
-(`admissionStore.isMessageSuperseded`, read fresh in both `writeAttemptedSend` and
-`readDequeuedAdmissionOutcome`) add nothing new: dequeue completes the claim without sending
-and without a settlement of its own, and a `send-prepared` attempt still states its own
-`attempt-settled` (`outcome: 'superseded'`) but only as late evidence on a lifecycle a terminal
-settlement already closed.
+(read fresh in `writeAttemptedSend` through `admissionStore.readSendGuards` and in
+`readDequeuedAdmissionOutcome` through `admissionStore.isMessageSuperseded`) add nothing new:
+dequeue completes the claim without sending and without a settlement of its own, and a
+`send-prepared` attempt still states its own `attempt-settled` (`outcome: 'superseded'`) but
+only as late evidence on a lifecycle a terminal settlement already closed.
 
 The RTC Promise executor captures its resolver synchronously before `sendJson`
 registers the callback. Native completion invokes it after queue mutation. This is
