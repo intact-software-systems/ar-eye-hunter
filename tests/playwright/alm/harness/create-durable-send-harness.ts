@@ -36,22 +36,26 @@ interface DurableSendStart {
     readonly dispatch: Promise<DurableSendDispatch>;
 }
 
+namespace PlainPageDurableSendHarness {
+    export interface Input {
+        readonly sessionId: string;
+        readonly runtime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
+        readonly observation: DurableSendObservation;
+        readonly frameLoad: PacedFrameLoad;
+    }
+}
+
 class PlainPageDurableSendHarness implements DurableSendHarness {
     private readonly sessionId: string;
     private readonly runtime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
     private readonly observation: DurableSendObservation;
     private readonly frameLoad: PacedFrameLoad;
 
-    constructor(
-        sessionId: string,
-        runtime: ALOutboundMessageRuntime<ALOutboundTransportMessage>,
-        observation: DurableSendObservation,
-        frameLoad: PacedFrameLoad
-    ) {
-        this.sessionId = sessionId;
-        this.runtime = runtime;
-        this.observation = observation;
-        this.frameLoad = frameLoad;
+    constructor(input: PlainPageDurableSendHarness.Input) {
+        this.sessionId = input.sessionId;
+        this.runtime = input.runtime;
+        this.observation = input.observation;
+        this.frameLoad = input.frameLoad;
     }
 
     async runSends(input: DurableSendRunInput): Promise<DurableSendRun> {
@@ -105,7 +109,7 @@ class PlainPageDurableSendHarness implements DurableSendHarness {
         const admission = this.runtime.enqueueIfAbsent(msg);
         return {
             startedAtMs,
-            phase: this.frameLoad.readFramePhase(startedAtMs),
+            phase: this.frameLoad.getFramePhase(startedAtMs),
             admission,
             dispatch
         };
@@ -168,5 +172,5 @@ export async function createDurableSendHarness(sessionId: string): Promise<Durab
         }
     });
     await runtime.ready();
-    return new PlainPageDurableSendHarness(sessionId, runtime, observation, frameLoad);
+    return new PlainPageDurableSendHarness({ sessionId, runtime, observation, frameLoad });
 }

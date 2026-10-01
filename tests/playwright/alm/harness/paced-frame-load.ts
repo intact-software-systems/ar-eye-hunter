@@ -19,6 +19,8 @@ interface ScheduledSend {
  *
  * `runAtFrameOffset` starts a send at a chosen offset from the start of the next frame, from inside
  * that frame's busy work when the offset falls within it, so a run samples a chosen mix of phases.
+ * The synchronous part of a send started inside a frame runs on that frame's clock, so it counts
+ * toward `busyShare`.
  */
 export class PacedFrameLoad {
     private handle: number | undefined;
@@ -53,14 +55,14 @@ export class PacedFrameLoad {
         this.scheduledSend = { offsetMs, action };
     }
 
-    readFramePhase(atMs: number): FramePhase {
+    getFramePhase(atMs: number): FramePhase {
         return {
             offsetMs: this.handle === undefined ? undefined : atMs - this.currentFrameStartMs,
             framesStarted: this.frameCount
         };
     }
 
-    countFramesStarted(): number {
+    getFramesStarted(): number {
         return this.frameCount;
     }
 
@@ -91,7 +93,7 @@ export class PacedFrameLoad {
         this.currentFrameStartMs = frameStartMs;
         this.frameCount += 1;
         this.nextFrameAtMs = Math.max(this.nextFrameAtMs + input.frameIntervalMs, frameStartMs);
-        const unstarted = this.burnBusyTime(frameStartMs, input.busyMsPerFrame);
+        const unstarted = this.runBusyTime(frameStartMs, input.busyMsPerFrame);
         this.busyMs += performance.now() - frameStartMs;
         if (unstarted !== undefined) {
             const delayMs = unstarted.offsetMs - (performance.now() - frameStartMs);
@@ -99,8 +101,11 @@ export class PacedFrameLoad {
         }
     }
 
-    /** Burns the frame's busy time, starting the scheduled send when its offset is reached; returns it if the frame ended first. */
-    private burnBusyTime(frameStartMs: number, busyMs: number): ScheduledSend | undefined {
+    /**
+     * Spends the frame's busy time, starting the scheduled send when its offset is reached; returns
+     * the send if the frame ended first.
+     */
+    private runBusyTime(frameStartMs: number, busyMs: number): ScheduledSend | undefined {
         let pending = this.scheduledSend;
         this.scheduledSend = undefined;
         while (performance.now() - frameStartMs < busyMs) {

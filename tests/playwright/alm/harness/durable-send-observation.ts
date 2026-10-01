@@ -11,7 +11,7 @@ const SETTLE_BOUND_MS = 2_000;
 
 export class DurableSendDispatchTimeoutError extends Error {
     constructor(sendIndex: number) {
-        super(`Send ${sendIndex} was not dispatched within ${SETTLE_BOUND_MS} ms of its admission`);
+        super(`Send ${sendIndex} did not reach its first dispatch within ${SETTLE_BOUND_MS} ms of its start`);
         this.name = 'DurableSendDispatchTimeoutError';
     }
 }
@@ -52,8 +52,8 @@ export class DurableSendObservation {
         this.dispatchWaiters.delete(msgId);
         resolveDispatch({
             atMs,
-            framesStarted: this.frameLoad.countFramesStarted(),
-            ownProbe: this.armOwnProbe()
+            framesStarted: this.frameLoad.getFramesStarted(),
+            ownProbe: this.startOwnProbeWait()
         });
     }
 
@@ -82,7 +82,7 @@ export class DurableSendObservation {
         });
     }
 
-    private armOwnProbe(): Promise<DurableSendOwnProbe> {
+    private startOwnProbeWait(): Promise<DurableSendOwnProbe> {
         return new Promise((resolve) => {
             const observedCauses: ALWorkReadinessProbeCause[] = [];
             const end = (endedOn: DurableSendProbeEnd) => {

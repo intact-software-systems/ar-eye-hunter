@@ -216,7 +216,7 @@ async function sendUntilOwnerIdle(
     recorded: RecordedIndexedDbTransactionLedger,
     resourceId: string
 ): Promise<void> {
-    const releasesBefore = countOperations(recorded.getLedger(), 'work-release');
+    const releasesBefore = computeOperationCount(recorded.getLedger(), 'work-release');
     const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage(resourceId));
     expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
     // The warm-up's release and probe are already in the ledger, so only counts taken before this
@@ -282,11 +282,11 @@ async function admitUntilReleased(
     expect(admitted.right).toEqual({ kind: 'admitted' });
     await vi.waitFor(() => {
         expect(fixture.delivered).toHaveLength(delivered);
-        expect(countOperations(recorded.getLedger(), 'work-release')).toBe(delivered);
+        expect(computeOperationCount(recorded.getLedger(), 'work-release')).toBe(delivered);
         expect(recorded.liveCount()).toBe(0);
     });
 }
 
-function countOperations(ledger: IndexedDbTransactionLedger, kind: IndexedDbOperationKind): number {
+function computeOperationCount(ledger: IndexedDbTransactionLedger, kind: IndexedDbOperationKind): number {
     return ledger.operations.filter((operation) => operation.kind === kind).length;
 }

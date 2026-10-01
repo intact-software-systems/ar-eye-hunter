@@ -8,8 +8,8 @@ import {
     computePercentile,
     computeSendToDispatchPercentiles
 } from './compute-send-to-dispatch-percentiles.ts';
-import type { DurableSendConfiguration } from './drive-durable-send-harness.ts';
 import type { DurableSendRun } from './harness/durable-send-harness-contract.ts';
+import type { DurableSendConfiguration } from './run-durable-send-configuration.ts';
 
 const REPORT_DIRECTORY = resolve(
     dirname(fileURLToPath(import.meta.url)),
@@ -49,6 +49,8 @@ export interface DurableSendReport {
     readonly method: DurableSendMethod;
     readonly configurations: readonly DurableSendConfigurationFigures[];
     readonly profile: CpuProfileShares;
+    /** `os.loadavg()` (1, 5 and 15 min) before the first run and after the profile. */
+    readonly loadAverage: { readonly atStart: readonly number[]; readonly atEnd: readonly number[]; };
 }
 
 export interface DurableSendMethod {
@@ -84,8 +86,8 @@ function toRunFigures(
     return {
         ...computeSendToDispatchPercentiles(sendToDispatchMs),
         unsettledCount: run.samples.filter((sample) => sample.probeEnd === 'timeout').length,
-        probeCauses: countByKey(run.samples.map((sample) => sample.probeEnd)),
-        observedProbeCauses: countByKey(run.samples.flatMap((sample) => sample.observedProbeCauses)),
+        probeCauses: computeCountByKey(run.samples.map((sample) => sample.probeEnd)),
+        observedProbeCauses: computeCountByKey(run.samples.flatMap((sample) => sample.observedProbeCauses)),
         fastModeShare: frameIntervalMs === undefined
             ? null
             : toFastModeShare(sendToDispatchMs, frameIntervalMs),
@@ -106,7 +108,7 @@ function toFastModeShare(sendToDispatchMs: readonly number[], frameIntervalMs: n
     return Math.round((fastCount / sendToDispatchMs.length) * 100) / 100;
 }
 
-function countByKey(keys: readonly string[]): Record<string, number> {
+function computeCountByKey(keys: readonly string[]): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const key of keys) {
         counts[key] = (counts[key] ?? 0) + 1;
@@ -138,8 +140,23 @@ export function toDurableSendTable(report: DurableSendReport): string {
         `idle CPU profile over ${report.method.profiledCount} sends: busy ${profile.busyMs} ms; ` +
         `polyfill ${profile.temporalPolyfillPercent} % + JSBI ${profile.jsbiPercent} % = ${profile.temporalPercent} %; ` +
         `codec self ${profile.codecSelfPercent} %, inclusive ${profile.codecInclusivePercent} %; ` +
-        `polyfill + JSBI under the codec ${profile.temporalUnderCodecPercent} %`
+        `polyfill + JSBI under the codec ${profile.temporalUnderCodecPercent} %`,
+        `  per send: polyfill ${toPerSendMs(report, profile.temporalPolyfillPercent)} ms, ` +
+        `JSBI ${toPerSendMs(report, profile.jsbiPercent)} ms, ` +
+        `codec inclusive ${toPerSendMs(report, profile.codecInclusivePercent)} ms; ` +
+        `load average ${report.loadAverage.atStart.map(toLoadText).join(' ')} -> ` +
+        report.loadAverage.atEnd.map(toLoadText).join(' ')
     ].join('\n');
+}
+
+/** A share of busy time as ms per profiled send, so a share that falls with `busyMs` is not read as time saved. */
+function toPerSendMs(report: DurableSendReport, percent: number): number {
+    const perSendMs = (report.profile.busyMs * percent) / 100 / report.method.profiledCount;
+    return Math.round(perSendMs * 1000) / 1000;
+}
+
+function toLoadText(load: number): string {
+    return load.toFixed(2);
 }
 
 function toRunCell(run: DurableSendRunFigures): string {
