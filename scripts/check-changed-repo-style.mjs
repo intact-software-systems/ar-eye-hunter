@@ -100,6 +100,7 @@ async function main() {
     const newFindings = retainTouchedEnforcedFindings({
         repoRoot,
         changes,
+        lineageTargetPaths: new Set(structuralLineageByTargetPath.keys()),
         targetFindings,
         newFindings: subtractExistingFindings({
             repoRoot,
@@ -377,7 +378,7 @@ function retainTouchedEnforcedFindings(input) {
             continue;
         }
         const relativePath = toRelativePath(input.repoRoot, finding.file);
-        if (!touchedPaths.has(relativePath)) {
+        if (!touchedPaths.has(relativePath) || input.lineageTargetPaths.has(relativePath)) {
             continue;
         }
         included.add(finding);

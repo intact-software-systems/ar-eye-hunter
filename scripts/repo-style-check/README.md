@@ -78,7 +78,8 @@ These scans read through that mask:
 Other rules fail when a finding is new or worsened against the merge base. `boundary.unknown` and
 `construction.forward-capture` also fail when a file in the diff still carries either finding,
 including one that already existed on the base. A file the diff leaves untouched keeps the
-new-or-worsened comparison.
+new-or-worsened comparison. A structural-lineage target keeps that comparison too: inherited
+findings are judged against the source file, and only growth fails.
 
 `boundary.unknown` keys include the symbol. A file whose total `boundary.unknown` magnitude stays
 within the merge-base total has moved `unknown` between symbols inside that total. The touched-file
