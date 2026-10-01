@@ -251,7 +251,7 @@ export async function claimOutboundTestWork<TPrepared>(
 ): Promise<readonly ALOutboundEffectSnapshot<TPrepared>[]> {
     const port = createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace);
     const claims = await port.claim({ maxCount, observedEntries: undefined });
-    return await Promise.all(claims.map((claim) => stores.admissionStore.readWorkSnapshot(claim.entry)));
+    return await Promise.all(claims.map((claim) => stores.admissionStore.readWorkSnapshot(claim.entry, undefined)));
 }
 
 /** Releases one claimed row the way the owner's attempt does. */

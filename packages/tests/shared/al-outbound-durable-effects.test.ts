@@ -757,7 +757,7 @@ async function hasAckTimeoutWork(
     const payloads = await Promise.all(
         entries
             .filter((entry) => entry.typeId === toALOutboundWorkType(stores.admissionStore.namespace))
-            .map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry)).payload)
+            .map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry, undefined)).payload)
     );
     return payloads.some((payload) => payload.kind === 'ack-timeout');
 }
@@ -770,6 +770,6 @@ async function readRetainedWorkKinds(stores: OutboundTestStores): Promise<readon
         cursor: null
     });
     return await Promise.all(
-        page.entries.map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry)).payload.kind)
+        page.entries.map(async (entry) => (await stores.admissionStore.readWorkSnapshot(entry, undefined)).payload.kind)
     );
 }

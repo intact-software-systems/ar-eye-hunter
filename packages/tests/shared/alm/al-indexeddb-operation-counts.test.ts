@@ -212,7 +212,7 @@ describe('outbound work owner IndexedDB scan volume', () => {
 });
 
 describe('outbound default send IndexedDB volume', () => {
-    it('sends one durable message in 10 al-admission and 13 al-work operations', async () => {
+    it('sends one durable message in 10 al-admission and 11 al-work operations', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundCountStores(observer, 'outbound-default-send'),
@@ -229,8 +229,8 @@ describe('outbound default send IndexedDB volume', () => {
         expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
         expect(
             counts.byOwner['al-work'],
-            'one default send spends 13 al-work operations: its decision read holds the effect row and canonical pair its commit fences, so the commit re-reads neither'
-        ).toBe(13);
+            'one default send spends 11 al-work operations: its decision read holds the effect row and canonical pair its commit fences, so the commit re-reads neither, and its claim takes the committed canonical pair in memory instead of two work reads'
+        ).toBe(11);
         runtime.dispose();
     });
 });

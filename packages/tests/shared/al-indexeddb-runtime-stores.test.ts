@@ -702,7 +702,7 @@ describe('IndexedDB AL runtime stores', () => {
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
             const reserved = await reserveEntries(input);
             const payloads = await Promise.all(
-                [...reserved.values()].map(async (entry) => (await admissionStore.readWorkSnapshot(entry)).payload)
+                [...reserved.values()].map(async (entry) => (await admissionStore.readWorkSnapshot(entry, undefined)).payload)
             );
             if (!acceptedAckDuringTimeout && payloads.some((payload) => payload.kind === 'ack-timeout')) {
                 acceptedAckDuringTimeout = true;

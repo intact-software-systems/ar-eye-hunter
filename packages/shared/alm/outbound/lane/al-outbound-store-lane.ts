@@ -39,6 +39,7 @@ import type { ALOutboundControlSource } from '../compute-al-outbound-control-adm
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
+import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
 
 export namespace ALOutboundStoreLane {
@@ -52,6 +53,8 @@ export namespace ALOutboundStoreLane {
         readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
         readonly evictExpired: (() => void) | undefined;
+        /** What this lane's commits hand its own claims; the memory pair's lane reads memory and has none. */
+        readonly canonicalHandoff: ALOutboundCanonicalHandoff | undefined;
         readonly runtime: ALOutboundMessageRuntime.Dependencies<TPrepared>;
         readonly sendControls: ALOutboundSendControls;
         readonly settlements: ALOutboundSettlementEmitter;
@@ -72,6 +75,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
+    private readonly removeStorageResetListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
 
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
@@ -106,6 +110,7 @@ export class ALOutboundStoreLane<TPrepared> {
             sendSignal: input.sendControls.signal,
             settlements
         });
+        this.removeStorageResetListener = stores.storageResets?.add(() => input.canonicalHandoff?.clear());
     }
 
     async ready(): Promise<void> {
@@ -116,6 +121,8 @@ export class ALOutboundStoreLane<TPrepared> {
     dispose(): void {
         this.work.dispose();
         this.dispatchAdmission.dispose();
+        this.removeStorageResetListener?.();
+        this.input.canonicalHandoff?.clear();
     }
 
     /** A memory read on the volatile lane: whether this lane admitted the message. */
@@ -127,6 +134,7 @@ export class ALOutboundStoreLane<TPrepared> {
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
+        this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
             this.work.committed();
@@ -144,10 +152,18 @@ export class ALOutboundStoreLane<TPrepared> {
             this.work.committed();
             throw error;
         });
+        results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
             this.work.committed();
         }
         return results.map((result) => this.toStoreComputed(result.computed));
+    }
+
+    /** Before the wake: the batch it starts claims what this commit wrote and finds its canonical row here. */
+    private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
+        if (result.committed && result.computed.bundle !== undefined) {
+            this.input.canonicalHandoff?.setCommitted(result.computed.bundle);
+        }
     }
 
     async acceptControlMessage(
@@ -260,7 +276,10 @@ export class ALOutboundStoreLane<TPrepared> {
     private async readOutboundWork(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
         return this.input.dequeueTypes.has(entry.typeId)
             ? toALOutboundDequeueWork(entry, this.input.runtime.readMessageFromEntry)
-            : await this.input.stores.admissionStore.readWorkSnapshot(entry);
+            : await this.input.stores.admissionStore.readWorkSnapshot(
+                entry,
+                this.input.canonicalHandoff?.takeCanonical(entry.key)
+            );
     }
 
     private async runDurableEffect(

@@ -324,8 +324,14 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
     /** The sent message, its receipt and its origin's version fence, read in one session. */
     readonly readReceiptAdmission: (receipt: ALOutboundPendingAckRef) => Promise<ALOutboundReceiptAdmissionSurface>;
 
-    /** Decodes one claimed work row of this scope, including the canonical message its payload references. */
-    readonly readWorkSnapshot: (entry: ResourceEntry) => Promise<ALOutboundEffectSnapshot<TPrepared>>;
+    /**
+     * Decodes one claimed work row of this scope, including the canonical message its payload
+     * references: the canonical row the lane's own commit handed over while it is live, else read.
+     */
+    readonly readWorkSnapshot: (
+        entry: ResourceEntry,
+        handedOffCanonical: ResourceEntry | undefined
+    ) => Promise<ALOutboundEffectSnapshot<TPrepared>>;
 
     /** Without the `observation` its decision read already holds, the commit reads its own first. */
     readonly commitBundle: (
@@ -495,8 +501,11 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }));
     }
 
-    async readWorkSnapshot(entry: ResourceEntry): Promise<ALOutboundEffectSnapshot<TPrepared>> {
-        return await this.effectStore.readWorkSnapshot(entry);
+    async readWorkSnapshot(
+        entry: ResourceEntry,
+        handedOffCanonical: ResourceEntry | undefined
+    ): Promise<ALOutboundEffectSnapshot<TPrepared>> {
+        return await this.effectStore.readWorkSnapshot(entry, handedOffCanonical);
     }
 
     async commitBundle(

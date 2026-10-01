@@ -278,7 +278,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         if (existing === undefined || !isPendingALOutboundWork(existing)) {
             return undefined;
         }
-        const work = await this.effectStore.readWorkSnapshot(existing);
+        const work = await this.effectStore.readWorkSnapshot(existing, undefined);
         if (work.payload.kind !== 'nack-retry' || work.payload.msgId !== msgId) {
             throw new ALAdmissionCorruptionError(
                 toALOutboundNotYetInSyncRetryKey(this.namespace, msgId),

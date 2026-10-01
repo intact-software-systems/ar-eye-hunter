@@ -307,7 +307,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         runtime1.dispose();
         vi.setSystemTime(Date.now() + 10_001);
         const [claimed] = await claimOne(port);
-        const work = await admissionStore.readWorkSnapshot(claimed!.entry);
+        const work = await admissionStore.readWorkSnapshot(claimed!.entry, undefined);
         expect(work.payload.kind).toBe('send-prepared');
         expect(work.canonicalMessage).toEqual(msg);
         expect(claimed!.entry.audit.date).toBeInstanceOf(Temporal.PlainTime);

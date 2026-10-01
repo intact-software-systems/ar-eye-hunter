@@ -112,6 +112,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        storageResets: stores.storageResets,
         volatileStores: input.volatileStores,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs },

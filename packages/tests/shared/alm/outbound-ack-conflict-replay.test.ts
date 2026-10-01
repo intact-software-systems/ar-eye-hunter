@@ -123,7 +123,7 @@ it.each(
         });
         const pending = [];
         for (const entry of page.entries) {
-            const work = await admissionStore.readWorkSnapshot(entry);
+            const work = await admissionStore.readWorkSnapshot(entry, undefined);
             if (work.payload.kind === 'admit-control') {
                 pending.push(entry);
             }

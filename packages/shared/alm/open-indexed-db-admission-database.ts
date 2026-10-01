@@ -52,6 +52,28 @@ export function createPassThroughALStorageResetSink(): (event: ALStorageResetEve
 }
 
 /**
+ * The owners that keep memory of one store pair's rows, told when its database was deleted and
+ * recreated so they forget it. The pair's composition notifies; each owner adds and removes itself.
+ */
+export class ALStorageResetListeners {
+    private readonly listeners = new Set<(event: ALStorageResetEvent) => void>();
+
+    /** Returns the removal of this listener, for its owner's dispose. */
+    add(listener: (event: ALStorageResetEvent) => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+            this.listeners.delete(listener);
+        };
+    }
+
+    notify(event: ALStorageResetEvent): void {
+        for (const listener of this.listeners) {
+            listener(event);
+        }
+    }
+}
+
+/**
  * Opens the admission database, resetting it once (delete and recreate) when its stores or its
  * schema identity do not match. A mismatch that persists after that single reset is a storage
  * invariant failure, not an expected outcome, so it throws.
