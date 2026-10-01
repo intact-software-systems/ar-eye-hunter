@@ -106,7 +106,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ownsQueueEngine: runtime.ownsQueueEngine,
             clock: runtime.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readWorkDeferral()),
+            readNextReadyAtMs: (port) => this.readNextReadyAtMs(port),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
@@ -244,20 +244,25 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input.evictExpired();
     }
 
-    private readWorkDeferral(): ALOutboundWorkDeferral {
+    private async readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined> {
+        const nowMs = this.readNowMs();
+        return await readALOutboundWorkReadyAt(port, nowMs, this.readWorkDeferral(nowMs));
+    }
+
+    private readWorkDeferral(nowMs: number): ALOutboundWorkDeferral {
         return {
-            dequeue: this.readDequeueDeferral(),
-            leaseSweeps: computeALWorkLeaseSweepState(this.leaseRecovery, this.readNowMs())
+            dequeue: this.readDequeueDeferral(nowMs),
+            leaseSweeps: computeALWorkLeaseSweepState(this.leaseRecovery, nowMs)
         };
     }
 
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
-    private readDequeueDeferral(): ALOutboundDequeueDeferral {
+    private readDequeueDeferral(nowMs: number): ALOutboundDequeueDeferral {
         const { resilience } = this.input.runtime.dequeue;
         return {
             types: this.input.dequeueTypes,
             readyAtMs: resilience.isNotAllowedThroughToDequeue()
-                ? this.readNowMs() + resilience.toCircuitOpenBackoffMs()
+                ? nowMs + resilience.toCircuitOpenBackoffMs()
                 : undefined
         };
     }

@@ -16,7 +16,7 @@ import {
 } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
-import { spendALWorkLeaseSweep, type ALWorkLeaseRecovery } from './al-work-lease-recovery.ts';
+import { isALWorkLeaseSweepOpen, spendALWorkLeaseSweep, type ALWorkLeaseRecovery } from './al-work-lease-recovery.ts';
 
 export type ALWorkOutcome =
     | Readonly<{ status: 'completed'; }>
@@ -131,24 +131,32 @@ async function claimALWork(
     return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, input.leaseMs));
 }
 
-/** The lease-timeout sweep reads only for the room the claim left, and only while its allowance holds. */
+/**
+ * The lease-timeout sweep reads only for the room the claim left, and only while its window is open; a sweep that
+ * comes back with room to spare closes it.
+ */
 async function reserveALWorkTimeouts(
     input: CreateALWorkQueuePortInput,
     maxToRecover: number,
     observedEntries: ClaimALWorkInput['observedEntries']
 ): Promise<Map<Key, ResourceEntry>> {
+    const nowMs = input.nowMs();
     if (
         maxToRecover <= 0 || observedEntries?.length === 0 ||
-        !spendALWorkLeaseSweep(input.leaseRecovery, 'timeout', input.nowMs())
+        !isALWorkLeaseSweepOpen(input.leaseRecovery, 'timeout', nowMs)
     ) {
         return new Map();
     }
-    return await input.queue.reserveTimeoutEntries({
+    const reserved = await input.queue.reserveTimeoutEntries({
         typeIds: new Set(input.workTypes),
         reservationInput: { maxToReserve: maxToRecover, maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts },
         timeSinceStartTs: Temporal.Duration.from({ milliseconds: input.leaseMs }),
         observedEntries
     });
+    if (reserved.size < maxToRecover) {
+        spendALWorkLeaseSweep(input.leaseRecovery, 'timeout', nowMs);
+    }
+    return reserved;
 }
 
 async function finalizeExhaustedALWork(
@@ -156,7 +164,8 @@ async function finalizeExhaustedALWork(
     maxCount: number
 ): Promise<readonly ALWorkClaim[]> {
     const { queue, workTypes, leaseMs } = input;
-    if (maxCount === 0 || !spendALWorkLeaseSweep(input.leaseRecovery, 'finalization', input.nowMs())) {
+    const nowMs = input.nowMs();
+    if (maxCount <= 0 || !isALWorkLeaseSweepOpen(input.leaseRecovery, 'finalization', nowMs)) {
         return [];
     }
     const reserved = await queue.reserveRetryExhaustionFinalizations(new Set(workTypes), {
@@ -164,6 +173,9 @@ async function finalizeExhaustedALWork(
         maxToReserve: maxCount,
         staleAfterMs: leaseMs
     });
+    if (reserved.size < maxCount) {
+        spendALWorkLeaseSweep(input.leaseRecovery, 'finalization', nowMs);
+    }
     return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, leaseMs));
 }
 

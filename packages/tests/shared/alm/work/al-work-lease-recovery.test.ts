@@ -21,6 +21,7 @@ const START_MS = 1_700_000_000_000;
 const DEQUEUE_TYPE = 'outbox';
 const MESSAGE_TTL_MS = 120_000;
 const ENGINE_PASS_MS = 100;
+const BACKLOG_SIZE = 40;
 
 interface LeaseRecoveryRun {
     readonly runtime: ALOutboundMessageRuntime<OutboundTestPayload>;
@@ -32,6 +33,8 @@ interface LeaseRecoveryRun {
     readonly finalizationSweepsAtMs: number[];
     /** Every sweep that returned a row, at the lane clock when it did. */
     readonly recoveredAtMs: number[];
+    /** How many rows each of those sweeps returned. */
+    readonly recoveredRowCounts: number[];
 }
 
 afterEach(() => {
@@ -105,6 +108,25 @@ describe('outbound lease recovery on the lane clock', () => {
         expect(run.batchesAtMs.length - batchesBefore).toBeLessThanOrEqual(2);
     });
 
+    it('recovers a backlog of crashed leases larger than one sweep within its lease end plus 19.1 s', async () => {
+        const run = createLeaseRecoveryRun();
+        await run.runtime.ready();
+        await vi.advanceTimersByTimeAsync(13_000);
+        let leaseEndMs = 0;
+        for (let index = 0; index < BACKLOG_SIZE; index += 1) {
+            leaseEndMs = await writeCrashedLease(run, `crashed-${String(index).padStart(2, '0')}`, 1);
+        }
+        await vi.advanceTimersByTimeAsync(AL_OUTBOUND_WORK_LEASE_MS - ENGINE_PASS_MS);
+        await run.runtime.enqueueIfAbsent(createOutboundMessage('spends-the-window', { ttlMs: MESSAGE_TTL_MS }));
+
+        const recoveredAtMs = await advanceUntilRecoveredRows(run, BACKLOG_SIZE);
+
+        expect(recoveredAtMs).toBeLessThanOrEqual(leaseEndMs + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
+        // A sweep that fills its room keeps the window open, so the backlog drains a page per batch, not per window.
+        expect(run.recoveredRowCounts).toEqual([16, 16, 8]);
+        expect(recoveredAtMs - run.recoveredAtMs[0]).toBeLessThan(ENGINE_PASS_MS);
+    });
+
     it('recovers a crashed lease the readiness scan cannot see behind a full page of live leases', async () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
@@ -174,14 +196,20 @@ function createLeaseRecoveryRun(options: { withVolatileLane?: boolean; } = {}): 
 
 function recordLeaseSweeps(
     queue: InMemoryQueueBox
-): Pick<LeaseRecoveryRun, 'timeoutSweepsAtMs' | 'finalizationSweepsAtMs' | 'recoveredAtMs'> {
-    const recorded = { timeoutSweepsAtMs: [] as number[], finalizationSweepsAtMs: [] as number[], recoveredAtMs: [] as number[] };
+): Pick<LeaseRecoveryRun, 'timeoutSweepsAtMs' | 'finalizationSweepsAtMs' | 'recoveredAtMs' | 'recoveredRowCounts'> {
+    const recorded = {
+        timeoutSweepsAtMs: [] as number[],
+        finalizationSweepsAtMs: [] as number[],
+        recoveredAtMs: [] as number[],
+        recoveredRowCounts: [] as number[]
+    };
     const reserveTimeouts = queue.reserveTimeoutEntries.bind(queue);
     vi.spyOn(queue, 'reserveTimeoutEntries').mockImplementation(async (request) => {
         recorded.timeoutSweepsAtMs.push(Date.now());
         const reserved = await reserveTimeouts(request);
         if (reserved.size > 0) {
             recorded.recoveredAtMs.push(Date.now());
+            recorded.recoveredRowCounts.push(reserved.size);
         }
         return reserved;
     });
@@ -191,6 +219,7 @@ function recordLeaseSweeps(
         const reserved = await reserveFinalizations(types, input);
         if (reserved.size > 0) {
             recorded.recoveredAtMs.push(Date.now());
+            recorded.recoveredRowCounts.push(reserved.size);
         }
         return reserved;
     });
@@ -233,4 +262,14 @@ async function advanceUntilRecovered(run: LeaseRecoveryRun): Promise<number> {
         }
     }
     throw new Error('Expected the lease to be recovered within a minute');
+}
+
+async function advanceUntilRecoveredRows(run: LeaseRecoveryRun, rowCount: number): Promise<number> {
+    for (let elapsedMs = 0; elapsedMs < 60_000; elapsedMs += ENGINE_PASS_MS) {
+        await vi.advanceTimersByTimeAsync(ENGINE_PASS_MS);
+        if (run.recoveredRowCounts.reduce((sum, count) => sum + count, 0) >= rowCount) {
+            return run.recoveredAtMs[run.recoveredAtMs.length - 1];
+        }
+    }
+    throw new Error(`Expected ${rowCount} leases to be recovered within a minute`);
 }

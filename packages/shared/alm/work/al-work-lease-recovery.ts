@@ -22,7 +22,10 @@ export interface ALWorkLeaseSweepState {
     readonly isFinalizationOpen: boolean;
 }
 
-/** One sweep of each kind per lease. A fresh pair holds both allowances, so the owner's first batch sweeps. */
+/**
+ * Of each kind, at most one sweep that comes back with room to spare per 1 to 1.25 leases. A fresh pair holds
+ * both allowances, so the owner's first batch sweeps.
+ */
 export function createLimitedALWorkLeaseRecovery(leaseMs: number, nowMs: number): ALWorkLeaseRecovery {
     return {
         kind: 'limited',
@@ -33,26 +36,35 @@ export function createLimitedALWorkLeaseRecovery(leaseMs: number, nowMs: number)
     };
 }
 
-/** Spends the sweep's allowance; false means the sweep must not read. Call it only when the sweep would read. */
-export function spendALWorkLeaseSweep(
+/** Whether the sweep may read now, taken without spending its allowance. */
+export function isALWorkLeaseSweepOpen(
     recovery: ALWorkLeaseRecovery,
-    sweep: 'timeout' | 'finalization',
+    sweep: keyof ALWorkLeaseSweepLimiters,
     nowMs: number
 ): boolean {
-    if (recovery.kind === 'every-batch') {
-        return true;
-    }
-    const limiter = recovery.limiters[sweep];
-    return limiter.allowAt(toLimiterNowMs(limiter, nowMs));
+    return recovery.kind === 'every-batch' || isLeaseSweepOpen(recovery.limiters[sweep], nowMs);
 }
 
-export function computeALWorkLeaseSweepState(recovery: ALWorkLeaseRecovery, nowMs: number): ALWorkLeaseSweepState {
-    if (recovery.kind === 'every-batch') {
-        return { isTimeoutOpen: true, isFinalizationOpen: true };
+/**
+ * Spends the sweep's allowance after a read that returned fewer rows than it had room for. A sweep that filled
+ * its room leaves the window open, so a backlog drains on every batch.
+ */
+export function spendALWorkLeaseSweep(
+    recovery: ALWorkLeaseRecovery,
+    sweep: keyof ALWorkLeaseSweepLimiters,
+    nowMs: number
+): void {
+    if (recovery.kind === 'limited') {
+        const limiter = recovery.limiters[sweep];
+        limiter.allowAt(toLimiterNowMs(limiter, nowMs));
     }
+}
+
+/** Both sweeps' windows at `nowMs`, for a readiness scan that must not advertise rows a closed sweep would recover. */
+export function computeALWorkLeaseSweepState(recovery: ALWorkLeaseRecovery, nowMs: number): ALWorkLeaseSweepState {
     return {
-        isTimeoutOpen: isLeaseSweepOpen(recovery.limiters.timeout, nowMs),
-        isFinalizationOpen: isLeaseSweepOpen(recovery.limiters.finalization, nowMs)
+        isTimeoutOpen: isALWorkLeaseSweepOpen(recovery, 'timeout', nowMs),
+        isFinalizationOpen: isALWorkLeaseSweepOpen(recovery, 'finalization', nowMs)
     };
 }
 

@@ -606,13 +606,15 @@ ordinary QueueBox claims. Release uses the existing observed-entry comparison an
 expiry conditions; a failed comparison returns a lost-reservation result.
 
 Each store lane, browser and server alike, sweeps for lapsed leases and exhausted reservations on a
-limiter pair of its own, the ResourceInbox dequeuer's lock-limiter design on the lane clock: at most
-one timeout sweep and one finalization sweep per lease, the first on the lane's bootstrap batch, and
-none on a batch whose claim filled the page. While a sweep's window is closed the readiness scan does
+limiter pair of its own, the ResourceInbox dequeuer's lock-limiter design on the lane clock: the first
+sweeps run on the lane's bootstrap batch, and no timeout sweep runs on a batch whose claim filled the
+page. A sweep spends its allowance only when it comes back with room to spare, which closes its window
+for up to 1.25 leases; a sweep that fills its room keeps the window open, so a backlog of crashed or
+exhausted rows drains on consecutive batches. While a sweep's window is closed the readiness scan does
 not advertise the reserved rows that sweep would recover, so no batch runs empty waiting for it. A
-crashed lease or an exhausted row is recovered at most 19.1 s after its lease ends: the window reopens
-within 1.25 leases of the last sweep, then the remembered readiness ages and the idle engine passes
-once. The inbound owner sweeps on every batch.
+crashed lease or an exhausted row, a backlog included, is recovered at most 19.1 s after its lease
+ends: the window reopens within 1.25 leases of the last spent sweep, then the remembered readiness ages
+and the idle engine passes once. The inbound owner sweeps on every batch.
 
 One work batch releases every claim it collected in a single queue write, with a disposition
 per entry; `releaseDurationMs` measures exactly that one write, run once at the batch's end

@@ -326,6 +326,41 @@ describe('ALWorkQueuePort lease recovery', () => {
         expect(toEffectIds(await port.finalizeExhausted(4))).toEqual(['exhausted-second']);
     });
 
+    it('keeps sweeping for timed-out leases while each sweep fills the room its claim left', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        for (const effectId of ['crashed-1', 'crashed-2']) {
+            await port.retainIfAbsent(newReservedWorkEntry(effectId, { startMs: 0, attempts: 1 }));
+        }
+
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed-1']);
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed-2']);
+        // This sweep comes back with room to spare, so it closes the window for the lease.
+        expect(await port.claim({ maxCount: 1, observedEntries: undefined })).toEqual([]);
+        await port.retainIfAbsent(newReservedWorkEntry('crashed-3', { startMs: 0, attempts: 1 }));
+        expect(await port.claim({ maxCount: 1, observedEntries: undefined })).toEqual([]);
+    });
+
+    it('keeps finalizing exhausted reservations while each sweep fills its page', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        for (const effectId of ['exhausted-1', 'exhausted-2']) {
+            await port.retainIfAbsent(newReservedWorkEntry(effectId, { startMs: 0, attempts: 20 }));
+        }
+
+        for (const expected of ['exhausted-1', 'exhausted-2']) {
+            const finalized = await port.finalizeExhausted(1);
+            expect(toEffectIds(finalized)).toEqual([expected]);
+            await port.releaseAll(finalized.map((claim) => ({ claim, outcome: { status: 'non-retryable' } as const })));
+        }
+        // This sweep comes back with room to spare, so it closes the window for the lease.
+        expect(await port.finalizeExhausted(1)).toEqual([]);
+        await port.retainIfAbsent(newReservedWorkEntry('exhausted-3', { startMs: 0, attempts: 20 }));
+        expect(await port.finalizeExhausted(1)).toEqual([]);
+    });
+
     it('keeps claiming and sweeping when its clock steps back behind the limiters it built', async () => {
         let now = 10_000;
         const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
