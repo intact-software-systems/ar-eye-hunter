@@ -12,6 +12,11 @@ import {
     type ALWorkDiagnostics,
     type ALWorkReadySelection
 } from '../../work/al-work-handler.ts';
+import {
+    computeALWorkLeaseSweepState,
+    createLimitedALWorkLeaseRecovery,
+    type ALWorkLeaseRecovery
+} from '../../work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '../../work/al-work-readiness-memory.ts';
 import type {
@@ -34,7 +39,8 @@ import {
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
     toALOutboundWorkType,
-    type ALOutboundDequeueDeferral
+    type ALOutboundDequeueDeferral,
+    type ALOutboundWorkDeferral
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
@@ -75,6 +81,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
+    private readonly leaseRecovery: ALWorkLeaseRecovery;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
@@ -84,7 +91,8 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input = input;
         const { stores, runtime } = input;
         this.readyPromise = stores.admissionStore.ready();
-        const workPort = createALOutboundLaneWorkPort(input);
+        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.clock.nowMs());
+        const workPort = createALOutboundLaneWorkPort(input, this.leaseRecovery);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
         const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
         this.dispatchAdmission = admissions.dispatchAdmission;
@@ -98,7 +106,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ownsQueueEngine: runtime.ownsQueueEngine,
             clock: runtime.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readDequeueDeferral()),
+            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readWorkDeferral()),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
@@ -234,6 +242,13 @@ export class ALOutboundStoreLane<TPrepared> {
         }
         this.nextEvictionAtMs = nowMs + AL_VOLATILE_STORE_EVICTION_INTERVAL_MS;
         this.input.evictExpired();
+    }
+
+    private readWorkDeferral(): ALOutboundWorkDeferral {
+        return {
+            dequeue: this.readDequeueDeferral(),
+            leaseSweeps: computeALWorkLeaseSweepState(this.leaseRecovery, this.readNowMs())
+        };
     }
 
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
@@ -442,15 +457,22 @@ interface ALOutboundLaneAdmissions<TPrepared> {
     readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
 }
 
-/** The lane's own work types, plus the foreign dequeue rows only the durable lane admits. */
-function createALOutboundLaneWorkPort<TPrepared>(input: ALOutboundStoreLane.Input<TPrepared>): ALWorkQueuePort {
+/**
+ * The lane's own work types, plus the foreign dequeue rows only the durable lane admits. Each lane sweeps
+ * on its own limiters, so the volatile lane never spends the durable lane's allowance.
+ */
+function createALOutboundLaneWorkPort<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    leaseRecovery: ALWorkLeaseRecovery
+): ALWorkQueuePort {
     const { stores, runtime } = input;
     return createALWorkQueuePort({
         queue: stores.workQueue,
         workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: () => runtime.clock.nowMs(),
-        random: runtime.random
+        random: runtime.random,
+        leaseRecovery
     });
 }
 

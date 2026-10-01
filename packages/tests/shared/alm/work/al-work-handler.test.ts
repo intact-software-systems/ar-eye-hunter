@@ -609,7 +609,8 @@ describe('ALWorkHandler', () => {
             workTypes: AL_TEST_TYPES,
             leaseMs: 5_000,
             nowMs: () => nowMs,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'cas-loser'));
         let attemptCount = 0;
@@ -917,7 +918,8 @@ describe('ALWorkHandler', () => {
             workTypes: AL_TEST_TYPES,
             leaseMs: 30_000,
             nowMs: () => nowMs,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         const engine = createEngine();
         const handler = new ALWorkHandler({
@@ -1513,7 +1515,8 @@ describe('ALWorkHandler readiness restore', () => {
                 workTypes: AL_TEST_TYPES,
                 leaseMs: 30_000,
                 nowMs: () => nowMs,
-                random: () => 0.5
+                random: () => 0.5,
+                leaseRecovery: { kind: 'every-batch' }
             }),
             queueEngine: engine,
             ownsQueueEngine: false,

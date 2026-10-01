@@ -29,6 +29,7 @@ import {
     claimOutboundTestWork,
     createOutboundMessage,
     createOutboundTestRuntimeFor,
+    holdOutboundClaims,
     releaseOutboundTestWork,
     runOutboundWorkTask
 } from './outbound-runtime-test-fixture.ts';
@@ -94,6 +95,8 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     let transportCount = 0;
     const first = createControlRuntime(firstStores, undefined, () => transportCount += 1);
     const second = createControlRuntime(secondStores, undefined, () => transportCount += 1);
+    // The commits' own batches claim nothing, so the counts below are the hand-off's alone.
+    const heldClaims = [holdOutboundClaims(firstStores), holdOutboundClaims(secondStores)];
 
     const results = await Promise.all([
         first.enqueueIfAbsent(message),
@@ -106,6 +109,7 @@ it('converges two runtime handoffs on one pending owner and one eventual transpo
     expect(retained.filter((entry) => entry.typeId === 'AL_OUTBOUND_IDENTITY')).toHaveLength(1);
     expect(retained.filter((entry) => entry.key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     expect(browserLocks.requestCount()).toBe(0);
+    await Promise.all(heldClaims.map((held) => held.release()));
 
     for (let pass = 0; pass < 3; pass += 1) {
         await runOutboundWorkTask(first);
@@ -138,8 +142,11 @@ it.each(
         return await retainPendingAdmission(input);
     });
     const runtime = createControlRuntime(stores);
+    // The pending row's own batch must not race the claim this case makes in its place.
+    const heldClaims = holdOutboundClaims(stores);
 
     expect((await runtime.enqueueIfAbsent(message)).verdict.kind).toBe('pending');
+    await heldClaims.release();
     if (state !== 'NEW') {
         const [claim] = await claimOutboundTestWork(stores, 1);
         expect(claim).toBeDefined();

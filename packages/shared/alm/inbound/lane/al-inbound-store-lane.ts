@@ -454,7 +454,9 @@ function createALInboundLaneWorkPort(dependencies: ALInboundMessageRuntime.Depen
         workTypes: new Set([toALInboundWorkType(dependencies.admissionStore.namespace, dependencies.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
         nowMs: () => dependencies.clock.nowMs(),
-        random: dependencies.random
+        random: dependencies.random,
+        // The rotation's probe has no lease clamp: a limited sweep would run empty batches until it reopened.
+        leaseRecovery: { kind: 'every-batch' }
     });
 }
 

@@ -12,6 +12,7 @@ import {
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
+import { isALWorkLeaseSweepDeferred, type ALWorkLeaseSweepState } from '../work/al-work-lease-recovery.ts';
 import { computeALWorkLeaseUntilMs, type ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundDurableEffect,
@@ -121,18 +122,26 @@ export interface ALOutboundDequeueDeferral {
     readonly readyAtMs: number | undefined;
 }
 
+/** What the lane's gates hold back from the readiness scan: an open dequeue circuit and a closed lease sweep. */
+export interface ALOutboundWorkDeferral {
+    readonly dequeue: ALOutboundDequeueDeferral;
+    readonly leaseSweeps: ALWorkLeaseSweepState;
+}
+
 /**
  * Retained work is due now, retried work at its own `nextTs`, gated dequeue work no earlier than the
- * breaker allows, and an expired row is never advertised. A page that held more rows than it returned
- * and holds a due row answers `nowMs`: one status never hides the next. A truncated page whose visible
- * rows are all expired or gated answers from those rows alone, so a full page of expired rows
- * advertises nothing and leaves the remainder to the queue's own expiry cleanup. Every status is read
- * in one scan, so the probe the engine runs on each round costs one round trip to storage.
+ * breaker allows, and an expired row is never advertised. A reserved row is advertised at its lease end
+ * only while the sweep that recovers it may run: a closed sweep would leave every batch it started empty.
+ * A page that held more rows than it returned and holds a due row answers `nowMs`: one status never
+ * hides the next. A truncated page whose visible rows are all expired or gated answers from those rows
+ * alone, so a full page of expired rows advertises nothing and leaves the remainder to the queue's own
+ * expiry cleanup. Every status is read in one scan, so the probe the engine runs on each round costs one
+ * round trip to storage.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,
     nowMs: number,
-    deferral: ALOutboundDequeueDeferral
+    deferral: ALOutboundWorkDeferral
 ): Promise<number | undefined> {
     const scans = await port.readPages(
         AL_OUTBOUND_SCAN_STATUSES.map((status) => ({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
@@ -141,10 +150,13 @@ export async function readALOutboundWorkReadyAt(
     for (const scan of scans) {
         let hasDueEntry = false;
         for (const entry of scan.entries) {
-            if (entry.audit.expiryTs.epochMilliseconds <= nowMs) {
+            if (
+                entry.audit.expiryTs.epochMilliseconds <= nowMs ||
+                isALWorkLeaseSweepDeferred(entry, deferral.leaseSweeps)
+            ) {
                 continue;
             }
-            const candidateAtMs = computeALOutboundEntryReadyAt(entry, deferral);
+            const candidateAtMs = computeALOutboundEntryReadyAt(entry, deferral.dequeue);
             hasDueEntry ||= candidateAtMs <= nowMs;
             readyAtMs = Math.min(readyAtMs ?? candidateAtMs, candidateAtMs);
         }

@@ -41,6 +41,8 @@ const SEND_GUARDS_SESSION_REASON = 'one guard read: a prepared send reads its su
     'one session';
 const READINESS_RESTORE_REASON = 'no readiness probe after the batch: the batch claimed and completed the one row ' +
     'its commit wrote, so it restores the answer that commit set aside';
+const LANE_CLOCK_REASON = 'no lease sweep: the bootstrap batch spent both sweeps\' allowances, and the lane clock ' +
+    'stands still for the run, so their windows stay closed';
 const WORK_ROW_PARSES = 'each read that decodes the work row parses its 4 timestamps (date, created, expiry and ' +
     'its one dequeue instant) once; a row the owner wrote is never parsed back';
 
@@ -52,7 +54,7 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         vi.restoreAllMocks();
     });
 
-    it('reaches the carrier in 8 transactions and the idle owner in 10', async () => {
+    it('reaches the carrier in 6 transactions and the idle owner in 8', async () => {
         const ledger = await readWarmOutboundSendLedger();
         const chain = computeIndexedDbLedgerTotals(ledger, ['chain']);
         const total = computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']);
@@ -61,19 +63,19 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         expect(
             chain.transactions,
             'enqueue to carrier: the decision read, the fence snapshot and the commit; then the batch\'s ' +
-                'exhaustion sweep, claim read, claim write, lease-recovery read and guard read; ' +
+                'claim read, claim write and guard read; ' + LANE_CLOCK_REASON + '; ' +
                 SINGLE_SEND_OBSERVATION_REASON + '; ' + CANONICAL_HANDOFF_REASON + '; ' +
                 SEND_GUARDS_SESSION_REASON + table
-        ).toBe(8);
+        ).toBe(6);
         expect(
             total.transactions,
-            'the chain\'s 8, then the release read and the release write; ' + READINESS_RESTORE_REASON + table
-        ).toBe(10);
+            'the chain\'s 6, then the release read and the release write; ' + READINESS_RESTORE_REASON + table
+        ).toBe(8);
         expect(
             total.requests,
-            'every get, getAll and put those 10 transactions issue; the guard read issues its 2 gets ' +
+            'every get, getAll and put those 8 transactions issue; the guard read issues its 2 gets ' +
                 'in one session' + table
-        ).toBe(39);
+        ).toBe(37);
         expect(total.droppedRequests, 'every request ran on a transaction the ledger recorded' + table)
             .toBe(0);
         expect(
@@ -83,25 +85,24 @@ describe('outbound warm send IndexedDB transaction ledger', () => {
         ).toBe(10);
         expect(
             total.byOwner['al-work'],
-            '3 decision work reads, 2 empty probes, the reservation and the release; ' +
+            '3 decision work reads, the reservation and the release; ' + LANE_CLOCK_REASON + '; ' +
                 CANONICAL_HANDOFF_REASON + '; ' + READINESS_RESTORE_REASON + table
-        ).toBe(7);
+        ).toBe(5);
     });
 
-    it('parses 9 timestamps up to the carrier and 13 up to the idle owner', async () => {
+    it('parses 4 timestamps up to the carrier and 8 up to the idle owner', async () => {
         const ledger = await readWarmOutboundSendLedger();
         const table = `\n${toIndexedDbLedgerTable(ledger)}`;
 
         expect(
             computeIndexedDbLedgerTotals(ledger, ['chain']).temporalParses,
-            'the claim read and the lease-recovery read decode the work row (4 each), and the lease ' +
-                'check parses the reservation\'s start once; ' + WORK_ROW_PARSES + table
-        ).toEqual({ instant: 5, plainTime: 2, plainDateTime: 2 });
+            'the claim read decodes the work row (4); ' + LANE_CLOCK_REASON + '; ' + WORK_ROW_PARSES + table
+        ).toEqual({ instant: 2, plainTime: 1, plainDateTime: 1 });
         expect(
             computeIndexedDbLedgerTotals(ledger, ['chain', 'after-send']).temporalParses,
-            'the chain\'s 9, then the release read decodes the work row (4); the release write parses ' +
+            'the chain\'s 4, then the release read decodes the work row (4); the release write parses ' +
                 'nothing' + table
-        ).toEqual({ instant: 7, plainTime: 3, plainDateTime: 3 });
+        ).toEqual({ instant: 4, plainTime: 2, plainDateTime: 2 });
     });
 });
 
@@ -191,8 +192,11 @@ async function readWarmOutboundSendLedger(): Promise<IndexedDbTransactionLedger>
     const recorded = recordIndexedDbTransactionLedger();
     const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     let phaseAtSend: IndexedDbLedgerPhase = 'before';
+    // The lane clock stands still: the sweep windows the bootstrap batch spent stay closed however long the run takes.
+    const laneNowMs = Date.now();
     const runtime = createDefaultOutboundTestRuntime({
         stores: createIndexedDbOutboundTestStores({ observer: recorded.observer, namespace: OUTBOUND_NAMESPACE }),
+        nowMs: () => laneNowMs,
         diagnostics: (event) => diagnostics.push(event),
         planOutgoingMessage: (msg) => ({
             msg,

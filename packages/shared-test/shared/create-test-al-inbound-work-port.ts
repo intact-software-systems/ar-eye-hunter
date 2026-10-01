@@ -15,8 +15,8 @@ export interface TestALInboundControlAdmissionInput extends TestALInboundWorkPor
 }
 
 /**
- * The inbound work port a test owns directly, with the lease, work type and deterministic jitter the
- * runtime composes. It lives here rather than in `packages/tests` because the root `tsconfig.json`
+ * The inbound work port a test owns directly, with the lease, work type, lease recovery and deterministic
+ * jitter the runtime composes. It lives here rather than in `packages/tests` because the root `tsconfig.json`
  * excludes that project, so a new required field on the port fails to compile here instead.
  */
 export function createTestALInboundWorkPort(input: TestALInboundWorkPortInput): ALWorkQueuePort {
@@ -25,7 +25,8 @@ export function createTestALInboundWorkPort(input: TestALInboundWorkPortInput): 
         workTypes: new Set([toALInboundWorkType(input.admissionStore.namespace, input.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
         nowMs: input.nowMs,
-        random: () => 0.5
+        random: () => 0.5,
+        leaseRecovery: { kind: 'every-batch' }
     });
 }
 

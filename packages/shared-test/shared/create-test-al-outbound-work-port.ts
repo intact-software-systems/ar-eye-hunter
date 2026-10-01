@@ -8,6 +8,7 @@ import {
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 
 export interface TestALOutboundWorkPortInput<TPrepared> extends ALOutboundRuntimeStores<TPrepared> {
@@ -24,8 +25,8 @@ export interface TestALOutboundControlAdmissionInput<TPrepared> extends TestALOu
 }
 
 /**
- * The outbound work port a test owns directly, with the lease, work types and deterministic jitter
- * the runtime composes. It lives here rather than in `packages/tests` because the root
+ * The outbound work port a test owns directly, with the lease, work types, lease-sweep limiters and
+ * deterministic jitter the runtime composes. It lives here rather than in `packages/tests` because the root
  * `tsconfig.json` excludes that project, so a new required field on the port fails to compile here
  * instead.
  */
@@ -40,7 +41,8 @@ export function createTestALOutboundWorkPort<TPrepared>(
         ]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: input.nowMs,
-        random: () => 0.5
+        random: () => 0.5,
+        leaseRecovery: createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, input.nowMs())
     });
 }
 

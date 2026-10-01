@@ -41,6 +41,7 @@ import {
     readALOutboundWorkReadyAt,
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import {
     createALWorkQueuePort,
     type ALWorkOutcome,
@@ -50,6 +51,13 @@ import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+
+/**
+ * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst:
+ * a sweep closes its window for 1.25 leases (the limiter counts in quarter-window buckets), then the
+ * remembered readiness answer ages for 3 s and the idle engine waits at most 3.6 s for its next pass.
+ */
+export const OUTBOUND_LEASE_RECOVERY_BOUND_MS = 19_100;
 
 interface OutboundTestRuntimeInput<TPrepared> {
     readonly queueEngine?: InboxOutboxEngine;
@@ -228,11 +236,12 @@ export function createOutboundWorkPort(
         workTypes: new Set([toALOutboundWorkType(namespace), ...dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: Date.now,
-        random: Math.random
+        random: Math.random,
+        leaseRecovery: createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, Date.now())
     });
 }
 
-/** The readiness the outbound owner advertises with no circuit gating: undefined once work is drained. */
+/** The readiness the outbound owner advertises with every gate open: undefined once work is drained. */
 export async function peekOutboundWorkReadyAt(
     workQueue: QueueBoxResourceEntryRepository,
     namespace: string
@@ -240,7 +249,10 @@ export async function peekOutboundWorkReadyAt(
     return await readALOutboundWorkReadyAt(
         createOutboundWorkPort(workQueue, namespace),
         Date.now(),
-        { types: new Set<string>(), readyAtMs: undefined }
+        {
+            dequeue: { types: new Set<string>(), readyAtMs: undefined },
+            leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
+        }
     );
 }
 
