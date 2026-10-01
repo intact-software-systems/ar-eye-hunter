@@ -53,8 +53,10 @@ export interface DurableSendSample {
 }
 
 /**
- * `acknowledged`: the receipt settled complete and the batch its commit woke drained, so the next send starts
- * on an idle owner with no receipt open. `none` for a plan that tracks no receipt.
+ * How the server's receipt for a send ended. `none`: the plan tracks no receipt. `acknowledged`: the receipt
+ * settled complete and the batch its commit woke drained, so the next send starts on an idle owner with no
+ * receipt open. `unacknowledged`: the receipt did not settle complete within the bound. `undrained`: it settled
+ * complete, but no batch drained within the bound after it.
  */
 export type DurableSendReceiptEnd = 'none' | 'acknowledged' | 'unacknowledged' | 'undrained';
 

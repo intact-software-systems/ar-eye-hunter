@@ -67,10 +67,11 @@ export interface ClaimALWorkInput {
 
 /**
  * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `releaseAll`
- * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end drops
- * the answer it remembers, so **any of them performed outside `runBatch` must invalidate that
- * memory** -- `ALWorkHandler.committed()` for this owner's own writes, the engine wake for anyone
- * else's.
+ * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end
+ * restores the answer a commit set aside only when the batch accounted for every row that commit
+ * wrote. **A write this owner makes outside `runBatch` must reach `ALWorkHandler.committed()`**, and
+ * a claim that may commit this owner's work rows other than through `committed()` must call
+ * `ALWorkHandler.claimCommitted()` before it runs. Anyone else's write reaches the engine wake.
  */
 export interface ALWorkQueuePort {
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;

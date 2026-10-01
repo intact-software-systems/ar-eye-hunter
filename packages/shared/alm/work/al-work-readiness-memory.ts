@@ -59,7 +59,8 @@ interface ALWorkSuspendedReadiness {
 
 /**
  * How long a probe's answer stands, and what empties it. **Any change to the owner's rows performed
- * outside its batch must reach `forget` or `suspend`**, or the owner keeps answering from a picture
+ * outside its batch must reach `forget` or `suspend`, and a claim that may write the owner's rows
+ * inside its batch must reach `forget` before it runs**, or the owner keeps answering from a picture
  * storage no longer supports.
  */
 export class ALWorkReadinessMemory {

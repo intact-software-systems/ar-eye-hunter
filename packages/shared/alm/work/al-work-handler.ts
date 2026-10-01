@@ -59,7 +59,9 @@ export interface ALWorkHandlerDependencies {
     /**
      * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
      * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
-     * measures the wait behind earlier claims against the same moment the batch diagnostics do.
+     * measures the wait behind earlier claims against the same moment the batch diagnostics do. A
+     * claim that may commit this owner's work rows calls `ALWorkHandler.claimCommitted()` before it
+     * runs, or the batch's end could restore an answer that misses those rows.
      */
     readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
@@ -150,7 +152,10 @@ interface ALWorkBatchEnd {
     readonly startedAtMs: number;
 }
 
-/** Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task, the batch lifecycle, and how long a probe's answer stands. */
+/**
+ * Generic ALM work loop: the port owns reservation and retry policy, this owns the engine task and
+ * the batch lifecycle, and `ALWorkReadinessMemory` owns how long a probe's answer stands.
+ */
 export class ALWorkHandler {
     private readonly dependencies: ALWorkHandlerDependencies;
     private batch: Promise<void> | undefined;
@@ -217,9 +222,9 @@ export class ALWorkHandler {
     }
 
     /**
-     * A claim of the running batch committed work rows of this owner: the batch's end restores no
-     * answer and the next round probes, as after any batch. It starts no batch of its own: the
-     * running batch's end wakes the engine.
+     * Called before a claim of the running batch that may commit work rows of this owner: the batch's
+     * end restores no answer and the next round probes, as after any batch. It starts no batch of its
+     * own: the running batch's end wakes the engine.
      */
     claimCommitted(): void {
         this.readiness.forget('batch');
@@ -261,8 +266,8 @@ export class ALWorkHandler {
     /**
      * The batch's end settles the readiness memory: a commit and a batch both change the rows a probe
      * read, so the answer is dropped unless the batch restores the one its commit set aside. The other
-     * ways a change reaches the memory are `committed()`, a retained claim's settlement, and the
-     * engine wake every writer that is not this owner announces its row with.
+     * ways a change reaches the memory are `committed()`, `claimCommitted()`, a retained claim's
+     * settlement, and the engine wake every writer that is not this owner announces its row with.
      */
     private settleReadiness(ended: ALWorkBatchEnd): ALWorkReadinessAnswer | undefined {
         if (ended.run === undefined) {

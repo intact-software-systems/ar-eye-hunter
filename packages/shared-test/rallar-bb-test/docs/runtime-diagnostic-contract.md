@@ -199,14 +199,14 @@ every session the page opens. The event's `data` is the event itself:
   page, rejected nothing, completed every claim and claimed at least as many
   rows as the commit wrote; no external wake, retained release or further commit
   reached the owner since the commit, and no claim of the batch could write work
-  rows of its own (only a send attempt cannot); the answer was neither due nor
-  aged out when the batch started; and every row the commit wrote was due by
-  then. A plain send therefore reports no probe after its `effect-drain`.
-  `readyAtMs` is the answer: an
-  epoch-ms time work is next due, or `none` for no work at all. `durationMs` is
-  what that read cost, and this is where it is charged: an owner whose probe
-  answers "due now" holds the page for the batch that follows, which reads none
-  of its own. A probe is not a batch, so it is outside the empty-batch
+  rows of its own (a send attempt writes none, and a dequeue's dispatch goes
+  through the owner's own commit, so a dequeue that writes nothing still
+  restores); the answer was neither due nor aged out when the batch started; and
+  every row the commit wrote was due by then. A plain send therefore reports no
+  probe after its `effect-drain`. `readyAtMs` is the answer: an epoch-ms time
+  work is next due, or `none` for no work at all. `durationMs` is what that read
+  cost, and this is where it is charged: an owner whose probe answers "due now"
+  holds the page for the batch that follows, which reads none of its own. A probe is not a batch, so it is outside the empty-batch
   suppression the drains carry. The inbound rotation reports none: its probe
   reads a page every engine round by construction, and relaying one event per
   round costs more in this harness than the answer is worth (see **Inbound

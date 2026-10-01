@@ -31,6 +31,6 @@
     ],
     "owner": "Knut-Helge Vik",
     "command": "npm run perf:alm:durable-send",
-    "reason": "Latency evidence, not a gate: send-to-dispatch p50/p95 and the Temporal polyfill and codec CPU shares of a durable ALM send in Chromium with an on-disk profile. Run locally before and after each durable-path lever and compare against a baseline from the same machine; hosted-runner timings are not comparable, and a lane that fails on a latency figure would be noise."
+    "reason": "Latency evidence, not a gate: send-to-dispatch p50/p95 of two durable ALM send plans, the ledger's minimal plan and a receipted command acknowledged by the server, in Chromium with an on-disk profile, and the Temporal polyfill and codec CPU shares of the minimal plan only. Run locally before and after each durable-path lever and compare against a baseline from the same machine; hosted-runner timings are not comparable, and a lane that fails on a latency figure would be noise."
   }
 ]
