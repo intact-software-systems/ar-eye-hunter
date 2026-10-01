@@ -15,6 +15,7 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
     createOutboundTestRuntimeFor,
+    OUTBOUND_LEASE_RECOVERY_BOUND_MS,
     runOutboundWorkTask
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
@@ -121,7 +122,7 @@ it('retries a control the closed tab never finished sending only once that tab l
     expect(session.attempts).toEqual([{ tab: 'first', msgId: 'control-1' }]);
     expect(session.sent).toEqual([]);
 
-    session.advanceMs(AL_OUTBOUND_WORK_LEASE_MS + 1);
+    session.advanceMs(AL_OUTBOUND_WORK_LEASE_MS + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
     await drainTabs(session, [second]);
 
     // Delivery after a crash inside a send is at least once; the retry is the one and only further attempt.

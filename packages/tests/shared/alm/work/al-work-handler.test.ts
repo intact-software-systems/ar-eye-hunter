@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import type {
+    ALWorkAttemptResult,
     ALWorkBatchDiagnostics,
     ALWorkDiagnostics,
     ALWorkReadinessProbeDiagnostics,
@@ -14,7 +15,15 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { newWorkEntry, readTestALWorkReadyAtMs, toTestALWorkReadySelection } from './al-work-test-entries.ts';
+import {
+    collectProbe,
+    fakePort,
+    newWorkEntry,
+    readTestALWorkReadyAtMs,
+    toFakeALWorkClaim,
+    toFakeALWorkKey,
+    toTestALWorkReadySelection
+} from './al-work-test-entries.ts';
 
 const AL_TEST_TYPES: ReadonlySet<string> = new Set(['AL_TEST']);
 
@@ -51,7 +60,7 @@ describe('ALWorkHandler', () => {
         expect(released).toEqual(['w-1:completed', 'w-2:retry']);
 
         const before = Date.now();
-        handler.committed();
+        handler.committed({ dueByMs: 1_000, writtenKeys: [] });
         expect(Date.now() - before).toBeLessThan(5);
         handler.dispose();
     });
@@ -449,12 +458,12 @@ describe('ALWorkHandler', () => {
         // Seed the claim that a mid-batch commit must reach only through the follow-up batch: wait
         // for the claim() call of this batch to run and capture it before the second entry exists.
         pending.push(toFakeALWorkClaim('first'));
-        handler.committed();
+        handler.committed({ dueByMs: 1_000, writtenKeys: [toFakeALWorkKey('first')] });
         await firstClaimEntered;
 
         // A second commit lands, and its work becomes claimable, while the first entry is still in flight.
         pending.push(toFakeALWorkClaim('second'));
-        handler.committed();
+        handler.committed({ dueByMs: 1_000, writtenKeys: [toFakeALWorkKey('second')] });
 
         releaseFirst?.();
         await expect.poll(() => released).toEqual(['first:completed', 'second:completed']);
@@ -607,7 +616,8 @@ describe('ALWorkHandler', () => {
             workTypes: AL_TEST_TYPES,
             leaseMs: 5_000,
             nowMs: () => nowMs,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'cas-loser'));
         let attemptCount = 0;
@@ -738,7 +748,7 @@ describe('ALWorkHandler', () => {
         handler.dispose();
     });
 
-    it('re-probes storage after its own commit, and after a batch that claimed, exactly once each', async () => {
+    it('reads nothing for its own commit whose batch claimed it clean, and probes once after an engine batch', async () => {
         const released: string[] = [];
         const pending: ALWorkClaim[] = [];
         let probeCount = 0;
@@ -771,27 +781,24 @@ describe('ALWorkHandler', () => {
         }
         expect(probeCount).toBe(1);
 
-        // A commit of this owner's own invalidates the answer; the batch it runs claims the row it wrote.
+        // A commit of this owner's own sets the answer aside; the batch it runs claims and completes the
+        // row it wrote, which leaves storage as the answer saw it.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed();
+        handler.committed({ dueByMs: 10_000, writtenKeys: [toFakeALWorkKey('committed-row')] });
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(released).toEqual(['committed-row:completed']);
-        expect(probeCount).toBe(1);
-
-        // One probe re-establishes the answer the batch invalidated; the rounds after it read nothing.
         for (let round = 0; round < 25; round += 1) {
             await engine.executeOnce();
         }
-        expect(probeCount).toBe(2);
+        expect(probeCount).toBe(1);
 
         // A batch the engine itself starts is worth exactly one probe to open it and one to close it.
         pending.push(toFakeALWorkClaim('engine-row'));
-        handler.committed();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(released).toEqual(['committed-row:completed', 'engine-row:completed']);
+        engine.wakeAfterExternalWrite();
         for (let round = 0; round < 25; round += 1) {
             await engine.executeOnce();
         }
+        expect(released).toEqual(['committed-row:completed', 'engine-row:completed']);
         expect(probeCount).toBe(3);
 
         handler.dispose();
@@ -817,7 +824,7 @@ describe('ALWorkHandler', () => {
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             readNextReadyAtMs: async () => nextReadyAtMs,
             selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
-            runClaim: async () => ({ status: 'completed' }),
+            runClaim: async (claim) => claim.entry.key.contextId === 'retried-row' ? { status: 'retry' } : { status: 'completed' },
             diagnostics: (event) => collectProbe(probes, event)
         });
 
@@ -825,9 +832,9 @@ describe('ALWorkHandler', () => {
         await handler.ready();
         await engine.executeOnce();
 
-        // A commit runs a batch, and that batch's own invalidation must not take the commit's credit.
+        // A commit whose batch completes everything it claimed costs no probe at all.
         pending.push(toFakeALWorkClaim('committed-row'));
-        handler.committed();
+        handler.committed({ dueByMs: nowMs, writtenKeys: [toFakeALWorkKey('committed-row')] });
         await new Promise((resolve) => setTimeout(resolve, 0));
         await engine.executeOnce();
 
@@ -839,12 +846,19 @@ describe('ALWorkHandler', () => {
         nowMs += AL_WORK_READINESS_MEMORY_MS;
         await engine.executeOnce();
 
+        // A commit whose batch leaves a row behind runs that batch, and the batch's own invalidation
+        // must not take the commit's credit.
+        pending.push(toFakeALWorkClaim('retried-row'));
+        handler.committed({ dueByMs: nowMs, writtenKeys: [toFakeALWorkKey('retried-row')] });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await engine.executeOnce();
+
         // The clock never moves here, so every probe reports the read it made as free.
         expect(probes).toEqual([
             { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'no-memory', readyAtMs: 'none', durationMs: 0 },
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 'none', durationMs: 0 },
             { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'external-wake', readyAtMs: 15_000, durationMs: 0 },
-            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000, durationMs: 0 }
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'age-bound', readyAtMs: 15_000, durationMs: 0 },
+            { kind: 'readiness-probe', workerId: 'probe-cause-worker', cause: 'own-commit', readyAtMs: 15_000, durationMs: 0 }
         ]);
 
         handler.dispose();
@@ -911,7 +925,8 @@ describe('ALWorkHandler', () => {
             workTypes: AL_TEST_TYPES,
             leaseMs: 30_000,
             nowMs: () => nowMs,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         const engine = createEngine();
         const handler = new ALWorkHandler({
@@ -1124,7 +1139,7 @@ describe('ALWorkHandler', () => {
         try {
             await handler.ready();
             shouldCorrupt = true;
-            handler.committed();
+            handler.committed({ dueByMs: 1_000, writtenKeys: [] });
             await new Promise((resolve) => setTimeout(resolve, 0));
 
             expect(unhandled).toEqual([]);
@@ -1138,43 +1153,8 @@ describe('ALWorkHandler', () => {
     });
 });
 
-function collectProbe(probes: ALWorkReadinessProbeDiagnostics[], event: ALWorkDiagnostics): void {
-    if (event.kind === 'readiness-probe') {
-        probes.push(event);
-    }
-}
-
 function createEngine(): InboxOutboxEngine {
     return new InboxOutboxEngine();
-}
-
-interface FakeALWorkPortInput {
-    readonly claims: readonly string[];
-    readonly onRelease: (claim: ALWorkClaim, outcome: ALWorkOutcome) => void;
-    /** Effect ids returned once from finalizeExhausted, then drained to []. */
-    readonly finalizeExhausted?: readonly string[];
-}
-
-function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
-    const pending = input.claims.map((effectId) => toFakeALWorkClaim(effectId));
-    let exhausted = (input.finalizeExhausted ?? []).map((effectId) => toFakeALWorkClaim(effectId));
-    return {
-        retainIfAbsent: async (entry) => entry,
-        readPage: async () => ({ entries: [], nextCursor: null }),
-        readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
-        claim: async ({ maxCount }) => pending.splice(0, maxCount),
-        finalizeExhausted: async () => {
-            const claims = exhausted;
-            exhausted = [];
-            return claims;
-        },
-        releaseAll: async (releases) => {
-            for (const release of releases) {
-                input.onRelease(release.claim, release.outcome);
-            }
-        },
-        readEntry: async () => undefined
-    };
 }
 
 /** A port whose every flush is kept whole, so a pin can count the batches and read their order. */
@@ -1187,8 +1167,4 @@ function recordingPort(claims: readonly string[], flushes: ALWorkRelease[][]): A
             }
         }
     };
-}
-
-function toFakeALWorkClaim(effectId: string): ALWorkClaim {
-    return { entry: newWorkEntry('AL_TEST', effectId), attempts: 0, leaseUntilMs: 0 };
 }

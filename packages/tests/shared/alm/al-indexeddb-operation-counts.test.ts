@@ -17,7 +17,7 @@ import {
     AL_OUTBOUND_WORK_LEASE_MS,
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
-    type ALOutboundDequeueDeferral
+    type ALOutboundWorkDeferral
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
@@ -25,6 +25,7 @@ import {
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
+import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type {
     IndexedDbOperationCounts,
@@ -71,7 +72,10 @@ const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 /** The resource inbox's timeout-claim and fairness rate-limit window, so the pin crosses at least one of each. */
 const IDLE_OWNER_RATE_WINDOW_MS = 60_000;
-const NO_DEFERRAL: ALOutboundDequeueDeferral = { types: new Set<string>(), readyAtMs: undefined };
+const NO_DEFERRAL: ALOutboundWorkDeferral = {
+    dequeue: { types: new Set<string>(), readyAtMs: undefined },
+    leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
+};
 
 describe('AL-owned IndexedDB operation counts', () => {
     it('counts admission reads, writes, and work operations through the backend', async () => {
@@ -135,7 +139,12 @@ describe('outbound work owner IndexedDB scan volume', () => {
         // Only the second work type holds a row: a probe that stopped at the first type would miss it.
         await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[1], 'second-type'));
         expect(await readALOutboundWorkReadyAt(port, NOW_MS, NO_DEFERRAL)).toBe(NOW_MS);
-        expect(await readALOutboundWorkReadyAt(port, NOW_MS, { types: new Set(WORK_TYPES), readyAtMs: NOW_MS + 60_000 }))
+        expect(
+            await readALOutboundWorkReadyAt(port, NOW_MS, {
+                ...NO_DEFERRAL,
+                dequeue: { types: new Set(WORK_TYPES), readyAtMs: NOW_MS + 60_000 }
+            })
+        )
             .toBe(NOW_MS + 60_000);
 
         // Claiming moves the row to RESERVED, which the scan still reads: it now answers at the lease end.
@@ -212,10 +221,13 @@ describe('outbound work owner IndexedDB scan volume', () => {
 });
 
 describe('outbound default send IndexedDB volume', () => {
-    it('sends one durable message in 10 al-admission and 11 al-work operations', async () => {
+    it('sends one durable message in 10 al-admission and 9 al-work operations', async () => {
         const observer = createCountingIndexedDbOperationObserver();
+        // The lane clock stands still, so the send's batch finds the sweep windows the bootstrap spent still closed.
+        const laneNowMs = Date.now();
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
+            nowMs: () => laneNowMs,
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -229,10 +241,11 @@ describe('outbound default send IndexedDB volume', () => {
         expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
         expect(
             counts.byOwner['al-work'],
-            'one default send spends 11 al-work operations: its decision read holds the effect row ' +
-                'and canonical pair its commit fences, so the commit re-reads neither, and its claim ' +
-                'takes the committed canonical pair in memory instead of two work reads'
-        ).toBe(11);
+            'one default send spends 9 al-work operations: its decision read holds the effect row ' +
+                'and canonical pair its commit fences, so the commit re-reads neither, its claim ' +
+                'takes the committed canonical pair in memory instead of two work reads, and only the ' +
+                'bootstrap batch sweeps for exhausted rows and lapsed leases'
+        ).toBe(9);
         runtime.dispose();
     });
 });
@@ -707,7 +720,8 @@ function createOutboundWorkPort(observer: IndexedDbOperationObserver): ALWorkQue
         workTypes: new Set(WORK_TYPES),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: () => NOW_MS,
-        random: () => 0.5
+        random: () => 0.5,
+        leaseRecovery: createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, NOW_MS)
     });
 }
 

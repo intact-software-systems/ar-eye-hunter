@@ -189,17 +189,30 @@ every session the page opens. The event's `data` is the event itself:
   `batch` and `retained-release` are this owner's own progress, `external-wake`
   is the announcement another writer made to every owner on the engine,
   `age-bound` is the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and
-  `no-memory` is an owner that has not probed yet. `readyAtMs` is the answer: an
-  epoch-ms time work is next due, or `none` for no work at all. `durationMs` is
-  what that read cost, and this is where it is charged: an owner whose probe
-  answers "due now" holds the page for the batch that follows, which reads none
-  of its own. A probe is not a batch, so it is outside the empty-batch
-  suppression the drains carry. The inbound rotation reports none: its probe
-  reads a page every engine round by construction, and relaying one event per
-  round costs more in this harness than the answer is worth (see **Inbound
-  Admission Diagnostics** below). The ALM observation artifact reads this
-  bullet's `age-bound` probes as the page's storage-queue regime (`pageRegime`,
-  `alm-observation-artifact.md`)
+  `no-memory` is an owner with no answer that has not probed yet, or whose last
+  probe failed after taking the cause it owed; an aged answer survives a failed
+  probe, so the probe after it reports `age-bound` again.
+  The first of these since the last probe names the next one. A commit sets its
+  owner's answer aside, and the batch the commit runs restores it when the
+  commit described the rows it wrote (an undescribed commit, such as a control
+  admission or an inbound one, never restores); that batch claimed fewer than a
+  page, rejected nothing, completed every claim, among them a claim of every row
+  the commit wrote; no external wake, retained release or further commit reached
+  the owner since the commit, and no claim of the batch could write work rows of
+  its own (a send attempt writes none, and a dequeue's dispatch goes through the
+  owner's own commit, so a dequeue that writes nothing still restores); the
+  answer was neither due nor aged out when the batch started; and every row the
+  commit wrote was due by then. A plain send therefore reports no probe after
+  its `effect-drain`. `readyAtMs` is the answer: an epoch-ms time work is next
+  due, or `none` for no work at all. `durationMs` is what that read cost, and
+  this is where it is charged: an owner whose probe answers "due now" holds the
+  page for the batch that follows, which reads none of its own. A probe is not a
+  batch, so it is outside the empty-batch suppression the drains carry. The
+  inbound rotation reports none: its probe reads a page every engine round by
+  construction, and relaying one event per round costs more in this harness than
+  the answer is worth (see **Inbound Admission Diagnostics** below). The ALM
+  observation artifact reads this bullet's `age-bound` probes as the page's
+  storage-queue regime (`pageRegime`, `alm-observation-artifact.md`)
 
 - `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome`,
   `reason`, and for a receipt `phase` (below): one event for every inbound

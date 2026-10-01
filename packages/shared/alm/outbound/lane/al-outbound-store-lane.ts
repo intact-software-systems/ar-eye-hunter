@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../../queuebox/resource-inbox/not-ready-exception.ts';
-import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
@@ -12,7 +12,13 @@ import {
     type ALWorkDiagnostics,
     type ALWorkReadySelection
 } from '../../work/al-work-handler.ts';
+import {
+    computeALWorkLeaseSweepState,
+    createLimitedALWorkLeaseRecovery,
+    type ALWorkLeaseRecovery
+} from '../../work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
+import { AL_WORK_UNDESCRIBED_COMMIT, type ALWorkCommittedRows } from '../../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundDurableEffect,
     ALOutboundEffectSnapshot
@@ -32,8 +38,10 @@ import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     readALOutboundWorkReadyAt,
     toALOutboundDequeueWork,
+    toALOutboundWorkKey,
     toALOutboundWorkType,
-    type ALOutboundDequeueDeferral
+    type ALOutboundDequeueDeferral,
+    type ALOutboundWorkDeferral
 } from '../al-outbound-work-entry.ts';
 import type { ALOutboundControlSource } from '../compute-al-outbound-control-admission.ts';
 import type { ALOutboundComputedDto } from '../compute-al-outbound-dispatch.ts';
@@ -74,6 +82,8 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
+    /** The sweep limiter pair this lane's work port spends and its readiness scan peeks. */
+    private readonly leaseRecovery: ALWorkLeaseRecovery;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
@@ -83,7 +93,8 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input = input;
         const { stores, runtime } = input;
         this.readyPromise = stores.admissionStore.ready();
-        const workPort = createALOutboundLaneWorkPort(input);
+        this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.clock.nowMs());
+        const workPort = createALOutboundLaneWorkPort(input, this.leaseRecovery);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
         const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
         this.dispatchAdmission = admissions.dispatchAdmission;
@@ -97,7 +108,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ownsQueueEngine: runtime.ownsQueueEngine,
             clock: runtime.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => readALOutboundWorkReadyAt(port, this.readNowMs(), this.readDequeueDeferral()),
+            readNextReadyAtMs: (port) => this.readNextReadyAtMs(port),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
@@ -142,7 +153,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.setCanonicalHandoff(result);
 
         if (hasWrittenWork(result)) {
-            this.work.committed();
+            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, [result]));
         }
 
         return this.toStoreComputed(result.computed);
@@ -154,12 +165,12 @@ export class ALOutboundStoreLane<TPrepared> {
     ): Promise<readonly ALOutboundComputedDto<TPrepared>[]> {
         const results = await this.dispatchAdmission.commitAll(dispatches).catch((error) => {
             // A group rethrows only after every member ran, so members before the throw may have landed.
-            this.work.committed();
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
             throw error;
         });
         results.forEach((result) => this.setCanonicalHandoff(result));
         if (results.some(hasWrittenWork)) {
-            this.work.committed();
+            this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, results));
         }
         return results.map((result) => this.toStoreComputed(result.computed));
     }
@@ -168,7 +179,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private setCanonicalHandoff(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
         // A commit that resolves after dispose must not refill what dispose cleared.
         if (!this.disposed && result.committed && result.computed.bundle !== undefined) {
-            this.input.canonicalHandoff?.setCommitted(result.computed.bundle);
+            this.input.canonicalHandoff?.setCommitted(result.computed.bundle, this.readNowMs());
         }
     }
 
@@ -179,7 +190,7 @@ export class ALOutboundStoreLane<TPrepared> {
         const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
-            this.work.committed();
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
         }
         return admitted;
     }
@@ -235,13 +246,25 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input.evictExpired();
     }
 
+    private async readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined> {
+        const nowMs = this.readNowMs();
+        return await readALOutboundWorkReadyAt(port, nowMs, this.getWorkDeferral(nowMs));
+    }
+
+    private getWorkDeferral(nowMs: number): ALOutboundWorkDeferral {
+        return {
+            dequeue: this.getDequeueDeferral(nowMs),
+            leaseSweeps: computeALWorkLeaseSweepState(this.leaseRecovery, nowMs)
+        };
+    }
+
     /** An open dequeue circuit must not advertise its rows, or every batch claims and releases them. */
-    private readDequeueDeferral(): ALOutboundDequeueDeferral {
+    private getDequeueDeferral(nowMs: number): ALOutboundDequeueDeferral {
         const { resilience } = this.input.runtime.dequeue;
         return {
             types: this.input.dequeueTypes,
             readyAtMs: resilience.isNotAllowedThroughToDequeue()
-                ? this.readNowMs() + resilience.toCircuitOpenBackoffMs()
+                ? nowMs + resilience.toCircuitOpenBackoffMs()
                 : undefined
         };
     }
@@ -249,7 +272,13 @@ export class ALOutboundStoreLane<TPrepared> {
     private async runOutboundClaim(claim: ALWorkClaim): Promise<ALWorkAttemptResult> {
         try {
             const work = await this.readExpirableOutboundWork(claim.entry);
-            return work === undefined ? { status: 'completed' } : await this.runDurableEffect(work);
+            if (work === undefined) {
+                return { status: 'completed' };
+            }
+            if (commitsALOutboundWorkOutsideLane(work.payload.kind)) {
+                this.work.claimCommitted();
+            }
+            return await this.runDurableEffect(work);
         }
         catch (error) {
             // A planner that is still waiting for authority owes no attempt: reschedule, never charge it.
@@ -284,7 +313,7 @@ export class ALOutboundStoreLane<TPrepared> {
             ? toALOutboundDequeueWork(entry, this.input.runtime.readMessageFromEntry)
             : await this.input.stores.admissionStore.readWorkSnapshot(
                 entry,
-                this.input.canonicalHandoff?.takeCanonical(entry.key)
+                this.input.canonicalHandoff?.takeCanonical(entry.key, this.readNowMs())
             );
     }
 
@@ -435,15 +464,22 @@ interface ALOutboundLaneAdmissions<TPrepared> {
     readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
 }
 
-/** The lane's own work types, plus the foreign dequeue rows only the durable lane admits. */
-function createALOutboundLaneWorkPort<TPrepared>(input: ALOutboundStoreLane.Input<TPrepared>): ALWorkQueuePort {
+/**
+ * The lane's own work types, plus the foreign dequeue rows only the durable lane admits. Each lane sweeps
+ * on its own limiters, so the volatile lane never spends the durable lane's allowance.
+ */
+function createALOutboundLaneWorkPort<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    leaseRecovery: ALWorkLeaseRecovery
+): ALWorkQueuePort {
     const { stores, runtime } = input;
     return createALWorkQueuePort({
         queue: stores.workQueue,
         workTypes: new Set([toALOutboundWorkType(stores.admissionStore.namespace), ...input.dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: () => runtime.clock.nowMs(),
-        random: runtime.random
+        random: runtime.random,
+        leaseRecovery
     });
 }
 
@@ -507,6 +543,43 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
 
 function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
     return result.committed || result.computed.verdict.kind === 'pending';
+}
+
+/**
+ * The work rows these commits wrote, as their batch must account for them, or an undescribed commit
+ * when one of them wrote work its result does not describe. A receipted send's acknowledgement
+ * timeout is due after its send, so the batch that sends it cannot have claimed it.
+ */
+function computeALOutboundCommittedRows<TPrepared>(
+    namespace: string,
+    results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
+): ALWorkCommittedRows {
+    let dueByMs = 0;
+    const writtenKeys: string[] = [];
+    for (const result of results.filter(hasWrittenWork)) {
+        const effects = result.committed ? result.computed.bundle?.durableEffects : undefined;
+        if (effects === undefined) {
+            return AL_WORK_UNDESCRIBED_COMMIT;
+        }
+        for (const { effectId, retryAtMs } of effects) {
+            if (retryAtMs === undefined) {
+                return AL_WORK_UNDESCRIBED_COMMIT;
+            }
+            dueByMs = Math.max(dueByMs, retryAtMs);
+            writtenKeys.push(toKeyAsString(toALOutboundWorkKey(namespace, effectId)));
+        }
+    }
+    return { dueByMs, writtenKeys };
+}
+
+/**
+ * The effect kinds whose claim may commit work rows without the lane's own commit, which announces
+ * what it writes: a timeout attempt writes the next timeout and a repair hint, a repair or retry
+ * commits a fresh dispatch, a retained admission commits its message, and a replayed control its
+ * repair and retry schedule.
+ */
+function commitsALOutboundWorkOutsideLane<TPrepared>(kind: ALOutboundDurableEffect<TPrepared>['kind']): boolean {
+    return kind !== 'send-prepared' && kind !== 'dequeue-message';
 }
 
 /** The effect kinds whose queue row expires exactly when the message it carries does. */

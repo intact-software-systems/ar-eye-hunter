@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -29,7 +30,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-1'));
 
@@ -60,7 +62,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => 10_000,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-lease'));
 
@@ -85,7 +88,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-2'));
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-3'));
@@ -111,7 +115,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         for (const effectId of ['batch-first', 'batch-lost', 'batch-last']) {
             await port.retainIfAbsent(newWorkEntry('AL_TEST', effectId));
@@ -139,7 +144,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         for (const effectId of ['conflict-first', 'conflict-middle', 'conflict-last']) {
             await port.retainIfAbsent(newWorkEntry('AL_TEST', effectId));
@@ -184,7 +190,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         for (const effectId of ['solo', 'batched', 'filler']) {
             const entry = newWorkEntry('AL_TEST', effectId);
@@ -216,7 +223,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST_A', 'AL_TEST_B']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST_A', 'a-1'));
         await port.retainIfAbsent(newWorkEntry('AL_TEST_A', 'a-2'));
@@ -260,7 +268,8 @@ describe('ALWorkQueuePort', () => {
             workTypes: new Set(['AL_TEST_A', 'AL_TEST_B']),
             leaseMs: 5_000,
             nowMs: () => now,
-            random: () => 0.5
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
         });
         await port.retainIfAbsent(newWorkEntry('AL_TEST_A', 'a-1'));
         await port.retainIfAbsent(newWorkEntry('AL_TEST_B', 'b-1'));
@@ -272,6 +281,150 @@ describe('ALWorkQueuePort', () => {
         expect(page.nextCursor).toBeNull();
     });
 });
+
+describe('ALWorkQueuePort lease recovery', () => {
+    it('sweeps for timed-out leases on its first claim, then at most once per lease of its own clock', async () => {
+        let now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+
+        expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
+        now += 5_000;
+        await port.retainIfAbsent(newReservedWorkEntry('crashed', { startMs: now - 6_000, attempts: 1 }));
+        expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
+        // The limiter counts in quarter-window buckets: the first sweep closes the window for 1.25 leases.
+        now = 10_000 + 6_250;
+        expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
+        now += 1;
+        expect(toEffectIds(await port.claim({ maxCount: 4, observedEntries: undefined }))).toEqual(['crashed']);
+    });
+
+    it('spends no timeout allowance on a claim whose reservation filled the page', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        await port.retainIfAbsent(newWorkEntry('AL_TEST', 'fills-the-page'));
+        await port.retainIfAbsent(newReservedWorkEntry('crashed', { startMs: 0, attempts: 1 }));
+
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['fills-the-page']);
+        // Still inside the first lease: only an allowance the first claim left unspent recovers the row.
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed']);
+    });
+
+    it('finalizes exhausted reservations on its first batch, then at most once per lease of its own clock', async () => {
+        let now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        await port.retainIfAbsent(newReservedWorkEntry('exhausted-first', { startMs: 0, attempts: 20 }));
+
+        const finalized = await port.finalizeExhausted(4);
+        expect(toEffectIds(finalized)).toEqual(['exhausted-first']);
+        await port.releaseAll(finalized.map((claim) => ({ claim, outcome: { status: 'non-retryable' } as const })));
+        await port.retainIfAbsent(newReservedWorkEntry('exhausted-second', { startMs: 0, attempts: 20 }));
+        expect(await port.finalizeExhausted(4)).toEqual([]);
+        now = 10_000 + 6_251;
+        expect(toEffectIds(await port.finalizeExhausted(4))).toEqual(['exhausted-second']);
+    });
+
+    it('keeps sweeping for timed-out leases while each sweep fills the room its claim left', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        for (const effectId of ['crashed-1', 'crashed-2']) {
+            await port.retainIfAbsent(newReservedWorkEntry(effectId, { startMs: 0, attempts: 1 }));
+        }
+
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed-1']);
+        expect(toEffectIds(await port.claim({ maxCount: 1, observedEntries: undefined }))).toEqual(['crashed-2']);
+        // This sweep comes back with room to spare, so it closes the window for the lease.
+        expect(await port.claim({ maxCount: 1, observedEntries: undefined })).toEqual([]);
+        await port.retainIfAbsent(newReservedWorkEntry('crashed-3', { startMs: 0, attempts: 1 }));
+        expect(await port.claim({ maxCount: 1, observedEntries: undefined })).toEqual([]);
+    });
+
+    it('keeps finalizing exhausted reservations while each sweep fills its page', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        for (const effectId of ['exhausted-1', 'exhausted-2']) {
+            await port.retainIfAbsent(newReservedWorkEntry(effectId, { startMs: 0, attempts: 20 }));
+        }
+
+        for (const expected of ['exhausted-1', 'exhausted-2']) {
+            const finalized = await port.finalizeExhausted(1);
+            expect(toEffectIds(finalized)).toEqual([expected]);
+            await port.releaseAll(finalized.map((claim) => ({ claim, outcome: { status: 'non-retryable' } as const })));
+        }
+        // This sweep comes back with room to spare, so it closes the window for the lease.
+        expect(await port.finalizeExhausted(1)).toEqual([]);
+        await port.retainIfAbsent(newReservedWorkEntry('exhausted-3', { startMs: 0, attempts: 20 }));
+        expect(await port.finalizeExhausted(1)).toEqual([]);
+    });
+
+    it('keeps claiming and sweeping when its clock steps back behind the limiters it built', async () => {
+        let now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createLimitedTestPort(queue, () => now);
+        now = 8_000;
+        await port.retainIfAbsent(newWorkEntry('AL_TEST', 'after-the-step'));
+        await port.retainIfAbsent(newReservedWorkEntry('crashed', { startMs: 0, attempts: 1 }));
+
+        expect(await port.finalizeExhausted(4)).toEqual([]);
+        expect(toEffectIds(await port.claim({ maxCount: 4, observedEntries: undefined }))).toEqual([
+            'after-the-step',
+            'crashed'
+        ]);
+    });
+
+    it('sweeps on every claim and every batch when configured to', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(now));
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => now,
+            random: () => 0.5,
+            leaseRecovery: { kind: 'every-batch' }
+        });
+
+        for (let batch = 0; batch < 3; batch += 1) {
+            await port.retainIfAbsent(newReservedWorkEntry(`exhausted-${batch}`, { startMs: 0, attempts: 20 }));
+            await port.retainIfAbsent(newReservedWorkEntry(`crashed-${batch}`, { startMs: 0, attempts: 1 }));
+            expect(toEffectIds(await port.finalizeExhausted(4))).toEqual([`exhausted-${batch}`]);
+            expect(toEffectIds(await port.claim({ maxCount: 4, observedEntries: undefined }))).toEqual([`crashed-${batch}`]);
+        }
+    });
+});
+
+function createLimitedTestPort(queue: InMemoryQueueBox, nowMs: () => number) {
+    return createALWorkQueuePort({
+        queue,
+        workTypes: new Set(['AL_TEST']),
+        leaseMs: 5_000,
+        nowMs,
+        random: () => 0.5,
+        leaseRecovery: createLimitedALWorkLeaseRecovery(5_000, nowMs())
+    });
+}
+
+/** A reservation an owner took at `startMs` and never released, as a crashed owner leaves it. */
+function newReservedWorkEntry(effectId: string, input: { startMs: number; attempts: number; }): ResourceEntry {
+    const entry = newWorkEntry('AL_TEST', effectId);
+    return {
+        ...entry,
+        status: EntityStatus.RESERVED,
+        dequeueAudit: {
+            ...entry.dequeueAudit,
+            attempts: input.attempts,
+            startTs: Temporal.Instant.fromEpochMilliseconds(input.startMs)
+        }
+    };
+}
+
+function toEffectIds(claims: readonly ALWorkClaim[]): string[] {
+    return claims.map((claim) => claim.entry.key.contextId);
+}
 
 function byEffectId(claims: readonly ALWorkClaim[]): Map<string, ALWorkClaim> {
     return new Map(claims.map((claim) => [claim.entry.key.contextId, claim]));

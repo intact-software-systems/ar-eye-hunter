@@ -4,6 +4,11 @@ import {
     type ExpiredEntryEvictionOptions
 } from './ExpiredEntryEviction.ts';
 import {
+    assertMaxEntries,
+    deleteOldestEntriesPastMax,
+    type MaxEntriesOptions
+} from './LatestRepository.ts';
+import {
     ObservableLatestValue,
     type ObservableLatestValueOptions,
     type ValueEqualityChecker
@@ -21,7 +26,9 @@ import {
 } from './RepositoryInterfaces.ts';
 
 export type ObservableLatestRepositoryOptions<K, V> = Readonly<
-    ExpiredEntryEvictionOptions & {
+    & ExpiredEntryEvictionOptions
+    & MaxEntriesOptions
+    & {
         ttlMs?: number;
         isValid?: (value: V) => boolean;
         equals?: ValueEqualityChecker<V>;
@@ -34,6 +41,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
     private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
     private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
+    private readonly maxEntries: number | undefined;
     private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableKeyedValueListener<K, V>>>();
     private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
     private observerQueue: Promise<void> = Promise.resolve();
@@ -45,6 +53,8 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
             equals: options.equals
         };
         this.onObserverError = options.onObserverError;
+        assertMaxEntries(options.maxEntries);
+        this.maxEntries = options.maxEntries;
         this.expiredEntryEviction = startExpiredEntryEviction(
             options,
             () => this.deleteExpired()
@@ -361,6 +371,7 @@ export class ObservableLatestRepository<K, V> implements PushKeyedValues<K, V>, 
                 });
             });
             this.entries.set(key, entry);
+            deleteOldestEntriesPastMax(this.entries, this.maxEntries, (oldest) => this.delete(oldest));
         }
 
         return entry;

@@ -7,7 +7,15 @@ import {
 import { LatestValue, LatestValueOptions, ValueValidityChecker } from './LatestValue.ts';
 import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions } from './RepositoryInterfaces.ts';
 
-export interface LatestRepositoryOptions<V> extends ExpiredEntryEvictionOptions {
+export type MaxEntriesOptions = Readonly<{
+    /**
+     * Absent means no cap. Past the cap the oldest first-inserted key is deleted;
+     * re-setting a key keeps its position, so a caller that wants it newest deletes it first.
+     */
+    maxEntries?: number;
+}>;
+
+export interface LatestRepositoryOptions<V> extends ExpiredEntryEvictionOptions, MaxEntriesOptions {
     ttlMs?: number;
     isValid?: ValueValidityChecker<V>;
     evictWindowMs?: number;
@@ -21,6 +29,29 @@ export interface AcceptLatestEntryInput<K, V> {
     readonly expireAtEpochMs?: number;
 }
 
+export function assertMaxEntries(maxEntries: number | undefined): void {
+    if (maxEntries !== undefined && (!Number.isInteger(maxEntries) || maxEntries < 1)) {
+        throw new Error('maxEntries must be a positive integer');
+    }
+}
+
+export function deleteOldestEntriesPastMax<K, V>(
+    entries: ReadonlyMap<K, V>,
+    maxEntries: number | undefined,
+    deleteEntry: (key: K) => void
+): void {
+    if (maxEntries === undefined) {
+        return;
+    }
+
+    for (const key of entries.keys()) {
+        if (entries.size <= maxEntries) {
+            return;
+        }
+        deleteEntry(key);
+    }
+}
+
 const DEFAULT_EVICT_WINDOW_MS = 5_000;
 const DEFAULT_EVICTS_PER_WINDOW = 2;
 const MIN_EVICT_WINDOW_MS = 4;
@@ -31,6 +62,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
     private readonly evictWindowMs: number;
     private readonly evictsPerWindow: number;
+    private readonly maxEntries: number | undefined;
 
     private evictLimiter: RateLimiter | undefined;
     private evictionRuns = 0;
@@ -49,6 +81,8 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
         if (!Number.isInteger(this.evictsPerWindow) || this.evictsPerWindow < 0) {
             throw new Error('evictsPerWindow must be a non-negative integer');
         }
+        assertMaxEntries(options.maxEntries);
+        this.maxEntries = options.maxEntries;
 
         this.expiredEntryEviction = startExpiredEntryEviction(
             options,
@@ -389,6 +423,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
         if (!entry) {
             entry = new LatestValue<V>(this.defaultValueOptions);
             this.entries.set(key, entry);
+            deleteOldestEntriesPastMax(this.entries, this.maxEntries, (oldest) => this.delete(oldest));
         }
 
         return entry;

@@ -1,4 +1,15 @@
-import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-handler.ts';
+import type { ALWorkReadinessProbeCause } from '@shared/alm/work/al-work-readiness-memory.ts';
+
+/**
+ * What a page sends: the ledger's minimal durable plan, or a receipted command, a durable WS unicast to the
+ * server on the `command` channel, planned as the WS client plans it and acknowledged as the server does.
+ */
+export type DurableSendPlan = 'minimal' | 'receipted-command';
+
+export const DURABLE_SEND_PLANS: readonly DurableSendPlan[] = ['minimal', 'receipted-command'];
+
+/** The page URL's query parameter that names its plan, so each page composes one runtime for one plan. */
+export const DURABLE_SEND_PLAN_PARAMETER = 'plan';
 
 export interface DurableSendRunInput {
     readonly runId: string;
@@ -20,16 +31,18 @@ export interface FrameLoadObservation {
 }
 
 /**
- * The causes a send's own progress gives the durable probe that follows its batch: its commit emptied
- * the owner's readiness memory (and keeps the credit over the batch that ran behind it).
- * Probes from an external wake, the age bound, a retained release or a first read are not its own.
+ * How a send's wait for its own batch ended: on that batch's durable `effect-drain`, on the readiness probe that
+ * follows the drain, or at the bound. A receipted send ends on the probe: its commit also wrote the ACK-timeout row
+ * due later, so the owner reads storage again after the batch instead of restoring its answer.
  */
-export const DURABLE_SEND_OWN_PROBE_CAUSES: readonly ALWorkReadinessProbeCause[] = [
-    'own-commit',
-    'batch'
-];
+export type DurableSendBatchEnd = 'effect-drain' | 'readiness-probe' | 'timeout';
 
-export type DurableSendProbeEnd = ALWorkReadinessProbeCause | 'timeout';
+/** Where each plan's batch goes idle: the one table the page waits on and the suite expects. */
+export const DURABLE_SEND_PLAN_BATCH_ENDS: Readonly<Record<DurableSendPlan, Exclude<DurableSendBatchEnd, 'timeout'>>> =
+    {
+        minimal: 'effect-drain',
+        'receipted-command': 'readiness-probe'
+    };
 
 export interface DurableSendSample {
     /** `enqueueIfAbsent` call to the carrier's `sendPreparedMessage`. */
@@ -38,11 +51,21 @@ export interface DurableSendSample {
     readonly phaseOffsetMs: number | undefined;
     /** Frame starts between the send's start and its dispatch. */
     readonly framesStraddled: number;
-    /** The durable probe that ended the wait for the send's batch to go idle, or the bound. */
-    readonly probeEnd: DurableSendProbeEnd;
+    /** What ended the wait for the send's batch to go idle. */
+    readonly batchEnd: DurableSendBatchEnd;
     /** Every durable probe seen from the dispatch to the end of that wait. */
     readonly observedProbeCauses: readonly ALWorkReadinessProbeCause[];
+    /** How the server's receipt, handed over once the batch went idle, ended. */
+    readonly receiptEnd: DurableSendReceiptEnd;
 }
+
+/**
+ * How the server's receipt for a send ended. `none`: the plan tracks no receipt. `acknowledged`: the receipt
+ * settled complete and the batch its commit woke drained, so the next send starts on an idle owner with no
+ * receipt open. `unacknowledged`: the receipt did not settle complete within the bound. `undrained`: it settled
+ * complete, but no batch drained within the bound after it.
+ */
+export type DurableSendReceiptEnd = 'none' | 'acknowledged' | 'unacknowledged' | 'undrained';
 
 export interface DurableSendRun {
     readonly samples: readonly DurableSendSample[];

@@ -7,14 +7,10 @@ import {
 } from '../al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import {
-    normalizeALQosPolicy,
     planALMessageHandling,
     resolveALQosNormalizationInput,
-    resolveSupersedenceKey,
-    shouldPersistOutbox,
     type ALMessageHandlingPlan,
     type ALMessagePlanningObservations,
-    type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
 import type {
@@ -28,7 +24,6 @@ import type {
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
@@ -39,21 +34,17 @@ import {
     ALOutboundMessageRuntime,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
-    type ALOutboundRetryTrackingPlan,
-    type ALOutboundSettledSendResult,
-    type ALOutboundSupersedenceTrackingPlan
+    type ALOutboundSettledSendResult
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
     reconstructALOutboundTransportMessage,
-    toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
-import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -72,10 +63,8 @@ import type {
     OnInboxMessageCallback,
     OnOutboxWebSocketMessageCallback
 } from './queue-message-callbacks.ts';
-import {
-    acceptWsQueueBoxClientControlMessage,
-    toWsQueueBoxClientAckTrackingPlan
-} from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
+import { toWsQueueBoxClientDispatchPlan } from './ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
+import { acceptWsQueueBoxClientControlMessage } from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -265,37 +254,12 @@ export class WsQueueBoxClientService {
     }
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        const socketOpen = this.isSocketOpen();
-        const normalizationInput = resolveALQosNormalizationInput(
-            msg,
-            {
-                direction: 'outbound',
-                selfPeerId: this.sessionId,
-                connectedPeerIds: socketOpen ? [this.sessionId] : []
-            },
-            this.dependencies.qosProvider
-        );
-        const normalized = normalizeALQosPolicy(msg, normalizationInput);
-        const message = toALOutboundMessage(msg, normalized.effective);
-        const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
-            msg: message,
-            carrier: 'ws',
-            policy: normalized
+        return toWsQueueBoxClientDispatchPlan(msg, {
+            sessionId: this.sessionId,
+            serverPeerId: this.serverPeerId,
+            socketOpen: this.isSocketOpen(),
+            qosProvider: this.dependencies.qosProvider
         });
-        return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>((refused) => refused, () => ({
-            msg: message,
-            dropReasonCode: undefined,
-            persist: shouldPersistOutbox(normalized.effective),
-            preparedMessages: [toALOutboundTransportMessage(message)],
-            ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg, this.serverPeerId),
-            retryTracking: this.toRetryTrackingPlan(normalized.effective),
-            repairTracking: {
-                enabled: normalized.effective.repair.algo !== 'none',
-                algo: normalized.effective.repair.algo,
-                maxAttempts: normalized.effective.repair.opts.maxRepairs
-            },
-            supersedenceTracking: this.toSupersedenceTrackingPlan(normalized.effective, msg)
-        }));
     }
 
     private planIncomingMessage(
@@ -616,35 +580,6 @@ export class WsQueueBoxClientService {
 
     private isSocketOpen(): boolean {
         return this.socket.ws?.readyState === 1;
-    }
-
-    private toRetryTrackingPlan(
-        effective: ALQosEffectivePolicy
-    ): ALOutboundRetryTrackingPlan | undefined {
-        if (effective.retry.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            maxAttempts: effective.retry.opts.maxAttempts
-        };
-    }
-
-    private toSupersedenceTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        msg: ALMessage
-    ): ALOutboundSupersedenceTrackingPlan | undefined {
-        if (effective.supersedence.algo === 'none') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            algo: effective.supersedence.algo,
-            key: resolveSupersedenceKey(msg, effective),
-            replacesMsgId: effective.supersedence.opts.replacesMsgId
-        };
     }
 }
 

@@ -3,7 +3,9 @@ import type { BrowserContext, CDPSession, Page } from '@playwright/test';
 import type { CpuProfile } from './compute-cpu-profile-shares.ts';
 import {
     DURABLE_SEND_HARNESS_GLOBAL,
+    DURABLE_SEND_PLAN_PARAMETER,
     type DurableSendHarness,
+    type DurableSendPlan,
     type DurableSendRun,
     type DurableSendRunInput,
     type FrameLoadInput
@@ -20,6 +22,11 @@ export interface DurableSendConfiguration {
     readonly name: string;
     readonly cpuThrottlingRate: number;
     readonly frameLoad: FrameLoadInput | undefined;
+}
+
+/** A run on a fresh page that composes one runtime for the plan it names. */
+export interface DurableSendPageRunInput extends Omit<DurableSendRunInput, 'frameLoad'> {
+    readonly plan: DurableSendPlan;
 }
 
 interface HarnessPage {
@@ -42,7 +49,7 @@ export async function routeDurableSendHarness(
 }
 
 export async function readBrowserVersion(context: BrowserContext): Promise<string> {
-    const { page, cdp } = await openHarnessPage(context);
+    const { page, cdp } = await openHarnessPage(context, 'minimal');
     try {
         return (await cdp.send('Browser.getVersion')).product;
     }
@@ -54,15 +61,16 @@ export async function readBrowserVersion(context: BrowserContext): Promise<strin
 export async function runDurableSendConfiguration(
     context: BrowserContext,
     configuration: DurableSendConfiguration,
-    input: Omit<DurableSendRunInput, 'frameLoad'>
+    input: DurableSendPageRunInput
 ): Promise<DurableSendRun> {
-    const harnessPage = await openHarnessPage(context);
+    const { plan, ...runInput } = input;
+    const harnessPage = await openHarnessPage(context, plan);
     try {
         await harnessPage.cdp.send('Emulation.setCPUThrottlingRate', {
             rate: configuration.cpuThrottlingRate
         });
         return await runSendsInPage(harnessPage.page, {
-            ...input,
+            ...runInput,
             frameLoad: configuration.frameLoad
         });
     }
@@ -73,10 +81,11 @@ export async function runDurableSendConfiguration(
 
 export async function profileDurableSends(
     context: BrowserContext,
-    input: Omit<DurableSendRunInput, 'frameLoad'>
+    input: DurableSendPageRunInput
 ): Promise<CpuProfile> {
-    const harnessPage = await openHarnessPage(context);
-    const idle = { ...input, frameLoad: undefined };
+    const { plan, ...runInput } = input;
+    const harnessPage = await openHarnessPage(context, plan);
+    const idle = { ...runInput, frameLoad: undefined };
     try {
         await runSendsInPage(harnessPage.page, { ...idle, measuredCount: 0 });
         await harnessPage.cdp.send('Profiler.enable');
@@ -96,10 +105,10 @@ export async function profileDurableSends(
     }
 }
 
-async function openHarnessPage(context: BrowserContext): Promise<HarnessPage> {
+async function openHarnessPage(context: BrowserContext, plan: DurableSendPlan): Promise<HarnessPage> {
     const page = await context.newPage();
     const cdp = await context.newCDPSession(page);
-    await page.goto(HARNESS_PAGE_URL);
+    await page.goto(`${HARNESS_PAGE_URL}?${new URLSearchParams({ [DURABLE_SEND_PLAN_PARAMETER]: plan })}`);
     await page.waitForFunction(
         (name) => Reflect.has(globalThis, name),
         DURABLE_SEND_HARNESS_GLOBAL

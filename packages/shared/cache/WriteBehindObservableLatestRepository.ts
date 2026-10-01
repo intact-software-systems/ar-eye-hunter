@@ -19,7 +19,7 @@ export type PersistenceErrorHandler<K, V> = (
 ) => void | Promise<void>;
 
 export type WriteBehindObservableLatestRepositoryOptions<K, V> =
-    & ObservableLatestRepositoryOptions<K, V>
+    & Omit<ObservableLatestRepositoryOptions<K, V>, 'maxEntries'>
     & Readonly<{
         persistence: PersistenceProvider<K, V>;
         onPersistenceError?: PersistenceErrorHandler<K, V>;
@@ -63,7 +63,7 @@ export class WriteBehindObservableLatestRepository<K, V> implements PushKeyedVal
     public constructor(
         options: WriteBehindObservableLatestRepositoryOptions<K, V>
     ) {
-        this.memory = new ObservableLatestRepository<K, V>(options);
+        this.memory = new ObservableLatestRepository<K, V>({ ...options, maxEntries: undefined });
         this.persistence = options.persistence;
         this.onPersistenceError = options.onPersistenceError;
 

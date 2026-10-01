@@ -21,7 +21,7 @@ import {
     toALOutboundDispatchCompletionReceipt,
     type ALOutboundDispatchCompletionRead
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
-import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundAckTimeoutEffectId, toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
@@ -400,12 +400,7 @@ function computeAckTrackingWrites<TPrepared>(
             expireAtTimestamp: messageExpiresAtMs
         }],
         durableEffects: [{
-            effectId: toALOutboundEffectId([
-                'ack-timeout',
-                pending.msgId,
-                pending.attempts + 1,
-                pending.deadlineAtMs
-            ]),
+            effectId: toALOutboundAckTimeoutEffectId(pending),
             retryAtMs: pending.deadlineAtMs,
             expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
             payload: { kind: 'ack-timeout', msgId: pending.msgId }

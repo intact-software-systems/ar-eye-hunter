@@ -23,7 +23,12 @@ import {
     type DurableSendConfigurationFigures,
     type DurableSendMethod
 } from './durable-send-report.ts';
-import { DURABLE_SEND_OWN_PROBE_CAUSES } from './harness/durable-send-harness-contract.ts';
+import {
+    DURABLE_SEND_PLAN_BATCH_ENDS,
+    DURABLE_SEND_PLANS,
+    type DurableSendPlan,
+    type DurableSendReceiptEnd
+} from './harness/durable-send-harness-contract.ts';
 import {
     DURABLE_SEND_HARNESS_SCRIPT_URL,
     profileDurableSends,
@@ -55,28 +60,42 @@ const CONFIGURATIONS: readonly DurableSendConfiguration[] = [
     }
 ];
 
+/** How each plan's receipt ends; where its batch goes idle is the page's own table. */
+const PLAN_RECEIPT_ENDS: Readonly<Record<DurableSendPlan, DurableSendReceiptEnd>> = {
+    minimal: 'none',
+    'receipted-command': 'acknowledged'
+};
+
+function computeCountSum(counts: Readonly<Record<string, number>>): number {
+    return Object.values(counts).reduce((sum, count) => sum + count, 0);
+}
+
 async function measureConfiguration(
     context: BrowserContext,
-    configuration: DurableSendConfiguration
+    configuration: DurableSendConfiguration,
+    plan: DurableSendPlan
 ): Promise<DurableSendConfigurationFigures> {
     const runs = [];
     for (let run = 0; run < METHOD.runCount; run += 1) {
         runs.push(
             await runDurableSendConfiguration(context, configuration, {
-                runId: `${configuration.name}-${run}`,
+                plan,
+                runId: `${configuration.name}-${plan}-${run}`,
                 warmupCount: METHOD.warmupCount,
                 measuredCount: METHOD.measuredCount
             })
         );
     }
-    return toConfigurationFigures(configuration, runs);
+    return toConfigurationFigures(configuration, plan, runs);
 }
 
 async function measureProfileShares(
     context: BrowserContext,
     bundle: DurableSendHarnessBundle
 ): Promise<CpuProfileShares> {
+    // The minimal plan only, so the attribution compares with the profiles of earlier heads.
     const profile = await profileDurableSends(context, {
+        plan: 'minimal',
         runId: 'profile',
         warmupCount: METHOD.warmupCount,
         measuredCount: METHOD.profiledCount
@@ -115,25 +134,30 @@ function expectProfileAttribution(
 }
 
 function expectRunsSettled(configurations: readonly DurableSendConfigurationFigures[]): void {
-    // Evidence, not a gate: the suite fails only when a run lost figures, a send started before its
-    // predecessor's own batch was idle again (a wait ends only on a probe that send earned), a wait
-    // saw a probe it did not end on, or the profile could not attribute its samples; never on a
-    // latency value.
+    // Evidence, not a gate: the suite fails only when a run lost figures, a send started before the
+    // batch of the send before it was idle again (a wait ends only on the drain of the batch that sent,
+    // or on the probe after it), a wait saw a probe its plan does not end on, a receipt stayed open, or
+    // the profile could not attribute its samples; never on a latency value.
     for (const configuration of configurations) {
+        const label = `${configuration.name} ${configuration.plan}`;
         expect(
             configuration.runs.map((run) => [run.sendToDispatchMs.length, run.unsettledCount]),
-            `${configuration.name}: every measured send was dispatched and its batch went idle`
+            `${label}: every measured send was dispatched and its batch went idle`
         )
             .toEqual(Array(METHOD.runCount).fill([METHOD.measuredCount, 0]));
+        const batchEnd = DURABLE_SEND_PLAN_BATCH_ENDS[configuration.plan];
         expect(
-            configuration.runs.flatMap((run) => Object.keys(run.probeCauses))
-                .filter((cause) => !DURABLE_SEND_OWN_PROBE_CAUSES.includes(cause as never)),
-            `${configuration.name}: every wait ended on a probe its own send earned`
-        ).toEqual([]);
+            configuration.runs.map((run) => run.batchEnds),
+            `${label}: every wait ended where the batch of its plan goes idle`
+        ).toEqual(Array(METHOD.runCount).fill({ [batchEnd]: METHOD.measuredCount }));
         expect(
-            configuration.runs.map((run) => run.observedProbeCauses),
-            `${configuration.name}: each send's wait saw exactly the one probe it ended on`
-        ).toEqual(configuration.runs.map((run) => run.probeCauses));
+            configuration.runs.map((run) => computeCountSum(run.observedProbeCauses)),
+            `${label}: a wait saw only the probe it ended on`
+        ).toEqual(Array(METHOD.runCount).fill(batchEnd === 'readiness-probe' ? METHOD.measuredCount : 0));
+        expect(
+            configuration.runs.map((run) => run.receiptEnds),
+            `${label}: every receipt ended as its plan expects`
+        ).toEqual(Array(METHOD.runCount).fill({ [PLAN_RECEIPT_ENDS[configuration.plan]]: METHOD.measuredCount }));
     }
 }
 
@@ -146,7 +170,9 @@ test('a durable send on a plain page with an on-disk profile reports send-to-dis
         await routeDurableSendHarness(context, bundle.script);
         const configurations = [];
         for (const configuration of CONFIGURATIONS) {
-            configurations.push(await measureConfiguration(context, configuration));
+            for (const plan of DURABLE_SEND_PLANS) {
+                configurations.push(await measureConfiguration(context, configuration, plan));
+            }
         }
         const report = {
             createdAt: new Date().toISOString(),

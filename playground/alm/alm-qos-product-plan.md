@@ -27,7 +27,9 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
 - **Release 4, performance and lifetime** (D88):
   - P1 makes the durable tiers cheaper without weakening any guarantee.
   - I2a makes storage lifetime deterministic and observable for every durable tier.
-  - I2b adds `local-checkpoint` only if P1 leaves a measured gap and a consumer needs it (D89).
+  - I2b adds `local-checkpoint` after I2a, regardless of the D89 reading: zero storage on the send
+    path with crash-tolerant checkpoints and a bounded recovery lag serves a wide range of apps
+    (D115).
 - **One recovery rule** (D85): recovery never re-issues what the outside world has seen and never
   retracts a delivery.
 - **The test plan is ALM's evidence structure** (section 9): semantic tests through real owners,
@@ -56,7 +58,7 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   from code_ or _needs measurement_. No optimization lands without before-and-after pins and
   plain-page harness figures (D111).
 - **Two concrete slices.** P1 and I2a become concrete once Release 3 is complete. I2b stays
-  outcome-shaped until its gate is decided.
+  outcome-shaped until I2a is delivered.
 
 ## 3. The durability tiers
 
@@ -78,6 +80,17 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
 - **Receivers.** A receiver acknowledges from memory for every tier except `local-inbox`, as today.
   The ACK confirms protocol acceptance under the promised durability policy, and only `local-inbox`
   promises the receiver's storage.
+
+### 3.1 Realtime QoS demands the tiers must serve
+
+Realtime data puts three demands on every tier, and I2b's and A1's designs are judged against them
+(D118).
+
+| Demand                                | Mechanism today                                                                                                                                                                                                                                                 | Gap                                                                                                                                                                                                                                                                                                                                                  | Owner slice                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| A strict low TTL                      | The per-send deadline (`deadlineMs` from the QoS defaults, shorter by option): past it the sender settles `expired`, a receiver drops the row, and the volatile lane sweeps at the deadline plus the receipt grace; `LatestRepository` takes a per-entry expiry | None.                                                                                                                                                                                                                                                                                                                                                | Covered; I2b keeps it across a restore (section 4) |
+| Replace an unsent outgoing copy       | `latest-wins` supersedence on a `supersedenceKey` (`packages/shared/al-contracts/al-policy.ts:44,82`): the older unsent message settles `superseded`                                                                                                            | `local-checkpoint` refuses latest-wins (D85), though a superseded unsent copy was never seen outside the runtime                                                                                                                                                                                                                                     | I2b narrows D85 (section 4)                        |
+| Keep only the last N copies of a type | None. The cache keeps one latest value per key; a memento value keeps undo and redo stacks of one value, bounded by `undoDepth` and `redoDepth` (`packages/shared/cache/MementoValue.ts`); a queue keeps every admitted message until its deadline              | Receiving side: a bounded history per key, as a `maxHistory` on the memento value or a generic bounded FIFO in `packages/shared/cache` shared with the memento history and the motion sample window (`packages/shared/rallar-motion/buffer.ts:306-309`). Sending side: supersedence generalised from one survivor to N, a per-key bound in the queue | I2b's plan decides the bounded FIFO                |
 
 ## 4. The `local-checkpoint` contract
 
@@ -109,7 +122,9 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   - Restored messages have no handle, like a resumed durable message (D13, D64).
 - **Restrictions.** A send with an ordering key or sequence (`seq`, `orderingKey`) or with
   latest-wins supersedence is refused with a typed `unsupported` on `local-checkpoint`. Such
-  traffic uses `volatile` or `local-outbox` (D85).
+  traffic uses `volatile` or `local-outbox` (D85). A superseded unsent copy was never seen outside
+  the runtime, so I2b's design revisits the latest-wins refusal and narrows it to sequence and
+  ordering keys (D118, section 3.1).
 - **Wire.**
   - `local-checkpoint` joins `AL_DURABILITY_ALGOS`, so the persisted-QoS validator and the
     envelope's `qos.durability` accept it.
@@ -173,6 +188,9 @@ each operation. It also waits in the queue behind the per-sender commit Web Lock
 | A durable inbound admission spends 8 `al-admission` operations, and a volatile one spends none. A warm admit-and-deliver adds 5 to 7 `al-work` in 11 to 13 transactions                                                                                                                                                                                                                                                                                                                                                                                      | the same test; the P1 code survey's ledger probe                                                     | measured (survey 2026-09-30) |
 | After P1a a warm durable send spends 10 `al-admission` and 8 `al-work` operations in 11 transactions (8 between `enqueueIfAbsent` and the carrier send) and 42 requests, and a cold send 10 and 11. Its pinned window parses 9 Temporal timestamps up to the carrier and 13 up to the idle owner. The warm inbound admit-and-deliver is unchanged (11 or 13 transactions, 8 `al-admission`, 5 or 7 `al-work`) and parses 16                                                                                                                                  | `al-indexeddb-transaction-ledger.test.ts`; `al-indexeddb-operation-counts.test.ts`                   | measured (P1a, 6cfcf872c)    |
 | Send-to-dispatch p50 / p95 on the plain-page harness (Apple M2 Max, HeadlessChrome 149; per invocation the median of three runs, ranged over three invocations) after P1a: idle 2.8-3.0 / 3.3-3.5 ms, 4x CPU 9.5-9.7 / 10.7-11.0 ms, 1x frame load 8.8-10.6 / 22.8-23.0 ms, 4x frame load 28.2-29.0 / 47.0-48.9 ms; before (f7902b5ac, same session): 3.3-3.4 / 3.8, 11.5-11.8 / 13.0-13.8, 10.0-12.5 / 23.4-23.6, 31.6-32.5 / 50.3-52.8 ms. The polyfill and JSBI fall from 36 % to 22-24 % of an idle page's busy CPU (0.78-0.80 to 0.37-0.39 ms per send) | `npm run perf:alm:durable-send`, three invocations per head; P1a's PR body                           | measured (P1a, 6cfcf872c)    |
+| After P1b a warm durable send spends 10 `al-admission` and 5 `al-work` operations in 8 transactions (6 between `enqueueIfAbsent` and the carrier send) and 37 requests, and a cold send 10 and 9. Its pinned window parses 4 Temporal timestamps up to the carrier and 8 up to the idle owner. The warm inbound admit-and-deliver is unchanged                                                                                                                                                                                                               | `al-indexeddb-transaction-ledger.test.ts`; `al-indexeddb-operation-counts.test.ts`                   | measured (P1b, c1e7086ff)    |
+| Send-to-dispatch p50 / p95 of the minimal plan on the plain-page harness after P1b (run level, nine runs per head, one session): idle 2.1-2.4 / 2.4-2.8 ms, 4x CPU 7.8-8.0 / 9.0-9.5 ms, 1x frame load 7.2-11.2 / 21.2-22.3 ms, 4x frame load 19.7-23.6 / 38.5-47.7 ms; before (9e8b9fc07): 2.6-3.0 / 2.9-3.5, 9.4-10.3 / 10.6-12.6, 7.8-13.1 / 21.8-23.5, 28.0-31.2 / 44.9-51.9 ms (both frame-load p95s within noise)                                                                                                                                      | `npm run perf:alm:durable-send`, three invocations per head; P1b's PR body                           | measured (P1b, c1e7086ff)    |
+| A receipted command (durable, acknowledged by the server) after P1b: idle 2.8-2.9 / 3.3-3.7 ms, 4x CPU 9.2-9.7 / 10.5-11.7 ms, 1x frame load 7.2-10.6 / 21.5-23.1 ms, 4x frame load 23.7-28.5 / 40.4-46.7 ms (D115's reading; M2 Max, HeadlessChrome 149, not a phone); 0 of 3 240 sends over 500 ms, 179 before the ACK-timeout completion                                                                                                                                                                                                                  | the same harness, receipted plan                                                                     | measured (P1b, c1e7086ff)    |
 | The hosted RTC cell passes below about 30 ms per operation and fails above 35 ms; slow runners measured 48 to 55 ms                                                                                                                                                                                                                                                                                                                                                                                                                                          | the roadmap's "Conformance lane" section                                                             | measured                     |
 | The whole ALM runtime runs on the main thread, and no Rallar package starts a worker                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | code search at `bf03c965b`                                                                           | proven from code             |
 | No IndexedDB transaction sets a durability hint, and `QuotaExceededError` is never handled                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | code search at `bf03c965b`                                                                           | proven from code             |
@@ -219,10 +237,19 @@ D90), and each lands only with before-and-after pins and harness figures (D111):
      one readonly session. The committed canonical message reaches dispatch in memory, with a read
      on a miss. Dispatch's three readonly sessions (canonical read, supersedence check,
      receipt-state read) become one.
-   - **P1b, 8 to 6, probes on a cadence.** The readiness probe after a batch, the finalize-exhausted
-     sweep and the lease-timeout reserve run on a cadence instead of every batch. Each states a bound
-     on how late an exhausted row or a crashed lease is noticed. P1b is decided on P1a's measured
-     figures.
+   - **P1b, 8 to 6 on the chain and 11 to 8 in all, probes on the engine's cadence (D112, D113).**
+     The finalize-exhausted sweep and the lease-timeout reserve guard one condition, a RESERVED row
+     past its lease, and take the chain from 8 to 6. They run behind a lock-limiter pair per
+     outbound store lane, the design QueueBox's ResourceInbox dequeuer already uses
+     (`ResourceInboxResilience` on `RateLimiter`), at most once per `leaseMs` (10 s) on the lane's
+     clock. The first batch after bootstrap sweeps. While a limiter is closed, the readiness scan
+     treats the lease ends it would recover as not due, so no batch loops. A crashed lease or an
+     exhausted row is recovered by lease end plus 19.1 s (today 6.6 s), in every outbound lane,
+     api-v1's Postgres lane included; inbound sweeps every batch. The readiness probe after a batch
+     is off the chain: a clean batch restores the memory its commit suspended through the engine's
+     `wakeAt`, which takes the total from 9 to 8. A batch that writes a RETRY or `not-ready` row or
+     retains a claim still probes, so a due retry gains 0 ms; another tab's row meets the idle
+     bound, at most 6.6 s.
    - Reads are merged, never skipped. No code proof shows that a receipt cannot complete before the
      first attempt.
 3. **Commit batching is not a P1 lever (D108).** `commitAll` batches one caller's
@@ -329,14 +356,14 @@ What the findings suggest, and where each stands:
      the enqueue-to-carrier chain; an admission has three readonly sessions, not two; dispatch runs
      three more; lever 3 does not touch a first send; and the empty control, receipt and effect reads
      are 7 by call site, not 6, so "13 of 22 avoidable" is an upper bound.
-2. **Move D89's gate out of the lane.** Decided as D111. The plain-page harness of section 9.1
-   measures it with a persistent profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is
-   93.7 ms today. The lane's slow regime measures its harness page.
+2. **Move D89's reading out of the lane.** Decided as D111; D115 later retired the gate, so the
+   reading is evidence only. The plain-page harness of section 9.1 measures it with a persistent
+   profile, at 4× CPU, under a 10-in-16 ms frame load. Its p95 is 93.7 ms today. The lane's slow
+   regime measures its harness page.
 3. **Take storage-cost evidence from a persistent profile.** Decided as D111 for latency. The lane's
    IndexedDB is in memory, so the lane stays the correctness authority but cannot measure storage
    cost.
-4. **Checkpoint only changed rows if I2b goes ahead.** H4 is refuted, so section 7.4 already
-   provides this.
+4. **Checkpoint only changed rows in I2b.** H4 is refuted, so section 7.4 already provides this.
 
 ### 7.6 Later outcomes
 
@@ -483,24 +510,32 @@ Release 4 follows Release 3 and precedes the arbitration, audience, scale and in
 which the roadmap renumbers 5 to 8 (D88). Its slices are:
 
 - **P1a, the codec and the send chain:** section 7.3, D108 to D111.
-- **P1b, probes on a cadence:** section 7.3, decided on P1a's measured figures.
+- **P1b, probes on the engine's cadence:** section 7.3, D112 to D117; the readiness restore, the two
+  sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and the
+  receipted reading recorded as I2b evidence.
 - **I2a, storage lifetime:** section 8.
-- **I2b, checkpointed durability:** sections 4 and 5, behind the gate below.
+- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115).
 
 The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evidence.
 
-### 10.2 The I2b gate
+### 10.2 The I2b reading
 
-I2b goes ahead only if, after P1, the p95 from a `local-outbox` send to its first dispatch still
-exceeds 100 ms, the interactive response budget (D89). It is measured in the plain-page harness
-(section 9.1) at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111). The
-spike's figure there is 93.7 ms on a desktop machine, so the reading states its machine.
+D89 made I2b conditional on the p95 from a `local-outbox` send to its first dispatch exceeding
+100 ms, the interactive response budget, after P1. D115 retires that gate: I2b proceeds after I2a
+whatever the reading, because zero storage on the send path with crash-tolerant checkpoints and a
+bounded recovery lag serves a wide range of apps that want cheap sends and reload survival without
+per-message durability. P1b still takes the reading, as evidence for I2b's consumer send: a
+receipted `command`-shaped send configuration it adds to the plain-page harness (section 9.1), the
+send D89 names, at 4x CPU under the 10-in-16 ms frame load, not in the lane's slow regime (D111).
+P1a's harness sends a minimal plan without a hop receipt. The spike's figure of 93.7 ms came from
+its own instrument; the harness read a p95 of 49.3 to 54.1 ms before P1a and 44.1 to 50.1 ms after
+on the minimal plan. The reading states its machine and that it is not a phone.
 
 - **Consumer.** Relic Hunters' server-addressed commands (S3c-i) are the consumer. A reload
   mid-command resumes the command, and the server's ALM dedup and AppInbox request-id idempotency
   absorb the repeat.
-- **If P1 closes the gap.** Relic's commands move to `local-outbox`, and a recorded decision
-  withdraws I2b and removes `local-checkpoint` from this plan.
+- **Relic before I2b.** Relic's commands move to `local-outbox` with I2a, whose recovery outcome
+  the reload proof needs; I2b's own consumer proof comes with I2b (D115).
 
 ### 10.3 Beside S3c, now
 

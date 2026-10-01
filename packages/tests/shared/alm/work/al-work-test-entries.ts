@@ -1,8 +1,13 @@
-import type { ALWorkReadySelection } from '@shared/alm/work/al-work-handler.ts';
-import type { ALWorkClaim } from '@shared/alm/work/al-work-queue-port.ts';
+import type {
+    ALWorkDiagnostics,
+    ALWorkReadinessProbeDiagnostics,
+    ALWorkReadySelection
+} from '@shared/alm/work/al-work-handler.ts';
+import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
+    toKeyAsString,
     toResourceEntryWithKey,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -63,4 +68,48 @@ export function toTestALWorkReadySelection(
         claimDurationMs: 0,
         earliestDueAtMs: undefined
     };
+}
+
+export function collectProbe(probes: ALWorkReadinessProbeDiagnostics[], event: ALWorkDiagnostics): void {
+    if (event.kind === 'readiness-probe') {
+        probes.push(event);
+    }
+}
+
+export interface FakeALWorkPortInput {
+    readonly claims: readonly string[];
+    readonly onRelease: (claim: ALWorkClaim, outcome: ALWorkOutcome) => void;
+    /** Effect ids returned once from finalizeExhausted, then drained to []. */
+    readonly finalizeExhausted?: readonly string[];
+}
+
+export function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
+    const pending = input.claims.map((effectId) => toFakeALWorkClaim(effectId));
+    let exhausted = (input.finalizeExhausted ?? []).map((effectId) => toFakeALWorkClaim(effectId));
+    return {
+        retainIfAbsent: async (entry) => entry,
+        readPage: async () => ({ entries: [], nextCursor: null }),
+        readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
+        claim: async ({ maxCount }) => pending.splice(0, maxCount),
+        finalizeExhausted: async () => {
+            const claims = exhausted;
+            exhausted = [];
+            return claims;
+        },
+        releaseAll: async (releases) => {
+            for (const release of releases) {
+                input.onRelease(release.claim, release.outcome);
+            }
+        },
+        readEntry: async () => undefined
+    };
+}
+
+export function toFakeALWorkClaim(effectId: string): ALWorkClaim {
+    return { entry: newWorkEntry('AL_TEST', effectId), attempts: 0, leaseUntilMs: 0 };
+}
+
+/** The queue key of the fake claim for `effectId`, as a commit names the rows it wrote. */
+export function toFakeALWorkKey(effectId: string): string {
+    return toKeyAsString(toFakeALWorkClaim(effectId).entry.key);
 }

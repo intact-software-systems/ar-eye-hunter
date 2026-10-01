@@ -30,6 +30,7 @@ import {
     createOutboundMessage,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
+    OUTBOUND_LEASE_RECOVERY_BOUND_MS,
     peekOutboundWorkReadyAt,
     reserveOutbox,
     type OutboundTestStores
@@ -89,7 +90,7 @@ describe('AL outbound durable effect lifecycle', () => {
             throw new Error('Completion failure must retain retryable work');
         }
         expect(retryAt).toBeGreaterThan(Date.now());
-        await vi.advanceTimersByTimeAsync(retryAt - Date.now());
+        await vi.advanceTimersByTimeAsync(retryAt - Date.now() + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
         expect(sent).toEqual([message.id.msgId, message.id.msgId]);
         expect(await peekOutboundTestWork(stores)).toBeUndefined();
     });
@@ -264,7 +265,7 @@ describe('AL outbound durable effect lifecycle', () => {
         await vi.advanceTimersByTimeAsync(retryAt - Date.now() - 1);
         expect(sent).toHaveLength(1);
 
-        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(1 + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -625,6 +626,8 @@ describe('AL outbound durable effect lifecycle', () => {
         const write = vi.spyOn(stores.backend, 'write').mockImplementationOnce(() => {
             throw new ALAdmissionBackendConflictError('simulated outbound control conflict');
         });
+        // The retained row's own batch must not claim it before the read below sees it.
+        holdOutboundClaims(stores);
 
         const accepted = await runtime.acceptControlMessage(
             newALNackControlMessage(

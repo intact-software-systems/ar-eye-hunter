@@ -16,6 +16,9 @@ import {
 } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
+import { isALWorkLeaseSweepOpen, spendALWorkLeaseSweep, type ALWorkLeaseRecovery } from './al-work-lease-recovery.ts';
+
+const AL_WORK_MAX_ATTEMPTS = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts;
 
 export type ALWorkOutcome =
     | Readonly<{ status: 'completed'; }>
@@ -66,10 +69,11 @@ export interface ClaimALWorkInput {
 
 /**
  * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `releaseAll`
- * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end drops
- * the answer it remembers, so **any of them performed outside `runBatch` must invalidate that
- * memory** -- `ALWorkHandler.committed()` for this owner's own writes, the engine wake for anyone
- * else's.
+ * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end
+ * restores the answer a commit set aside only when the batch accounted for every row that commit
+ * wrote. **A write this owner makes outside `runBatch` must reach `ALWorkHandler.committed()`**, and
+ * a claim that may commit this owner's work rows other than through `committed()` must call
+ * `ALWorkHandler.claimCommitted()` before it runs. Anyone else's write reaches the engine wake.
  */
 export interface ALWorkQueuePort {
     retainIfAbsent(entry: ResourceEntry): Promise<ResourceEntry>;
@@ -93,41 +97,17 @@ export interface CreateALWorkQueuePortInput {
     readonly leaseMs: number;
     readonly nowMs: () => number;
     readonly random: () => number;
+    readonly leaseRecovery: ALWorkLeaseRecovery;
 }
 
 export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWorkQueuePort {
-    const { queue, workTypes, leaseMs } = input;
-    const maxAttempts = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts;
+    const { queue, workTypes } = input;
     return {
         retainIfAbsent: (entry) => queue.enqueueIfAbsent(entry),
         readPage: (pageInput) => readMergedALWorkPage(queue, workTypes, pageInput),
         readPages: (scanInputs) => readMergedALWorkPageScans(queue, workTypes, scanInputs),
-        claim: async ({ maxCount, observedEntries }) => {
-            const pending = await queue.reserveEntries({
-                typeIds: new Set(workTypes),
-                statusIds: new Set(NEW_AND_RETRY_STATUSES),
-                reservationInput: { maxToReserve: maxCount, maxAttempts },
-                observedEntries
-            });
-            const recovered = await queue.reserveTimeoutEntries({
-                typeIds: new Set(workTypes),
-                reservationInput: {
-                    maxToReserve: Math.max(0, maxCount - pending.size),
-                    maxAttempts
-                },
-                timeSinceStartTs: Temporal.Duration.from({ milliseconds: leaseMs }),
-                observedEntries
-            });
-            return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, leaseMs));
-        },
-        finalizeExhausted: async (maxCount) => {
-            const reserved = await queue.reserveRetryExhaustionFinalizations(new Set(workTypes), {
-                processingAttempts: maxAttempts,
-                maxToReserve: maxCount,
-                staleAfterMs: leaseMs
-            });
-            return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, leaseMs));
-        },
+        claim: (claimInput) => claimALWork(input, claimInput),
+        finalizeExhausted: (maxCount) => finalizeExhaustedALWork(input, maxCount),
         releaseAll: (releases) =>
             releaseALWorkClaims(
                 queue,
@@ -138,6 +118,68 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
             ),
         readEntry: (key) => queue.getItem(key)
     };
+}
+
+async function claimALWork(
+    input: CreateALWorkQueuePortInput,
+    { maxCount, observedEntries }: ClaimALWorkInput
+): Promise<readonly ALWorkClaim[]> {
+    const pending = await input.queue.reserveEntries({
+        typeIds: new Set(input.workTypes),
+        statusIds: new Set(NEW_AND_RETRY_STATUSES),
+        reservationInput: { maxToReserve: maxCount, maxAttempts: AL_WORK_MAX_ATTEMPTS },
+        observedEntries
+    });
+    const recovered = await reserveALWorkTimeouts(input, maxCount - pending.size, observedEntries);
+    return [...pending.values(), ...recovered.values()].map((entry) => toALWorkClaim(entry, input.leaseMs));
+}
+
+/**
+ * The lease-timeout sweep reads only for the room the claim left, only while its window is open, and not when the
+ * selection observed nothing; a sweep that comes back with room to spare closes it.
+ */
+async function reserveALWorkTimeouts(
+    input: CreateALWorkQueuePortInput,
+    maxToRecover: number,
+    observedEntries: ClaimALWorkInput['observedEntries']
+): Promise<Map<Key, ResourceEntry>> {
+    const nowMs = input.nowMs();
+    if (
+        maxToRecover <= 0 || observedEntries?.length === 0 ||
+        !isALWorkLeaseSweepOpen(input.leaseRecovery, 'timeout', nowMs)
+    ) {
+        return new Map();
+    }
+    const reserved = await input.queue.reserveTimeoutEntries({
+        typeIds: new Set(input.workTypes),
+        reservationInput: { maxToReserve: maxToRecover, maxAttempts: AL_WORK_MAX_ATTEMPTS },
+        timeSinceStartTs: Temporal.Duration.from({ milliseconds: input.leaseMs }),
+        observedEntries
+    });
+    if (reserved.size < maxToRecover) {
+        spendALWorkLeaseSweep(input.leaseRecovery, 'timeout', nowMs);
+    }
+    return reserved;
+}
+
+async function finalizeExhaustedALWork(
+    input: CreateALWorkQueuePortInput,
+    maxCount: number
+): Promise<readonly ALWorkClaim[]> {
+    const { queue, workTypes, leaseMs } = input;
+    const nowMs = input.nowMs();
+    if (maxCount <= 0 || !isALWorkLeaseSweepOpen(input.leaseRecovery, 'finalization', nowMs)) {
+        return [];
+    }
+    const reserved = await queue.reserveRetryExhaustionFinalizations(new Set(workTypes), {
+        processingAttempts: AL_WORK_MAX_ATTEMPTS,
+        maxToReserve: maxCount,
+        staleAfterMs: leaseMs
+    });
+    if (reserved.size < maxCount) {
+        spendALWorkLeaseSweep(input.leaseRecovery, 'finalization', nowMs);
+    }
+    return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, leaseMs));
 }
 
 /**

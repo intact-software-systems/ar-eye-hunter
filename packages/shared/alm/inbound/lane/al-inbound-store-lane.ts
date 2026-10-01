@@ -17,6 +17,7 @@ import {
     type ALWorkOutcome,
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
+import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
 import type { ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
@@ -184,7 +185,7 @@ export class ALInboundStoreLane {
 
     private commitWork(): void {
         this.workSelector.requestHeadRead();
-        this.work.committed();
+        this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
     }
 
     /**
@@ -195,7 +196,7 @@ export class ALInboundStoreLane {
         this.evictWhenDue();
         const selection = await this.workSelector.selectReady(port, pageSize);
         if (this.workSelector.isHeadReadPending()) {
-            this.work.committed();
+            this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
         }
         return selection;
     }
@@ -453,7 +454,9 @@ function createALInboundLaneWorkPort(dependencies: ALInboundMessageRuntime.Depen
         workTypes: new Set([toALInboundWorkType(dependencies.admissionStore.namespace, dependencies.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
         nowMs: () => dependencies.clock.nowMs(),
-        random: dependencies.random
+        random: dependencies.random,
+        // The rotation's probe has no lease clamp: a limited sweep would run empty batches until it reopened.
+        leaseRecovery: { kind: 'every-batch' }
     });
 }
 

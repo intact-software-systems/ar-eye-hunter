@@ -29,7 +29,11 @@ import {
     type ALOutboundAdmissionStore,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import {
+    INBOX_OUTBOX_ENGINE_MAX_IDLE_MS,
+    INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO,
+    InboxOutboxEngine
+} from '@shared/services/InboxOutboxEngine.ts';
 
 import type {
     ALOutboundEffectSnapshot,
@@ -41,6 +45,11 @@ import {
     readALOutboundWorkReadyAt,
     toALOutboundWorkType
 } from '@shared/alm/outbound/al-outbound-work-entry.ts';
+import { AL_WORK_READINESS_MEMORY_MS } from '@shared/alm/work/al-work-handler.ts';
+import {
+    AL_WORK_LEASE_SWEEP_WINDOW_LEASES,
+    createLimitedALWorkLeaseRecovery
+} from '@shared/alm/work/al-work-lease-recovery.ts';
 import {
     createALWorkQueuePort,
     type ALWorkOutcome,
@@ -50,6 +59,16 @@ import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
+
+/**
+ * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst, a
+ * backlog larger than one sweep included: a sweep that comes back with room to spare closes its window for
+ * up to 1.25 leases, while a sweep that fills its room keeps it open, so a backlog drains on consecutive
+ * batches once the window reopens. Then the remembered readiness answer ages and the idle engine waits
+ * at most one jittered idle pass.
+ */
+export const OUTBOUND_LEASE_RECOVERY_BOUND_MS = AL_OUTBOUND_WORK_LEASE_MS * AL_WORK_LEASE_SWEEP_WINDOW_LEASES +
+    AL_WORK_READINESS_MEMORY_MS + INBOX_OUTBOX_ENGINE_MAX_IDLE_MS * (1 + INBOX_OUTBOX_ENGINE_SCHEDULE_JITTER_RATIO);
 
 interface OutboundTestRuntimeInput<TPrepared> {
     readonly queueEngine?: InboxOutboxEngine;
@@ -228,11 +247,12 @@ export function createOutboundWorkPort(
         workTypes: new Set([toALOutboundWorkType(namespace), ...dequeueTypes]),
         leaseMs: AL_OUTBOUND_WORK_LEASE_MS,
         nowMs: Date.now,
-        random: Math.random
+        random: Math.random,
+        leaseRecovery: createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, Date.now())
     });
 }
 
-/** The readiness the outbound owner advertises with no circuit gating: undefined once work is drained. */
+/** The readiness the outbound owner advertises with every gate open: undefined once work is drained. */
 export async function peekOutboundWorkReadyAt(
     workQueue: QueueBoxResourceEntryRepository,
     namespace: string
@@ -240,7 +260,10 @@ export async function peekOutboundWorkReadyAt(
     return await readALOutboundWorkReadyAt(
         createOutboundWorkPort(workQueue, namespace),
         Date.now(),
-        { types: new Set<string>(), readyAtMs: undefined }
+        {
+            dequeue: { types: new Set<string>(), readyAtMs: undefined },
+            leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
+        }
     );
 }
 
