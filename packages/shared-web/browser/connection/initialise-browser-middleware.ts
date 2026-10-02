@@ -5,6 +5,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -91,6 +92,11 @@ export interface MiddlewareInitOptions {
     readonly bootstrapDegree?: number;
     readonly scope?: StateScope;
     readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
+}
+
+/** One connect's options: the caller's, and the connect's claim on its session's durable work. */
+export interface BrowserConnectOptions extends MiddlewareInitOptions {
+    readonly durableWorkOwnership: ALDurableWorkOwnership;
 }
 
 export interface ToCreateWsUrlInput {
@@ -188,7 +194,7 @@ export interface InitialiseBrowserTransportInput {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly volatileBound: BrowserSessionVolatileBound;
-    readonly options: MiddlewareInitOptions;
+    readonly options: BrowserConnectOptions;
 }
 
 interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
@@ -205,7 +211,7 @@ interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTranspor
 export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
-    options: MiddlewareInitOptions
+    options: BrowserConnectOptions
 ): Promise<RallarBrowserMiddleware> {
     const storageAvailability = initialiseBrowserRuntimeStores(
         session.sessionId,
@@ -247,7 +253,7 @@ export async function initialiseMiddleware(
 
 export function createBrowserTransportInput(
     session: AuthSession,
-    options: MiddlewareInitOptions
+    options: BrowserConnectOptions
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -320,6 +326,7 @@ export function toBrowserWebSocketQueueBoxInput(
         clientData: input.clientData,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
+        durableWorkOwnership: input.options.durableWorkOwnership,
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -387,6 +394,7 @@ async function initialiseBrowserRtcTransport(
             clientData: input.clientData,
             inboundStores: input.inboundStores,
             inboundVolatileStores: input.inboundVolatileStores,
+            durableWorkOwnership: input.options.durableWorkOwnership,
             roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
             inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
         }
@@ -414,6 +422,7 @@ export function toRtcOverlayMulticastManagerInput(
         ...carrier,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
+        durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.rtc
     };

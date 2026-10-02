@@ -190,6 +190,37 @@ The browser transport storage and WebSocket owners are feature-colocated:
   the others, and the first failure is rethrown after all were tried. The
   pre-scope database `ar-eye-hunter-al-runtime` is never opened or deleted; the
   browser evicts it.
+- [browser-al-durable-work-claim.ts](./al-runtime/browser-al-durable-work-claim.ts)
+  owns one connect's claim on its session's durable work in its scope: the Web
+  Lock `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>` (the
+  scope's parts URI-encoded), requested once per connect by
+  [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
+  with the connect's own signal and released when the connect ends, after its
+  runtimes stop, or when the connect fails. The tab it is granted to drains the
+  session's durable lanes; every other tab admits and waits, and the next
+  tab's lock is granted when the owner's connect ends, whose bootstrap batch
+  takes over. Ownership turns true at most once per connect and never back
+  while its runtimes live; a connect that fails after its WS transport is built
+  leaves those runtimes owning (a carried limit).
+  Without the Locks API, or when the request fails, every connect owns its
+  work as before. The WS client, the RTC overlay and the RTC receiver hand it
+  to their durable lanes only. A waiting tab's commit reaches the owner on the
+  connect's session channel (below), and a foreign commit reaches a lane only
+  while its connect holds the work.
+- [browser-al-session-channel.ts](./al-runtime/browser-al-session-channel.ts)
+  owns one `BroadcastChannel` per connect,
+  `rallar-alm:<applicationId>:<workspaceId>:<sessionId>` with the scope parts
+  URI-encoded, opened through the transport runtime's injected port factory
+  behind the same missing-API guard as the Rallar Data and CRDT channels. The
+  connect's durable work claim holds it and closes it on release. It carries
+  two messages, each filtered by version, session key and the posting
+  instance's echo: `committed`, the commit a waiting tab announced under a lane
+  work type, which the claim hands to its lane of that work type
+  (`applyForeignCommit`) only while it owns the work, so nothing is announced
+  twice; and `settlement`, a durable lane's settlement a tab recorded for a
+  message it holds no handle for, recorded once by the tab that holds it.
+  Without `BroadcastChannel` a tab reaches no other tab, and a waiting tab's
+  row waits for the owner's age-bound probe.
 - [delete-ended-session-al-runtime-entries.ts](./session/delete-ended-session-al-runtime-entries.ts)
   purges an ended session's rows on logout, and a replaced session's rows after
   the disconnect on a login over it or a session switch in `connect`, when the
@@ -219,7 +250,13 @@ Message ownership is concentrated under [`messages/`](./messages/):
 - [BrowserRallarMessageSender](./messages/browser-rallar-message-sender.ts)
   owns RTC/WS envelope construction and scoped targets, returning a `RallarMessageHandle`
   immediately after submission. Consumers await admission with `handle.wait(...)` and inspect
-  its lifecycle; the delivery registry observes carrier settlements in memory.
+  its lifecycle; the delivery registry observes carrier settlements in memory. Each connect's
+  settlement epoch ([`BrowserDeliverySettlements`](./connection/browser-delivery-settlements.ts))
+  relays once, on the session channel, a durable lane's settlement for a msgId this tab holds no
+  handle for: the owner tab sends every tab's durable messages, and any tab may admit the
+  acknowledgement of one. A volatile lane's settlement, and one no lane stated, stays in its tab.
+  The receiving tab records it through its own observers, which ignore a msgId they never opened,
+  and never relays it again. A handle's `cancel()` reaches only its own tab's carriers.
 - [BrowserTypedMessageChannels](./messages/browser-typed-message-channels.ts)
   owns typed channels and the current RTC-with-WS and WS-then-RTC policies.
 - [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)

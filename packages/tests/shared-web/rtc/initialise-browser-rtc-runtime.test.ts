@@ -33,6 +33,7 @@ import {
     AL_VOLATILE_SESSION_MAX_BYTES,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -188,6 +189,7 @@ describe('browser RTC runtime composition', () => {
         const drain = captureOutboundWorkRunnable(qboxEngine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: (event) => registry.record(event),
@@ -265,6 +267,7 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: createDefaultVolatileSessionBudget(),
             outboundSettlements: () => {},
@@ -344,6 +347,7 @@ describe('browser RTC runtime composition', () => {
             maxBytes: AL_VOLATILE_SESSION_MAX_BYTES
         });
         const manager = initialiseRtcOverlayMulticastManager({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             volatileBudget: budget,
             outboundSettlements: () => {},

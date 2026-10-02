@@ -15,6 +15,7 @@ import { toALRtcPeerSource } from '../alm/inbound/al-inbound-source-validation.t
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
+import type { ALDurableWorkOwnership } from '../alm/work/al-durable-work-ownership.ts';
 import {
     EnqueuedType,
     type PeerId,
@@ -69,6 +70,8 @@ export namespace WebRtcRxStreamerService {
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
+        /** The browser's per-connect session claim; absent, this receiver's inbound runtime owns its durable work. */
+        readonly durableWorkOwnership?: ALDurableWorkOwnership;
     }
 
     export interface Dependencies {
@@ -536,7 +539,8 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.RTC_INBOX),
+            durableWorkOwnership: input.durableWorkOwnership
         }),
         epochNow: input.nowEpochMs ?? Date.now,
         heartbeat: input.heartbeat ?? {

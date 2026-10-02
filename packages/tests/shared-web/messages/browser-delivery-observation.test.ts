@@ -15,9 +15,9 @@ describe('browser session delivery observation', () => {
         const fixture = createObservation();
         const handle = fixture.registry.open(createMessage('retained'), 'ws');
         const waiting = handle.wait();
-        const oldEpoch = fixture.feed.open({ ws: fixture.owner.settle, rtc: fixture.owner.settle });
+        const oldEpoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
         fixture.feed.close();
-        const nextEpoch = fixture.feed.open({ ws: fixture.owner.settle, rtc: fixture.owner.settle });
+        const nextEpoch = fixture.feed.open(fixture.owner.observers, { relaySettlement: () => {} });
         oldEpoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 0 });
         expect(handle.lifecycle().state).toBe('submitted');
         nextEpoch.settlements.ws({

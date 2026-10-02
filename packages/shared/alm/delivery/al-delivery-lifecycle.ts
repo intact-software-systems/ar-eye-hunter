@@ -1,5 +1,6 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
 import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
 
@@ -93,7 +94,8 @@ export type ALDeliveryAdmissionVerdict =
     | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable)
     | Readonly<{ kind: 'failed'; detail: string; }>;
 
-export type ALDeliverySettlement =
+/** What one settlement states, before the outbound runtime stamps the lane that stated it. */
+type ALDeliverySettlementStatement =
     | Readonly<{
         kind: 'admission';
         msgId: string;
@@ -227,6 +229,16 @@ export type ALDeliverySettlement =
         detail: string;
     }>
     | Readonly<{ kind: 'cancelled'; msgId: string; carrier: ALDeliveryCarrier; atMs: number; }>;
+
+export type ALDeliverySettlement =
+    & ALDeliverySettlementStatement
+    & Readonly<{
+        /**
+         * The outbound lane that stated it. Absent on a settlement no lane stated: the browser sender's own
+         * admission, refusal and fallback facts, and a cancel the runtime states for its whole lifetime.
+         */
+        lane?: ALStoreDurability;
+    }>;
 
 export type ALDeliverySettlementSink = (settlement: ALDeliverySettlement) => void;
 

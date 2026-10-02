@@ -19,6 +19,7 @@ import {
 } from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
 import { readRoomWorkflowMocks, resetRoomWorkflowTestRuntime, seedRoomSnapshots } from '../room-workflow-test-runtime.ts';
 import { createFormationSnapshot, createLayoutOverlay } from './room-formation-test-fixtures.ts';
 
@@ -99,6 +100,8 @@ const commandBodies = {
     reset: {},
     start: {}
 } satisfies Record<GroupLifecycleCommand, object>;
+
+installFakeBroadcastChannelPerTest();
 
 describe('room formation commands', () => {
     beforeEach(() => {

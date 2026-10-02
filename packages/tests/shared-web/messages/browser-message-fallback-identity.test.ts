@@ -367,7 +367,7 @@ function createChannel(input: ChannelInput): ChannelFixture {
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, { deliverySettlements: feed, readMiddleware: () => context });
     sessionDeliveries.beginSession(context.session);
-    const epoch = feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
+    const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
         creation: {
             createUnicast: newALUnicastMessage,

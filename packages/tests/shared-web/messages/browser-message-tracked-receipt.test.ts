@@ -260,7 +260,7 @@ function createDispatchHarness(
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => middleware });
     sessionDeliveries.beginSession(middleware.session);
-    feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
+    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({ deliveries: registry, sessionDeliveries, nowMs: Date.now });
     const canFallback = admits.ws !== undefined && admits.rtc !== undefined;
     return {

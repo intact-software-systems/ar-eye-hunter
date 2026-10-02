@@ -81,6 +81,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             kind: 'relay-rejected',
             msgId: 'ordered-gapped',
             carrier: 'ws',
+            lane: 'durable',
             atMs: expect.any(Number),
             relayRejection: { relay: 'trusted-server', reason: 'resync-required' },
             detail: 'The server relay refused the message: resync-required.'
@@ -123,6 +124,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
                 kind: 'relay-rejected',
                 msgId: 'unicast-to-outsider',
                 carrier: 'ws',
+                lane: 'durable',
                 atMs: expect.any(Number),
                 relayRejection: { relay: 'trusted-server', reason: 'unauthorized' },
                 detail: 'The server refused the message: unauthorized.'
@@ -186,6 +188,7 @@ describe('a WS relay rejection at the origin (R-S2c-ii-5)', () => {
             kind: 'receipt-exhausted',
             msgId: 'hop-to-outsider',
             carrier: 'ws',
+            lane: 'durable',
             atMs: expect.any(Number),
             mode: 'hop',
             confirmedPeerIds: [],

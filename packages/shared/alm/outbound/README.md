@@ -4,7 +4,10 @@
 lifecycle boundary: it enqueues, accepts control messages, claims work, and routes
 each claimed durable effect to the owner that runs it. It never sends or mutates
 admission state itself. [`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)
-owns sender serialization, browser locking, and optimistic read/compute/commit.
+owns sender serialization, browser locking, and optimistic read/compute/commit. Its cross-tab commit
+lock, `rallar:al-outbound-commit:<senderId>`, is a name on the shared Web Locks port
+[`ALBrowserLocks`](../storage/al-browser-locks.ts), which the default composition fills with
+`navigator.locks` where the API exists.
 [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) owns control
 acceptance, the ACK-timeout schedule, and the not-yet-in-sync retry schedule; it
 commits new bundles and never sends.
@@ -38,6 +41,32 @@ runtime closes dispatch admission, removes its engine task, and aborts owned RTC
 items; the same abort signal is what the effect owner reads as "disposed". A supplied
 engine remains available to its other tasks; a runtime-owned engine stops. An
 interrupted durable claim remains recoverable after its lease expires.
+
+**One durable owner per session.** The resources carry `durableWorkOwnership`
+([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)), and only the durable lane takes
+it; the memory lane always owns its pair. The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
+server's, Node's and every runtime's whose durable store no other runtime drains, and keeps the
+handler's construction-time registration. While another runtime of the session owns the work, the
+durable lane's [`ALWorkHandler`](../work/al-work-handler.ts) joins no engine round, its `ready()`
+runs no bootstrap batch, and a commit runs no batch: it is announced (`announceCommit`) under the
+lane's work type, `toALOutboundWorkType(namespace)`, which every runtime of the session shares. The
+lane still admits under the commit lock. When ownership turns true (once, never back) the handler
+registers its task and runs the bootstrap batch once; that batch's first-batch report is the
+takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
+batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hears every commit another
+runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
+the same `committed(rows)` its own commits take, so its batch claims the rows at once instead of at
+its remembered answer's age bound; in the browser the announcement travels on the connect's session
+channel ([`BrowserALSessionChannel`](../../../shared-web/browser/al-runtime/browser-al-session-channel.ts)).
+The browser's value is the connect's
+[`BrowserALDurableWorkClaim`](../../../shared-web/browser/al-runtime/browser-al-durable-work-claim.ts),
+the second name on the lock port: `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>`,
+requested once per connect, never per send, and held until the connect ends; without the Locks API
+every connect owns its work, as before. The claim hands a foreign commit (`applyForeignCommit`) to its
+work type's listeners only while its connect holds the work, so a waiting runtime never runs one nor
+announces it again. Its own `announceCommit` posts on the session channel, so a waiting tab's row
+reaches the owner at once; where the browser has no `BroadcastChannel` it reaches no other tab, and
+the row waits for the owner's readiness memory to age.
 
 The transport decoding owners are
 [`decodeALOutboundPreparedMessage`](./al-outbound-effect-validation.ts) for WS
@@ -716,8 +745,9 @@ states nothing at all; see [Receipt ends and the hand-over](#receipt-ends-and-th
 
 Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
 through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
-the runtime's private `emitSettlement` stamps the fact with its own `carrier` and the
-current `atMs` into the `ALDeliverySettlement` the sink receives, and guards that call
+the runtime's private `emitSettlement` stamps the fact with its own `carrier`, the
+current `atMs` and the `lane` that stated it (`durable` or `volatile`; a runtime-wide
+`cancel` names none) into the `ALDeliverySettlement` the sink receives, and guards that call
 so a throwing sink logs and returns rather than changing dispatch, retry, or claim
 behaviour. The browser's sink for these settlements is the in-memory delivery registry,
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)

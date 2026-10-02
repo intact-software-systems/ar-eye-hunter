@@ -91,7 +91,7 @@ function createFallbackFixture(
         readMiddleware: () => context
     });
     sessionDeliveries.beginSession(context.session);
-    const epoch = feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
+    const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,

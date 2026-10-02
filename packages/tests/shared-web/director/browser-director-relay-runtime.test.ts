@@ -12,6 +12,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -125,6 +126,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar director relay', () => {
     beforeEach(async () => {

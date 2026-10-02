@@ -1,3 +1,9 @@
+import {
+    afterEach,
+    beforeEach,
+    vi
+} from 'vitest';
+
 import type { RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 
 export type Todo = Readonly<{
@@ -40,6 +46,26 @@ export class FakeBroadcastChannel {
     public static clear(): void {
         FakeBroadcastChannel.channels.clear();
     }
+
+    /** The name of every channel open now, once per name. */
+    public static openNames(): readonly string[] {
+        return Array.from(FakeBroadcastChannel.channels)
+            .filter(([, channels]) => channels.size > 0)
+            .map(([name]) => name);
+    }
+}
+
+/**
+ * Node's global `BroadcastChannel` is real: a file whose tests connect through the browser composition installs
+ * the fake for each test, so no unit test opens a real channel.
+ */
+export function installFakeBroadcastChannelPerTest(): void {
+    beforeEach(() => {
+        vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    });
+    afterEach(() => {
+        FakeBroadcastChannel.clear();
+    });
 }
 
 export async function waitFor(predicate: () => boolean): Promise<void> {

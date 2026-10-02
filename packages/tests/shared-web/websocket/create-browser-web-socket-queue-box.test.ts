@@ -22,6 +22,7 @@ import {
     AL_VOLATILE_SESSION_MAX_BYTES,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -61,6 +62,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
@@ -116,6 +118,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
@@ -159,6 +162,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
@@ -216,6 +220,7 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
@@ -274,6 +279,7 @@ describe('the session volatile bound on the WS client (C3)', () => {
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
         const initialized = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},

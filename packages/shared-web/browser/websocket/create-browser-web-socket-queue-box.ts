@@ -13,6 +13,7 @@ import type {
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
@@ -44,6 +45,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
         readonly volatileBudget: ALVolatileSessionBudget;
+        /** The connect's claim on its session's durable work, which only the durable lanes take. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;
         readonly newConnectionRequestId: (() => string) | undefined;
@@ -100,6 +103,7 @@ function createBrowserWebSocketQueueBoxService(
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,
+        durableWorkOwnership: input.durableWorkOwnership,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: {
             ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,

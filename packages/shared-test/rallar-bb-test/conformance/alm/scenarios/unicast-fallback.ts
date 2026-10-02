@@ -3,18 +3,14 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { MESSAGE_CONTROL_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toRtcDropFaultCommand } from '../alm-conformance-fault-commands.ts';
-import {
-    toHandedOverAssertions,
-    toResultAssertion
-} from '../alm-conformance-message-commands.ts';
+import { toHandedOverAssertions, toResultAssertion } from '../alm-conformance-message-commands.ts';
+import { toAddressedSendCommands } from '../alm-conformance-receipt-commands.ts';
 import { toAdmissionOutcomeWait, toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-
-import { toAddressedSendCommands } from './to-addressed-send-commands.ts';
 
 const HAND_OVER = [['from', 'rtc'], ['to', 'ws'], ['reason', 'not-ready']] as const;
 

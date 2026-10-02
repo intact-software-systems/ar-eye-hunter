@@ -19,7 +19,9 @@ export function toSendHandleId(step: AlmConformanceMessageStepInput): string {
 }
 
 export function toConnectionName(step: AlmConformanceStepInput): string {
-    return step.role === 'sender' ? step.input.senderConnection : step.input.receiverConnection;
+    return step.role === 'sender' || step.role === 'successor'
+        ? step.input.senderConnection
+        : step.input.receiverConnection;
 }
 
 export function toRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlackBoxTestRecord {

@@ -1,3 +1,4 @@
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
@@ -8,6 +9,8 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import { FakeBroadcastChannel, installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
@@ -86,6 +89,8 @@ vi.mock(
     })
 );
 
+installFakeBroadcastChannelPerTest();
+
 beforeEach(() => {
     browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
@@ -123,6 +128,22 @@ describe('browser facade transport ownership', () => {
             'websocket-closed'
         ]);
         expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
+    });
+});
+
+// Node's BroadcastChannel is real; the connect's session channel must open on the installed fake.
+describe('browser facade session channel', () => {
+    it('opens one session channel per connect on the fake and closes it on disconnect', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
+        const sessionChannels = () => FakeBroadcastChannel.openNames().filter((name) => name.startsWith('rallar-alm:'));
+
+        await facade.connect();
+        expect(sessionChannels()).toHaveLength(1);
+
+        await facade.disconnect();
+        expect(sessionChannels()).toEqual([]);
     });
 });
 
@@ -205,7 +226,8 @@ describe('browser facade restored-session setup', () => {
                     workspaceId: 'match'
                 },
                 timeoutMs: 123,
-                maxPeerConnections: 10
+                maxPeerConnections: 10,
+                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
             }
         );
         expect(runtime.refreshStateSnapshots).toHaveBeenCalledWith(

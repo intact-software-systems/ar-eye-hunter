@@ -6,6 +6,8 @@ import { CircuitBreakerPolicy } from '../../resilience/circuit-breaker.ts';
 import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '../al-runtime-stores.ts';
+import { readALBrowserLocks } from '../storage/al-browser-locks.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
 import {
     ALOutboundMessageRuntime,
@@ -42,6 +44,8 @@ export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly nowMs?: () => number;
     readonly random?: () => number;
     readonly queueEngine?: InboxOutboxEngine;
+    /** The browser's per-connect session claim; absent, the runtime owns its durable work. */
+    readonly durableWorkOwnership?: ALDurableWorkOwnership;
 }
 
 export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
@@ -121,8 +125,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined,
-        browserLocks: typeof globalThis.navigator?.locks?.request === 'function'
-            ? globalThis.navigator.locks
-            : undefined
+        browserLocks: readALBrowserLocks(),
+        durableWorkOwnership: input.durableWorkOwnership ?? ALWAYS_OWNED_AL_DURABLE_WORK
     };
 }

@@ -7,8 +7,8 @@ import {
 } from 'vitest';
 
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRtcLifecycleEvent, RallarRtcStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
@@ -25,6 +25,7 @@ import type { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcSignalingType } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 
 const mocks = await vi.hoisted(async () => {
@@ -47,7 +48,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<typeof AuthModule.clearSession>(),
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle['hydrate']>(() => Promise.resolve()),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
+        initialiseApiMiddleware: vi.fn<(options: MiddlewareModule.MiddlewareInitOptions) => Promise<ApiMiddleware>>(() => Promise.resolve(ctx)),
         createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(
             () => Promise.reject(new Error('create not mocked'))
         ),
@@ -163,6 +164,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar RTC recovery', () => {
     beforeEach(async () => {

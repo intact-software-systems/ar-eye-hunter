@@ -1,19 +1,14 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import {
-    toAddresseeReceiptAssertions,
-    toReceiptsCommand
-} from '../alm-conformance-message-commands.ts';
-import type { AlmConformanceReceiptRoles } from '../alm-conformance-receipt-commands.ts';
+import { toAddresseeReceiptAssertions, toReceiptsCommand } from '../alm-conformance-message-commands.ts';
+import { toAddressedSendCommands, type AlmConformanceReceiptRoles } from '../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-
-import { toAddressedSendCommands } from './to-addressed-send-commands.ts';
 
 const RECEIVER_CONFIRMED: AlmConformanceReceiptRoles = { confirmed: ['receiver'], unconfirmed: [] };
 

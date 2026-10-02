@@ -382,7 +382,7 @@ These stay outcome-shaped until evidence earns them:
 
 These apply to every durable tier:
 
-- **One durable owner per session store.**
+- **One durable owner per session store.** Delivered (I2a-ii, 58daa3f7d).
   - One tab holds a Web Lock claim on the session's durable store and drains it, and another tab
     takes over when the lock is released.
   - The claim is a second lock name on the shared BrowserLocks port, beside the unchanged

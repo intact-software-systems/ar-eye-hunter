@@ -5,6 +5,8 @@ import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../s
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
+import type { ALDurableWorkLaneOwnership } from './al-durable-work-ownership.ts';
+import { ALWorkEngineMembership } from './al-work-engine-membership.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
 import {
     ALWorkReadinessMemory,
@@ -73,6 +75,12 @@ export interface ALWorkHandlerDependencies {
      * reporter, so their batch failures are logged; the browser's durable lanes pass it.
      */
     readonly storageHealth?: ALStorageHealth;
+    /**
+     * The session ownership a durable lane's work runs under. While another runtime owns it, this
+     * handler joins no engine round, runs no batch and announces its commits instead. Absent on a lane
+     * no other runtime drains (the server's, a memory lane's), which owns its work from construction.
+     */
+    readonly durableOwnership?: ALDurableWorkLaneOwnership;
 }
 
 export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDiagnostics;
@@ -121,8 +129,8 @@ export interface ALWorkReadinessProbeDiagnostics {
 
 /**
  * How long one probe's answer stands, counted from that probe whatever batches ran since. It is the
- * engine's own idle ceiling, derived from it so the two cannot drift apart: work another tab wrote,
- * or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of
+ * engine's own idle ceiling, derived from it so the two cannot drift apart: work another tab wrote
+ * unannounced, or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of
  * costing a storage read on every engine round.
  */
 export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
@@ -174,27 +182,31 @@ export class ALWorkHandler {
     /** Set when committed() lands while a batch is running; drained by one follow-up batch at that batch's end. */
     private commitPending = false;
     private readonly shutdown = new AbortController();
+    private readonly engine: ALWorkEngineMembership;
 
     constructor(dependencies: ALWorkHandlerDependencies) {
         this.dependencies = dependencies;
         this.readiness = new ALWorkReadinessMemory(dependencies.readinessMemoryMs);
-        dependencies.queueEngine.includeTask(dependencies.workerId, {
-            name: dependencies.workerId,
-            maxConcurrency: () => 1,
-            isWork: () => this.hasReadyWork(),
-            runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
-            ongoingTasks: []
+        this.engine = new ALWorkEngineMembership({
+            queueEngine: dependencies.queueEngine,
+            workerId: dependencies.workerId,
+            task: {
+                name: dependencies.workerId,
+                maxConcurrency: () => 1,
+                isWork: () => this.hasReadyWork(),
+                runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
+                ongoingTasks: []
+            },
+            // Only the server announces a write this engine did not make; another tab's commit reaches
+            // the owner's lane as its own, and a row a reload wrote is found at the age bound.
+            onExternalWake: () => this.readiness.forget('external-wake'),
+            durableOwnership: dependencies.durableOwnership,
+            takeOver: () => void this.ready().catch((error) => this.reportBatchFailure(toError(error)))
         });
-        // Only the server announces a write this engine did not make; a row another tab or a reload
-        // wrote is found when the remembered answer reaches its age bound.
-        dependencies.queueEngine.includeWakeListener(
-            dependencies.workerId,
-            () => this.readiness.forget('external-wake')
-        );
     }
 
     async ready(): Promise<void> {
-        if (this.bootstrapped || this.shutdown.signal.aborted) {
+        if (this.bootstrapped || this.shutdown.signal.aborted || !this.engine.isOwned()) {
             return;
         }
         await this.runBatch();
@@ -206,8 +218,7 @@ export class ALWorkHandler {
 
     dispose(): void {
         this.shutdown.abort();
-        this.dependencies.queueEngine.excludeWakeListener(this.dependencies.workerId);
-        this.dependencies.queueEngine.excludeTask(this.dependencies.workerId);
+        this.engine.dispose();
         if (this.dependencies.ownsQueueEngine) {
             this.dependencies.queueEngine.stop();
         }
@@ -218,9 +229,13 @@ export class ALWorkHandler {
      * unrelated work. It is also the invalidation an owner owes for any write of its own rows it
      * made outside `runBatch`. `written` says when the last row the commit wrote becomes claimable
      * and which rows it wrote: only a batch that starts at or after then, and completes a claim of
-     * each, can have claimed every one of them.
+     * each, can have claimed every one of them. While another runtime owns the work, the commit is
+     * announced to that owner and runs nothing here.
      */
     committed(written: ALWorkCommittedRows): void {
+        if (this.engine.announceUnlessOwned(written)) {
+            return;
+        }
         this.readiness.suspend(written);
         this.dependencies.queueEngine.wake();
         if (this.batch === undefined) {

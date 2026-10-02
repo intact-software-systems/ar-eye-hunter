@@ -5,7 +5,12 @@ import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEnt
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
+import type { ALBrowserLocks } from '../../storage/al-browser-locks.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
+import {
+    toALDurableWorkLaneOwnership,
+    type ALDurableWorkOwnership
+} from '../../work/al-durable-work-ownership.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -59,7 +64,9 @@ export namespace ALOutboundStoreLane {
         readonly workerId: string;
         /** Foreign queue rows only the durable lane admits; the volatile lane names none. */
         readonly dequeueTypes: ReadonlySet<string>;
-        readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
+        readonly browserLocks: ALBrowserLocks | undefined;
+        /** The session ownership the durable lane's work runs under; undefined for the volatile lane, which owns its memory pair. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
         readonly evictExpired: (() => void) | undefined;
         /** What this lane's commits hand its own claims; the memory pair's lane reads memory and has none. */
@@ -87,6 +94,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly leaseRecovery: ALWorkLeaseRecovery;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
     private readonly removeStorageResetListener: (() => void) | undefined;
+    private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private disposed = false;
 
@@ -101,20 +109,12 @@ export class ALOutboundStoreLane<TPrepared> {
         this.repairAdmission = admissions.repairAdmission;
         this.receiptAdmission = admissions.receiptAdmission;
         this.repairRetransmission = admissions.repairRetransmission;
-        this.work = new ALWorkHandler({
-            workerId: input.workerId,
-            port: workPort,
-            queueEngine: runtime.queueEngine,
-            ownsQueueEngine: runtime.ownsQueueEngine,
-            clock: runtime.clock,
-            pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
-            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
-            selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
-            runClaim: (claim) => this.runOutboundClaim(claim),
-            diagnostics: (event) => this.recordWorkDiagnostics(event),
-            storageHealth: stores.storageHealth
-        });
+        const workType = toALOutboundWorkType(stores.admissionStore.namespace);
+        this.work = this.createWorkHandler(workPort, workType);
+        this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(
+            workType,
+            (rows) => this.applyForeignCommit(rows)
+        );
         this.readiness = new ALStorageReadiness({
             openStores: () => stores.admissionStore.ready(),
             startWork: () => this.work.ready(),
@@ -143,7 +143,13 @@ export class ALOutboundStoreLane<TPrepared> {
         this.work.dispose();
         this.dispatchAdmission.dispose();
         this.removeStorageResetListener?.();
+        this.removeForeignCommitListener?.();
         this.input.canonicalHandoff?.clear();
+    }
+
+    /** Rows another runtime of the session committed to this lane's work type, for this owner to run. */
+    applyForeignCommit(rows: ALWorkCommittedRows): void {
+        this.work.committed(rows);
     }
 
     /** A memory read on the volatile lane: whether this lane admitted the message. */
@@ -482,6 +488,25 @@ export class ALOutboundStoreLane<TPrepared> {
             completedCount: event.completedCount,
             rescheduledCount: event.rescheduledCount,
             rejectedCount: event.rejectedCount
+        });
+    }
+
+    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler {
+        const { stores, runtime } = this.input;
+        return new ALWorkHandler({
+            workerId: this.input.workerId,
+            port: workPort,
+            queueEngine: runtime.queueEngine,
+            ownsQueueEngine: runtime.ownsQueueEngine,
+            clock: runtime.clock,
+            pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
+            readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
+            runClaim: (claim) => this.runOutboundClaim(claim),
+            diagnostics: (event) => this.recordWorkDiagnostics(event),
+            storageHealth: stores.storageHealth,
+            durableOwnership: toALDurableWorkLaneOwnership(this.input.durableWorkOwnership, workType)
         });
     }
 

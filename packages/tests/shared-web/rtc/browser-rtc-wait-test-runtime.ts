@@ -1,5 +1,7 @@
 import { vi } from 'vitest';
 
+import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -42,7 +44,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initialiseApiMiddleware: vi.fn<ContractModules.BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
+        initialiseApiMiddleware: vi.fn<(options: MiddlewareInitOptions) => Promise<ApiMiddleware>>(() => Promise.resolve(ctx)),
         createAndJoinStateGroup: vi.fn<ContractModules.RoomGroupStateWorkflows['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked'))
         ),

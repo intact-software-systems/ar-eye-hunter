@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
@@ -18,6 +19,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 import { createRoomTransportFixture, type RoomTransportFixture } from './realtime/create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './realtime/native-realtime-lane-fixture.ts';
 
@@ -100,6 +102,8 @@ vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOrigin
 }));
 
 const connection = vi.mocked(mocks.context.middleware.webRtcConnectionService);
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar facade default scope behavior', () => {
     beforeEach(() => {
@@ -294,7 +298,8 @@ describe('Rallar facade default scope behavior', () => {
                 timeoutMs: 321,
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3
+                rttReportingDegreeLimit: 3,
+                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
             }
         );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(

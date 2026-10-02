@@ -10,6 +10,8 @@ import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-re
 /** Owns volatile delivery observation for the browser's shared authenticated session. */
 export class BrowserSessionDeliveries {
     readonly settle: ALDeliverySettlementSink;
+    /** What each connect's epoch reports to: both carriers settle here, and the epoch relays what this tab does not hold. */
+    readonly observers: BrowserDeliverySettlements.Observers;
     private sessionKey: string | undefined;
     private readonly deliveries: BrowserRallarDeliveryRegistry;
     private readonly transport: Pick<BrowserTransportRuntimePort, 'deliverySettlements' | 'readMiddleware'>;
@@ -21,6 +23,11 @@ export class BrowserSessionDeliveries {
         this.deliveries = deliveries;
         this.transport = transport;
         this.settle = (event) => deliveries.record(event);
+        this.observers = {
+            ws: this.settle,
+            rtc: this.settle,
+            holds: (msgId) => deliveries.getHandle(msgId) !== undefined
+        };
     }
 
     beginSession(session: AuthSession): void {

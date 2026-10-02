@@ -378,6 +378,20 @@ send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone re
 at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
 reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
 
+The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
+scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
+the sender's IndexedDB and the `auth.session` in `localStorage`, under a control agent of its own. That page skips the
+login screen, and its recipe connects with `rallar` `{ username: '', password: '', restoreSession: true }`, so it
+restores the sender's session rather than signing in afresh. Over the RTC carriers its connect waits for one ready
+peer, as the sender's and the receiver's do, since both pages are one session and so one peer. The two pages are never connected at once: the
+server keeps one WebSocket per auth session and a second upgrade closes the first with `connection-replaced`, after
+which the first page reconnects and replaces the second. The lane therefore starts the receiver, runs the sender's
+recipe, closes the sender's page from Playwright, and only then runs the successor's recipe, whose prologue waits out
+the owner page's last work lease before its connect; no control command closes a page. No `reset` runs on a successor
+page, since it would clear the storage both pages share. Each scenario opens its own successor, which owns the session
+for the next one. The Hetzner entries select their scenarios by lane family (`two-agent` and `addressed` for manifest
+18, `three-agent` for manifest 22), so neither carries this family: a hosted agent has no second page in its context.
+
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
@@ -517,6 +531,22 @@ first. Two residuals remain. The fault port is page-wide and the rtc and fallbac
 the waits are tied to the cell, not to a store: they cannot show which store turned, nor that a store left alone stayed
 healthy. And the healthy wait proves only that some store recovered after the release: a release of an earlier cell's
 leftover rows can read it healthy, so the third send's own commit is proven by `assert-enqueued-3`, not by the wait.
+
+`durable-takeover` runs over every carrier in the same-context family. The sender's page holds its carrier with the
+same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
+absence window plus 60 s (above one 10 s lease, the 19.1 s recovery bound and a whole successor connect), and proves
+it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until a WS
+attempt follows the hand-over to WS, so the WS row is committed before the page ends. The lane then closes that
+page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
+lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
+claims the row rather than finding it leased. The successor connects with the restored session, waits for the one
+`recovery` of the store that held the original (`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise)
+reading `restored`, the store id embedding the session its own connect restored, and asserts that outcome's
+`claimed` above 0. The receiver waits for the carrier-tagged original over the sender's connect plus the original's
+lifetime, then proves for an absence window that no second copy arrives. A takeover while the owner's lease still
+stands, recovered by a later batch at the lease end plus at most 19.1 s, is not run by the lane: that path claims in a
+batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
+the owner's page is gone.
 
 `agent.reload` asks the control agent to reload its page and resume the run. The
 agent records the run id, its agent id and the command ids it already completed

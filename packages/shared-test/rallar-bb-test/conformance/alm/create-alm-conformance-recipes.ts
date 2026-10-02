@@ -25,6 +25,7 @@ import {
     toConnectCommand,
     toEnsureGroupCommand,
     toEnsureMemberCommand,
+    toOwnerLeaseLapseWait,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
@@ -36,6 +37,7 @@ import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
+import { durableTakeover } from './scenarios/durable-takeover.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
@@ -58,6 +60,8 @@ export interface AlmConformanceScenario {
     readonly receiver: RallarBlackBoxTestRecipe;
     /** The second recipient's recipe; undefined exactly when `roles` does not declare `recipient-b`. */
     readonly recipientB: RallarBlackBoxTestRecipe | undefined;
+    /** The sender's second page's recipe; undefined exactly when `roles` does not declare `successor`. */
+    readonly successor: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
 }
 
@@ -98,7 +102,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     unicastFallback,
     serverCommand,
     capacity,
-    ...receiptedAudience
+    ...receiptedAudience,
+    durableTakeover
 ];
 
 export function createAlmConformanceRecipes(
@@ -113,11 +118,6 @@ export function createAlmConformanceRecipes(
     return ALM_CONFORMANCE_SCENARIOS
         .filter((definition) => definition.carriers.includes(input.carrier))
         .map((definition) => toAlmConformanceScenario(input, definition));
-}
-
-/** Three agents run only the scenarios that declare `recipient-b`; every other scenario runs on two (D45). */
-export function isThreeAgentScenario(scenario: AlmConformanceScenario): boolean {
-    return scenario.roles.includes('recipient-b');
 }
 
 export function toAlmConformanceRoleRecipe(
@@ -139,7 +139,9 @@ function toAlmConformanceScenario(
             role,
             roles: definition.roles
         };
-        const commands = role === 'sender' ? definition.toSenderCommands(step) : definition.toRecipientCommands(step);
+        const commands = role === 'sender' || role === 'successor'
+            ? definition.toSenderCommands(step)
+            : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
         return toAlmConformanceRecipe({ ...step, commands, receiptRoles });
     };
@@ -151,7 +153,8 @@ function toAlmConformanceScenario(
         tags: definition.tags,
         sender: toRoleRecipe('sender'),
         receiver: toRoleRecipe('receiver'),
-        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined
+        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
+        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined
     };
 }
 
@@ -177,6 +180,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
         commands: [
             toEnsureGroupCommand(recipe),
             toEnsureMemberCommand(recipe),
+            ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,

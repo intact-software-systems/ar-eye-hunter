@@ -60,6 +60,13 @@ its first work batch reports the lane's one recovery outcome of the connect thro
 health, under the store id followed by the carrier (`<store id>/ws`, `<store id>/rtc`), with that
 lane's own claims and the expired rows of its own work type.
 
+The durable lane takes the session's `durableWorkOwnership` as the outbound one does (see the
+outbound README): while another runtime owns the work it admits and runs no batch, announcing each
+commit under its work type `toALInboundWorkType(namespace, carrier)`, and its first batch after
+ownership turns true reports the lane's recovery. Inbound commits name no rows, so the owner's lane
+applies a foreign one (`applyForeignCommit()`) as its own: a head read and an undescribed commit. The
+WS server and Node keep the always-owned default.
+
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
   names from the envelope's normalized `qos.durability`: the IndexedDB lane exactly when

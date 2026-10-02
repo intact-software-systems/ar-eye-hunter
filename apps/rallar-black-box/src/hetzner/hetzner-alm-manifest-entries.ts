@@ -4,11 +4,11 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -137,8 +137,17 @@ export function createAlmConformance3AgentEntry(): HetznerDistributedManifestEnt
     });
 }
 
-/** A three-role scenario runs on its own three agents (D45), so each family combines into its own recipes. */
+/** A three-role scenario runs on its own three agents, so each hosted entry combines into its own recipes. */
 type AlmConformanceFamily = 'two-agent' | 'three-agent';
+
+/**
+ * The lane families each hosted entry carries. The addressed sends ride the 2-agent entry; a same-context scenario
+ * needs two pages of one browser context, which no hosted agent has, so no entry carries it.
+ */
+const HOSTED_ALM_LANE_FAMILIES: Readonly<Record<AlmConformanceFamily, readonly AlmConformanceLaneFamily[]>> = {
+    'two-agent': ['two-agent', 'addressed'],
+    'three-agent': ['three-agent']
+};
 
 function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): readonly AlmConformanceScenario[] {
     const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
@@ -150,7 +159,7 @@ function toAlmConformanceScenariosForAllCarriers(family: AlmConformanceFamily): 
             receiverConnection: ALM_CONFORMANCE_RECEIVER_CONNECTION,
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         }).filter((scenario) => !isHetznerWithheldAlmScenario(scenario.scenarioKey, carrier))
-    ).filter((scenario) => isThreeAgentScenario(scenario) === (family === 'three-agent'));
+    ).filter((scenario) => HOSTED_ALM_LANE_FAMILIES[family].includes(scenario.laneFamily));
     // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL, and a
     // capacity block closes and reconnects its sender, so nothing but another capacity block follows it.
     const isHoisted = (scenario: AlmConformanceScenario) =>

@@ -1,7 +1,9 @@
 import { assert, assertEquals } from '@std/assert';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -9,6 +11,7 @@ import type {
     RallarBlackBoxTestFaultInjectCommand,
     RallarBlackBoxTestMessagesReplayCommand,
     RallarBlackBoxTestMessagesSendCommand,
+    RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -93,6 +96,8 @@ class GeneratedAlmPorts {
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
+    /** Whether a held fallback send's RTC leg hands it to WS at all. */
+    handsOverHeldFallback = true;
     lastQuotaFaultId = '';
     readonly receiver: RallarBlackBoxTestRuntime;
     sender: RallarBlackBoxTestRuntime;
@@ -179,7 +184,8 @@ class GeneratedAlmPorts {
                 return { status: 'ok', value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [role] } };
             case 'assert':
             case 'wait':
-                return undefined; // These acceptance commands execute in the real runtime.
+            case 'loop':
+                return undefined; // These acceptance and composite commands execute in the real runtime.
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
@@ -246,15 +252,41 @@ class GeneratedAlmPorts {
         // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
         const isWs = message.command.carrier === 'ws';
         const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
-        return {
-            status: 'ok',
-            value: {
-                confirmedHopPeerIds: isWs ? [] : [confirmed],
-                unconfirmedHopPeerIds: [],
-                confirmedRecipientPeerIds: [confirmed],
-                unconfirmedRecipientPeerIds: []
-            }
+        const value = {
+            confirmedHopPeerIds: isWs ? [] : [confirmed],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: [confirmed],
+            unconfirmedRecipientPeerIds: [],
+            carrierFallback: message.carrierFallback,
+            attemptCarriers: message.attemptCarriers
         };
+        this.advanceHeldFallback(message);
+        return { status: 'ok', value };
+    }
+
+    /**
+     * A held fallback send's RTC attempts hand it to WS a moment after admission, and its held WS attempt follows once
+     * the WS row commits, a moment later again: each read precedes the next step.
+     */
+    private advanceHeldFallback(message: PortMessage): void {
+        if (
+            !this.handsOverHeldFallback || message.command.carrier !== 'rtc-with-ws-fallback' || message.submitted ||
+            !this.isHeld(message.command.typeId)
+        ) {
+            return;
+        }
+        if (message.carrierFallback === undefined) {
+            message.carrierFallback = {
+                from: 'rtc',
+                to: 'ws',
+                reason: 'not-ready',
+                atMs: this.now,
+                detail: 'The held RTC leg handed the send over to WS.'
+            };
+            return;
+        }
+        message.attemptCarriers = ['rtc', 'ws'];
+        message.attemptOutcomes = ['not-ready', 'not-ready'];
     }
 
     private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
@@ -297,32 +329,32 @@ class GeneratedAlmPorts {
         };
     }
 
+    /** The next page of the sender's session, a reloaded document or a successor page, sends what the last one held. */
     private deliverRecoveredOriginals(role: 'sender' | 'receiver'): void {
         if (role !== 'sender') {
             return;
         }
-        for (const message of this.messages) {
-            if (isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'delivery-reload' && !message.submitted) {
-                this.deliver(message);
-            }
+        for (const message of this.messages.filter(isHeldOriginal)) {
+            this.deliver(message);
         }
     }
 
     /**
      * Every durable store of the page reports what it restored once its first batch ran, the session inbound store once
-     * per carrier lane; the fixture runs it at connect.
+     * per carrier lane; the fixture runs it at connect. An outbound store claims the originals the last page held in it.
      */
     private reportStoreRecoveries(role: 'sender' | 'receiver', sessionId: string): void {
         if (role !== 'sender') {
             return;
         }
-        const storeIds = [
-            `browser-session-inbound:${sessionId}/ws`,
-            `browser-session-inbound:${sessionId}/rtc`,
-            `browser-ws-client:${sessionId}`,
-            `browser-rtc-overlay:${sessionId}`
+        const held = this.messages.filter(isHeldOriginal);
+        const stores = [
+            { storeId: `browser-session-inbound:${sessionId}/ws`, claimed: 0 },
+            { storeId: `browser-session-inbound:${sessionId}/rtc`, claimed: 0 },
+            { storeId: `browser-ws-client:${sessionId}`, claimed: held.filter((message) => message.command.carrier !== 'rtc').length },
+            { storeId: `browser-rtc-overlay:${sessionId}`, claimed: held.filter((message) => message.command.carrier === 'rtc').length }
         ];
-        for (const storeId of storeIds) {
+        for (const { storeId, claimed } of stores) {
             this.sender.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.storage',
@@ -330,7 +362,7 @@ class GeneratedAlmPorts {
                     data: {
                         kind: 'recovery',
                         storeId,
-                        outcome: { kind: 'restored', claimed: 0, expired: 0 }
+                        outcome: { kind: 'restored', claimed, expired: 0 }
                     }
                 }
             });
@@ -771,6 +803,66 @@ for (const replacesDocument of [true, false]) {
             'terminal evidence returns to the configured finite bounds'
         );
     });
+}
+
+/** A durable original a page held when it ended: a reloaded document's or a closed owner page's. */
+function isHeldOriginal(message: PortMessage): boolean {
+    const marker = isJsonRecordValue(message.command.payload) ? message.command.payload.marker : undefined;
+    return (marker === 'delivery-reload' || marker === 'durable-takeover') && !message.submitted;
+}
+
+for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+    Deno.test(`the ${carrier} takeover's three recipes run end to end against the fixture's takeover model`, async () => {
+        const scenario = createAlmConformanceRecipes({
+            group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+            carrier,
+            typeId: 'alm.conformance',
+            senderConnection: 'almConformanceSender',
+            receiverConnection: 'almConformanceReceiver',
+            deadlineMs: 18_000
+        }).find((candidate) => candidate.scenarioId === 'durable-takeover');
+        assert(scenario?.successor);
+        const ports = new GeneratedAlmPorts(true);
+
+        const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
+        const held = ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'durable-takeover');
+        assertEquals(held.map((message) => message.submitted), [false], 'the owner\'s hold keeps its original from the carrier');
+        ports.replaceSenderDocument();
+        const successor = await ports.sender.execute(toRecipeRun(scenario.successor));
+        const receiver = await ports.receiver.execute(toRecipeRun(scenario.receiver));
+
+        for (const [role, result] of [['owner', owner], ['successor', successor], ['receiver', receiver]] as const) {
+            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+        }
+        assertEquals(held.map((message) => message.submitted), [true], 'the successor sends the original once');
+        assertEquals(
+            held.map((message) => [message.carrierFallback?.to, message.attemptCarriers.includes('ws')]),
+            [carrier === 'rtc-with-ws-fallback' ? ['ws', true] : [undefined, false]],
+            'only the fallback owner waits for its hand-over and the WS attempt that follows it'
+        );
+    });
+}
+
+Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never hands over to WS', async () => {
+    const scenario = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+        carrier: 'rtc-with-ws-fallback',
+        typeId: 'alm.conformance',
+        senderConnection: 'almConformanceSender',
+        receiverConnection: 'almConformanceReceiver',
+        deadlineMs: 18_000
+    }).find((candidate) => candidate.scenarioId === 'durable-takeover');
+    assert(scenario);
+    const ports = new GeneratedAlmPorts(true);
+    ports.handsOverHeldFallback = false;
+
+    const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
+
+    assertEquals(owner.ok, false, JSON.stringify(owner));
+});
+
+function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
+    return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };
 }
 
 async function executeSegment(service: RallarBlackBoxControlService, runtime: RallarBlackBoxTestRuntime, envelope: ControlCommandEnvelope): Promise<void> {

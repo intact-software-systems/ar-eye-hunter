@@ -40,7 +40,8 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'server-command',
         'capacity',
-        ...Array.from({ length: 3 }, () => 'receipted-audience' as const)
+        ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
+        'durable-takeover'
     ],
     rtc: [
         'volatile-default',
@@ -56,7 +57,8 @@ const CARRIER_SCENARIO_IDS = {
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
-        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
+        'durable-takeover'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -78,7 +80,8 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'unicast-fallback',
         'capacity',
-        ...Array.from({ length: 4 }, () => 'receipted-audience' as const)
+        ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
+        'durable-takeover'
     ]
 } as const;
 
@@ -96,7 +99,10 @@ function toConformanceInput(
 }
 
 function toRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
-    return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver]);
+    return scenarios.flatMap((scenario) =>
+        [scenario.sender, scenario.receiver, scenario.recipientB, scenario.successor]
+            .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
+    );
 }
 
 const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
@@ -104,8 +110,9 @@ const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
 /**
  * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
+ * The takeover's sender holds its carrier until the lane closes its page, which no later block shares.
  */
-const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = ['-frozen-audience-membership-recipient-b'];
+const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = ['-frozen-audience-membership-recipient-b', '-durable-takeover-sender'];
 
 /**
  * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before
@@ -191,8 +198,8 @@ describe('ALM conformance recipe validation', () => {
             ALM_CONFORMANCE_SCOPES.flatMap((scope) =>
                 createAlmConformanceRecipes(toConformanceInput(carrier))
                     .filter((scenario) => scenario.tags.includes(scope))
-                    .flatMap((scenario) => [scenario.sender, scenario.receiver, scenario.recipientB])
-                    .flatMap((recipe) => recipe === undefined ? [] : toUnreleasedFaults(recipe))
+                    .flatMap((scenario) => toRecipes([scenario]))
+                    .flatMap(toUnreleasedFaults)
                     .map((finding) => `${scope}: ${finding}`)
             )
         );

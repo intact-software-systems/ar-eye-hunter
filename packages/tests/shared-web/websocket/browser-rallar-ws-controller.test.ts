@@ -7,8 +7,8 @@ import {
 } from 'vitest';
 
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsLifecycleEvent, RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
@@ -22,6 +22,8 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/json-web-socket-client.ts';
+
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const mocks = await vi.hoisted(async () => {
     // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
@@ -60,7 +62,7 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(
             () => Promise.resolve()
         ),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
+        initialiseApiMiddleware: vi.fn<(options: MiddlewareModule.MiddlewareInitOptions) => Promise<ApiMiddleware>>(() => Promise.resolve(ctx)),
         joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
         leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
         listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
@@ -179,6 +181,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar WS lifecycle', () => {
     beforeEach(async () => {

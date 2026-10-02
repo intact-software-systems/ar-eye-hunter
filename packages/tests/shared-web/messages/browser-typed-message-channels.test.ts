@@ -26,6 +26,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
@@ -67,6 +68,8 @@ interface ReceivedChatMessage {
 interface ChatMessage {
     readonly text: string;
 }
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar typed message channel', () => {
     beforeEach(async () => {

@@ -7,6 +7,7 @@ import {
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 import {
     createAcceptedOverlay,
@@ -43,6 +44,8 @@ function withPreviousAcceptedPresenceRevision(
         }
     };
 }
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar RTC room wait', () => {
     beforeEach(resetRtcWaitTestRuntime);

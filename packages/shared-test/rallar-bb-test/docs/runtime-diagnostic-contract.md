@@ -186,7 +186,9 @@ every session the page opens. The event's `data` is the event itself:
   one event for every storage read an owner spends deciding whether it has work,
   which is the read the page's `work-page` counter charges.
   `cause` is why the owner had no remembered answer to give -- `own-commit`,
-  `batch` and `retained-release` are this owner's own progress, `external-wake`
+  `batch` and `retained-release` are this owner's own progress (a commit
+  another browser tab of the session announced reaches the owning tab's lane
+  as that lane's own commit, so it reads `own-commit` there), `external-wake`
   is the announcement another writer made to every owner on the engine,
   `age-bound` is the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and
   `no-memory` is an owner with no answer that has not probed yet, or whose last
@@ -536,6 +538,24 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   original: the RTC overlay store on `rtc`, the WS client store on `ws` and on
   `rtc-with-ws-fallback`, whose hold hands the original to WS before the
   reload.
+
+  Where the browser has the Locks API, only the tab that holds the session's
+  durable-owner lock runs its durable lanes' batches, so the outcomes are the
+  session's and come from that tab alone; another tab of the session reports
+  no `recovery` while it waits. When the owner's connect ends, the next tab's
+  lock is granted, and its first batch, the takeover's, reports `restored` with
+  the rows it claimed: a row the previous owner still held under its lease is
+  claimed by a later batch, at its lease end plus at most 19.1 s. Without the
+  Locks API every tab drains, and reports, as before. `durable-takeover` closes
+  the owner page with one durable original held, waits out one lease before the
+  successor page connects, then waits for the successor's `restored` recovery
+  of the store that held the original (chosen as `delivery-reload` chooses it)
+  and asserts its `claimed` above 0. Over `rtc-with-ws-fallback` the owner page
+  closes only once its receipt records the hand-over to WS and a WS attempt (a
+  `loop` until the first success over `messages.receipts`, asserting that
+  `carrierFallback.to` is `ws` and that `attemptCarriers` contains `ws`): the
+  hand-over is recorded before the WS row commits, and a WS attempt exists only
+  once it has, so the held row is in the WS client store the successor reads.
 
 ## Compatibility
 

@@ -551,54 +551,45 @@ export async function exportControlRunArtifacts(
     return await response.json() as Readonly<Record<string, unknown>>;
 }
 
+export interface BrowserControlAgentInput {
+    readonly config: FullStackConfig;
+    readonly user: FullStackUser;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly groupId: string;
+    readonly connection?: string;
+    /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
+    readonly diagnosticsRole?: AlmConformanceRole;
+}
+
+export interface OpenedBrowserControlAgent {
+    readonly context: BrowserContext;
+    readonly page: Page;
+    readonly session: BrowserAuthSession;
+    readonly diagnostics?: PageDiagnosticsCapture;
+}
+
 export async function openBrowserControlAgent(
     browser: Browser,
     config: FullStackConfig,
     user: FullStackUser,
-    input: Readonly<{
-        runId: string;
-        agentId: string;
-        groupId: string;
-        connection?: string;
-        /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
-        diagnosticsRole?: AlmConformanceRole;
-    }>
-): Promise<
-    Readonly<{
-        context: BrowserContext;
-        page: Page;
-        session: BrowserAuthSession;
-        diagnostics?: PageDiagnosticsCapture;
-    }>
-> {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    const diagnostics = toPageDiagnosticsCapture(page, input);
-    const query = new URLSearchParams({
-        mode: 'control',
-        workspace: 'black-box-runner',
-        tab: 'local-workbench',
-        provider: 'browser-rallar',
-        autoConnect: '1',
-        controlUrl: FULL_STACK_CONTROL_WS_URL,
-        runId: input.runId,
-        agentId: input.agentId,
-        apiBaseUrl: config.apiBaseUrl,
-        applicationId: config.applicationId,
-        workspaceId: config.workspaceId,
-        roomId: input.groupId,
-        actor: user.actor,
-        sessionId: `${input.agentId}-session`,
-        heartbeatIntervalMs: '250',
-        statsIntervalMs: '1000',
-        rallarLeaveRoomOnClose: '0',
-        rallarUsername: user.username,
-        rallarPassword: user.password
-    });
+    input: Omit<BrowserControlAgentInput, 'config' | 'user'>
+): Promise<OpenedBrowserControlAgent> {
+    return await openBrowserControlAgentInContext(await browser.newContext(), { ...input, config, user });
+}
 
-    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${query.toString()}`);
-    await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
-    await page.getByRole('button', { name: 'Sign in' }).click();
+/**
+ * Opens a control agent page in a context that may already hold an auth session: a page of a context another agent
+ * signed in skips the login screen, so it signs in only when the gate shows.
+ */
+export async function openBrowserControlAgentInContext(
+    context: BrowserContext,
+    agent: BrowserControlAgentInput
+): Promise<OpenedBrowserControlAgent> {
+    const page = await context.newPage();
+    const diagnostics = toPageDiagnosticsCapture(page, agent);
+    await page.goto(`${FULL_STACK_SPA_ORIGIN}/?${toBrowserControlAgentQuery(agent).toString()}`);
+    await signInIfLoginGateIsVisible(page);
     await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
         'true',
@@ -613,6 +604,40 @@ export async function openBrowserControlAgent(
         session: await readBrowserAuthSession(page),
         diagnostics
     };
+}
+
+function toBrowserControlAgentQuery(agent: BrowserControlAgentInput): URLSearchParams {
+    return new URLSearchParams({
+        mode: 'control',
+        workspace: 'black-box-runner',
+        tab: 'local-workbench',
+        provider: 'browser-rallar',
+        autoConnect: '1',
+        controlUrl: FULL_STACK_CONTROL_WS_URL,
+        runId: agent.runId,
+        agentId: agent.agentId,
+        apiBaseUrl: agent.config.apiBaseUrl,
+        applicationId: agent.config.applicationId,
+        workspaceId: agent.config.workspaceId,
+        roomId: agent.groupId,
+        actor: agent.user.actor,
+        sessionId: `${agent.agentId}-session`,
+        heartbeatIntervalMs: '250',
+        statsIntervalMs: '1000',
+        rallarLeaveRoomOnClose: '0',
+        rallarUsername: agent.user.username,
+        rallarPassword: agent.user.password
+    });
+}
+
+/** Either screen settles first; the workbench of a signed-in context never shows the gate. */
+async function signInIfLoginGateIsVisible(page: Page): Promise<void> {
+    const loginGate = page.getByRole('heading', { name: 'Rallar Server Login' });
+    const workbench = page.getByRole('tab', { name: 'Advanced' });
+    await expect(loginGate.or(workbench).first()).toBeVisible({ timeout: 30_000 });
+    if (await loginGate.isVisible()) {
+        await page.getByRole('button', { name: 'Sign in' }).click();
+    }
 }
 
 function toPageDiagnosticsCapture(

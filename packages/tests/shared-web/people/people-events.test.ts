@@ -4,6 +4,7 @@ import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createPeopleEvent,
     createPeopleEventPage,
@@ -14,6 +15,8 @@ import {
     resetPeopleEventTestRuntime,
     toPeopleEventMessage
 } from './people-event-test-runtime.ts';
+
+installFakeBroadcastChannelPerTest();
 
 describe('people events', () => {
     beforeEach(resetPeopleEventTestRuntime);

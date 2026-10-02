@@ -14,6 +14,7 @@ import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryLane, ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
     toALInboundAdmissionDiagnostics,
@@ -106,6 +107,8 @@ export namespace ALInboundMessageRuntime {
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
+        /** Which runtime of the session drains the durable pair; only the durable lane takes it. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
     /** A retried copy of an admitted message, owed to these child hops only, sent as its own attempt. */
@@ -191,6 +194,7 @@ export class ALInboundMessageRuntime {
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             evictExpired: undefined,
+            durableWorkOwnership: dependencies.durableWorkOwnership,
             runtime: dependencies
         });
         this.volatile = dependencies.volatileStores === undefined ? undefined : new ALInboundStoreLane({
@@ -198,6 +202,7 @@ export class ALInboundMessageRuntime {
             stores: dependencies.volatileStores,
             workerId: `${dependencies.effectWorkerId}/volatile`,
             evictExpired: dependencies.volatileStores.evictExpired,
+            durableWorkOwnership: undefined,
             runtime: dependencies
         });
         if (dependencies.ownsQueueEngine) {

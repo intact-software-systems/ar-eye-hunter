@@ -6,11 +6,11 @@ import { toALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailab
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { RECOVERED_STORE_PREFIXES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { RELOAD_RECOVERED_STORE_PREFIXES } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/delivery-reload.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -258,10 +258,10 @@ describe('delivery-reload recovery reads', () => {
             .recordRecovery({ kind: 'restored', claimed: 0, expired: 0 }, 'ws');
 
         expect(events.map((event) => event.kind === 'recovery' ? event.storeId : event.kind)).toEqual([
-            `${RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound}:s/ws`
+            `${RECOVERED_STORE_PREFIXES.sessionInbound}:s/ws`
         ]);
-        expect(`${RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound}:s`).toBe(String(toBrowserSessionALInboundRuntimeStoreId('s')));
-        expect(`${RELOAD_RECOVERED_STORE_PREFIXES.ws}:s`).toBe(String(toBrowserWsClientALRuntimeStoreId('s')));
-        expect(`${RELOAD_RECOVERED_STORE_PREFIXES.rtc}:s`).toBe(String(toBrowserRtcOverlayALRuntimeStoreId('s')));
+        expect(`${RECOVERED_STORE_PREFIXES.sessionInbound}:s`).toBe(String(toBrowserSessionALInboundRuntimeStoreId('s')));
+        expect(`${RECOVERED_STORE_PREFIXES.ws}:s`).toBe(String(toBrowserWsClientALRuntimeStoreId('s')));
+        expect(`${RECOVERED_STORE_PREFIXES.rtc}:s`).toBe(String(toBrowserRtcOverlayALRuntimeStoreId('s')));
     });
 });

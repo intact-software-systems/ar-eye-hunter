@@ -4,6 +4,7 @@ import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { StateEventCursor } from '@shared/api/state-event-types.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomEvent,
     createRoomEventPage,
@@ -20,6 +21,8 @@ interface ReplayPageRequest {
     readonly limit: number | undefined;
     readonly after: StateEventCursor | undefined;
 }
+
+installFakeBroadcastChannelPerTest();
 
 describe('room event replay', () => {
     beforeEach(resetRoomEventTestRuntime);

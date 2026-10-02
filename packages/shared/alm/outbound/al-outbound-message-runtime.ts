@@ -19,10 +19,12 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
+import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -282,9 +284,9 @@ export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
 
-/** Every settlement variant without the two fields the runtime stamps for its owners. */
+/** Every settlement variant without the three fields the runtime stamps for its owners. */
 type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
-    Omit<TSettlement, 'carrier' | 'atMs'> :
+    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
     never;
 
 /** One delivery fact as the owner that observed it states it, before the runtime stamps it. */
@@ -330,11 +332,6 @@ export namespace ALOutboundMessageRuntime {
         nowMs(): number;
     }
 
-    export interface BrowserLocks {
-        /** Holds the named exclusive lock until the single callback invocation settles. */
-        request<T>(name: string, options: Readonly<{ mode: 'exclusive'; }>, callback: () => Promise<T>): Promise<T>;
-    }
-
     export interface Resources<TPrepared> {
         /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -352,7 +349,9 @@ export namespace ALOutboundMessageRuntime {
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
-        readonly browserLocks: BrowserLocks | undefined;
+        readonly browserLocks: ALBrowserLocks | undefined;
+        /** Which runtime of the session drains the durable pair; only the durable lane takes it. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
     export interface DequeueSource {
@@ -430,13 +429,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
-        const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
         this.durable = new ALOutboundStoreLane({
             lane: 'durable',
             stores: dependencies,
             workerId: dependencies.effectWorkerId,
             dequeueTypes: dependencies.dequeue.types,
             browserLocks: dependencies.browserLocks,
+            durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
             canonicalHandoff: new ALOutboundCanonicalHandoff({
                 namespace: dependencies.admissionStore.namespace,
@@ -444,7 +443,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }),
             runtime: dependencies,
             sendControls: this.sendControls,
-            settlements
+            settlements: (fact) => this.emitSettlement(fact, 'durable')
         });
         this.volatile = dependencies.volatileStores === undefined ? undefined : new ALOutboundStoreLane({
             lane: 'volatile',
@@ -452,11 +451,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             workerId: `${dependencies.effectWorkerId}/volatile`,
             dequeueTypes: new Set<string>(),
             browserLocks: undefined,
+            durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
             canonicalHandoff: undefined,
             runtime: dependencies,
             sendControls: this.sendControls,
-            settlements
+            settlements: (fact) => this.emitSettlement(fact, 'volatile')
         });
     }
 
@@ -486,7 +486,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
-            this.emitSettlement({ kind: 'cancelled', msgId });
+            this.emitSettlement({ kind: 'cancelled', msgId }, undefined);
         }
         return outcome;
     }
@@ -677,13 +677,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    /** The one guard over every settlement this owner states: a throwing sink changes no work. */
-    private emitSettlement(fact: ALOutboundSettlementFact): void {
+    /**
+     * The one guard over every settlement this owner states: a throwing sink changes no work. `lane` is the
+     * lane that stated it; a cancel is the runtime's own, for every lane, and names none.
+     */
+    private emitSettlement(fact: ALOutboundSettlementFact, lane: ALStoreDurability | undefined): void {
         try {
             this.dependencies.settlements?.({
                 ...fact,
                 carrier: this.dependencies.carrier,
-                atMs: this.dependencies.clock.nowMs()
+                atMs: this.dependencies.clock.nowMs(),
+                ...(lane === undefined ? {} : { lane })
             });
         }
         catch (error) {

@@ -11,7 +11,6 @@ import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-te
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -169,7 +168,12 @@ const SCENARIO_KEYS_BY_CARRIER = {
 } as const;
 
 function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
-    return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver, ...(scenario.recipientB ? [scenario.recipientB] : [])]);
+    return scenarios.flatMap((scenario) => [
+        scenario.sender,
+        scenario.receiver,
+        ...(scenario.recipientB ? [scenario.recipientB] : []),
+        ...(scenario.successor ? [scenario.successor] : [])
+    ]);
 }
 
 describe('alm-conformance recipe family', () => {
@@ -177,7 +181,8 @@ describe('alm-conformance recipe family', () => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
 
         for (const scenario of scenarios) {
-            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(isThreeAgentScenario(scenario));
+            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(scenario.roles.includes('recipient-b'));
+            expect(scenario.laneFamily === 'same-context', scenario.scenarioKey).toBe(scenario.roles.includes('successor'));
         }
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
@@ -196,21 +201,31 @@ describe('alm-conformance recipe family', () => {
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]),
                     ...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
-                    )
+                    ),
+                    ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`)
                 ]);
         }
     });
 
-    it('declares recipient-b on the receipted-audience scenarios only; every other scenario keeps one sender and one receiver (D45)', () => {
+    it('declares recipient-b on the receipted-audience scenarios and successor on durable-takeover only; every other scenario keeps one sender and one receiver', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = scenario.scenarioId === 'receipted-audience';
-                expect(scenario.roles, scenario.scenarioKey).toEqual(threeRoles ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver']);
-                expect(isThreeAgentScenario(scenario), scenario.scenarioKey).toBe(threeRoles);
+                const twoPages = scenario.scenarioId === 'durable-takeover';
+                expect(scenario.roles, scenario.scenarioKey).toEqual(
+                    threeRoles
+                        ? ['sender', 'receiver', 'recipient-b']
+                        : twoPages
+                        ? ['sender', 'receiver', 'successor']
+                        : ['sender', 'receiver']
+                );
+                expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(threeRoles);
                 expect(toAlmConformanceRoleRecipe(scenario, 'sender')).toBe(scenario.sender);
                 expect(toAlmConformanceRoleRecipe(scenario, 'receiver')).toBe(scenario.receiver);
                 expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBe(scenario.recipientB);
+                expect(toAlmConformanceRoleRecipe(scenario, 'successor')).toBe(scenario.successor);
                 expect(scenario.recipientB?.recipeId).toBe(threeRoles ? `alm-${carrier}-${scenario.scenarioKey}-recipient-b` : undefined);
+                expect(scenario.successor?.recipeId).toBe(twoPages ? `alm-${carrier}-${scenario.scenarioKey}-successor` : undefined);
             }
         }
     });
@@ -231,6 +246,39 @@ describe('alm-conformance recipe family', () => {
             toConnectCommand({ input: toConformanceInput('ws'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role: 'sender', roles: threeRoles })
                 .readiness
         ).toBeUndefined();
+    });
+
+    // The successor is the sender's own session on a second page, so it is never a peer to wait for.
+    it('counts one ready peer for every page of a same-context scenario', () => {
+        const sameContext = ['sender', 'receiver', 'successor'] as const;
+
+        for (const role of sameContext) {
+            expect(
+                toConnectCommand({ input: toConformanceInput('rtc'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role, roles: sameContext })
+                    .readiness?.minReadyPeers,
+                role
+            ).toBe(1);
+        }
+    });
+
+    it('connects the successor on the sender\'s connection and restores the session the shared context holds', () => {
+        const connect = toConnectCommand({
+            input: toConformanceInput('ws'),
+            scenarioId: 'delivery-baseline',
+            scenarioKey: 'probe',
+            role: 'successor',
+            roles: ['sender', 'receiver', 'successor']
+        });
+
+        expect(connect.commandId).toBe('alm-ws-probe-successor-connect');
+        expect(connect.connection).toBe('sender');
+        expect(connect.rallar).toEqual({
+            typeId: 'alm.conformance.ws.probe',
+            topicId: CONFORMANCE_TOPIC_ID,
+            username: '',
+            password: '',
+            restoreSession: true
+        });
     });
 
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
@@ -352,7 +400,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('keeps reload, storage-unavailable and ordering-resync full-only while preserving the smoke scenarios', () => {
+    it('keeps reload, storage-unavailable, ordering-resync and the takeover full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
@@ -385,7 +433,8 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
-            'receipted-audience'
+            'receipted-audience',
+            'durable-takeover'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -396,6 +445,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -808,7 +858,7 @@ describe('alm-conformance recipe family', () => {
                 let sawAcknowledged = false;
                 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                     for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
-                        if (!isThreeAgentScenario(scenario)) {
+                        if (scenario.laneFamily !== 'three-agent') {
                             continue;
                         }
                         const endingAssert = scenario.sender.commands.find((command) =>

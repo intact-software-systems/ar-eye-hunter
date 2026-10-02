@@ -7,10 +7,7 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import {
-    createAlmConformanceRecipes,
-    isThreeAgentScenario
-} from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import type { TwoAgentRunParticipant } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
@@ -73,7 +70,7 @@ describe('three-agent ALM run', () => {
             'rtc-with-ws-fallback': rtcScenarioKeys
         };
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const threeAgent = toScenarios(carrier).filter(isThreeAgentScenario);
+            const threeAgent = toScenarios(carrier).filter((scenario) => scenario.laneFamily === 'three-agent');
             expect(threeAgent.map((scenario) => scenario.scenarioKey), carrier).toEqual(expectedKeys[carrier]);
             expect(threeAgent.every((scenario) => scenario.recipientB !== undefined), carrier).toBe(true);
         }

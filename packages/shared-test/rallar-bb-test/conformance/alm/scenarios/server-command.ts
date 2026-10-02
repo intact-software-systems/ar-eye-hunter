@@ -2,14 +2,13 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import { toAddresseeReceiptAssertions } from '../alm-conformance-message-commands.ts';
+import { toAddressedSendCommands } from '../alm-conformance-receipt-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-
-import { toAddressedSendCommands } from './to-addressed-send-commands.ts';
 
 /** The server is no RTC peer: an RTC strategy refuses a send addressed to it before admission. */
 const SERVER_COMMAND_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];

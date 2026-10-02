@@ -77,7 +77,7 @@ interface StateStoreFixture {
 function createStateStoreFixture(
     cacheOverrides: Partial<RallarStateCacheReadPort> = {}
 ): StateStoreFixture {
-    const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+    const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
     const stateCache: RallarStateCacheReadPort = {
         ...createRallarStateCacheReadPort(),
         ...cacheOverrides

@@ -1,15 +1,20 @@
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
-import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand
+} from '../../rallar-black-box-test-contracts.ts';
 
 import {
     NON_EXPIRING_SEND_TIMEOUT_MS,
+    NON_EXPIRING_TTL_MS,
     RESPONSE_MARGIN_MS,
     toBudgetMs
 } from './alm-conformance-budgets.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
+    toObserveCommand,
     toReceiptsCommand,
     toResultAssertion,
     toSendCommand
@@ -30,6 +35,28 @@ export type AlmConformanceReceiptEnding = Extract<ALDeliveryState, 'acknowledged
 interface AlmConformanceAudienceSendInput {
     readonly sender: AlmConformanceStepInput;
     readonly ttlMs: number;
+}
+
+/** The first send of an addressed scenario, admitted and observed until its addressee acknowledges it. */
+export function toAddressedSendCommands(
+    sender: AlmConformanceStepInput,
+    toPeer: NonNullable<RallarBlackBoxTestMessagesSendCommand['toPeer']>
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toSendCommand({
+            ...sender,
+            index: 1,
+            payload: { marker: sender.scenarioId, carrier: sender.input.carrier },
+            delivery: {
+                toPeer,
+                ack: 'receiver',
+                ttlMs: NON_EXPIRING_TTL_MS,
+                commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
+            }
+        }),
+        ...toAdmissionCommands({ ...sender, index: 1 }),
+        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' })
+    ];
 }
 
 /**
