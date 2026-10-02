@@ -192,7 +192,7 @@ export class ALOutboundStoreLane<TPrepared> {
         }
     }
 
-    /** Every commit of the durable pair is a recovery point; a send its store refused is its failure. */
+    /** A committed send is a recovery point; a send its store refused is its failure. */
     private recordStorageHealth(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
         const { storageHealth } = this.input.stores;
         const { verdict } = result.computed;

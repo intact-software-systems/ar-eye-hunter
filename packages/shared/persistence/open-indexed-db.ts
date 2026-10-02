@@ -35,10 +35,7 @@ export interface OpenedIndexedDb {
     readonly created: boolean;
 }
 
-interface OpenedIndexedDbHandle {
-    readonly db: IDBDatabase;
-    readonly created: boolean;
-}
+type OpenedIndexedDbHandle = Pick<OpenedIndexedDb, 'db' | 'created'>;
 
 /** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
 class IndexedDbSchemaMismatchError extends Error {

@@ -124,6 +124,7 @@ export type {
 export type {
     ALDeliveryAttempt,
     ALDeliveryCarrierFallback,
+    ALDeliveryDurabilityDowngrade,
     ALDeliveryEvidence,
     ALDeliveryFallbackReason,
     ALDeliveryLifecycle,
@@ -132,5 +133,11 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-export type { ALStorageEvent, ALStorageRecoveryOutcome } from '@shared/alm/storage/al-storage-event.ts';
+export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+export type {
+    ALStorageEvent,
+    ALStorageHealthState,
+    ALStoragePersistOutcome,
+    ALStorageRecoveryOutcome
+} from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';

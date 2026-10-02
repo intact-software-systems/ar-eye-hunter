@@ -418,7 +418,8 @@ export namespace ALOutboundMessageRuntime {
  *   and the reverse. That is sound because a message's durability is fixed by its policy, so the same
  *   msgId always resolves to the same lane. A caller that re-sent one msgId under another durability
  *   would get a second copy in the other lane, whose receipt never completes, because every control
- *   for that id goes to the memory lane first. No caller does this.
+ *   for that id goes to the memory lane first. The one re-send is the volatile downgrade of a durable
+ *   send its storage refused: that admission committed nothing, so the memory lane holds the only copy.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
     private readonly sendControls = new ALOutboundSendControls();

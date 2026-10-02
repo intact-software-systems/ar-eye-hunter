@@ -40,6 +40,7 @@ export type {
 export type {
     ALDeliveryAttempt,
     ALDeliveryCarrierFallback,
+    ALDeliveryDurabilityDowngrade,
     ALDeliveryEvidence,
     ALDeliveryFallbackReason,
     ALDeliveryLifecycle,

@@ -739,7 +739,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         seeded.close();
         const events: ALStorageEvent[] = [];
         const sessionId = `storage-port-${crypto.randomUUID()}`;
-        const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
+        const wsClientId = `browser-ws-client:${sessionId}`;
         configureBrowserALRuntimeStores(sessionId, {
             scope: SCOPE,
             diagnosticsPorts: toRallarDiagnosticsPorts({ storage: (event) => events.push(event) })

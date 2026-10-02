@@ -646,8 +646,9 @@ its inbound `admission-outcome` naming the storage failure. A hand-over whose re
 leaves the row to expire. A
 commit inside a work claim (a dequeued row, a repair) still throws into its claim, which retries, and
 a batch that fails for its storage records the failure on the pair's health instead of logging it.
-Every durable commit and every flushed batch is a recovery point, which ends a `failing` health. A
-write deadline, a corrupt row, a conflict and a code defect keep their own meanings.
+A committed send and a flushed batch are recovery points, which end a `failing` health; a committed
+control or receipt records none, so a failure a control recorded stays `failing` until a send or a batch
+commits. A write deadline, a corrupt row, a conflict and a code defect keep their own meanings.
 
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before
@@ -799,13 +800,18 @@ an explicit storage effect.
 Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
 the database existed, was created, was reset, or was created again after this document
 had opened it (another context's reset after a `versionchange`, an eviction without one).
+A creation, reset or eviction is a fact of the whole database, kept per database for the
+document: every store that shares it reads it at its first open after it, though another
+store's open found it, and a later open of the same store reads the database as it is.
 A pair the factory opens itself, and whose store has an `ALStorageHealth`, carries an
 [`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts) on its stores; the lane's
 first `work-batch` diagnostic hands it the batch's claims, and it states the store's one
-recovery outcome of this connect, with the expired rows that batch's reservation deleted,
-through that health (`recordRecovery`); an eviction is a failure of the health instead
-(`recordFailure`, cause `evicted`). The reporter reads no store of its own: both counts
-come from the batch the lane already runs.
+recovery outcome of this connect, with the expired rows the store's reservations deleted up
+to that batch, through that health (`recordRecovery`); an eviction is a failure of the health instead
+(`recordFailure`, cause `evicted`). The reporter reads no store of its own: the claims come
+from the batch the lane already runs, the expired rows from the queue's in-memory count. The
+inbound pair, which both carriers' lanes share, has one reporter per lane instead (see the
+[inbound README](../inbound/README.md)).
 
 [`writeIndexedDbAdmissionMutations`](../write-indexed-db-admission-mutations.ts)
 accepts already computed admission and QueueBox mutations. The pure QueueBox

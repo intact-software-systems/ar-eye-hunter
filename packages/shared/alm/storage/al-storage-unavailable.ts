@@ -1,4 +1,3 @@
-// packages/shared/alm/storage/al-storage-unavailable.ts
 /**
  * Why a browser ALM store cannot persist: IndexedDB is absent (`missing`), its open request failed
  * (`open-failed`), a reset's delete stayed blocked (`reset-blocked`), a write hit the quota (`quota`),
@@ -19,7 +18,6 @@ export interface ALStorageUnavailable {
     readonly detail: string;
 }
 
-/** Raised where only the raising code knows the cause: IndexedDB absent, an open that failed, a database that vanished. */
 export class ALStorageUnavailableError extends Error {
     readonly unavailable: ALStorageUnavailable;
 
@@ -38,10 +36,7 @@ const AL_STORAGE_UNAVAILABLE_CAUSES_BY_DOM_EXCEPTION_NAME: ReadonlyMap<string, A
     ['TransactionInactiveError', 'transaction-failed']
 ]);
 
-/**
- * The storage failure an error is, or `undefined` for every other error: a write deadline, a corrupt
- * row, a conflict and a code defect keep their own meanings. The PostgreSQL backend raises none of these.
- */
+/** A write deadline, a corrupt row, a conflict or a defect keeps its own meaning: it is no storage failure. */
 export function toALStorageUnavailable(error: Error): ALStorageUnavailable | undefined {
     if (error instanceof ALStorageUnavailableError) {
         return error.unavailable;

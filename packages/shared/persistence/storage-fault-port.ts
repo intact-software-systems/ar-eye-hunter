@@ -71,7 +71,7 @@ class ScriptedStorageFaults implements ScriptedStorageFaultPort {
         }
         const decision = typeof fault.action === 'string' ? fault.action : 'delay';
         this.observations.push({ faultId: fault.faultId, operation, decision });
-        return toStorageFaultDecision(fault);
+        return startStorageFaultDecision(fault);
     }
 }
 
@@ -83,7 +83,7 @@ function matchesStorageFault(fault: ScriptedStorageFault, operation: IndexedDbOp
 }
 
 /** The message names the fault, so the storage failure a store reports reads back to the fault that caused it. */
-function toStorageFaultDecision({ action, faultId }: ScriptedStorageFault): Promise<void> {
+function startStorageFaultDecision({ action, faultId }: ScriptedStorageFault): Promise<void> {
     if (action === 'quota') {
         return Promise.reject(new DOMException(`Scripted storage quota fault ${faultId}`, 'QuotaExceededError'));
     }

@@ -69,8 +69,8 @@ export interface ALWorkHandlerDependencies {
     readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
     /**
-     * Absent on the server lane, which has no storage health reporter, so its batch failures are
-     * logged; the browser composition always passes it.
+     * Absent on the server lane and on the browser's memory lanes, which have no storage health
+     * reporter, so their batch failures are logged; the browser's durable lanes pass it.
      */
     readonly storageHealth?: ALStorageHealth;
 }

@@ -86,7 +86,7 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 sessionInboundId,
                 { inbound: true },
-                toBrowserStoreOptions(sessionInboundId, options, storage)
+                createBrowserStoreOptions(sessionInboundId, options, storage)
             )
         },
         {
@@ -94,7 +94,7 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 wsClientId,
                 { outbound: true },
-                toBrowserStoreOptions(wsClientId, options, storage)
+                createBrowserStoreOptions(wsClientId, options, storage)
             )
         },
         {
@@ -102,14 +102,14 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 rtcOverlayId,
                 { outbound: true },
-                toBrowserStoreOptions(rtcOverlayId, options, storage)
+                createBrowserStoreOptions(rtcOverlayId, options, storage)
             )
         }
     ];
 }
 
 /** One health per store and connect, shared by every resolve of it; its events and resets name the store. */
-function toBrowserStoreOptions(
+function createBrowserStoreOptions(
     storeId: string,
     options: BrowserALRuntimeOptions,
     storage: ALStorageEventSink

@@ -1178,20 +1178,24 @@ describe('ALWorkHandler', () => {
             storageHealth: new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) })
         });
 
-        await handler.ready();
+        try {
+            await handler.ready();
 
-        await vi.waitFor(() =>
-            expect(events).toEqual([{
-                kind: 'health',
-                storeId: 'store-1',
-                status: 'failing',
-                lastFailure: { cause: 'quota', detail: 'QuotaExceededError: The quota has been exceeded.' },
-                lastRecoveryPointAtMs: undefined
-            }])
-        );
-        expect(logged).toEqual([]);
-        consoleErrorSpy.mockRestore();
-        handler.dispose();
+            await vi.waitFor(() =>
+                expect(events).toEqual([{
+                    kind: 'health',
+                    storeId: 'store-1',
+                    status: 'failing',
+                    lastFailure: { cause: 'quota', detail: 'QuotaExceededError: The quota has been exceeded.' },
+                    lastRecoveryPointAtMs: undefined
+                }])
+            );
+            expect(logged).toEqual([]);
+        }
+        finally {
+            consoleErrorSpy.mockRestore();
+            handler.dispose();
+        }
     });
 
     // A batch that released claims committed them: a recovery point that ends a failure.

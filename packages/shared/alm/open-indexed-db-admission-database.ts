@@ -225,7 +225,10 @@ async function openOrReset(
     return await toStoreSchemaMismatchReset(input);
 }
 
-/** Only the open request's own failure is `open-failed`; what the opened stores hold is checked after it. */
+/**
+ * The open request's failure, a store that fails its name validation and a schema write that fails during
+ * the upgrade are `open-failed`; what the opened stores hold is checked after it.
+ */
 async function openAdmissionStores(input: OpenIndexedDbAdmissionDatabaseInput): Promise<OpenedIndexedDb> {
     try {
         return await openIndexedDbWithValidatedStores(

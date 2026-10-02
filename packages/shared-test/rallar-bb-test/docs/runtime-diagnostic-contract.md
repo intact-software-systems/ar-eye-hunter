@@ -469,20 +469,34 @@ current shape.
 `rallar.browser.alm.storage` carries every `ALStorageEvent` but a reset; the
 event's `data` is the event itself, with `kind` and, except for `persist`, the
 `storeId` of the store it describes (`browser-session-inbound:<sessionId>`,
-`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`).
+`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`). The
+session inbound store is shared by the WS and RTC lanes, so its `recovery`
+names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
+`browser-session-inbound:<sessionId>/rtc`).
 
 - `health`: `status` (`healthy` or `failing`), `lastFailure` (an
-  `ALStorageUnavailable`: `cause` and `detail`, or `undefined` before the first
-  failure) and `lastRecoveryPointAtMs` (the store's last durable commit, or
-  `undefined` before its first). A store starts `healthy` without an event and
-  states only a change of status, never one event per send: `failing` at its
-  first storage failure, `healthy` at the first recovery point after it.
+  `ALStorageUnavailable`: `cause` and `detail`) and `lastRecoveryPointAtMs`
+  (the store's last recovery point, or `undefined` before its first). A store
+  starts `healthy` without an event and states only a change of status, never
+  one event per send: `failing` at its first storage failure, `healthy` at the
+  first recovery point after it. Every emitted event carries the failure that
+  made it `failing`, and the `healthy` that ends it keeps that failure. A later
+  failure while the store is already `failing` replaces `lastFailure` without
+  an event.
 
   A durable lane records a storage failure of its open, of a send's commit, of a
-  control, receipt or inbound admission, and of a work batch; every durable
-  commit and every flushed batch is a recovery point.
+  control, receipt or inbound admission, and of a work batch. A committed send,
+  an inbound admission that wrote work and a flushed batch are recovery points;
+  a committed control or receipt is none, so a failure a control recorded stays
+  `failing` until a send or a batch commits.
   A send whose channel chose `onStorageUnavailable: 'volatile'` and that its
   carrier then admits without storage is no recovery point.
+
+  A purge of an ended session's rows (logout, a login over a session, a session
+  switch) that fails states `failing` once for each of that session's three
+  store ids, straight on the port, since those stores are gone. Its
+  `lastFailure` is absent when the purge failed for a reason other than
+  storage; the browser logs that error instead.
 
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already
@@ -490,29 +504,35 @@ event's `data` is the event itself, with `kind` and, except for `persist`, the
   request failed, `unsupported` without `navigator.storage.persist`. It has no
   `storeId`.
 
-- `recovery`: one event per durable store per connect, `outcome` being what
-  the store found when its lane started. A store reports after its first work
-  batch, so a store that never runs a batch (an outbound store with no work on
-  its carrier) reports nothing, and a store whose open failed never starts its
-  work and reads as a `failing` `health` event instead. `outcome` is:
-  - `storage-created`: the store's open created the database, the first time
-    this document opened it
-  - `storage-reset` with `reason`: the open reset a mismatched database
-    (`schema-id-mismatch`, `store-schema-mismatch`), or created again a
-    database this document had opened after another context's `versionchange`
-    closed it (`other-context`); a reset wins over the creation it caused
+- `recovery`: one event per durable store, and per lane of the shared session
+  inbound store, per connect, `outcome` being what the store found when its
+  lane started. A lane reports after its first work batch, so a store that
+  never runs a batch (an outbound store with no work on its carrier) reports
+  nothing, and a store whose open failed never starts its work and reads as a
+  `failing` `health` event instead. The three stores of a session share one
+  per-scope database, and a creation, reset or eviction is a fact of that
+  database: every store reads it at its first open after it, whichever store's
+  open found it, and a later open of the same store (a reconnect of the same
+  session) reads the database as it is. `outcome` is:
+  - `storage-created`: the database was created, the first time this document
+    opened it
+  - `storage-reset` with `reason`: the database was reset because it did not
+    match (`schema-id-mismatch`, `store-schema-mismatch`), or created again
+    after another context's `versionchange` closed this document's connection
+    (`other-context`); a reset wins over the creation it caused
   - `restored` with `claimed` and `expired`: the database existed; `claimed` is
-    what the first batch claimed, `expired` the expired rows its reservation
-    deleted on the way
+    what the lane's first batch claimed, `expired` the expired rows of the
+    lane's own work type its reservations deleted up to that batch
   - `expired-at-recovery` with `expired`: the first batch claimed nothing and
-    its reservation deleted expired rows
+    those reservations deleted expired rows
 
   A creation of a database this document had opened, without a `versionchange`
   first, is an eviction: the store's health records it as a failure, so it
   reads as a `health` event with `status: 'failing'` and
   `lastFailure.cause: 'evicted'` instead of a recovery. `delivery-reload` waits
-  after the reload for a `restored` recovery of the session inbound store and
-  of the outbound store that held the original.
+  after the reload for a `restored` recovery of the session inbound store's WS
+  lane, which runs on every carrier, and of the outbound store that held the
+  original.
 
 ## Compatibility
 

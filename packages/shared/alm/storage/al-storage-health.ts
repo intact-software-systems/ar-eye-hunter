@@ -11,7 +11,8 @@ export namespace ALStorageHealth {
 
 /**
  * One durable store's health. It starts `healthy` and states only a change of status: the first
- * failure, and the first recovery point after it. Every durable commit is a recovery point.
+ * failure, and the first recovery point after it. A recovery point is a committed send, an inbound
+ * admission that wrote work, or a flushed batch; a committed control or receipt records none.
  */
 export class ALStorageHealth {
     private readonly state = new ObservableLatestValue<ALStorageHealthState>({

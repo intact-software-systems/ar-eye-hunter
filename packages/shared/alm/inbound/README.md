@@ -53,10 +53,12 @@ volatile duplicate over the other carrier still meets its first admission. The W
 server's runtime has no memory pair and keeps one backend for every message.
 [`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
 [`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
-its own pair on the shared engine. The IndexedDB pair is one store with one
-[`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts): whichever carrier's lane runs
-the first work batch reports the store's one recovery outcome of the connect through the
-store's health, and the other's first batch reports nothing.
+its own pair on the shared engine. The IndexedDB pair is one store shared by both carriers'
+lanes, and each lane claims only its own carrier's work type, so recovery is reported per lane:
+each lane has its own [`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts), and
+its first work batch reports the lane's one recovery outcome of the connect through the store's
+health, under the store id followed by the carrier (`<store id>/ws`, `<store id>/rtc`), with that
+lane's own claims and the expired rows of its own work type.
 
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
@@ -124,7 +126,7 @@ once, still forwards it to the children it owns and still sends its ACKs and NAC
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
-its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers above)
+its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
 The WS server narrows its current room to the frozen audience, so a session that left after the RTC
 freeze is absent from the WS receipt rather than read unconfirmed.

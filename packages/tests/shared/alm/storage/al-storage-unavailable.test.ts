@@ -1,4 +1,3 @@
-// packages/tests/shared/alm/storage/al-storage-unavailable.test.ts
 import * as FakeIndexedDb from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 

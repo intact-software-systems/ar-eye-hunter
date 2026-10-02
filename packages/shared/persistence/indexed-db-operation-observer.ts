@@ -37,7 +37,8 @@ export interface IndexedDbOperation {
 }
 
 /**
- * Told of every operation an IndexedDB owner starts, before its transaction opens or before a write it
+ * Told of every operation an IndexedDB owner starts, before the operation's own request: before its
+ * transaction opens, before a read inside a read session that is already open, or before a write it
  * computed from a finished read. A returned promise holds the operation until it settles and fails it
  * with its rejection; returning nothing lets it run at once, so a pass-through observer adds no microtask.
  */
