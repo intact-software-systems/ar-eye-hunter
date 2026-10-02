@@ -110,6 +110,7 @@ function toRoomSessionMessageDefinition(
         typeId: input.typeId,
         roomRef,
         purpose: input.purpose,
-        ...(input.durability === undefined ? {} : { durability: input.durability })
+        ...(input.durability === undefined ? {} : { durability: input.durability }),
+        ...(input.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: input.onStorageUnavailable })
     };
 }

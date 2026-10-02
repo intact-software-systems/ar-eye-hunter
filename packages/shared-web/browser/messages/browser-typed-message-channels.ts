@@ -40,7 +40,11 @@ export class BrowserTypedMessageChannels {
 
     private createChannel<T>(definition: RallarTypedMessageChannelDefinition): RallarTypedMessageChannel<T> {
         const route = { topicId: definition.topicId, typeId: definition.typeId };
-        const policy: BrowserTypedChannelPolicy = { purpose: definition.purpose, durability: definition.durability };
+        const policy: BrowserTypedChannelPolicy = {
+            purpose: definition.purpose,
+            durability: definition.durability,
+            onStorageUnavailable: definition.onStorageUnavailable ?? 'refuse'
+        };
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
                 await this.input.sender.sendTyped({ ...options, ...route, payload }, policy),

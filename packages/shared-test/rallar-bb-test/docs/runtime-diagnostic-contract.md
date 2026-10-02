@@ -480,6 +480,8 @@ event's `data` is the event itself, with `kind` and, except for `persist`, the
   A durable lane records a storage failure of its open, of a send's commit, of a
   control, receipt or inbound admission, and of a work batch; every durable
   commit and every flushed batch is a recovery point.
+  A send whose channel chose `onStorageUnavailable: 'volatile'` and that its
+  carrier then admits without storage is no recovery point.
 
 ## Compatibility
 

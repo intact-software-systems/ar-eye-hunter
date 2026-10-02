@@ -1,5 +1,5 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
-import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALDurabilityAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
 
@@ -122,6 +122,15 @@ export type ALDeliverySettlement =
         to: ALDeliveryCarrier;
         reason: ALDeliveryFallbackReason;
         detail: string;
+    }>
+    /** Storage could not hold a durable message and its channel chose `volatile`: evidence, never an end. */
+    | Readonly<{
+        kind: 'durability-downgrade';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        requested: ALDurabilityAlgo;
+        cause: ALStorageUnavailable['cause'];
     }>
     /** The sender's strategy has no carrier left to try after an `unroutable` verdict. */
     | Readonly<{
@@ -266,6 +275,11 @@ export interface ALDeliveryReceiptDowngrade {
     readonly tracked: ALAckAlgo;
 }
 
+export interface ALDeliveryDurabilityDowngrade {
+    readonly requested: ALDurabilityAlgo;
+    readonly cause: ALStorageUnavailable['cause'];
+}
+
 /** The one hand-over of an admitted message to its fallback carrier; after it the left carrier's receipt facts move nothing. */
 export interface ALDeliveryCarrierFallback {
     readonly from: ALDeliveryCarrier;
@@ -290,6 +304,8 @@ export interface ALDeliveryEvidence extends ALDeliveryReceiptEvidence {
     readonly relayRejection: ALDeliveryRelayRejection | undefined;
     /** Undefined unless the admitting carrier tracks a weaker receipt than the send's policy asked for. */
     readonly receiptDowngrade: ALDeliveryReceiptDowngrade | undefined;
+    /** Undefined unless storage could not hold a durable send and its channel sent it without storage. */
+    readonly durabilityDowngrade: ALDeliveryDurabilityDowngrade | undefined;
     /** Undefined unless the strategy handed the admitted message to its fallback carrier (D56). */
     readonly carrierFallback: ALDeliveryCarrierFallback | undefined;
     readonly failure: ALDeliveryFailure | undefined;
@@ -356,6 +372,7 @@ export function createInitialALDeliveryLifecycle(
             unconfirmedRecipientPeerIds: [],
             relayRejection: undefined,
             receiptDowngrade: undefined,
+            durabilityDowngrade: undefined,
             carrierFallback: undefined,
             failure: undefined,
             reason: undefined

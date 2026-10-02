@@ -719,6 +719,42 @@ describe('carrier refusal handed to the fallback carrier', () => {
     });
 });
 
+describe('a durable send admitted without storage', () => {
+    it('records the downgrade as evidence and leaves the state to the volatile admission', () => {
+        const downgraded = computeALDeliveryLifecycle(createLifecycle('receiver'), {
+            kind: 'durability-downgrade',
+            msgId: MSG_ID,
+            carrier: 'ws',
+            atMs: AT_MS,
+            requested: 'local-outbox',
+            cause: 'quota'
+        });
+        const admitted = computeALDeliveryLifecycle(
+            downgraded,
+            toAdmissionSettlement(downgraded, {
+                kind: 'admitted',
+                durable: false,
+                queuedAttempts: 1
+            })
+        );
+
+        expect(downgraded.state).toBe('submitted');
+        expect(downgraded.evidence.durabilityDowngrade).toEqual({
+            requested: 'local-outbox',
+            cause: 'quota'
+        });
+        expect(admitted.state).toBe('queued');
+        expect(admitted.evidence).toMatchObject({
+            admittedDurable: false,
+            durabilityDowngrade: { requested: 'local-outbox', cause: 'quota' }
+        });
+    });
+
+    it('states no downgrade before one is settled', () => {
+        expect(createLifecycle('receiver').evidence.durabilityDowngrade).toBeUndefined();
+    });
+});
+
 describe('transport-accepted terminality', () => {
     it.each([
         { ackMode: 'none' as const, expectedTerminal: true },

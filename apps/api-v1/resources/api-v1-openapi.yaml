@@ -3732,6 +3732,7 @@ components:
             - admission
             - carrier-refused
             - carrier-fallback
+            - durability-downgrade
             - attempts-exhausted
             - attempt-started
             - attempt-settled

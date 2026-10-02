@@ -664,8 +664,15 @@ await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.roomRef });
 the room's frozen audience; both are at-least-once, receipted, volatile and
 30 s by default, and every send option overrides its default.
 `durability: 'local-outbox'` or `'local-inbox'` opts the channel into browser
-storage. A WS send with scope `world` or `all`, and a `best-effort` send, ask
-for no receipt unless the send states `ack`.
+storage. When storage cannot hold a durable send, the handle reads `failed`
+with `failure: { kind: 'storage-unavailable', cause }`; a channel defined with
+`onStorageUnavailable: 'volatile'` sends the same message once without storage
+instead, and its evidence names `durabilityDowngrade: { requested, cause }`
+beside `admittedDurable: false`. A downgraded `local-inbox` send also loses the
+receiver's inbox persistence, and a fallback carrier receives the downgraded
+message. A lane send names no channel, so it always refuses. A WS send with
+scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
+the send states `ack`.
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and

@@ -1,4 +1,7 @@
-import type { RallarMessageSendBase } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessageSendBase,
+    RallarStorageUnavailablePolicy
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALDurabilityAlgo, ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import {
@@ -10,6 +13,7 @@ import {
 export interface BrowserTypedChannelPolicy {
     readonly purpose: ALChannelPurpose;
     readonly durability: ALDurabilityAlgo | undefined;
+    readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
 }
 
 export interface BrowserMessageSendDefaults {
@@ -25,6 +29,13 @@ export interface ToBrowserMessageSendDefaultsInput {
     readonly channel: BrowserTypedChannelPolicy | undefined;
     readonly hasLogicalAudience: boolean;
     readonly laneTtlMs: number;
+}
+
+/** A lane send (`messages.rtc.send`, `messages.ws.send`) names no channel, so storage it cannot use refuses it. */
+export function resolveBrowserStorageUnavailablePolicy(
+    channel: BrowserTypedChannelPolicy | undefined
+): RallarStorageUnavailablePolicy {
+    return channel?.onStorageUnavailable ?? 'refuse';
 }
 
 /**

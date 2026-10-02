@@ -1,10 +1,11 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliveryCarrier,
+    ALDeliveryDurabilityDowngrade,
     ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
@@ -18,6 +19,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 import type { BrowserSessionDeliveries } from './browser-session-deliveries.ts';
+import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
 
 /** What the strategy does after one carrier leg: hand the send to the fallback carrier, stop, or expire it. */
 export type BrowserFallbackDisposition = 'retry' | 'stop' | 'expired';
@@ -26,6 +28,7 @@ interface CapturedMessageAdmission {
     readonly message: ALMessage;
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly trackedReceiptAlgo: ALAckAlgo;
+    readonly durabilityDowngrade: ALDeliveryDurabilityDowngrade | undefined;
 }
 
 /** The verdict of one carrier leg and what the strategy does next with it. */
@@ -44,6 +47,7 @@ export namespace BrowserRallarMessageDispatch {
         readonly message: ALMessage;
         readonly canFallback: boolean;
         readonly payloadIssues: readonly RallarValidationIssue[];
+        readonly onStorageUnavailable: RallarStorageUnavailablePolicy;
     }
 
     export interface Input {
@@ -102,20 +106,11 @@ export class BrowserRallarMessageDispatch {
         }
         this.input.deliveries.updateDeadline(result.message);
         const sink = lifetime.settlements[delivery.carrier];
-        const admission: CarrierAdmission = {
-            msgId: delivery.message.id.msgId,
-            carrier: delivery.carrier,
-            verdict: result.verdict,
-            trackedReceiptAlgo: result.trackedReceiptAlgo,
-            fallback: delivery.canFallback
-                ? computeFallbackDisposition(
-                    result.verdict,
-                    result.message.constraints?.expiresAtMs,
-                    this.input.nowMs()
-                )
-                : 'stop'
-        };
+        const admission = this.toCarrierAdmission(delivery, result);
         this.watchFallbackLeg(delivery, result, lifetime);
+        if (result.durabilityDowngrade !== undefined) {
+            sink(toDurabilityDowngradeSettlement(admission, result.durabilityDowngrade, this.input.nowMs()));
+        }
         sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
@@ -131,6 +126,25 @@ export class BrowserRallarMessageDispatch {
         if (end) {
             sink(end);
         }
+    }
+
+    private toCarrierAdmission(
+        delivery: BrowserRallarMessageDispatch.Delivery,
+        result: CapturedMessageAdmission
+    ): CarrierAdmission {
+        return {
+            msgId: delivery.message.id.msgId,
+            carrier: delivery.carrier,
+            verdict: result.verdict,
+            trackedReceiptAlgo: result.trackedReceiptAlgo,
+            fallback: delivery.canFallback
+                ? computeFallbackDisposition(
+                    result.verdict,
+                    result.message.constraints?.expiresAtMs,
+                    this.input.nowMs()
+                )
+                : 'stop'
+        };
     }
 
     /** An admitted RTC leg of `rtc-with-ws-fallback` may still hand over after admission (D56); `ws-then-rtc` does not (Q1). */
@@ -158,7 +172,7 @@ export class BrowserRallarMessageDispatch {
     private async admitCapturedMessage(
         delivery: BrowserRallarMessageDispatch.Delivery
     ): Promise<CapturedMessageAdmission> {
-        const { message, context } = delivery;
+        const { message } = delivery;
         const validated = decodeALMessageValue(message);
         const issue = delivery.payloadIssues[0];
         if (issue) {
@@ -178,7 +192,7 @@ export class BrowserRallarMessageDispatch {
             });
         }
         try {
-            return await writeCarrierOutboxAdmission(context, delivery, message);
+            return await writeChannelAdmission(delivery);
         }
         catch (caught) {
             return toUnadmittedAdmission(message, { kind: 'failed', detail: toError(caught).message });
@@ -187,7 +201,45 @@ export class BrowserRallarMessageDispatch {
 }
 
 function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionVerdict): CapturedMessageAdmission {
-    return { message, verdict, trackedReceiptAlgo: 'none' };
+    return { message, verdict, trackedReceiptAlgo: 'none', durabilityDowngrade: undefined };
+}
+
+/** Admitting the same msgId again is sound because a `storage-unavailable` admission committed nothing. */
+async function writeChannelAdmission(
+    delivery: BrowserRallarMessageDispatch.Delivery
+): Promise<CapturedMessageAdmission> {
+    const admitted = await writeCarrierOutboxAdmission(delivery.context, delivery, delivery.message);
+    if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
+        return toCapturedAdmission(admitted, undefined);
+    }
+    const downgrade: ALDeliveryDurabilityDowngrade = {
+        requested: toRequestedDurability(delivery.message),
+        cause: admitted.verdict.cause
+    };
+    return toCapturedAdmission(
+        await writeCarrierOutboxAdmission(delivery.context, delivery, toVolatileALMessage(delivery.message)),
+        downgrade
+    );
+}
+
+function toCapturedAdmission(
+    result: ALOutboundEnqueueResult,
+    durabilityDowngrade: ALDeliveryDurabilityDowngrade | undefined
+): CapturedMessageAdmission {
+    return {
+        message: result.message,
+        verdict: result.verdict,
+        trackedReceiptAlgo: result.trackedReceiptAlgo,
+        durabilityDowngrade
+    };
+}
+
+function toRequestedDurability(message: ALMessage): ALDurabilityAlgo {
+    return message.qos?.durability?.algo ?? 'volatile';
+}
+
+function toVolatileALMessage(message: ALMessage): ALMessage {
+    return { ...message, qos: { ...message.qos, durability: { algo: 'volatile' } } };
 }
 
 /** The carrier owns the message now: admitted, already held, or retained for its own replay. */
@@ -235,6 +287,20 @@ function toCarrierAdmissionSettlement(admission: CarrierAdmission, atMs: number)
         : { kind: 'admission', msgId, carrier, atMs, verdict, trackedReceiptAlgo };
 }
 
+function toDurabilityDowngradeSettlement(
+    admission: CarrierAdmission,
+    downgrade: ALDeliveryDurabilityDowngrade,
+    atMs: number
+): ALDeliverySettlement {
+    return {
+        kind: 'durability-downgrade',
+        msgId: admission.msgId,
+        carrier: admission.carrier,
+        atMs,
+        ...downgrade
+    };
+}
+
 /** What ends a leg no fallback continues: the deadline it reached first, or no carrier left to route it. */
 function toCarrierAdmissionEndSettlement(
     admission: CarrierAdmission,
@@ -258,7 +324,7 @@ function toCarrierAdmissionEndSettlement(
 
 export function wakeQueueBoxEngineIfQueued(
     engine: ApiMiddleware['middleware']['qboxEngine'],
-    result: CapturedMessageAdmission
+    result: Pick<ALOutboundEnqueueResult, 'verdict'>
 ): void {
     if (result.verdict.kind === 'admitted' || result.verdict.kind === 'duplicate') {
         engine.wake();

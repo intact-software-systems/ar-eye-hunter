@@ -101,6 +101,7 @@ export type {
     RallarStartResult,
     RallarStateEventListener,
     RallarStateListener,
+    RallarStorageUnavailablePolicy,
     RallarSubscriptionScope,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,

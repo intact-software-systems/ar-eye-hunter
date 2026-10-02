@@ -267,7 +267,14 @@ function createDispatchHarness(
         registry,
         send: (message) => {
             const handle = registry.open(message, carrier);
-            dispatch.send({ context: middleware, carrier, message, canFallback, payloadIssues: [] });
+            dispatch.send({
+                context: middleware,
+                carrier,
+                message,
+                canFallback,
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
+            });
             return handle;
         }
     };

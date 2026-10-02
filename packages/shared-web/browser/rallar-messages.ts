@@ -13,6 +13,7 @@ export type {
     RallarMessageWaitOptions,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
+    RallarStorageUnavailablePolicy,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendOptions,

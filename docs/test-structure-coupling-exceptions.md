@@ -3418,6 +3418,66 @@ moved or changed test.
         "requiredConstraint": "The runtime falls back to REST only when the WS path returned no delivery (no server id known), never after a WS attempt.",
         "failureRationale": "The WS outcome reads the same whether or not a REST copy was also sent, and a REST copy after a WS command could apply the command twice on the server; the absent REST call is the only witness."
       }
+    },
+    {
+      "id": "browser-storage-unavailable-refuse-admits-once",
+      "domain": "Browser durable send storage cannot hold",
+      "owner": "Rallar browser maintainers",
+      "summary": "A refusing channel makes one durable admission and none without storage. Executable assertion: “reads failed with the storage cause on a channel that refuses, and is admitted nowhere else”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#reads failed with the storage cause on a channel that refuses, and is admitted nowhere else",
+      "coverageRelation": "The test replaces the carrier outbound admission port with one that answers storage-unavailable or admits, sends through the real sender and dispatch, and reads the handle and the envelopes the port received.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "One admission attempt for the send.",
+        "requiredConstraint": "A refusing channel never admits the message a second time.",
+        "failureRationale": "A second admission would send a message the application chose to fail."
+      }
+    },
+    {
+      "id": "browser-storage-unavailable-volatile-admits-once-more",
+      "domain": "Browser durable send storage cannot hold",
+      "owner": "Rallar browser maintainers",
+      "summary": "A volatile channel adds exactly one admission of the same message without storage to the failed durable one. Executable assertion: “admits the same message once without storage on a channel that chose volatile”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#admits the same message once without storage on a channel that chose volatile",
+      "coverageRelation": "The test replaces the carrier outbound admission port with one that answers storage-unavailable or admits, sends through the real sender and dispatch, and reads the handle and the envelopes the port received.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "Two admissions: the durable attempt, then one of the same msgId without storage.",
+        "requiredConstraint": "The admission without storage happens once and only after the durable admission committed nothing.",
+        "failureRationale": "A repeated admission without storage sends one message twice."
+      }
+    },
+    {
+      "id": "browser-storage-held-send-admits-once",
+      "domain": "Browser durable send storage cannot hold",
+      "owner": "Rallar browser maintainers",
+      "summary": "A durable send storage holds is admitted once even on a channel that chose volatile. Executable assertion: “states no downgrade for a send storage held, whatever the channel chose”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#states no downgrade for a send storage held, whatever the channel chose",
+      "coverageRelation": "The test replaces the carrier outbound admission port with one that answers storage-unavailable or admits, sends through the real sender and dispatch, and reads the handle and the envelopes the port received.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "One admission for a send storage held.",
+        "requiredConstraint": "Choosing volatile never adds an admission while storage holds the send.",
+        "failureRationale": "An extra admission would send a held message twice."
+      }
+    },
+    {
+      "id": "browser-storage-downgrade-reaches-fallback-once",
+      "domain": "Browser durable send storage cannot hold",
+      "owner": "Rallar browser maintainers",
+      "summary": "A fallback carrier receives the already-downgraded envelope, so storage is asked once per send. Executable assertion: “hands the downgraded message to the fallback carrier without asking storage again”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again",
+      "coverageRelation": "The test replaces the carrier outbound admission port with one that answers storage-unavailable or admits, sends through the real sender and dispatch, and reads the handle and the envelopes the port received.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "The first carrier sees the durable attempt and one admission without storage; the fallback carrier one volatile admission.",
+        "requiredConstraint": "The downgrade happens once per send, whichever carrier ends up holding it.",
+        "failureRationale": "Asking storage again on the fallback leg would repeat the durable failure and could downgrade twice."
+      }
     }
   ],
   "entries": [
@@ -7875,6 +7935,72 @@ moved or changed test.
       "owner": "Relic Hunters maintainers",
       "rationale": "`expect(deps.refreshRooms).toHaveBeenCalledTimes(1);` pins the room creation to a generated unique name and one rooms refresh; the hydrated room reads the same either way.",
       "semanticCoverage": "apps/relic-hunters-v1/tests/relic-hunters-runtime.test.ts#hydrates the created room with its current snapshot and refreshed room state"
+    },
+    {
+      "id": "test-structure-coupling-19eea405be1b7baf",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-unavailable-refuse-admits-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A refusing channel makes the one durable admission and no second one.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#reads failed with the storage cause on a channel that refuses, and is admitted nowhere else"
+    },
+    {
+      "id": "test-structure-coupling-745e430b2f546159",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-unavailable-volatile-admits-once-more",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A volatile channel adds exactly one admission without storage.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#admits the same message once without storage on a channel that chose volatile"
+    },
+    {
+      "id": "test-structure-coupling-e0d383cef2b11ac5",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-held-send-admits-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A send storage held is admitted once.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#states no downgrade for a send storage held, whatever the channel chose"
+    },
+    {
+      "id": "test-structure-coupling-63953d25d3f8ee3b",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-downgrade-reaches-fallback-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The first carrier sees the durable attempt and the one admission without storage.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again"
+    },
+    {
+      "id": "test-structure-coupling-a0017b3df5d28f28",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-downgrade-reaches-fallback-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The fallback carrier admits the downgraded message once.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again"
+    },
+    {
+      "id": "test-structure-coupling-a56fc05857187604",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-downgrade-reaches-fallback-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The envelope the fallback carrier receives is already volatile.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again"
     }
   ]
 }

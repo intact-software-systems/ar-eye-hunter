@@ -315,3 +315,36 @@ it('gives a named room message the notification purpose and passes a declared on
         }
     ]);
 });
+
+it('passes a declared storage choice through to the room channel', async () => {
+    const { createRoomSession } = await import('@shared-web/browser/rooms/room-session.ts');
+    const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+    const room: CreateRoomSessionInput['messages']['room'] = vi.fn();
+    const session = createRoomSession({
+        roomRef,
+        stateStore: {} as CreateRoomSessionInput['stateStore'],
+        messages: { room } as CreateRoomSessionInput['messages'],
+        realtime: {} as CreateRoomSessionInput['realtime'],
+        leaveRoom: vi.fn(),
+        refreshRoom: vi.fn(),
+        createFormation: vi.fn()
+    });
+
+    session.message({
+        topicId: 'room.cmd',
+        typeId: 'room.cmd.v1',
+        purpose: 'command',
+        durability: 'local-outbox',
+        onStorageUnavailable: 'volatile'
+    });
+
+    const definitions = vi.mocked(room).mock.calls.map(([definition]) => definition);
+    expect(definitions).toEqual([{
+        topicId: 'room.cmd',
+        typeId: 'room.cmd.v1',
+        roomRef,
+        purpose: 'command',
+        durability: 'local-outbox',
+        onStorageUnavailable: 'volatile'
+    }]);
+});

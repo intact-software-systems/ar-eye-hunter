@@ -138,7 +138,14 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
         wsAdmissions,
         send: async (message, canFallback) => {
             const handle = deliveries.open(message, 'rtc');
-            dispatch.send({ context, carrier: 'rtc', message, canFallback, payloadIssues: [] });
+            dispatch.send({
+                context,
+                carrier: 'rtc',
+                message,
+                canFallback,
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
+            });
             await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
             return handle;
         }

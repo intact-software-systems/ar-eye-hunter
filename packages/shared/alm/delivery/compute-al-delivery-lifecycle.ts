@@ -21,6 +21,10 @@ type ALDeliveryAcknowledgementSettlement = Extract<ALDeliverySettlement, Readonl
 type ALDeliveryRelayRejectedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'relay-rejected'; }>>;
 type ALDeliveryReceiptExhaustedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'receipt-exhausted'; }>>;
 type ALDeliveryCarrierFallbackSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'carrier-fallback'; }>>;
+type ALDeliveryDurabilityDowngradeSettlement = Extract<
+    ALDeliverySettlement,
+    Readonly<{ kind: 'durability-downgrade'; }>
+>;
 
 export function computeALDeliveryLifecycle(
     previous: ALDeliveryLifecycle,
@@ -45,6 +49,8 @@ export function computeALDeliveryLifecycle(
             });
         case 'carrier-fallback':
             return toCarrierFallbackLifecycle(previous, settlement);
+        case 'durability-downgrade':
+            return toDurabilityDowngradeLifecycle(previous, settlement);
         case 'attempt-started':
         case 'attempt-settled':
             return toAttemptLifecycle(previous, settlement);
@@ -264,6 +270,17 @@ function toCarrierFallbackLifecycle(
     return {
         ...previous,
         evidence: { ...previous.evidence, carrierFallback: { from, to, reason, atMs, detail } }
+    };
+}
+
+function toDurabilityDowngradeLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryDurabilityDowngradeSettlement
+): ALDeliveryLifecycle {
+    const { requested, cause } = settlement;
+    return {
+        ...previous,
+        evidence: { ...previous.evidence, durabilityDowngrade: { requested, cause } }
     };
 }
 
