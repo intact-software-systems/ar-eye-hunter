@@ -11,18 +11,30 @@ interface ALStorageBootstrap {
     readonly expiredCount: number;
 }
 
-/** Reports a durable store's one recovery of this connect; only a pair whose backend opened IndexedDB has one. */
+/**
+ * Reports one lane's recovery of a durable store for this connect; only a pair whose backend opened
+ * IndexedDB has one. A store two lanes share has one reporter per lane.
+ */
 export interface ALStorageRecoveryReporter {
-    /** The store's first work batch ended: its claims are what the store restored. Later batches report nothing. */
+    /** The lane's first work batch ended: its claims are what the lane restored. Later batches report nothing. */
     reportFirstBatch(claimedCount: number): void;
+}
+
+/** One lane of a store two lanes share: its outcome names it, and counts only the rows of its own work type. */
+export interface ALStorageRecoveryLane {
+    readonly name: string;
+    readonly workTypeId: string;
 }
 
 export interface CreateALStorageRecoveryReporterInput {
     /** What the store's latest open found; undefined before its first open. */
     readonly getStorageOpening: () => ALStorageOpening | undefined;
+    /** The expired rows the lane's reservations deleted, up to the report. */
     readonly getReservationExpiredDeleteCount: () => number;
     /** The store's health: a recovery is stated through it, and an eviction is a failure of it. */
     readonly storageHealth: ALStorageHealth;
+    /** The lane named on the outcome; `undefined` for a store one lane owns. */
+    readonly lane: string | undefined;
 }
 
 export function createALStorageRecoveryReporter(
@@ -39,7 +51,7 @@ export function createALStorageRecoveryReporter(
             const expiredCount = input.getReservationExpiredDeleteCount();
             computeALStorageRecovery(opening, { claimedCount, expiredCount }).fold(
                 (failure) => input.storageHealth.recordFailure(failure),
-                (outcome) => input.storageHealth.recordRecovery(outcome)
+                (outcome) => input.storageHealth.recordRecovery(outcome, input.lane)
             );
         }
     };

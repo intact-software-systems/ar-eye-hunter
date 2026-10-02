@@ -5,6 +5,7 @@ import { Either } from '../../../resilience/Either.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryReporter } from '../../storage/al-storage-recovery-reporter.ts';
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
@@ -79,6 +80,7 @@ export class ALInboundStoreLane {
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
+    private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private emptyRoundCount = 0;
     private emptyRoundsFromMs: number | undefined;
@@ -97,6 +99,10 @@ export class ALInboundStoreLane {
         this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
         this.delivery = new ALInboundAdmittedDelivery(this.dependencies);
+        this.storageRecovery = input.stores.createStorageRecovery?.({
+            name: input.runtime.carrier,
+            workTypeId: toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier)
+        });
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
@@ -246,7 +252,7 @@ export class ALInboundStoreLane {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
-            this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
+            this.storageRecovery?.reportFirstBatch(event.claimedCount);
             this.recordWorkBatch(event);
         }
     }

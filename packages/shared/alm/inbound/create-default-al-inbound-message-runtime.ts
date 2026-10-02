@@ -48,7 +48,7 @@ export function createDefaultALInboundRuntimeResources(
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
         storageHealth: stores.storageHealth,
-        storageRecovery: stores.storageRecovery,
+        createStorageRecovery: stores.createStorageRecovery,
         volatileStores: input.volatileStores,
         effectWorkerId: `al-inbound:${crypto.randomUUID()}`,
         effectPreparation: {

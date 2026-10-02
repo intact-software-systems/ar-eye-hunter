@@ -6,7 +6,8 @@ import {
     beforeEach,
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
@@ -167,6 +168,29 @@ describe('Rallar auth logout and transport cleanup contract', () => {
                 lastRecoveryPointAtMs: undefined
             }))
         );
+    });
+
+    it('logs a purge that failed for a reason other than storage, beside the failing health it states', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const events: ALStorageEvent[] = [];
+        const failure = new TypeError('Browser AL runtime cleanup key prefix is invalid');
+        recordDisconnectAndPurgeSteps(failure);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const facade = createRallarFacade();
+            facade.setDefaults({ applicationId: 'purge-app', diagnosticsPorts: { storage: (event) => events.push(event) } });
+            await facade.connect();
+
+            await expect(facade.auth.logout()).resolves.toBeUndefined();
+
+            expect(consoleError).toHaveBeenCalledWith(expect.any(String), failure);
+            expect(events.map((event) => event.kind === 'health' ? [event.status, event.lastFailure] : event.kind)).toEqual(
+                toBrowserSessionALRuntimeStoreIds('session-1').map(() => ['failing', undefined])
+            );
+        }
+        finally {
+            consoleError.mockRestore();
+        }
     });
 
     it('does not reconnect with a stale session while manual logout is in progress', async () => {

@@ -208,13 +208,22 @@ function startBrowserALRuntimeExpiryEviction(
         });
 }
 
-/** The prefix leaves the pre-scope database out, so it stays until the browser evicts it. */
+/**
+ * The prefix leaves the pre-scope database out, so it stays until the browser evicts it. A browser that
+ * cannot list its databases, or fails to, still has the current scope's swept.
+ */
 async function readBrowserALRuntimeDbNames(currentScope: StateScope): Promise<readonly string[]> {
     if (typeof indexedDB.databases !== 'function') {
         return [toBrowserALRuntimeDbName(currentScope)];
     }
-    const databases = await indexedDB.databases();
-    return databases.flatMap(({ name }) => name?.startsWith(BROWSER_AL_RUNTIME_DB_NAME_PREFIX) ? [name] : []);
+    try {
+        const databases = await indexedDB.databases();
+        return databases.flatMap(({ name }) => name?.startsWith(BROWSER_AL_RUNTIME_DB_NAME_PREFIX) ? [name] : []);
+    }
+    catch (error) {
+        console.error('Failed to list the browser AL runtime databases:', toError(error));
+        return [toBrowserALRuntimeDbName(currentScope)];
+    }
 }
 
 /** A failing database does not keep the others from being swept; its failure is rethrown after them. */

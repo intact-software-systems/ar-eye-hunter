@@ -5,6 +5,7 @@ import type {
 } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export type ALStorageAvailability =
     | Readonly<{ kind: 'available'; }>
@@ -47,9 +48,9 @@ export class BrowserALStorageAvailability {
             return;
         }
         this.persistRequested = true;
-        void readStoragePersistOutcome(this.input.requestPersist).then((outcome) =>
-            this.input.storage({ kind: 'persist', outcome })
-        );
+        void readStoragePersistOutcome(this.input.requestPersist)
+            .then((outcome) => this.input.storage({ kind: 'persist', outcome }))
+            .catch((error) => console.error('Failed to report the storage persist outcome:', toError(error)));
     }
 }
 
@@ -69,7 +70,10 @@ export function computeALStorageAvailability(
     if (verdict.kind === 'storage-unavailable') {
         return { kind: 'unavailable', reason: { cause: verdict.cause, detail: verdict.detail } };
     }
-    return verdict.kind === 'admitted' && verdict.durable ? { kind: 'available' } : previous;
+    if (verdict.kind !== 'admitted' || !verdict.durable || previous.kind === 'available') {
+        return previous;
+    }
+    return { kind: 'available' };
 }
 
 /** Reads an earlier grant first, so a browser that already persists this origin is not asked again. */

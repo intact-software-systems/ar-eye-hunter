@@ -18,6 +18,7 @@ import { createInboundTestRuntime } from './inbound-runtime-test-fixture.ts';
 
 const STORE_ID = 'recovery-store';
 const WORK_TYPE = 'RECOVERY_WORK';
+const RTC_WORK_TYPE = 'RECOVERY_RTC_WORK';
 const START_MS = 1_800_000_000_000;
 
 describe('storage recovery outcome of a durable store', () => {
@@ -119,19 +120,45 @@ describe('storage recovery outcome of a durable store', () => {
         expect(store.events).toHaveLength(1);
     });
 
-    it('reports one outcome from a durable lane\'s first work batch', async () => {
+    // The session inbound pair is shared by both carriers' lanes, and each claims only its own carrier's rows.
+    it('reports one outcome per carrier lane of a shared pair, each from its own first work batch', async () => {
         const events: ALStorageEvent[] = [];
         const stores = createDefaultIndexedDbALInboundRuntimeStores({
             dbName: newDbName(),
             namespace: 'recovery-lane',
             storageHealth: new ALStorageHealth({ storeId: STORE_ID, storage: (event) => events.push(event) })
         });
-        const { runtime } = createInboundTestRuntime({ stores, carrier: 'ws', effectWorkerId: 'al-inbound:recovery' });
+        const ws = createInboundTestRuntime({ stores, carrier: 'ws', effectWorkerId: 'al-inbound:recovery-ws' });
+        const rtc = createInboundTestRuntime({ stores, carrier: 'rtc', effectWorkerId: 'al-inbound:recovery-rtc' });
 
-        await runtime.ready();
-        await runtime.ready();
+        await ws.runtime.ready();
+        await rtc.runtime.ready();
+        await ws.runtime.ready();
 
-        expect(events).toEqual([toRecoveryEvent({ kind: 'storage-created' })]);
+        expect(events).toEqual([
+            toRecoveryEvent({ kind: 'storage-created' }, 'ws'),
+            toRecoveryEvent({ kind: 'storage-created' }, 'rtc')
+        ]);
+    });
+
+    it('counts each lane\'s own claims and expired rows when the other lane batches first', async () => {
+        const dbName = newDbName();
+        const clock = { nowMs: START_MS };
+        const previous = await openRecoveryStore(dbName, clock);
+        await previous.stores.workQueue.enqueue(workEntry(undefined, RTC_WORK_TYPE));
+        await previous.stores.workQueue.enqueue(workEntry(undefined, RTC_WORK_TYPE));
+        await previous.stores.workQueue.enqueue(workEntry(START_MS + 1_000, WORK_TYPE));
+        clock.nowMs = START_MS + 2_000;
+
+        const store = await openRecoveryStore(dbName, clock);
+        const rtcLane = store.stores.createStorageRecovery?.({ name: 'rtc', workTypeId: RTC_WORK_TYPE });
+        store.report((await reserveAll(store.stores.workQueue)).size);
+        rtcLane?.reportFirstBatch((await reserveAll(store.stores.workQueue, RTC_WORK_TYPE)).size);
+
+        expect(store.events).toEqual([
+            toRecoveryEvent({ kind: 'expired-at-recovery', expired: 1 }),
+            toRecoveryEvent({ kind: 'restored', claimed: 2, expired: 0 }, 'rtc')
+        ]);
     });
 });
 
@@ -150,20 +177,21 @@ async function openRecoveryStore(dbName: string, clock = { nowMs: START_MS }): P
         storageHealth: new ALStorageHealth({ storeId: STORE_ID, storage: (event) => events.push(event) })
     });
     await stores.admissionStore.ready();
+    const lane = stores.createStorageRecovery?.({ name: 'ws', workTypeId: WORK_TYPE });
     return {
         stores,
         events,
-        report: (claimedCount) => stores.storageRecovery?.reportFirstBatch(claimedCount)
+        report: (claimedCount) => lane?.reportFirstBatch(claimedCount)
     };
 }
 
-function toRecoveryEvent(outcome: ALStorageRecoveryOutcome): ALStorageEvent {
-    return { kind: 'recovery', storeId: STORE_ID, outcome };
+function toRecoveryEvent(outcome: ALStorageRecoveryOutcome, lane = 'ws'): ALStorageEvent {
+    return { kind: 'recovery', storeId: `${STORE_ID}/${lane}`, outcome };
 }
 
-async function reserveAll(queue: RecoveryStore['stores']['workQueue']) {
+async function reserveAll(queue: RecoveryStore['stores']['workQueue'], typeId = WORK_TYPE) {
     return await queue.reserveEntries({
-        typeIds: new Set([WORK_TYPE]),
+        typeIds: new Set([typeId]),
         statusIds: new Set(NEW_AND_RETRY_STATUSES),
         reservationInput: { maxToReserve: 16, maxAttempts: 5 },
         observedEntries: undefined
@@ -171,10 +199,10 @@ async function reserveAll(queue: RecoveryStore['stores']['workQueue']) {
 }
 
 /** Undefined `expiresAtMs` keeps the row until it is claimed. */
-function workEntry(expiresAtMs: number | undefined): ResourceEntry {
+function workEntry(expiresAtMs: number | undefined, typeId = WORK_TYPE): ResourceEntry {
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(
         newALUnicastMessage('sender', newALEventRoute('test', crypto.randomUUID()), 'receiver', 'test', { value: 1 }),
-        WORK_TYPE
+        typeId
     );
     return expiresAtMs === undefined
         ? entry

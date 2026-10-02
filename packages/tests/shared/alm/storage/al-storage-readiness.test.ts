@@ -96,6 +96,33 @@ describe('ALStorageReadiness', () => {
         expect(reads).toEqual(['read']);
     });
 
+    // Two callers awaiting one failed open both clear it; the later clear must not discard an open started between them.
+    it('keeps an open started while another caller of the failed open has yet to resume', async () => {
+        let opens = 0;
+        const readiness = new ALStorageReadiness({
+            openStores: async () => {
+                opens += 1;
+                if (opens === 1) {
+                    throw OPEN_FAILED;
+                }
+                await new Promise<void>(() => {});
+            },
+            startWork: async () => {},
+            storageHealth: undefined
+        });
+        await readiness.readOpenedStore(async () => 'row', 'none');
+
+        queueMicrotask(() => void readiness.ready());
+        void readiness.ready();
+        queueMicrotask(() => void readiness.ready());
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        void readiness.ready();
+
+        expect(opens).toBe(2);
+    });
+
     it('rethrows an open failure that is no storage failure', async () => {
         const readiness = new ALStorageReadiness({
             openStores: async () => {

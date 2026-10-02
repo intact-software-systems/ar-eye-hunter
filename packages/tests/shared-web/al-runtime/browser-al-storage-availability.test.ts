@@ -102,6 +102,11 @@ describe('a durable admission re-decides availability', () => {
         expect(computeALStorageAvailability(previous, verdict)).toEqual(next);
     });
 
+    // A listener of the availability fires on a new value, so an unchanged one must stay the same value.
+    it('keeps the same availability when a durable admission finds storage already available', () => {
+        expect(computeALStorageAvailability(AVAILABLE, { kind: 'admitted', durable: true, queuedAttempts: 1 })).toBe(AVAILABLE);
+    });
+
     it('skips the durable lane only while storage is missing; any other cause is tried again', () => {
         const missing = createStorageAvailability(MISSING, undefined, () => {});
         const quota = createStorageAvailability(QUOTA, undefined, () => {});
@@ -129,6 +134,22 @@ describe('the request for persistent storage', () => {
         expect(requestPersist).toHaveBeenCalledTimes(1);
         expect(events).toEqual([]);
         await vi.waitFor(() => expect(events).toEqual([{ kind: 'persist', outcome: 'granted' }]));
+    });
+
+    it('logs a storage sink that throws on the persist outcome instead of leaving the rejection unhandled', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const storage = createStorageAvailability(AVAILABLE, async () => true, () => {
+                throw new Error('sink failed');
+            });
+
+            storage.requestPersistentStorage();
+
+            await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ message: 'sink failed' })));
+        }
+        finally {
+            consoleError.mockRestore();
+        }
     });
 
     it.each<{ label: string; requestPersist: BrowserStoragePersistRequest; outcome: string; }>([

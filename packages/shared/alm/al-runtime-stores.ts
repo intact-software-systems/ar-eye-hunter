@@ -42,6 +42,7 @@ import type {
 import type { ALStorageHealth } from './storage/al-storage-health.ts';
 import {
     createALStorageRecoveryReporter,
+    type ALStorageRecoveryLane,
     type ALStorageRecoveryReporter
 } from './storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
@@ -144,9 +145,19 @@ export function createIndexedDbALInboundRuntimeStores(
     if (input.inboundBackend !== undefined) {
         return toIndexedDbALInboundRuntimeStores(input, input.inboundBackend, undefined);
     }
-    const backend = createIndexedDbAdmissionBackend(input, input.onStorageReset);
-    const storageRecovery = toALStorageRecoveryReporter(backend, input.storageHealth);
-    return toIndexedDbALInboundRuntimeStores(input, backend, storageRecovery);
+    const backend = createIndexedDbAdmissionBackend(input, `${input.namespace}:inbound`, input.onStorageReset);
+    const storageHealth = input.storageHealth;
+    const createStorageRecovery = storageHealth === undefined
+        ? undefined
+        : (lane: ALStorageRecoveryLane) =>
+            createALStorageRecoveryReporter({
+                getStorageOpening: () => backend.getStorageOpening(),
+                getReservationExpiredDeleteCount: () =>
+                    backend.workQueue.getReservationExpiredDeleteCount(lane.workTypeId),
+                storageHealth,
+                lane: lane.name
+            });
+    return toIndexedDbALInboundRuntimeStores(input, backend, createStorageRecovery);
 }
 
 export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
@@ -160,27 +171,23 @@ export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
         });
     }
     const storageResets = new ALStorageResetListeners();
-    const backend = createIndexedDbAdmissionBackend(input, (event) => {
+    const backend = createIndexedDbAdmissionBackend(input, `${input.namespace}:outbound`, (event) => {
         storageResets.notify(event);
         input.onStorageReset(event);
     });
-    const storageRecovery = toALStorageRecoveryReporter(backend, input.storageHealth);
-    return toIndexedDbALOutboundRuntimeStores(input, backend, { storageResets, storageRecovery });
-}
-
-function toALStorageRecoveryReporter(
-    backend: IndexedDbAdmissionBackend,
-    storageHealth: ALStorageHealth | undefined
-): ALStorageRecoveryReporter | undefined {
-    return storageHealth === undefined ? undefined : createALStorageRecoveryReporter({
+    const storageHealth = input.storageHealth;
+    const storageRecovery = storageHealth === undefined ? undefined : createALStorageRecoveryReporter({
         getStorageOpening: () => backend.getStorageOpening(),
-        getReservationExpiredDeleteCount: () => backend.workQueue.getReservationExpiredDeleteCount(),
-        storageHealth
+        getReservationExpiredDeleteCount: () => backend.workQueue.getReservationExpiredDeleteCount(undefined),
+        storageHealth,
+        lane: undefined
     });
+    return toIndexedDbALOutboundRuntimeStores(input, backend, { storageResets, storageRecovery });
 }
 
 function createIndexedDbAdmissionBackend(
     input: CreateIndexedDbALRuntimeStoresInput,
+    storeNamespace: string,
     onStorageReset: (event: ALStorageResetEvent) => void
 ): IndexedDbAdmissionBackend {
     return new IndexedDbAdmissionBackend({
@@ -190,18 +197,19 @@ function createIndexedDbAdmissionBackend(
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: input.observer,
         schemaId: input.schemaId,
-        onStorageReset
+        onStorageReset,
+        storeNamespace
     });
 }
 
 function toIndexedDbALInboundRuntimeStores(
     input: CreateIndexedDbALRuntimeStoresInput,
     backend: ALAdmissionWorkBackend,
-    storageRecovery: ALStorageRecoveryReporter | undefined
+    createStorageRecovery: ((lane: ALStorageRecoveryLane) => ALStorageRecoveryReporter) | undefined
 ): ALInboundRuntimeStores {
     return {
         storageHealth: input.storageHealth,
-        storageRecovery,
+        createStorageRecovery,
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,

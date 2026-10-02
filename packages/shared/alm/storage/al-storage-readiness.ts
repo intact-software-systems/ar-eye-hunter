@@ -28,10 +28,13 @@ export class ALStorageReadiness {
     }
 
     async ready(): Promise<ALStorageReadiness.Outcome> {
-        this.opening ??= this.readOpen();
-        const opened = await this.opening;
+        const opening = this.opening ?? this.readOpen();
+        this.opening = opening;
+        const opened = await opening;
         if (opened.left !== undefined) {
-            this.opening = undefined;
+            if (this.opening === opening) {
+                this.opening = undefined;
+            }
             return opened;
         }
         await this.input.startWork();

@@ -61,6 +61,8 @@ export namespace IndexedDbAdmissionBackend {
         readonly observer: IndexedDbOperationObserver;
         readonly schemaId: string;
         readonly onStorageReset: (event: ALStorageResetEvent) => void;
+        /** The store this backend holds inside a database other stores share; absent for one it holds alone. */
+        readonly storeNamespace?: string;
     }
 }
 
@@ -83,7 +85,8 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
                 dbName: input.dbName,
                 storeName: input.storeName,
                 schemaId: input.schemaId,
-                onStorageReset: input.onStorageReset
+                onStorageReset: input.onStorageReset,
+                storeNamespace: input.storeNamespace
             });
             this.#opening = opened.opening;
             return opened.db;

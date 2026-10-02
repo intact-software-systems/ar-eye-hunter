@@ -14,7 +14,8 @@ export interface DeleteEndedSessionALRuntimeEntriesInput {
 /**
  * A failed purge leaves rows behind but never keeps the session from ending. The ended session's
  * stores are gone, so no per-store health holder could report a recovery: each store id gets one
- * failing event straight on the storage port instead.
+ * failing event straight on the storage port instead. A failure that is not one of storage leaves
+ * `lastFailure` absent, so it is logged.
  */
 export async function deleteEndedSessionALRuntimeEntries(
     sessionId: string,
@@ -27,8 +28,12 @@ export async function deleteEndedSessionALRuntimeEntries(
             storage
         });
     }
-    catch (error) {
-        const lastFailure = toALStorageUnavailable(toError(error));
+    catch (caught) {
+        const error = toError(caught);
+        const lastFailure = toALStorageUnavailable(error);
+        if (lastFailure === undefined) {
+            console.error('Failed to purge the ended session\'s browser AL runtime rows:', error);
+        }
         for (const storeId of toBrowserSessionALRuntimeStoreIds(sessionId)) {
             storage({
                 kind: 'health',

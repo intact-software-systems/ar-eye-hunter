@@ -54,7 +54,9 @@ export class ALStorageHealth {
         }
     }
 
-    recordRecovery(outcome: ALStorageRecoveryOutcome): void {
-        this.input.storage({ kind: 'recovery', storeId: this.input.storeId, outcome });
+    /** A store two lanes share reports per lane, as `<store id>/<lane>`. */
+    recordRecovery(outcome: ALStorageRecoveryOutcome, lane: string | undefined): void {
+        const storeId = lane === undefined ? this.input.storeId : `${this.input.storeId}/${lane}`;
+        this.input.storage({ kind: 'recovery', storeId, outcome });
     }
 }

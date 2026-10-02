@@ -72,6 +72,9 @@ const OTHER_SCOPE: StateScope = { applicationId: 'other-app', workspaceId: 'othe
 const SCOPE_DB_NAME = 'rallar-al-runtime:rallar-server:default';
 const OTHER_SCOPE_DB_NAME = 'rallar-al-runtime:other-app:other-workspace';
 const LEGACY_DB_NAME = 'ar-eye-hunter-al-runtime';
+/** Created after the failing database and listed after it in creation and in name order alike. */
+const THIRD_SCOPE: StateScope = { applicationId: 'third-app', workspaceId: 'third-workspace' };
+const THIRD_SCOPE_DB_NAME = 'rallar-al-runtime:third-app:third-workspace';
 
 describe('Browser AL runtime IndexedDB stores', () => {
     beforeEach(async () => {
@@ -519,6 +522,35 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:first`]);
     });
 
+    it('purges the current scope\'s database when the browser fails to list its databases', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        const sessionId = `failed-listing-purge-${crypto.randomUUID()}`;
+        const sentPrefix = toBrowserOutboundSentPrefix(toBrowserWsClientALRuntimeStoreId(sessionId));
+        configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
+        await persistSentMessage(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore, 'first');
+        configureBrowserALRuntimeStores(sessionId, { scope: OTHER_SCOPE, diagnosticsPorts });
+        await persistSentMessage(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore, 'second');
+        Object.defineProperty(indexedDB, 'databases', {
+            configurable: true,
+            value: async () => {
+                throw new DOMException('The listing was refused.', 'UnknownError');
+            }
+        });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        const result = await deleteBrowserALRuntimeEntriesForSession(sessionId, {
+            currentScope: OTHER_SCOPE,
+            storage: diagnosticsPorts.storage
+        });
+
+        expect(result.dbNames).toEqual([OTHER_SCOPE_DB_NAME]);
+        expect(consoleError).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ name: 'UnknownError' }));
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix, OTHER_SCOPE_DB_NAME)).toEqual([]);
+        showIndexedDbDatabaseListing();
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:first`]);
+    });
+
     it('leaves the legacy database and its rows where they are', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -560,6 +592,12 @@ describe('Browser AL runtime IndexedDB stores', () => {
             diagnosticsPorts
         });
         await persistSentMessage(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore, 'expired');
+        configureBrowserALRuntimeStores(sessionId, {
+            scope: THIRD_SCOPE,
+            retention: { sentMessageTtlMs: 20, controlHistoryTtlMs: 20, msgOwnerTtlMs: 20 },
+            diagnosticsPorts
+        });
+        await persistSentMessage(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore, 'third');
         await vi.advanceTimersByTimeAsync(21);
 
         await expect(
@@ -570,6 +608,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix, OTHER_SCOPE_DB_NAME)).toEqual([]);
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix, THIRD_SCOPE_DB_NAME)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:corrupt`]);
     });
 

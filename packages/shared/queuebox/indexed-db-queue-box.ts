@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
+import { LatestRepository } from '../cache/LatestRepository.ts';
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
@@ -138,6 +139,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     readonly #completedRetention: QueueBoxCompletedRetention;
     readonly #observer: IndexedDbOperationObserver;
     #reservationExpiredDeleteCount = 0;
+    readonly #reservationExpiredDeleteCountByType = new LatestRepository<string, number>();
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
@@ -439,22 +441,30 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
         });
         // An unreservable row that is also expired is swept by the write this claim already owes.
-        const expiredDeletes = selection.ineligible
-            .filter((stored) => isStoredQueueEntryExpired(stored, now))
-            .map(computeIndexedDbQueueDelete);
-        const mutations = [...selection.mutations, ...expiredDeletes];
+        const expired = selection.ineligible.filter((stored) => isStoredQueueEntryExpired(stored, now));
+        const mutations = [...selection.mutations, ...expired.map(computeIndexedDbQueueDelete)];
         const decision = this.#observeReservation(mutations);
         if (decision instanceof Promise) {
             await decision;
         }
         const reserved = await this.#write(db, { mutations, result: selection.reserved });
-        this.#reservationExpiredDeleteCount += expiredDeletes.length;
+        this.#addReservationExpiredDeletes(expired);
         return reserved;
     }
 
-    /** Cumulative since this queue was constructed. */
-    getReservationExpiredDeleteCount(): number {
-        return this.#reservationExpiredDeleteCount;
+    /** Cumulative since this queue was constructed: of one work type, or of every type when none is named. */
+    getReservationExpiredDeleteCount(typeId: string | undefined): number {
+        return typeId === undefined
+            ? this.#reservationExpiredDeleteCount
+            : this.#reservationExpiredDeleteCountByType.getOrElse(typeId, 0);
+    }
+
+    #addReservationExpiredDeletes(expired: readonly StoredResourceEntry[]): void {
+        this.#reservationExpiredDeleteCount += expired.length;
+        for (const stored of expired) {
+            const count = this.#reservationExpiredDeleteCountByType.getOrElse(stored.typeId, 0);
+            this.#reservationExpiredDeleteCountByType.set(stored.typeId, count + 1);
+        }
     }
 
     async reserveOverdueRetryEntries(
