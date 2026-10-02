@@ -318,14 +318,20 @@ export class WebRtcOverlayMulticastManager {
         return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
 
+    /** A forward its store could not persist throws into the inbound claim, which retries it. */
     async forwardIfRequired(
         msg: ALMessage,
         fromPeerId?: PeerId
     ): Promise<readonly ResourceEntry[]> {
         const forwarding = this.planForwarding(msg, fromPeerId);
-        return forwarding === undefined
-            ? []
-            : (await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding)).entries;
+        if (forwarding === undefined) {
+            return [];
+        }
+        const result = await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding);
+        if (result.verdict.kind === 'storage-unavailable') {
+            throw new Error(result.reason ?? 'RTC forward admission returned storage-unavailable');
+        }
+        return result.entries;
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
