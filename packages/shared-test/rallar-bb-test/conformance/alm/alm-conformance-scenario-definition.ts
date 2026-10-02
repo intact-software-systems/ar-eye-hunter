@@ -24,6 +24,7 @@ export type AlmConformanceScenarioId =
     | 'delivery-lifecycle'
     | 'delivery-reload'
     | 'durable-opt-in'
+    | 'durable-takeover'
     | 'fallback-within-deadline'
     | 'no-fallback-after-deadline'
     | 'not-yet-in-sync'

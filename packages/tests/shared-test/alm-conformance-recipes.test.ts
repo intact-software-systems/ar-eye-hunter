@@ -201,23 +201,31 @@ describe('alm-conformance recipe family', () => {
                     ...SCENARIO_KEYS_BY_CARRIER[carrier].flatMap((key) => [`alm-${carrier}-${key}-sender`, `alm-${carrier}-${key}-receiver`]),
                     ...RECEIPTED_AUDIENCE_KEYS_BY_CARRIER[carrier].flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
-                    )
+                    ),
+                    ...['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-durable-takeover-${role}`)
                 ]);
         }
     });
 
-    it('declares recipient-b on the receipted-audience scenarios only; every other scenario keeps one sender and one receiver (D45)', () => {
+    it('declares recipient-b on the receipted-audience scenarios and successor on durable-takeover only; every other scenario keeps one sender and one receiver', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = scenario.scenarioId === 'receipted-audience';
-                expect(scenario.roles, scenario.scenarioKey).toEqual(threeRoles ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver']);
+                const twoPages = scenario.scenarioId === 'durable-takeover';
+                expect(scenario.roles, scenario.scenarioKey).toEqual(
+                    threeRoles
+                        ? ['sender', 'receiver', 'recipient-b']
+                        : twoPages
+                        ? ['sender', 'receiver', 'successor']
+                        : ['sender', 'receiver']
+                );
                 expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(threeRoles);
                 expect(toAlmConformanceRoleRecipe(scenario, 'sender')).toBe(scenario.sender);
                 expect(toAlmConformanceRoleRecipe(scenario, 'receiver')).toBe(scenario.receiver);
                 expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBe(scenario.recipientB);
                 expect(toAlmConformanceRoleRecipe(scenario, 'successor')).toBe(scenario.successor);
                 expect(scenario.recipientB?.recipeId).toBe(threeRoles ? `alm-${carrier}-${scenario.scenarioKey}-recipient-b` : undefined);
-                expect(scenario.successor).toBeUndefined();
+                expect(scenario.successor?.recipeId).toBe(twoPages ? `alm-${carrier}-${scenario.scenarioKey}-successor` : undefined);
             }
         }
     });
@@ -392,7 +400,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('keeps reload, storage-unavailable and ordering-resync full-only while preserving the smoke scenarios', () => {
+    it('keeps reload, storage-unavailable, ordering-resync and the takeover full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
@@ -425,7 +433,8 @@ describe('alm-conformance recipe family', () => {
             'receipted-audience',
             'receipted-audience',
             'receipted-audience',
-            'receipted-audience'
+            'receipted-audience',
+            'durable-takeover'
         ]);
         expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
@@ -436,6 +445,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

@@ -25,6 +25,7 @@ import {
     toConnectCommand,
     toEnsureGroupCommand,
     toEnsureMemberCommand,
+    toOwnerLeaseLapseWait,
     toStatsCommand
 } from './alm-conformance-session-commands.ts';
 import { toRoomRef, toSendHandleId } from './alm-conformance-step-identities.ts';
@@ -36,6 +37,7 @@ import { deliveryBaseline } from './scenarios/delivery-baseline.ts';
 import { deliveryLifecycle } from './scenarios/delivery-lifecycle.ts';
 import { deliveryReload, toReloadCheckpoint } from './scenarios/delivery-reload.ts';
 import { durableOptIn } from './scenarios/durable-opt-in.ts';
+import { durableTakeover } from './scenarios/durable-takeover.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
 import { noFallbackAfterDeadline } from './scenarios/no-fallback-after-deadline.ts';
 import { notYetInSync } from './scenarios/not-yet-in-sync.ts';
@@ -100,7 +102,8 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     unicastFallback,
     serverCommand,
     capacity,
-    ...receiptedAudience
+    ...receiptedAudience,
+    durableTakeover
 ];
 
 export function createAlmConformanceRecipes(
@@ -177,6 +180,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
         commands: [
             toEnsureGroupCommand(recipe),
             toEnsureMemberCommand(recipe),
+            ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,

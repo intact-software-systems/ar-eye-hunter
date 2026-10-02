@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -50,6 +51,22 @@ function toParticipant(agentId: string, page: Playwright.Page | undefined): TwoA
 }
 
 describe('same-context ALM run', () => {
+    it('selects exactly durable-takeover for the same-context family on every carrier', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const sameContext = createAlmConformanceRecipes({
+                group,
+                carrier,
+                typeId: 'probe',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000
+            }).filter((scenario) => scenario.laneFamily === 'same-context');
+
+            expect(sameContext.map((scenario) => scenario.scenarioKey), carrier).toEqual(['durable-takeover']);
+            expect(sameContext.every((scenario) => scenario.successor !== undefined), carrier).toBe(true);
+        }
+    });
+
     // One auth session keeps one server socket: the successor connects only once the owner page is gone.
     it('runs the owner\'s recipe, closes the owner page, then runs the successor, the receiver started first', async () => {
         const baseline = createAlmConformanceRecipes({
