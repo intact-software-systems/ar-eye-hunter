@@ -229,7 +229,7 @@ function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
                 peerId: HARNESS_SERVER_PEER_ID,
                 payload: { resourceId },
                 senderId: sessionId,
-                channel: { purpose: 'command', durability: 'local-outbox' },
+                channel: { purpose: 'command', durability: 'local-outbox', onStorageUnavailable: 'refuse' },
                 laneTtlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
             }),
         planOutgoingMessage: (msg) =>
