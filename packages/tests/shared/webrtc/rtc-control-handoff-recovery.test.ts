@@ -50,6 +50,10 @@ it.each(
         [{ kind: 'unroutable', reason: 'no-route', detail: 'Observed no route' }, EntityStatus.RETRY],
         [{ kind: 'deferred', reason: 'not-yet-in-sync', detail: 'Observed pending sync' }, EntityStatus.RETRY],
         [{ kind: 'failed', detail: 'Observed failure' }, EntityStatus.RETRY],
+        [
+            { kind: 'storage-unavailable', cause: 'quota', detail: 'QuotaExceededError: The quota has been exceeded.' },
+            EntityStatus.RETRY
+        ],
         [{ kind: 'skipped', reason: 'pending-terminated', detail: 'Observed termination' }, EntityStatus.NON_RETRYABLE],
         [{ kind: 'superseded', detail: 'Observed supersession' }, EntityStatus.NON_RETRYABLE],
         [{ kind: 'expired', detail: 'Observed expiry' }, EntityStatus.NON_RETRYABLE]

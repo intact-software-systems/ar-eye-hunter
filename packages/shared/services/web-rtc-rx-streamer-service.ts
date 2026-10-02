@@ -162,6 +162,7 @@ export class WebRtcRxStreamerService {
                 return;
             case 'deferred':
             case 'unroutable':
+            case 'storage-unavailable':
             case 'failed':
                 throw new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
             case 'refused':

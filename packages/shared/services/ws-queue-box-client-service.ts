@@ -243,7 +243,7 @@ export class WsQueueBoxClientService {
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
                 sendControlMessages: async (msgs) => {
-                    await this.enqueueOutboxAllIfAbsent(msgs);
+                    await this.handoffControlMessages(msgs);
                 },
                 onControlMessage: async (msg) => {
                     await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
@@ -251,6 +251,15 @@ export class WsQueueBoxClientService {
                 diagnostics: this.dependencies.inboundDiagnostics
             }
         );
+    }
+
+    /** A control its store could not persist throws into the inbound claim, which retries it. */
+    private async handoffControlMessages(msgs: readonly ALMessage[]): Promise<void> {
+        const results = await this.enqueueOutboxAllIfAbsent(msgs);
+        const unpersisted = results.find((result) => result.verdict.kind === 'storage-unavailable');
+        if (unpersisted !== undefined) {
+            throw new Error(unpersisted.reason ?? 'WS control admission returned storage-unavailable');
+        }
     }
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
