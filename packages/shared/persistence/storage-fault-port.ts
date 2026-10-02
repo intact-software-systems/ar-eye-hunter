@@ -71,7 +71,7 @@ class ScriptedStorageFaults implements ScriptedStorageFaultPort {
         }
         const decision = typeof fault.action === 'string' ? fault.action : 'delay';
         this.observations.push({ faultId: fault.faultId, operation, decision });
-        return toStorageFaultDecision(fault.action);
+        return toStorageFaultDecision(fault);
     }
 }
 
@@ -82,14 +82,13 @@ function matchesStorageFault(fault: ScriptedStorageFault, operation: IndexedDbOp
         (fault.action !== 'quota' || WRITE_KINDS.has(operation.kind));
 }
 
-function toStorageFaultDecision(action: ScriptedStorageFault['action']): Promise<void> {
+/** The message names the fault, so the storage failure a store reports reads back to the fault that caused it. */
+function toStorageFaultDecision({ action, faultId }: ScriptedStorageFault): Promise<void> {
     if (action === 'quota') {
-        return Promise.reject(
-            new DOMException('Scripted storage quota fault', 'QuotaExceededError')
-        );
+        return Promise.reject(new DOMException(`Scripted storage quota fault ${faultId}`, 'QuotaExceededError'));
     }
     if (action === 'fail') {
-        return Promise.reject(new DOMException('Scripted storage fault', 'UnknownError'));
+        return Promise.reject(new DOMException(`Scripted storage fault ${faultId}`, 'UnknownError'));
     }
     return new Promise((resolve) => {
         setTimeout(resolve, action.delayMs);

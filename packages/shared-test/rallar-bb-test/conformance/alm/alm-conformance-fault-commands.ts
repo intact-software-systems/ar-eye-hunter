@@ -60,22 +60,53 @@ export function toRtcDropFaultCommand(
 }
 
 /**
- * Fails every admission write of this page with `QuotaExceededError` while held; the same fault id with
- * `remaining: 0` releases it. Reads and the work queue's own writes go through.
+ * Fails every admission write and every work-queue write of this page with `QuotaExceededError` while held, each owner
+ * under its own fault id; the same ids with `remaining: 0` release them. Reads go through.
  */
-export function toAdmissionQuotaFaultCommand(
+export function toStorageQuotaFaultCommands(
     step: AlmConformanceStepInput,
-    name: string,
-    remaining: 'until-cleared' | 0
+    phase: 'hold' | 'release'
+): readonly RallarBlackBoxTestStorageFaultInjectCommand[] {
+    const remaining = phase === 'hold' ? 'until-cleared' : 0;
+    return [
+        toStorageQuotaFaultCommand(step, {
+            name: `quota-admission-${phase}`,
+            faultId: toAdmissionQuotaFaultId(step),
+            match: { owner: 'al-admission', kind: 'write' },
+            remaining
+        }),
+        toStorageQuotaFaultCommand(step, {
+            name: `quota-work-${phase}`,
+            faultId: `quota-work-${toScenarioTypeId(step)}`,
+            match: { owner: 'al-work' },
+            remaining
+        })
+    ];
+}
+
+export function toAdmissionQuotaFaultId(step: AlmConformanceStepInput): string {
+    return `quota-admission-${toScenarioTypeId(step)}`;
+}
+
+interface StorageQuotaFault {
+    readonly name: string;
+    readonly faultId: string;
+    readonly match: RallarBlackBoxTestStorageFaultInjectCommand['match'];
+    readonly remaining: 'until-cleared' | 0;
+}
+
+function toStorageQuotaFaultCommand(
+    step: AlmConformanceStepInput,
+    fault: StorageQuotaFault
 ): RallarBlackBoxTestStorageFaultInjectCommand {
     return {
         kind: 'fault.inject',
-        commandId: toCommandId(step, name),
-        faultId: `quota-admission-${toScenarioTypeId(step)}`,
+        commandId: toCommandId(step, fault.name),
+        faultId: fault.faultId,
         carrier: 'storage',
-        match: { owner: 'al-admission', kind: 'write' },
+        match: fault.match,
         action: 'quota',
-        remaining,
+        remaining: fault.remaining,
         timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
     };
 }

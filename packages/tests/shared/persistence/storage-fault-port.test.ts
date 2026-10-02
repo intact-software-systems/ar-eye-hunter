@@ -39,6 +39,28 @@ describe('ScriptedStorageFaultPort', () => {
         }]);
     });
 
+    // A recipe matches the storage failure a store reports to the fault that caused it, so the message names the fault.
+    it('names the fault id in the message of each rejection it scripts', async () => {
+        const port = createScriptedStorageFaultPort();
+        port.inject(QUOTA_ON_ADMISSION_WRITES);
+        port.inject({
+            faultId: 'fail-read',
+            carrier: 'storage',
+            match: { owner: 'al-work', kind: 'work-page' },
+            action: 'fail',
+            remaining: 'until-cleared'
+        });
+
+        await expect(port.observe({ owner: 'al-admission', kind: 'write' })).rejects.toMatchObject({
+            name: 'QuotaExceededError',
+            message: 'Scripted storage quota fault quota-admission'
+        });
+        await expect(port.observe({ owner: 'al-work', kind: 'work-page' })).rejects.toMatchObject({
+            name: 'UnknownError',
+            message: 'Scripted storage fault fail-read'
+        });
+    });
+
     // A full disk refuses writes, so a quota fault leaves reads and the other owner alone.
     it.each(
         [

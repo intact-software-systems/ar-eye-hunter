@@ -467,7 +467,10 @@ operations instead: `match.owner` is `al-admission` or `al-work`, and
 `UnknownError` `DOMException`, `action: 'quota'` rejects a write (`write`,
 `work-write`, `work-reserve`, `work-release`, `work-cleanup`) with a
 `QuotaExceededError` and lets reads through, and `{ delayMs }` holds the
-operation. The decision lands before the operation's transaction opens, or
+operation. A rejection's message names its `faultId`
+(`Scripted storage quota fault <faultId>`, `Scripted storage fault <faultId>`),
+so the `detail` of the storage failure a store reports on
+`rallar.browser.alm.storage` reads back to the fault. The decision lands before the operation's transaction opens, or
 between a reservation's finished read and its write, so a fault never leaves
 half a write. The operation is still counted by `storage.counters`. Replacing
 the same `faultId` with `remaining: 0` releases it, and `close` clears every

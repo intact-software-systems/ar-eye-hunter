@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toAdmissionQuotaFaultCommand } from '../alm-conformance-fault-commands.ts';
+import { toAdmissionQuotaFaultId, toStorageQuotaFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toObserveCommand,
@@ -24,7 +24,8 @@ const STORAGE_TOPIC = 'rallar.browser.alm.storage';
  * A full disk under a durable channel: while every admission write fails with a quota error, the channel that refuses
  * fails its send typed and the channel that goes volatile delivers it without storage, saying so; once the quota
  * frees, the next durable send commits and the store reads healthy again. One type id carries both channels: the
- * channel's choice is its own, not the type's.
+ * channel's choice is its own, not the type's. The work-queue writes are held too: a work release that commits records
+ * a recovery point, which would read the store healthy during the hold, so only the third send's admission can.
  */
 export const storageUnavailable: AlmConformanceScenarioDefinition = {
     scenarioId: 'storage-unavailable',
@@ -39,11 +40,11 @@ export const storageUnavailable: AlmConformanceScenarioDefinition = {
 
 function toStorageUnavailableSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toAdmissionQuotaFaultCommand(sender, 'quota-hold', 'until-cleared'),
+        ...toStorageQuotaFaultCommands(sender, 'hold'),
         ...toRefusedSendCommands({ ...sender, index: 1 }),
         toQuotaHealthWait(sender, 'health-failing', 'failing'),
         ...toDowngradedSendCommands({ ...sender, index: 2 }),
-        toAdmissionQuotaFaultCommand(sender, 'quota-release', 0),
+        ...toStorageQuotaFaultCommands(sender, 'release'),
         ...toDurableSendCommands({ ...sender, index: 3 }),
         toQuotaHealthWait(sender, 'health-healthy', 'healthy')
     ];
@@ -131,14 +132,16 @@ function toStorageUnavailableReceiverCommands(receiver: AlmConformanceStepInput)
     ];
 }
 
+/** One receiver page hears every carrier's cell, so the payload names the carrier. */
 function toPayload(step: AlmConformanceMessageStepInput): Readonly<Record<string, string>> {
-    return { marker: step.scenarioId, send: String(step.index) };
+    return { marker: step.scenarioId, carrier: step.input.carrier, send: String(step.index) };
 }
 
 /**
  * A durable store's `health` transition on the storage port, matched in its emitted key order (`status`, then
- * `lastFailure`): a quota failure names the move to `failing`, and stays the last failure once the store reads `healthy`
- * again, so the healthy match cannot be an earlier healthy reading.
+ * `lastFailure` with `cause` and `detail`). The scripted fault names its id in the detail, and the id carries the
+ * cell's type id, so neither match can be a transition of an earlier cell. The failure stays the last one once the
+ * store reads `healthy` again, so the healthy match cannot be an earlier healthy reading either.
  */
 function toQuotaHealthWait(
     step: AlmConformanceStepInput,
@@ -152,7 +155,8 @@ function toQuotaHealthWait(
             kind: 'diagnostic',
             topic: STORAGE_TOPIC,
             payloadPath: 'data',
-            contains: `"status":"${status}","lastFailure":{"cause":"quota"`
+            contains: `"status":"${status}","lastFailure":{"cause":"quota",` +
+                `"detail":"QuotaExceededError: Scripted storage quota fault ${toAdmissionQuotaFaultId(step)}"`
         },
         timeoutMs: toBudgetMs(NON_EXPIRING_SEND_TIMEOUT_MS, step.input.deadlineMs)
     };

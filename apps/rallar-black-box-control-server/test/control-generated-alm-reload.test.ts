@@ -90,9 +90,10 @@ class GeneratedAlmPorts {
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
     readonly holds = new Map<string, string>();
-    /** A held storage fault fails every durable admission of the sender's page with a quota error. */
-    storageQuota = false;
+    /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
+    storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
+    lastQuotaFaultId = '';
     readonly receiver: RallarBlackBoxTestRuntime;
     sender: RallarBlackBoxTestRuntime;
     private absence: { duration: number; release: () => void; } | undefined;
@@ -338,7 +339,10 @@ class GeneratedAlmPorts {
                     kind: 'health',
                     storeId: 'browser-ws-client:sender-stored-session',
                     status,
-                    lastFailure: { cause: 'quota', detail: 'The fixture storage is full.' },
+                    lastFailure: {
+                        cause: 'quota',
+                        detail: `QuotaExceededError: Scripted storage quota fault ${this.lastQuotaFaultId}`
+                    },
                     lastRecoveryPointAtMs: undefined
                 }
             }
@@ -347,7 +351,10 @@ class GeneratedAlmPorts {
 
     private injectFault(command: RallarBlackBoxTestFaultInjectCommand): RallarBlackBoxTestCommandOutcome {
         if (command.carrier === 'storage') {
-            this.storageQuota = command.remaining !== 0;
+            if (command.match.owner === 'al-admission') {
+                this.storageQuotaFaultId = command.remaining === 0 ? undefined : command.faultId;
+                this.lastQuotaFaultId = command.faultId;
+            }
             return { status: 'ok', value: { faultId: command.faultId } };
         }
         if (command.remaining === 0) {
@@ -369,8 +376,9 @@ class GeneratedAlmPorts {
         // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
         const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
         const durable = (command.durability ?? 'volatile') !== 'volatile';
-        const storageRefused = durable && this.storageQuota && command.onStorageUnavailable !== 'volatile';
-        const downgraded = durable && this.storageQuota && command.onStorageUnavailable === 'volatile';
+        const quotaHeld = this.storageQuotaFaultId !== undefined;
+        const storageRefused = durable && quotaHeld && command.onStorageUnavailable !== 'volatile';
+        const downgraded = durable && quotaHeld && command.onStorageUnavailable === 'volatile';
         const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
         const message: PortMessage = {
             command,
@@ -390,13 +398,13 @@ class GeneratedAlmPorts {
         if (storageRefused && !this.storageFailing) {
             this.reportStoreHealth('failing');
         }
-        if (durable && !this.storageQuota && this.storageFailing) {
+        if (durable && !quotaHeld && this.storageFailing) {
             this.reportStoreHealth('healthy');
         }
         this.messages.push(message);
         assert(command.handleId);
         this.handles.set(command.handleId, message);
-        if (durable && !this.storageQuota) {
+        if (durable && !quotaHeld) {
             this.writes.sender += 1;
         }
         if (command.payload.revision === 'replacement') {
