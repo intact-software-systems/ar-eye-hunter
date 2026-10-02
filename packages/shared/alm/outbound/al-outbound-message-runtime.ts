@@ -19,6 +19,7 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
+import type { ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
@@ -330,11 +331,6 @@ export namespace ALOutboundMessageRuntime {
         nowMs(): number;
     }
 
-    export interface BrowserLocks {
-        /** Holds the named exclusive lock until the single callback invocation settles. */
-        request<T>(name: string, options: Readonly<{ mode: 'exclusive'; }>, callback: () => Promise<T>): Promise<T>;
-    }
-
     export interface Resources<TPrepared> {
         /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -352,7 +348,7 @@ export namespace ALOutboundMessageRuntime {
         readonly random: () => number;
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
-        readonly browserLocks: BrowserLocks | undefined;
+        readonly browserLocks: ALBrowserLocks | undefined;
     }
 
     export interface DequeueSource {

@@ -5,6 +5,7 @@ import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEnt
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
+import type { ALBrowserLocks } from '../../storage/al-browser-locks.ts';
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
@@ -59,7 +60,7 @@ export namespace ALOutboundStoreLane {
         readonly workerId: string;
         /** Foreign queue rows only the durable lane admits; the volatile lane names none. */
         readonly dequeueTypes: ReadonlySet<string>;
-        readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
+        readonly browserLocks: ALBrowserLocks | undefined;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
         readonly evictExpired: (() => void) | undefined;
         /** What this lane's commits hand its own claims; the memory pair's lane reads memory and has none. */

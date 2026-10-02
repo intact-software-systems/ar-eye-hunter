@@ -4,7 +4,10 @@
 lifecycle boundary: it enqueues, accepts control messages, claims work, and routes
 each claimed durable effect to the owner that runs it. It never sends or mutates
 admission state itself. [`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)
-owns sender serialization, browser locking, and optimistic read/compute/commit.
+owns sender serialization, browser locking, and optimistic read/compute/commit. Its cross-tab commit
+lock, `rallar:al-outbound-commit:<senderId>`, is a name on the shared Web Locks port
+[`ALBrowserLocks`](../storage/al-browser-locks.ts), which the default composition fills with
+`navigator.locks` where the API exists.
 [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) owns control
 acceptance, the ACK-timeout schedule, and the not-yet-in-sync retry schedule; it
 commits new bundles and never sends.

@@ -1,0 +1,23 @@
+export interface ALBrowserLockOptions {
+    readonly mode: 'exclusive';
+    /** Abandons the request while it still waits; absent, the request waits until it is granted. */
+    readonly signal?: AbortSignal;
+}
+
+/**
+ * The Web Locks port every cross-context lock of ALM is a name on. The browser injects
+ * `navigator.locks`; a runtime without the API (the server, Node, a browser without it) has none.
+ */
+export interface ALBrowserLocks {
+    /** Holds the named exclusive lock until the single callback invocation settles. */
+    request<T>(name: string, options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T>;
+}
+
+export function readALBrowserLocks(): ALBrowserLocks | undefined {
+    return typeof globalThis.navigator?.locks?.request === 'function' ? globalThis.navigator.locks : undefined;
+}
+
+/** Serializes one sender's IndexedDB commits across the tabs of a browser. */
+export function toALOutboundCommitLockName(senderId: string): string {
+    return `rallar:al-outbound-commit:${senderId}`;
+}

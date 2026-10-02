@@ -6,6 +6,7 @@ import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import { toALOutboundCommitLockName, type ALBrowserLocks } from '../storage/al-browser-locks.ts';
 import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
@@ -88,7 +89,7 @@ export namespace ALOutboundDispatchAdmission {
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
-        readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
+        readonly browserLocks: ALBrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         readonly settlements: ALOutboundSettlementEmitter;
     }
@@ -582,7 +583,7 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         origin: ALOutboundCommitOrigin,
         task: () => Promise<T>
     ): Promise<T> {
-        const lockName = `rallar:al-outbound-commit:${senderId}`;
+        const lockName = toALOutboundCommitLockName(senderId);
         const locks = this.dependencies.browserLocks;
         if (!locks) {
             this.emitDiagnostics({
