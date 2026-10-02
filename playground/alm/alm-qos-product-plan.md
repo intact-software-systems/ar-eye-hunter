@@ -392,16 +392,16 @@ These apply to every durable tier:
     the non-owner's handles over the same channel (D123) (I2a design, 2026-10-01).
   - `durable-takeover` needs two pages in one browser context, which is a new harness capability;
     it runs in the Playwright lane only (D124) (I2a design, 2026-10-01).
-- **No silent fallback.**
+- **No silent fallback.** Delivered (I2a-i, 527267e73).
   - Today a browser without IndexedDB quietly gets memory stores for its durable pairs
     (`packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts`).
   - I2a applies the channel's `onStorageUnavailable` instead.
   - The same typed `storage-unavailable` outcome covers quota exceeded, the reset's blocked delete
     (the open names no version, so no upgrade can block), detected eviction and, for
     `local-checkpoint`, recovery lag beyond the bound (I2a design, 2026-10-01).
-- **Persistent storage.** The first durable admission in a session requests
+- **Persistent storage.** Delivered (I2a-i, 527267e73). The first durable admission in a session requests
   `navigator.storage.persist()`, and the grant is reported. Rallar never requests it today.
-- **Typed recovery outcomes.**
+- **Typed recovery outcomes.** Delivered (I2a-i, 527267e73).
   - `restored`, with counts.
   - `expired-at-recovery`.
   - `storage-created`. First use, eviction and deletion are indistinguishable in a browser. Safari
@@ -411,14 +411,14 @@ These apply to every durable tier:
     another tab's reset, otherwise `storage-unavailable` with cause `evicted` (I2a design,
     2026-10-01).
   - `storage-reset`, for a schema mismatch (D3).
-- **One health vocabulary** on the public diagnostics sink.
+- **One health vocabulary** on the public diagnostics sink. Delivered (I2a-i, 527267e73).
   - The sink is one `storage` port of four kinds, `reset`, `recovery`, `health` and `persist`,
     widening today's `onStorageReset` (D121) (I2a design, 2026-10-01).
   - It reports `healthy`, `delayed` or `failing`, the age of the oldest unsaved change, the last
     saved recovery point and the last failure.
   - Today the storage-reset sink does nothing in production
     (`packages/shared-web/browser/connection/rallar-diagnostics-ports.ts`).
-- **Scope and privacy.**
+- **Scope and privacy.** Delivered (I2a-i, 527267e73).
   - Rows are keyed by application scope and session. Today they are keyed by session only, in a
     database named `ar-eye-hunter-al-runtime`
     (`packages/shared-web/browser/al-runtime/browser-al-runtime-identity.ts`). Each scope gets its
@@ -430,7 +430,7 @@ These apply to every durable tier:
     the old rows until they expire.
   - Recovered records pass the existing bounded persisted-record decoder, and dispatch re-checks
     authority and the deadline at the send boundary.
-- **Dedup retention.** It covers the deadline plus the receipt grace (section 5).
+- **Dedup retention.** Delivered (I2a-i, 527267e73). It covers the deadline plus the receipt grace (section 5).
 
 ## 9. Test and evidence plan
 
