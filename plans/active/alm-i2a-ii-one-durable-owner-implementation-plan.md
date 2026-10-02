@@ -8284,7 +8284,7 @@ git -C $WT fetch origin
 git -C $WT rev-parse HEAD origin/$B
 git -C $WT log --oneline HEAD..origin/main | wc -l
 gh variable list -R $R | grep -c RALLAR_BLACK_BOX_ALM_SCOPE
-gh pr view <PR> -R $R --json mergeable,mergeStateStatus --jq '[.mergeable, .mergeStateStatus] | @tsv'
+gh pr view 630 -R $R --json mergeable,mergeStateStatus --jq '[.mergeable, .mergeStateStatus] | @tsv'
 ```
 
 Expected: no status output; the two hashes equal; `0` variables; `MERGEABLE`. If main moved (the `wc -l` is not
@@ -8528,8 +8528,8 @@ Title: `ALM Release 4, I2a-ii: one durable owner (D119, D123, D124, D126, D128)`
   replay hand-over gap, `tests/playwright` typecheck coverage, the API's lease-lost self-stop and the parked minors.
 - The attribution line.
 
-Publish with `gh pr edit <PR> -R $R --title "..." --body-file $T/pr-body.md`. Leave the PR in draft; the maintainer
-reviews and merges. Then write `Task 8: complete` and `PLAN COMPLETE <date>: PR #<PR> at <H2>` in the ledger.
+Publish with `gh pr edit 630 -R $R --title "..." --body-file $T/pr-body.md`. Leave the PR in draft; the maintainer
+reviews and merges. Then write `Task 8: complete` and `PLAN COMPLETE <date>: PR #630 at <H2>` in the ledger.
 
 - [ ] **Step 13: After the maintainer merges**
 
@@ -8622,7 +8622,7 @@ Per-task bundles (brotli q11), as `browser/rallar.ts` / headless:
 **(b) Placeholder scan.** No `TBD`, `TODO`, "implement later" or "similar to Task N" remains. The angle-bracket
 tokens that remain are deliberate:
 
-- `<PR>` in Task 8: the controller fills it after the draft PR opens.
+- `630` in Task 8: the controller fills it after the draft PR opens.
 - Values read while running Task 8: `<H1>`, `<RUN>`, `<GATE_RUN>`, `<OBS_JOB>`, `<k>`, `<date>`, `<entry>`, `<N>`, `<x.xx>`, `<sha>` and `<alm-conformance-lane artifact>`.
 - Name patterns in prose and lock or channel names: `<carrier>`, `<applicationId>`, `<workspaceId>`, `<sessionId>`, `<senderId>` and `<p>`.
 
