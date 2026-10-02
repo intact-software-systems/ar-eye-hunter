@@ -308,19 +308,28 @@ class GeneratedAlmPorts {
         }
     }
 
-    /** Every durable store of the page reports what it restored once its first batch ran; the fixture runs it at connect. */
+    /**
+     * Every durable store of the page reports what it restored once its first batch ran, the session inbound store once
+     * per carrier lane; the fixture runs it at connect.
+     */
     private reportStoreRecoveries(role: 'sender' | 'receiver', sessionId: string): void {
         if (role !== 'sender') {
             return;
         }
-        for (const prefix of ['browser-session-inbound', 'browser-ws-client', 'browser-rtc-overlay']) {
+        const storeIds = [
+            `browser-session-inbound:${sessionId}/ws`,
+            `browser-session-inbound:${sessionId}/rtc`,
+            `browser-ws-client:${sessionId}`,
+            `browser-rtc-overlay:${sessionId}`
+        ];
+        for (const storeId of storeIds) {
             this.sender.recordEvent({
                 kind: 'diagnostic',
                 topic: 'rallar.browser.alm.storage',
                 payload: {
                     data: {
                         kind: 'recovery',
-                        storeId: `${prefix}:${sessionId}`,
+                        storeId,
                         outcome: { kind: 'restored', claimed: 0, expired: 0 }
                     }
                 }

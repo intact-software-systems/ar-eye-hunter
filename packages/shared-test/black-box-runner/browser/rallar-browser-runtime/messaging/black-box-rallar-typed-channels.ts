@@ -1,4 +1,7 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessagePayload,
+    RallarStorageUnavailablePolicy
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
     normalizeRallarMessageSelector,
     type RallarMessageSelector
@@ -23,7 +26,7 @@ export interface TypedChannelRoute {
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
     readonly durability: ALDurabilityAlgo | undefined;
-    readonly onStorageUnavailable: 'refuse' | 'volatile' | undefined;
+    readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
     readonly purpose: ALChannelPurpose;
 }
 

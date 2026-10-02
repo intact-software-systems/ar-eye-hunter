@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import { toAdmissionQuotaFaultId, toStorageQuotaFaultCommands } from '../alm-conformance-fault-commands.ts';
+import { toStorageQuotaFaultCommands, toStorageQuotaFaultIdPrefix } from '../alm-conformance-fault-commands.ts';
 import {
     toAdmissionCommands,
     toObserveCommand,
@@ -24,8 +24,9 @@ const STORAGE_TOPIC = 'rallar.browser.alm.storage';
  * A full disk under a durable channel: while every admission write fails with a quota error, the channel that refuses
  * fails its send typed and the channel that goes volatile delivers it without storage, saying so; once the quota
  * frees, the next durable send commits and the store reads healthy again. One type id carries both channels: the
- * channel's choice is its own, not the type's. The work-queue writes are held too: a work release that commits records
- * a recovery point, which would read the store healthy during the hold, so only the third send's admission can.
+ * channel's choice is its own, not the type's. The work-queue writes are held too, since a work release that commits
+ * records a recovery point: during the hold no write of this page can record one. The healthy wait proves only that
+ * some store recovered after the release; the third send's own commit is proven by `assert-enqueued-3`.
  */
 export const storageUnavailable: AlmConformanceScenarioDefinition = {
     scenarioId: 'storage-unavailable',
@@ -139,8 +140,9 @@ function toPayload(step: AlmConformanceMessageStepInput): Readonly<Record<string
 
 /**
  * A durable store's `health` transition on the storage port, matched in its emitted key order (`status`, then
- * `lastFailure` with `cause` and `detail`). The scripted fault names its id in the detail, and the id carries the
- * cell's type id, so neither match can be a transition of an earlier cell. The failure stays the last one once the
+ * `lastFailure` with `cause` and `detail`). The scripted fault names its id in the detail, and both of the cell's
+ * fault ids start with its type id, so neither match can be a transition of an earlier cell, and a work-queue failure
+ * that replaces the admission one as the store's last failure still matches. The failure stays the last one once the
  * store reads `healthy` again, so the healthy match cannot be an earlier healthy reading either.
  */
 function toQuotaHealthWait(
@@ -156,7 +158,7 @@ function toQuotaHealthWait(
             topic: STORAGE_TOPIC,
             payloadPath: 'data',
             contains: `"status":"${status}","lastFailure":{"cause":"quota",` +
-                `"detail":"QuotaExceededError: Scripted storage quota fault ${toAdmissionQuotaFaultId(step)}"`
+                `"detail":"QuotaExceededError: Scripted storage quota fault ${toStorageQuotaFaultIdPrefix(step)}`
         },
         timeoutMs: toBudgetMs(NON_EXPIRING_SEND_TIMEOUT_MS, step.input.deadlineMs)
     };

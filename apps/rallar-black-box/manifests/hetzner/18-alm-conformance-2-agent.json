@@ -445,7 +445,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-ws-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-ws-delivery-reload-sender-reconnect.value.sessionId}/ws\",\"outcome\":{\"kind\":\"restored\""
             },
             "timeoutMs": 77000
           },
@@ -716,7 +716,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-delivery-reload-sender-reconnect.value.sessionId}/ws\",\"outcome\":{\"kind\":\"restored\""
             },
             "timeoutMs": 77000
           },
@@ -999,7 +999,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}/ws\",\"outcome\":{\"kind\":\"restored\""
             },
             "timeoutMs": 77000
           },
@@ -1889,7 +1889,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-ws-storage-unavailable-sender-quota-admission-hold",
-            "faultId": "quota-admission-alm.conformance.ws.storage-unavailable",
+            "faultId": "alm.conformance.ws.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -1902,7 +1902,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-ws-storage-unavailable-sender-quota-work-hold",
-            "faultId": "quota-work-alm.conformance.ws.storage-unavailable",
+            "faultId": "alm.conformance.ws.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -1968,7 +1968,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.ws.storage-unavailable\""
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.ws.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },
@@ -2044,7 +2044,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-ws-storage-unavailable-sender-quota-admission-release",
-            "faultId": "quota-admission-alm.conformance.ws.storage-unavailable",
+            "faultId": "alm.conformance.ws.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -2057,7 +2057,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-ws-storage-unavailable-sender-quota-work-release",
-            "faultId": "quota-work-alm.conformance.ws.storage-unavailable",
+            "faultId": "alm.conformance.ws.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -2125,7 +2125,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.ws.storage-unavailable\""
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.ws.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },
@@ -3394,7 +3394,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-storage-unavailable-sender-quota-admission-hold",
-            "faultId": "quota-admission-alm.conformance.rtc.storage-unavailable",
+            "faultId": "alm.conformance.rtc.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -3407,7 +3407,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-storage-unavailable-sender-quota-work-hold",
-            "faultId": "quota-work-alm.conformance.rtc.storage-unavailable",
+            "faultId": "alm.conformance.rtc.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -3478,7 +3478,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.rtc.storage-unavailable\""
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.rtc.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },
@@ -3559,7 +3559,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-storage-unavailable-sender-quota-admission-release",
-            "faultId": "quota-admission-alm.conformance.rtc.storage-unavailable",
+            "faultId": "alm.conformance.rtc.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -3572,7 +3572,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-storage-unavailable-sender-quota-work-release",
-            "faultId": "quota-work-alm.conformance.rtc.storage-unavailable",
+            "faultId": "alm.conformance.rtc.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -3645,7 +3645,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.rtc.storage-unavailable\""
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.rtc.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },
@@ -4974,7 +4974,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-admission-hold",
-            "faultId": "quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "faultId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -4987,7 +4987,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-work-hold",
-            "faultId": "quota-work-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "faultId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -5058,7 +5058,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable\""
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },
@@ -5139,7 +5139,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-admission-release",
-            "faultId": "quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "faultId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-admission",
             "carrier": "storage",
             "match": {
               "owner": "al-admission",
@@ -5152,7 +5152,7 @@
           {
             "kind": "fault.inject",
             "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-work-release",
-            "faultId": "quota-work-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "faultId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-work",
             "carrier": "storage",
             "match": {
               "owner": "al-work"
@@ -5225,7 +5225,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable\""
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\",\"detail\":\"QuotaExceededError: Scripted storage quota fault alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-"
             },
             "timeoutMs": 10000
           },

@@ -1,3 +1,4 @@
+import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import {
     afterEach,
     beforeEach,
@@ -6,6 +7,7 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
 import {
     events,
     facade,
@@ -413,6 +415,31 @@ it('records AL storage recovery, health and persist events on the storage topic'
         { kind: 'persist', outcome: 'granted' }
     ]);
     expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toEqual([]);
+});
+
+// The storage waits match a substring of the serialized event, so the key order a store emits must reach the topic.
+it('keeps the key order a store emits its health and recovery in on the storage topic', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const storage = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.storage;
+    const health = new ALStorageHealth({ storeId: 'browser-ws-client:session-1', storage: (event) => storage?.(event) });
+
+    const serialized = () => events.filter((event) => event.topic === 'rallar.browser.alm.storage').map((event) => JSON.stringify(event.data));
+
+    health.recordFailure({ cause: 'quota', detail: 'QuotaExceededError: full' });
+    await vi.waitFor(() => expect(serialized()).toHaveLength(1));
+    health.recordRecovery({ kind: 'restored', claimed: 1, expired: 0 }, 'ws');
+
+    await vi.waitFor(() =>
+        expect(serialized()).toEqual([
+            '{"kind":"health","storeId":"browser-ws-client:session-1","status":"failing",' +
+            '"lastFailure":{"cause":"quota","detail":"QuotaExceededError: full"}}',
+            '{"kind":"recovery","storeId":"browser-ws-client:session-1/ws","outcome":{"kind":"restored","claimed":1,"expired":0}}'
+        ])
+    );
 });
 
 it('records synchronous connection producer diagnostics once across reconnect', async () => {

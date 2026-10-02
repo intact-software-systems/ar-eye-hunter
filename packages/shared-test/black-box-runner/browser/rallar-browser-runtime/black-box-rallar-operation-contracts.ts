@@ -1,4 +1,7 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarMessagePayload,
+    RallarStorageUnavailablePolicy
+} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
@@ -295,7 +298,7 @@ export interface BlackBoxRallarMessageSendInput {
     /** Absent, the send is volatile. */
     readonly durability: ALDurabilityAlgo | undefined;
     /** Absent, the channel refuses a durable send its storage cannot take. */
-    readonly onStorageUnavailable: 'refuse' | 'volatile' | undefined;
+    readonly onStorageUnavailable: RallarStorageUnavailablePolicy | undefined;
     readonly ttlMs: number | undefined;
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;

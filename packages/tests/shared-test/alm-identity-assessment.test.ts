@@ -356,6 +356,16 @@ describe('ALM recipe identity assessment', () => {
         }
     );
 
+    it('rejects a reload suffix wait other than a recovery read on the storage topic', () => {
+        const transcript = new IdentityTranscript('reload');
+        const recovery = transcript.sender.commands.find((command) => command.commandId?.endsWith('-recovered-session-inbound'));
+        if (recovery?.kind !== 'wait') {
+            throw new Error('The reload suffix has no recovery wait.');
+        }
+        transcript.sender.replaceCommand({ ...recovery, match: { kind: 'message', payloadPath: 'data.payload', equals: {} } });
+        expect(assessAlmConformanceIdentity(transcript.input())).not.toEqual([]);
+    });
+
     it.each(['invalid', -1, Number.NaN])('rejects malformed other baseline kind %s when write is omitted', (invalid) => {
         const transcript = new IdentityTranscript('reload');
         recordAt(transcript.sender.result(transcript.sender.command('storage.counters')).value).byKind = { read: invalid };

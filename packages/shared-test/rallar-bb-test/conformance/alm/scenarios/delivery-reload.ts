@@ -123,7 +123,11 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
     ];
 }
 
-/** One `recovery` per durable store the reloaded document batches over: each restored, none created or reset. */
+/**
+ * One `restored` outcome for each durable store the reloaded document batches over. The session inbound store is
+ * shared by both carriers' lanes and reports per lane; the WS lane runs on every carrier, so its outcome is the one
+ * read. That no store also read `storage-created` or `storage-reset` rests on each lane reporting once.
+ */
 function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const originalStore = sender.input.carrier === 'ws'
         ? RELOAD_RECOVERED_STORE_PREFIXES.ws
@@ -133,12 +137,14 @@ function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly Rallar
         toStoreRecoveryWait(sender, {
             name: 'recovered-session-inbound',
             storeIdPrefix: RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound,
+            lane: '/ws',
             connectName: 'reconnect',
             timeoutMs
         }),
         toStoreRecoveryWait(sender, {
             name: 'recovered-original-store',
             storeIdPrefix: originalStore,
+            lane: '',
             connectName: 'reconnect',
             timeoutMs
         })
@@ -179,12 +185,13 @@ function toReloadSurvivalTtlMs(deadlineMs: number): number {
 }
 
 /**
- * The one `recovery` a durable store reports after its first work batch, matched in its emitted key order (`kind`,
- * `storeId`, `outcome`). The store id embeds the session the reconnect restored, read from that connect's result.
+ * The one `recovery` a durable store, or one lane of a shared store, reports after its first work batch, matched in
+ * its emitted key order (`kind`, `storeId`, `outcome`). The store id embeds the session the reconnect restored, read
+ * from that connect's result, and a shared store's lane follows it.
  */
 function toStoreRecoveryWait(
     step: AlmConformanceStepInput,
-    store: Readonly<{ name: string; storeIdPrefix: string; connectName: string; timeoutMs: number; }>
+    store: Readonly<{ name: string; storeIdPrefix: string; lane: '' | '/ws'; connectName: string; timeoutMs: number; }>
 ): RallarBlackBoxTestCommand {
     const sessionId = `{resultCache.${toCommandId(step, store.connectName)}.value.sessionId}`;
     return {
@@ -194,7 +201,8 @@ function toStoreRecoveryWait(
             kind: 'diagnostic',
             topic: STORAGE_TOPIC,
             payloadPath: 'data',
-            contains: `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}","outcome":{"kind":"restored"`
+            contains:
+                `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}${store.lane}","outcome":{"kind":"restored"`
         },
         timeoutMs: store.timeoutMs
     };

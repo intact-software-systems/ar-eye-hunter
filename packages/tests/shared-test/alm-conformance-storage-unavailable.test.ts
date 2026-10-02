@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import { toALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 
@@ -100,25 +102,25 @@ describe('storage-unavailable conformance scenario', () => {
 
         expect(faults).toEqual([
             {
-                faultId: 'quota-admission-alm.conformance.rtc.storage-unavailable',
+                faultId: 'alm.conformance.rtc.storage-unavailable.quota-admission',
                 match: { owner: 'al-admission', kind: 'write' },
                 action: 'quota',
                 remaining: 'until-cleared'
             },
             {
-                faultId: 'quota-work-alm.conformance.rtc.storage-unavailable',
+                faultId: 'alm.conformance.rtc.storage-unavailable.quota-work',
                 match: { owner: 'al-work' },
                 action: 'quota',
                 remaining: 'until-cleared'
             },
             {
-                faultId: 'quota-admission-alm.conformance.rtc.storage-unavailable',
+                faultId: 'alm.conformance.rtc.storage-unavailable.quota-admission',
                 match: { owner: 'al-admission', kind: 'write' },
                 action: 'quota',
                 remaining: 0
             },
             {
-                faultId: 'quota-work-alm.conformance.rtc.storage-unavailable',
+                faultId: 'alm.conformance.rtc.storage-unavailable.quota-work',
                 match: { owner: 'al-work' },
                 action: 'quota',
                 remaining: 0
@@ -144,12 +146,12 @@ describe('storage-unavailable conformance scenario', () => {
         ]);
     });
 
-    // The detail names the cell's admission fault, so a cell never matches a transition an earlier cell caused.
-    it('reads the store failing, then healthy with the quota of this cell\'s admission fault still its last failure', () => {
+    // The detail names one of the cell's two faults, so a cell never matches a transition an earlier cell caused.
+    it('reads the store failing, then healthy with a quota of this cell\'s faults still its last failure', () => {
         const waits = findScenario('rtc-with-ws-fallback', 'storage-unavailable').sender.commands
             .filter((command) => command.kind === 'wait');
         const lastFailure = '"lastFailure":{"cause":"quota","detail":"QuotaExceededError: Scripted storage quota fault ' +
-            'quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable"';
+            'alm.conformance.rtc-with-ws-fallback.storage-unavailable.quota-';
 
         expect(waits.map((wait) => wait.match)).toEqual([
             {
@@ -167,31 +169,41 @@ describe('storage-unavailable conformance scenario', () => {
         ]);
     });
 
-    it('matches the storage failure the scripted admission fault produces, as a store records it', async () => {
-        const { sender } = findScenario('ws', 'storage-unavailable');
-        const [admissionFault] = sender.commands.filter((command) => command.kind === 'fault.inject');
-        const port = createScriptedStorageFaultPort();
-        port.inject({
-            faultId: admissionFault.faultId,
-            carrier: 'storage',
-            match: { owner: 'al-admission', kind: 'write' },
-            action: 'quota',
-            remaining: 'until-cleared'
-        });
-        const rejection = await Promise.resolve(port.observe({ owner: 'al-admission', kind: 'write' }))
-            .then(() => new Error('The held quota fault let the admission write through.'), (error: Error) => error);
-        const lastFailure = JSON.stringify({ lastFailure: toALStorageUnavailable(rejection) }).slice(1, -2);
-        const failing = sender.commands.find((command) => command.commandId?.endsWith('-health-failing'));
+    // A work-queue failure can replace the admission one as the store's last failure: either one matches.
+    it.each(['al-admission', 'al-work'] as const)(
+        'matches the storage failure the scripted %s fault produces, as a store records it',
+        async (owner) => {
+            const { sender } = findScenario('ws', 'storage-unavailable');
+            const fault = sender.commands.find((command) => command.kind === 'fault.inject' && command.carrier === 'storage' && command.match.owner === owner);
+            if (fault?.kind !== 'fault.inject' || fault.carrier !== 'storage') {
+                throw new Error(`The scenario holds no ${owner} quota.`);
+            }
+            const port = createScriptedStorageFaultPort();
+            port.inject({
+                faultId: fault.faultId,
+                carrier: 'storage',
+                match: { owner: fault.match.owner, kind: fault.match.kind },
+                action: 'quota',
+                remaining: 'until-cleared'
+            });
+            const rejection = await Promise.resolve(port.observe({ owner, kind: 'write' }))
+                .then(() => new Error('The held quota fault let the write through.'), (error: Error) => error);
+            const lastFailure = JSON.stringify({ lastFailure: toALStorageUnavailable(rejection) }).slice(1, -2);
+            const failing = sender.commands.find((command) => command.commandId?.endsWith('-health-failing'));
 
-        expect(failing?.kind === 'wait' ? failing.match.contains : undefined).toBe(`"status":"failing",${lastFailure}`);
-    });
+            expect(failing?.kind).toBe('wait');
+            expect(`"status":"failing",${lastFailure}`).toContain(failing?.kind === 'wait' ? failing.match.contains : '');
+        }
+    );
 
-    it.each(ALM_CONFORMANCE_CARRIERS)('ties each %s health wait to that cell\'s own admission fault', (carrier) => {
+    it.each(ALM_CONFORMANCE_CARRIERS)('ties each %s health wait to that cell\'s own faults', (carrier) => {
         const waits = findScenario(carrier, 'storage-unavailable').sender.commands
             .filter((command) => command.kind === 'wait');
 
         for (const wait of waits) {
-            expect(wait.match.contains).toContain(`quota-admission-alm.conformance.${carrier}.storage-unavailable"`);
+            expect(wait.match.contains).toMatch(
+                new RegExp(`fault alm\\.conformance\\.${carrier.replaceAll('-', '\\-')}\\.storage-unavailable\\.quota-$`)
+            );
         }
     });
 
@@ -232,14 +244,22 @@ describe('delivery-reload recovery reads', () => {
             const sessionId = `{resultCache.alm-${carrier}-delivery-reload-sender-reconnect.value.sessionId}`;
 
             expect(recoveries.map((wait) => wait.kind === 'wait' ? wait.match.contains : undefined)).toEqual([
-                `"kind":"recovery","storeId":"browser-session-inbound:${sessionId}","outcome":{"kind":"restored"`,
+                `"kind":"recovery","storeId":"browser-session-inbound:${sessionId}/ws","outcome":{"kind":"restored"`,
                 `"kind":"recovery","storeId":"${originalStore}:${sessionId}","outcome":{"kind":"restored"`
             ]);
             expect(sender.commands.at(-2)?.commandId).toBe(`alm-${carrier}-delivery-reload-sender-storage-counters-recovered`);
         }
     );
 
+    // The session inbound store reports per carrier lane, under the store id the product's health names it by.
     it('names the stores by the browser\'s own store ids', () => {
+        const events: ALStorageEvent[] = [];
+        new ALStorageHealth({ storeId: toBrowserSessionALInboundRuntimeStoreId('s'), storage: (event) => events.push(event) })
+            .recordRecovery({ kind: 'restored', claimed: 0, expired: 0 }, 'ws');
+
+        expect(events.map((event) => event.kind === 'recovery' ? event.storeId : event.kind)).toEqual([
+            `${RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound}:s/ws`
+        ]);
         expect(`${RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound}:s`).toBe(String(toBrowserSessionALInboundRuntimeStoreId('s')));
         expect(`${RELOAD_RECOVERED_STORE_PREFIXES.ws}:s`).toBe(String(toBrowserWsClientALRuntimeStoreId('s')));
         expect(`${RELOAD_RECOVERED_STORE_PREFIXES.rtc}:s`).toBe(String(toBrowserRtcOverlayALRuntimeStoreId('s')));

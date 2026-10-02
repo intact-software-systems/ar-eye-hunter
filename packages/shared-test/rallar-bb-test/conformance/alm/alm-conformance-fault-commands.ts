@@ -61,7 +61,8 @@ export function toRtcDropFaultCommand(
 
 /**
  * Fails every admission write and every work-queue write of this page with `QuotaExceededError` while held, each owner
- * under its own fault id; the same ids with `remaining: 0` release them. Reads go through.
+ * under its own fault id; the same ids with `remaining: 0` release them. Reads go through. Both ids start with
+ * {@link toStorageQuotaFaultIdPrefix}, so a store's last failure names this cell whichever owner failed last.
  */
 export function toStorageQuotaFaultCommands(
     step: AlmConformanceStepInput,
@@ -71,21 +72,22 @@ export function toStorageQuotaFaultCommands(
     return [
         toStorageQuotaFaultCommand(step, {
             name: `quota-admission-${phase}`,
-            faultId: toAdmissionQuotaFaultId(step),
+            faultId: `${toStorageQuotaFaultIdPrefix(step)}admission`,
             match: { owner: 'al-admission', kind: 'write' },
             remaining
         }),
         toStorageQuotaFaultCommand(step, {
             name: `quota-work-${phase}`,
-            faultId: `quota-work-${toScenarioTypeId(step)}`,
+            faultId: `${toStorageQuotaFaultIdPrefix(step)}work`,
             match: { owner: 'al-work' },
             remaining
         })
     ];
 }
 
-export function toAdmissionQuotaFaultId(step: AlmConformanceStepInput): string {
-    return `quota-admission-${toScenarioTypeId(step)}`;
+/** The cell's type id first: no type id followed by `.quota-` is a prefix of another. */
+export function toStorageQuotaFaultIdPrefix(step: AlmConformanceStepInput): string {
+    return `${toScenarioTypeId(step)}.quota-`;
 }
 
 interface StorageQuotaFault {

@@ -177,7 +177,9 @@ function decodeStorageFaultMatch(value: unknown): Either<BlackBoxRallarInputIssu
     }
     const owner = INDEXED_DB_OPERATION_OWNERS.find((candidate) => candidate === value.owner);
     if (owner === undefined) {
-        return toInputIssue('fault.inject.match.owner must be al-admission or al-work on the storage carrier.');
+        return toInputIssue(
+            `fault.inject.match.owner must be one of ${INDEXED_DB_OPERATION_OWNERS.join(', ')} on the storage carrier.`
+        );
     }
     const kind = value.kind ?? undefined;
     const knownKind = INDEXED_DB_OPERATION_KINDS.find((candidate) => candidate === kind);
