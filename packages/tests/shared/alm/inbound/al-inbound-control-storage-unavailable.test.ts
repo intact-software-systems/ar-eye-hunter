@@ -26,8 +26,9 @@ afterEach(() => {
 });
 
 describe('inbound control whose outbound store cannot persist it', () => {
-    // A storage failure inside a claim retries the claim, so the replayed control reaches the outbound owner again.
-    it('retries the admit-control replay claim', async () => {
+    // Recorded gap: the first attempt already committed the inbound admission, so the retry completes without handing
+    // the control to the outbound owner again; the receipt timeout and the peer's re-ACK heal it.
+    it('retries the admit-control replay claim once and completes it without a second hand-over', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         await seedPendingAcknowledgement(stores);
@@ -35,12 +36,20 @@ describe('inbound control whose outbound store cannot persist it', () => {
         vi.spyOn(stores.admissionStore, 'commitBundle')
             .mockResolvedValueOnce('conflict')
             .mockImplementation(commitBundle);
-        const { runtime } = createRuntime(stores, async () => UNPERSISTED);
+        const handedOver: string[] = [];
+        const { runtime } = createRuntime(stores, async (msg) => {
+            handedOver.push(msg.id.msgId);
+            return UNPERSISTED;
+        });
 
         const pending = await runtime.admitIncomingMessage(createAcknowledgement(), SOURCE);
 
         expect(pending.right).toEqual({ kind: 'pending-admission' });
         await expect.poll(() => readAdmitControlStatuses(stores)).toEqual(['RETRY']);
+        expect(handedOver).toEqual(['control-ack']);
+        vi.setSystemTime(Date.now() + 600_000);
+        await expect.poll(() => readAdmitControlStatuses(stores)).toEqual(['COMPLETED']);
+        expect(handedOver).toEqual(['control-ack']);
     });
 
     // The carrier still reads an unhandled control; the diagnostic says it was storage, not a foreign control.

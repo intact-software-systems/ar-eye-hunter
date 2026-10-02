@@ -483,7 +483,9 @@ A message its durable store cannot persist is `not-admitted` with reason `storag
 failed transaction wrote nothing, so the sender's receipt retries it. A control that its inbound store,
 or the outbound owner it is handed to, cannot persist answers its carrier as an unhandled control, and
 its `admission-outcome` reads `not-handled` with reason `storage-unavailable: <cause>`; inside an
-`admit-control` replay claim the outbound failure retries the claim instead. The
+`admit-control` replay claim the outbound failure retries the claim instead. That retry finds the
+inbound admission already committed and completes without handing the control over again; the receipt
+timeout and the peer's re-ACK heal it. The
 failure is recorded on the pair's health, as is a work batch that fails for its storage; every
 admission that wrote work and every flushed batch is a recovery point. `ready()` answers a pair that
 cannot open as a value, and the next call opens again; until then the lane starts no work and its

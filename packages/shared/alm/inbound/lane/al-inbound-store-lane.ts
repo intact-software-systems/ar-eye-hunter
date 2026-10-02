@@ -427,7 +427,10 @@ export class ALInboundStoreLane {
         return { status: 'completed' };
     }
 
-    /** A storage failure inside this claim retries it, so the replayed control reaches the outbound owner again. */
+    /**
+     * A storage failure retries this claim once; the inbound admission is already committed, so the retry completes
+     * without a second hand-over, and the receipt timeout and the peer's re-ACK heal it.
+     */
     private async replayControl(payload: ALInboundPendingControl): Promise<ALWorkOutcome> {
         const replayed = await this.controlAdmission.replay(payload);
         if (replayed.wroteWork) {
