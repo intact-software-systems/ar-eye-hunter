@@ -4,6 +4,7 @@ import { CONNECT_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../alm-conform
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
 import {
+    toReceiptsCommand,
     toResultAssertion,
     toRetainedEvidenceCommands,
     toSendCommand
@@ -19,6 +20,9 @@ import {
     toRecoveryTtlMs,
     toStoreRecoveryWait
 } from '../alm-conformance-session-commands.ts';
+import { toCommandId } from '../alm-conformance-step-identities.ts';
+
+const HAND_OVER_POLL_INTERVAL_MS = 200;
 
 /**
  * One durable owner per session: the sender's page admits a durable send it cannot deliver and closes, and the
@@ -37,7 +41,11 @@ export const durableTakeover: AlmConformanceScenarioDefinition = {
     toRecipientCommands: toDurableTakeoverReceiverCommands
 };
 
-/** The native hold ends only with the owner's page, so no attempt of the owner ever leaves it. */
+/**
+ * The native hold ends only with the owner's page, so no attempt of the owner ever leaves it. Over the fallback
+ * carrier the owner's recipe ends only once its held RTC attempts have handed the original to WS, whose attempts the
+ * hold keeps too, so the row the successor restores is in the WS client store.
+ */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toHeldFaultCommands(owner, 'takeover-hold', 'until-cleared'),
@@ -52,8 +60,36 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
                 commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
             }
         }),
-        ...toRetainedEvidenceCommands({ ...owner, index: 1 }, true)
+        ...toRetainedEvidenceCommands({ ...owner, index: 1 }, true),
+        ...(owner.input.carrier === 'rtc-with-ws-fallback' ? [toHandOverPoll(owner)] : [])
     ];
+}
+
+/**
+ * The hand-over changes no delivery state, so the owner reads its receipt until the receipt's carrier-fallback evidence
+ * names WS, within the budget a fallback send gets to reach its WS copy. Each read is the loop child of its iteration.
+ */
+function toHandOverPoll(owner: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const name = 'await-hand-over-1';
+    const receipts = { ...owner, index: 1 };
+    return {
+        kind: 'loop',
+        commandId: toCommandId(owner, name),
+        until: 'first-success',
+        count: NON_EXPIRING_SEND_TIMEOUT_MS / HAND_OVER_POLL_INTERVAL_MS,
+        intervalMs: HAND_OVER_POLL_INTERVAL_MS,
+        commands: [
+            toReceiptsCommand(receipts),
+            toResultAssertion({
+                step: owner,
+                name: 'assert-handed-over-to-ws-1',
+                resultName: `${name}:i{loop.iteration}:c1:${toCommandId(receipts, 'receipts-1')}`,
+                field: 'carrierFallback.to',
+                operator: 'equals',
+                expected: 'ws'
+            })
+        ]
+    };
 }
 
 /** The takeover's first batch claims the original from the store that held it; the recovery it reports says so. */

@@ -9,7 +9,10 @@ import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 
-import { CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
+import {
+    CONNECT_TIMEOUT_MS,
+    NON_EXPIRING_SEND_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
@@ -20,6 +23,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { decodePayloadPathValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 import { OUTBOUND_LEASE_RECOVERY_BOUND_MS } from '../shared/alm/outbound-runtime-test-fixture.ts';
@@ -89,8 +93,50 @@ describe('durable-takeover conformance scenario', () => {
             'assert',
             'assert',
             'assert',
-            'assert'
+            'assert',
+            ...(carrier === 'rtc-with-ws-fallback' ? ['loop'] : [])
         ]);
+    });
+
+    // The owner's page closes as its recipe ends; over the fallback carrier the row must have left the overlay by then.
+    it('has the fallback owner poll its receipt until the hand-over to WS is recorded', () => {
+        const scenario = findTakeover('rtc-with-ws-fallback');
+        const poll = scenario.sender.commands.at(-2);
+        const [receipts, handedOver] = poll?.kind === 'loop' ? poll.commands : [];
+
+        expect(poll).toMatchObject({ kind: 'loop', until: 'first-success', intervalMs: 200 });
+        expect(poll?.kind === 'loop' ? (poll.count ?? 0) * (poll.intervalMs ?? 0) : 0).toBe(NON_EXPIRING_SEND_TIMEOUT_MS);
+        expect(receipts).toMatchObject({ kind: 'messages.receipts', handleId: findSend(scenario).handleId });
+        expect(handedOver).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'ws' });
+    });
+
+    it.each([[['none', 'ws'], true], [['none', 'none', 'none'], false]] as const)(
+        'ends the fallback owner\'s poll on the first receipt naming WS (receipts %j, passes %s)',
+        async (handOvers, passes) => {
+            const poll = findTakeover('rtc-with-ws-fallback').sender.commands.at(-2);
+            const receipts = [...handOvers];
+            let reads = 0;
+            const runtime = createRallarBlackBoxTestRuntime({
+                sleep: async () => {},
+                commandExecutor: (command) => {
+                    if (command.kind !== 'messages.receipts') {
+                        return undefined;
+                    }
+                    const to = receipts[Math.min(reads, receipts.length - 1)];
+                    reads += 1;
+                    return { status: 'ok', value: { carrierFallback: to === 'ws' ? { from: 'rtc', to } : undefined } };
+                }
+            });
+
+            const result = await runtime.execute(poll?.kind === 'loop' ? { ...poll, count: receipts.length } : { kind: 'health' });
+
+            expect(result.ok).toBe(passes);
+            expect(reads).toBe(passes ? 2 : 3);
+        }
+    );
+
+    it.each(['ws', 'rtc'] as const)('ends the %s owner\'s commands at its retained evidence', (carrier) => {
+        expect(findTakeover(carrier).sender.commands.some((command) => command.kind === 'loop')).toBe(false);
     });
 
     // The owner's page closes with its row held: the successor takes it over, at once or after one lease and a sweep.

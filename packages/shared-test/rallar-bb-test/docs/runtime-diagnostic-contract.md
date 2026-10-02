@@ -550,7 +550,10 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   the owner page with one durable original held, waits out one lease before the
   successor page connects, then waits for the successor's `restored` recovery
   of the store that held the original (chosen as `delivery-reload` chooses it)
-  and asserts its `claimed` above 0.
+  and asserts its `claimed` above 0. Over `rtc-with-ws-fallback` the owner page
+  closes only once its receipt records the hand-over to WS (a `loop` until the
+  first success over `messages.receipts` and an assert that `carrierFallback.to`
+  is `ws`), so the held row is in the WS client store the successor reads.
 
 ## Compatibility
 

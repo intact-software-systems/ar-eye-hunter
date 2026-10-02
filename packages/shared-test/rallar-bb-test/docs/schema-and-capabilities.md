@@ -535,16 +535,18 @@ leftover rows can read it healthy, so the third send's own commit is proven by `
 `durable-takeover` runs over every carrier in the same-context family. The sender's page holds its carrier with the
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 19.1 s recovery bound and a whole successor connect), and proves
-it admitted, enqueued, retained and unsubmitted. The lane then closes that page. Under the hold the row stays
-reserved until its lease ends, so a successor's prologue first waits out one lease and a margin (an absent wait on a
-topic nothing emits) before it connects: its takeover's first batch then claims the row rather than finding it leased.
-The successor connects with the restored session, waits for the one `recovery` of the store that held the original
-(`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise) reading `restored`, the store id embedding the
-session its own connect restored, and asserts that outcome's `claimed` above 0. The receiver waits for the
-carrier-tagged original over the sender's connect plus the original's lifetime, then proves for an absence window
-that no second copy arrives. A takeover while the owner's lease still stands, recovered by a later batch at the lease
-end plus at most 19.1 s, is not run by the lane: that path claims in a batch that reports nothing, and the server
-keeps one socket per auth session, so the successor cannot connect before the owner's page is gone.
+it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until the
+hand-over to WS is recorded, so the row leaves the overlay store before the page ends. The lane then closes that
+page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
+lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
+claims the row rather than finding it leased. The successor connects with the restored session, waits for the one
+`recovery` of the store that held the original (`browser-rtc-overlay` over `rtc`, `browser-ws-client` otherwise)
+reading `restored`, the store id embedding the session its own connect restored, and asserts that outcome's
+`claimed` above 0. The receiver waits for the carrier-tagged original over the sender's connect plus the original's
+lifetime, then proves for an absence window that no second copy arrives. A takeover while the owner's lease still
+stands, recovered by a later batch at the lease end plus at most 19.1 s, is not run by the lane: that path claims in a
+batch that reports nothing, and the server keeps one socket per auth session, so the successor cannot connect before
+the owner's page is gone.
 
 `agent.reload` asks the control agent to reload its page and resume the run. The
 agent records the run id, its agent id and the command ids it already completed

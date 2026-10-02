@@ -96,6 +96,8 @@ class GeneratedAlmPorts {
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
+    /** Whether a held fallback send's RTC leg hands it to WS at all. */
+    handsOverHeldFallback = true;
     lastQuotaFaultId = '';
     readonly receiver: RallarBlackBoxTestRuntime;
     sender: RallarBlackBoxTestRuntime;
@@ -182,7 +184,8 @@ class GeneratedAlmPorts {
                 return { status: 'ok', value: { barrierId: command.barrierId, outcome: 'released', arrivedAgentIds: [role] } };
             case 'assert':
             case 'wait':
-                return undefined; // These acceptance commands execute in the real runtime.
+            case 'loop':
+                return undefined; // These acceptance and composite commands execute in the real runtime.
             default:
                 throw new Error(`Unexpected external fixture port: ${command.kind}`);
         }
@@ -249,15 +252,31 @@ class GeneratedAlmPorts {
         // A ws receipt names no hop, so its logical recipient is read from the recipient lists.
         const isWs = message.command.carrier === 'ws';
         const confirmed = isWs ? 'receiver-stored-session' : 'receiver';
-        return {
-            status: 'ok',
-            value: {
-                confirmedHopPeerIds: isWs ? [] : [confirmed],
-                unconfirmedHopPeerIds: [],
-                confirmedRecipientPeerIds: [confirmed],
-                unconfirmedRecipientPeerIds: []
-            }
+        const value = {
+            confirmedHopPeerIds: isWs ? [] : [confirmed],
+            unconfirmedHopPeerIds: [],
+            confirmedRecipientPeerIds: [confirmed],
+            unconfirmedRecipientPeerIds: [],
+            carrierFallback: message.carrierFallback
         };
+        this.handOverHeldFallback(message);
+        return { status: 'ok', value };
+    }
+
+    /** A held fallback send's RTC attempts hand it to WS a moment after admission, so the first read precedes it. */
+    private handOverHeldFallback(message: PortMessage): void {
+        if (
+            this.handsOverHeldFallback && message.command.carrier === 'rtc-with-ws-fallback' && !message.submitted &&
+            this.isHeld(message.command.typeId)
+        ) {
+            message.carrierFallback = {
+                from: 'rtc',
+                to: 'ws',
+                reason: 'not-ready',
+                atMs: this.now,
+                detail: 'The held RTC leg handed the send over to WS.'
+            };
+        }
     }
 
     private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
@@ -806,8 +825,31 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
         }
         assertEquals(held.map((message) => message.submitted), [true], 'the successor sends the original once');
+        assertEquals(
+            held.map((message) => message.carrierFallback?.to),
+            [carrier === 'rtc-with-ws-fallback' ? 'ws' : undefined],
+            'only the fallback owner waits for its hand-over to WS'
+        );
     });
 }
+
+Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never hands over to WS', async () => {
+    const scenario = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+        carrier: 'rtc-with-ws-fallback',
+        typeId: 'alm.conformance',
+        senderConnection: 'almConformanceSender',
+        receiverConnection: 'almConformanceReceiver',
+        deadlineMs: 18_000
+    }).find((candidate) => candidate.scenarioId === 'durable-takeover');
+    assert(scenario);
+    const ports = new GeneratedAlmPorts(true);
+    ports.handsOverHeldFallback = false;
+
+    const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
+
+    assertEquals(owner.ok, false, JSON.stringify(owner));
+});
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
     return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };
