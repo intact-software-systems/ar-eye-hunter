@@ -233,7 +233,7 @@ describe('delivery-reload recovery reads', () => {
         [
             ['ws', 'browser-ws-client'],
             ['rtc', 'browser-rtc-overlay'],
-            ['rtc-with-ws-fallback', 'browser-rtc-overlay']
+            ['rtc-with-ws-fallback', 'browser-ws-client']
         ] as const
     )(
         'waits after the %s reload for one restored recovery of the session inbound store and of %s',

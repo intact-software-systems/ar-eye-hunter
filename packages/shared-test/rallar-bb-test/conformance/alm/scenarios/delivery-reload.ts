@@ -37,8 +37,9 @@ const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
 /**
  * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this Deno-loaded catalog
- * cannot import). The session inbound store batches every engine round; the outbound store that holds the original
- * runs its first batch when it reclaims it.
+ * cannot import). The session inbound store batches every engine round. An outbound store reports when its first work
+ * batch runs, which for a store without work can be long after the connect or never before the document ends, so the
+ * wait names the store that holds the original.
  */
 export const RELOAD_RECOVERED_STORE_PREFIXES = {
     sessionInbound: 'browser-session-inbound',
@@ -124,14 +125,16 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
 }
 
 /**
- * One `restored` outcome for each durable store the reloaded document batches over. The session inbound store is
- * shared by both carriers' lanes and reports per lane; the WS lane runs on every carrier, so its outcome is the one
- * read. That no store also read `storage-created` or `storage-reset` rests on each lane reporting once.
+ * One `restored` outcome for the session inbound store and for the outbound store holding the original. The session
+ * inbound store is shared by both carriers' lanes and reports per lane; the WS lane runs on every carrier, so its
+ * outcome is the one read. The fallback carrier's hold hands the original to WS before the reload, so only `rtc`
+ * leaves it in the overlay store. That no store also read `storage-created` or `storage-reset` rests on each lane
+ * reporting once.
  */
 function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const originalStore = sender.input.carrier === 'ws'
-        ? RELOAD_RECOVERED_STORE_PREFIXES.ws
-        : RELOAD_RECOVERED_STORE_PREFIXES.rtc;
+    const originalStore = sender.input.carrier === 'rtc'
+        ? RELOAD_RECOVERED_STORE_PREFIXES.rtc
+        : RELOAD_RECOVERED_STORE_PREFIXES.ws;
     const timeoutMs = toReloadSurvivalTtlMs(sender.input.deadlineMs);
     return [
         toStoreRecoveryWait(sender, {

@@ -1010,7 +1010,7 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.storage",
               "payloadPath": "data",
-              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-rtc-overlay:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-ws-client:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
             },
             "timeoutMs": 77000
           },

@@ -506,8 +506,9 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
 
 - `recovery`: one event per durable store, and per lane of the shared session
   inbound store, per connect, `outcome` being what the store found when its
-  lane started. A lane reports after its first work batch, so a store that
-  never runs a batch (an outbound store with no work on its carrier) reports
+  lane started. A durable store reports its outcome when its lane's first work
+  batch runs, which for an outbound store without work can be long after the
+  connect; a store whose lane runs no batch before the document ends reports
   nothing, and a store whose open failed never starts its work and reads as a
   `failing` `health` event instead. The three stores of a session share one
   per-scope database, and a creation, reset or eviction one of them found is a
@@ -531,8 +532,10 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   reads as a `health` event with `status: 'failing'` and
   `lastFailure.cause: 'evicted'` instead of a recovery. `delivery-reload` waits
   after the reload for a `restored` recovery of the session inbound store's WS
-  lane, which runs on every carrier, and of the outbound store that held the
-  original.
+  lane, which runs on every carrier, and of the outbound store that holds the
+  original: the RTC overlay store on `rtc`, the WS client store on `ws` and on
+  `rtc-with-ws-fallback`, whose hold hands the original to WS before the
+  reload.
 
 ## Compatibility
 
