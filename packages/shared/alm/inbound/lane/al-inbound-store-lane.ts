@@ -4,6 +4,8 @@ import { NonRetryableException } from '../../../queuebox/resource-inbox/create-d
 import { Either } from '../../../resilience/Either.ts';
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
+import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryReporter } from '../../storage/al-storage-recovery-reporter.ts';
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
@@ -34,7 +36,8 @@ import {
 } from '../al-inbound-work-entry.ts';
 import {
     ALInboundControlAdmission,
-    type ALInboundControlAdmissionResult
+    type ALInboundControlAdmissionResult,
+    type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
@@ -71,12 +74,13 @@ export namespace ALInboundStoreLane {
 export class ALInboundStoreLane {
     private readonly input: ALInboundStoreLane.Input;
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
-    private readonly readyPromise: Promise<void>;
+    private readonly readiness: ALStorageReadiness;
     private readonly admission: ALInboundMessageAdmission;
     private readonly controlAdmission: ALInboundControlAdmission;
     private readonly delivery: ALInboundAdmittedDelivery;
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
+    private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private emptyRoundCount = 0;
     private emptyRoundsFromMs: number | undefined;
@@ -91,11 +95,14 @@ export class ALInboundStoreLane {
     constructor(input: ALInboundStoreLane.Input) {
         this.input = input;
         this.dependencies = toALInboundLaneDependencies(input);
-        this.readyPromise = input.stores.admissionStore.ready();
         const workPort = createALInboundLaneWorkPort(this.dependencies);
         this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
         this.delivery = new ALInboundAdmittedDelivery(this.dependencies);
+        this.storageRecovery = input.stores.createStorageRecovery?.({
+            name: input.runtime.carrier,
+            workTypeId: toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier)
+        });
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
@@ -109,18 +116,24 @@ export class ALInboundStoreLane {
             clock: this.dependencies.clock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
-            readNextReadyAtMs: (port) => this.workSelector.readNextReadyAtMs(port),
+            readNextReadyAtMs: (port) =>
+                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port), undefined),
             // The rotation advances one status per probe, so an answer of its own never stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
             runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
-            diagnostics: (event) => this.recordWorkDiagnostics(event)
+            diagnostics: (event) => this.recordWorkDiagnostics(event),
+            storageHealth: input.stores.storageHealth
+        });
+        this.readiness = new ALStorageReadiness({
+            openStores: () => input.stores.admissionStore.ready(),
+            startWork: () => this.work.ready(),
+            storageHealth: input.stores.storageHealth
         });
     }
 
-    async ready(): Promise<void> {
-        await this.readyPromise;
-        await this.work.ready();
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        return await this.readiness.ready();
     }
 
     dispose(): void {
@@ -130,7 +143,19 @@ export class ALInboundStoreLane {
         this.delivery.dispose();
     }
 
+    /** A message its store cannot persist is not admitted: it wrote nothing, and its sender's receipt retries it. */
     async admitData(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
+        planIncomingMessage: ALInboundPlanner
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+        return await this.readiness.runStoreOperation(
+            () => this.admitDataInStore(msg, source, planIncomingMessage),
+            () => Either.ofRight({ kind: 'not-admitted', reason: 'storage-unavailable' })
+        );
+    }
+
+    private async admitDataInStore(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
@@ -144,6 +169,7 @@ export class ALInboundStoreLane {
             return Either.ofRight(await this.retainConflictedAdmission(result.pending));
         }
         if (result.wroteWork) {
+            this.input.stores.storageHealth?.recordRecoveryPoint(this.readNowMs());
             this.commitWork();
         }
         return Either.ofRight(result.acceptance);
@@ -157,7 +183,10 @@ export class ALInboundStoreLane {
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source
     ): Promise<ALInboundControlAdmissionResult> {
-        const admitted = await this.controlAdmission.admit(msg, source);
+        const admitted = await this.readiness.runStoreOperation(
+            () => this.controlAdmission.admit(msg, source),
+            (unavailable): ALInboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
+        );
         if (admitted.kind === 'pending-control' || admitted.kind === 'committed') {
             this.commitWork();
         }
@@ -223,6 +252,7 @@ export class ALInboundStoreLane {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
+            this.storageRecovery?.reportFirstBatch(event.claimedCount);
             this.recordWorkBatch(event);
         }
     }
@@ -362,14 +392,7 @@ export class ALInboundStoreLane {
             return toALInboundReplayOutcome(replayed.outcome, this.readNowMs());
         }
         if (payload.kind === 'admit-control') {
-            const replayed = await this.controlAdmission.replay(payload);
-            if (replayed.wroteWork) {
-                this.commitWork();
-            }
-            if (replayed.acceptance !== undefined && !this.disposed) {
-                await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
-            }
-            return replayed.outcome;
+            return await this.replayControl(payload);
         }
         if (payload.kind === 'send-control') {
             return await this.sendControlInRound(effect, payload.msg);
@@ -409,6 +432,22 @@ export class ALInboundStoreLane {
             await this.dependencies.sendControlMessages([msg]);
         }
         return { status: 'completed' };
+    }
+
+    /**
+     * A storage failure retries this claim once; the inbound admission is already committed, so the retry completes
+     * without a second hand-over, and the receipt timeout and the peer's re-ACK heal it.
+     */
+    private async replayControl(payload: ALInboundPendingControl): Promise<ALWorkOutcome> {
+        const replayed = await this.controlAdmission.replay(payload);
+        if (replayed.wroteWork) {
+            this.commitWork();
+        }
+        if (replayed.acceptance === undefined || this.disposed) {
+            return replayed.outcome;
+        }
+        const handedOver = await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
+        return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
     }
 
     private readNowMs(): number {

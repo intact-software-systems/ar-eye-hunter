@@ -22,9 +22,9 @@ interface BrowserMessageSenderFixture {
 
 export function createBrowserMessageSenderFixture(
     maxPayloadBytes = 64 * 1024,
-    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} })
+    registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} }),
+    middleware = createDefaultApiMiddlewareTestDouble()
 ): BrowserMessageSenderFixture {
-    const middleware = createDefaultApiMiddlewareTestDouble();
     let activeMiddleware = middleware;
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(registry, { deliverySettlements: feed, readMiddleware: () => activeMiddleware });

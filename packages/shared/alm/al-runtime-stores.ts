@@ -39,6 +39,13 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
+import type { ALStorageConnectOpenings } from './storage/al-storage-connect-openings.ts';
+import type { ALStorageHealth } from './storage/al-storage-health.ts';
+import {
+    createALStorageRecoveryReporter,
+    type ALStorageRecoveryLane,
+    type ALStorageRecoveryReporter
+} from './storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
 
 /**
@@ -69,6 +76,10 @@ export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRun
     readonly observer: IndexedDbOperationObserver;
     readonly schemaId: string;
     readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    /** The health the pair's lanes record into; `undefined` when no one reads it. */
+    readonly storageHealth: ALStorageHealth | undefined;
+    /** The openings of the connect whose stores share the database; `undefined` for a pair of no connect. */
+    readonly connectOpenings: ALStorageConnectOpenings | undefined;
 }
 
 export interface CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared> extends CreateIndexedDbALRuntimeStoresInput {
@@ -93,6 +104,8 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly observer?: IndexedDbOperationObserver;
     readonly schemaId?: string;
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
+    readonly storageHealth?: ALStorageHealth;
+    readonly connectOpenings?: ALStorageConnectOpenings;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -133,17 +146,76 @@ export function createInMemoryALOutboundRuntimeStores<TPrepared>(
 export function createIndexedDbALInboundRuntimeStores(
     input: CreateIndexedDbALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    const backend = input.inboundBackend ??
-        new IndexedDbAdmissionBackend({
-            dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-            storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-            nowMs: input.nowMs,
-            newWriteToken: crypto.randomUUID.bind(crypto),
-            observer: input.observer,
-            schemaId: input.schemaId,
-            onStorageReset: input.onStorageReset
+    if (input.inboundBackend !== undefined) {
+        return toIndexedDbALInboundRuntimeStores(input, input.inboundBackend, undefined);
+    }
+    const backend = createIndexedDbAdmissionBackend(input, `${input.namespace}:inbound`, input.onStorageReset);
+    const storageHealth = input.storageHealth;
+    const createStorageRecovery = storageHealth === undefined
+        ? undefined
+        : (lane: ALStorageRecoveryLane) =>
+            createALStorageRecoveryReporter({
+                getStorageOpening: () => backend.getStorageOpening(),
+                getReservationExpiredDeleteCount: () =>
+                    backend.workQueue.getReservationExpiredDeleteCount(lane.workTypeId),
+                storageHealth,
+                lane: lane.name
+            });
+    return toIndexedDbALInboundRuntimeStores(input, backend, createStorageRecovery);
+}
+
+export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
+    input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
+): ALOutboundRuntimeStores<TPrepared> {
+    // Only a backend this factory opens reports its resets and its recovery here; a supplied one reports to its opener.
+    if (input.outboundBackend !== undefined) {
+        return toIndexedDbALOutboundRuntimeStores(input, input.outboundBackend, {
+            storageResets: undefined,
+            storageRecovery: undefined
         });
+    }
+    const storageResets = new ALStorageResetListeners();
+    const backend = createIndexedDbAdmissionBackend(input, `${input.namespace}:outbound`, (event) => {
+        storageResets.notify(event);
+        input.onStorageReset(event);
+    });
+    const storageHealth = input.storageHealth;
+    const storageRecovery = storageHealth === undefined ? undefined : createALStorageRecoveryReporter({
+        getStorageOpening: () => backend.getStorageOpening(),
+        getReservationExpiredDeleteCount: () => backend.workQueue.getReservationExpiredDeleteCount(undefined),
+        storageHealth,
+        lane: undefined
+    });
+    return toIndexedDbALOutboundRuntimeStores(input, backend, { storageResets, storageRecovery });
+}
+
+function createIndexedDbAdmissionBackend(
+    input: CreateIndexedDbALRuntimeStoresInput,
+    storeNamespace: string,
+    onStorageReset: (event: ALStorageResetEvent) => void
+): IndexedDbAdmissionBackend {
+    return new IndexedDbAdmissionBackend({
+        dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+        storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+        nowMs: input.nowMs,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer: input.observer,
+        schemaId: input.schemaId,
+        onStorageReset,
+        connectOpening: input.connectOpenings === undefined
+            ? undefined
+            : { openings: input.connectOpenings, storeNamespace }
+    });
+}
+
+function toIndexedDbALInboundRuntimeStores(
+    input: CreateIndexedDbALRuntimeStoresInput,
+    backend: ALAdmissionWorkBackend,
+    createStorageRecovery: ((lane: ALStorageRecoveryLane) => ALStorageRecoveryReporter) | undefined
+): ALInboundRuntimeStores {
     return {
+        storageHealth: input.storageHealth,
+        createStorageRecovery,
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
@@ -156,26 +228,20 @@ export function createIndexedDbALInboundRuntimeStores(
     };
 }
 
-export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
-    input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
+/** The relays a factory-opened pair carries; both absent for a backend its caller opened. */
+interface IndexedDbALOutboundRelays {
+    readonly storageResets: ALStorageResetListeners | undefined;
+    readonly storageRecovery: ALStorageRecoveryReporter | undefined;
+}
+
+function toIndexedDbALOutboundRuntimeStores<TPrepared>(
+    input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>,
+    backend: ALAdmissionWorkBackend,
+    relays: IndexedDbALOutboundRelays
 ): ALOutboundRuntimeStores<TPrepared> {
-    // Only a backend this factory opens reports its resets here; a supplied one reports to its opener.
-    const storageResets = input.outboundBackend === undefined ? new ALStorageResetListeners() : undefined;
-    const backend = input.outboundBackend ??
-        new IndexedDbAdmissionBackend({
-            dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-            storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-            nowMs: input.nowMs,
-            newWriteToken: crypto.randomUUID.bind(crypto),
-            observer: input.observer,
-            schemaId: input.schemaId,
-            onStorageReset: (event) => {
-                storageResets?.notify(event);
-                input.onStorageReset(event);
-            }
-        });
     return {
-        storageResets,
+        ...relays,
+        storageHealth: input.storageHealth,
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
@@ -314,6 +380,8 @@ function toDefaultIndexedDbInput(
         dbName: options.dbName,
         observer: options.observer ?? createPassThroughIndexedDbOperationObserver(),
         schemaId: options.schemaId ?? AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink()
+        onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink(),
+        storageHealth: options.storageHealth,
+        connectOpenings: options.connectOpenings
     };
 }

@@ -235,6 +235,7 @@ export type {
     RallarStartResult,
     RallarStateEventListener,
     RallarStateListener,
+    RallarStorageUnavailablePolicy,
     RallarSubscriptionScope,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
@@ -277,6 +278,7 @@ export type {
 export type {
     ALDeliveryAttempt,
     ALDeliveryCarrierFallback,
+    ALDeliveryDurabilityDowngrade,
     ALDeliveryEvidence,
     ALDeliveryFallbackReason,
     ALDeliveryLifecycle,
@@ -284,3 +286,11 @@ export type {
     ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+export type {
+    ALStorageEvent,
+    ALStorageHealthState,
+    ALStoragePersistOutcome,
+    ALStorageRecoveryOutcome
+} from '@shared/alm/storage/al-storage-event.ts';
+export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';

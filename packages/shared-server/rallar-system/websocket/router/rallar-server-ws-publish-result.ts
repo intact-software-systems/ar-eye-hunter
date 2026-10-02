@@ -61,5 +61,8 @@ function toOutboxPublishStatus(verdict: ALDeliveryAdmissionVerdict): RallarServe
         case 'skipped':
         case 'failed':
             return verdict.kind;
+        // The PostgreSQL store never answers it; an unpersisted admission reads as a failed one.
+        case 'storage-unavailable':
+            return 'failed';
     }
 }

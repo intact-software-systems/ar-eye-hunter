@@ -15,6 +15,7 @@ import '../../setup-browser-indexeddb.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
@@ -61,7 +62,7 @@ describe('browser RTC runtime composition', () => {
     afterEach(() => vi.restoreAllMocks());
     beforeEach(() => {
         configureTestCacheRepositories();
-        configureBrowserALRuntimeStores('self', { diagnosticsPorts });
+        configureBrowserALRuntimeStores('self', { scope: defaultStateScope(), diagnosticsPorts });
     });
 
     it('retains an incoming offer while signaling starts and admits it after the selected layout is ready', async () => {

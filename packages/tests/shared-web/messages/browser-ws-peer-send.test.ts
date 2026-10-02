@@ -6,7 +6,7 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const COMMAND_CHANNEL = { purpose: 'command', durability: undefined } as const;
+const COMMAND_CHANNEL = { purpose: 'command', durability: undefined, onStorageUnavailable: 'refuse' } as const;
 
 describe('a WS send addressed to one peer (Q11)', () => {
     it('builds a receipted room unicast to the peer for a command channel', async () => {

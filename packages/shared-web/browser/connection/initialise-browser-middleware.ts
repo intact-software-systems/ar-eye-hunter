@@ -59,6 +59,7 @@ import {
     createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create-browser-queue-box-engine.ts';
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -206,7 +207,11 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
-    initialiseBrowserRuntimeStores(session.sessionId, options.diagnosticsPorts);
+    const storageAvailability = initialiseBrowserRuntimeStores(
+        session.sessionId,
+        options.scope ?? defaultStateScope(),
+        options.diagnosticsPorts
+    );
     const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
@@ -235,7 +240,8 @@ export async function initialiseMiddleware(
     return {
         ...webSocketTransport,
         ...rtcTransport,
-        heartbeat: heartbeatHandle
+        heartbeat: heartbeatHandle,
+        storageAvailability
     };
 }
 
@@ -272,13 +278,15 @@ export function createBrowserTransportInput(
 
 function initialiseBrowserRuntimeStores(
     sessionId: string,
+    scope: StateScope,
     diagnosticsPorts: RallarDiagnosticsPorts
-): void {
+): BrowserALStorageAvailability {
     initialiseBrowserCacheRepositories();
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    initBrowserALRuntimeExpiryEviction({ onStorageReset: diagnosticsPorts.onStorageReset }).catch((error) =>
+    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts });
+    initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage: diagnosticsPorts.storage }).catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
+    return storageAvailability;
 }
 
 async function initialiseBrowserWebSocketTransport(

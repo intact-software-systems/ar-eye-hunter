@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import '../../setup-browser-indexeddb.ts';
+import { describe, expect, it } from 'vitest';
 
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     createInboundTestMessage,
@@ -12,14 +14,9 @@ import {
 } from '../../shared/alm/inbound-runtime-test-fixture.ts';
 
 describe('browser session inbound admission store', () => {
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
-
-    it('shares one in-memory admission state across every resolve of one session', async () => {
-        vi.stubGlobal('indexedDB', undefined);
+    it('shares one admission state across every resolve of one session', async () => {
         const sessionId = `session-inbound-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const first = resolveBrowserSessionALInboundRuntimeStores(sessionId);
         const second = resolveBrowserSessionALInboundRuntimeStores(sessionId);
         const msg = createInboundTestMessage({ msgId: 'admitted-through-the-first-resolve' });

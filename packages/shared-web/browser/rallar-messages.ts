@@ -13,6 +13,7 @@ export type {
     RallarMessageWaitOptions,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
+    RallarStorageUnavailablePolicy,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
     RallarTypedMessageSendOptions,
@@ -39,6 +40,7 @@ export type {
 export type {
     ALDeliveryAttempt,
     ALDeliveryCarrierFallback,
+    ALDeliveryDurabilityDowngrade,
     ALDeliveryEvidence,
     ALDeliveryFallbackReason,
     ALDeliveryLifecycle,

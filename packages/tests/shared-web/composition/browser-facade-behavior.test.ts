@@ -197,7 +197,7 @@ describe('browser facade restored-session setup', () => {
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
-                    onStorageReset: expect.any(Function)
+                    storage: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
                 scope: {

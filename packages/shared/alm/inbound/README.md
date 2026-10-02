@@ -53,7 +53,12 @@ volatile duplicate over the other carrier still meets its first admission. The W
 server's runtime has no memory pair and keeps one backend for every message.
 [`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
 [`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
-its own pair on the shared engine.
+its own pair on the shared engine. The IndexedDB pair is one store shared by both carriers'
+lanes, and each lane claims only its own carrier's work type, so recovery is reported per lane:
+each lane has its own [`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts), and
+its first work batch reports the lane's one recovery outcome of the connect through the store's
+health, under the store id followed by the carrier (`<store id>/ws`, `<store id>/rtc`), with that
+lane's own claims and the expired rows of its own work type.
 
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
@@ -103,8 +108,9 @@ An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile 
 ([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
 standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
 envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
-the dedup row for the 60 s dedup window. Once its child's ACK arrives it adds an acknowledgement-history row, kept
-until the deadline plus the grace as well. Before S3c-ii the owner row stayed for an hour and the history row
+the dedup row for the longer of the 60 s dedup window and the deadline plus the grace (see the dedup retention
+below). Once its child's ACK arrives it adds an acknowledgement-history row, kept until the deadline plus the grace
+as well. Before S3c-ii the owner row stayed for an hour and the history row
 30 min. The acknowledgement-history row of a relay row whose message named no deadline keeps its 30 min
 (`controlHistoryTtlMs`), since it has no deadline to be cut to (R-S3c-ii-1).
 
@@ -120,7 +126,7 @@ once, still forwards it to the children it owns and still sends its ACKs and NAC
 A message handed from RTC to WS (D66) reaches a receiver twice when its RTC copy was delivered but not
 receipted: the WS copy meets the first admission in the shared session store, is refused
 `not-handled`/`duplicate`, and, since the message-owner row records the RTC admission, the receiver sends
-its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers above)
+its own ACK again over WS, a relay as well as a leaf (R-S3b-1, R-S3b-21, see the duplicate answers below)
 -- the receipt the WS leg needs from every member of the frozen audience.
 The WS server narrows its current room to the frozen audience, so a session that left after the RTC
 freeze is absent from the WS receipt rather than read unconfirmed.
@@ -129,6 +135,20 @@ Every stored key stays session-logical: dedup, message-owner, ordering,
 supersedence, and control rows are shared across carriers, because a given
 message and its control history are one identity no matter which carrier
 delivered them.
+
+### Dedup retention
+
+An admitted message writes one dedup row, whose expiry
+[`computeALInboundDedupExpiryMs`](./admission/al-inbound-delivery-mutations.ts) computes; a copy that meets it is
+`duplicate`, is never delivered again, and is answered as the duplicate answers below describe. Identity dedup
+(`msg-id`, `msg-id+sender`) keeps the row for the longer of the dedup window (60 s by default, at most 5 min) and
+the message's own deadline plus the 30 s receipt grace, so a replay inside the deadline meets its first admission
+(D125). The deadline term is capped at the message-owner lifetime (`msgOwnerTtlMs`,
+60 min by default), the bound a durable message-owner row already has, so a sender's deadline never sets how long
+a receiver keeps the row: a replay after the cap and before a deadline further out is delivered again. A message
+that names no deadline keeps the window. `semantic-key` dedup keeps the window whatever the deadline, since held
+to the deadline it would drop new messages that share the key. Memory, IndexedDB and the WS server's PostgreSQL
+store write the row through the one mutation.
 
 What is partitioned per carrier is which QueueBox work rows a runtime may
 claim. [`toALInboundWorkType`](./al-inbound-work-entry.ts) types a work row
@@ -479,6 +499,18 @@ terminal bookkeeping can omit an execution deadline without authorizing another 
 
 ## Selection, failure, and cleanup
 
+A message its durable store cannot persist is `not-admitted` with reason `storage-unavailable`: the
+failed transaction wrote nothing, so the sender's receipt retries it. A control that its inbound store,
+or the outbound owner it is handed to, cannot persist answers its carrier as an unhandled control, and
+its `admission-outcome` reads `not-handled` with reason `storage-unavailable: <cause>`; inside an
+`admit-control` replay claim the outbound failure retries the claim instead. That retry finds the
+inbound admission already committed and completes without handing the control over again; the receipt
+timeout and the peer's re-ACK heal it. The
+failure is recorded on the pair's health, as is a work batch that fails for its storage; every
+admission that wrote work and every flushed batch is a recovery point. `ready()` answers a pair that
+cannot open as a value, and the next call opens again; until then the lane starts no work and its
+idle readiness probe answers no work without touching storage.
+
 The worker holds one 16-entry observation page. It reads through QueueBox's
 `readWorkPage` port and
 [`createALInboundWorkSelector`](./read-al-inbound-work-selection.ts) skips known
@@ -580,7 +612,7 @@ successful finalization.
 
 Browser expiry and session cleanup are owned by
 [`browser-al-work-cleanup.ts`](../../../shared-web/browser/al-runtime/browser-al-work-cleanup.ts)
-in the shared admission database. Because every AL-owned key leads with its owner,
+in each scope's admission database. Because every AL-owned key leads with its owner,
 cleanup deletes one bounded key range per owned `AL_INBOUND`/`AL_OUTBOUND` namespace
 and per owned canonical scope, and each range ends its `resourceId` with the `/`
 delimiter so a neighbouring owner whose id is a string prefix is never pulled in.

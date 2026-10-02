@@ -35,7 +35,9 @@ export type ALInboundControlAdmissionResult =
         acceptance: ALControlAcceptance;
     }>
     | Readonly<{ kind: 'pending-control'; }>
-    | Readonly<{ kind: 'rejected'; reason: string; }>;
+    | Readonly<{ kind: 'rejected'; reason: string; }>
+    /** The store could not persist the control, so it wrote nothing; an inline caller answers it not handled. */
+    | ALInboundMessageRuntime.UnpersistedControl;
 
 export interface ALInboundPendingControl {
     readonly kind: 'admit-control';

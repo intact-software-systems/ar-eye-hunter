@@ -99,6 +99,26 @@ it('targeted active recipe cleanup releases its real fault even when disconnect 
     }
 });
 
+it('releases an indefinite storage hold on close', async () => {
+    const { runtime } = await createHeldFaultRuntime();
+    const injected = await runtime.execute({
+        kind: 'fault.inject',
+        commandId: 'storage-hold',
+        faultId: 'storage-hold',
+        carrier: 'storage',
+        match: { owner: 'al-admission' },
+        action: 'fail',
+        remaining: 'until-cleared'
+    });
+    expect(injected.ok, injected.error?.message).toBe(true);
+    const failed = facade.rallar.diagnostics.storageFaults.observe({ owner: 'al-admission', kind: 'read' });
+    await expect(failed).rejects.toMatchObject({ name: 'UnknownError' });
+
+    expect((await runtime.execute({ kind: 'close' })).ok).toBe(true);
+
+    expect(facade.rallar.diagnostics.storageFaults.observe({ owner: 'al-admission', kind: 'read' })).toBeUndefined();
+});
+
 it('closes the exact idle successful prefix through its existing close operation', async () => {
     const { runtime, frame } = await createHeldFaultRuntime();
     const close = { kind: 'close' as const, targetCommandId: 'hold-prefix' };

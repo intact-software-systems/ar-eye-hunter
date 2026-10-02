@@ -17,6 +17,7 @@ import {
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -280,6 +281,32 @@ describe('WS client typed ingress and transport effects', () => {
         await vi.waitFor(() => expect(fixture.delivered).toEqual([message]));
     });
 
+    // The receipt control its store could not persist stays with the inbound owner, which retries it.
+    it('retries a receipt control whose admission answers storage-unavailable', async () => {
+        const fixture = await createClientIngressFixture();
+        vi.spyOn(fixture.service, 'enqueueOutboxAllIfAbsent').mockImplementation(async (messages) =>
+            messages.map((message) => ({
+                verdict: {
+                    kind: 'storage-unavailable',
+                    cause: 'quota',
+                    detail: 'QuotaExceededError: The quota has been exceeded.'
+                },
+                message,
+                entries: [],
+                reason: 'QuotaExceededError: The quota has been exceeded.',
+                trackedReceiptAlgo: 'none'
+            }))
+        );
+        const message: ALMessage = {
+            ...createIncomingMessage(),
+            qos: { ack: { algo: 'hop' }, durability: { algo: 'volatile' } }
+        };
+
+        expect((await fixture.service.acceptIncomingMessage(message)).right?.kind).toBe('admitted');
+
+        await expect.poll(() => readControlWorkStatuses(fixture)).toEqual(['RETRY']);
+    });
+
     it('ignores a native event whose connection was replaced while an earlier listener was waiting', async () => {
         vi.useFakeTimers();
         const fixture = await createClientIngressFixture({
@@ -356,6 +383,16 @@ async function createClientIngressFixture(
         admission,
         delivered
     };
+}
+
+async function readControlWorkStatuses(fixture: ClientIngressFixture): Promise<readonly string[]> {
+    const entries = await Promise.all(
+        (await fixture.admission.workQueue.getAllKeys()).map((key) => fixture.admission.workQueue.getItem(key))
+    );
+    return entries
+        .filter((entry) => entry !== undefined)
+        .filter((entry) => decodeALInboundWorkEntry(entry, fixture.admissionStore.namespace).payload.kind === 'send-control')
+        .map((entry) => entry.status);
 }
 
 function createIncomingMessage(): ALMessage {

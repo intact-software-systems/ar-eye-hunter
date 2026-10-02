@@ -26,7 +26,7 @@ const mocks = await vi.hoisted(async () => {
         onCacheChange: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
         deleteBrowserALRuntimeEntriesForSession: vi.fn<ContractModules.BrowserALRuntimeCleanup['deleteBrowserALRuntimeEntriesForSession']>(() =>
             Promise.resolve({
-                dbName: '',
+                dbNames: [],
                 storeName: '',
                 keyPrefixes: [],
                 scanned: 0,
@@ -185,7 +185,7 @@ function resetSessionAndRoomMocks(): void {
     mocks.readSession.mockReturnValue(mocks.ctx.session);
     mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
     mocks.deleteBrowserALRuntimeEntriesForSession.mockResolvedValue({
-        dbName: 'rallar-browser-al-runtime',
+        dbNames: ['rallar-al-runtime:rallar-server:default'],
         storeName: 'entries',
         keyPrefixes: [],
         scanned: 0,

@@ -32,6 +32,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
                 rejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' }
             },
             { kind: 'admission-failed' },
+            { kind: 'storage-unavailable', cause: 'quota' },
             { kind: 'skipped', reason: 'planner-drop' },
             { kind: 'unroutable', reason: 'no-route' },
             { kind: 'attempt-failed', outcome: 'no-targets' },
@@ -63,6 +64,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
             },
             field: 'failure.rejection'
         },
+        { failure: { kind: 'storage-unavailable', cause: 'full' }, field: 'failure.cause' },
         { failure: { kind: 'skipped', reason: 'no-route' }, field: 'failure.reason' },
         { failure: { kind: 'unroutable', reason: 'planner-drop' }, field: 'failure.reason' },
         { failure: { kind: 'attempt-failed', outcome: 'sent' }, field: 'failure.outcome' },
@@ -82,6 +84,27 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
         }
     ])('refuses a failure whose $field is unusable', ({ failure, field }) => {
         expect(() => decodeAlmDeliveryResultValue({ ...OBSERVATION, failure }))
+            .toThrowError(`The page runtime returned no usable delivery observation.${field}.`);
+    });
+});
+
+describe('the durability downgrade a delivery observation carries', () => {
+    it('reads the requested durability and the storage cause of a downgraded send', () => {
+        const durabilityDowngrade = { requested: 'local-outbox', cause: 'quota' };
+
+        expect(decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }).durabilityDowngrade)
+            .toEqual(durabilityDowngrade);
+    });
+
+    it('reads an observation without a downgrade as none', () => {
+        expect(decodeAlmDeliveryResultValue(OBSERVATION).durabilityDowngrade).toBeUndefined();
+    });
+
+    it.each([
+        { durabilityDowngrade: { requested: 'disk', cause: 'quota' }, field: 'durabilityDowngrade.requested' },
+        { durabilityDowngrade: { requested: 'local-outbox', cause: 'full' }, field: 'durabilityDowngrade.cause' }
+    ])('refuses a downgrade whose $field is unusable', ({ durabilityDowngrade, field }) => {
+        expect(() => decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }))
             .toThrowError(`The page runtime returned no usable delivery observation.${field}.`);
     });
 });

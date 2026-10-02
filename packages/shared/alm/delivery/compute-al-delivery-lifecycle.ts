@@ -21,6 +21,10 @@ type ALDeliveryAcknowledgementSettlement = Extract<ALDeliverySettlement, Readonl
 type ALDeliveryRelayRejectedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'relay-rejected'; }>>;
 type ALDeliveryReceiptExhaustedSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'receipt-exhausted'; }>>;
 type ALDeliveryCarrierFallbackSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'carrier-fallback'; }>>;
+type ALDeliveryDurabilityDowngradeSettlement = Extract<
+    ALDeliverySettlement,
+    Readonly<{ kind: 'durability-downgrade'; }>
+>;
 
 export function computeALDeliveryLifecycle(
     previous: ALDeliveryLifecycle,
@@ -45,6 +49,8 @@ export function computeALDeliveryLifecycle(
             });
         case 'carrier-fallback':
             return toCarrierFallbackLifecycle(previous, settlement);
+        case 'durability-downgrade':
+            return toDurabilityDowngradeLifecycle(previous, settlement);
         case 'attempt-started':
         case 'attempt-settled':
             return toAttemptLifecycle(previous, settlement);
@@ -174,6 +180,8 @@ function toAdmissionLifecycle(
             return toFailureLifecycle(previous, { kind: 'expired' }, verdict.detail);
         case 'failed':
             return toFailureLifecycle(previous, { kind: 'admission-failed' }, verdict.detail);
+        case 'storage-unavailable':
+            return toFailureLifecycle(previous, { kind: 'storage-unavailable', cause: verdict.cause }, verdict.detail);
         case 'skipped':
             return toFailureLifecycle(previous, { kind: 'skipped', reason: verdict.reason }, verdict.detail);
     }
@@ -265,10 +273,22 @@ function toCarrierFallbackLifecycle(
     };
 }
 
+function toDurabilityDowngradeLifecycle(
+    previous: ALDeliveryLifecycle,
+    settlement: ALDeliveryDurabilityDowngradeSettlement
+): ALDeliveryLifecycle {
+    const { requested, cause } = settlement;
+    return {
+        ...previous,
+        evidence: { ...previous.evidence, durabilityDowngrade: { requested, cause } }
+    };
+}
+
 const AL_DELIVERY_FAILURE_STATES: Readonly<Record<ALDeliveryFailure['kind'], ALDeliveryState>> = {
     refused: 'rejected',
     'relay-rejected': 'rejected',
     'admission-failed': 'failed',
+    'storage-unavailable': 'failed',
     skipped: 'failed',
     unroutable: 'failed',
     'attempt-failed': 'failed',

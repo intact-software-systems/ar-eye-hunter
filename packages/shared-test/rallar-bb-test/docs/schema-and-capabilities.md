@@ -152,10 +152,14 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `durability`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
 `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
 `durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
-channel's durability; absent, the send is volatile.
+channel's durability; absent, the send is volatile. `onStorageUnavailable`
+(`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
+durable send: `refuse` fails the send with `failure.kind: 'storage-unavailable'`,
+`volatile` admits it once more without storage and names the lost durability on
+the observation's `durabilityDowngrade`; absent, the send refuses.
 `handleId` defaults to the command's own `commandId`, and every later delivery
 command addresses the send through that handle. Supersedence (`key`) is not part of
 this release, and neither is a literal peer id (`toPeerId`), which no recipe knows
@@ -382,7 +386,8 @@ Carrier settlements update the handle directly. Observations include
 `submitted`, `attempts`, `attemptOutcomes`, `attemptCarriers`, `relayRejection`, `carrierFallback`, `failure`,
 `receiptMode`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, `expectedRecipientPeerIds`,
 `confirmedRecipientPeerIds`, `unconfirmedRecipientPeerIds`, `reason`,
-`backpressured`, and `enqueued`. `attempts` counts every attempt row,
+`backpressured`, `enqueued`, and `durabilityDowngrade` (`{ requested, cause }`, present only on a send its
+channel downgraded to volatile because storage could not hold it). `attempts` counts every attempt row,
 including a carrier admission that never reached the transport: an `unroutable`
 leg, or a `refused` leg the fallback carrier took over. `attemptOutcomes` lists
 the outcome of every settled row in attempt order. `attemptCarriers` names the carrier of each of
@@ -408,7 +413,9 @@ only, in `relayRejection`.
 
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
-the send over), `relay-rejected` with its `rejection`, `admission-failed`, `skipped` with its
+the send over), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
+its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
+`transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
 with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
 `reason` keeps the prose; a receipt-less send refused late keeps `transport-accepted` and no failure.
@@ -458,6 +465,22 @@ id. A top-level `typeId` never matches. The fault's observations are not
 readable from a recipe in this release, so a fault's effect can only be inferred
 from what the receiver did or did not get.
 
+`fault.inject` with `carrier: 'storage'` faults the AL-owned IndexedDB
+operations instead: `match.owner` is `al-admission` or `al-work`, and
+`match.kind`, when present, narrows it to one operation kind (the kinds
+`storage.counters` reports). `action: 'fail'` rejects the operation with an
+`UnknownError` `DOMException`, `action: 'quota'` rejects a write (`write`,
+`work-write`, `work-reserve`, `work-release`, `work-cleanup`) with a
+`QuotaExceededError` and lets reads through, and `{ delayMs }` holds the
+operation. A rejection's message names its `faultId`
+(`Scripted storage quota fault <faultId>`, `Scripted storage fault <faultId>`),
+so the `detail` of the storage failure a store reports on
+`rallar.browser.alm.storage` reads back to the fault. The decision lands before the operation's own request:
+before its transaction opens, before a read inside a read session that is already open, or between a reservation's
+finished read and its write, so a fault never leaves half a write. The operation is still counted by `storage.counters`. Replacing
+the same `faultId` with `remaining: 0` releases it, and `close` clears every
+storage fault with the transport faults.
+
 `storage.counters` reads the AL-owned IndexedDB operation counters as
 `{ total, byOwner: { 'al-admission', 'al-work' }, byKind, workProbeCount,
 workNonProbeCount, reset }`, and `reset: true` reads and then clears them.
@@ -479,6 +502,21 @@ window, so its acknowledgement has left before the scenario ends. The scripted s
 port are attached only when the active connection names an application, so both
 `storage.counters` and `fault.inject` refuse a connection without one instead of
 reporting zeros.
+
+`storage-unavailable` runs over every carrier and holds a `quota` storage fault on both owners of the sender's page:
+`al-admission` writes and every `al-work` write, each under its own fault id. Both ids start with the cell's type id
+followed by `.quota-`, which no other cell's ids share. The work owner is held too because a work release that commits
+records a recovery point: during the hold no write of the page can read a store healthy. Under the hold the first
+send, on the default channel, must fail with `failure.kind: 'storage-unavailable'`, `failure.cause: 'quota'` and
+`submitted: false`; the second, with `onStorageUnavailable: 'volatile'`, must be admitted with `enqueued: false` and a
+`durabilityDowngrade` of `{ requested: 'local-outbox', cause: 'quota' }`. A wait between them reads a store's
+`health` turn `failing` with a `lastFailure` whose detail names one of the cell's fault ids. Both holds are then
+released, the third send must be admitted with `enqueued: true`, and a last wait reads a store `healthy` with that
+failure still its last. The receiver gets the second and the third payload, each naming its carrier, and never the
+first. Two residuals remain. The fault port is page-wide and the rtc and fallback cells share one overlay store, so
+the waits are tied to the cell, not to a store: they cannot show which store turned, nor that a store left alone stayed
+healthy. And the healthy wait proves only that some store recovered after the release: a release of an earlier cell's
+leftover rows can read it healthy, so the third send's own commit is proven by `assert-enqueued-3`, not by the wait.
 
 `agent.reload` asks the control agent to reload its page and resume the run. The
 agent records the run id, its agent id and the command ids it already completed

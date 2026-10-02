@@ -1,3 +1,4 @@
+import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
@@ -43,6 +44,7 @@ export interface RallarBrowserMiddleware {
     readonly webRtcGroupManager: WebRtcGroupManager;
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly heartbeat: RallarSessionHeartbeat;
+    readonly storageAvailability: BrowserALStorageAvailability;
 }
 
 /** Authenticated browser connection returned by setup and connect operations. */

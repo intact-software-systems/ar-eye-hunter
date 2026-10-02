@@ -13,6 +13,7 @@ import {
     createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -48,7 +49,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             vi.unstubAllGlobals();
             TestWebSocket.instances.length = 0;
         });
-        configureBrowserALRuntimeStores(clientData.sessionId, { diagnosticsPorts });
+        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
     });
 
     it('returns an open service for the session after the initial socket opens', async () => {
@@ -260,7 +261,7 @@ describe('the session volatile bound on the WS client (C3)', () => {
             vi.unstubAllGlobals();
             TestWebSocket.instances.length = 0;
         });
-        configureBrowserALRuntimeStores(clientData.sessionId, { diagnosticsPorts });
+        configureBrowserALRuntimeStores(clientData.sessionId, { scope: defaultStateScope(), diagnosticsPorts });
     });
 
     it('counts a received and a sent volatile message against the one budget both of its memory pairs carry', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
     toBrowserWebSocketQueueBoxInput,
@@ -33,7 +34,7 @@ const OPTIONS: MiddlewareInitOptions = {
 
 describe('the one volatile bound a browser session hands its carriers (D74)', () => {
     it('gives the inbound pair, the WS client and the RTC overlay the same budget and provider', () => {
-        configureBrowserALRuntimeStores(SESSION.sessionId, { diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
         const input = createBrowserTransportInput(SESSION, OPTIONS);
@@ -58,7 +59,7 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
     });
 
     it('bounds the budget by the limits the session reads', () => {
-        configureBrowserALRuntimeStores(SESSION.sessionId, { diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const { budget } = createBrowserTransportInput(SESSION, OPTIONS).volatileBound;
         const nowMs = Date.now();
 

@@ -30,6 +30,8 @@ interface AlmConformanceSendDelivery {
     readonly ack?: 'receiver' | 'all-logical-recipients';
     readonly reliability?: 'at-least-once';
     readonly durability?: 'local-outbox' | 'local-inbox';
+    /** Absent, the channel refuses a durable send its storage cannot take. */
+    readonly onStorageUnavailable?: 'refuse' | 'volatile';
     readonly orderingKey?: string;
     readonly seq?: number;
     readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];

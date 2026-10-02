@@ -572,6 +572,8 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        storageHealth: undefined,
+        createStorageRecovery: undefined,
         volatileStores: undefined,
         carrier: 'ws',
         planIncomingMessage,

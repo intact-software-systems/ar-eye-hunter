@@ -152,6 +152,9 @@ different content, and never retracts a delivery (D85). For ALM that means four 
   deadline plus the receipt grace.
   - Today the default is a fixed 60 s window that ignores the deadline
     (`packages/shared/al-contracts/normalize-al-qos-policy.ts`).
+  - The window stays as the floor: identity dedup (`msg-id`, `msg-id+sender`) holds max(window,
+    deadline + grace), capped at the message-owner TTL, and `semantic-key` keeps its window. D85's
+    "replacing the fixed 60 s default" reads this way (D125) (I2a design, 2026-10-01).
   - Inside the deadline, a replay meets its first admission and is re-acknowledged without a second
     delivery. After the deadline it is dropped `expired`.
   - This lands in I2a, because resumed `local-outbox` work needs it too.
@@ -382,40 +385,52 @@ These apply to every durable tier:
 - **One durable owner per session store.**
   - One tab holds a Web Lock claim on the session's durable store and drains it, and another tab
     takes over when the lock is released.
-  - This extends the existing per-sender commit lock, as the roadmap's reuse inventory requires,
-    rather than adding a primitive.
-  - `durable-takeover` needs two pages in one browser context, which is a new harness capability.
-- **No silent fallback.**
+  - The claim is a second lock name on the shared BrowserLocks port, beside the unchanged
+    per-sender commit lock, rather than a new primitive (D123) (I2a design, 2026-10-01).
+  - A non-owner commits but runs no durable work task. A per-scope-and-session `BroadcastChannel`
+    carries its commit into the owner's `work.committed(rows)`, and the owner relays settlements to
+    the non-owner's handles over the same channel (D123) (I2a design, 2026-10-01).
+  - `durable-takeover` needs two pages in one browser context, which is a new harness capability;
+    it runs in the Playwright lane only (D124) (I2a design, 2026-10-01).
+- **No silent fallback.** Delivered (I2a-i, 527267e73).
   - Today a browser without IndexedDB quietly gets memory stores for its durable pairs
     (`packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts`).
   - I2a applies the channel's `onStorageUnavailable` instead.
-  - The same typed `storage-unavailable` outcome covers quota exceeded, a blocked upgrade, detected
-    eviction and, for `local-checkpoint`, recovery lag beyond the bound.
-- **Persistent storage.** The first durable admission in a session requests
+  - The same typed `storage-unavailable` outcome covers quota exceeded, the reset's blocked delete
+    (the open names no version, so no upgrade can block), detected eviction and, for
+    `local-checkpoint`, recovery lag beyond the bound (I2a design, 2026-10-01).
+- **Persistent storage.** Delivered (I2a-i, 527267e73). The first durable admission in a session requests
   `navigator.storage.persist()`, and the grant is reported. Rallar never requests it today.
-- **Typed recovery outcomes.**
+- **Typed recovery outcomes.** Delivered (I2a-i, 527267e73).
   - `restored`, with counts.
   - `expired-at-recovery`.
   - `storage-created`. First use, eviction and deletion are indistinguishable in a browser. Safari
     deletes script-writable storage after seven days of Safari use without interaction with the
-    site. This outcome is therefore reported, never presented as a successful restore.
+    site. This outcome is therefore reported, never presented as a successful restore. It holds for
+    a document's first open; a creation on a reopen within one document reads `storage-reset` after
+    another tab's reset, otherwise `storage-unavailable` with cause `evicted` (I2a design,
+    2026-10-01).
   - `storage-reset`, for a schema mismatch (D3).
-- **One health vocabulary** on the public diagnostics sink.
+- **One health vocabulary** on the public diagnostics sink. Delivered (I2a-i, 527267e73).
+  - The sink is one `storage` port of four kinds, `reset`, `recovery`, `health` and `persist`,
+    widening today's `onStorageReset` (D121) (I2a design, 2026-10-01).
   - It reports `healthy`, `delayed` or `failing`, the age of the oldest unsaved change, the last
     saved recovery point and the last failure.
   - Today the storage-reset sink does nothing in production
     (`packages/shared-web/browser/connection/rallar-diagnostics-ports.ts`).
-- **Scope and privacy.**
+- **Scope and privacy.** Delivered (I2a-i, 527267e73).
   - Rows are keyed by application scope and session. Today they are keyed by session only, in a
     database named `ar-eye-hunter-al-runtime`
-    (`packages/shared-web/browser/al-runtime/browser-al-runtime-identity.ts`). The rename is a D3
-    reset.
+    (`packages/shared-web/browser/al-runtime/browser-al-runtime-identity.ts`). Each scope gets its
+    own database, `rallar-al-runtime:${applicationId}:${workspaceId}`, with the keys inside
+    unchanged; no row shape changes, so the schema id stays, and the legacy database is left to the
+    browser's eviction, with no delete code (D120) (I2a design, 2026-10-01).
   - Logout, and login over an existing session, purge memory, storage and checkpoint in one step,
     so a later checkpoint cannot bring the rows back. Today, login over an existing session leaves
     the old rows until they expire.
   - Recovered records pass the existing bounded persisted-record decoder, and dispatch re-checks
     authority and the deadline at the send boundary.
-- **Dedup retention.** It covers the deadline plus the receipt grace (section 5).
+- **Dedup retention.** Delivered (I2a-i, 527267e73). It covers the deadline plus the receipt grace (section 5).
 
 ## 9. Test and evidence plan
 
@@ -471,8 +486,8 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
 | Transactions from `enqueueIfAbsent` to the carrier send fall from 11 to at most 8 (P1a) and 6 (P1b)          | P1a, P1b | the ledger pin; `durable-opt-in` and `delivery-baseline` unchanged in the lane                                                                              |
 | The Temporal polyfill leaves the storage hot path                                                            | P1a      | the harness's CPU-profile share of the polyfill and the codec, and send-to-dispatch p50 and p95, before and after                                           |
 | A probe on a cadence notices a due row, an exhausted row or a crashed lease within its stated bound          | P1b      | a fake-clock unit test per probe; the harness figures                                                                                                       |
-| One durable owner per session store, with takeover on release                                                | I2a      | unit: two owners on a lock fake; lane: `durable-takeover`                                                                                                   |
-| Quota, a blocked upgrade or missing storage ends typed or degrades with a note, never silently               | I2a      | a unit test per cause; lane: `storage-unavailable` through the fault port                                                                                   |
+| One durable owner per session store, with takeover on release                                                | I2a      | unit: two owners on a lock fake; lane: `durable-takeover` in the Playwright lane only (D124) (I2a design, 2026-10-01)                                       |
+| Quota, the reset's blocked delete or missing storage ends typed or degrades with a note, never silently      | I2a      | a unit test per cause; lane: `storage-unavailable` through the fault port, every carrier (I2a design, 2026-10-01)                                           |
 | Recovery outcomes `restored`, `expired-at-recovery`, `storage-created` and `storage-reset`                   | I2a      | a unit test per outcome; lane: `delivery-reload` reads the outcome                                                                                          |
 | Dedup retention covers the deadline plus the receipt grace                                                   | I2a      | unit: a replay after 60 s and inside the deadline is re-acknowledged without a second delivery                                                              |
 | A purge reaches memory, storage and checkpoint, and nothing replays across sessions                          | I2a      | unit: a checkpoint after a purge writes nothing back; login over a session leaves no rows                                                                   |
@@ -492,7 +507,8 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
 The slice that needs a scenario declares it, and each runs over every carrier:
 
 - I2a: `durable-takeover` and `storage-unavailable`. `delivery-reload` also gains the recovery
-  outcome read.
+  outcome read. `durable-takeover` runs in the Playwright lane only (D124) (I2a design,
+  2026-10-01).
 - I2b: `checkpoint-recovery`, `checkpoint-lag` and `flush-on-hide`.
 
 The roadmap's recipe rules apply unchanged:
@@ -549,7 +565,9 @@ on the minimal plan. The reading states its machine and that it is not a phone.
 
 ### 10.4 Consumer proofs
 
-- **I2a:** AR Eye Hunter's multi-tab claim of the match session, moved from I2's former row.
+- **I2a:** no AR Eye Hunter proof. Its channels are volatile since S3c-ii, so there is no durable
+  store to claim; `durable-takeover` and Relic's move to `local-outbox` prove I2a (D128) (I2a
+  design, 2026-10-01).
 - **I2b:** Relic Hunters' commands (section 10.2).
 - **P1:** no game changes. The ledger pins and the harness figures are its proof.
 

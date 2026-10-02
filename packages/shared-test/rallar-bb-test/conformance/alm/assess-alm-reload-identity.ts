@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesSendCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../rallar-black-box-test-contracts.ts';
 import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
@@ -11,6 +12,8 @@ import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
 import { isSameJsonValue } from '../../wait/wait-event-match.ts';
 import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from './alm-reload-pair.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
+
+const ALM_STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
 interface ReloadEvidence {
     readonly sender: RecordedAlmConformanceParticipant;
@@ -162,7 +165,7 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         suffix[0].rallar.username === '' && suffix[0].rallar.password === '' &&
         suffix[0].connection === send.connection &&
         suffix.at(-1)?.kind === 'storage.counters' &&
-        suffix.slice(1).every((command) => ['messages.observe', 'assert', 'storage.counters'].includes(command.kind));
+        suffix.slice(1).every(isReloadSuffixCommand);
     const receiverPreserved =
         [...receiverBefore, ...recovery].every((command) =>
             ['http.request', 'rtc.connect', 'health', 'stats', 'wait', 'barrier'].includes(command.kind)
@@ -186,11 +189,21 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
 }
 
+/** The suffix only reads: its waits are the reloaded stores' recovery reads on the storage topic. */
+function isReloadSuffixCommand(command: RallarBlackBoxTestCommand): boolean {
+    if (command.kind === 'wait') {
+        return command.match.kind === 'diagnostic' && command.match.topic === ALM_STORAGE_TOPIC;
+    }
+    return ['messages.observe', 'assert', 'storage.counters'].includes(command.kind);
+}
+
 /** Fault IDs own map entries, so each possible native lane must retain a distinct held fault. */
 function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
     const selectedCarriers = send.carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [send.carrier];
     const sendIndex = prefix.indexOf(send);
-    const holds = prefix.filter((command) => command.kind === 'fault.inject');
+    const holds = prefix.filter((command): command is RallarBlackBoxTestTransportFaultInjectCommand =>
+        command.kind === 'fault.inject' && command.carrier !== 'storage'
+    );
     const matchingHolds = selectedCarriers.every((carrier) =>
         holds.some((hold) =>
             hold.carrier === carrier && hold.action === (carrier === 'ws' ? 'not-ready' : 'drop') &&

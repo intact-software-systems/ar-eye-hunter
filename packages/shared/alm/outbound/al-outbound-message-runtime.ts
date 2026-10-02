@@ -19,6 +19,9 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
+import type { ALStorageHealth } from '../storage/al-storage-health.ts';
+import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -177,6 +180,10 @@ export interface ALOutboundRuntimeStores<TPrepared> {
      * relayed here (a memory or PostgreSQL pair, or a backend its caller opened).
      */
     readonly storageResets?: ALStorageResetListeners;
+    /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
+    readonly storageHealth?: ALStorageHealth;
+    /** Reports the pair's recovery after its first work batch; absent for a pair that recovers nothing (memory, PostgreSQL). */
+    readonly storageRecovery?: ALStorageRecoveryReporter;
 }
 
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
@@ -334,6 +341,10 @@ export namespace ALOutboundMessageRuntime {
         readonly workQueue: QueueBoxResourceEntryRepository;
         /** The durable pair's resets; `undefined` for a pair no reset reaches (memory, PostgreSQL). */
         readonly storageResets: ALStorageResetListeners | undefined;
+        /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
+        readonly storageHealth: ALStorageHealth | undefined;
+        /** The durable pair's recovery; `undefined` for a pair that recovers nothing (memory, PostgreSQL). */
+        readonly storageRecovery: ALStorageRecoveryReporter | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
@@ -407,7 +418,8 @@ export namespace ALOutboundMessageRuntime {
  *   and the reverse. That is sound because a message's durability is fixed by its policy, so the same
  *   msgId always resolves to the same lane. A caller that re-sent one msgId under another durability
  *   would get a second copy in the other lane, whose receipt never completes, because every control
- *   for that id goes to the memory lane first. No caller does this.
+ *   for that id goes to the memory lane first. The one re-send is the volatile downgrade of a durable
+ *   send its storage refused: that admission committed nothing, so the memory lane holds the only copy.
  */
 export class ALOutboundMessageRuntime<TPrepared> {
     private readonly sendControls = new ALOutboundSendControls();
@@ -448,8 +460,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
     }
 
-    async ready(): Promise<void> {
-        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        return durable;
     }
 
     dispose(): void {

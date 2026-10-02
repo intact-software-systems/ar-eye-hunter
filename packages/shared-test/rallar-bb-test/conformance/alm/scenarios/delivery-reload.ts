@@ -33,6 +33,20 @@ import type { AlmReloadCheckpoint } from '../alm-reload-pair.ts';
  */
 const RELOAD_RECOVERY_MARGIN_MS = 60_000;
 
+const STORAGE_TOPIC = 'rallar.browser.alm.storage';
+
+/**
+ * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this Deno-loaded catalog
+ * cannot import). The session inbound store batches every engine round. An outbound store reports when its first work
+ * batch runs, which for a store without work can be long after the connect or never before the document ends, so the
+ * wait names the store that holds the original.
+ */
+export const RELOAD_RECOVERED_STORE_PREFIXES = {
+    sessionInbound: 'browser-session-inbound',
+    ws: 'browser-ws-client',
+    rtc: 'browser-rtc-overlay'
+} as const;
+
 export const deliveryReload: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-reload',
     scenarioKey: 'delivery-reload',
@@ -105,7 +119,38 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
             operator: 'equals',
             expected: 'unobservable'
         }),
+        ...toRecoveredStoreWaits(sender),
         toStorageCountersCommand(sender, 'storage-counters-recovered', false)
+    ];
+}
+
+/**
+ * One `restored` outcome for the session inbound store and for the outbound store holding the original. The session
+ * inbound store is shared by both carriers' lanes and reports per lane; the WS lane runs on every carrier, so its
+ * outcome is the one read. The fallback carrier's hold hands the original to WS before the reload, so only `rtc`
+ * leaves it in the overlay store. That no store also read `storage-created` or `storage-reset` rests on each lane
+ * reporting once.
+ */
+function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const originalStore = sender.input.carrier === 'rtc'
+        ? RELOAD_RECOVERED_STORE_PREFIXES.rtc
+        : RELOAD_RECOVERED_STORE_PREFIXES.ws;
+    const timeoutMs = toReloadSurvivalTtlMs(sender.input.deadlineMs);
+    return [
+        toStoreRecoveryWait(sender, {
+            name: 'recovered-session-inbound',
+            storeIdPrefix: RELOAD_RECOVERED_STORE_PREFIXES.sessionInbound,
+            lane: '/ws',
+            connectName: 'reconnect',
+            timeoutMs
+        }),
+        toStoreRecoveryWait(sender, {
+            name: 'recovered-original-store',
+            storeIdPrefix: originalStore,
+            lane: '',
+            connectName: 'reconnect',
+            timeoutMs
+        })
     ];
 }
 
@@ -140,4 +185,28 @@ function toReloadHealthCommand(step: AlmConformanceStepInput, name: string): Ral
 /** The absence window plus the time a reloaded owner needs before it can submit. */
 function toReloadSurvivalTtlMs(deadlineMs: number): number {
     return deadlineMs - RESPONSE_MARGIN_MS + RELOAD_RECOVERY_MARGIN_MS;
+}
+
+/**
+ * The one `recovery` a durable store, or one lane of a shared store, reports after its first work batch, matched in
+ * its emitted key order (`kind`, `storeId`, `outcome`). The store id embeds the session the reconnect restored, read
+ * from that connect's result, and a shared store's lane follows it.
+ */
+function toStoreRecoveryWait(
+    step: AlmConformanceStepInput,
+    store: Readonly<{ name: string; storeIdPrefix: string; lane: '' | '/ws'; connectName: string; timeoutMs: number; }>
+): RallarBlackBoxTestCommand {
+    const sessionId = `{resultCache.${toCommandId(step, store.connectName)}.value.sessionId}`;
+    return {
+        kind: 'wait',
+        commandId: toCommandId(step, store.name),
+        match: {
+            kind: 'diagnostic',
+            topic: STORAGE_TOPIC,
+            payloadPath: 'data',
+            contains:
+                `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}${store.lane}","outcome":{"kind":"restored"`
+        },
+        timeoutMs: store.timeoutMs
+    };
 }

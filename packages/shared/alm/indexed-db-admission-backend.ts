@@ -42,10 +42,12 @@ import {
 } from './indexed-db-admission-row.ts';
 import {
     AL_ADMISSION_WORK_STORE_NAME,
-    openIndexedDbAdmissionDatabase,
+    openIndexedDbAdmissionStorage,
+    type ALStorageOpening,
     type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
+import type { ALStorageConnectStoreOpening } from './storage/al-storage-connect-openings.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
@@ -60,6 +62,8 @@ export namespace IndexedDbAdmissionBackend {
         readonly observer: IndexedDbOperationObserver;
         readonly schemaId: string;
         readonly onStorageReset: (event: ALStorageResetEvent) => void;
+        /** Absent for a backend that serves no store of a connect. */
+        readonly connectOpening?: ALStorageConnectStoreOpening;
     }
 }
 
@@ -70,20 +74,24 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     readonly #nowMs: () => number;
     readonly #newWriteToken: () => string;
     readonly #observer: IndexedDbOperationObserver;
+    #opening: ALStorageOpening | undefined;
 
     constructor(input: IndexedDbAdmissionBackend.Input) {
         this.#storeName = input.storeName;
         this.#nowMs = input.nowMs;
         this.#newWriteToken = input.newWriteToken;
         this.#observer = input.observer;
-        this.#connection = new IndexedDbConnection(() =>
-            openIndexedDbAdmissionDatabase({
+        this.#connection = new IndexedDbConnection(async () => {
+            const opened = await openIndexedDbAdmissionStorage({
                 dbName: input.dbName,
                 storeName: input.storeName,
                 schemaId: input.schemaId,
-                onStorageReset: input.onStorageReset
-            })
-        );
+                onStorageReset: input.onStorageReset,
+                connectOpening: input.connectOpening
+            });
+            this.#opening = opened.opening;
+            return opened.db;
+        });
         this.workQueue = new IndexedDbQueueBox({
             now: () => Temporal.Instant.fromEpochMilliseconds(this.#nowMs()),
             connection: this.#connection,
@@ -95,6 +103,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
 
     async ready(): Promise<void> {
         await this.#connection.open();
+    }
+
+    getStorageOpening(): ALStorageOpening | undefined {
+        return this.#opening;
     }
 
     async readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {
@@ -122,7 +134,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const stored = (await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'key', key }))[0];
         if (stored === undefined) {
@@ -145,7 +160,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const rows = await readIndexedDbAdmissionSnapshot(
             db,
@@ -181,7 +199,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const fenced = await this.#readFencedWrite(db, fn);
         const deadline = executionExpiresAtMs === null

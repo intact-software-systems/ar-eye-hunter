@@ -144,6 +144,7 @@ function toSignalAdmissionOutcome(verdict: ALDeliveryAdmissionVerdict): SignalAd
         case 'superseded':
         case 'expired':
         case 'skipped':
+        case 'storage-unavailable':
         case 'failed':
             return 'terminal';
     }

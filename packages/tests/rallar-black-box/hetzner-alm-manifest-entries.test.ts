@@ -191,7 +191,10 @@ describe('ALM combined recipient-b ACK-hold ordering', () => {
             // previous block's own last command — the one that must hold the ACK open — sits just before it.
             for (let i = 2; i < commands.length; i++) {
                 const command = commands[i]!;
-                if (command.kind !== 'fault.inject' || command.match.controlType !== 'ack' || command.remaining !== 'until-cleared') {
+                if (
+                    command.kind !== 'fault.inject' || command.carrier === 'storage' || command.match.controlType !== 'ack' ||
+                    command.remaining !== 'until-cleared'
+                ) {
                     continue;
                 }
                 const currentPrefix = prefixOf(command.commandId);

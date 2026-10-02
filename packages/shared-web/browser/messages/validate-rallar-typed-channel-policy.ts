@@ -2,11 +2,16 @@ import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
 import { AL_CHANNEL_PURPOSES } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
-/** The definition as a JavaScript caller may pass it: any string, or nothing, in either field. */
+import type { RallarStorageUnavailablePolicy } from './rallar-message-contracts.ts';
+
+/** The definition as a JavaScript caller may pass it: any string, or nothing, in each field. */
 export interface RallarTypedChannelPolicyInput {
     readonly purpose?: string;
     readonly durability?: string;
+    readonly onStorageUnavailable?: string;
 }
+
+const RALLAR_STORAGE_UNAVAILABLE_POLICIES: readonly RallarStorageUnavailablePolicy[] = ['refuse', 'volatile'];
 
 /** A realtime purpose belongs to `rallar.realtime` (D15, D52). */
 export function validateRallarTypedChannelPolicy(
@@ -35,6 +40,16 @@ export function validateRallarTypedChannelPolicy(
             path: '$.durability',
             code: 'invalid-durability',
             message: 'Durability must be volatile, local-outbox or local-inbox.'
+        });
+    }
+    if (
+        definition.onStorageUnavailable !== undefined &&
+        !RALLAR_STORAGE_UNAVAILABLE_POLICIES.some((candidate) => candidate === definition.onStorageUnavailable)
+    ) {
+        issues.push({
+            path: '$.onStorageUnavailable',
+            code: 'invalid-on-storage-unavailable',
+            message: 'onStorageUnavailable must be refuse or volatile.'
         });
     }
     return issues;

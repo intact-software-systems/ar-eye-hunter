@@ -66,6 +66,7 @@ export function toDeliveryObservation(
         attemptCarriers: attempts.flatMap((attempt) => attempt.outcome === undefined ? [] : [attempt.carrier]),
         relayRejection: lifecycle?.evidence.relayRejection,
         carrierFallback: lifecycle?.evidence.carrierFallback,
+        durabilityDowngrade: lifecycle?.evidence.durabilityDowngrade,
         failure: lifecycle?.evidence.failure,
         reason: lifecycle?.evidence.reason,
         backpressured: attempts.some((attempt) =>
@@ -103,6 +104,7 @@ export class BlackBoxRallarDeliveryLedger {
             topicId: send.topicId,
             roomRef,
             durability: send.durability,
+            onStorageUnavailable: send.onStorageUnavailable,
             purpose: send.toPeer === undefined ? 'notification' : 'command'
         });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {

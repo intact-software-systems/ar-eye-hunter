@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
+import { LatestRepository } from '../cache/LatestRepository.ts';
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest, readIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { IndexedDbConnection, openIndexedDbWithStores } from '../persistence/open-indexed-db.ts';
@@ -137,6 +138,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     readonly #storeName: string;
     readonly #completedRetention: QueueBoxCompletedRetention;
     readonly #observer: IndexedDbOperationObserver;
+    #reservationExpiredDeleteCount = 0;
+    readonly #reservationExpiredDeleteCountByType = new LatestRepository<string, number>();
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
@@ -165,7 +168,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const request = toValidatedWorkPageRequest(input);
         const db = await this.#connection.open();
         const stored = await readStoredQueueWorkPage(db, this.#storeName, request);
@@ -177,7 +183,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         if (inputs.length === 0) {
             return [];
         }
-        this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-page' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
         const db = await this.#connection.open();
         const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
@@ -200,7 +209,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
      * until some later trigger.
      */
     async cleanupAsync(): Promise<IndexedDbQueueCleanupResult> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const now = this.#now();
         const expired = await this.#readExpiredEntries(db, now);
@@ -229,7 +241,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const keyString = toKeyAsString(resourceEntry.key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
@@ -240,7 +255,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const stored = await readStoredQueueEntry(
             db,
@@ -273,7 +291,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         expected: ResourceEntry,
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         if (toKeyAsString(expected.key) !== toKeyAsString(replacement.key)) {
             throw new TypeError('Queue replacement key differs from its observation');
         }
@@ -304,7 +325,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const validated = toValidatedResourceInboxReleases(releases);
         if (validated.length === 0) {
             return new Map<Key, ResourceEntry>();
@@ -380,7 +404,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 stored.dequeueAudit.attempts < maxAttempts &&
                 isStoredQueueEntryTimedOut({ stored, typeIds, duration: timeSinceStartTs, now })
         });
-        this.#observeReservation(selection.mutations);
+        const decision = this.#observeReservation(selection.mutations);
+        if (decision instanceof Promise) {
+            await decision;
+        }
         return await this.#write(db, { mutations: selection.mutations, result: selection.reserved });
     }
 
@@ -414,14 +441,30 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
         });
         // An unreservable row that is also expired is swept by the write this claim already owes.
-        const mutations = [
-            ...selection.mutations,
-            ...selection.ineligible
-                .filter((stored) => isStoredQueueEntryExpired(stored, now))
-                .map(computeIndexedDbQueueDelete)
-        ];
-        this.#observeReservation(mutations);
-        return await this.#write(db, { mutations, result: selection.reserved });
+        const expired = selection.ineligible.filter((stored) => isStoredQueueEntryExpired(stored, now));
+        const mutations = [...selection.mutations, ...expired.map(computeIndexedDbQueueDelete)];
+        const decision = this.#observeReservation(mutations);
+        if (decision instanceof Promise) {
+            await decision;
+        }
+        const reserved = await this.#write(db, { mutations, result: selection.reserved });
+        this.#addReservationExpiredDeletes(expired);
+        return reserved;
+    }
+
+    /** Cumulative since this queue was constructed: of one work type, or of every type when none is named. */
+    getReservationExpiredDeleteCount(typeId: string | undefined): number {
+        return typeId === undefined
+            ? this.#reservationExpiredDeleteCount
+            : this.#reservationExpiredDeleteCountByType.getOrElse(typeId, 0);
+    }
+
+    #addReservationExpiredDeletes(expired: readonly StoredResourceEntry[]): void {
+        this.#reservationExpiredDeleteCount += expired.length;
+        for (const stored of expired) {
+            const count = this.#reservationExpiredDeleteCountByType.getOrElse(stored.typeId, 0);
+            this.#reservationExpiredDeleteCountByType.set(stored.typeId, count + 1);
+        }
     }
 
     async reserveOverdueRetryEntries(
@@ -462,7 +505,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             now,
             requestedTypes
         });
-        this.#observeReservation(computed.mutations);
+        const decision = this.#observeReservation(computed.mutations);
+        if (decision instanceof Promise) {
+            await decision;
+        }
         return await this.#write(db, computed);
     }
 
@@ -515,7 +561,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             reserved.set(updated.key, { entry: updated, selectedDueTs });
             mutations.push(computeIndexedDbQueuePut(stored, updated));
         }
-        this.#observeReservation(mutations);
+        const decision = this.#observeReservation(mutations);
+        if (decision instanceof Promise) {
+            await decision;
+        }
         return await this.#write(db, { mutations, result: reserved });
     }
 
@@ -523,7 +572,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         typeIds: Set<string>,
         workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-probe' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const options = toResourceInboxWorkAdvertisementOptions(workInput);
         const db = await this.#connection.open();
         const now = this.#now();
@@ -602,8 +654,11 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     /** A reservation read that changed nothing is the owner's idle inspection; one that writes is a reservation. */
-    #observeReservation(mutations: readonly ComputedIndexedDbQueueMutation[]): void {
-        this.#observer.observe({ owner: 'al-work', kind: mutations.length === 0 ? 'work-probe' : 'work-reserve' });
+    #observeReservation(mutations: readonly ComputedIndexedDbQueueMutation[]): Promise<void> | void {
+        return this.#observer.observe({
+            owner: 'al-work',
+            kind: mutations.length === 0 ? 'work-probe' : 'work-reserve'
+        });
     }
 
     async #write<Result>(
@@ -626,7 +681,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async getItem(key: Key): Promise<ResourceEntry | undefined> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const keyString = toKeyAsString(key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
@@ -645,7 +703,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         value: ResourceEntry,
         _options: PersistenceSetItemOptions
     ): Promise<void> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const entry: ResourceEntry = {
             ...value,
@@ -660,7 +721,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async removeItem(key: Key): Promise<void> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         await writeComputedIndexedDbQueueMutations({
             db: db,
@@ -672,7 +736,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async getAllKeys(): Promise<Key[]> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         // Unscoped by type or status: every other read narrows by an index, this one cannot, so
         // it reads the store directly instead of a single-caller store-module export for it.
@@ -701,7 +768,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
      * signal that more expired rows remain, so the bound belongs to the caller and not to a loop here.
      */
     async deleteExpired(): Promise<number> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-cleanup' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const expired = await this.#readExpiredEntries(db, this.#now());
         return await this.#write(db, {

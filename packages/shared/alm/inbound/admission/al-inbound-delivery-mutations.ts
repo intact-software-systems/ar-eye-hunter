@@ -1,5 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
-import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
+import {
+    resolveALMessageExpireAtMs,
+    type ALDedupAlgo,
+    type ALDedupOptions,
+    type ALEffectiveAlgorithm
+} from '../../../al-contracts/al-policy.ts';
 import { resolveExpireAtTimestampWithFallback } from '../../ALStoreRetention.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type {
@@ -9,12 +14,20 @@ import type {
 } from '../al-inbound-admission-store.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 
+export interface ComputeALInboundDedupExpiryInput {
+    readonly nowMs: number;
+    readonly dedup: ALEffectiveAlgorithm<ALDedupAlgo, ALDedupOptions>;
+    /** The message's own deadline; undefined when it names none, which keeps the window. */
+    readonly messageDeadlineAtMs: number | undefined;
+    readonly msgOwnerTtlMs: number;
+}
+
 /** The provenance, ordering and dedup rows an admitted message owns. */
 export function toALInboundAdmittedMessageMutations(
     read: ALInboundMessageReadDto
 ): readonly ALInboundAdmissionMutation[] {
-    const deadlineAtMs = resolveALMessageExpireAtMs(read.msg, read.plan.effective) ??
-        read.nowMs + read.retention.durableEffectTtlMs;
+    const messageDeadlineAtMs = resolveALMessageExpireAtMs(read.msg, read.plan.effective);
+    const deadlineAtMs = messageDeadlineAtMs ?? read.nowMs + read.retention.durableEffectTtlMs;
     const mutations: ALInboundAdmissionMutation[] = [
         {
             kind: 'set-msg-owner',
@@ -37,7 +50,12 @@ export function toALInboundAdmittedMessageMutations(
     mutations.push({
         kind: 'set-dedup',
         dedupKey: read.plan.dedupKey,
-        expireAtTimestamp: read.nowMs + Math.max(0, read.plan.effective.dedup.opts.windowMs)
+        expireAtTimestamp: computeALInboundDedupExpiryMs({
+            nowMs: read.nowMs,
+            dedup: read.plan.effective.dedup,
+            messageDeadlineAtMs,
+            msgOwnerTtlMs: read.retention.msgOwnerTtlMs
+        })
     });
     return mutations;
 }
@@ -49,6 +67,22 @@ export function computeALInboundMessageOwnerExpiryMs(
     return read.durability === 'volatile'
         ? computeALReceiptRetentionExpiryMs(deadlineAtMs)
         : read.nowMs + read.retention.msgOwnerTtlMs;
+}
+
+/**
+ * Held to the deadline, a semantic key would drop new messages that share it, so only identity dedup
+ * outlives the window; the message-owner lifetime caps the deadline term.
+ */
+export function computeALInboundDedupExpiryMs(input: ComputeALInboundDedupExpiryInput): number {
+    const windowExpiryMs = input.nowMs + Math.max(0, input.dedup.opts.windowMs);
+    if (input.dedup.algo === 'semantic-key' || input.messageDeadlineAtMs === undefined) {
+        return windowExpiryMs;
+    }
+    const deadlineExpiryMs = Math.min(
+        computeALReceiptRetentionExpiryMs(input.messageDeadlineAtMs),
+        input.nowMs + input.msgOwnerTtlMs
+    );
+    return Math.max(windowExpiryMs, deadlineExpiryMs);
 }
 
 /** The buffered ordered-message slot, plus the older superseded slots this message replaces. */

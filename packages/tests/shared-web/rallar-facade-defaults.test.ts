@@ -284,7 +284,7 @@ describe('Rallar facade default scope behavior', () => {
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
-                    onStorageReset: expect.any(Function)
+                    storage: expect.any(Function)
                 },
                 onAuthInvalid: expect.any(Function),
                 scope: {
@@ -335,7 +335,7 @@ describe('Rallar facade default scope behavior', () => {
                     indexedDbOperationObserver,
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
-                    onStorageReset: expect.any(Function)
+                    storage: expect.any(Function)
                 }
             })
         );

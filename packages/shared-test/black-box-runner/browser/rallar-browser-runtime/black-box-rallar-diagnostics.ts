@@ -113,7 +113,12 @@ export function createBlackBoxRallarDiagnosticsPorts(
     return {
         transportFaultPort: effects.faults,
         submissionReadinessFaultPort: effects.faults,
-        indexedDbOperationObserver: effects.storage,
+        indexedDbOperationObserver: {
+            observe: (operation) => {
+                effects.storage.observe(operation);
+                return effects.storageFaults.observe(operation);
+            }
+        },
         outboundDiagnostics: (event) =>
             diagnostics.emit({
                 kind: 'diagnostic',
@@ -126,8 +131,14 @@ export function createBlackBoxRallarDiagnosticsPorts(
                 topic: 'rallar.browser.alm.inbound_diagnostics',
                 data: { ...event }
             }),
-        onStorageReset: (event) =>
-            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage_reset', data: { ...event } })
+        storage: (event) =>
+            event.kind === 'reset'
+                ? diagnostics.emit({
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.storage_reset',
+                    data: { ...event.event }
+                })
+                : diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage', data: { ...event } })
     };
 }
 

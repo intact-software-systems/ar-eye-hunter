@@ -68,7 +68,7 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'wait':
             return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC ? toAdmissionOutcomeTypeIds(command.match.contains) : [];
         case 'fault.inject':
-            return command.match.typeId === undefined ? [] : [command.match.typeId];
+            return command.carrier === 'storage' || command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
             return [];
     }
@@ -124,6 +124,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-lifecycle',
         'durable-opt-in',
         'delivery-reload',
+        'storage-unavailable',
         'ordering-resync',
         'ws-unicast-receipt',
         'server-command',
@@ -137,6 +138,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-lifecycle',
         'durable-opt-in',
         'delivery-reload',
+        'storage-unavailable',
         'ordering-resync',
         'not-yet-in-sync-delivered-after-refresh',
         'not-yet-in-sync-expires',
@@ -151,6 +153,7 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'delivery-lifecycle',
         'durable-opt-in',
         'delivery-reload',
+        'storage-unavailable',
         'ordering-resync',
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
@@ -349,7 +352,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('keeps reload and ordering-resync full-only while preserving the smoke scenarios', () => {
+    it('keeps reload, storage-unavailable and ordering-resync full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
@@ -368,6 +371,7 @@ describe('alm-conformance recipe family', () => {
                 .map((scenario) => scenario.scenarioId)
         ).toEqual([
             'delivery-reload',
+            'storage-unavailable',
             'ordering-resync',
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
@@ -392,6 +396,7 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
+            ['full'],
             ['full'],
             ['full'],
             ['full'],

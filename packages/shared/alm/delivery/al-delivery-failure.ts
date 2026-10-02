@@ -1,4 +1,5 @@
 import type { ALNackReason } from '../../al-contracts/al-control.ts';
+import type { ALStorageUnavailableCause } from '../storage/al-storage-unavailable.ts';
 import type {
     ALDeliveryAttemptOutcome,
     ALDeliveryRefusalReason,
@@ -17,6 +18,7 @@ export type ALDeliveryFailure =
     | Readonly<{ kind: 'refused'; reason: ALDeliveryRefusalReason; }>
     | Readonly<{ kind: 'relay-rejected'; rejection: ALDeliveryRelayRejection; }>
     | Readonly<{ kind: 'admission-failed'; }>
+    | Readonly<{ kind: 'storage-unavailable'; cause: ALStorageUnavailableCause; }>
     | Readonly<{ kind: 'skipped'; reason: ALDeliverySkippedReason; }>
     | Readonly<{ kind: 'unroutable'; reason: ALDeliveryUnroutableReason; }>
     | Readonly<{

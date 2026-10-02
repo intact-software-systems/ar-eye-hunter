@@ -2,9 +2,11 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { toError } from '../../resilience/to-error.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALStoreDurability } from '../al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -201,14 +203,16 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             );
         }
         catch (error) {
-            if (!(error instanceof NonRetryableException) || dispatch.intent !== 'enqueue') {
+            const verdict = dispatch.intent === 'enqueue' ? toALOutboundThrownVerdict(toError(error)) : undefined;
+            if (verdict === undefined) {
                 throw error;
             }
             return {
-                computed: toALOutboundVerdictComputed(
-                    { kind: 'failed', detail: error.message },
-                    { msg: dispatch.msg, reason: error.message, entries: [] }
-                ),
+                computed: toALOutboundVerdictComputed(verdict, {
+                    msg: dispatch.msg,
+                    reason: verdict.detail,
+                    entries: []
+                }),
                 committed: false
             };
         }
@@ -643,6 +647,20 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
     }
+}
+
+type ALOutboundThrownVerdict = Extract<
+    ALDeliveryAdmissionVerdict,
+    Readonly<{ kind: 'failed' | 'storage-unavailable'; }>
+>;
+
+/** A send whose commit threw for a non-retryable reason or for its storage settles typed; anything else throws. */
+function toALOutboundThrownVerdict(error: Error): ALOutboundThrownVerdict | undefined {
+    if (error instanceof NonRetryableException) {
+        return { kind: 'failed', detail: error.message };
+    }
+    const unavailable = toALStorageUnavailable(error);
+    return unavailable === undefined ? undefined : { kind: 'storage-unavailable', ...unavailable };
 }
 
 function toALOutboundSettledDecision<TPrepared>(

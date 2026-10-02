@@ -71,7 +71,10 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const stored = await this.readRow(key);
         if (stored === undefined) {
             return undefined;
@@ -85,7 +88,10 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const nowMs = this.#nowMs();
         const entries: ALAdmissionBackendEntry<V>[] = [];
         for (const stored of await this.readRows(prefix)) {
@@ -100,7 +106,10 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
     }
 
     async readWork(key: Key): Promise<ResourceEntry | undefined> {
-        this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        const decision = this.#observer.observe({ owner: 'al-work', kind: 'work-read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const stored = await this.readStoredWork(toKeyAsString(key));
         return stored === undefined ||
                 isStoredQueueEntryExpired(stored, Temporal.Instant.fromEpochMilliseconds(this.#nowMs()))

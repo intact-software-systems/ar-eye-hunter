@@ -537,6 +537,41 @@ describe('Rallar typed message channel', () => {
                     ]
                 })
             );
+        expect(define({ typeId: 'chat.message.v1', purpose: 'command', onStorageUnavailable: 'drop' })).toThrow(
+            expect.objectContaining({
+                issues: [
+                    expect.objectContaining({ path: '$.onStorageUnavailable', code: 'invalid-on-storage-unavailable' })
+                ]
+            })
+        );
+    });
+
+    it('refuses a durable send storage cannot hold unless the channel chose to send it without storage', async () => {
+        webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
+            verdict: message.qos?.durability?.algo === 'volatile'
+                ? { kind: 'admitted' as const, durable: false, queuedAttempts: 1 }
+                : { kind: 'storage-unavailable' as const, cause: 'missing' as const, detail: 'No IndexedDB.' },
+            message,
+            entries: [],
+            trackedReceiptAlgo: 'none'
+        }));
+        const facade = createFacade();
+        const definition = {
+            topicId: 'app.chat',
+            typeId: 'chat.message.v1',
+            purpose: 'command',
+            durability: 'local-outbox'
+        } as const;
+        const refusing = facade.messages.channel<ChatMessage>(definition);
+        const downgrading = facade.messages.channel<ChatMessage>({ ...definition, onStorageUnavailable: 'volatile' });
+
+        const refused = await refusing.sendWs({ text: 'refused' }, { scope: 'all', resourceId: 'storage-refused-1' });
+        const downgraded = await downgrading.sendWs({ text: 'sent' }, { scope: 'all', resourceId: 'storage-volatile-1' });
+
+        await expect.poll(() => refused.lifecycle().state).toBe('failed');
+        await expect.poll(() => downgraded.lifecycle().state).toBe('queued');
+        expect(refused.lifecycle().evidence.failure).toEqual({ kind: 'storage-unavailable', cause: 'missing' });
+        expect(downgraded.lifecycle().evidence.durabilityDowngrade).toEqual({ requested: 'local-outbox', cause: 'missing' });
     });
 
     it('fixes the channel policy at creation, so a definition changed afterwards changes nothing', async () => {

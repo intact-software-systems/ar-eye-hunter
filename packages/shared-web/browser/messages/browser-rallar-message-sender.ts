@@ -10,6 +10,7 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import {
+    resolveBrowserStorageUnavailablePolicy,
     toBrowserMessageSendDefaults,
     type BrowserTypedChannelPolicy
 } from '@shared-web/browser/messages/to-browser-message-send-defaults.ts';
@@ -123,7 +124,8 @@ export class BrowserRallarMessageSender {
             carrier: 'rtc',
             message,
             canFallback: false,
-            payloadIssues: payloadValidation.issues
+            payloadIssues: payloadValidation.issues,
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         });
     }
 
@@ -165,7 +167,8 @@ export class BrowserRallarMessageSender {
             carrier: 'ws',
             message,
             canFallback: false,
-            payloadIssues: payloadValidation.issues
+            payloadIssues: payloadValidation.issues,
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         });
     }
 
@@ -233,7 +236,8 @@ export class BrowserRallarMessageSender {
                 laneTtlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
             }),
             canFallback: peer.strategy === 'rtc-with-ws-fallback',
-            payloadIssues: payloadValidation.issues
+            payloadIssues: payloadValidation.issues,
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         });
     }
 
@@ -262,7 +266,8 @@ export class BrowserRallarMessageSender {
             carrier: firstCarrier,
             message,
             canFallback: true,
-            payloadIssues: payloadValidation.issues
+            payloadIssues: payloadValidation.issues,
+            onStorageUnavailable: resolveBrowserStorageUnavailablePolicy(channel)
         });
     }
 

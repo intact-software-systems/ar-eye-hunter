@@ -133,7 +133,8 @@ export class WebRtcRxStreamerService {
                     await this.handoffControlMessages(msgs);
                 },
                 onControlMessage: async (msg) => {
-                    await this.multicast.acceptControlMessage(msg);
+                    const admitted = await this.multicast.acceptControlMessage(msg);
+                    return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
                 forwardMessage: async ({ msg, fromPeerId }) => {
                     await this.multicast.forwardIfRequired(msg, fromPeerId);
@@ -162,6 +163,7 @@ export class WebRtcRxStreamerService {
                 return;
             case 'deferred':
             case 'unroutable':
+            case 'storage-unavailable':
             case 'failed':
                 throw new Error(result.reason ?? `RTC control admission returned ${result.verdict.kind}`);
             case 'refused':

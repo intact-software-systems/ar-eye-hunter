@@ -106,6 +106,8 @@ export interface RallarMessageLane<TSendInput, TSelector = string> {
     onMessage<T = never>(selector: TSelector, handler: RallarMessageHandler<T>): RallarUnsubscribe;
 }
 
+export type RallarStorageUnavailablePolicy = 'refuse' | 'volatile';
+
 export interface RallarTypedMessageChannelDefinition {
     readonly topicId?: string;
     readonly typeId: string;
@@ -113,6 +115,11 @@ export interface RallarTypedMessageChannelDefinition {
     readonly purpose: ALChannelPurpose;
     /** Absent, the purpose's `volatile`; `local-outbox`/`local-inbox` opt the channel into browser storage. */
     readonly durability?: ALDurabilityAlgo;
+    /**
+     * Absent, `refuse`: a durable send storage cannot hold reads `failed`. `volatile` sends it once without
+     * storage instead; a downgraded `local-inbox` send also loses the receiver's inbox persistence.
+     */
+    readonly onStorageUnavailable?: RallarStorageUnavailablePolicy;
 }
 
 export type RallarTypedPayloadHandler<T> = (

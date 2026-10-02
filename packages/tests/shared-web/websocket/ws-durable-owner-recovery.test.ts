@@ -17,6 +17,7 @@ import {
     createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
@@ -70,7 +71,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     vi.stubGlobal('WebSocket', TestWebSocket);
     const sessionId = crypto.randomUUID();
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const oldFaults = createScriptedTransportFaultPort();
     oldFaults.inject({
         faultId: 'until-document-ends',
@@ -125,7 +126,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
     oldEngine.stop();
 
     // Recreate both runtime store wrappers and transport owners while keeping the same real IndexedDB namespace/session.
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const freshFaults = createScriptedTransportFaultPort();
     const freshEngine = new InboxOutboxEngine();
     const drainFresh = captureOutboundWorkRunnable(freshEngine);
@@ -451,7 +452,7 @@ async function openRecoveryOwner(
     principalId: string,
     faults: ReturnType<typeof createScriptedTransportFaultPort>
 ) {
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const engine = new InboxOutboxEngine();
     const drain = captureOutboundWorkRunnable(engine);
     const settlements: ALDeliverySettlement[] = [];

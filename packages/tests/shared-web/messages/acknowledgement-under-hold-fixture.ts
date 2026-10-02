@@ -8,6 +8,7 @@ import {
     resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
@@ -193,7 +194,7 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     vi.useFakeTimers({ toFake: ['Date'] });
     onTestFinished(() => void vi.useRealTimers());
     configureTestCacheRepositories();
-    configureBrowserALRuntimeStores('self', { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+    configureBrowserALRuntimeStores('self', { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const group = createAcceptedGroupSnapshotFixture(['self', 'receiver']);
     groupStateSnapshotsRepository.setGroupStateSnapshot(group);
     overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), createAcceptedOverlayFixture(group, 1, ['receiver']));
@@ -245,13 +246,17 @@ function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resource
 
 function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
     const nativeRuntime = installNativeRtcRuntime();
-    const fixture = createNativeRtcConnectionFixture({
-        sessionId: 'self',
-        token: 'fixture-token',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc'
-    }, nativeRuntime, faults);
+    const fixture = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        nativeRuntime,
+        faults
+    );
     onTestFinished(() => {
         fixture.dispose();
         nativeRuntime.dispose();
@@ -303,7 +308,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         TestWebSocket.instances.length = 0;
     });
     const sessionId = crypto.randomUUID();
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const runtime = createHoldSenderRuntime();
     const { service, native } = await connectWsQueueBox(runtime, sessionId);
     const readiness = vi.spyOn(runtime.faults, 'decideSubmissionReadiness');

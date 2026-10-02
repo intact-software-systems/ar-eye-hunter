@@ -160,7 +160,7 @@ scope.unsubscribe();
 
 `auth.registerAndLogin(request, options?)` registers and then logs in.
 
-`auth.logout(options?)` clears the local session, disconnects, calls the logout API when a session exists, closes authenticated data scopes, emits state and a `logout` auth change, and then rethrows the first cleanup failure, if any.
+`auth.logout(options?)` clears the local session, disconnects, calls the logout API when a session exists, closes authenticated data scopes, purges the ended session's browser ALM rows, emits state and a `logout` auth change, and then rethrows the first cleanup failure, if any. `auth.login` over a stored session, and a `connect` whose stored session changed, purge the replaced session's rows the same way after the disconnect. A purge that fails never keeps the session from ending: it states each of that session's stores `failing` on the `storage` diagnostics port.
 
 `auth.restore()` reads the locally stored session.
 
@@ -664,8 +664,47 @@ await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.roomRef });
 the room's frozen audience; both are at-least-once, receipted, volatile and
 30 s by default, and every send option overrides its default.
 `durability: 'local-outbox'` or `'local-inbox'` opts the channel into browser
-storage. A WS send with scope `world` or `all`, and a `best-effort` send, ask
-for no receipt unless the send states `ack`.
+storage. When storage cannot hold a durable send, the handle reads `failed`
+with `failure: { kind: 'storage-unavailable', cause }`; a channel defined with
+`onStorageUnavailable: 'volatile'` sends the same message once without storage
+instead, and its evidence names `durabilityDowngrade: { requested, cause }`
+beside `admittedDurable: false`. A downgraded `local-inbox` send also loses the
+receiver's inbox persistence, and a fallback carrier receives the downgraded
+message. A lane send names no channel, so it always refuses. A WS send with
+scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
+the send states `ack`.
+
+A browser without IndexedDB has no durable storage and no memory stand-in:
+each connect decides that once, and its durable sends follow the same rule
+without reaching the carrier. Any other storage failure is tried again by the
+next durable send. The first durable admission of a connect asks for
+persistent storage: it reads `navigator.storage.persisted()` and, unless the
+origin already persists, calls `navigator.storage.persist()`; the send awaits
+neither, and the outcome arrives as a `persist` event on the storage
+diagnostics port. A denial is asked again by the next connect.
+
+The browser keeps one ALM database per scope, named
+`rallar-al-runtime:<applicationId>:<workspaceId>` with each part URI-encoded;
+the database of earlier releases is left for the browser to evict. The
+`storage` diagnostics port (`setDefaults({ diagnosticsPorts: { storage } })`,
+`RallarDiagnosticsPortsInput.storage`) replaces `onStorageReset` and receives
+every `ALStorageEvent`:
+
+- `reset`: the database was deleted and recreated because its schema no longer
+  matched (`ALStorageResetEvent`); a reset the cleanup caused names the
+  database instead of a store;
+- `recovery`: what a durable store found when its lane started, once per store
+  and connect (`ALStorageRecoveryOutcome`: `restored`, `expired-at-recovery`,
+  `storage-created` or `storage-reset`). The session's inbound store is shared
+  by the WS and RTC lanes and reports once per lane, as `<store id>/ws` and
+  `<store id>/rtc`. A creation or reset of the database is reported by each
+  store of the connect that found it; a later connect reads the database as it is;
+- `health`: a store's `ALStorageHealthState` on each change of status only,
+  `failing` at the first storage failure and `healthy` at the first commit
+  after it, with the failure as `lastFailure`; a database evicted under the
+  document reads `failing` with cause `evicted`;
+- `persist`: the outcome of the connect's one persistence request
+  (`ALStoragePersistOutcome`).
 
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and

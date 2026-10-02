@@ -1,9 +1,9 @@
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import {
-    createPassThroughALStorageResetSink,
-    type ALStorageResetEvent
-} from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    createPassThroughALStorageEventSink,
+    type ALStorageEventSink
+} from '@shared/alm/storage/al-storage-event.ts';
 import {
     createPassThroughIndexedDbOperationObserver,
     type IndexedDbOperationObserver
@@ -21,7 +21,7 @@ export interface RallarDiagnosticsPortsInput {
     readonly indexedDbOperationObserver?: IndexedDbOperationObserver;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
-    readonly onStorageReset?: (event: ALStorageResetEvent) => void;
+    readonly storage?: ALStorageEventSink;
 }
 
 export interface RallarDiagnosticsPorts {
@@ -30,7 +30,7 @@ export interface RallarDiagnosticsPorts {
     readonly indexedDbOperationObserver: IndexedDbOperationObserver;
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
     readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
-    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    readonly storage: ALStorageEventSink;
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
@@ -52,6 +52,6 @@ export function toRallarDiagnosticsPorts(
             createPassThroughIndexedDbOperationObserver(),
         outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
         inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
-        onStorageReset: input?.onStorageReset ?? createPassThroughALStorageResetSink()
+        storage: input?.storage ?? createPassThroughALStorageEventSink()
     };
 }

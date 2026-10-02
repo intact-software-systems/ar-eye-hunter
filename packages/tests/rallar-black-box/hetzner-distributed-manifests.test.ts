@@ -1175,6 +1175,7 @@ describe('Hetzner distributed manifest catalog', () => {
                 'delivery-baseline',
                 'delivery-lifecycle',
                 'durable-opt-in',
+                'storage-unavailable',
                 'ordering-resync',
                 'ws-unicast-receipt',
                 'server-command',

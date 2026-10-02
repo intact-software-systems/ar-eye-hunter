@@ -153,6 +153,19 @@ const FAILURE_CASES: readonly FailureCase[] = [
         reason: 'Storage unavailable'
     },
     {
+        meaning: 'an admission its store could not persist',
+        settlements: [
+            toAdmission({
+                kind: 'storage-unavailable',
+                cause: 'quota',
+                detail: 'QuotaExceededError: The quota has been exceeded.'
+            })
+        ],
+        state: 'failed',
+        failure: { kind: 'storage-unavailable', cause: 'quota' },
+        reason: 'QuotaExceededError: The quota has been exceeded.'
+    },
+    {
         meaning: 'a skipped admission',
         settlements: [
             toAdmission({

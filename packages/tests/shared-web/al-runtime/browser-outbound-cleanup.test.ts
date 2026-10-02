@@ -18,7 +18,7 @@ import {
     deleteExpiredBrowserALRuntimeEntriesForSession,
     initBrowserALRuntimeExpiryEviction
 } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
-import { BROWSER_AL_RUNTIME_DB_NAME, BROWSER_AL_RUNTIME_STORE_NAME } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import { BROWSER_AL_RUNTIME_STORE_NAME, toBrowserALRuntimeDbName } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores,
@@ -28,6 +28,7 @@ import {
     readBrowserALWorkCleanupRows,
     writeBrowserALWorkExpiryCleanup
 } from '@shared-web/browser/al-runtime/browser-al-work-cleanup.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -60,6 +61,8 @@ interface RawWorkRow {
 }
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
+const SCOPE = defaultStateScope();
+const SCOPE_DB_NAME = toBrowserALRuntimeDbName(SCOPE);
 
 describe('browser canonical outbound cleanup', () => {
     afterEach(() => {
@@ -77,13 +80,14 @@ describe('browser canonical outbound cleanup', () => {
         const unrelated = toResourceEntryWithKey({ topicId: 'unrelated', contextId: 'test', resourceId: crypto.randomUUID() }, 'unrelated', {});
         await other.queue.enqueueIfAbsent(unrelated);
         vi.setSystemTime(Date.now() + 11);
-        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteExpiredBrowserALRuntimeEntries({ currentScope: SCOPE, storage: diagnosticsPorts.storage });
         let rows = await readRawWorkRows();
         expect(rows.some((row) => row.resource === expired.resource)).toBe(false);
         expect(rows.some((row) => row.resource === target.resource)).toBe(true);
         expect(rows.some((row) => row.resource === other.resource)).toBe(true);
         await deleteBrowserALRuntimeEntriesForSession(targetSession, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage
         });
         rows = await readRawWorkRows();
         expect(rows.some((row) => row.resource === target.resource)).toBe(false);
@@ -100,13 +104,13 @@ describe('browser canonical outbound cleanup', () => {
         await fresh.store.workQueue.enqueueIfAbsent(unrelated);
         await vi.advanceTimersByTimeAsync(11);
 
-        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteExpiredBrowserALRuntimeEntries({ currentScope: SCOPE, storage: diagnosticsPorts.storage });
         const remaining = await readRawWorkRows();
 
         expect(remaining.filter((row) => expired.keys.has(row.keyString))).toEqual([]);
         expect(remaining.filter((row) => fresh.keys.has(row.keyString))).toHaveLength(fresh.keys.size);
         expect(remaining.some((row) => row.keyString.includes(unrelated.key.resourceId))).toBe(true);
-        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteExpiredBrowserALRuntimeEntries({ currentScope: SCOPE, storage: diagnosticsPorts.storage });
         expect(await readRawWorkRows()).toEqual(remaining);
     });
 
@@ -120,14 +124,14 @@ describe('browser canonical outbound cleanup', () => {
         expect(await expired.store.workQueue.getItem(toALOutboundIdentityKey(reference.key))).toBeUndefined();
         expect((await readRawWorkRows()).filter((row) => expired.keys.has(row.keyString))).toHaveLength(2);
 
-        await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteExpiredBrowserALRuntimeEntries({ currentScope: SCOPE, storage: diagnosticsPorts.storage });
 
         expect((await readRawWorkRows()).filter((row) => expired.keys.has(row.keyString))).toEqual([]);
     });
 
     it('excludes a namespace whose resource id is only a string prefix of the owned one', async () => {
         const db = await openIndexedDbAdmissionDatabase({
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            dbName: SCOPE_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {}
@@ -163,7 +167,8 @@ describe('browser canonical outbound cleanup', () => {
         const otherLive = await admitForSession(otherLiveSession, 60_000);
 
         await deleteExpiredBrowserALRuntimeEntriesForSession(targetSession, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage
         });
 
         const remaining = await readRawWorkRows();
@@ -176,7 +181,8 @@ describe('browser canonical outbound cleanup', () => {
         vi.setSystemTime(new Date('2030-08-01T00:00:00Z'));
         const first = await admitForSession(`timer-first-${crypto.randomUUID()}`, 20);
         const stop = await initBrowserALRuntimeExpiryEviction({
-            onStorageReset: diagnosticsPorts.onStorageReset,
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage,
             intervalMs: 10
         });
         try {
@@ -199,7 +205,8 @@ describe('browser canonical outbound cleanup', () => {
         await other.store.workQueue.enqueueIfAbsent(unrelated);
 
         await deleteBrowserALRuntimeEntriesForSession(targetSession, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage
         });
         const remaining = await readRawWorkRows();
 
@@ -212,7 +219,7 @@ describe('browser canonical outbound cleanup', () => {
         const nowMs = Date.now();
         const expiredCount = INDEXED_DB_QUEUE_CLEANUP_MAX_EXPIRED_TO_DELETE + 40;
         const session = `budget-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(session, { diagnosticsPorts });
+        configureBrowserALRuntimeStores(session, { scope: SCOPE, diagnosticsPorts });
         const stores = resolveBrowserSessionALInboundRuntimeStores(session);
         await stores.admissionStore.ready();
         const keyStrings = new Set<string>();
@@ -229,7 +236,7 @@ describe('browser canonical outbound cleanup', () => {
             await stores.workQueue.enqueue(entry);
         }
         const db = await openIndexedDbAdmissionDatabase({
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            dbName: SCOPE_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {}
@@ -267,7 +274,8 @@ describe('browser canonical outbound cleanup', () => {
         });
 
         await deleteBrowserALRuntimeEntriesForSession(targetSession, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            currentScope: SCOPE,
+            storage: diagnosticsPorts.storage
         });
         openCursorSpy.mockRestore();
 
@@ -291,7 +299,7 @@ describe('browser canonical outbound cleanup', () => {
 });
 
 async function admitForSession(sessionId: string, ttlMs: number) {
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
+    configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
     const store = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
     const before = new Set((await readRawWorkRows()).map((row) => row.keyString));
     const runtime = createOutboundTestRuntimeFor({
@@ -316,7 +324,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
 
 async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
     const db = await openIndexedDbAdmissionDatabase({
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        dbName: SCOPE_DB_NAME,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         schemaId: AL_ADMISSION_SCHEMA_ID,
         onStorageReset: () => {}
@@ -331,7 +339,7 @@ async function readRawWorkRows(): Promise<readonly RawWorkRow[]> {
 }
 
 async function retainPendingForSession(sessionId: string, ttlMs: number) {
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
+    configureBrowserALRuntimeStores(sessionId, { scope: SCOPE, diagnosticsPorts });
     const stores = resolveBrowserSessionALInboundRuntimeStores(sessionId);
     const store = stores.admissionStore;
     await store.ready();

@@ -30,7 +30,10 @@ constructor builds its `ALWorkQueuePort`, asks the admission store for the scope
 [`ALOutboundControlAdmission`](./control/al-outbound-control-admission.ts), then
 constructs dispatch admission, repair admission, repair retransmission, the
 `ALWorkHandler`, and finally the message-effect owner. Registration does not invoke
-any of them. `ready()` awaits storage readiness before the first claim. Disposing the
+any of them. `ready()` answers the durable lane's storage as a value before the first claim:
+`ALStorageUnavailable` when its pair cannot open, recorded on the pair's health, and the next call
+opens again; any other open failure throws. While its last open failed the lane starts no work
+and its idle readiness probe answers no work without touching storage. Disposing the
 runtime closes dispatch admission, removes its engine task, and aborts owned RTC queue
 items; the same abort signal is what the effect owner reads as "disposed". A supplied
 engine remains available to its other tasks; a runtime-owned engine stops. An
@@ -633,6 +636,20 @@ queue write conflict degrades the batch once to releasing each entry serially. A
 is different: it releases on its own settlement, independently of any batch, one claim at a
 time, with no coalescing window or timer.
 
+A storage failure is a value at the lane, never a raw throw out of it
+([`toALStorageUnavailable`](../storage/al-storage-unavailable.ts) names its cause). A send whose
+commit fails for its storage settles `storage-unavailable` with that cause, where a
+`NonRetryableException` settles `failed`; it wrote nothing. A control or a receipt its store cannot
+persist answers `storage-unavailable` with that cause, never a raw throw: the inbound `admit-control`
+claim that replays it retries, and a control arriving inline from its carrier is answered not handled,
+its inbound `admission-outcome` naming the storage failure. A hand-over whose receipt row cannot end
+leaves the row to expire. A
+commit inside a work claim (a dequeued row, a repair) still throws into its claim, which retries, and
+a batch that fails for its storage records the failure on the pair's health instead of logging it.
+A committed send and a flushed batch are recovery points, which end a `failing` health; a committed
+control or receipt records none, so a failure a control recorded stays `failing` until a send or a batch
+commits. A write deadline, a corrupt row, a conflict and a code defect keep their own meanings.
+
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before
 any message effect is returned for execution.
@@ -780,6 +797,24 @@ the fixed admission and `alm-work` stores together. The work store uses the cano
 can use the same `IndexedDbConnection` as admission; opening that connection remains
 an explicit storage effect.
 
+Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
+the database existed, was created, was reset, or was created again after this document
+had opened it (another context's reset after a `versionchange`, an eviction without one).
+A creation, reset or eviction one store of a connect found is a fact of that connect
+([`ALStorageConnectOpenings`](../storage/al-storage-connect-openings.ts), one per connect):
+each store of the connect reports it once, though another store's open found it, and a
+later connect reads the database as it is. The document keeps per database only whether a
+`versionchange` closed it, which tells another context's reset from an eviction.
+A pair the factory opens itself, and whose store has an `ALStorageHealth`, carries an
+[`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts) on its stores; the lane's
+first `work-batch` diagnostic hands it the batch's claims, and it states the store's one
+recovery outcome of this connect, with the expired rows the store's reservations deleted up
+to that batch, through that health (`recordRecovery`); an eviction is a failure of the health instead
+(`recordFailure`, cause `evicted`). The reporter reads no store of its own: the claims come
+from the batch the lane already runs, the expired rows from the queue's in-memory count. The
+inbound pair, which both carriers' lanes share, has one reporter per lane instead (see the
+[inbound README](../inbound/README.md)).
+
 [`writeIndexedDbAdmissionMutations`](../write-indexed-db-admission-mutations.ts)
 accepts already computed admission and QueueBox mutations. The pure QueueBox
 validator returns an `Either` before transaction entry. The joint transaction uses
@@ -814,7 +849,8 @@ IndexedDB-only; the memory pair is swept by its own lane (Store lanes, above).
 
 A browser database whose stores or recorded schema identity do not match is deleted
 and recreated once, and the reset is reported through the required `onStorageReset`
-port with the previous and current schema ids. An undecodable schema row is treated
+port with the previous and current schema ids; the browser composition states it as
+the `reset` event of the store on its `storage` port. An undecodable schema row is treated
 as "no schema record yet" and resets the same way. A mismatch that survives that
 single reset is a storage invariant failure and throws; a delete that stays blocked by
 another open connection throws `ALStorageResetBlockedError`. Unrelated application

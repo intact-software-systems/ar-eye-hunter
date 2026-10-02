@@ -116,7 +116,8 @@ function createFallbackFixture(
                 carrier: firstCarrier,
                 message,
                 canFallback,
-                payloadIssues: []
+                payloadIssues: [],
+                onStorageUnavailable: 'refuse'
             });
             await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES });
             return handle;

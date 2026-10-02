@@ -30,7 +30,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 import { createBrowserMessageSenderFixture } from './browser-message-sender-fixture.ts';
 
 const ROOM_REF = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const COMMAND_CHANNEL = { purpose: 'command', durability: undefined } as const;
+const COMMAND_CHANNEL = { purpose: 'command', durability: undefined, onStorageUnavailable: 'refuse' } as const;
 const DIRECTOR = 'director';
 const INTENT = {
     typeId: 'room.director.intent.v1',

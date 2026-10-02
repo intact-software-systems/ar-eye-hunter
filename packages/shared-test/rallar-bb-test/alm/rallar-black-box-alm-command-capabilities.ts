@@ -13,7 +13,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
             'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
             'send time. qos: { ack: { algo } } passes a QoS ack algorithm request (none, hop, subtree, receiver) to ' +
             'the product as given. durability (volatile, local-outbox, local-inbox) declares the typed channel\'s ' +
-            'durability; absent, the send is volatile. ' +
+            'durability; absent, the send is volatile. onStorageUnavailable (refuse, volatile) declares what the ' +
+            'channel does when its durable storage is unavailable; absent, it refuses. ' +
             'toPeer (server or receiver) addresses one peer by its lane role, which the page resolves at send time to ' +
             'the WS server\'s peer id or to the one other live session of the room; a role it cannot resolve fails ' +
             'the send and opens no handle. ' +
@@ -128,8 +129,10 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
     },
     {
         kind: 'fault.inject',
-        title: 'Inject Transport Fault',
+        title: 'Inject Transport or Storage Fault',
         description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'carrier storage instead faults the IndexedDB operations of match.owner (al-admission or al-work) and ' +
+            'optionally match.kind: fail, quota (writes only) or a delay. ' +
             'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],

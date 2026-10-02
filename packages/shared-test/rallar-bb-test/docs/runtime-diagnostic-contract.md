@@ -291,7 +291,9 @@ independent of any connection. The event's `data` is the event itself:
   `pending` (held for an asynchronous authority recheck), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
-  (duplicate, resync-required, disposed, or an unhandled control)
+  (duplicate, resync-required, disposed, an unhandled control, or a control
+  its store could not persist, whose reason reads `storage-unavailable: <cause>`
+  with the cause `toALStorageUnavailable` named)
 - `reason` is the plan's drop reason, the rejection's code, or the acceptance
   kind that carries neither. A drop the RTC room-snapshot admission decided
   carries the drop code at the head of that reason and the denial that fired
@@ -433,6 +435,10 @@ measured halves are `readDurationMs` and `commitDurationMs`.
 
 ## Storage Reset Diagnostics
 
+The browser's `RallarDiagnosticsPorts.storage` port receives every
+`ALStorageEvent` of the browser ALM stores. The harness publishes its `reset`
+arm here and every other arm on `rallar.browser.alm.storage` (below).
+
 `rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded
 the moment `openIndexedDbAdmissionDatabase` deletes and reopens a database
 whose stores or schema identity no longer match. This is not one event per
@@ -441,7 +447,8 @@ detects it independently and emits its own event, so a single cutover can
 leave behind N events, one per concurrent opener. The event's `data` is the
 event itself:
 
-- `dbName`: the IndexedDB database that was reset
+- `dbName`: the IndexedDB database that was reset; for the browser runtime, the
+  scope's database `rallar-al-runtime:<applicationId>:<workspaceId>`
 - `previousSchemaId`: the schema id read back before the reset, or `undefined`
   either when the store set itself did not match (so no schema id could be
   read) or when the stores matched but the database carried no schema record
@@ -456,6 +463,79 @@ This is the evidence an incompatible browser cutover (new indexes, new key
 layouts, new stored fields) leaves behind: it confirms the old database was
 discarded rather than left mismatched underneath a client that assumes the
 current shape.
+
+## Storage Diagnostics
+
+`rallar.browser.alm.storage` carries every `ALStorageEvent` but a reset; the
+event's `data` is the event itself, with `kind` and, except for `persist`, the
+`storeId` of the store it describes (`browser-session-inbound:<sessionId>`,
+`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`). The
+session inbound store is shared by the WS and RTC lanes, so its `recovery`
+names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
+`browser-session-inbound:<sessionId>/rtc`).
+
+- `health`: `status` (`healthy` or `failing`), `lastFailure` (an
+  `ALStorageUnavailable`: `cause` and `detail`) and `lastRecoveryPointAtMs`
+  (the store's last recovery point, or `undefined` before its first). A store
+  starts `healthy` without an event and states only a change of status, never
+  one event per send: `failing` at its first storage failure, `healthy` at the
+  first recovery point after it. Every emitted event carries the failure that
+  made it `failing`, and the `healthy` that ends it keeps that failure. A later
+  failure while the store is already `failing` replaces `lastFailure` without
+  an event.
+
+  A durable lane records a storage failure of its open, of a send's commit, of a
+  control, receipt or inbound admission, and of a work batch. A committed send,
+  an inbound admission that wrote work and a flushed batch are recovery points;
+  a committed control or receipt is none, so a failure a control recorded stays
+  `failing` until a send or a batch commits.
+  A send whose channel chose `onStorageUnavailable: 'volatile'` and that its
+  carrier then admits without storage is no recovery point.
+
+  A purge of an ended session's rows (logout, a login over a session, a session
+  switch) that fails states `failing` once for each of that session's three
+  store ids, straight on the port, since those stores are gone. Its
+  `lastFailure` is absent when the purge failed for a reason other than
+  storage; the browser logs that error instead.
+
+- `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
+  after its first durable admission: `granted` when the origin already
+  persisted or the browser granted the request, `denied` when it refused or the
+  request failed, `unsupported` without `navigator.storage.persist`. It has no
+  `storeId`.
+
+- `recovery`: one event per durable store, and per lane of the shared session
+  inbound store, per connect, `outcome` being what the store found when its
+  lane started. A durable store reports its outcome when its lane's first work
+  batch runs, which for an outbound store without work can be long after the
+  connect; a store whose lane runs no batch before the document ends reports
+  nothing, and a store whose open failed never starts its work and reads as a
+  `failing` `health` event instead. The three stores of a session share one
+  per-scope database, and a creation, reset or eviction one of them found is a
+  fact of their connect: each store of that connect reports it once, whichever
+  store's open found it. A later connect, of another session or of the same
+  one, reads the database as it is. `outcome` is:
+  - `storage-created`: the database was created, the first time this document
+    opened it
+  - `storage-reset` with `reason`: the database was reset because it did not
+    match (`schema-id-mismatch`, `store-schema-mismatch`), or created again
+    after another context's `versionchange` closed this document's connection
+    (`other-context`); a reset wins over the creation it caused
+  - `restored` with `claimed` and `expired`: the database existed; `claimed` is
+    what the lane's first batch claimed, `expired` the expired rows of the
+    lane's own work type its reservations deleted up to that batch
+  - `expired-at-recovery` with `expired`: the first batch claimed nothing and
+    those reservations deleted expired rows
+
+  A creation of a database this document had opened, without a `versionchange`
+  first, is an eviction: the store's health records it as a failure, so it
+  reads as a `health` event with `status: 'failing'` and
+  `lastFailure.cause: 'evicted'` instead of a recovery. `delivery-reload` waits
+  after the reload for a `restored` recovery of the session inbound store's WS
+  lane, which runs on every carrier, and of the outbound store that holds the
+  original: the RTC overlay store on `rtc`, the WS client store on `ws` and on
+  `rtc-with-ws-fallback`, whose hold hands the original to WS before the
+  reload.
 
 ## Compatibility
 

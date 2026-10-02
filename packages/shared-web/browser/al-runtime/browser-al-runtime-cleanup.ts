@@ -3,17 +3,19 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { EMPTY_INDEXED_DB_ADMISSION_FENCE } from '@shared/alm/indexed-db-admission-fence.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
-    openIndexedDbAdmissionDatabase,
-    type ALStorageResetEvent
+    openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import type { StoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import type { ComputedIndexedDbQueueMutation } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import {
     computeBrowserALWorkCleanupMutations,
@@ -22,9 +24,10 @@ import {
 } from './browser-al-work-cleanup.ts';
 
 import {
-    BROWSER_AL_RUNTIME_DB_NAME,
+    BROWSER_AL_RUNTIME_DB_NAME_PREFIX,
     BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX,
     BROWSER_AL_RUNTIME_STORE_NAME,
+    toBrowserALRuntimeDbName,
     toBrowserSessionALRuntimeEntryKeyPrefixes,
     toBrowserSessionALRuntimeWorkNamespaces
 } from './browser-al-runtime-identity.ts';
@@ -63,7 +66,7 @@ export interface BrowserALRuntimeCleanupValidationIssue {
 }
 
 export interface BrowserALRuntimeCleanupResult {
-    readonly dbName: string;
+    readonly dbNames: readonly string[];
     readonly storeName: string;
     readonly keyPrefixes: readonly string[];
     readonly scanned: number;
@@ -71,28 +74,49 @@ export interface BrowserALRuntimeCleanupResult {
 }
 
 export interface DeleteExpiredBrowserALRuntimeEntriesOptions {
-    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    /** The one database swept where the browser cannot list its databases. */
+    readonly currentScope: StateScope;
+    readonly storage: ALStorageEventSink;
     readonly nowMs?: number;
     readonly keyPrefixes?: readonly string[];
+}
+
+export interface DeleteBrowserALRuntimeEntriesForSessionOptions {
+    /** The one database purged where the browser cannot list its databases. */
+    readonly currentScope: StateScope;
+    readonly storage: ALStorageEventSink;
+}
+
+interface BrowserALRuntimeEntriesDeletion {
+    readonly keyPrefixes: readonly string[];
+    readonly workNamespaces: readonly string[];
+    readonly canonicalScopes: readonly string[];
+    readonly deletionPolicy: BrowserALRuntimeDeletionPolicy;
+    readonly storage: ALStorageEventSink;
+}
+
+interface BrowserALRuntimeCleanupCounts {
+    readonly scanned: number;
+    readonly deleted: number;
 }
 
 export async function deleteExpiredBrowserALRuntimeEntries(
     options: DeleteExpiredBrowserALRuntimeEntriesOptions
 ): Promise<BrowserALRuntimeCleanupResult> {
-    const nowMs = options.nowMs ?? Date.now();
-
-    return await deleteBrowserALRuntimeEntriesMatching({
+    return await deleteBrowserALRuntimeEntriesInEveryDatabase(options.currentScope, {
         keyPrefixes: options.keyPrefixes ?? [BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX],
-        deletionPolicy: { kind: 'expired', nowMs },
-        onStorageReset: options.onStorageReset
+        workNamespaces: [],
+        canonicalScopes: [],
+        deletionPolicy: { kind: 'expired', nowMs: options.nowMs ?? Date.now() },
+        storage: options.storage
     });
 }
 
 /**
  * Deletes this session's expired KV admission-metadata rows only. AL work-row expiry is a side
- * effect of every call here, and it is store-wide (see `writeBrowserALWorkExpiryCleanup`): other
- * sessions' expired AL work rows are removed too, while their live rows and their expired KV rows
- * are untouched.
+ * effect of every call here, and it is store-wide in every scope's database (see
+ * `writeBrowserALWorkExpiryCleanup`): other sessions' expired AL work rows are removed too, while
+ * their live rows and their expired KV rows are untouched.
  */
 export async function deleteExpiredBrowserALRuntimeEntriesForSession(
     sessionId: string,
@@ -106,14 +130,14 @@ export async function deleteExpiredBrowserALRuntimeEntriesForSession(
 
 export async function deleteBrowserALRuntimeEntriesForSession(
     sessionId: string,
-    options: Readonly<{ onStorageReset: (event: ALStorageResetEvent) => void; }>
+    options: DeleteBrowserALRuntimeEntriesForSessionOptions
 ): Promise<BrowserALRuntimeCleanupResult> {
-    return await deleteBrowserALRuntimeEntriesMatching({
+    return await deleteBrowserALRuntimeEntriesInEveryDatabase(options.currentScope, {
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
         workNamespaces: toBrowserSessionALRuntimeWorkNamespaces(sessionId),
         canonicalScopes: [`browser-session:${sessionId}`],
         deletionPolicy: { kind: 'all' },
-        onStorageReset: options.onStorageReset
+        storage: options.storage
     });
 }
 
@@ -129,7 +153,9 @@ export async function evictExpiredBrowserALRuntimeEntries(
 }
 
 export interface InitBrowserALRuntimeExpiryEvictionInput {
-    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    /** The one database swept where the browser cannot list its databases. */
+    readonly currentScope: StateScope;
+    readonly storage: ALStorageEventSink;
     readonly intervalMs?: number;
 }
 
@@ -167,7 +193,10 @@ function startBrowserALRuntimeExpiryEviction(
     return tryRunInIntervals(
         async () => {
             if (!stopped) {
-                await evictExpiredBrowserALRuntimeEntries({ onStorageReset: input.onStorageReset });
+                await evictExpiredBrowserALRuntimeEntries({
+                    currentScope: input.currentScope,
+                    storage: input.storage
+                });
             }
         },
         input.intervalMs ?? BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS
@@ -179,57 +208,76 @@ function startBrowserALRuntimeExpiryEviction(
         });
 }
 
-function openBrowserALRuntimeDatabase(
-    onStorageReset: (event: ALStorageResetEvent) => void
-): Promise<IDBDatabase> {
-    return openIndexedDbAdmissionDatabase({
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
-        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
-        schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset
-    });
+/**
+ * The prefix leaves the pre-scope database out, so it stays until the browser evicts it. A browser that
+ * cannot list its databases, or fails to, still has the current scope's swept.
+ */
+async function readBrowserALRuntimeDbNames(currentScope: StateScope): Promise<readonly string[]> {
+    if (typeof indexedDB.databases !== 'function') {
+        return [toBrowserALRuntimeDbName(currentScope)];
+    }
+    try {
+        const databases = await indexedDB.databases();
+        return databases.flatMap(({ name }) => name?.startsWith(BROWSER_AL_RUNTIME_DB_NAME_PREFIX) ? [name] : []);
+    }
+    catch (error) {
+        console.error('Failed to list the browser AL runtime databases:', toError(error));
+        return [toBrowserALRuntimeDbName(currentScope)];
+    }
 }
 
-async function deleteBrowserALRuntimeEntriesMatching(
-    options: Readonly<{
-        keyPrefixes: readonly string[];
-        workNamespaces?: readonly string[];
-        canonicalScopes?: readonly string[];
-        deletionPolicy: BrowserALRuntimeDeletionPolicy;
-        onStorageReset: (event: ALStorageResetEvent) => void;
-    }>
+/** A failing database does not keep the others from being swept; its failure is rethrown after them. */
+async function deleteBrowserALRuntimeEntriesInEveryDatabase(
+    currentScope: StateScope,
+    deletion: BrowserALRuntimeEntriesDeletion
 ): Promise<BrowserALRuntimeCleanupResult> {
-    const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
-    const workNamespaces = options.workNamespaces ?? [];
-    const canonicalScopes = options.canonicalScopes ?? [];
-
+    const keyPrefixes = [...new Set(deletion.keyPrefixes)].filter((prefix) => prefix.length > 0);
     if (keyPrefixes.length === 0 || !isIndexedDbALRuntimeStoreSupported()) {
-        return toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
+        return toBrowserALRuntimeCleanupResult([], keyPrefixes, []);
     }
-
-    const db = await openBrowserALRuntimeDatabase(options.onStorageReset);
-
-    try {
-        if (options.deletionPolicy.kind === 'expired') {
-            await writeBrowserALWorkExpiryCleanup(db, options.deletionPolicy.nowMs);
+    const dbNames = await readBrowserALRuntimeDbNames(currentScope);
+    const counts: BrowserALRuntimeCleanupCounts[] = [];
+    const failures: Error[] = [];
+    for (const dbName of dbNames) {
+        try {
+            counts.push(await deleteBrowserALRuntimeEntriesInDatabase(dbName, { ...deletion, keyPrefixes }));
         }
-        const read = await readBrowserALRuntimeCleanup(db, {
-            keyPrefixes,
-            workNamespaces,
-            canonicalScopes,
-            policy: options.deletionPolicy
-        });
-        const computed = computeBrowserALRuntimeCleanup(read, options.deletionPolicy);
-        const issues = validateBrowserALRuntimeCleanup(read, options.deletionPolicy, computed);
+        catch (error) {
+            failures.push(toError(error));
+        }
+    }
+    if (failures.length > 0) {
+        throw failures[0];
+    }
+    return toBrowserALRuntimeCleanupResult(dbNames, keyPrefixes, counts);
+}
+
+/** The cleanup opens a whole database for no one store, so a reset it causes names the database. */
+async function deleteBrowserALRuntimeEntriesInDatabase(
+    dbName: string,
+    deletion: BrowserALRuntimeEntriesDeletion
+): Promise<BrowserALRuntimeCleanupCounts> {
+    const db = await openIndexedDbAdmissionDatabase({
+        dbName,
+        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: toALStorageResetSink(deletion.storage, dbName)
+    });
+    try {
+        if (deletion.deletionPolicy.kind === 'expired') {
+            await writeBrowserALWorkExpiryCleanup(db, deletion.deletionPolicy.nowMs);
+        }
+        const read = await readBrowserALRuntimeCleanup(db, deletion);
+        const computed = computeBrowserALRuntimeCleanup(read, deletion.deletionPolicy);
+        const issues = validateBrowserALRuntimeCleanup(read, deletion.deletionPolicy, computed);
         if (issues.length > 0) {
             throw new TypeError(issues.map((issue) => issue.message).join('; '));
         }
         await writeBrowserALRuntimeCleanup(db, computed);
-        return toBrowserALRuntimeCleanupResult(
-            keyPrefixes,
-            read.rows.length + read.workRows.length,
-            computed.mutations.length + computed.queueMutations.length
-        );
+        return {
+            scanned: read.rows.length + read.workRows.length,
+            deleted: computed.mutations.length + computed.queueMutations.length
+        };
     }
     finally {
         db.close();
@@ -238,14 +286,9 @@ async function deleteBrowserALRuntimeEntriesMatching(
 
 async function readBrowserALRuntimeCleanup(
     db: IDBDatabase,
-    options: Readonly<{
-        keyPrefixes: readonly string[];
-        workNamespaces: readonly string[];
-        canonicalScopes: readonly string[];
-        policy: BrowserALRuntimeDeletionPolicy;
-    }>
+    deletion: Omit<BrowserALRuntimeEntriesDeletion, 'storage'>
 ): Promise<BrowserALRuntimeCleanupRead> {
-    const { keyPrefixes, workNamespaces, canonicalScopes, policy } = options;
+    const { keyPrefixes, workNamespaces, canonicalScopes, deletionPolicy: policy } = deletion;
     const readsExpiryIndex = policy.kind === 'expired' &&
         keyPrefixes.length === 1 &&
         keyPrefixes[0] === BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX;
@@ -398,16 +441,16 @@ async function writeBrowserALRuntimeCleanup(
 }
 
 function toBrowserALRuntimeCleanupResult(
+    dbNames: readonly string[],
     keyPrefixes: readonly string[],
-    scanned: number,
-    deleted: number
+    counts: readonly BrowserALRuntimeCleanupCounts[]
 ): BrowserALRuntimeCleanupResult {
     return {
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        dbNames,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         keyPrefixes,
-        scanned,
-        deleted
+        scanned: counts.reduce((total, count) => total + count.scanned, 0),
+        deleted: counts.reduce((total, count) => total + count.deleted, 0)
     };
 }
 

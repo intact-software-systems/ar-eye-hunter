@@ -31,7 +31,11 @@ export interface OpenedIndexedDb {
     readonly db: IDBDatabase;
     /** Empty when the opened database is the required schema; every reason it is not otherwise. */
     readonly schemaIssues: readonly string[];
+    /** The open ran `upgradeneeded`: an open that names no version does so only when the database did not exist. */
+    readonly created: boolean;
 }
+
+type OpenedIndexedDbHandle = Pick<OpenedIndexedDb, 'db' | 'created'>;
 
 /** Thrown when an existing database's store, key path, auto-increment, or index set is not the required schema. */
 class IndexedDbSchemaMismatchError extends Error {
@@ -90,9 +94,9 @@ export async function openIndexedDbWithValidatedStores<InitialRecord extends obj
     if (validated.left) {
         throw validated.left;
     }
-    const db = await openIndexedDb(dbName, stores);
+    const { db, created } = await openIndexedDb(dbName, stores);
     db.onversionchange = () => db.close();
-    return { db, schemaIssues: validateIndexedDbDatabaseSchema(db, stores) };
+    return { db, schemaIssues: validateIndexedDbDatabaseSchema(db, stores), created };
 }
 
 /** The same open for a caller whose contract is that a schema mismatch is a defect, not an outcome. */
@@ -182,11 +186,13 @@ function formatKeyPath(keyPath: string | string[] | null): string {
 async function openIndexedDb<InitialRecord extends object>(
     dbName: string,
     stores: readonly IndexedDbStoreSchema<InitialRecord>[]
-): Promise<IDBDatabase> {
-    return await new Promise<IDBDatabase>((resolve, reject) => {
+): Promise<OpenedIndexedDbHandle> {
+    return await new Promise<OpenedIndexedDbHandle>((resolve, reject) => {
         const request = indexedDB.open(dbName);
         let schemaWriteError: Error | undefined;
+        let created = false;
         request.onupgradeneeded = () => {
+            created = true;
             try {
                 for (const store of stores) {
                     createIndexedDbStore(request.result, store);
@@ -197,7 +203,7 @@ async function openIndexedDb<InitialRecord extends object>(
                 request.transaction!.abort();
             }
         };
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => resolve({ db: request.result, created });
         request.onerror = () => reject(schemaWriteError ?? request.error ?? new Error('IndexedDB open failed'));
     });
 }

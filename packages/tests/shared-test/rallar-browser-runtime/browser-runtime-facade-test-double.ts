@@ -41,6 +41,10 @@ import {
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
+    createScriptedStorageFaultPort,
+    type ScriptedStorageFaultPort
+} from '@shared/persistence/storage-fault-port.ts';
+import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
@@ -347,6 +351,7 @@ const director: BlackBoxBrowserDirectorDependency = {
 
 let scriptedFaults = createScriptedTransportFaultPort();
 let countingStorage = createCountingIndexedDbOperationObserver();
+let scriptedStorageFaults = createScriptedStorageFaultPort();
 let deliveryRegistry = createFacadeDeliveryRegistry();
 let deliverySequence = 0;
 
@@ -374,6 +379,9 @@ const diagnostics: BlackBoxBrowserDiagnosticsDependency = {
     },
     get storage(): CountingIndexedDbOperationObserver {
         return countingStorage;
+    },
+    get storageFaults(): ScriptedStorageFaultPort {
+        return scriptedStorageFaults;
     }
 };
 
@@ -420,6 +428,7 @@ export function resetBrowserRuntimeFacadeTestDouble(): void {
     clearRecords();
     scriptedFaults = createScriptedTransportFaultPort();
     countingStorage = createCountingIndexedDbOperationObserver();
+    scriptedStorageFaults = createScriptedStorageFaultPort();
     deliveryRegistry = createFacadeDeliveryRegistry();
     facadeBehavior.login.mockResolvedValue(facadeSession);
     facadeBehavior.registerAndLogin.mockResolvedValue(facadeSession);

@@ -9,6 +9,10 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALStorageHealth } from '../storage/al-storage-health.ts';
+import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryLane, ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
+import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
@@ -33,6 +37,13 @@ import {
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
     readonly workQueue: QueueBoxResourceEntryRepository;
+    /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
+    readonly storageHealth?: ALStorageHealth;
+    /**
+     * Creates one carrier lane's recovery reporter: both carriers' lanes share the session's pair, and each
+     * reports its own first work batch. Absent for a pair that recovers nothing (memory, PostgreSQL).
+     */
+    readonly createStorageRecovery?: (lane: ALStorageRecoveryLane) => ALStorageRecoveryReporter;
 }
 
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
@@ -62,6 +73,14 @@ export namespace ALInboundMessageRuntime {
         | { readonly kind: 'not-admitted'; readonly reason: string; }
         | { readonly kind: 'control'; readonly handled: boolean; };
 
+    /** What ingress decided; a control its store could not persist is answered as an unhandled control. */
+    export type Admission =
+        | Acceptance
+        | { readonly kind: 'unpersisted-control'; readonly unavailable: ALStorageUnavailable; };
+
+    /** A control the store could not persist, so it wrote nothing. */
+    export type UnpersistedControl = Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable;
+
     export type PendingAuthority =
         | { readonly kind: 'authorized'; readonly source: Source; }
         | { readonly kind: 'retry'; readonly retryAfterMs: number; }
@@ -75,6 +94,10 @@ export namespace ALInboundMessageRuntime {
         /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALInboundAdmissionStore;
         readonly workQueue: QueueBoxResourceEntryRepository;
+        /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
+        readonly storageHealth: ALStorageHealth | undefined;
+        /** The durable pair's recovery, one reporter per lane; `undefined` for a pair that recovers nothing (memory, PostgreSQL). */
+        readonly createStorageRecovery: ((lane: ALStorageRecoveryLane) => ALStorageRecoveryReporter) | undefined;
         /** The memory pair a volatile message goes to; `undefined` keeps one backend for every message. */
         readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
@@ -115,7 +138,11 @@ export namespace ALInboundMessageRuntime {
         readonly canDispatchMessage?: (msg: ALMessage) => boolean;
         /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
         readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
-        readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
+        /** Answers `storage-unavailable` when the outbound store could not persist the control: a replay claim retries. */
+        readonly onControlMessage?: (
+            msg: ALMessage,
+            acceptance: ALControlAcceptance
+        ) => Promise<void | UnpersistedControl>;
         readonly forwardMessage?: (input: ForwardMessageInputDto) => Promise<void | 'completed' | 'retry'>;
         /** Absence means a retried copy of an admitted message is never forwarded again. */
         readonly forwardRetriedCopy?: (copy: RetriedCopy) => Promise<void | 'completed' | 'retry'>;
@@ -178,8 +205,10 @@ export class ALInboundMessageRuntime {
         }
     }
 
-    async ready(): Promise<void> {
-        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        return durable;
     }
 
     dispose(): void {
@@ -203,14 +232,14 @@ export class ALInboundMessageRuntime {
         const msg = decoded.right!;
         const admitted = await this.admitDecodedMessage(msg, source, planIncomingMessage);
         this.recordAdmissionOutcome(msg, source, admitted);
-        return admitted;
+        return admitted.mapRight(toALInboundAcceptance);
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
     private recordAdmissionOutcome(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
-        admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>
+        admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
     ): void {
         this.dependencies.diagnostics?.({
             kind: 'admission-outcome',
@@ -226,7 +255,7 @@ export class ALInboundMessageRuntime {
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
-    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
+    ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Admission>> {
         const validated = validateALInboundMessage(
             msg,
             source,
@@ -268,7 +297,7 @@ export class ALInboundMessageRuntime {
     private async admitControlMessage(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source
-    ): Promise<ALInboundMessageRuntime.Acceptance> {
+    ): Promise<ALInboundMessageRuntime.Admission> {
         const admitted = isALOriginAcknowledgement(msg, this.dependencies.effectPreparation.selfPeerId)
             ? { kind: 'not-handled' as const }
             : await this.admitControlInLanes(msg, source);
@@ -278,10 +307,11 @@ export class ALInboundMessageRuntime {
         const acceptance: ALControlAcceptance = admitted.kind === 'committed'
             ? admitted.acceptance
             : { handled: false, completedPendingAcks: [] };
-        if (!this.disposed) {
-            await this.dependencies.onControlMessage?.(msg, acceptance);
-        }
-        return { kind: 'control', handled: acceptance.handled };
+        const handedOver = this.disposed ? undefined : await this.dependencies.onControlMessage?.(msg, acceptance);
+        const unpersisted = admitted.kind === 'storage-unavailable' ? admitted : handedOver || undefined;
+        return unpersisted === undefined
+            ? { kind: 'control', handled: acceptance.handled }
+            : { kind: 'unpersisted-control', unavailable: { cause: unpersisted.cause, detail: unpersisted.detail } };
     }
 
     /** Memory first, so a control the memory lane handles never reaches IndexedDB. */
@@ -294,4 +324,9 @@ export class ALInboundMessageRuntime {
             ? await this.durable.admitControl(msg, source)
             : volatile;
     }
+}
+
+/** The carrier reads a control its store could not persist as one it did not handle. */
+function toALInboundAcceptance(admission: ALInboundMessageRuntime.Admission): ALInboundMessageRuntime.Acceptance {
+    return admission.kind === 'unpersisted-control' ? { kind: 'control', handled: false } : admission;
 }

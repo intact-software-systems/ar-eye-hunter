@@ -1,6 +1,7 @@
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestFaultInjectCommand
+    RallarBlackBoxTestStorageFaultInjectCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
 import { toBudgetMs } from './alm-conformance-budgets.ts';
@@ -58,9 +59,63 @@ export function toRtcDropFaultCommand(
     });
 }
 
+/**
+ * Fails every admission write and every work-queue write of this page with `QuotaExceededError` while held, each owner
+ * under its own fault id; the same ids with `remaining: 0` release them. Reads go through. Both ids start with
+ * {@link toStorageQuotaFaultIdPrefix}, so a store's last failure names this cell whichever owner failed last.
+ */
+export function toStorageQuotaFaultCommands(
+    step: AlmConformanceStepInput,
+    phase: 'hold' | 'release'
+): readonly RallarBlackBoxTestStorageFaultInjectCommand[] {
+    const remaining = phase === 'hold' ? 'until-cleared' : 0;
+    return [
+        toStorageQuotaFaultCommand(step, {
+            name: `quota-admission-${phase}`,
+            faultId: `${toStorageQuotaFaultIdPrefix(step)}admission`,
+            match: { owner: 'al-admission', kind: 'write' },
+            remaining
+        }),
+        toStorageQuotaFaultCommand(step, {
+            name: `quota-work-${phase}`,
+            faultId: `${toStorageQuotaFaultIdPrefix(step)}work`,
+            match: { owner: 'al-work' },
+            remaining
+        })
+    ];
+}
+
+/** The cell's type id first: no type id followed by `.quota-` is a prefix of another. */
+export function toStorageQuotaFaultIdPrefix(step: AlmConformanceStepInput): string {
+    return `${toScenarioTypeId(step)}.quota-`;
+}
+
+interface StorageQuotaFault {
+    readonly name: string;
+    readonly faultId: string;
+    readonly match: RallarBlackBoxTestStorageFaultInjectCommand['match'];
+    readonly remaining: 'until-cleared' | 0;
+}
+
+function toStorageQuotaFaultCommand(
+    step: AlmConformanceStepInput,
+    fault: StorageQuotaFault
+): RallarBlackBoxTestStorageFaultInjectCommand {
+    return {
+        kind: 'fault.inject',
+        commandId: toCommandId(step, fault.name),
+        faultId: fault.faultId,
+        carrier: 'storage',
+        match: fault.match,
+        action: 'quota',
+        remaining: fault.remaining,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
+    };
+}
+
 function toFaultCommand(
     input: AlmConformanceFaultCommandInput
-): RallarBlackBoxTestFaultInjectCommand {
+): RallarBlackBoxTestTransportFaultInjectCommand {
     const typeId = toScenarioTypeId(input.step);
     return {
         kind: 'fault.inject',

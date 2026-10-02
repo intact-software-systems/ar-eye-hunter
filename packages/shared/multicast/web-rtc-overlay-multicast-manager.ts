@@ -42,6 +42,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
@@ -318,14 +319,20 @@ export class WebRtcOverlayMulticastManager {
         return { verdict, message: msg, entries: [], reason: verdict.detail, trackedReceiptAlgo: 'none' };
     }
 
+    /** A forward its store could not persist throws into the inbound claim, which retries it. */
     async forwardIfRequired(
         msg: ALMessage,
         fromPeerId?: PeerId
     ): Promise<readonly ResourceEntry[]> {
         const forwarding = this.planForwarding(msg, fromPeerId);
-        return forwarding === undefined
-            ? []
-            : (await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding)).entries;
+        if (forwarding === undefined) {
+            return [];
+        }
+        const result = await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding);
+        if (result.verdict.kind === 'storage-unavailable') {
+            throw new Error(result.reason ?? 'RTC forward admission returned storage-unavailable');
+        }
+        return result.entries;
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
@@ -438,12 +445,12 @@ export class WebRtcOverlayMulticastManager {
         return toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<void> {
+    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         if (this.disposed) {
-            return;
+            return { kind: 'not-handled' };
         }
 
-        await this.outboundRuntime.acceptControlMessage(msg, 'peer');
+        return await this.outboundRuntime.acceptControlMessage(msg, 'peer');
     }
 
     private readOutboundObservation(msg: ALMessage): RtcOutboundObservation {
