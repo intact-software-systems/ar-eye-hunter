@@ -447,7 +447,8 @@ detects it independently and emits its own event, so a single cutover can
 leave behind N events, one per concurrent opener. The event's `data` is the
 event itself:
 
-- `dbName`: the IndexedDB database that was reset
+- `dbName`: the IndexedDB database that was reset; for the browser runtime, the
+  scope's database `rallar-al-runtime:<applicationId>:<workspaceId>`
 - `previousSchemaId`: the schema id read back before the reset, or `undefined`
   either when the store set itself did not match (so no schema id could be
   read) or when the stores matched but the database carried no schema record

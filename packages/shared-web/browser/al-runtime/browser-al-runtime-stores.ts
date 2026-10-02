@@ -29,9 +29,10 @@ import {
 import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 
 import {
-    BROWSER_AL_RUNTIME_DB_NAME,
+    toBrowserALRuntimeDbName,
     toBrowserRtcOverlayALRuntimeStoreId,
     toBrowserSessionALInboundRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
@@ -42,10 +43,13 @@ import {
     toInitialALStorageAvailability
 } from './browser-al-storage-availability.ts';
 
-type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
+interface BrowserALRuntimeOptions extends Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'> {
+    readonly dbName: string;
+}
 
 export interface ConfigureBrowserALRuntimeStoresInput
-    extends Omit<BrowserALRuntimeOptions, 'observer' | 'onStorageReset' | 'storageHealth'> {
+    extends Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth'> {
+    readonly scope: StateScope;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
 
@@ -120,25 +124,20 @@ function toBrowserStoreOptions(
 /** Always IndexedDB: without it the pair fails at open, and the connect's availability reads `missing`. */
 export function createBrowserALInboundRuntimeStores(
     name: string,
-    options: BrowserALRuntimeOptions = {}
+    options: BrowserALRuntimeOptions
 ): ALInboundRuntimeStores {
-    return createDefaultIndexedDbALInboundRuntimeStores({
-        ...options,
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
-        namespace: `browser:${name}`
-    });
+    return createDefaultIndexedDbALInboundRuntimeStores({ ...options, namespace: `browser:${name}` });
 }
 
 /** Always IndexedDB: without it the pair fails at open, and the connect's availability reads `missing`. */
 export function createBrowserALOutboundRuntimeStores(
     name: string,
-    options: BrowserALRuntimeOptions = {}
+    options: BrowserALRuntimeOptions
 ): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
     return createDefaultIndexedDbALOutboundRuntimeStores({
         ...options,
         namespace: `browser:${name}`,
-        decodePrepared: decodeALOutboundTransportMessage,
-        dbName: BROWSER_AL_RUNTIME_DB_NAME
+        decodePrepared: decodeALOutboundTransportMessage
     });
 }
 
@@ -169,9 +168,10 @@ export function configureBrowserALRuntimeStores(
     sessionId: string,
     input: ConfigureBrowserALRuntimeStoresInput
 ): BrowserALStorageAvailability {
-    const { diagnosticsPorts, ...options } = input;
+    const { diagnosticsPorts, scope, ...options } = input;
     const scoped: BrowserALRuntimeOptions = {
         ...options,
+        dbName: toBrowserALRuntimeDbName(scope),
         observer: diagnosticsPorts.indexedDbOperationObserver,
         canonicalScope: `browser-session:${sessionId}`
     };

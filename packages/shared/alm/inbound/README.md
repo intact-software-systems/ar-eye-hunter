@@ -592,7 +592,7 @@ successful finalization.
 
 Browser expiry and session cleanup are owned by
 [`browser-al-work-cleanup.ts`](../../../shared-web/browser/al-runtime/browser-al-work-cleanup.ts)
-in the shared admission database. Because every AL-owned key leads with its owner,
+in each scope's admission database. Because every AL-owned key leads with its owner,
 cleanup deletes one bounded key range per owned `AL_INBOUND`/`AL_OUTBOUND` namespace
 and per owned canonical scope, and each range ends its `resourceId` with the `/`
 delimiter so a neighbouring owner whose id is a string prefix is never pulled in.

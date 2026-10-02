@@ -1,5 +1,9 @@
-import { toBrowserWsClientALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    toBrowserALRuntimeDbName,
+    toBrowserWsClientALRuntimeStoreId
+} from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import { createBrowserALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createBrowserUnicastMessage } from '@shared-web/browser/messages/create-browser-unicast-message.ts';
 import {
     AL_WS_CLIENT_CAPABILITIES,
@@ -284,7 +288,7 @@ export async function createDurableSendHarness(
     const observation = new DurableSendObservation({ frameLoad, batchEnd: DURABLE_SEND_PLAN_BATCH_ENDS[plan] });
     const stores = createBrowserALOutboundRuntimeStores(
         toBrowserWsClientALRuntimeStoreId(sessionId),
-        { canonicalScope: `browser-session:${sessionId}` }
+        { dbName: toBrowserALRuntimeDbName(defaultStateScope()), canonicalScope: `browser-session:${sessionId}` }
     );
     const runtime = createDefaultALOutboundMessageRuntime<ALOutboundTransportMessage>({
         stores,

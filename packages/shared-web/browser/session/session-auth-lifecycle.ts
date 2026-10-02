@@ -1,5 +1,5 @@
-import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type {
@@ -27,8 +27,10 @@ import {
     readSession,
     writeSession
 } from '@shared/api/auth.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
+import { deleteEndedSessionALRuntimeEntries } from './delete-ended-session-al-runtime-entries.ts';
 import type { RallarSessionConnectionLifecycle } from './session-connection-lifecycle.ts';
 
 const MAX_AUTH_EXPIRY_TIMEOUT_MS = 2_147_483_647;
@@ -134,6 +136,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (previousSession) {
             this.input.sessionDeliveries.endSession(previousSession);
             await this.input.closeDataScopes(previousSession);
+            await this.deleteReplacedSessionALRuntimeEntries(previousSession, session);
         }
         this.input.sessionDeliveries.beginSession(session);
         writeSession(session);
@@ -236,6 +239,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         ) {
             this.input.sessionDeliveries.endSession(activeMiddleware.session);
             await this.disconnect();
+            await this.deleteReplacedSessionALRuntimeEntries(activeMiddleware.session, session);
         }
     }
 
@@ -310,15 +314,28 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         diagnosticsPorts: RallarDiagnosticsPorts
     ): Promise<Error | undefined> {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
-        try {
-            await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
-                storage: diagnosticsPorts.storage
+        await deleteEndedSessionALRuntimeEntries(session.sessionId, {
+            currentScope: this.resolveStorageScope(),
+            diagnosticsPorts
+        });
+        return dataCleanupError;
+    }
+
+    /** Rows are keyed by the session id alone, so a login that keeps the session id keeps its rows. */
+    private async deleteReplacedSessionALRuntimeEntries(
+        replaced: AuthSession,
+        replacement: AuthSession
+    ): Promise<void> {
+        if (replaced.sessionId !== replacement.sessionId) {
+            await deleteEndedSessionALRuntimeEntries(replaced.sessionId, {
+                currentScope: this.resolveStorageScope(),
+                diagnosticsPorts: this.readDiagnosticsPorts()
             });
         }
-        catch {
-            // Browser-local AL cleanup is best-effort.
-        }
-        return dataCleanupError;
+    }
+
+    private resolveStorageScope(): StateScope {
+        return this.input.connectionRuntime.resolveOperationScope() ?? defaultStateScope();
     }
 
     private resolveSession(session?: AuthSession): AuthSession | undefined {

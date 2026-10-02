@@ -5,6 +5,7 @@ import {
     configureBrowserALRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import {
     createInboundTestMessage,
@@ -15,7 +16,7 @@ import {
 describe('browser session inbound admission store', () => {
     it('shares one admission state across every resolve of one session', async () => {
         const sessionId = `session-inbound-${crypto.randomUUID()}`;
-        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const first = resolveBrowserSessionALInboundRuntimeStores(sessionId);
         const second = resolveBrowserSessionALInboundRuntimeStores(sessionId);
         const msg = createInboundTestMessage({ msgId: 'admitted-through-the-first-resolve' });

@@ -15,6 +15,7 @@ import {
     createBrowserALVolatileInboundRuntimeStores,
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
@@ -51,7 +52,7 @@ describe('WS retained-work faults', () => {
 
     it('supersedes held work through the real configured QoS normalizer and submits only its replacement', async () => {
         const sessionId = crypto.randomUUID();
-        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const faults = createScriptedTransportFaultPort();
         const fault = {
             faultId: 'hold',
@@ -133,7 +134,7 @@ describe('WS retained-work faults', () => {
 
     it('holds original durable work before every callback and releases it exactly once without retry charges', async () => {
         const sessionId = crypto.randomUUID();
-        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const faults = createScriptedTransportFaultPort();
         const fault = {
             faultId: 'hold-original',

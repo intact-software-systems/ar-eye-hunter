@@ -1,5 +1,7 @@
+import { toBrowserSessionALRuntimeStoreIds } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     beforeEach,
     describe,
@@ -85,7 +87,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             async (sessionId) => {
                 deletedSessionIds.push(sessionId);
                 return {
-                    dbName: 'rallar-browser-al-runtime',
+                    dbNames: ['rallar-al-runtime:rallar-server:default'],
                     storeName: 'entries',
                     keyPrefixes: [],
                     scanned: 0,
@@ -99,6 +101,72 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         );
 
         expect(deletedSessionIds).toEqual(['session-1']);
+    });
+
+    it('purges the replaced session\'s browser AL runtime rows after the disconnect when a login replaces it', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const steps = recordDisconnectAndPurgeSteps();
+        let currentSession = mocks.ctx.session;
+        mocks.readSession.mockImplementation(() => currentSession);
+        mocks.writeSession.mockImplementation((session) => {
+            currentSession = session;
+        });
+        mocks.loginToApi.mockResolvedValue({ ...mocks.ctx.session, sessionId: 'session-2', accessToken: 'token-2' });
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        await facade.auth.login({ username: 'principal-2', password: 'password-2' });
+
+        expect(steps).toEqual(['disconnect', 'purge:session-1 in rallar-server:default']);
+    });
+
+    it('keeps the rows when a login renews the session it already holds', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const steps = recordDisconnectAndPurgeSteps();
+        mocks.loginToApi.mockResolvedValue({ ...mocks.ctx.session, accessToken: 'renewed' });
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        await facade.auth.login({ username: 'principal-1', password: 'password-1' });
+
+        expect(steps).toEqual(['disconnect']);
+    });
+
+    it('purges the previous session\'s browser AL runtime rows after the disconnect when connect switches sessions', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const steps = recordDisconnectAndPurgeSteps();
+        let currentSession = mocks.ctx.session;
+        mocks.readSession.mockImplementation(() => currentSession);
+        const facade = createRallarFacade();
+        await facade.connect();
+        currentSession = { ...mocks.ctx.session, sessionId: 'session-2', accessToken: 'token-2' };
+
+        await facade.connect();
+
+        expect(steps).toEqual(['disconnect', 'purge:session-1 in rallar-server:default']);
+    });
+
+    it('reports a failed purge as failing storage health and still ends the session', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const events: ALStorageEvent[] = [];
+        const steps = recordDisconnectAndPurgeSteps(new DOMException('quota exceeded', 'QuotaExceededError'));
+        const facade = createRallarFacade();
+        facade.setDefaults({ applicationId: 'purge-app', diagnosticsPorts: { storage: (event) => events.push(event) } });
+        await facade.connect();
+
+        await expect(facade.auth.logout()).resolves.toBeUndefined();
+
+        expect(steps).toEqual(['disconnect', 'purge:session-1 in purge-app:default']);
+        expect(facade.isConnected()).toBe(false);
+        expect(events).toEqual(
+            toBrowserSessionALRuntimeStoreIds('session-1').map((storeId) => ({
+                kind: 'health',
+                storeId,
+                status: 'failing',
+                lastFailure: { cause: 'quota', detail: 'QuotaExceededError: quota exceeded' },
+                lastRecoveryPointAtMs: undefined
+            }))
+        );
     });
 
     it('does not reconnect with a stale session while manual logout is in progress', async () => {
@@ -347,3 +415,19 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
     });
 });
+
+/** Logs each disconnect and each purge with the scope it would cover; a given failure rejects every purge. */
+function recordDisconnectAndPurgeSteps(purgeFailure?: Error): string[] {
+    const steps: string[] = [];
+    mocks.webSocketQueueBox.close.mockImplementation(() => {
+        steps.push('disconnect');
+    });
+    mocks.deleteBrowserALRuntimeEntriesForSession.mockImplementation(async (sessionId, options) => {
+        steps.push(`purge:${sessionId} in ${options.currentScope.applicationId}:${options.currentScope.workspaceId}`);
+        if (purgeFailure) {
+            throw purgeFailure;
+        }
+        return { dbNames: [], storeName: 'entries', keyPrefixes: [], scanned: 0, deleted: 0 };
+    });
+    return steps;
+}

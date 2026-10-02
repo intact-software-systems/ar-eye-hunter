@@ -3,11 +3,18 @@ import {
     type ALRuntimeStoreId
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
-export const BROWSER_AL_RUNTIME_DB_NAME = 'ar-eye-hunter-al-runtime';
+export const BROWSER_AL_RUNTIME_DB_NAME_PREFIX = 'rallar-al-runtime:';
 export const BROWSER_AL_RUNTIME_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 export const BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX = 'browser:';
+
+/** Each part is URI-encoded, as `toStateScopeHttpPath` does, so an id with a colon cannot alias another scope. */
+export function toBrowserALRuntimeDbName(scope: StateScope): string {
+    const applicationId = encodeURIComponent(scope.applicationId);
+    return `${BROWSER_AL_RUNTIME_DB_NAME_PREFIX}${applicationId}:${encodeURIComponent(scope.workspaceId)}`;
+}
 
 /** One inbound admission store per browser session, whichever carrier delivered the message (S2b). */
 export function toBrowserSessionALInboundRuntimeStoreId(
@@ -33,18 +40,24 @@ export function toBrowserALRuntimeEntryKeyPrefix(name: string): string {
     return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}:`;
 }
 
-export function toBrowserSessionALRuntimeEntryKeyPrefixes(
+export function toBrowserSessionALRuntimeStoreIds(
     sessionId: string
-): readonly string[] {
+): readonly ALRuntimeStoreId<ALOutboundTransportMessage>[] {
     return [
-        toBrowserALRuntimeEntryKeyPrefix(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
-        toBrowserALRuntimeEntryKeyPrefix(toBrowserWsClientALRuntimeStoreId(sessionId)),
-        toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcOverlayALRuntimeStoreId(sessionId))
+        toBrowserSessionALInboundRuntimeStoreId(sessionId),
+        toBrowserWsClientALRuntimeStoreId(sessionId),
+        toBrowserRtcOverlayALRuntimeStoreId(sessionId)
     ];
 }
 
+export function toBrowserSessionALRuntimeEntryKeyPrefixes(
+    sessionId: string
+): readonly string[] {
+    return toBrowserSessionALRuntimeStoreIds(sessionId).map(toBrowserALRuntimeEntryKeyPrefix);
+}
+
 /** The namespace an admission store built from this store id actually enqueues work under. */
-export function toBrowserALRuntimeNamespace(name: string): string {
+function toBrowserALRuntimeNamespace(name: string): string {
     return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}`;
 }
 

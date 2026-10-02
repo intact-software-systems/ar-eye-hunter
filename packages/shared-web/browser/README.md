@@ -173,16 +173,28 @@ the typed result or failure visible without crossing a feature-blind module.
 The browser transport storage and WebSocket owners are feature-colocated:
 
 - [browser-al-runtime-identity.ts](./al-runtime/browser-al-runtime-identity.ts)
-  owns the persisted database, store, and session-key names;
+  owns the persisted database, store, and session-key names: one database per
+  scope, `rallar-al-runtime:<applicationId>:<workspaceId>` with each part
+  URI-encoded, and session-scoped keys inside;
   [browser-al-runtime-stores.ts](./al-runtime/browser-al-runtime-stores.ts)
-  owns session-scoped AL runtime store factories, whose durable pairs are
-  always IndexedDB;
+  owns session-scoped AL runtime store factories over the database of the scope
+  the connect resolved, whose durable pairs are always IndexedDB;
   [browser-al-storage-availability.ts](./al-runtime/browser-al-storage-availability.ts)
   owns the connect's storage availability (`missing` without IndexedDB, any
   other cause re-decided by the next durable admission) and its one request
   for persistent storage;
   [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
-  owns IndexedDB scanning, expiry scheduling, and session cleanup.
+  owns IndexedDB scanning, expiry scheduling, and session cleanup over every
+  scope's database that `indexedDB.databases()` lists, or the current scope's
+  alone where the browser cannot list them; a failing database does not stop
+  the others, and the first failure is rethrown after all were tried. The
+  pre-scope database `ar-eye-hunter-al-runtime` is never opened or deleted; the
+  browser evicts it.
+- [delete-ended-session-al-runtime-entries.ts](./session/delete-ended-session-al-runtime-entries.ts)
+  purges an ended session's rows on logout, and a replaced session's rows after
+  the disconnect on a login over it or a session switch in `connect`, when the
+  session id differs; a failed purge reports failing `health` on the `storage`
+  port for each of the session's stores, and the session ends anyway.
 - [browser-al-work-cleanup.ts](./al-runtime/browser-al-work-cleanup.ts)
   selects canonical payload, identity and action rows in the shared admission
   QueueBox for expiry and session cleanup. The current scan visits the AL work

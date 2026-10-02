@@ -13,6 +13,7 @@ import {
     type ALStorageAvailability,
     type BrowserStoragePersistRequest
 } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
@@ -39,6 +40,7 @@ describe('the storage availability a connect decides', () => {
         const sessionId = `no-indexeddb-${crypto.randomUUID()}`;
 
         const storage = configureBrowserALRuntimeStores(sessionId, {
+            scope: defaultStateScope(),
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
         });
         const outbound = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
@@ -57,6 +59,7 @@ describe('the storage availability a connect decides', () => {
         vi.stubGlobal('indexedDB', fakeIndexedDB);
 
         const storage = configureBrowserALRuntimeStores(`indexeddb-${crypto.randomUUID()}`, {
+            scope: defaultStateScope(),
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
         });
 

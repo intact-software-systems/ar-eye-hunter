@@ -1,6 +1,7 @@
 import { onTestFinished, vi } from 'vitest';
 
-import { BROWSER_AL_RUNTIME_DB_NAME } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import { toBrowserALRuntimeDbName } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { decodeALAdmissionControlValue } from '@shared/alm/al-admission-value-validation.ts';
 import type { ALAdmissionReadSession } from '@shared/alm/al-admission-work-backend.ts';
@@ -20,7 +21,7 @@ import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-
  */
 export async function setNextAcksReadEvictionRaced(namespace: string, msgId: string): Promise<void> {
     const competitor = new IndexedDbAdmissionBackend({
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        dbName: toBrowserALRuntimeDbName(defaultStateScope()),
         storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
         nowMs: Date.now,
         newWriteToken: crypto.randomUUID.bind(crypto),

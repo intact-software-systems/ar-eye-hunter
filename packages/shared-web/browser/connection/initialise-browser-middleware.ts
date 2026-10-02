@@ -207,7 +207,11 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: MiddlewareInitOptions
 ): Promise<RallarBrowserMiddleware> {
-    const storageAvailability = initialiseBrowserRuntimeStores(session.sessionId, options.diagnosticsPorts);
+    const storageAvailability = initialiseBrowserRuntimeStores(
+        session.sessionId,
+        options.scope ?? defaultStateScope(),
+        options.diagnosticsPorts
+    );
     const transportInput = createBrowserTransportInput(session, options);
     const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
     const rtcTransport = await initialiseBrowserRtcTransport({
@@ -274,11 +278,12 @@ export function createBrowserTransportInput(
 
 function initialiseBrowserRuntimeStores(
     sessionId: string,
+    scope: StateScope,
     diagnosticsPorts: RallarDiagnosticsPorts
 ): BrowserALStorageAvailability {
     initialiseBrowserCacheRepositories();
-    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    initBrowserALRuntimeExpiryEviction({ storage: diagnosticsPorts.storage }).catch((error) =>
+    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts });
+    initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage: diagnosticsPorts.storage }).catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
     return storageAvailability;

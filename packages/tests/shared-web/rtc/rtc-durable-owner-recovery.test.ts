@@ -13,6 +13,7 @@ import {
     configureBrowserALRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALBroadcastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -256,7 +257,7 @@ class RtcRecoveryOwner {
     constructor(sessionId: string) {
         this.sessionId = sessionId;
         this.roomRef = { applicationId: 'reload-app', workspaceId: 'workspace', groupId: sessionId };
-        configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         this.connection = new WebRtcConnectionService({ connect: async () => {}, send: async () => {} }, {
             sessionId,
             token: 'fixture-token',

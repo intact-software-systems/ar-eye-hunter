@@ -8,6 +8,7 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -46,7 +47,7 @@ const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 /** Both carrier outbounds of one browser session over its real stores; nothing is ever ready to submit. */
 function createSessionOutbounds(): SessionOutbounds {
     const sessionId = `replay-${crypto.randomUUID()}`;
-    configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
+    configureBrowserALRuntimeStores(sessionId, { scope: defaultStateScope(), diagnosticsPorts });
     const stores = {
         rtc: resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId),
         ws: resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
@@ -56,7 +57,7 @@ function createSessionOutbounds(): SessionOutbounds {
     onTestFinished(async () => {
         rtc.dispose();
         ws.dispose();
-        await deleteBrowserALRuntimeEntriesForSession(sessionId, { storage: diagnosticsPorts.storage });
+        await deleteBrowserALRuntimeEntriesForSession(sessionId, { currentScope: defaultStateScope(), storage: diagnosticsPorts.storage });
     });
     const wake = vi.fn();
     const replayed: ALMessage[] = [];
