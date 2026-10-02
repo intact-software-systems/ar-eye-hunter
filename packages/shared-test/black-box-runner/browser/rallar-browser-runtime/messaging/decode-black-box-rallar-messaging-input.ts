@@ -1,4 +1,9 @@
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    INDEXED_DB_OPERATION_KINDS,
+    INDEXED_DB_OPERATION_OWNERS
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { ScriptedStorageFault, StorageFaultMatch } from '@shared/persistence/storage-fault-port.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type {
     ScriptedTransportFault,
@@ -15,6 +20,7 @@ import {
     decodeBlackBoxCommandNumber,
     decodeBlackBoxCommandString,
     isBlackBoxCommandRecord,
+    type BlackBoxRallarCommandRecord,
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
 
@@ -65,13 +71,19 @@ export function decodeBlackBoxRallarDeliveryObserveInput(
 
 export function decodeBlackBoxRallarFaultInput(
     value: unknown
-): Either<BlackBoxRallarInputIssue, ScriptedTransportFault> {
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault | ScriptedStorageFault> {
     if (!isBlackBoxCommandRecord(value)) {
         return toInputIssue('fault.inject input must be an object.');
     }
+    return value.carrier === 'storage' ? decodeStorageFault(value) : decodeTransportFault(value);
+}
+
+function decodeTransportFault(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault> {
     const carrier = value.carrier;
     if (!isFaultCarrier(carrier)) {
-        return toInputIssue('fault.inject.carrier must be ws or rtc.');
+        return toInputIssue('fault.inject.carrier must be ws, rtc or storage.');
     }
     return decodeFaultAction(value.action).flatMap(
         (issue) => Either.ofLeft(issue),
@@ -98,6 +110,30 @@ export function decodeBlackBoxRallarFaultInput(
     );
 }
 
+function decodeStorageFault(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, ScriptedStorageFault> {
+    const faultId = decodeBlackBoxCommandString(value.faultId);
+    if (faultId === undefined) {
+        return toInputIssue('fault.inject.faultId is required.');
+    }
+    return decodeStorageFaultAction(value.action).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (action) =>
+            decodeStorageFaultMatch(value.match).flatMap(
+                (issue) => Either.ofLeft(issue),
+                (match) =>
+                    decodeFaultRemaining(value.remaining).mapRight((remaining) => ({
+                        faultId,
+                        carrier: 'storage',
+                        match,
+                        action,
+                        remaining
+                    }))
+            )
+    );
+}
+
 export function decodeBlackBoxRallarStorageCountersInput(
     value: unknown
 ): Either<BlackBoxRallarInputIssue, BlackBoxRallarStorageCountersInput> {
@@ -121,6 +157,34 @@ function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, Scr
     return delayMs === undefined
         ? toInputIssue('fault.inject.action must be "drop", "not-ready" or an object naming delayMs.')
         : Either.ofRight({ delayMs });
+}
+
+function decodeStorageFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedStorageFault['action']> {
+    if (value === 'fail' || value === 'quota') {
+        return Either.ofRight(value);
+    }
+    const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
+    return delayMs === undefined
+        ? toInputIssue(
+            'fault.inject.action must be "fail", "quota" or an object naming delayMs on the storage carrier.'
+        )
+        : Either.ofRight({ delayMs });
+}
+
+function decodeStorageFaultMatch(value: unknown): Either<BlackBoxRallarInputIssue, StorageFaultMatch> {
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('fault.inject.match must be an object.');
+    }
+    const owner = INDEXED_DB_OPERATION_OWNERS.find((candidate) => candidate === value.owner);
+    if (owner === undefined) {
+        return toInputIssue('fault.inject.match.owner must be al-admission or al-work on the storage carrier.');
+    }
+    const kind = value.kind ?? undefined;
+    const knownKind = INDEXED_DB_OPERATION_KINDS.find((candidate) => candidate === kind);
+    if (kind !== undefined && knownKind === undefined) {
+        return toInputIssue(`fault.inject.match.kind must be one of ${INDEXED_DB_OPERATION_KINDS.join(', ')}.`);
+    }
+    return Either.ofRight({ owner, kind: knownKind });
 }
 
 function decodeFaultRemaining(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['remaining']> {

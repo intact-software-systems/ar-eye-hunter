@@ -68,7 +68,7 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'wait':
             return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC ? toAdmissionOutcomeTypeIds(command.match.contains) : [];
         case 'fault.inject':
-            return command.match.typeId === undefined ? [] : [command.match.typeId];
+            return command.carrier === 'storage' || command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
             return [];
     }

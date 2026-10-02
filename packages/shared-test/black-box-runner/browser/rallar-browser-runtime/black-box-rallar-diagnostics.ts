@@ -113,7 +113,12 @@ export function createBlackBoxRallarDiagnosticsPorts(
     return {
         transportFaultPort: effects.faults,
         submissionReadinessFaultPort: effects.faults,
-        indexedDbOperationObserver: effects.storage,
+        indexedDbOperationObserver: {
+            observe: (operation) => {
+                effects.storage.observe(operation);
+                return effects.storageFaults.observe(operation);
+            }
+        },
         outboundDiagnostics: (event) =>
             diagnostics.emit({
                 kind: 'diagnostic',

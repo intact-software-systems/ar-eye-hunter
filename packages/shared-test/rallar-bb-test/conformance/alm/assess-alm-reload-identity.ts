@@ -4,6 +4,7 @@ import type {
     RallarBlackBoxTestAgentReloadCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesSendCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../rallar-black-box-test-contracts.ts';
 import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
@@ -190,7 +191,9 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
 function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
     const selectedCarriers = send.carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [send.carrier];
     const sendIndex = prefix.indexOf(send);
-    const holds = prefix.filter((command) => command.kind === 'fault.inject');
+    const holds = prefix.filter((command): command is RallarBlackBoxTestTransportFaultInjectCommand =>
+        command.kind === 'fault.inject' && command.carrier !== 'storage'
+    );
     const matchingHolds = selectedCarriers.every((carrier) =>
         holds.some((hold) =>
             hold.carrier === carrier && hold.action === (carrier === 'ws' ? 'not-ready' : 'drop') &&

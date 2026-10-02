@@ -283,6 +283,9 @@ describe('ALM recipe identity assessment', () => {
         (defect) => {
             const transcript = new IdentityTranscript('reload', 'rtc-with-ws-fallback');
             const hold = transcript.sender.command('fault.inject', 1);
+            if (hold.carrier === 'storage') {
+                throw new Error('The reload hold is a transport fault.');
+            }
             if (defect === 'missing') {
                 transcript.sender.removeCommand(hold);
             }

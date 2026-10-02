@@ -441,10 +441,21 @@ const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIEL
     typeId: stringSchema,
     msgId: stringSchema
 });
+const faultDelayActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, {
+    delayMs: numberSchema
+});
 const faultActionSchema: JsonSchema = {
+    oneOf: [{ type: 'string', enum: ['drop', 'not-ready'] }, faultDelayActionSchema]
+};
+const faultRemainingSchema: JsonSchema = { oneOf: [numberSchema, { const: 'until-cleared' }] };
+const storageFaultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.storageFaultMatch, {
+    owner: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultOwner },
+    kind: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultKind }
+});
+const storageFaultActionSchema: JsonSchema = {
     oneOf: [
-        { type: 'string', enum: ['drop', 'not-ready'] },
-        strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSchema })
+        { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultAction },
+        faultDelayActionSchema
     ]
 };
 
@@ -644,15 +655,24 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         toPeerId: stringSchema
     }),
     'fault.inject': {
-        oneOf: ['ws', 'rtc'].map((carrier) =>
+        oneOf: [
+            ...['ws', 'rtc'].map((carrier) =>
+                strictCommandSchema('fault.inject', {
+                    faultId: stringSchema,
+                    carrier: { const: carrier },
+                    match: faultMatchSchema,
+                    action: carrier === 'ws' ? faultActionSchema : { const: 'drop' },
+                    remaining: faultRemainingSchema
+                })
+            ),
             strictCommandSchema('fault.inject', {
                 faultId: stringSchema,
-                carrier: { const: carrier },
-                match: faultMatchSchema,
-                action: carrier === 'ws' ? faultActionSchema : { const: 'drop' },
-                remaining: { oneOf: [numberSchema, { const: 'until-cleared' }] }
+                carrier: { const: 'storage' },
+                match: storageFaultMatchSchema,
+                action: storageFaultActionSchema,
+                remaining: faultRemainingSchema
             })
-        )
+        ]
     },
     'storage.counters': strictCommandSchema('storage.counters', {
         reset: booleanSchema

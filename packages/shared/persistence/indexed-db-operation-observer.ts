@@ -1,5 +1,7 @@
 export type IndexedDbOperationOwner = 'al-admission' | 'al-work';
 
+export const INDEXED_DB_OPERATION_OWNERS: readonly IndexedDbOperationOwner[] = ['al-admission', 'al-work'];
+
 /**
  * `work-page` and `work-probe` are an owner's inspections: a readiness read, and a reservation read that
  * computed no write. `work-reserve` is a reservation that computed a write, even one that then conflicted.
@@ -16,13 +18,31 @@ export type IndexedDbOperationKind =
     | 'work-probe'
     | 'work-cleanup';
 
+export const INDEXED_DB_OPERATION_KINDS: readonly IndexedDbOperationKind[] = [
+    'read',
+    'list',
+    'write',
+    'work-read',
+    'work-write',
+    'work-page',
+    'work-reserve',
+    'work-release',
+    'work-probe',
+    'work-cleanup'
+];
+
 export interface IndexedDbOperation {
     readonly owner: IndexedDbOperationOwner;
     readonly kind: IndexedDbOperationKind;
 }
 
+/**
+ * Told of every operation an IndexedDB owner starts, before its transaction opens or before a write it
+ * computed from a finished read. A returned promise holds the operation until it settles and fails it
+ * with its rejection; returning nothing lets it run at once, so a pass-through observer adds no microtask.
+ */
 export interface IndexedDbOperationObserver {
-    observe(operation: IndexedDbOperation): void;
+    observe(operation: IndexedDbOperation): Promise<void> | void;
 }
 
 export interface IndexedDbOperationCounts {

@@ -300,7 +300,7 @@ class GeneratedAlmPorts {
         if (command.remaining === 0) {
             this.holds.delete(command.faultId);
         }
-        else {
+        else if (command.carrier !== 'storage') {
             this.holds.set(command.faultId, String(command.match?.typeId));
         }
         for (const message of this.messages) {

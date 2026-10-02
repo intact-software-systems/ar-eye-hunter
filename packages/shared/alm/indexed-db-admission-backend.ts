@@ -122,7 +122,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'read' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const stored = (await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'key', key }))[0];
         if (stored === undefined) {
@@ -145,7 +148,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'list' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const rows = await readIndexedDbAdmissionSnapshot(
             db,
@@ -181,7 +187,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>,
         executionExpiresAtMs: number | null = null
     ): Promise<T> {
-        this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+        const decision = this.#observer.observe({ owner: 'al-admission', kind: 'write' });
+        if (decision instanceof Promise) {
+            await decision;
+        }
         const db = await this.#connection.open();
         const fenced = await this.#readFencedWrite(db, fn);
         const deadline = executionExpiresAtMs === null

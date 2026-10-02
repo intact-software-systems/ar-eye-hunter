@@ -58,6 +58,10 @@ import {
     type CountingIndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
+    createScriptedStorageFaultPort,
+    type ScriptedStorageFaultPort
+} from '@shared/persistence/storage-fault-port.ts';
+import {
     createScriptedTransportFaultPort,
     type ScriptedTransportFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
@@ -137,6 +141,8 @@ export interface BlackBoxBrowserPeersDependency extends Pick<RallarConnectionOpe
 export interface BlackBoxBrowserDiagnosticsDependency {
     readonly faults: ScriptedTransportFaultPort;
     readonly storage: CountingIndexedDbOperationObserver;
+    /** Decides each IndexedDB operation after `storage` has counted it. */
+    readonly storageFaults: ScriptedStorageFaultPort;
 }
 
 export interface BlackBoxBrowserRealtimeDependency
@@ -181,6 +187,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
 ): BlackBoxBrowserRallarRuntimeDependency {
     const faults = createScriptedTransportFaultPort();
     const storage = createCountingIndexedDbOperationObserver();
+    const storageFaults = createScriptedStorageFaultPort();
     const { foundation, state, session, stateEvents, messaging, realtime } = createBlackBoxBrowserTransportComposition(
         input.readVolatileSessionLimits
     );
@@ -217,7 +224,7 @@ export function createBlackBoxBrowserRallarRuntimeDependency(
         realtime,
         crdt,
         director,
-        diagnostics: { faults, storage },
+        diagnostics: { faults, storage, storageFaults },
         ...toBlackBoxBrowserMessagingPorts({ session, state })
     });
 }

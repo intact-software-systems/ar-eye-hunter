@@ -1,4 +1,8 @@
 import { AL_DURABILITY_ALGOS } from '@shared/al-contracts/al-policy.ts';
+import {
+    INDEXED_DB_OPERATION_KINDS,
+    INDEXED_DB_OPERATION_OWNERS
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { RallarBlackBoxTestCommandKind } from '../rallar-black-box-test-contracts.ts';
 
 export interface RallarBlackBoxCommandFieldSet {
@@ -251,6 +255,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     httpResponse: { required: [], optional: ['body', 'maxBodyChars', 'acceptedStatusCodes'] },
     faultMatch: { required: [], optional: ['controlType', 'typeId', 'msgId'] },
     faultDelayAction: { required: ['delayMs'], optional: [] },
+    storageFaultMatch: { required: ['owner'], optional: ['kind'] },
     messagesReplay: { required: ['handleId', 'carrier'], optional: [] },
     messagesSnapshotFloor: { required: [], optional: ['absolute', 'aboveCurrentBy'] },
     messagesQos: { required: ['ack'], optional: [] },
@@ -296,6 +301,9 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesToPeer: ['server', 'receiver'],
     /** One carrier leg: the carrier a replay or a raw control is admitted on. */
     messagesCarrierLeg: ['ws', 'rtc'],
-    faultCarrier: ['ws', 'rtc'],
-    faultControlType: ['ack', 'nack', 'repair']
+    faultCarrier: ['ws', 'rtc', 'storage'],
+    faultControlType: ['ack', 'nack', 'repair'],
+    storageFaultOwner: INDEXED_DB_OPERATION_OWNERS,
+    storageFaultKind: INDEXED_DB_OPERATION_KINDS,
+    storageFaultAction: ['fail', 'quota']
 } as const;

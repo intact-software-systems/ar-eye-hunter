@@ -127,6 +127,34 @@ it('applies a command-injected hold through the configured readiness owner and r
     await runtime.close();
 });
 
+// The storage counters count the operation the fault then fails, so a counted window still sees it.
+it('routes a storage fault to the IndexedDB interceptor after the counting observer', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.ws');
+    const observer = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.indexedDbOperationObserver;
+    if (!observer) {
+        throw new Error('Scoped connection must install the IndexedDB operation observer.');
+    }
+    const fault = {
+        faultId: 'quota',
+        carrier: 'storage',
+        match: { owner: 'al-admission', kind: 'write' },
+        action: 'quota',
+        remaining: 'until-cleared'
+    };
+
+    await runtime.injectFault(fault);
+
+    await expect(observer.observe({ owner: 'al-admission', kind: 'write' })).rejects.toMatchObject({
+        name: 'QuotaExceededError'
+    });
+    expect(observer.observe({ owner: 'al-admission', kind: 'read' })).toBeUndefined();
+    expect(facade.rallar.diagnostics.storage.getCounts().byOwner['al-admission']).toBe(2);
+    expect(facade.rallar.diagnostics.faults.getObservations()).toEqual([]);
+    await runtime.injectFault({ ...fault, remaining: 0 });
+    expect(observer.observe({ owner: 'al-admission', kind: 'write' })).toBeUndefined();
+    await runtime.close();
+});
+
 it('passes the connected room reference through RTC message sends', async () => {
     const { runtime } = await loadConnectedMessageRuntime('messages.rtc');
 

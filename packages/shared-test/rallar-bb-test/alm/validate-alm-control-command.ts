@@ -242,8 +242,9 @@ function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly
             path,
             allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultCarrier
         }),
-        ...validateFaultMatchField(command),
-        ...validateFaultActionField(command),
+        ...(command.carrier === 'storage'
+            ? [...validateStorageFaultMatchField(command), ...validateStorageFaultActionField(command)]
+            : [...validateFaultMatchField(command), ...validateFaultActionField(command)]),
         ...(command.remaining === 'until-cleared' ? [] : validateNumberField(command, 'remaining', path))
     ];
 }
@@ -267,6 +268,45 @@ function validateFaultMatchField(command: RallarBlackBoxTestRecord): readonly Co
     ];
 }
 
+function validateStorageFaultMatchField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const match = command.match;
+    const path = 'fault.inject.match';
+    if (!isJsonRecordValue(match)) {
+        return [toControlCommandIssue(`${path} must be an object.`)];
+    }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.storageFaultMatch;
+    return [
+        ...validateAllowedFields(match, fields, path),
+        ...validateRequiredFields({ record: match, fields, path, ownMessageFields: [] }),
+        ...validateEnumField({
+            record: match,
+            key: 'owner',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultOwner
+        }),
+        ...validateEnumField({
+            record: match,
+            key: 'kind',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.storageFaultKind
+        })
+    ];
+}
+
+function validateStorageFaultActionField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const action = command.action;
+    const path = 'fault.inject.action';
+    if (action === 'fail' || action === 'quota') {
+        return [];
+    }
+    if (!isJsonRecordValue(action)) {
+        return [
+            toControlCommandIssue(`${path} must be "fail", "quota" or an object with delayMs on the storage carrier.`)
+        ];
+    }
+    return validateFaultDelayAction(action, path);
+}
+
 function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const action = command.action;
     const path = 'fault.inject.action';
@@ -282,6 +322,10 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     if (!isJsonRecordValue(action)) {
         return [toControlCommandIssue(`${path} must be "drop", "not-ready" or an object with delayMs.`)];
     }
+    return validateFaultDelayAction(action, path);
+}
+
+function validateFaultDelayAction(action: RallarBlackBoxTestRecord, path: string): readonly ControlCommandIssue[] {
     const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction;
     return [
         ...validateAllowedFields(action, fields, path),

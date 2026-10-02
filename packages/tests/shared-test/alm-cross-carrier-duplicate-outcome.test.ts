@@ -17,6 +17,7 @@ import {
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createCountingIndexedDbOperationObserver, createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { createScriptedStorageFaultPort } from '@shared/persistence/storage-fault-port.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
@@ -75,7 +76,8 @@ async function runDuplicateOutcomeCommands(
     });
     const ports = createBlackBoxRallarDiagnosticsPorts(pageDiagnostics, {
         faults: createScriptedTransportFaultPort(),
-        storage: createCountingIndexedDbOperationObserver()
+        storage: createCountingIndexedDbOperationObserver(),
+        storageFaults: createScriptedStorageFaultPort()
     });
     const { runtime, diagnostics } = createInboundTestRuntime({
         carrier: 'rtc',

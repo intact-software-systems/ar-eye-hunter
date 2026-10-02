@@ -5,6 +5,11 @@ import type {
     ALDeliveryCarrier,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    IndexedDbOperationKind,
+    IndexedDbOperationOwner
+} from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 
 import type { RallarBlackBoxTestMessagesControlFields } from './alm/rallar-black-box-test-messages-control-fields.ts';
@@ -380,6 +385,10 @@ export type RallarBlackBoxTestMessagesControlCommand =
     & RallarBlackBoxTestMessagesControlFields;
 
 export type RallarBlackBoxTestFaultInjectCommand =
+    | RallarBlackBoxTestTransportFaultInjectCommand
+    | RallarBlackBoxTestStorageFaultInjectCommand;
+
+export type RallarBlackBoxTestTransportFaultInjectCommand =
     & RallarBlackBoxTestCommandBase<'fault.inject'>
     & Readonly<{
         faultId: string;
@@ -387,6 +396,17 @@ export type RallarBlackBoxTestFaultInjectCommand =
         match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
         action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
         remaining: ScriptedTransportFault['remaining'];
+    }>;
+
+/** An absent `match.kind` faults every operation of the owner; `quota` still fails only its writes. */
+export type RallarBlackBoxTestStorageFaultInjectCommand =
+    & RallarBlackBoxTestCommandBase<'fault.inject'>
+    & Readonly<{
+        faultId: string;
+        carrier: 'storage';
+        match: Readonly<{ owner: IndexedDbOperationOwner; kind?: IndexedDbOperationKind; }>;
+        action: ScriptedStorageFault['action'];
+        remaining: ScriptedStorageFault['remaining'];
     }>;
 
 export type RallarBlackBoxTestStorageCountersCommand =

@@ -2,6 +2,7 @@ import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rall
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
+import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controller.ts';
@@ -223,9 +224,14 @@ export class BlackBoxRallarConnectionRuntime {
         });
     }
 
-    #injectFault(fault: ScriptedTransportFault): void {
+    #injectFault(fault: ScriptedTransportFault | ScriptedStorageFault): void {
         this.#requireScriptedPorts('fault.inject');
-        this.#foundation.rallar.diagnostics.faults.inject(fault);
+        const { diagnostics } = this.#foundation.rallar;
+        if (fault.carrier === 'storage') {
+            diagnostics.storageFaults.inject(fault);
+            return;
+        }
+        diagnostics.faults.inject(fault);
     }
 
     #readStorageCounters(counters: BlackBoxRallarStorageCountersInput): IndexedDbOperationCounts {

@@ -460,6 +460,19 @@ id. A top-level `typeId` never matches. The fault's observations are not
 readable from a recipe in this release, so a fault's effect can only be inferred
 from what the receiver did or did not get.
 
+`fault.inject` with `carrier: 'storage'` faults the AL-owned IndexedDB
+operations instead: `match.owner` is `al-admission` or `al-work`, and
+`match.kind`, when present, narrows it to one operation kind (the kinds
+`storage.counters` reports). `action: 'fail'` rejects the operation with an
+`UnknownError` `DOMException`, `action: 'quota'` rejects a write (`write`,
+`work-write`, `work-reserve`, `work-release`, `work-cleanup`) with a
+`QuotaExceededError` and lets reads through, and `{ delayMs }` holds the
+operation. The decision lands before the operation's transaction opens, or
+between a reservation's finished read and its write, so a fault never leaves
+half a write. The operation is still counted by `storage.counters`. Replacing
+the same `faultId` with `remaining: 0` releases it, and `close` clears every
+storage fault with the transport faults.
+
 `storage.counters` reads the AL-owned IndexedDB operation counters as
 `{ total, byOwner: { 'al-admission', 'al-work' }, byKind, workProbeCount,
 workNonProbeCount, reset }`, and `reset: true` reads and then clears them.
