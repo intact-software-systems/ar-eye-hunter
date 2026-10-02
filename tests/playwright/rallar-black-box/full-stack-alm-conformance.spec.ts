@@ -47,6 +47,7 @@ import {
     type TwoAgentRun,
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
+import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
 import {
     createThreeAgentRun,
     runRecipeTrioOnThreeAgents,
@@ -55,7 +56,7 @@ import {
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
-type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent'>;
+type TwoAgentScenarioFamily = Exclude<AlmConformanceLaneFamily, 'three-agent' | 'same-context'>;
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
@@ -187,6 +188,41 @@ test.describe('ALM conformance lane', () => {
                 await run.close();
             }
         });
+
+        test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
+            test.skip(
+                selectScenarios(toPlanningSelection(), carrier, 'same-context').length === 0,
+                `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
+            );
+            test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+
+            const run = await createTwoAgentRun({
+                browser,
+                request,
+                testInfo,
+                runId: `alm-${carrier}-same-context-${uniqueSuffix()}`
+            });
+            const participants: TwoAgentRunParticipant[] = [run.sender, run.receiver];
+            let scenarioFailed = false;
+            try {
+                await runSameContextScenarios({ run, carrier, testInfo, participants });
+            }
+            catch (scenarioError) {
+                scenarioFailed = true;
+                throw scenarioError;
+            }
+            finally {
+                await recordObservation({
+                    run,
+                    family: 'same-context',
+                    participants,
+                    testInfo,
+                    carrier,
+                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
+                });
+                await run.close();
+            }
+        });
     }
 });
 
@@ -260,6 +296,35 @@ async function runThreeAgentScenarios(
                 { role: 'recipient-b', agent: run.recipientB, outcome: outcome.recipientB }
             ]);
         }
+    }
+}
+
+interface SameContextCell {
+    readonly run: TwoAgentRun;
+    readonly carrier: AlmConformanceCarrier;
+    readonly testInfo: TestInfo;
+    /** The cell's pages; each scenario's successor joins them, so the observation reads every page that ran. */
+    readonly participants: TwoAgentRunParticipant[];
+}
+
+/** Each scenario closes the page that owns the sender's session, so its successor owns the session for the next one. */
+async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
+    const { run, carrier, testInfo, participants } = cell;
+    let owner = run.sender;
+    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'same-context')) {
+        if (scenario.successor === undefined) {
+            throw new Error(`${scenario.scenarioKey} runs on one context without a successor recipe.`);
+        }
+        const successor = await openSuccessorPage({ testInfo, run, owner });
+        participants.push(successor);
+        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor }, {
+            ...scenario,
+            successor: scenario.successor
+        });
+        for (const role of ['receiver', 'sender', 'successor'] as const) {
+            expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
+        }
+        owner = successor;
     }
 }
 

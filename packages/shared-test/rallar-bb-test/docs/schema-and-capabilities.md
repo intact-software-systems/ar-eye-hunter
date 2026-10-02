@@ -378,6 +378,20 @@ send (R-S3c-ii-9). The limit is three fillers, so the two counted sends alone re
 at least 9 180 bytes of headroom. Its receiver's window adds one readiness budget and the 31 s wait, since the sender
 reconnects and waits before it sends. In manifest 18 the three `capacity` blocks run after every other block.
 
+The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its
+scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
+the sender's IndexedDB and the `auth.session` in `localStorage`, under a control agent of its own. That page skips the
+login screen, and its recipe connects with `rallar` `{ username: '', password: '', restoreSession: true }`, so it
+restores the sender's session rather than signing in afresh. Its connect waits for one ready peer, as the sender's and
+the receiver's do, since both pages are one session and so one peer. The two pages are never connected at once: the
+server keeps one WebSocket per auth session and a second upgrade closes the first with `connection-replaced`, after
+which the first page reconnects and replaces the second. The lane therefore starts the receiver, runs the sender's
+recipe, closes the sender's page from Playwright, and only then runs the successor's recipe; no control command closes
+a page. No `reset` runs on a successor page, since it would clear the storage both pages share. Each scenario opens its
+own successor, which owns the session for the next one. The Hetzner entries select their scenarios by lane family
+(`two-agent` and `addressed` for manifest 18, `three-agent` for manifest 22), so neither carries this family: a
+hosted agent has no second page in its context.
+
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,

@@ -11,7 +11,6 @@ import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-te
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -169,7 +168,12 @@ const SCENARIO_KEYS_BY_CARRIER = {
 } as const;
 
 function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestRecipe[] {
-    return scenarios.flatMap((scenario) => [scenario.sender, scenario.receiver, ...(scenario.recipientB ? [scenario.recipientB] : [])]);
+    return scenarios.flatMap((scenario) => [
+        scenario.sender,
+        scenario.receiver,
+        ...(scenario.recipientB ? [scenario.recipientB] : []),
+        ...(scenario.successor ? [scenario.successor] : [])
+    ]);
 }
 
 describe('alm-conformance recipe family', () => {
@@ -177,7 +181,8 @@ describe('alm-conformance recipe family', () => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
 
         for (const scenario of scenarios) {
-            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(isThreeAgentScenario(scenario));
+            expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(scenario.roles.includes('recipient-b'));
+            expect(scenario.laneFamily === 'same-context', scenario.scenarioKey).toBe(scenario.roles.includes('successor'));
         }
         expect(scenarios.filter((scenario) => scenario.laneFamily === 'addressed').map(({ scenarioId }) => scenarioId))
             .toEqual(
@@ -206,11 +211,13 @@ describe('alm-conformance recipe family', () => {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const threeRoles = scenario.scenarioId === 'receipted-audience';
                 expect(scenario.roles, scenario.scenarioKey).toEqual(threeRoles ? ['sender', 'receiver', 'recipient-b'] : ['sender', 'receiver']);
-                expect(isThreeAgentScenario(scenario), scenario.scenarioKey).toBe(threeRoles);
+                expect(scenario.laneFamily === 'three-agent', scenario.scenarioKey).toBe(threeRoles);
                 expect(toAlmConformanceRoleRecipe(scenario, 'sender')).toBe(scenario.sender);
                 expect(toAlmConformanceRoleRecipe(scenario, 'receiver')).toBe(scenario.receiver);
                 expect(toAlmConformanceRoleRecipe(scenario, 'recipient-b')).toBe(scenario.recipientB);
+                expect(toAlmConformanceRoleRecipe(scenario, 'successor')).toBe(scenario.successor);
                 expect(scenario.recipientB?.recipeId).toBe(threeRoles ? `alm-${carrier}-${scenario.scenarioKey}-recipient-b` : undefined);
+                expect(scenario.successor).toBeUndefined();
             }
         }
     });
@@ -231,6 +238,39 @@ describe('alm-conformance recipe family', () => {
             toConnectCommand({ input: toConformanceInput('ws'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role: 'sender', roles: threeRoles })
                 .readiness
         ).toBeUndefined();
+    });
+
+    // The successor is the sender's own session on a second page, so it is never a peer to wait for.
+    it('counts one ready peer for every page of a same-context scenario', () => {
+        const sameContext = ['sender', 'receiver', 'successor'] as const;
+
+        for (const role of sameContext) {
+            expect(
+                toConnectCommand({ input: toConformanceInput('rtc'), scenarioId: 'delivery-baseline', scenarioKey: 'probe', role, roles: sameContext })
+                    .readiness?.minReadyPeers,
+                role
+            ).toBe(1);
+        }
+    });
+
+    it('connects the successor on the sender\'s connection and restores the session the shared context holds', () => {
+        const connect = toConnectCommand({
+            input: toConformanceInput('ws'),
+            scenarioId: 'delivery-baseline',
+            scenarioKey: 'probe',
+            role: 'successor',
+            roles: ['sender', 'receiver', 'successor']
+        });
+
+        expect(connect.commandId).toBe('alm-ws-probe-successor-connect');
+        expect(connect.connection).toBe('sender');
+        expect(connect.rallar).toEqual({
+            typeId: 'alm.conformance.ws.probe',
+            topicId: CONFORMANCE_TOPIC_ID,
+            username: '',
+            password: '',
+            restoreSession: true
+        });
     });
 
     it('connects both roles on the carrier transport that subscribes the typed inbound channel', () => {
@@ -808,7 +848,7 @@ describe('alm-conformance recipe family', () => {
                 let sawAcknowledged = false;
                 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                     for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
-                        if (!isThreeAgentScenario(scenario)) {
+                        if (scenario.laneFamily !== 'three-agent') {
                             continue;
                         }
                         const endingAssert = scenario.sender.commands.find((command) =>

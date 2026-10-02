@@ -5,9 +5,9 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
-    isThreeAgentScenario,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
@@ -122,27 +122,37 @@ describe('ALM conformance combined recipe', () => {
     });
 });
 
-describe('ALM conformance 2-agent hosted withholdings', () => {
+/** Every `alm-<carrier>-<scenarioKey>` cell the catalog defines in the named lane families. */
+function toFamilyCells(families: readonly AlmConformanceLaneFamily[]): readonly string[] {
+    return ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+        createAlmConformanceRecipes({
+            group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+            carrier,
+            typeId: 'alm.conformance',
+            senderConnection: 'sender',
+            receiverConnection: 'receiver',
+            deadlineMs: 18_000
+        }).filter((scenario) => families.includes(scenario.laneFamily))
+            .map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
+    );
+}
+
+function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry>): readonly string[] {
+    const sender = entry.manifest.recipes
+        .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
+    return toBarrierIds(sender).filter((id) => id.endsWith('-start')).map((id) => id.replace(/-start$/, ''));
+}
+
+describe('ALM conformance hosted lane families', () => {
     it('withholds exactly the named cells: the refresh variant over rtc and rtc-with-ws-fallback', () => {
-        const defined = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            createAlmConformanceRecipes({
-                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
-                carrier,
-                typeId: 'alm.conformance',
-                senderConnection: 'sender',
-                receiverConnection: 'receiver',
-                deadlineMs: 18_000
-            }).filter((scenario) => !isThreeAgentScenario(scenario)).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
-        );
+        const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: no plain-member write advances the
         // snapshot version for the refresh variant.
         const withheld = [
             'alm-rtc-not-yet-in-sync-delivered-after-refresh',
             'alm-rtc-with-ws-fallback-not-yet-in-sync-delivered-after-refresh'
         ];
-        const sender = createAlmConformance2AgentEntry().manifest.recipes
-            .find((selection) => selection.role === 'sender')!.recipe as RallarBlackBoxTestRecipe;
-        const cells = toBarrierIds(sender).filter((id) => id.endsWith('-start')).map((id) => id.replace(/-start$/, ''));
+        const cells = toStartedCells(createAlmConformance2AgentEntry());
 
         expect(defined).toEqual(expect.arrayContaining(withheld));
         expect(new Set(cells)).toEqual(new Set(defined.filter((cell) => !withheld.includes(cell))));
@@ -151,6 +161,17 @@ describe('ALM conformance 2-agent hosted withholdings', () => {
             'alm-rtc-delivery-reload',
             'alm-rtc-with-ws-fallback-delivery-reload'
         ]);
+    });
+
+    it('carries the three-agent family in the 3-agent entry', () => {
+        expect(new Set(toStartedCells(createAlmConformance3AgentEntry()))).toEqual(new Set(toFamilyCells(['three-agent'])));
+    });
+
+    // A same-context scenario needs two pages of one browser context, which no hosted agent has.
+    it('leaves the same-context family out of every hosted entry', () => {
+        const hosted = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()].flatMap(toStartedCells);
+
+        expect(toFamilyCells(['same-context']).filter((cell) => hosted.includes(cell))).toEqual([]);
     });
 });
 

@@ -58,6 +58,8 @@ export interface AlmConformanceScenario {
     readonly receiver: RallarBlackBoxTestRecipe;
     /** The second recipient's recipe; undefined exactly when `roles` does not declare `recipient-b`. */
     readonly recipientB: RallarBlackBoxTestRecipe | undefined;
+    /** The sender's second page's recipe; undefined exactly when `roles` does not declare `successor`. */
+    readonly successor: RallarBlackBoxTestRecipe | undefined;
     readonly tags: readonly AlmConformanceTag[];
 }
 
@@ -115,11 +117,6 @@ export function createAlmConformanceRecipes(
         .map((definition) => toAlmConformanceScenario(input, definition));
 }
 
-/** Three agents run only the scenarios that declare `recipient-b`; every other scenario runs on two (D45). */
-export function isThreeAgentScenario(scenario: AlmConformanceScenario): boolean {
-    return scenario.roles.includes('recipient-b');
-}
-
 export function toAlmConformanceRoleRecipe(
     scenario: AlmConformanceScenario,
     role: AlmConformanceRole
@@ -139,7 +136,9 @@ function toAlmConformanceScenario(
             role,
             roles: definition.roles
         };
-        const commands = role === 'sender' ? definition.toSenderCommands(step) : definition.toRecipientCommands(step);
+        const commands = role === 'sender' || role === 'successor'
+            ? definition.toSenderCommands(step)
+            : definition.toRecipientCommands(step);
         const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
         return toAlmConformanceRecipe({ ...step, commands, receiptRoles });
     };
@@ -151,7 +150,8 @@ function toAlmConformanceScenario(
         tags: definition.tags,
         sender: toRoleRecipe('sender'),
         receiver: toRoleRecipe('receiver'),
-        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined
+        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
+        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined
     };
 }
 

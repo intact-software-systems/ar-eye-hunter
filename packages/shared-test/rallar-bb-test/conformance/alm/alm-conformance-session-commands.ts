@@ -10,6 +10,7 @@ import {
     STATS_TIMEOUT_MS,
     toBudgetMs
 } from './alm-conformance-budgets.ts';
+import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
     ALM_CONFORMANCE_TOPIC_ID,
@@ -21,6 +22,9 @@ import {
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
+
+/** A connect that keeps the auth session its document already holds: no credentials, so it never signs in afresh. */
+export const RESTORED_SESSION_RALLAR = { username: '', password: '', restoreSession: true } as const;
 
 export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const group = step.input.group;
@@ -90,11 +94,13 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
         workspaceId: input.group.workspaceId,
         roomRef: toRoomRef(input.group),
         transport: input.carrier === 'ws' ? 'messages.ws' : 'messages.rtc',
-        rallar: { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
+        rallar: step.role === 'successor'
+            ? { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID, ...RESTORED_SESSION_RALLAR }
+            : { typeId, topicId: ALM_CONFORMANCE_TOPIC_ID },
         timeoutMs: CONNECT_TIMEOUT_MS,
         ...(input.carrier === 'ws' || !waitsForReadyPeers(step) ? {} : {
             readiness: {
-                minReadyPeers: step.roles.length - 1,
+                minReadyPeers: toPeerCount(step.roles) - 1,
                 timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
                 intervalMs: CONNECT_READINESS_INTERVAL_MS
             }
@@ -109,6 +115,11 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
  */
 function waitsForReadyPeers(step: AlmConformanceStepInput): boolean {
     return step.role === 'sender' || !step.roles.includes('recipient-b');
+}
+
+/** The successor is a second page of the sender's session, so the two are one peer. */
+function toPeerCount(roles: readonly AlmConformanceRole[]): number {
+    return roles.filter((role) => role !== 'successor').length;
 }
 
 export function toStatsCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {

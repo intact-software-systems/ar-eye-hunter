@@ -22,7 +22,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toConnectCommand } from '../alm-conformance-session-commands.ts';
+import { RESTORED_SESSION_RALLAR, toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../alm-reload-pair.ts';
 
@@ -108,7 +108,7 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
         {
             ...reconnect,
             commandId: toCommandId(sender, 'reconnect'),
-            rallar: { ...reconnect.rallar, username: '', password: '', restoreSession: true }
+            rallar: { ...reconnect.rallar, ...RESTORED_SESSION_RALLAR }
         },
         toObserveCommand({ ...sender, index: 1, state: 'unobservable' }),
         toResultAssertion({
