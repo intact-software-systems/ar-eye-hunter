@@ -71,6 +71,28 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
     });
 });
 
+describe('the durable work ownership a connect hands its carriers', () => {
+    it('gives the WS client and the RTC overlay the ownership of the transport input', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(ws.durableWorkOwnership).toBe(input.durableWorkOwnership);
+        expect(rtc.durableWorkOwnership).toBe(input.durableWorkOwnership);
+    });
+});
+
 function createConnectionService(): WebRtcConnectionService {
     return new WebRtcConnectionService({
         send: async () => undefined,

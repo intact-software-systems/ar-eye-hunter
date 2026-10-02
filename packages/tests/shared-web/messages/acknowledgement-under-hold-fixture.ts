@@ -24,6 +24,7 @@ import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-in
 import { ALOutboundMessageRuntime, type ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
@@ -273,6 +274,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: undefined,
         volatileBudget: createDefaultVolatileSessionBudget(),
         outboundSettlements: (event) => runtime.registry.record(event),
@@ -280,6 +282,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         qboxEngine: runtime.engine
     });
     const streamer = initialiseRtcRxStreamer({
+        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         webRtcOverlayMulticastManager: manager,
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
@@ -350,6 +353,7 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
 
 async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) {
     const connecting = createBrowserWebSocketQueueBox({
+        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: undefined,
         submissionReadinessFaultPort: runtime.faults,
         outboundSettlements: (event) => runtime.registry.record(event),

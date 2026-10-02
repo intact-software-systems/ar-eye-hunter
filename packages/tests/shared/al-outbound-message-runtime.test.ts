@@ -15,6 +15,7 @@ import type {
     ALOutboundSettledSendResult
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundDequeueResilience } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import {
     ALOutboundMessageRuntime,
     EntityStatus,
@@ -68,6 +69,7 @@ describe('ALOutboundMessageRuntime', () => {
             queueEngine,
             ownsQueueEngine: false,
             browserLocks: undefined,
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             random: () => 0,
             diagnostics: undefined,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),

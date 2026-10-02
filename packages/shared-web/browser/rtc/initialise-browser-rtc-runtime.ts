@@ -21,6 +21,7 @@ import {
     createDefaultALOutboundRuntimeResources
 } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ClientInfo,
     IceConfig,
@@ -55,6 +56,8 @@ export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly outboundSettlements: ALDeliverySettlementSink;
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
+    /** The connect's claim on its session's durable work, which only the durable lanes take. */
+    readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 
@@ -76,7 +79,8 @@ export function initialiseRtcOverlayMulticastManager(
             volatileStores: createBrowserALVolatileOutboundRuntimeStores(
                 toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
                 input.volatileBudget
-            )
+            ),
+            durableWorkOwnership: input.durableWorkOwnership
         }),
         dequeueResilience: createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
@@ -96,6 +100,8 @@ export interface InitialiseRtcRxStreamerInput {
     readonly inboundStores: ALInboundRuntimeStores;
     /** The session's inbound memory pair, the same one the WS client holds. */
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
+    /** The connect's claim on its session's durable work, which only the durable lanes take. */
+    readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly roomAuthorityRefresh?: WebRtcRxStreamerService.Input['roomAuthorityRefresh'];
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
 }
@@ -113,7 +119,8 @@ export function initialiseRtcRxStreamer(
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,
-        inboundDiagnostics: input.inboundDiagnostics
+        inboundDiagnostics: input.inboundDiagnostics,
+        durableWorkOwnership: input.durableWorkOwnership
     });
 }
 

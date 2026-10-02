@@ -24,6 +24,7 @@ import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
+import type { ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -349,6 +350,8 @@ export namespace ALOutboundMessageRuntime {
         readonly queueEngine: InboxOutboxEngine;
         readonly ownsQueueEngine: boolean;
         readonly browserLocks: ALBrowserLocks | undefined;
+        /** Which runtime of the session drains the durable pair; only the durable lane takes it. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership;
     }
 
     export interface DequeueSource {
@@ -433,6 +436,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             workerId: dependencies.effectWorkerId,
             dequeueTypes: dependencies.dequeue.types,
             browserLocks: dependencies.browserLocks,
+            durableWorkOwnership: dependencies.durableWorkOwnership,
             evictExpired: undefined,
             canonicalHandoff: new ALOutboundCanonicalHandoff({
                 namespace: dependencies.admissionStore.namespace,
@@ -448,6 +452,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             workerId: `${dependencies.effectWorkerId}/volatile`,
             dequeueTypes: new Set<string>(),
             browserLocks: undefined,
+            durableWorkOwnership: undefined,
             evictExpired: dependencies.volatileStores.evictExpired,
             canonicalHandoff: undefined,
             runtime: dependencies,

@@ -5,6 +5,10 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import {
+    ALWAYS_OWNED_AL_DURABLE_WORK,
+    type ALDurableWorkOwnership
+} from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -188,6 +192,8 @@ export interface InitialiseBrowserTransportInput {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly volatileBound: BrowserSessionVolatileBound;
+    /** The connect's claim on its session's durable work, handed to every carrier's durable lanes. */
+    readonly durableWorkOwnership: ALDurableWorkOwnership;
     readonly options: MiddlewareInitOptions;
 }
 
@@ -268,6 +274,7 @@ export function createBrowserTransportInput(
             volatileBound.budget
         ),
         volatileBound,
+        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -320,6 +327,7 @@ export function toBrowserWebSocketQueueBoxInput(
         clientData: input.clientData,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
+        durableWorkOwnership: input.durableWorkOwnership,
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -387,6 +395,7 @@ async function initialiseBrowserRtcTransport(
             clientData: input.clientData,
             inboundStores: input.inboundStores,
             inboundVolatileStores: input.inboundVolatileStores,
+            durableWorkOwnership: input.durableWorkOwnership,
             roomAuthorityRefresh: createBrowserRtcGroupSnapshotRefresh(input),
             inboundDiagnostics: input.options.diagnosticsPorts.inboundDiagnostics
         }
@@ -414,6 +423,7 @@ export function toRtcOverlayMulticastManagerInput(
         ...carrier,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
+        durableWorkOwnership: input.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.rtc
     };

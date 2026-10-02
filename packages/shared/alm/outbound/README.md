@@ -42,6 +42,22 @@ items; the same abort signal is what the effect owner reads as "disposed". A sup
 engine remains available to its other tasks; a runtime-owned engine stops. An
 interrupted durable claim remains recoverable after its lease expires.
 
+**One durable owner per session.** The resources carry `durableWorkOwnership`
+([`ALDurableWorkOwnership`](../work/al-durable-work-ownership.ts)), and only the durable lane takes
+it; the memory lane always owns its pair. The default, `ALWAYS_OWNED_AL_DURABLE_WORK`, is the
+server's, Node's and every runtime's whose durable store no other runtime drains, and keeps the
+handler's construction-time registration. While another runtime of the session owns the work, the
+durable lane's [`ALWorkHandler`](../work/al-work-handler.ts) joins no engine round, its `ready()`
+runs no bootstrap batch, and a commit runs no batch: it is announced (`announceCommit`) under the
+lane's work type, `toALOutboundWorkType(namespace)`, which every runtime of the session shares. The
+lane still admits under the commit lock. When ownership turns true (once, never back) the handler
+registers its task and runs the bootstrap batch once; that batch's first-batch report is the
+takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
+batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hears every commit another
+runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
+the same `committed(rows)` its own commits take. The browser hands its per-connect value through the
+WS client's and the RTC overlay's carrier inputs.
+
 The transport decoding owners are
 [`decodeALOutboundPreparedMessage`](./al-outbound-effect-validation.ts) for WS
 client and RTC envelopes, and

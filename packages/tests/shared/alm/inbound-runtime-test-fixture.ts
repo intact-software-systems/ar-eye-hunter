@@ -37,6 +37,7 @@ import {
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -147,6 +148,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
     /** Absent sends every control; a call carrying a message this names throws, the way a transport refusal does. */
     readonly failControlSend?: (msg: ALMessage) => boolean;
+    /** Absent leaves the runtime owning its durable work, as every runtime without a session claim does. */
+    readonly durableWorkOwnership?: ALDurableWorkOwnership;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -162,7 +165,8 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             stores: input.stores,
             volatileStores: input.volatileStores,
             queueEngine,
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox')
+            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            durableWorkOwnership: input.durableWorkOwnership
         }),
         carrier: input.carrier,
         planIncomingMessage: (msg, source, observations) => {

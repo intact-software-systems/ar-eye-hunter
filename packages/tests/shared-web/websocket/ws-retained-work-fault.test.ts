@@ -22,6 +22,7 @@ import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/cr
 import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import * as auth from '@shared/api/auth.ts';
 import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
@@ -67,6 +68,7 @@ describe('WS retained-work faults', () => {
         const drain = captureOutboundWorkRunnable(engine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const connecting = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             submissionReadinessFaultPort: faults,
             outboundSettlements: (event) => registry.record(event),
@@ -149,6 +151,7 @@ describe('WS retained-work faults', () => {
         const drain = captureOutboundWorkRunnable(engine);
         const settlements: ALDeliverySettlement[] = [];
         const connecting = createBrowserWebSocketQueueBox({
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: undefined,
             submissionReadinessFaultPort: faults,
             outboundSettlements: (settlement) => settlements.push(settlement),

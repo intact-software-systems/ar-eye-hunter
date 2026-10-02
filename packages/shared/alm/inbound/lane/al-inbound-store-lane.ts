@@ -7,6 +7,10 @@ import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.t
 import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
 import type { ALStorageRecoveryReporter } from '../../storage/al-storage-recovery-reporter.ts';
 import {
+    toALDurableWorkLaneOwnership,
+    type ALDurableWorkOwnership
+} from '../../work/al-durable-work-ownership.ts';
+import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
     type ALWorkBatchDiagnostics,
@@ -62,6 +66,8 @@ export namespace ALInboundStoreLane {
         readonly workerId: string;
         /** The memory pair's sweep; undefined for a lane over a durable pair. */
         readonly evictExpired: (() => void) | undefined;
+        /** The session ownership the durable lane's work runs under; undefined for the volatile lane, which owns its memory pair. */
+        readonly durableWorkOwnership: ALDurableWorkOwnership | undefined;
         readonly runtime: ALInboundMessageRuntime.Dependencies;
     }
 }
@@ -81,6 +87,7 @@ export class ALInboundStoreLane {
     private readonly workSelector: ALInboundWorkSelector;
     private readonly work: ALWorkHandler;
     private readonly storageRecovery: ALStorageRecoveryReporter | undefined;
+    private readonly removeForeignCommitListener: (() => void) | undefined;
     private nextEvictionAtMs = Number.NEGATIVE_INFINITY;
     private emptyRoundCount = 0;
     private emptyRoundsFromMs: number | undefined;
@@ -99,32 +106,21 @@ export class ALInboundStoreLane {
         this.admission = new ALInboundMessageAdmission({ ...this.dependencies, workPort });
         this.controlAdmission = createALInboundLaneControlAdmission(this.dependencies, workPort);
         this.delivery = new ALInboundAdmittedDelivery(this.dependencies);
+        const workType = toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier);
         this.storageRecovery = input.stores.createStorageRecovery?.({
             name: input.runtime.carrier,
-            workTypeId: toALInboundWorkType(input.stores.admissionStore.namespace, input.runtime.carrier)
+            workTypeId: workType
         });
         this.workSelector = createALInboundWorkSelector({
             delivery: this.delivery,
             namespace: input.stores.admissionStore.namespace,
             nowMs: () => this.readNowMs()
         });
-        this.work = new ALWorkHandler({
-            workerId: input.workerId,
-            port: workPort,
-            queueEngine: this.dependencies.queueEngine,
-            ownsQueueEngine: this.dependencies.ownsQueueEngine,
-            clock: this.dependencies.clock,
-            pageSize: AL_INBOUND_WORK_PAGE_SIZE,
-            // The rotation answers readiness: work the eligibility rules defer must not report as due.
-            readNextReadyAtMs: (port) =>
-                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port), undefined),
-            // The rotation advances one status per probe, so an answer of its own never stands.
-            readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
-            selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
-            runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
-            diagnostics: (event) => this.recordWorkDiagnostics(event),
-            storageHealth: input.stores.storageHealth
-        });
+        this.work = this.createWorkHandler(workPort, workType);
+        this.removeForeignCommitListener = input.durableWorkOwnership?.onForeignCommit(
+            workType,
+            () => this.applyForeignCommit()
+        );
         this.readiness = new ALStorageReadiness({
             openStores: () => input.stores.admissionStore.ready(),
             startWork: () => this.work.ready(),
@@ -138,9 +134,15 @@ export class ALInboundStoreLane {
 
     dispose(): void {
         this.disposed = true;
+        this.removeForeignCommitListener?.();
         this.admission.dispose();
         this.work.dispose();
         this.delivery.dispose();
+    }
+
+    /** Another runtime of the session admitted to this lane's work type; inbound commits name no rows. */
+    applyForeignCommit(): void {
+        this.commitWork();
     }
 
     /** A message its store cannot persist is not admitted: it wrote nothing, and its sender's receipt retries it. */
@@ -448,6 +450,28 @@ export class ALInboundStoreLane {
         }
         const handedOver = await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
         return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
+    }
+
+    private createWorkHandler(workPort: ALWorkQueuePort, workType: string): ALWorkHandler {
+        const { input, dependencies } = this;
+        return new ALWorkHandler({
+            workerId: input.workerId,
+            port: workPort,
+            queueEngine: dependencies.queueEngine,
+            ownsQueueEngine: dependencies.ownsQueueEngine,
+            clock: dependencies.clock,
+            pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+            // The rotation answers readiness: work the eligibility rules defer must not report as due.
+            readNextReadyAtMs: (port) =>
+                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port), undefined),
+            // The rotation advances one status per probe, so an answer of its own never stands.
+            readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
+            selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),
+            runClaim: (claim, batchStartedAtMs) => this.runInboundClaim(claim, batchStartedAtMs),
+            diagnostics: (event) => this.recordWorkDiagnostics(event),
+            storageHealth: input.stores.storageHealth,
+            durableOwnership: toALDurableWorkLaneOwnership(input.durableWorkOwnership, workType)
+        });
     }
 
     private readNowMs(): number {

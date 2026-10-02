@@ -5,6 +5,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK, type ALDurableWorkOwnership } from '../work/al-durable-work-ownership.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import {
     ALInboundMessageRuntime,
@@ -22,6 +23,8 @@ export interface DefaultALInboundRuntimeResourceInput {
     /** Absent keeps one backend for every message, as the server and a standalone runtime do. */
     readonly volatileStores?: ALVolatileInboundRuntimeStores;
     readonly queueEngine?: InboxOutboxEngine;
+    /** The browser's per-connect session claim; absent, the runtime owns its durable work. */
+    readonly durableWorkOwnership?: ALDurableWorkOwnership;
 }
 
 export interface CreateDefaultALInboundMessageRuntimeDependencies
@@ -59,7 +62,8 @@ export function createDefaultALInboundRuntimeResources(
         clock: { nowMs },
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
-        ownsQueueEngine: input.queueEngine === undefined
+        ownsQueueEngine: input.queueEngine === undefined,
+        durableWorkOwnership: input.durableWorkOwnership ?? ALWAYS_OWNED_AL_DURABLE_WORK
     };
 }
 

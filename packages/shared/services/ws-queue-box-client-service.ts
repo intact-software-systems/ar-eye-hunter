@@ -45,6 +45,7 @@ import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
 } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { ALDurableWorkOwnership } from '../alm/work/al-durable-work-ownership.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
@@ -136,6 +137,8 @@ export namespace WsQueueBoxClientService {
         readonly dequeueResilience?: ResourceInboxResilience;
         readonly newConnectionRequestId?: () => string;
         readonly reconnect?: ReconnectOptions;
+        /** The browser's per-connect session claim; absent, this client's runtimes own their durable work. */
+        readonly durableWorkOwnership?: ALDurableWorkOwnership;
     }
 
     export interface Dependencies {
@@ -607,14 +610,16 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX),
+            durableWorkOwnership: input.durableWorkOwnership
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             decodePrepared: decodeALOutboundTransportMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,
             volatileStores: input.outboundVolatileStores,
-            queueEngine: input.queueEngine
+            queueEngine: input.queueEngine,
+            durableWorkOwnership: input.durableWorkOwnership
         }),
         dequeueResilience: input.dequeueResilience ?? createDefaultALOutboundDequeueResilience(),
         outboundDiagnostics: input.outboundDiagnostics,
