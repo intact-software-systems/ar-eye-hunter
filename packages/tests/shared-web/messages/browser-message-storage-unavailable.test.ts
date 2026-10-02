@@ -65,24 +65,6 @@ describe('a durable send whose browser storage is unavailable', () => {
         });
     });
 
-    // The downgrade asks storage exactly once more: a re-admission that also finds no storage ends the send.
-    it('fails a downgraded send whose volatile re-admission also finds storage unavailable, keeping the downgrade', async () => {
-        const fixture = createBrowserMessageSenderFixture();
-        const admit = vi.mocked(
-            fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent
-        )
-            .mockImplementation(async (message) => toStorageUnavailableAdmission(message));
-
-        const handle = await fixture.sender.sendWs(COMMAND, toDurableChannel('volatile'));
-
-        await expect.poll(() => handle.lifecycle().state).toBe('failed');
-        expect(admit).toHaveBeenCalledTimes(2);
-        expect(handle.lifecycle().evidence).toMatchObject({
-            failure: { kind: 'storage-unavailable', cause: 'quota' },
-            durabilityDowngrade: { requested: 'local-outbox', cause: 'quota' }
-        });
-    });
-
     it('states no downgrade for a send storage held, whatever the channel chose', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const admit = vi.spyOn(
@@ -202,7 +184,7 @@ describe('the connect\'s storage availability at the dispatch', () => {
     });
 
     // The request never settles here, as a browser prompting its user: no send may wait for it.
-    it('asks for persistent storage on the first durable admission only, without awaiting the answer', async () => {
+    it('asks for persistent storage on the first durable admission only', async () => {
         const requestPersist = vi.fn(() => new Promise<boolean>(() => {}));
         const events: ALStorageEvent[] = [];
         const fixture = createStorageFixture(
@@ -229,6 +211,26 @@ describe('the connect\'s storage availability at the dispatch', () => {
 
         expect(requestPersist).toHaveBeenCalledTimes(1);
         expect(events).toEqual([]);
+    });
+});
+
+describe('a downgraded send whose storage stays unavailable', () => {
+    // The downgrade asks storage exactly once more: a re-admission that also finds no storage ends the send.
+    it('fails a downgraded send whose volatile re-admission also finds storage unavailable, keeping the downgrade', async () => {
+        const fixture = createBrowserMessageSenderFixture();
+        const admit = vi.mocked(
+            fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent
+        )
+            .mockImplementation(async (message) => toStorageUnavailableAdmission(message));
+
+        const handle = await fixture.sender.sendWs(COMMAND, toDurableChannel('volatile'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('failed');
+        expect(admit).toHaveBeenCalledTimes(2);
+        expect(handle.lifecycle().evidence).toMatchObject({
+            failure: { kind: 'storage-unavailable', cause: 'quota' },
+            durabilityDowngrade: { requested: 'local-outbox', cause: 'quota' }
+        });
     });
 });
 

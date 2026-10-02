@@ -3480,6 +3480,21 @@ moved or changed test.
       }
     },
     {
+      "id": "browser-storage-downgrade-asks-storage-once-more",
+      "domain": "Browser durable send storage cannot hold",
+      "owner": "Rallar browser maintainers",
+      "summary": "A downgraded send whose admission without storage also answers storage-unavailable ends failed after exactly two admissions, keeping its downgrade. Executable assertion: “fails a downgraded send whose volatile re-admission also finds storage unavailable, keeping the downgrade”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#fails a downgraded send whose volatile re-admission also finds storage unavailable, keeping the downgrade",
+      "coverageRelation": "The test replaces the carrier outbound admission port with one that always answers storage-unavailable, sends through the real sender and dispatch, and reads the handle and the admissions the port received.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "Two admissions: the durable attempt and the one without storage, and no third.",
+        "requiredConstraint": "The downgrade asks storage once more, never in a loop.",
+        "failureRationale": "A downgrade that re-admitted until storage answered would spin on a full disk, and the failed handle reads the same either way."
+      }
+    },
+    {
       "id": "browser-storage-missing-skips-carrier",
       "domain": "Browser storage availability per connect",
       "owner": "Rallar browser maintainers",
@@ -8106,6 +8121,17 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The envelope the fallback carrier receives is already volatile.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again"
+    },
+    {
+      "id": "test-structure-coupling-d76df2ebb78c023a",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-downgrade-asks-storage-once-more",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A downgrade that also finds no storage makes two admissions and no third.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#fails a downgraded send whose volatile re-admission also finds storage unavailable, keeping the downgrade"
     },
     {
       "id": "test-structure-coupling-8c505289aafb62eb",
