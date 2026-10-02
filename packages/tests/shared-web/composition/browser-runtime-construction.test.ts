@@ -20,6 +20,7 @@ import {
 
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -52,6 +53,8 @@ vi.mock(import('@shared/api/auth.ts'), async (importOriginal): Promise<AuthModul
     readSession: runtime.readSession,
     writeSession: vi.fn()
 }));
+
+installFakeBroadcastChannelPerTest();
 
 describe('browser runtime construction', () => {
     beforeEach(() => {

@@ -186,7 +186,9 @@ every session the page opens. The event's `data` is the event itself:
   one event for every storage read an owner spends deciding whether it has work,
   which is the read the page's `work-page` counter charges.
   `cause` is why the owner had no remembered answer to give -- `own-commit`,
-  `batch` and `retained-release` are this owner's own progress, `external-wake`
+  `batch` and `retained-release` are this owner's own progress (a commit
+  another browser tab of the session announced reaches the owning tab's lane
+  as that lane's own commit, so it reads `own-commit` there), `external-wake`
   is the announcement another writer made to every owner on the engine,
   `age-bound` is the memory reaching `AL_WORK_READINESS_MEMORY_MS`, and
   `no-memory` is an owner with no answer that has not probed yet, or whose last

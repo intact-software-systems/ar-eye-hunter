@@ -284,9 +284,9 @@ export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent
 ) => void;
 
-/** Every settlement variant without the two fields the runtime stamps for its owners. */
+/** Every settlement variant without the three fields the runtime stamps for its owners. */
 type ALOutboundUnstampedSettlement<TSettlement> = TSettlement extends ALDeliverySettlement ?
-    Omit<TSettlement, 'carrier' | 'atMs'> :
+    Omit<TSettlement, 'carrier' | 'atMs' | 'lane'> :
     never;
 
 /** One delivery fact as the owner that observed it states it, before the runtime stamps it. */
@@ -429,7 +429,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     constructor(dependencies: ALOutboundMessageRuntime.Dependencies<TPrepared>) {
         this.dependencies = dependencies;
-        const settlements: ALOutboundSettlementEmitter = (fact) => this.emitSettlement(fact);
         this.durable = new ALOutboundStoreLane({
             lane: 'durable',
             stores: dependencies,
@@ -444,7 +443,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             }),
             runtime: dependencies,
             sendControls: this.sendControls,
-            settlements
+            settlements: (fact) => this.emitSettlement(fact, 'durable')
         });
         this.volatile = dependencies.volatileStores === undefined ? undefined : new ALOutboundStoreLane({
             lane: 'volatile',
@@ -457,7 +456,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             canonicalHandoff: undefined,
             runtime: dependencies,
             sendControls: this.sendControls,
-            settlements
+            settlements: (fact) => this.emitSettlement(fact, 'volatile')
         });
     }
 
@@ -487,7 +486,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     cancel(msgId: string): ALOutboundCancelOutcome {
         const outcome = this.sendControls.cancel(msgId);
         if (outcome === 'cancelled') {
-            this.emitSettlement({ kind: 'cancelled', msgId });
+            this.emitSettlement({ kind: 'cancelled', msgId }, undefined);
         }
         return outcome;
     }
@@ -678,13 +677,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         };
     }
 
-    /** The one guard over every settlement this owner states: a throwing sink changes no work. */
-    private emitSettlement(fact: ALOutboundSettlementFact): void {
+    /**
+     * The one guard over every settlement this owner states: a throwing sink changes no work. `lane` is the
+     * lane that stated it; a cancel is the runtime's own, for every lane, and names none.
+     */
+    private emitSettlement(fact: ALOutboundSettlementFact, lane: ALStoreDurability | undefined): void {
         try {
             this.dependencies.settlements?.({
                 ...fact,
                 carrier: this.dependencies.carrier,
-                atMs: this.dependencies.clock.nowMs()
+                atMs: this.dependencies.clock.nowMs(),
+                ...(lane === undefined ? {} : { lane })
             });
         }
         catch (error) {

@@ -12,9 +12,12 @@ import {
     installGroupSnapshotRepositoryMocks
 } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
 const mocks = readAuthSessionContractMocks();
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar auth login, expiry, and registration contract', () => {
     beforeEach(resetAuthSessionContractMocks);

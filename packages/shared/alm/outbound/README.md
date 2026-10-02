@@ -55,14 +55,18 @@ registers its task and runs the bootstrap batch once; that batch's first-batch r
 takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
 batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hears every commit another
 runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
-the same `committed(rows)` its own commits take. The browser's value is the connect's
+the same `committed(rows)` its own commits take, so its batch claims the rows at once instead of at
+its remembered answer's age bound; in the browser the announcement travels on the connect's session
+channel ([`BrowserALSessionChannel`](../../../shared-web/browser/al-runtime/browser-al-session-channel.ts)),
+which the claim hands to its lanes only while it owns the work. The browser's value is the connect's
 [`BrowserALDurableWorkClaim`](../../../shared-web/browser/al-runtime/browser-al-durable-work-claim.ts),
 the second name on the lock port: `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>`,
 requested once per connect, never per send, and held until the connect ends; without the Locks API
 every connect owns its work, as before. The claim hands a foreign commit (`applyForeignCommit`) to its
 work type's listeners only while its connect holds the work, so a waiting runtime never runs one nor
-announces it again; its own `announceCommit` reaches no other tab, so a waiting tab's row waits for
-the owner's readiness memory to age.
+announces it again. Its own `announceCommit` posts on the session channel, so a waiting tab's row
+reaches the owner at once; where the browser has no `BroadcastChannel` it reaches no other tab, and
+the row waits for the owner's readiness memory to age.
 
 The transport decoding owners are
 [`decodeALOutboundPreparedMessage`](./al-outbound-effect-validation.ts) for WS
@@ -741,8 +745,9 @@ states nothing at all; see [Receipt ends and the hand-over](#receipt-ends-and-th
 
 Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
 through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
-the runtime's private `emitSettlement` stamps the fact with its own `carrier` and the
-current `atMs` into the `ALDeliverySettlement` the sink receives, and guards that call
+the runtime's private `emitSettlement` stamps the fact with its own `carrier`, the
+current `atMs` and the `lane` that stated it (`durable` or `volatile`; a runtime-wide
+`cancel` names none) into the `ALDeliverySettlement` the sink receives, and guards that call
 so a throwing sink logs and returns rather than changing dispatch, retry, or claim
 behaviour. The browser's sink for these settlements is the in-memory delivery registry,
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)

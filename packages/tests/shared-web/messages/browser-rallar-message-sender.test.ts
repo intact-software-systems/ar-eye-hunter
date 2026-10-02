@@ -11,6 +11,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
@@ -44,6 +45,8 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async 
 let qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
 let rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
 let webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar message send', () => {
     beforeEach(async () => {

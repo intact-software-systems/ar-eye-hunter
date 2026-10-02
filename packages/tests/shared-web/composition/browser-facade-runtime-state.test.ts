@@ -19,7 +19,7 @@ describe('Browser facade runtime state', () => {
         const lanes: readonly RtcDataChannelLaneConfig[] = [
             { id: 'motion', label: 'rtc-motion' }
         ];
-        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
 
         context.setDefaults({
             applicationId: 'app-1',
@@ -90,8 +90,8 @@ describe('Browser facade runtime state', () => {
     });
 
     it('keeps current room and connection state isolated per context', () => {
-        const first = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
-        const second = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const first = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
+        const second = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
 
         first.setCurrentRoom(createGroupSnapshot('room-1'));
         first.setConnectState('connected');
@@ -110,7 +110,7 @@ describe('Browser facade runtime state', () => {
     });
 
     it('reports missing middleware through its transport runtime', () => {
-        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const context = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
 
         expect(context.readMiddleware()).toBeUndefined();
         expect(() => context.requireMiddleware()).toThrow(

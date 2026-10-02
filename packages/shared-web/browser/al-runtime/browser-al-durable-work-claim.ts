@@ -1,3 +1,4 @@
+import type { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { toALDurableOwnerLockName, type ALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import type { ALDurableWorkCommit, ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
@@ -11,6 +12,8 @@ export namespace BrowserALDurableWorkClaim {
         readonly sessionId: string;
         /** `undefined` where the Locks API is missing: every connect owns its session's durable work. */
         readonly locks: ALBrowserLocks | undefined;
+        /** The connect's channel to the session's other tabs, which carries the commits; closed on release. */
+        readonly sessionChannel: BrowserALSessionChannel;
     }
 }
 
@@ -35,10 +38,15 @@ export class BrowserALDurableWorkClaim implements ALDurableWorkOwnership {
     constructor(input: BrowserALDurableWorkClaim.Input) {
         this.input = input;
         this.ownedValue.accept(input.locks === undefined);
+        input.sessionChannel.onCommitted((commit) => this.applyForeignCommit(commit));
     }
 
     get owned(): ObservableValue<boolean> {
         return this.ownedValue;
+    }
+
+    get sessionChannel(): BrowserALSessionChannel {
+        return this.input.sessionChannel;
     }
 
     /** Requests the owner lock once; its callback is the takeover. */
@@ -56,13 +64,16 @@ export class BrowserALDurableWorkClaim implements ALDurableWorkOwnership {
     /** Ends the connect's claim: a request still waiting is abandoned, a held lock is released. */
     release(): void {
         this.lifetime.abort();
+        this.input.sessionChannel.close();
     }
 
     isOwned(): boolean {
         return this.ownedValue.peek() === true;
     }
 
-    announceCommit(): void {}
+    announceCommit(commit: ALDurableWorkCommit): void {
+        this.input.sessionChannel.announceCommit(commit);
+    }
 
     onForeignCommit(workType: string, listener: (rows: ALWorkCommittedRows) => void): () => void {
         const entry: ForeignCommitListener = { workType, listener };

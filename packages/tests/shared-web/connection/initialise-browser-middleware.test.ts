@@ -2,6 +2,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
@@ -34,7 +35,14 @@ const OPTIONS: BrowserConnectOptions = {
     durableWorkOwnership: new BrowserALDurableWorkClaim({
         scope: defaultStateScope(),
         sessionId: SESSION.sessionId,
-        locks: undefined
+        locks: undefined,
+        sessionChannel: new BrowserALSessionChannel({
+            scope: defaultStateScope(),
+            sessionId: SESSION.sessionId,
+            instanceId: 'session-channel',
+            openPort: () => undefined,
+            applySettlement: () => {}
+        })
     })
 };
 

@@ -8,6 +8,7 @@ import {
 
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 import {
     readRtcWaitMocks,
@@ -15,6 +16,8 @@ import {
 } from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar RTC peer wait', () => {
     beforeEach(resetRtcWaitTestRuntime);

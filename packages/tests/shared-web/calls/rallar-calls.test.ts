@@ -13,6 +13,7 @@ import {
     vi
 } from 'vitest';
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -113,6 +114,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar calls', () => {
     beforeEach(() => {

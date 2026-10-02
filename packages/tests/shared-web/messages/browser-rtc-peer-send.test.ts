@@ -425,7 +425,7 @@ function createPeerFallbackFixture(rtcVerdict: ALDeliveryAdmissionVerdict): Peer
         readMiddleware: () => context
     });
     sessionDeliveries.beginSession(context.session);
-    const epoch = feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
+    const epoch = feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const sender = new BrowserRallarMessageSender({
         creation: {
             createUnicast: newALUnicastMessage,

@@ -540,6 +540,7 @@ describe('outbound control admission identity', () => {
                 kind: 'not-yet-in-sync-exhausted',
                 msgId: 'message',
                 carrier: 'rtc',
+                lane: 'durable',
                 atMs: expect.any(Number),
                 detail: 'The not-yet-in-sync retry budget of 2 ran out.'
             }]);

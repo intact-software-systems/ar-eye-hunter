@@ -1,6 +1,9 @@
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type {
+    BrowserTransportInitOptions,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
@@ -33,7 +36,7 @@ export interface RallarSessionConnectionLifecycle {
 }
 
 interface PendingSessionConnection {
-    readonly middlewareOptions: MiddlewareInitOptions;
+    readonly middlewareOptions: BrowserTransportInitOptions;
     readonly generation: number;
 }
 
@@ -92,7 +95,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             ...toMiddlewareOptions(input),
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
-            deliverySettlements: { ws: this.input.sessionDeliveries.settle, rtc: this.input.sessionDeliveries.settle }
+            deliverySettlements: this.input.sessionDeliveries.observers
         };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;

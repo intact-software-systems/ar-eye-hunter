@@ -75,8 +75,11 @@ import {
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+
+installFakeBroadcastChannelPerTest();
 
 describe('RTC room authority recovery', () => {
     it.each(

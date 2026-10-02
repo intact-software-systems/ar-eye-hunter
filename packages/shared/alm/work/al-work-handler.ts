@@ -129,8 +129,8 @@ export interface ALWorkReadinessProbeDiagnostics {
 
 /**
  * How long one probe's answer stands, counted from that probe whatever batches ran since. It is the
- * engine's own idle ceiling, derived from it so the two cannot drift apart: work another tab wrote,
- * or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of
+ * engine's own idle ceiling, derived from it so the two cannot drift apart: work another tab wrote
+ * unannounced, or a row a crashed owner's lease still holds, is discovered on that idle cadence instead of
  * costing a storage read on every engine round.
  */
 export const AL_WORK_READINESS_MEMORY_MS = INBOX_OUTBOX_ENGINE_MAX_IDLE_MS;
@@ -197,8 +197,8 @@ export class ALWorkHandler {
                 runnable: () => this.runBatch().catch((error) => this.reportBatchFailure(toError(error))),
                 ongoingTasks: []
             },
-            // Only the server announces a write this engine did not make; a row another tab or a reload
-            // wrote is found when the remembered answer reaches its age bound.
+            // Only the server announces a write this engine did not make; another tab's commit reaches
+            // the owner's lane as its own, and a row a reload wrote is found at the age bound.
             onExternalWake: () => this.readiness.forget('external-wake'),
             durableOwnership: dependencies.durableOwnership,
             takeOver: () => void this.ready().catch((error) => this.reportBatchFailure(toError(error)))

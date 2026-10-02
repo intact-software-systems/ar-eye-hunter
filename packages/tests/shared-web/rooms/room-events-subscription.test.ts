@@ -4,6 +4,7 @@ import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomEvent,
     dispatchRoomWsMessage,
@@ -11,6 +12,8 @@ import {
     resetRoomEventTestRuntime,
     toRoomEventEnvelopeMessage
 } from './room-event-test-runtime.ts';
+
+installFakeBroadcastChannelPerTest();
 
 describe('room event subscriptions', () => {
     beforeEach(resetRoomEventTestRuntime);

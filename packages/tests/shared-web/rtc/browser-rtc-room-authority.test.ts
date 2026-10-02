@@ -17,6 +17,7 @@ import {
     type SimulatedNativeRtcDataChannel,
     type SimulatedNativeRtcPeerConnection
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createAcceptedOverlay,
     createGroupSnapshot,
@@ -33,6 +34,8 @@ interface NativeRoomFixture {
     readonly lane: SimulatedNativeRtcDataChannel;
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
 }
+
+installFakeBroadcastChannelPerTest();
 
 describe('room RTC authority and native progress', () => {
     beforeEach(resetRtcWaitTestRuntime);

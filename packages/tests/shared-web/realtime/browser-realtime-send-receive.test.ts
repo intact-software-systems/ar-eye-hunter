@@ -7,8 +7,9 @@ import {
     vi
 } from 'vitest';
 
-import { browserTransportRuntime, type BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -18,6 +19,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createRoomTransportFixture, type RoomTransportFixture } from './create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
@@ -28,7 +30,7 @@ const mocks = await vi.hoisted(async () => {
         context,
         findAcceptedOverlayById: vi.fn<typeof OverlaysRepositoryModule.findAcceptedOverlayById>(),
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(async () => {}),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(async () => context),
+        initialiseApiMiddleware: vi.fn<(options: MiddlewareModule.MiddlewareInitOptions) => Promise<ApiMiddleware>>(async () => context),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         readSession: vi.fn<typeof AuthModule.readSession>(() => context.session),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(),
@@ -72,6 +74,8 @@ vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOrigin
     ...await importOriginal(),
     findAcceptedOverlayById: mocks.findAcceptedOverlayById
 }));
+
+installFakeBroadcastChannelPerTest();
 
 afterEach(() => {
     browserTransportRuntime.shutdown();

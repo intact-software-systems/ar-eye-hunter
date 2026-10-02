@@ -23,12 +23,15 @@ import {
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
     readRoomWorkflowMocks,
     resetRoomWorkflowTestRuntime,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
+
+installFakeBroadcastChannelPerTest();
 
 beforeEach(() => {
     resetRoomWorkflowTestRuntime();

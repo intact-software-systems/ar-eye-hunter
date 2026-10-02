@@ -8,6 +8,7 @@ import {
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { EmptyMediaStream } from '../../shared/rtc-media-test-events.ts';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 // The factories below annotate their return type on purpose: without it the contextual type of a
@@ -86,6 +87,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar RTC diagnostics', () => {
     beforeEach(() => {

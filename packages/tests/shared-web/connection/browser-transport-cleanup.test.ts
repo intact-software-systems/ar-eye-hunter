@@ -1,7 +1,9 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
-import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import {
+    BrowserTransportRuntime,
+    type BrowserTransportInitOptions
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
@@ -43,7 +45,7 @@ describe('Browser transport cleanup', () => {
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -93,7 +95,7 @@ describe('Browser transport cleanup', () => {
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -146,7 +148,7 @@ describe('Browser transport cleanup', () => {
         });
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -209,7 +211,7 @@ describe('Browser transport cleanup', () => {
             });
         });
         mocks.readSession.mockReturnValue(first.session);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const connection = new BrowserSessionConnectionLifecycle({
@@ -265,14 +267,14 @@ describe('Browser transport cleanup', () => {
                 resolveMiddleware = resolve;
             })
         );
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
         const pending = transportRuntime.init({
             qosProvider: undefined,
             readVolatileSessionLimits: undefined,
             diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
-            deliverySettlements: { ws: () => {}, rtc: () => {} }
+            deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         });
         transportRuntime.shutdown();
         resolveMiddleware?.(middleware.middleware);
@@ -328,7 +330,7 @@ describe('Browser transport cleanup', () => {
 
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -391,7 +393,7 @@ describe('Browser transport cleanup', () => {
                 resolveMiddleware = resolve;
             })
         );
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
@@ -450,7 +452,7 @@ describe('the session volatile limits seam', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const readVolatileSessionLimits = () => ({ maxAdmissions: 3, maxBytes: 4_096 });
         const connection = new BrowserSessionConnectionLifecycle({
@@ -476,7 +478,7 @@ describe('the session\'s durable work claim', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
         await transportRuntime.init(toInitOptions());
@@ -496,7 +498,7 @@ describe('the session\'s durable work claim', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockRejectedValue(new Error('network unavailable'));
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
 
         await expect(transportRuntime.init(toInitOptions())).rejects.toThrow('network unavailable');
 
@@ -512,7 +514,7 @@ describe('the session\'s durable work claim', () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
         await transportRuntime.init(toInitOptions());
@@ -542,11 +544,11 @@ function stubGrantedWebLocks(): { readonly names: readonly string[]; heldCount()
     return { names, heldCount: () => held };
 }
 
-function toInitOptions(): MiddlewareInitOptions {
+function toInitOptions(): BrowserTransportInitOptions {
     return {
         qosProvider: undefined,
         readVolatileSessionLimits: undefined,
-        deliverySettlements: { ws: () => {}, rtc: () => {} },
+        deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
     };
 }

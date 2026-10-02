@@ -17,6 +17,7 @@ import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/c
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
@@ -86,6 +87,8 @@ vi.mock(
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar startup lifecycle behavior', () => {
     beforeEach(async () => {

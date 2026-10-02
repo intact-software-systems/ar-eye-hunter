@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 
+import { installFakeBroadcastChannelPerTest } from '../../data/rallar-data-test-runtime.ts';
 import { resetRoomWorkflowTestRuntime, seedRoomSnapshots } from '../room-workflow-test-runtime.ts';
 import { createFormationSnapshot, createFormationView } from './room-formation-test-fixtures.ts';
 
@@ -13,6 +14,8 @@ function stubView(view: GroupFormationView) {
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
 }
+
+installFakeBroadcastChannelPerTest();
 
 describe('room formation view read', () => {
     beforeEach(() => {

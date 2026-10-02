@@ -127,7 +127,7 @@ function createCarrierGapFixture(gap: CarrierGap): CarrierGapFixture {
         readMiddleware: () => context
     });
     sessionDeliveries.beginSession(context.session);
-    feed.open({ ws: sessionDeliveries.settle, rtc: sessionDeliveries.settle });
+    feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
     const dispatch = new BrowserRallarMessageDispatch({
         deliveries,
         sessionDeliveries,

@@ -75,6 +75,8 @@ export interface CreateInboundTestStoresInput {
     readonly storage: InboundTestStorage;
     /** The IndexedDB backend's observer; a memory store has no operations to observe. */
     readonly observer: IndexedDbOperationObserver;
+    /** A database another pair shares, as a second tab would; absent, the pair opens one of its own. */
+    readonly dbName?: string;
 }
 
 export interface InboundTestBackendStores {
@@ -88,7 +90,7 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
         : new IndexedDbAdmissionBackend({
             schemaId: AL_ADMISSION_SCHEMA_ID,
             onStorageReset: () => {},
-            dbName: `${input.namespace}-${crypto.randomUUID()}`,
+            dbName: input.dbName ?? `${input.namespace}-${crypto.randomUUID()}`,
             storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
             nowMs: Date.now,
             newWriteToken: crypto.randomUUID.bind(crypto),

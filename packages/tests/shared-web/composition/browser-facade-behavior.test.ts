@@ -10,6 +10,8 @@ import {
     vi
 } from 'vitest';
 
+import { FakeBroadcastChannel, installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
+
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -87,6 +89,8 @@ vi.mock(
     })
 );
 
+installFakeBroadcastChannelPerTest();
+
 beforeEach(() => {
     browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
@@ -124,6 +128,22 @@ describe('browser facade transport ownership', () => {
             'websocket-closed'
         ]);
         expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
+    });
+});
+
+// Node's BroadcastChannel is real; the connect's session channel must open on the installed fake.
+describe('browser facade session channel', () => {
+    it('opens one session channel per connect on the fake and closes it on disconnect', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
+        const sessionChannels = () => FakeBroadcastChannel.openNames().filter((name) => name.startsWith('rallar-alm:'));
+
+        await facade.connect();
+        expect(sessionChannels()).toHaveLength(1);
+
+        await facade.disconnect();
+        expect(sessionChannels()).toEqual([]);
     });
 });
 

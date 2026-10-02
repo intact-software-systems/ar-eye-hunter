@@ -19,6 +19,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 import { createRoomTransportFixture, type RoomTransportFixture } from './realtime/create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './realtime/native-realtime-lane-fixture.ts';
 
@@ -101,6 +102,8 @@ vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOrigin
 }));
 
 const connection = vi.mocked(mocks.context.middleware.webRtcConnectionService);
+
+installFakeBroadcastChannelPerTest();
 
 describe('Rallar facade default scope behavior', () => {
     beforeEach(() => {

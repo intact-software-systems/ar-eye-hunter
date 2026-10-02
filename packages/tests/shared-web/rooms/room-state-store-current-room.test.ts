@@ -124,7 +124,7 @@ describe('room state store current-room projection', () => {
     });
 
     it('uses the highest-revision principal snapshot before accepting the default scope', () => {
-        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
         const current = createMemberRoomSnapshot();
         const lowerRevisionDefaultAlice = createClient('alice', 'Default Alice');
         const higherRevisionOtherScopeAlice = createClient('alice', 'Other Alice', {
@@ -177,7 +177,7 @@ describe('room state store current-room projection', () => {
     });
 
     it('preserves the selected current room when defaults move to another scope', () => {
-        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
         const current = createRoomSnapshot({ groupId: 'scope-a-room', displayName: 'Scope A Room' });
         const visible = createRoomSnapshot({
             groupId: 'scope-b-room',
@@ -209,7 +209,7 @@ describe('room state store current-room projection', () => {
     });
 
     it('selects the session room when the canonical current room ref is absent', () => {
-        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime());
+        const runtime = new BrowserFacadeRuntimeState(new BrowserTransportRuntime({ openSessionChannelPort: () => undefined }));
         const sessionRoom = createRoomSnapshot({ groupId: 'session-room', displayName: 'Session Room' });
         stateMocks.groups.push(sessionRoom);
         stateMocks.repositoriesConfigured = true;

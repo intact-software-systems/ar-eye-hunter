@@ -9,7 +9,7 @@ import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-dou
 
 describe('the WS server peer id on the connection operations (D57 as applied)', () => {
     it('reads the id the connected WS client learned, and nothing before a connection', () => {
-        const transportRuntime = new BrowserTransportRuntime();
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         const operations = createRallarSessionConnectionOperations({
             connectionRuntime: new BrowserFacadeRuntimeState(transportRuntime),
             transportRuntime,

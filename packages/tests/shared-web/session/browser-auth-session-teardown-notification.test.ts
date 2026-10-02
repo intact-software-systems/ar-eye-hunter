@@ -148,7 +148,7 @@ describe('Rallar auth session teardown notification', () => {
 });
 
 function createDefaultAuthFixture(emitState: () => void): AuthFixture {
-    const transportRuntime = new BrowserTransportRuntime();
+    const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
     const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     onTestFinished(() => runtime.clearAuthExpiryTimer());
     const middleware = createDefaultApiMiddlewareTestDouble();

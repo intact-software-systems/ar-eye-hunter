@@ -1,5 +1,5 @@
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
@@ -11,6 +11,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
 const mocks = await vi.hoisted(async () => {
@@ -19,7 +20,7 @@ const mocks = await vi.hoisted(async () => {
     return {
         ctx,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(async () => {}),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(async () => ctx),
+        initialiseApiMiddleware: vi.fn<(options: MiddlewareModule.MiddlewareInitOptions) => Promise<ApiMiddleware>>(async () => ctx),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         readSession: vi.fn<typeof AuthModule.readSession>(() => ctx.session),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(),
@@ -58,6 +59,8 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), (): Pa
     findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
     getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
 }));
+
+installFakeBroadcastChannelPerTest();
 
 beforeEach(() => {
     vi.clearAllMocks();

@@ -1,4 +1,8 @@
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
+import {
+    BrowserALSessionChannel,
+    openBrowserALSessionChannelPort
+} from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import {
@@ -13,22 +17,39 @@ import { readSession } from '@shared/api/auth.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
+/** The middleware's options with this tab's delivery observers, which the transport fences per connect. */
+export interface BrowserTransportInitOptions extends Omit<MiddlewareInitOptions, 'deliverySettlements'> {
+    readonly deliverySettlements: BrowserDeliverySettlements.Observers;
+}
+
 export interface BrowserTransportRuntimePort {
     readonly deliverySettlements: BrowserDeliverySettlements;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     isReady(): boolean;
     isInitializing(): boolean;
-    init(options: MiddlewareInitOptions): Promise<ApiMiddleware>;
+    init(options: BrowserTransportInitOptions): Promise<ApiMiddleware>;
     shutdown(reason?: string): void;
+}
+
+export namespace BrowserTransportRuntime {
+    export interface Input {
+        /** Opens each connect's session channel to the session's other tabs. */
+        readonly openSessionChannelPort: BrowserALSessionChannel.OpenPort;
+    }
 }
 
 export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     readonly deliverySettlements = new BrowserDeliverySettlements();
+    private readonly input: BrowserTransportRuntime.Input;
     private activeMiddleware: ApiMiddleware | undefined;
     private activeDurableWork: BrowserALDurableWorkClaim | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
+
+    constructor(input: BrowserTransportRuntime.Input) {
+        this.input = input;
+    }
 
     public readMiddleware(): ApiMiddleware | undefined {
         return this.activeMiddleware;
@@ -51,7 +72,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         return this.pendingMiddleware !== undefined;
     }
 
-    public init(options: MiddlewareInitOptions): Promise<ApiMiddleware> {
+    public init(options: BrowserTransportInitOptions): Promise<ApiMiddleware> {
         if (this.activeMiddleware) {
             return Promise.resolve(this.activeMiddleware);
         }
@@ -66,8 +87,8 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             return Promise.reject(new Error('Cannot init middleware: no auth session.'));
         }
 
-        const epoch = this.deliverySettlements.open(options.deliverySettlements);
         const durableWork = this.claimDurableWork(session, options);
+        const epoch = this.deliverySettlements.open(options.deliverySettlements, durableWork.sessionChannel);
         const pendingMiddleware = this.createMiddleware(session, {
             ...options,
             deliverySettlements: epoch.settlements,
@@ -115,16 +136,26 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         if (middleware) {
             this.shutdownMiddleware(middleware.middleware, reason);
         }
-        // Released after the runtimes stop, so the next owner's takeover never overlaps this connect's work.
+        // Released after the runtimes stop, so the next owner's takeover starts after them; a batch still in
+        // flight is not awaited, and its rows' leases keep each row once.
         durableWork?.release();
     }
 
-    /** Requested once per connect, in the connect's scope; held until the connect ends. */
-    private claimDurableWork(session: AuthSession, options: MiddlewareInitOptions): BrowserALDurableWorkClaim {
+    /** Requested once per connect, in the connect's scope; held, with the connect's session channel, until the connect ends. */
+    private claimDurableWork(session: AuthSession, options: BrowserTransportInitOptions): BrowserALDurableWorkClaim {
+        const scope = options.scope ?? defaultStateScope();
+        const observers = options.deliverySettlements;
         const durableWork = new BrowserALDurableWorkClaim({
-            scope: options.scope ?? defaultStateScope(),
+            scope,
             sessionId: session.sessionId,
-            locks: readALBrowserLocks()
+            locks: readALBrowserLocks(),
+            sessionChannel: new BrowserALSessionChannel({
+                scope,
+                sessionId: session.sessionId,
+                instanceId: crypto.randomUUID(),
+                openPort: this.input.openSessionChannelPort,
+                applySettlement: (settlement) => observers[settlement.carrier](settlement)
+            })
         });
         durableWork.request();
         return durableWork;
@@ -173,4 +204,6 @@ function runShutdownStep(step: () => void): void {
     }
 }
 
-export const browserTransportRuntime = new BrowserTransportRuntime();
+export const browserTransportRuntime = new BrowserTransportRuntime({
+    openSessionChannelPort: openBrowserALSessionChannelPort
+});

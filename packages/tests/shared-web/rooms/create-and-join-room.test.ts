@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createRoomSnapshot,
     readRoomWorkflowMocks,
@@ -12,6 +13,8 @@ import {
 } from './room-workflow-test-runtime.ts';
 
 const roomWorkflowMocks = readRoomWorkflowMocks();
+
+installFakeBroadcastChannelPerTest();
 
 describe('room create operations', () => {
     beforeEach(resetRoomWorkflowTestRuntime);

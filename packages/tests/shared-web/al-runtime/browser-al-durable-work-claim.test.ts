@@ -1,6 +1,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
+import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import type { ALBrowserLockOptions, ALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import type { ALDurableWorkCommit, ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ALWorkCommittedRows } from '@shared/alm/work/al-work-readiness-memory.ts';
@@ -175,7 +176,15 @@ async function drainObservers(): Promise<void> {
 }
 
 function openClaim(locks: ALBrowserLocks | undefined): BrowserALDurableWorkClaim {
-    const claim = new BrowserALDurableWorkClaim({ scope: SCOPE, sessionId: SESSION_ID, locks });
+    // No other tab hears this connect, so a waiting tab's row waits for the takeover these tests prove.
+    const sessionChannel = new BrowserALSessionChannel({
+        scope: SCOPE,
+        sessionId: SESSION_ID,
+        instanceId: crypto.randomUUID(),
+        openPort: () => undefined,
+        applySettlement: () => {}
+    });
+    const claim = new BrowserALDurableWorkClaim({ scope: SCOPE, sessionId: SESSION_ID, locks, sessionChannel });
     claim.request();
     onTestFinished(() => claim.release());
     return claim;

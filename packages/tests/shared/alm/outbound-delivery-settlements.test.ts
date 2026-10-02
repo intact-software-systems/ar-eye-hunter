@@ -29,6 +29,7 @@ import {
     computeOutboundTestAdmission,
     createDefaultOutboundTestRuntime,
     createOutboundMessage,
+    createVolatileOutboundTestStores,
     enqueueOutboundOrThrow,
     holdOutboundClaims,
     peekOutboundWorkReadyAt,
@@ -127,6 +128,32 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
     );
 }
 
+// The browser relays a durable lane's settlement to the tab that holds the message; a volatile message's
+// state stays in the tab that admitted it, and a cancel is the runtime's own.
+it('stamps every settlement with the lane that stated it, and its own cancel with none', async () => {
+    const settlements: ALDeliverySettlement[] = [];
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: createStores('memory'),
+        volatileStores: createVolatileOutboundTestStores(),
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: (msg) => ({ ...planSend()(msg), persist: msg.route.resourceId === 'msg-durable-lane' }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const durable = createOutboundMessage('msg-durable-lane');
+    const volatile = createOutboundMessage('msg-volatile-lane');
+
+    await enqueueOutboundOrThrow(runtime, durable);
+    await enqueueOutboundOrThrow(runtime, volatile);
+    runtime.cancel('msg-never-admitted');
+
+    const lanesOf = (msgId: string) => settlements.filter((settlement) => settlement.msgId === msgId).map(({ lane }) => lane);
+    expect(lanesOf(durable.id.msgId)).toEqual(['durable', 'durable']);
+    expect(lanesOf(volatile.id.msgId)).toEqual(['volatile', 'volatile']);
+    expect(settlements.filter((settlement) => settlement.msgId === 'msg-never-admitted')).toStrictEqual([
+        { kind: 'cancelled', msgId: 'msg-never-admitted', carrier: 'ws', atMs: expect.any(Number) }
+    ]);
+});
+
 it.each(BACKEND_KINDS)(
     'states the attempt it started and the outcome its carrier settled over %s',
     async (kind) => {
@@ -182,6 +209,7 @@ it.each(BACKEND_KINDS)('states that a not-ready attempt will be tried again over
         kind: 'attempt-settled',
         msgId: message.id.msgId,
         carrier: 'ws',
+        lane: 'durable',
         atMs: expect.any(Number),
         attemptId: firstAttemptId(message.id.msgId),
         outcome: 'not-ready',
@@ -241,6 +269,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             kind: 'acknowledgement',
             msgId: message.id.msgId,
             carrier: 'ws',
+            lane: 'durable',
             atMs: expect.any(Number),
             mode: 'hop',
             confirmedHopPeerIds: ['peer-1'],
@@ -254,6 +283,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             kind: 'acknowledgement',
             msgId: message.id.msgId,
             carrier: 'ws',
+            lane: 'durable',
             atMs: expect.any(Number),
             mode: 'hop',
             confirmedHopPeerIds: ['peer-1', 'peer-2'],
@@ -308,6 +338,7 @@ it.each(BACKEND_KINDS)(
             kind: 'relay-rejected',
             msgId: message.id.msgId,
             carrier: 'rtc',
+            lane: 'durable',
             atMs: expect.any(Number),
             relayRejection: { relay: 'peer', peerId: 'peer-1', reason: 'resync-required' },
             detail: 'Hop peer-1 refused the message: resync-required.'
@@ -349,6 +380,7 @@ it.each(BACKEND_KINDS)('states expiry for work claimed past its own deadline ove
         kind: 'expired',
         msgId: message.id.msgId,
         carrier: 'ws',
+        lane: 'durable',
         atMs: ownerNowMs,
         detail: expect.any(String)
     }]);

@@ -679,7 +679,11 @@ where the browser has the Locks API, the tab holding the session's
 durable-owner lock sends every tab's durable messages, and when it disconnects
 or closes the next tab takes over and sends what it left; a message the closed
 tab was still sending is retried once its lease ends, at most 19.1 s after.
-Without the Locks API every tab sends its own, as before.
+Over `BroadcastChannel` a waiting tab's durable send reaches the owner at once,
+and its handle reads the settlements the owner states for it; a handle's
+`cancel()` reaches only its own tab. Without `BroadcastChannel` the owner finds
+the waiting tab's message on its idle cadence. Without the Locks API every tab
+sends its own, as before.
 
 A browser without IndexedDB has no durable storage and no memory stand-in:
 each connect decides that once, and its durable sends follow the same rule
