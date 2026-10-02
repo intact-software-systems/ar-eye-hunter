@@ -433,6 +433,10 @@ measured halves are `readDurationMs` and `commitDurationMs`.
 
 ## Storage Reset Diagnostics
 
+The browser's `RallarDiagnosticsPorts.storage` port receives every
+`ALStorageEvent` of the browser ALM stores. The harness publishes its `reset`
+arm here and every other arm on `rallar.browser.alm.storage` (below).
+
 `rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded
 the moment `openIndexedDbAdmissionDatabase` deletes and reopens a database
 whose stores or schema identity no longer match. This is not one event per
@@ -456,6 +460,20 @@ This is the evidence an incompatible browser cutover (new indexes, new key
 layouts, new stored fields) leaves behind: it confirms the old database was
 discarded rather than left mismatched underneath a client that assumes the
 current shape.
+
+## Storage Diagnostics
+
+`rallar.browser.alm.storage` carries every `ALStorageEvent` but a reset; the
+event's `data` is the event itself, with `kind` and, except for `persist`, the
+`storeId` of the store it describes (`browser-session-inbound:<sessionId>`,
+`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`).
+
+- `health`: `status` (`healthy` or `failing`), `lastFailure` (an
+  `ALStorageUnavailable`: `cause` and `detail`, or `undefined` before the first
+  failure) and `lastRecoveryPointAtMs` (the store's last durable commit, or
+  `undefined` before its first). A store starts `healthy` without an event and
+  states only a change of status, never one event per send: `failing` at its
+  first storage failure, `healthy` at the first recovery point after it.
 
 ## Compatibility
 

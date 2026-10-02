@@ -32,7 +32,9 @@ import {
     toRallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { AL_ADMISSION_SCHEMA_ID, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     AL_VOLATILE_SESSION_MAX_ADMISSIONS,
     AL_VOLATILE_SESSION_MAX_BYTES,
@@ -206,7 +208,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
         const unrelatedSentPrefix = toBrowserOutboundSentPrefix(unrelatedRuntimeName);
 
-        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        const result = await deleteExpiredBrowserALRuntimeEntries({ storage: diagnosticsPorts.storage });
 
         expect(result).toMatchObject({
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
@@ -244,7 +246,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             throw new Error('Periodic expiry cleanup must not scan the complete object store');
         });
 
-        const result = await deleteExpiredBrowserALRuntimeEntries({ onStorageReset: diagnosticsPorts.onStorageReset });
+        const result = await deleteExpiredBrowserALRuntimeEntries({ storage: diagnosticsPorts.storage });
 
         // The AL_OUTBOUND work row's own expiry now goes through cleanupAsync, off this count.
         expect(result.deleted).toBe(2);
@@ -268,7 +270,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         await expect(
             deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
-                onStorageReset: diagnosticsPorts.onStorageReset
+                storage: diagnosticsPorts.storage
             })
         ).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect(await readBrowserALRuntimeEntryKeys(key)).toEqual([key]);
@@ -304,7 +306,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
 
         const result = await deleteExpiredBrowserALRuntimeEntriesForSession(targetSessionId, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            storage: diagnosticsPorts.storage
         });
 
         // The AL_OUTBOUND work rows' own expiry now goes through cleanupAsync, off this count.
@@ -358,7 +360,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await vi.advanceTimersByTimeAsync(15_001);
 
         const result = await deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            storage: diagnosticsPorts.storage
         });
 
         expect(result.deleted).toBe(1);
@@ -410,7 +412,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         );
 
         const result = await deleteBrowserALRuntimeEntriesForSession(targetSessionId, {
-            onStorageReset: diagnosticsPorts.onStorageReset
+            storage: diagnosticsPorts.storage
         });
 
         expect(result.scanned).toBe(11);
@@ -462,7 +464,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await expect(
             deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, {
                 nowMs: 100,
-                onStorageReset: diagnosticsPorts.onStorageReset
+                storage: diagnosticsPorts.storage
             })
         ).rejects.toThrow('cleanup conflicted');
 
@@ -490,7 +492,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await vi.advanceTimersByTimeAsync(21);
 
         const stop = await initBrowserALRuntimeExpiryEviction({
-            onStorageReset: diagnosticsPorts.onStorageReset,
+            storage: diagnosticsPorts.storage,
             intervalMs: 50
         });
         try {
@@ -520,7 +522,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
                 indexedDbOperationObserver: observer,
                 outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),
                 inboundDiagnostics: createPassThroughALInboundRuntimeDiagnosticsSink(),
-                onStorageReset: () => {}
+                storage: () => {}
             }
         });
         const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
@@ -528,6 +530,50 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await stores.admissionStore.readSentMessage('never-persisted');
 
         expect(observer.getCounts().total).toBeGreaterThan(0);
+    });
+
+    // Each store states its reset and its health under its own id, and every resolve of it shares one health.
+    it('names each store on the reset and the health it states through the storage port', async () => {
+        const seeded = await openIndexedDbAdmissionDatabase({
+            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+            schemaId: 'rallar-alm-previous',
+            onStorageReset: () => {}
+        });
+        seeded.close();
+        const events: ALStorageEvent[] = [];
+        const sessionId = `storage-port-${crypto.randomUUID()}`;
+        const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
+        configureBrowserALRuntimeStores(sessionId, {
+            diagnosticsPorts: toRallarDiagnosticsPorts({ storage: (event) => events.push(event) })
+        });
+        const stores = resolveBrowserWsClientALOutboundRuntimeStores(sessionId);
+
+        await stores.admissionStore.ready();
+        expect(resolveBrowserWsClientALOutboundRuntimeStores(sessionId).storageHealth).toBe(stores.storageHealth);
+        expect(resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId).storageHealth).not.toBe(stores.storageHealth);
+        stores.storageHealth?.recordFailure({ cause: 'quota', detail: 'QuotaExceededError: full' });
+
+        await vi.waitFor(() => expect(events).toHaveLength(2));
+        expect(events).toEqual([
+            {
+                kind: 'reset',
+                storeId: wsClientId,
+                event: {
+                    dbName: BROWSER_AL_RUNTIME_DB_NAME,
+                    previousSchemaId: 'rallar-alm-previous',
+                    schemaId: AL_ADMISSION_SCHEMA_ID,
+                    reason: 'schema-id-mismatch'
+                }
+            },
+            {
+                kind: 'health',
+                storeId: wsClientId,
+                status: 'failing',
+                lastFailure: { cause: 'quota', detail: 'QuotaExceededError: full' },
+                lastRecoveryPointAtMs: undefined
+            }
+        ]);
     });
 
     it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
@@ -576,7 +622,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(volatile.admissionStore.namespace).toBe(
             `browser:${toBrowserSessionALInboundRuntimeStoreId(sessionId)}:volatile:inbound:admission`
         );
-        await deleteBrowserALRuntimeEntriesForSession(sessionId, { onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteBrowserALRuntimeEntriesForSession(sessionId, { storage: diagnosticsPorts.storage });
         expect(await volatile.workQueue.getAllKeys()).toHaveLength(1);
     });
 });

@@ -276,7 +276,7 @@ function initialiseBrowserRuntimeStores(
 ): void {
     initialiseBrowserCacheRepositories();
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    initBrowserALRuntimeExpiryEviction({ onStorageReset: diagnosticsPorts.onStorageReset }).catch((error) =>
+    initBrowserALRuntimeExpiryEviction({ storage: diagnosticsPorts.storage }).catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
 }

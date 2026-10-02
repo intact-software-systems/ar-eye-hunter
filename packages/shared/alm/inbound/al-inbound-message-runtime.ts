@@ -9,6 +9,7 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
@@ -33,6 +34,8 @@ import {
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
     readonly workQueue: QueueBoxResourceEntryRepository;
+    /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
+    readonly storageHealth?: ALStorageHealth;
 }
 
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */

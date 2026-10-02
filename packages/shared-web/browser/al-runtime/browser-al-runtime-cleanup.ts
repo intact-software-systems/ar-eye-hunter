@@ -3,10 +3,10 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { EMPTY_INDEXED_DB_ADMISSION_FENCE } from '@shared/alm/indexed-db-admission-fence.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
-    openIndexedDbAdmissionDatabase,
-    type ALStorageResetEvent
+    openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
@@ -71,7 +71,7 @@ export interface BrowserALRuntimeCleanupResult {
 }
 
 export interface DeleteExpiredBrowserALRuntimeEntriesOptions {
-    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    readonly storage: ALStorageEventSink;
     readonly nowMs?: number;
     readonly keyPrefixes?: readonly string[];
 }
@@ -84,7 +84,7 @@ export async function deleteExpiredBrowserALRuntimeEntries(
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: options.keyPrefixes ?? [BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX],
         deletionPolicy: { kind: 'expired', nowMs },
-        onStorageReset: options.onStorageReset
+        storage: options.storage
     });
 }
 
@@ -106,14 +106,14 @@ export async function deleteExpiredBrowserALRuntimeEntriesForSession(
 
 export async function deleteBrowserALRuntimeEntriesForSession(
     sessionId: string,
-    options: Readonly<{ onStorageReset: (event: ALStorageResetEvent) => void; }>
+    options: Readonly<{ storage: ALStorageEventSink; }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
         workNamespaces: toBrowserSessionALRuntimeWorkNamespaces(sessionId),
         canonicalScopes: [`browser-session:${sessionId}`],
         deletionPolicy: { kind: 'all' },
-        onStorageReset: options.onStorageReset
+        storage: options.storage
     });
 }
 
@@ -129,7 +129,7 @@ export async function evictExpiredBrowserALRuntimeEntries(
 }
 
 export interface InitBrowserALRuntimeExpiryEvictionInput {
-    readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    readonly storage: ALStorageEventSink;
     readonly intervalMs?: number;
 }
 
@@ -167,7 +167,7 @@ function startBrowserALRuntimeExpiryEviction(
     return tryRunInIntervals(
         async () => {
             if (!stopped) {
-                await evictExpiredBrowserALRuntimeEntries({ onStorageReset: input.onStorageReset });
+                await evictExpiredBrowserALRuntimeEntries({ storage: input.storage });
             }
         },
         input.intervalMs ?? BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS
@@ -179,14 +179,13 @@ function startBrowserALRuntimeExpiryEviction(
         });
 }
 
-function openBrowserALRuntimeDatabase(
-    onStorageReset: (event: ALStorageResetEvent) => void
-): Promise<IDBDatabase> {
+/** The cleanup opens the whole database for no one store, so a reset it causes names the database. */
+function openBrowserALRuntimeDatabase(storage: ALStorageEventSink): Promise<IDBDatabase> {
     return openIndexedDbAdmissionDatabase({
         dbName: BROWSER_AL_RUNTIME_DB_NAME,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         schemaId: AL_ADMISSION_SCHEMA_ID,
-        onStorageReset
+        onStorageReset: toALStorageResetSink(storage, BROWSER_AL_RUNTIME_DB_NAME)
     });
 }
 
@@ -196,7 +195,7 @@ async function deleteBrowserALRuntimeEntriesMatching(
         workNamespaces?: readonly string[];
         canonicalScopes?: readonly string[];
         deletionPolicy: BrowserALRuntimeDeletionPolicy;
-        onStorageReset: (event: ALStorageResetEvent) => void;
+        storage: ALStorageEventSink;
     }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
@@ -207,7 +206,7 @@ async function deleteBrowserALRuntimeEntriesMatching(
         return toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
     }
 
-    const db = await openBrowserALRuntimeDatabase(options.onStorageReset);
+    const db = await openBrowserALRuntimeDatabase(options.storage);
 
     try {
         if (options.deletionPolicy.kind === 'expired') {

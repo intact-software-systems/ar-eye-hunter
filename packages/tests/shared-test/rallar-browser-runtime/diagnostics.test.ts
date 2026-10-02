@@ -357,11 +357,15 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
     });
 
-    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.onStorageReset?.({
-        dbName: 'rallar-al-runtime',
-        previousSchemaId: 'rallar-alm-2026-08-f1',
-        schemaId: 'rallar-alm-2026-09-f2',
-        reason: 'schema-id-mismatch'
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.storage?.({
+        kind: 'reset',
+        storeId: 'browser-ws-client:session-1',
+        event: {
+            dbName: 'rallar-al-runtime',
+            previousSchemaId: 'rallar-alm-2026-08-f1',
+            schemaId: 'rallar-alm-2026-09-f2',
+            reason: 'schema-id-mismatch'
+        }
     });
 
     expect(events).toEqual(expect.arrayContaining([
@@ -378,6 +382,39 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
     ]));
 });
 
+// The reset keeps its own topic and payload; recovery, health and persist share the storage topic.
+it('records AL storage recovery, health and persist events on the storage topic', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const storage = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.storage;
+
+    storage?.({ kind: 'recovery', storeId: 'browser-ws-client:session-1', outcome: { kind: 'storage-created' } });
+    storage?.({
+        kind: 'health',
+        storeId: 'browser-ws-client:session-1',
+        status: 'failing',
+        lastFailure: { cause: 'quota', detail: 'QuotaExceededError: full' },
+        lastRecoveryPointAtMs: 1_000
+    });
+    storage?.({ kind: 'persist', outcome: 'granted' });
+
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage').map((event) => event.data)).toEqual([
+        { kind: 'recovery', storeId: 'browser-ws-client:session-1', outcome: { kind: 'storage-created' } },
+        {
+            kind: 'health',
+            storeId: 'browser-ws-client:session-1',
+            status: 'failing',
+            lastFailure: { cause: 'quota', detail: 'QuotaExceededError: full' },
+            lastRecoveryPointAtMs: 1_000
+        },
+        { kind: 'persist', outcome: 'granted' }
+    ]);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toEqual([]);
+});
+
 it('records synchronous connection producer diagnostics once across reconnect', async () => {
     const runtime = await loadRuntime();
     const connect = { connection: 'early', rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' } };
@@ -391,7 +428,11 @@ it('records synchronous connection producer diagnostics once across reconnect', 
             queuedBehindOrigin: 'none',
             durationMs: 0
         });
-        ports?.onStorageReset?.({ dbName: 'early', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' });
+        ports?.storage?.({
+            kind: 'reset',
+            storeId: 'browser-ws-client:early',
+            event: { dbName: 'early', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+        });
     });
     await runtime.connect(connect);
     await runtime.close();

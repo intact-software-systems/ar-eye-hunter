@@ -312,7 +312,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         const dataCleanupError = await captureError(() => this.input.closeDataScopes(session));
         try {
             await deleteBrowserALRuntimeEntriesForSession(session.sessionId, {
-                onStorageReset: diagnosticsPorts.onStorageReset
+                storage: diagnosticsPorts.storage
             });
         }
         catch {

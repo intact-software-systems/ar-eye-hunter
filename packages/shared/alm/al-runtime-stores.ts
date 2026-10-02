@@ -39,6 +39,7 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
+import type { ALStorageHealth } from './storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
 
 /**
@@ -69,6 +70,8 @@ export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRun
     readonly observer: IndexedDbOperationObserver;
     readonly schemaId: string;
     readonly onStorageReset: (event: ALStorageResetEvent) => void;
+    /** The health the pair's lanes record into; `undefined` when no one reads it. */
+    readonly storageHealth: ALStorageHealth | undefined;
 }
 
 export interface CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared> extends CreateIndexedDbALRuntimeStoresInput {
@@ -93,6 +96,7 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly observer?: IndexedDbOperationObserver;
     readonly schemaId?: string;
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
+    readonly storageHealth?: ALStorageHealth;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -144,6 +148,7 @@ export function createIndexedDbALInboundRuntimeStores(
             onStorageReset: input.onStorageReset
         });
     return {
+        storageHealth: input.storageHealth,
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:inbound:admission`,
@@ -176,6 +181,7 @@ export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
         });
     return {
         storageResets,
+        storageHealth: input.storageHealth,
         admissionStore: createALOutboundAdmissionStore({
             nowMs: input.nowMs,
             namespace: `${input.namespace}:outbound:admission`,
@@ -314,6 +320,7 @@ function toDefaultIndexedDbInput(
         dbName: options.dbName,
         observer: options.observer ?? createPassThroughIndexedDbOperationObserver(),
         schemaId: options.schemaId ?? AL_ADMISSION_SCHEMA_ID,
-        onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink()
+        onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink(),
+        storageHealth: options.storageHealth
     };
 }

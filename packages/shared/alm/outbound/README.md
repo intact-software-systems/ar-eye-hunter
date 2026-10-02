@@ -814,7 +814,8 @@ IndexedDB-only; the memory pair is swept by its own lane (Store lanes, above).
 
 A browser database whose stores or recorded schema identity do not match is deleted
 and recreated once, and the reset is reported through the required `onStorageReset`
-port with the previous and current schema ids. An undecodable schema row is treated
+port with the previous and current schema ids; the browser composition states it as
+the `reset` event of the store on its `storage` port. An undecodable schema row is treated
 as "no schema record yet" and resets the same way. A mismatch that survives that
 single reset is a storage invariant failure and throws; a delete that stays blocked by
 another open connection throws `ALStorageResetBlockedError`. Unrelated application

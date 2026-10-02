@@ -29,6 +29,8 @@ import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
+import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import {
@@ -41,7 +43,7 @@ import {
 type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
 export interface ConfigureBrowserALRuntimeStoresInput
-    extends Omit<BrowserALRuntimeOptions, 'observer' | 'onStorageReset'> {
+    extends Omit<BrowserALRuntimeOptions, 'observer' | 'onStorageReset' | 'storageHealth'> {
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
 
@@ -65,7 +67,8 @@ function createBrowserRuntimeStoreFactories(
 
 function toBrowserRuntimeStoreScopes(
     sessionId: string,
-    options: BrowserALRuntimeOptions
+    options: BrowserALRuntimeOptions,
+    storage: ALStorageEventSink
 ): readonly ALRuntimeStoreScope<ALOutboundTransportMessage>[] {
     const sessionInboundId = toBrowserSessionALInboundRuntimeStoreId(sessionId);
     const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
@@ -77,7 +80,7 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 sessionInboundId,
                 { inbound: true },
-                options
+                toBrowserStoreOptions(sessionInboundId, options, storage)
             )
         },
         {
@@ -85,7 +88,7 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 wsClientId,
                 { outbound: true },
-                options
+                toBrowserStoreOptions(wsClientId, options, storage)
             )
         },
         {
@@ -93,10 +96,23 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 rtcOverlayId,
                 { outbound: true },
-                options
+                toBrowserStoreOptions(rtcOverlayId, options, storage)
             )
         }
     ];
+}
+
+/** One health per store and connect, shared by every resolve of it; its events and resets name the store. */
+function toBrowserStoreOptions(
+    storeId: string,
+    options: BrowserALRuntimeOptions,
+    storage: ALStorageEventSink
+): BrowserALRuntimeOptions {
+    return {
+        ...options,
+        onStorageReset: toALStorageResetSink(storage, storeId),
+        storageHealth: new ALStorageHealth({ storeId, storage })
+    };
 }
 
 export function createBrowserALInboundRuntimeStores(
@@ -156,7 +172,6 @@ export function configureBrowserALRuntimeStores(
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         observer: diagnosticsPorts.indexedDbOperationObserver,
-        onStorageReset: diagnosticsPorts.onStorageReset,
         canonicalScope: `browser-session:${sessionId}`,
         inboundBackend: inMemory
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
@@ -165,7 +180,7 @@ export function configureBrowserALRuntimeStores(
             ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
             : options.outboundBackend
     };
-    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped));
+    configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, diagnosticsPorts.storage));
 }
 
 export function resolveBrowserSessionALInboundRuntimeStores(

@@ -67,7 +67,7 @@ describe('RTC message diagnostic receipts', () => {
         }
         finally {
             await deleteBrowserALRuntimeEntriesForSession(sessionId, {
-                onStorageReset: diagnosticsPorts.onStorageReset
+                storage: diagnosticsPorts.storage
             });
         }
     });

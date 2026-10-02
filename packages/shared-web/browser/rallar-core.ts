@@ -131,3 +131,5 @@ export type {
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALStorageEvent, ALStorageRecoveryOutcome } from '@shared/alm/storage/al-storage-event.ts';
+export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';

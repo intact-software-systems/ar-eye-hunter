@@ -19,6 +19,7 @@ import type {
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
+import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -177,6 +178,8 @@ export interface ALOutboundRuntimeStores<TPrepared> {
      * relayed here (a memory or PostgreSQL pair, or a backend its caller opened).
      */
     readonly storageResets?: ALStorageResetListeners;
+    /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
+    readonly storageHealth?: ALStorageHealth;
 }
 
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */

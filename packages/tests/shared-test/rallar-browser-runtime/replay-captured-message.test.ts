@@ -56,7 +56,7 @@ function createSessionOutbounds(): SessionOutbounds {
     onTestFinished(async () => {
         rtc.dispose();
         ws.dispose();
-        await deleteBrowserALRuntimeEntriesForSession(sessionId, { onStorageReset: diagnosticsPorts.onStorageReset });
+        await deleteBrowserALRuntimeEntriesForSession(sessionId, { storage: diagnosticsPorts.storage });
     });
     const wake = vi.fn();
     const replayed: ALMessage[] = [];

@@ -284,3 +284,5 @@ export type {
     ALDeliveryRelayRejection,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export type { ALStorageEvent, ALStorageRecoveryOutcome } from '@shared/alm/storage/al-storage-event.ts';
+export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
