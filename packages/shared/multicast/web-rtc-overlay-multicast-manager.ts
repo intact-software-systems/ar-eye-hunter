@@ -42,6 +42,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
+import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
@@ -444,12 +445,12 @@ export class WebRtcOverlayMulticastManager {
         return toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<void> {
+    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         if (this.disposed) {
-            return;
+            return { kind: 'not-handled' };
         }
 
-        await this.outboundRuntime.acceptControlMessage(msg, 'peer');
+        return await this.outboundRuntime.acceptControlMessage(msg, 'peer');
     }
 
     private readOutboundObservation(msg: ALMessage): RtcOutboundObservation {

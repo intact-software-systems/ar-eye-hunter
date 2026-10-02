@@ -15,6 +15,7 @@ import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflic
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import { computeALVolatileControlRowExpiryMs } from '../../delivery/compute-al-volatile-control-row-expiry-ms.ts';
+import type { ALStorageUnavailable } from '../../storage/al-storage-unavailable.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -61,7 +62,9 @@ export type ALOutboundControlAdmissionResult =
     | Readonly<{ kind: 'not-handled'; }>
     | Readonly<{ kind: 'committed'; }>
     | Readonly<{ kind: 'pending-control'; }>
-    | Readonly<{ kind: 'rejected'; reason: string; }>;
+    | Readonly<{ kind: 'rejected'; reason: string; }>
+    /** The store could not persist the control: a claim that carried it retries, an inline caller answers it not handled. */
+    | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable);
 
 export interface ALOutboundPendingControl {
     readonly kind: 'admit-control';

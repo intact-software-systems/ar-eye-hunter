@@ -35,7 +35,8 @@ import {
 } from '../al-inbound-work-entry.ts';
 import {
     ALInboundControlAdmission,
-    type ALInboundControlAdmissionResult
+    type ALInboundControlAdmissionResult,
+    type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
@@ -178,7 +179,7 @@ export class ALInboundStoreLane {
     ): Promise<ALInboundControlAdmissionResult> {
         const admitted = await this.readiness.runStoreOperation(
             () => this.controlAdmission.admit(msg, source),
-            (): ALInboundControlAdmissionResult => ({ kind: 'not-handled' })
+            (unavailable): ALInboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         if (admitted.kind === 'pending-control' || admitted.kind === 'committed') {
             this.commitWork();
@@ -384,14 +385,7 @@ export class ALInboundStoreLane {
             return toALInboundReplayOutcome(replayed.outcome, this.readNowMs());
         }
         if (payload.kind === 'admit-control') {
-            const replayed = await this.controlAdmission.replay(payload);
-            if (replayed.wroteWork) {
-                this.commitWork();
-            }
-            if (replayed.acceptance !== undefined && !this.disposed) {
-                await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
-            }
-            return replayed.outcome;
+            return await this.replayControl(payload);
         }
         if (payload.kind === 'send-control') {
             return await this.sendControlInRound(effect, payload.msg);
@@ -431,6 +425,19 @@ export class ALInboundStoreLane {
             await this.dependencies.sendControlMessages([msg]);
         }
         return { status: 'completed' };
+    }
+
+    /** A storage failure inside this claim retries it, so the replayed control reaches the outbound owner again. */
+    private async replayControl(payload: ALInboundPendingControl): Promise<ALWorkOutcome> {
+        const replayed = await this.controlAdmission.replay(payload);
+        if (replayed.wroteWork) {
+            this.commitWork();
+        }
+        if (replayed.acceptance === undefined || this.disposed) {
+            return replayed.outcome;
+        }
+        const handedOver = await this.dependencies.onControlMessage?.(payload.msg, replayed.acceptance);
+        return handedOver?.kind === 'storage-unavailable' ? { status: 'retry' } : replayed.outcome;
     }
 
     private readNowMs(): number {

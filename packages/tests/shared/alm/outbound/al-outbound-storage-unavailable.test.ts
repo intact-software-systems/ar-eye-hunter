@@ -16,6 +16,7 @@ import {
     createRecordingOutboundTestRuntime,
     createVolatileOutboundTestStores,
     drainEngine,
+    toOutboundTestAck,
     type OutboundTestStores
 } from '../outbound-runtime-test-fixture.ts';
 
@@ -136,6 +137,23 @@ describe('outbound storage unavailability', () => {
         expect(observer.getCounts().byOwner['al-work']).toBe(0);
         await vi.waitFor(() => expect(events.map(toHealthStatus)).toEqual(['failing']));
         runtime.dispose();
+    });
+
+    // The caller tells this from a foreign control: inside a claim it retries, inline it answers not handled.
+    it('answers a control its store cannot read storage-unavailable', async () => {
+        const { stores } = createObservedStores();
+        const runtime = createRecordingOutboundTestRuntime(stores, []);
+        const sent = createOutboundMessage('storage-control');
+        await runtime.enqueueIfAbsent(sent);
+        vi.spyOn(stores.backend, 'read').mockRejectedValue(QUOTA);
+
+        const admitted = await runtime.acceptControlMessage(toOutboundTestAck(sent, 'peer-1'), 'peer');
+
+        expect(admitted).toEqual({
+            kind: 'storage-unavailable',
+            cause: 'quota',
+            detail: 'QuotaExceededError: The quota has been exceeded.'
+        });
     });
 
     it('leaves a commit failure that is no storage failure a throw', async () => {

@@ -479,8 +479,11 @@ terminal bookkeeping can omit an execution deadline without authorizing another 
 
 ## Selection, failure, and cleanup
 
-A message its durable store cannot persist is `not-admitted` with reason `storage-unavailable`, and a
-control `not-handled`: the failed transaction wrote nothing, so the sender's receipt retries it. The
+A message its durable store cannot persist is `not-admitted` with reason `storage-unavailable`: the
+failed transaction wrote nothing, so the sender's receipt retries it. A control that its inbound store,
+or the outbound owner it is handed to, cannot persist answers its carrier as an unhandled control, and
+its `admission-outcome` reads `not-handled` with reason `storage-unavailable: <cause>`; inside an
+`admit-control` replay claim the outbound failure retries the claim instead. The
 failure is recorded on the pair's health, as is a work batch that fails for its storage; every
 admission that wrote work and every flushed batch is a recovery point. `ready()` answers a pair that
 cannot open as a value, and the next call opens again; until then the lane starts no work and its

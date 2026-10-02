@@ -246,7 +246,8 @@ export class WsQueueBoxClientService {
                     await this.handoffControlMessages(msgs);
                 },
                 onControlMessage: async (msg) => {
-                    await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
+                    const admitted = await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
+                    return admitted.kind === 'storage-unavailable' ? admitted : undefined;
                 },
                 diagnostics: this.dependencies.inboundDiagnostics
             }

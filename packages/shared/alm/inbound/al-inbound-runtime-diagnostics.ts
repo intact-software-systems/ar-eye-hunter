@@ -174,7 +174,7 @@ export interface ALInboundAdmissionDiagnostics {
  * sends no NACK and returns no error, so without this it reads exactly like a delivery still coming.
  */
 export function toALInboundAdmissionDiagnostics(
-    admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>
+    admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
 ): ALInboundAdmissionDiagnostics {
     return admitted.fold(toRejectionDiagnostics, toAcceptanceDiagnostics);
 }
@@ -187,7 +187,7 @@ function toRejectionDiagnostics(rejection: ALMessageRejection): ALInboundAdmissi
 }
 
 function toAcceptanceDiagnostics(
-    acceptance: ALInboundMessageRuntime.Acceptance
+    acceptance: ALInboundMessageRuntime.Admission
 ): ALInboundAdmissionDiagnostics {
     switch (acceptance.kind) {
         case 'admitted':
@@ -203,6 +203,8 @@ function toAcceptanceDiagnostics(
             return acceptance.handled
                 ? { outcome: 'committed', reason: 'control' }
                 : { outcome: 'not-handled', reason: 'control' };
+        case 'unpersisted-control':
+            return { outcome: 'not-handled', reason: `storage-unavailable: ${acceptance.unavailable.cause}` };
         default:
             return { outcome: 'not-handled', reason: acceptance.kind };
     }

@@ -204,14 +204,14 @@ export class ALOutboundStoreLane<TPrepared> {
         }
     }
 
-    /** A control its store cannot persist is not handled: it wrote nothing, and its sender sends it again. */
+    /** A control its store cannot persist wrote nothing; its caller decides between a retry and not handled. */
     async acceptControlMessage(
         msg: ALMessage,
         source: ALOutboundControlSource
     ): Promise<ALOutboundControlAdmissionResult> {
         const admitted = await this.readiness.runStoreOperation(
             () => this.repairAdmission.acceptControlMessage(msg, source),
-            (): ALOutboundControlAdmissionResult => ({ kind: 'not-handled' })
+            (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
@@ -223,7 +223,7 @@ export class ALOutboundStoreLane<TPrepared> {
     async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         return await this.readiness.runStoreOperation(
             () => this.receiptAdmission.admit(control),
-            (): ALOutboundControlAdmissionResult => ({ kind: 'not-handled' })
+            (unavailable): ALOutboundControlAdmissionResult => ({ kind: 'storage-unavailable', ...unavailable })
         );
     }
 

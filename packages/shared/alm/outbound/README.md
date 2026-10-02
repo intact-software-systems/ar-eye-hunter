@@ -640,7 +640,10 @@ A storage failure is a value at the lane, never a raw throw out of it
 ([`toALStorageUnavailable`](../storage/al-storage-unavailable.ts) names its cause). A send whose
 commit fails for its storage settles `storage-unavailable` with that cause, where a
 `NonRetryableException` settles `failed`; it wrote nothing. A control or a receipt its store cannot
-persist is `not-handled`, and a hand-over whose receipt row cannot end leaves the row to expire. A
+persist answers `storage-unavailable` with that cause, never a raw throw: the inbound `admit-control`
+claim that replays it retries, and a control arriving inline from its carrier is answered not handled,
+its inbound `admission-outcome` naming the storage failure. A hand-over whose receipt row cannot end
+leaves the row to expire. A
 commit inside a work claim (a dequeued row, a repair) still throws into its claim, which retries, and
 a batch that fails for its storage records the failure on the pair's health instead of logging it.
 Every durable commit and every flushed batch is a recovery point, which ends a `failing` health. A

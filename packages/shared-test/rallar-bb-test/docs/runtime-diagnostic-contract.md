@@ -291,7 +291,9 @@ independent of any connection. The event's `data` is the event itself:
   `pending` (held for an asynchronous authority recheck), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
-  (duplicate, resync-required, disposed, or an unhandled control)
+  (duplicate, resync-required, disposed, an unhandled control, or a control
+  its store could not persist, whose reason reads `storage-unavailable: <cause>`
+  with the cause `toALStorageUnavailable` named)
 - `reason` is the plan's drop reason, the rejection's code, or the acceptance
   kind that carries neither. A drop the RTC room-snapshot admission decided
   carries the drop code at the head of that reason and the denial that fired
