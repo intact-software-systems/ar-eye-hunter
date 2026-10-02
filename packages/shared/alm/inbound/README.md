@@ -103,8 +103,9 @@ An RTC relay keeps 5 rows in the session's memory pair for one relayed volatile 
 ([`rtc-relay-row-retention.test.ts`](../../../tests/shared/multicast/rtc-relay-row-retention.test.ts), the
 standard four-session relay): its pending-ACK row (the relay row), its control-owner index and the canonical
 envelope until the message deadline, its message-owner row until the deadline plus the 30 s receipt grace, and
-the dedup row for the 60 s dedup window. Once its child's ACK arrives it adds an acknowledgement-history row, kept
-until the deadline plus the grace as well. Before S3c-ii the owner row stayed for an hour and the history row
+the dedup row for the longer of the 60 s dedup window and the deadline plus the grace (see the dedup retention
+below). Once its child's ACK arrives it adds an acknowledgement-history row, kept until the deadline plus the grace
+as well. Before S3c-ii the owner row stayed for an hour and the history row
 30 min. The acknowledgement-history row of a relay row whose message named no deadline keeps its 30 min
 (`controlHistoryTtlMs`), since it has no deadline to be cut to (R-S3c-ii-1).
 
@@ -129,6 +130,20 @@ Every stored key stays session-logical: dedup, message-owner, ordering,
 supersedence, and control rows are shared across carriers, because a given
 message and its control history are one identity no matter which carrier
 delivered them.
+
+### Dedup retention
+
+An admitted message writes one dedup row, whose expiry
+[`computeALInboundDedupExpiryMs`](./admission/al-inbound-delivery-mutations.ts) computes; a copy that meets it is
+`duplicate`, is never delivered again, and is answered as the duplicate answers below describe. Identity dedup
+(`msg-id`, `msg-id+sender`) keeps the row for the longer of the dedup window (60 s by default, at most 5 min) and
+the message's own deadline plus the 30 s receipt grace, so a replay inside the deadline meets its first admission
+(D125). The deadline term is capped at the message-owner lifetime (`msgOwnerTtlMs`,
+60 min by default), the bound a durable message-owner row already has, so a sender's deadline never sets how long
+a receiver keeps the row: a replay after the cap and before a deadline further out is delivered again. A message
+that names no deadline keeps the window. `semantic-key` dedup keeps the window whatever the deadline, since held
+to the deadline it would drop new messages that share the key. Memory, IndexedDB and the WS server's PostgreSQL
+store write the row through the one mutation.
 
 What is partitioned per carrier is which QueueBox work rows a runtime may
 claim. [`toALInboundWorkType`](./al-inbound-work-entry.ts) types a work row
