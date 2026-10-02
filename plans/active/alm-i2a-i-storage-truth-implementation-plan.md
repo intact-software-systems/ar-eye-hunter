@@ -13765,7 +13765,8 @@ H2 gate; every red named with its classification and evidence, never softened); 
 plan and every `Ruling:` line from the SDD ledger, with what it costs if wrong); Limits (what the evidence cannot show:
 no hosted takeover yet, I2a-ii; the legacy database left to eviction; deadlines beyond the message-owner TTL not
 covered by dedup; `storage-created` indistinguishable from eviction at first open; the fault port faults operations,
-not the browser's own quota); Risk and rollback (revert the merge commit; the per-scope database name means a revert
+not the browser's own quota); a control replayed inside the `admit-control` claim after a storage failure is not handed over a
+second time, because the inbound admission is already committed, and the receipt timeout and re-ACK heal it, pre-existing (R-I2a-i-66); Risk and rollback (revert the merge commit; the per-scope database name means a revert
 reopens the legacy name and leaves the new databases to eviction; no schema id change); Follow-up (I2a-ii: the
 durable owner, the cross-tab wake and relay, `durable-takeover`, Relic to `local-outbox`; the masked `boundary.unknown`
 at `admitIncomingMessage(value: unknown)` (R-I2a-i-24); the style walker's apostrophe misread in type-literal doc
