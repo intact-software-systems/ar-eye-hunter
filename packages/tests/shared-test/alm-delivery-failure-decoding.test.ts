@@ -87,3 +87,24 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
             .toThrowError(`The page runtime returned no usable delivery observation.${field}.`);
     });
 });
+
+describe('the durability downgrade a delivery observation carries', () => {
+    it('reads the requested durability and the storage cause of a downgraded send', () => {
+        const durabilityDowngrade = { requested: 'local-outbox', cause: 'quota' };
+
+        expect(decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }).durabilityDowngrade)
+            .toEqual(durabilityDowngrade);
+    });
+
+    it('reads an observation without a downgrade as none', () => {
+        expect(decodeAlmDeliveryResultValue(OBSERVATION).durabilityDowngrade).toBeUndefined();
+    });
+
+    it.each([
+        { durabilityDowngrade: { requested: 'disk', cause: 'quota' }, field: 'durabilityDowngrade.requested' },
+        { durabilityDowngrade: { requested: 'local-outbox', cause: 'full' }, field: 'durabilityDowngrade.cause' }
+    ])('refuses a downgrade whose $field is unusable', ({ durabilityDowngrade, field }) => {
+        expect(() => decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }))
+            .toThrowError(`The page runtime returned no usable delivery observation.${field}.`);
+    });
+});

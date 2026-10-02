@@ -36,9 +36,14 @@ interface PortMessage {
     submitted: boolean;
     attemptCarriers: readonly ('rtc' | 'ws')[];
     attemptOutcomes: readonly ('not-ready' | 'sent')[];
-    /** The volatile bound's refusal (D78); undefined for every send it admits. */
-    readonly failure: Readonly<{ kind: 'refused'; reason: 'capacity'; }> | undefined;
+    /** The volatile bound's refusal or a refused durable send under a storage quota; undefined for every send admitted. */
+    readonly failure:
+        | Readonly<{ kind: 'refused'; reason: 'capacity'; }>
+        | Readonly<{ kind: 'storage-unavailable'; cause: 'quota'; }>
+        | undefined;
     carrierFallback: ALDeliveryCarrierFallback | undefined;
+    /** A durable send a volatile channel admitted volatile while its storage was full. */
+    readonly durabilityDowngrade: Readonly<{ requested: string; cause: 'quota'; }> | undefined;
 }
 
 interface HandedOverOutcome {
@@ -85,6 +90,9 @@ class GeneratedAlmPorts {
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
     readonly holds = new Map<string, string>();
+    /** A held storage fault fails every durable admission of the sender's page with a quota error. */
+    storageQuota = false;
+    storageFailing = false;
     readonly receiver: RallarBlackBoxTestRuntime;
     sender: RallarBlackBoxTestRuntime;
     private absence: { duration: number; release: () => void; } | undefined;
@@ -147,6 +155,7 @@ class GeneratedAlmPorts {
             case 'http.request':
                 return { status: 'ok', value: { status: 200 } };
             case 'rtc.connect':
+                this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
                 return { status: 'ok', value: { document, ...session } };
             case 'health':
@@ -195,8 +204,9 @@ class GeneratedAlmPorts {
         if (message && command.state.length === 1 && command.state[0] === 'expired') {
             message.state = 'expired';
         }
-        // Only a send that opted into a durability is enqueued; the default is volatile.
-        const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile';
+        // Only a send that opted into a durability and committed it is enqueued; the default is volatile.
+        const enqueued = (message?.command.durability ?? 'volatile') !== 'volatile' &&
+            message?.durabilityDowngrade === undefined && message?.state !== 'failed';
         return {
             status: 'ok',
             value: {
@@ -209,6 +219,7 @@ class GeneratedAlmPorts {
                 attemptOutcomes: message?.attemptOutcomes ?? [],
                 failure: message?.failure,
                 carrierFallback: message?.carrierFallback,
+                durabilityDowngrade: message?.durabilityDowngrade,
                 ...(message?.command.toPeer !== undefined && message.state === 'acknowledged'
                     ? toAddresseeReceipt(message.command.toPeer)
                     : {})
@@ -296,11 +307,53 @@ class GeneratedAlmPorts {
         }
     }
 
+    /** Every durable store of the page reports what it restored once its first batch ran; the fixture runs it at connect. */
+    private reportStoreRecoveries(role: 'sender' | 'receiver', sessionId: string): void {
+        if (role !== 'sender') {
+            return;
+        }
+        for (const prefix of ['browser-session-inbound', 'browser-ws-client', 'browser-rtc-overlay']) {
+            this.sender.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.storage',
+                payload: {
+                    data: {
+                        kind: 'recovery',
+                        storeId: `${prefix}:${sessionId}`,
+                        outcome: { kind: 'restored', claimed: 0, expired: 0 }
+                    }
+                }
+            });
+        }
+    }
+
+    /** A store's health, stated on its transitions only. */
+    private reportStoreHealth(status: 'failing' | 'healthy'): void {
+        this.storageFailing = status === 'failing';
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.storage',
+            payload: {
+                data: {
+                    kind: 'health',
+                    storeId: 'browser-ws-client:sender-stored-session',
+                    status,
+                    lastFailure: { cause: 'quota', detail: 'The fixture storage is full.' },
+                    lastRecoveryPointAtMs: undefined
+                }
+            }
+        });
+    }
+
     private injectFault(command: RallarBlackBoxTestFaultInjectCommand): RallarBlackBoxTestCommandOutcome {
+        if (command.carrier === 'storage') {
+            this.storageQuota = command.remaining !== 0;
+            return { status: 'ok', value: { faultId: command.faultId } };
+        }
         if (command.remaining === 0) {
             this.holds.delete(command.faultId);
         }
-        else if (command.carrier !== 'storage') {
+        else {
             this.holds.set(command.faultId, String(command.match?.typeId));
         }
         for (const message of this.messages) {
@@ -315,21 +368,35 @@ class GeneratedAlmPorts {
         assert(isJsonRecordValue(command.payload));
         // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
         const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
-        const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused;
+        const durable = (command.durability ?? 'volatile') !== 'volatile';
+        const storageRefused = durable && this.storageQuota && command.onStorageUnavailable !== 'volatile';
+        const downgraded = durable && this.storageQuota && command.onStorageUnavailable === 'volatile';
+        const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
         const message: PortMessage = {
             command,
             msgId: `port-message-${this.messages.length + 1}`,
-            state: rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
+            state: storageRefused ? 'failed' : rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
             attemptCarriers: [],
             attemptOutcomes: [],
-            failure: capacityRefused ? { kind: 'refused', reason: 'capacity' } : undefined,
-            carrierFallback: undefined
+            failure: capacityRefused
+                ? { kind: 'refused', reason: 'capacity' }
+                : storageRefused
+                ? { kind: 'storage-unavailable', cause: 'quota' }
+                : undefined,
+            carrierFallback: undefined,
+            durabilityDowngrade: downgraded ? { requested: String(command.durability), cause: 'quota' } : undefined
         };
+        if (storageRefused && !this.storageFailing) {
+            this.reportStoreHealth('failing');
+        }
+        if (durable && !this.storageQuota && this.storageFailing) {
+            this.reportStoreHealth('healthy');
+        }
         this.messages.push(message);
         assert(command.handleId);
         this.handles.set(command.handleId, message);
-        if ((command.durability ?? 'volatile') !== 'volatile') {
+        if (durable && !this.storageQuota) {
             this.writes.sender += 1;
         }
         if (command.payload.revision === 'replacement') {
@@ -346,7 +413,7 @@ class GeneratedAlmPorts {
                 msgId: message.msgId,
                 handleId: command.handleId,
                 carrier: command.carrier,
-                status: rejected ? 'rejected' : 'accepted',
+                status: storageRefused ? 'failed' : rejected ? 'rejected' : 'accepted',
                 reason: capacityRefused
                     ? 'The volatile session bound refused the admission.'
                     : rejected

@@ -328,6 +328,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
         durability?: 'volatile' | 'local-outbox' | 'local-inbox';
+        /** What the typed channel does when its durable storage is unavailable; absent, it refuses. */
+        onStorageUnavailable?: 'refuse' | 'volatile';
         ttlMs?: number;
         orderingKey?: string;
         seq?: number;

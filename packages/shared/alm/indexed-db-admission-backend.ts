@@ -42,7 +42,8 @@ import {
 } from './indexed-db-admission-row.ts';
 import {
     AL_ADMISSION_WORK_STORE_NAME,
-    openIndexedDbAdmissionDatabase,
+    openIndexedDbAdmissionStorage,
+    type ALStorageOpening,
     type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
@@ -70,20 +71,23 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     readonly #nowMs: () => number;
     readonly #newWriteToken: () => string;
     readonly #observer: IndexedDbOperationObserver;
+    #opening: ALStorageOpening | undefined;
 
     constructor(input: IndexedDbAdmissionBackend.Input) {
         this.#storeName = input.storeName;
         this.#nowMs = input.nowMs;
         this.#newWriteToken = input.newWriteToken;
         this.#observer = input.observer;
-        this.#connection = new IndexedDbConnection(() =>
-            openIndexedDbAdmissionDatabase({
+        this.#connection = new IndexedDbConnection(async () => {
+            const opened = await openIndexedDbAdmissionStorage({
                 dbName: input.dbName,
                 storeName: input.storeName,
                 schemaId: input.schemaId,
                 onStorageReset: input.onStorageReset
-            })
-        );
+            });
+            this.#opening = opened.opening;
+            return opened.db;
+        });
         this.workQueue = new IndexedDbQueueBox({
             now: () => Temporal.Instant.fromEpochMilliseconds(this.#nowMs()),
             connection: this.#connection,
@@ -95,6 +99,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
 
     async ready(): Promise<void> {
         await this.#connection.open();
+    }
+
+    getStorageOpening(): ALStorageOpening | undefined {
+        return this.#opening;
     }
 
     async readWithin<T>(read: (session: ALAdmissionReadSession) => Promise<T>): Promise<T> {

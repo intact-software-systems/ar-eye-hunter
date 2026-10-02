@@ -459,6 +459,9 @@ export class ALOutboundStoreLane<TPrepared> {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         const { diagnostics } = this.input.runtime;
+        if (event.kind === 'work-batch') {
+            this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
+        }
         if (event.kind === 'readiness-probe') {
             diagnostics?.({
                 kind: 'readiness-probe',

@@ -108,6 +108,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'reliability',
             'ack',
             'durability',
+            'onStorageUnavailable',
             'ttlMs',
             'orderingKey',
             'seq',
@@ -296,6 +297,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
     messagesDurability: AL_DURABILITY_ALGOS,
+    messagesOnStorageUnavailable: ['refuse', 'volatile'],
     messagesQosAckAlgo: ['none', 'hop', 'subtree', 'receiver'],
     /** Roles, not session ids: no session exists when a recipe is written. */
     messagesToPeer: ['server', 'receiver'],

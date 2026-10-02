@@ -796,6 +796,17 @@ the fixed admission and `alm-work` stores together. The work store uses the cano
 can use the same `IndexedDbConnection` as admission; opening that connection remains
 an explicit storage effect.
 
+Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
+the database existed, was created, was reset, or was created again after this document
+had opened it (another context's reset after a `versionchange`, an eviction without one).
+A pair the factory opens itself, and whose store has an `ALStorageHealth`, carries an
+[`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts) on its stores; the lane's
+first `work-batch` diagnostic hands it the batch's claims, and it states the store's one
+recovery outcome of this connect, with the expired rows that batch's reservation deleted,
+through that health (`recordRecovery`); an eviction is a failure of the health instead
+(`recordFailure`, cause `evicted`). The reporter reads no store of its own: both counts
+come from the batch the lane already runs.
+
 [`writeIndexedDbAdmissionMutations`](../write-indexed-db-admission-mutations.ts)
 accepts already computed admission and QueueBox mutations. The pure QueueBox
 validator returns an `Either` before transaction entry. The joint transaction uses

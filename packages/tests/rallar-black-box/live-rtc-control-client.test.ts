@@ -211,6 +211,7 @@ describe('live RTC control client', () => {
                             attemptCarriers: [],
                             relayRejection: undefined,
                             carrierFallback: undefined,
+                            durabilityDowngrade: undefined,
                             failure: undefined,
                             backpressured: false,
                             enqueued: false
@@ -325,6 +326,7 @@ describe('live RTC control client', () => {
                             attemptCarriers: [],
                             relayRejection: undefined,
                             carrierFallback: undefined,
+                            durabilityDowngrade: undefined,
                             failure: undefined,
                             backpressured: false,
                             enqueued: true
@@ -438,6 +440,7 @@ describe('live RTC control client', () => {
                         attemptCarriers: [],
                         relayRejection: undefined,
                         carrierFallback: undefined,
+                        durabilityDowngrade: undefined,
                         failure: undefined,
                         backpressured: false,
                         enqueued: false
@@ -507,6 +510,7 @@ describe('live RTC control client', () => {
                             attemptCarriers: [],
                             relayRejection: undefined,
                             carrierFallback: undefined,
+                            durabilityDowngrade: undefined,
                             failure: undefined,
                             backpressured: false,
                             enqueued: true
@@ -705,6 +709,7 @@ describe('live RTC control client', () => {
                                 attemptCarriers: [],
                                 relayRejection: undefined,
                                 carrierFallback: undefined,
+                                durabilityDowngrade: undefined,
                                 failure: undefined,
                                 backpressured: false,
                                 enqueued: true
@@ -772,6 +777,7 @@ describe('live RTC control client', () => {
                             attemptCarriers: [],
                             relayRejection: undefined,
                             carrierFallback: undefined,
+                            durabilityDowngrade: undefined,
                             failure: undefined,
                             backpressured: false,
                             enqueued: true

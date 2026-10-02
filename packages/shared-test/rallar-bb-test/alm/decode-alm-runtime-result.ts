@@ -6,6 +6,7 @@ import {
     type ALDeliveryAttemptOutcome,
     type ALDeliveryCarrier,
     type ALDeliveryCarrierFallback,
+    type ALDeliveryDurabilityDowngrade,
     type ALDeliveryFallbackReason,
     type ALDeliveryRelayRejection,
     type ALDeliveryState
@@ -16,7 +17,11 @@ import type {
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
-import { decodeAlmDeliveryFailure, decodeAlmRelayRejection } from './decode-alm-delivery-failure.ts';
+import {
+    decodeAlmDeliveryFailure,
+    decodeAlmDurabilityDowngrade,
+    decodeAlmRelayRejection
+} from './decode-alm-delivery-failure.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import type {
     RallarBlackBoxTestMessagesControlResultValue,
@@ -150,6 +155,7 @@ export function decodeAlmDeliveryResultValue(
         relayRejection: readAlmRelayRejectionField(record, path),
         failure: readAlmFailureField(record, path),
         carrierFallback: readAlmCarrierFallbackField(record, path),
+        durabilityDowngrade: readAlmDurabilityDowngradeField(record, path),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
         expectedRecipientPeerIds: requireAlmStringListField(
@@ -283,6 +289,21 @@ function readAlmFailureField(
         return undefined;
     }
     const decoded = decodeAlmDeliveryFailure(record.failure);
+    if (decoded.left !== undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
+    }
+    return decoded.right;
+}
+
+/** Absent unless storage could not hold a durable send and its channel sent it volatile. */
+function readAlmDurabilityDowngradeField(
+    record: RallarBlackBoxTestRecord,
+    path: string
+): ALDeliveryDurabilityDowngrade | undefined {
+    if (record.durabilityDowngrade === undefined) {
+        return undefined;
+    }
+    const decoded = decodeAlmDurabilityDowngrade(record.durabilityDowngrade);
     if (decoded.left !== undefined) {
         throw toAlmInvalidRuntimeResultError(`${path}.${decoded.left}`);
     }

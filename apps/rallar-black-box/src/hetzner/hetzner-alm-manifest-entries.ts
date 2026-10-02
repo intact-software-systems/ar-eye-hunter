@@ -70,8 +70,9 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
             'baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, ' +
             'not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no ' +
             'fallback after the deadline, and the addressed sends: a command to the receiver, its unicast ' +
-            'fallback, a command to the server, and the volatile session bound) across ws, rtc, and ' +
-            'rtc-with-ws-fallback carriers.',
+            'fallback, a command to the server, and the volatile session bound, and storage unavailable: a ' +
+            'durable send refused typed and one downgraded to volatile) across ws, rtc, and rtc-with-ws-fallback ' +
+            'carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender', 'two-agent'),

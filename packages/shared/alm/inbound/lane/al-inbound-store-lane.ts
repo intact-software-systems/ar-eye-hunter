@@ -246,6 +246,7 @@ export class ALInboundStoreLane {
      */
     private recordWorkDiagnostics(event: ALWorkDiagnostics): void {
         if (event.kind === 'work-batch') {
+            this.input.stores.storageRecovery?.reportFirstBatch(event.claimedCount);
             this.recordWorkBatch(event);
         }
     }

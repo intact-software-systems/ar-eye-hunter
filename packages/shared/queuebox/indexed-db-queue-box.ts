@@ -137,6 +137,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     readonly #storeName: string;
     readonly #completedRetention: QueueBoxCompletedRetention;
     readonly #observer: IndexedDbOperationObserver;
+    #reservationExpiredDeleteCount = 0;
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
@@ -438,17 +439,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             isReservable: (stored) => isStoredQueueEntryReservable({ stored, typeIds, statusIds, now, maxAttempts })
         });
         // An unreservable row that is also expired is swept by the write this claim already owes.
-        const mutations = [
-            ...selection.mutations,
-            ...selection.ineligible
-                .filter((stored) => isStoredQueueEntryExpired(stored, now))
-                .map(computeIndexedDbQueueDelete)
-        ];
+        const expiredDeletes = selection.ineligible
+            .filter((stored) => isStoredQueueEntryExpired(stored, now))
+            .map(computeIndexedDbQueueDelete);
+        const mutations = [...selection.mutations, ...expiredDeletes];
         const decision = this.#observeReservation(mutations);
         if (decision instanceof Promise) {
             await decision;
         }
-        return await this.#write(db, { mutations, result: selection.reserved });
+        const reserved = await this.#write(db, { mutations, result: selection.reserved });
+        this.#reservationExpiredDeleteCount += expiredDeletes.length;
+        return reserved;
+    }
+
+    /** Cumulative since this queue was constructed. */
+    getReservationExpiredDeleteCount(): number {
+        return this.#reservationExpiredDeleteCount;
     }
 
     async reserveOverdueRetryEntries(

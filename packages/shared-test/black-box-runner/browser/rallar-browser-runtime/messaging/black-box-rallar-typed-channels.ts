@@ -23,6 +23,7 @@ export interface TypedChannelRoute {
     readonly topicId: string | undefined;
     readonly roomRef: GroupRef | undefined;
     readonly durability: ALDurabilityAlgo | undefined;
+    readonly onStorageUnavailable: 'refuse' | 'volatile' | undefined;
     readonly purpose: ALChannelPurpose;
 }
 
@@ -58,7 +59,8 @@ export class BlackBoxRallarTypedChannels {
             roomId: config.roomId,
             roomRef: route.roomRef,
             purpose: route.purpose,
-            ...(route.durability === undefined ? {} : { durability: route.durability })
+            ...(route.durability === undefined ? {} : { durability: route.durability }),
+            ...(route.onStorageUnavailable === undefined ? {} : { onStorageUnavailable: route.onStorageUnavailable })
         });
         const selector = config.rallar.messageSelector
             ? normalizeRallarMessageSelector(config.rallar.messageSelector)
@@ -102,6 +104,7 @@ export class BlackBoxRallarTypedChannels {
             topicId: resolveBlackBoxRallarTopicId(config),
             roomRef: blackBoxRallarRoomRefOf(config),
             durability: undefined,
+            onStorageUnavailable: undefined,
             purpose: 'notification'
         });
     }

@@ -616,6 +616,10 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         reliability: messagesReliabilitySchema,
         ack: messagesAckSchema,
         durability: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesDurability },
+        onStorageUnavailable: {
+            type: 'string',
+            enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesOnStorageUnavailable
+        },
         ttlMs: { type: 'integer', minimum: 0 },
         orderingKey: stringSchema,
         seq: numberSchema,

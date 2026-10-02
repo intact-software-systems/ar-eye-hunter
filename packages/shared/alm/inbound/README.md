@@ -53,7 +53,10 @@ volatile duplicate over the other carrier still meets its first admission. The W
 server's runtime has no memory pair and keeps one backend for every message.
 [`ALInboundMessageRuntime`](./al-inbound-message-runtime.ts) routes; each
 [`ALInboundStoreLane`](./lane/al-inbound-store-lane.ts) admits, retains and delivers over
-its own pair on the shared engine.
+its own pair on the shared engine. The IndexedDB pair is one store with one
+[`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts): whichever carrier's lane runs
+the first work batch reports the store's one recovery outcome of the connect through the
+store's health, and the other's first batch reports nothing.
 
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)

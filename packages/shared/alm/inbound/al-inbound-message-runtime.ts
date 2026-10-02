@@ -11,6 +11,7 @@ import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
@@ -38,6 +39,8 @@ export interface ALInboundRuntimeStores {
     readonly workQueue: QueueBoxResourceEntryRepository;
     /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
     readonly storageHealth?: ALStorageHealth;
+    /** Reports the pair's recovery after its first work batch; absent for a pair that recovers nothing (memory, PostgreSQL). */
+    readonly storageRecovery?: ALStorageRecoveryReporter;
 }
 
 /** The session's inbound memory pair: nothing in it survives the document, and each lane over it sweeps it. */
@@ -90,6 +93,8 @@ export namespace ALInboundMessageRuntime {
         readonly workQueue: QueueBoxResourceEntryRepository;
         /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
         readonly storageHealth: ALStorageHealth | undefined;
+        /** The durable pair's recovery; `undefined` for a pair that recovers nothing (memory, PostgreSQL). */
+        readonly storageRecovery: ALStorageRecoveryReporter | undefined;
         /** The memory pair a volatile message goes to; `undefined` keeps one backend for every message. */
         readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;

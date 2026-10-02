@@ -43,6 +43,7 @@ import { orderingResync } from './scenarios/ordering-resync.ts';
 import { receiptExhaustedFallback } from './scenarios/receipt-exhausted-fallback.ts';
 import { receiptedAudience } from './scenarios/receipted-audience.ts';
 import { serverCommand } from './scenarios/server-command.ts';
+import { storageUnavailable } from './scenarios/storage-unavailable.ts';
 import { unicastFallback } from './scenarios/unicast-fallback.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
@@ -86,6 +87,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     deliveryLifecycle,
     durableOptIn,
     deliveryReload,
+    storageUnavailable,
     orderingResync,
     ...crossCarrierDuplicate,
     ...notYetInSync,

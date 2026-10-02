@@ -1,5 +1,5 @@
 import { ObservableLatestValue } from '../../cache/ObservableLatestValue.ts';
-import type { ALStorageEventSink, ALStorageHealthState } from './al-storage-event.ts';
+import type { ALStorageEventSink, ALStorageHealthState, ALStorageRecoveryOutcome } from './al-storage-event.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
 
 export namespace ALStorageHealth {
@@ -17,9 +17,11 @@ export class ALStorageHealth {
     private readonly state = new ObservableLatestValue<ALStorageHealthState>({
         equals: (left, right) => left.status === right.status
     });
+    private readonly input: ALStorageHealth.Input;
     private lastRecoveryPointAtMs: number | undefined = undefined;
 
     constructor(input: ALStorageHealth.Input) {
+        this.input = input;
         this.state.accept({
             status: 'healthy',
             lastFailure: undefined,
@@ -50,5 +52,9 @@ export class ALStorageHealth {
                 lastRecoveryPointAtMs: atMs
             });
         }
+    }
+
+    recordRecovery(outcome: ALStorageRecoveryOutcome): void {
+        this.input.storage({ kind: 'recovery', storeId: this.input.storeId, outcome });
     }
 }

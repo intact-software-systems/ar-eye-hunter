@@ -21,6 +21,7 @@ import type {
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
 import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
+import type { ALStorageRecoveryReporter } from '../storage/al-storage-recovery-reporter.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -181,6 +182,8 @@ export interface ALOutboundRuntimeStores<TPrepared> {
     readonly storageResets?: ALStorageResetListeners;
     /** Records the storage failures and the commits of the lanes over this pair; absent where no storage failure reaches. */
     readonly storageHealth?: ALStorageHealth;
+    /** Reports the pair's recovery after its first work batch; absent for a pair that recovers nothing (memory, PostgreSQL). */
+    readonly storageRecovery?: ALStorageRecoveryReporter;
 }
 
 /** The memory pair of a carrier runtime: nothing in it survives the document, and its lane sweeps it. */
@@ -340,6 +343,8 @@ export namespace ALOutboundMessageRuntime {
         readonly storageResets: ALStorageResetListeners | undefined;
         /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
         readonly storageHealth: ALStorageHealth | undefined;
+        /** The durable pair's recovery; `undefined` for a pair that recovers nothing (memory, PostgreSQL). */
+        readonly storageRecovery: ALStorageRecoveryReporter | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;

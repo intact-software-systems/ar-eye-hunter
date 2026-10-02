@@ -26,7 +26,7 @@ type MessageSendIdentity = Pick<
 
 type MessageSendOptions = Pick<
     BlackBoxRallarMessageSendInput,
-    'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'minSnapshotVersion' | 'qos'
+    'roomRef' | 'scope' | 'reliability' | 'ack' | 'durability' | 'onStorageUnavailable' | 'minSnapshotVersion' | 'qos'
 >;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
@@ -36,6 +36,10 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
     'at-least-once'
 ];
 const QOS_ACK_ALGOS: readonly ALAckAlgo[] = ['none', 'hop', 'subtree', 'receiver'];
+const ON_STORAGE_UNAVAILABLE: readonly NonNullable<BlackBoxRallarMessageSendInput['onStorageUnavailable']>[] = [
+    'refuse',
+    'volatile'
+];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
 const MESSAGE_PEER_ROLES: readonly NonNullable<BlackBoxRallarMessageSendInput['toPeer']>[] = [
     'server',
@@ -52,6 +56,7 @@ const REPLAY_REFUSED_FIELDS = [
     'reliability',
     'ack',
     'durability',
+    'onStorageUnavailable',
     'ttlMs',
     'orderingKey',
     'seq',
@@ -158,48 +163,73 @@ function decodeMessageSendIdentity(
         : Either.ofRight({ timeoutMs, connection, carrier, typeId, handleId });
 }
 
-/** A null scope, reliability or durability reads as absent, the way the recipe schema writes an unset option. */
+/** A null scope, reliability, durability or storage choice reads as absent, the way the recipe schema writes an unset option. */
 function decodeMessageSendOptions(
     record: BlackBoxRallarCommandRecord
 ): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
-    const scope = record.scope ?? undefined;
-    const reliability = record.reliability ?? undefined;
-    const durability = record.durability ?? undefined;
-    const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
-    const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
-    const knownDurability = AL_DURABILITY_ALGOS.find((candidate) => candidate === durability);
+    const scope = decodeKnownSendOption(record.scope, MESSAGE_SCOPES, 'scope must be room, world, or all');
+    const reliability = decodeKnownSendOption(
+        record.reliability,
+        MESSAGE_RELIABILITIES,
+        'reliability must be best-effort or at-least-once'
+    );
+    const durability = decodeKnownSendOption(
+        record.durability,
+        AL_DURABILITY_ALGOS,
+        'durability must be volatile, local-outbox or local-inbox'
+    );
+    const onStorageUnavailable = decodeKnownSendOption(
+        record.onStorageUnavailable,
+        ON_STORAGE_UNAVAILABLE,
+        'onStorageUnavailable must be refuse or volatile'
+    );
     const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
     const qos = decodeMessageQos(record.qos);
     return decodeBlackBoxCommandRouting(record).flatMap(
         (issue) => Either.ofLeft(issue),
         (routing) => {
-            if (scope !== undefined && knownScope === undefined) {
-                return Either.ofLeft({ message: 'messages.send.scope must be room, world, or all.' });
+            if (isInputIssue(scope)) {
+                return Either.ofLeft(scope);
             }
-            if (reliability !== undefined && knownReliability === undefined) {
-                return Either.ofLeft({ message: 'messages.send.reliability must be best-effort or at-least-once.' });
+            if (isInputIssue(reliability)) {
+                return Either.ofLeft(reliability);
             }
-            if (durability !== undefined && knownDurability === undefined) {
-                return Either.ofLeft({
-                    message: 'messages.send.durability must be volatile, local-outbox or local-inbox.'
-                });
+            if (isInputIssue(durability)) {
+                return Either.ofLeft(durability);
             }
-            if (minSnapshotVersion !== undefined && 'message' in minSnapshotVersion) {
+            if (isInputIssue(onStorageUnavailable)) {
+                return Either.ofLeft(onStorageUnavailable);
+            }
+            if (isInputIssue(minSnapshotVersion)) {
                 return Either.ofLeft(minSnapshotVersion);
             }
-            if (qos !== undefined && 'message' in qos) {
+            if (isInputIssue(qos)) {
                 return Either.ofLeft(qos);
             }
             return Either.ofRight({
                 ...routing,
-                scope: knownScope,
-                reliability: knownReliability,
-                durability: knownDurability,
+                scope,
+                reliability,
+                durability,
+                onStorageUnavailable,
                 minSnapshotVersion,
                 qos
             });
         }
     );
+}
+
+function decodeKnownSendOption<T extends string>(
+    value: unknown,
+    allowed: readonly T[],
+    rule: string
+): T | BlackBoxRallarInputIssue | undefined {
+    const known = allowed.find((candidate) => candidate === value);
+    return value === undefined || value === null || known !== undefined ? known : { message: `messages.send.${rule}.` };
+}
+
+function isInputIssue<T>(value: T | BlackBoxRallarInputIssue): value is BlackBoxRallarInputIssue {
+    return typeof value === 'object' && value !== null && 'message' in value;
 }
 
 /** Absent, the send states no floor of its own. */

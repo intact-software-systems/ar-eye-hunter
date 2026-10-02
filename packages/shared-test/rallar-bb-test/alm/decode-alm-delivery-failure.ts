@@ -1,6 +1,8 @@
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
 import type {
+    ALDeliveryDurabilityDowngrade,
     ALDeliveryRefusalReason,
     ALDeliveryRelayRejection,
     ALDeliverySkippedReason,
@@ -51,6 +53,12 @@ const ALM_STORAGE_UNAVAILABLE_CAUSES: Readonly<Record<ALStorageUnavailableCause,
     closed: true,
     evicted: true,
     'transaction-failed': true
+};
+
+const ALM_DURABILITY_ALGOS: Readonly<Record<ALDurabilityAlgo, true>> = {
+    volatile: true,
+    'local-outbox': true,
+    'local-inbox': true
 };
 
 const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
@@ -153,6 +161,19 @@ function decodeAlmReceiptExhaustedFailure(
             hopPeerId,
             nackReason
         }));
+}
+
+export function decodeAlmDurabilityDowngrade(value: unknown): Either<string, ALDeliveryDurabilityDowngrade> {
+    const downgrade = decodeAlmRuntimeRecord(value);
+    const requested = decodeAlmFailureKey(ALM_DURABILITY_ALGOS, downgrade.requested, 'requested').right;
+    const cause = decodeAlmFailureKey(ALM_STORAGE_UNAVAILABLE_CAUSES, downgrade.cause, 'cause').right;
+    if (requested === undefined) {
+        return Either.ofLeft('durabilityDowngrade.requested');
+    }
+    if (cause === undefined) {
+        return Either.ofLeft('durabilityDowngrade.cause');
+    }
+    return Either.ofRight({ requested, cause });
 }
 
 function decodeAlmFailureKey<TKey extends string>(

@@ -31,6 +31,7 @@ export type AlmConformanceScenarioId =
     | 'receipt-exhausted-fallback'
     | 'receipted-audience'
     | 'server-command'
+    | 'storage-unavailable'
     | 'unicast-fallback'
     | 'volatile-default'
     | 'ws-unicast-receipt';

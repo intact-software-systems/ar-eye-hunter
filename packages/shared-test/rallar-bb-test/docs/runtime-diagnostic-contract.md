@@ -490,6 +490,30 @@ event's `data` is the event itself, with `kind` and, except for `persist`, the
   request failed, `unsupported` without `navigator.storage.persist`. It has no
   `storeId`.
 
+- `recovery`: one event per durable store per connect, `outcome` being what
+  the store found when its lane started. A store reports after its first work
+  batch, so a store that never runs a batch (an outbound store with no work on
+  its carrier) reports nothing, and a store whose open failed never starts its
+  work and reads as a `failing` `health` event instead. `outcome` is:
+  - `storage-created`: the store's open created the database, the first time
+    this document opened it
+  - `storage-reset` with `reason`: the open reset a mismatched database
+    (`schema-id-mismatch`, `store-schema-mismatch`), or created again a
+    database this document had opened after another context's `versionchange`
+    closed it (`other-context`); a reset wins over the creation it caused
+  - `restored` with `claimed` and `expired`: the database existed; `claimed` is
+    what the first batch claimed, `expired` the expired rows its reservation
+    deleted on the way
+  - `expired-at-recovery` with `expired`: the first batch claimed nothing and
+    its reservation deleted expired rows
+
+  A creation of a database this document had opened, without a `versionchange`
+  first, is an eviction: the store's health records it as a failure, so it
+  reads as a `health` event with `status: 'failing'` and
+  `lastFailure.cause: 'evicted'` instead of a recovery. `delivery-reload` waits
+  after the reload for a `restored` recovery of the session inbound store and
+  of the outbound store that held the original.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

@@ -1,6 +1,7 @@
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestFaultInjectCommand
+    RallarBlackBoxTestStorageFaultInjectCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand
 } from '../../rallar-black-box-test-contracts.ts';
 
 import { toBudgetMs } from './alm-conformance-budgets.ts';
@@ -58,9 +59,30 @@ export function toRtcDropFaultCommand(
     });
 }
 
+/**
+ * Fails every admission write of this page with `QuotaExceededError` while held; the same fault id with
+ * `remaining: 0` releases it. Reads and the work queue's own writes go through.
+ */
+export function toAdmissionQuotaFaultCommand(
+    step: AlmConformanceStepInput,
+    name: string,
+    remaining: 'until-cleared' | 0
+): RallarBlackBoxTestStorageFaultInjectCommand {
+    return {
+        kind: 'fault.inject',
+        commandId: toCommandId(step, name),
+        faultId: `quota-admission-${toScenarioTypeId(step)}`,
+        carrier: 'storage',
+        match: { owner: 'al-admission', kind: 'write' },
+        action: 'quota',
+        remaining,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
+    };
+}
+
 function toFaultCommand(
     input: AlmConformanceFaultCommandInput
-): RallarBlackBoxTestFaultInjectCommand {
+): RallarBlackBoxTestTransportFaultInjectCommand {
     const typeId = toScenarioTypeId(input.step);
     return {
         kind: 'fault.inject',

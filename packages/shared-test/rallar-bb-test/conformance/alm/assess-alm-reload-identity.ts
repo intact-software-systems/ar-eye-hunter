@@ -163,7 +163,9 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         suffix[0].rallar.username === '' && suffix[0].rallar.password === '' &&
         suffix[0].connection === send.connection &&
         suffix.at(-1)?.kind === 'storage.counters' &&
-        suffix.slice(1).every((command) => ['messages.observe', 'assert', 'storage.counters'].includes(command.kind));
+        suffix.slice(1).every((command) =>
+            ['messages.observe', 'assert', 'wait', 'storage.counters'].includes(command.kind)
+        );
     const receiverPreserved =
         [...receiverBefore, ...recovery].every((command) =>
             ['http.request', 'rtc.connect', 'health', 'stats', 'wait', 'barrier'].includes(command.kind)

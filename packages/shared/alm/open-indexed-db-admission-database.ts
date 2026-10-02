@@ -1,3 +1,4 @@
+import { LatestRepository } from '../cache/LatestRepository.ts';
 import { readIndexedDbRequest } from '../persistence/indexed-db-request.ts';
 import {
     openIndexedDbWithValidatedStores,
@@ -29,6 +30,22 @@ export interface ALStorageResetEvent {
     readonly reason: 'schema-id-mismatch' | 'store-schema-mismatch';
 }
 
+/**
+ * What one open found. `created` is a first creation in this document; a creation of a database this
+ * document opened before is another context's reset after a `versionchange` closed it here, and an
+ * eviction without one.
+ */
+export type ALStorageOpening =
+    | Readonly<{ kind: 'existing'; }>
+    | Readonly<{ kind: 'created'; }>
+    | Readonly<{ kind: 'reset'; reason: ALStorageResetEvent['reason'] | 'other-context'; }>
+    | Readonly<{ kind: 'evicted'; }>;
+
+export interface OpenedIndexedDbAdmissionStorage {
+    readonly db: IDBDatabase;
+    readonly opening: ALStorageOpening;
+}
+
 export interface OpenIndexedDbAdmissionDatabaseInput {
     readonly dbName: string;
     readonly storeName: string;
@@ -50,8 +67,13 @@ export class ALStorageResetBlockedError extends ALStorageUnavailableError {
 type OpenOrResetAttempt = 'after-reset' | undefined;
 
 type OpenOrResetResult =
-    | Readonly<{ kind: 'open'; db: IDBDatabase; }>
+    | Readonly<{ kind: 'open'; db: IDBDatabase; created: boolean; }>
     | Readonly<{ kind: 'reset'; event: ALStorageResetEvent; }>;
+
+/** What this document saw of each admission database: that it opened it, and whether a `versionchange` closed it since. */
+type DocumentAdmissionDatabase = 'opened' | 'versionchange';
+
+const DOCUMENT_ADMISSION_DATABASES = new LatestRepository<string, DocumentAdmissionDatabase>();
 
 export function createPassThroughALStorageResetSink(): (event: ALStorageResetEvent) => void {
     return () => {};
@@ -87,22 +109,51 @@ export class ALStorageResetListeners {
 export async function openIndexedDbAdmissionDatabase(
     input: OpenIndexedDbAdmissionDatabaseInput
 ): Promise<IDBDatabase> {
+    return (await openIndexedDbAdmissionStorage(input)).db;
+}
+
+export async function openIndexedDbAdmissionStorage(
+    input: OpenIndexedDbAdmissionDatabaseInput
+): Promise<OpenedIndexedDbAdmissionStorage> {
     if (typeof indexedDB === 'undefined') {
         throw new ALStorageUnavailableError({
             cause: 'missing',
             detail: 'IndexedDB is not available in this environment'
         });
     }
+    const seen = DOCUMENT_ADMISSION_DATABASES.read(input.dbName);
     const first = await openOrReset(input, undefined);
     if (first.kind === 'open') {
-        return first.db;
+        return rememberAdmissionDatabase(input.dbName, first.db, toALStorageOpening(first.created, seen));
     }
     input.onStorageReset(first.event);
     const second = await openOrReset(input, 'after-reset');
     if (second.kind === 'open') {
-        return second.db;
+        return rememberAdmissionDatabase(input.dbName, second.db, { kind: 'reset', reason: first.event.reason });
     }
     throw new Error(`ALM storage ${input.dbName} still mismatches after reset`);
+}
+
+function toALStorageOpening(created: boolean, seen: DocumentAdmissionDatabase | undefined): ALStorageOpening {
+    if (!created) {
+        return { kind: 'existing' };
+    }
+    if (seen === undefined) {
+        return { kind: 'created' };
+    }
+    return seen === 'versionchange' ? { kind: 'reset', reason: 'other-context' } : { kind: 'evicted' };
+}
+
+function rememberAdmissionDatabase(
+    dbName: string,
+    db: IDBDatabase,
+    opening: ALStorageOpening
+): OpenedIndexedDbAdmissionStorage {
+    DOCUMENT_ADMISSION_DATABASES.set(dbName, 'opened');
+    db.addEventListener('versionchange', () => {
+        DOCUMENT_ADMISSION_DATABASES.set(dbName, 'versionchange');
+    });
+    return { db, opening };
 }
 
 async function openOrReset(
@@ -111,7 +162,7 @@ async function openOrReset(
 ): Promise<OpenOrResetResult> {
     const opened = await openAdmissionStores(input);
     if (opened.schemaIssues.length === 0) {
-        return await toSchemaIdMismatchReset(input, attempt, opened.db);
+        return await toSchemaIdMismatchReset(input, attempt, opened);
     }
     opened.db.close();
     if (attempt === 'after-reset') {
@@ -158,13 +209,13 @@ async function toStoreSchemaMismatchReset(
 async function toSchemaIdMismatchReset(
     input: OpenIndexedDbAdmissionDatabaseInput,
     attempt: OpenOrResetAttempt,
-    db: IDBDatabase
+    opened: OpenedIndexedDb
 ): Promise<OpenOrResetResult> {
-    const storedSchemaId = await readStoredSchemaId(db, input.storeName);
+    const storedSchemaId = await readStoredSchemaId(opened.db, input.storeName);
     if (storedSchemaId === input.schemaId) {
-        return { kind: 'open', db };
+        return { kind: 'open', db: opened.db, created: opened.created };
     }
-    db.close();
+    opened.db.close();
     if (attempt === 'after-reset') {
         throw new Error(`ALM schema id mismatch persisted in "${input.dbName}" after reset`);
     }

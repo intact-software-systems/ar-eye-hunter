@@ -294,6 +294,8 @@ export interface BlackBoxRallarMessageSendInput {
     readonly ack: ALAckMode | undefined;
     /** Absent, the send is volatile. */
     readonly durability: ALDurabilityAlgo | undefined;
+    /** Absent, the channel refuses a durable send its storage cannot take. */
+    readonly onStorageUnavailable: 'refuse' | 'volatile' | undefined;
     readonly ttlMs: number | undefined;
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
@@ -364,7 +366,9 @@ export interface BlackBoxRallarMessageSendDiagnostics {
 }
 
 export interface BlackBoxRallarDeliveryObservation
-    extends ALDeliveryReceiptEvidence, Pick<ALDeliveryEvidence, 'relayRejection' | 'failure' | 'carrierFallback'> {
+    extends
+        ALDeliveryReceiptEvidence,
+        Pick<ALDeliveryEvidence, 'relayRejection' | 'failure' | 'carrierFallback' | 'durabilityDowngrade'> {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;

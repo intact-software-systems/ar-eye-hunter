@@ -168,6 +168,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -180,6 +181,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -191,6 +193,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -380,6 +383,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -392,6 +396,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -403,6 +408,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -431,6 +437,28 @@
             "operator": "equals",
             "expected": "unobservable",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-reload-sender-recovered-session-inbound",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-ws-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-reload-sender-recovered-original-store",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-ws-client:{resultCache.alm-ws-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
           },
           {
             "kind": "storage.counters",
@@ -626,6 +654,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -638,6 +667,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -649,6 +679,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -677,6 +708,28 @@
             "operator": "equals",
             "expected": "unobservable",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-reload-sender-recovered-session-inbound",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-reload-sender-recovered-original-store",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-rtc-overlay:{resultCache.alm-rtc-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
           },
           {
             "kind": "storage.counters",
@@ -884,6 +937,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -896,6 +950,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -907,6 +962,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -935,6 +991,28 @@
             "operator": "equals",
             "expected": "unobservable",
             "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-recovered-session-inbound",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-session-inbound:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-recovered-original-store",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"kind\":\"recovery\",\"storeId\":\"browser-rtc-overlay:{resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect.value.sessionId}\",\"outcome\":{\"kind\":\"restored\""
+            },
+            "timeoutMs": 77000
           },
           {
             "kind": "storage.counters",
@@ -1788,6 +1866,245 @@
           {
             "kind": "stats",
             "commandId": "alm-ws-durable-opt-in-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-storage-unavailable-sender-start",
+            "barrierId": "alm-ws-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-storage-unavailable-sender-armed",
+            "barrierId": "alm-ws-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-storage-unavailable-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-ws-storage-unavailable-sender-quota-hold",
+            "faultId": "quota-admission-alm.conformance.ws.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-storage-unavailable-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "1"
+            },
+            "handleId": "alm-ws-storage-unavailable-send-1",
+            "timeoutMs": 10000,
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-storage-unavailable-sender-observe-failed-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-storage-unavailable-send-1",
+            "state": [
+              "failed"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-refused-failure-kind-1",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-failed-1.value.failure.kind",
+            "operator": "equals",
+            "expected": "storage-unavailable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-refused-failure-cause-1",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-failed-1.value.failure.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-refused-submitted-1",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-failed-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-storage-unavailable-sender-health-failing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-storage-unavailable-sender-send-2",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "2"
+            },
+            "handleId": "alm-ws-storage-unavailable-send-2",
+            "timeoutMs": 10000,
+            "durability": "local-outbox",
+            "onStorageUnavailable": "volatile"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-storage-unavailable-sender-observe-admitted-2",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-storage-unavailable-send-2",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-admitted-2",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-2.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-downgraded-enqueued-2",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-2.value.enqueued",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-requested-2",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.requested",
+            "operator": "equals",
+            "expected": "local-outbox",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-cause-2",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-ws-storage-unavailable-sender-quota-release",
+            "faultId": "quota-admission-alm.conformance.ws.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-storage-unavailable-sender-send-3",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "3"
+            },
+            "handleId": "alm-ws-storage-unavailable-send-3",
+            "timeoutMs": 10000,
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-storage-unavailable-sender-observe-admitted-3",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-storage-unavailable-send-3",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-admitted-3",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-3.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-storage-unavailable-sender-assert-enqueued-3",
+            "source": "resultCache.alm-ws-storage-unavailable-sender-observe-admitted-3.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-storage-unavailable-sender-health-healthy",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-storage-unavailable-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -3027,6 +3344,260 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-durable-opt-in-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-storage-unavailable-sender-start",
+            "barrierId": "alm-rtc-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-storage-unavailable-sender-armed",
+            "barrierId": "alm-rtc-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-storage-unavailable-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-storage-unavailable-sender-quota-hold",
+            "faultId": "quota-admission-alm.conformance.rtc.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-storage-unavailable-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "1"
+            },
+            "handleId": "alm-rtc-storage-unavailable-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-storage-unavailable-sender-observe-failed-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-storage-unavailable-send-1",
+            "state": [
+              "failed"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-refused-failure-kind-1",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-failed-1.value.failure.kind",
+            "operator": "equals",
+            "expected": "storage-unavailable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-refused-failure-cause-1",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-failed-1.value.failure.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-refused-submitted-1",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-failed-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-storage-unavailable-sender-health-failing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-storage-unavailable-sender-send-2",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "2"
+            },
+            "handleId": "alm-rtc-storage-unavailable-send-2",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox",
+            "onStorageUnavailable": "volatile"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-storage-unavailable-sender-observe-admitted-2",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-storage-unavailable-send-2",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-admitted-2",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-2.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-downgraded-enqueued-2",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-2.value.enqueued",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-requested-2",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.requested",
+            "operator": "equals",
+            "expected": "local-outbox",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-cause-2",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-storage-unavailable-sender-quota-release",
+            "faultId": "quota-admission-alm.conformance.rtc.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-storage-unavailable-sender-send-3",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "3"
+            },
+            "handleId": "alm-rtc-storage-unavailable-send-3",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-storage-unavailable-sender-observe-admitted-3",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-storage-unavailable-send-3",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-admitted-3",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-3.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-storage-unavailable-sender-assert-enqueued-3",
+            "source": "resultCache.alm-rtc-storage-unavailable-sender-observe-admitted-3.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-storage-unavailable-sender-health-healthy",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-storage-unavailable-sender-stats",
             "timeoutMs": 3000
           },
           {
@@ -4330,6 +4901,260 @@
           },
           {
             "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-start",
+            "barrierId": "alm-rtc-with-ws-fallback-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-hold",
+            "faultId": "quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "1"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-failed-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-1",
+            "state": [
+              "failed"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-refused-failure-kind-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-failed-1.value.failure.kind",
+            "operator": "equals",
+            "expected": "storage-unavailable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-refused-failure-cause-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-failed-1.value.failure.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-refused-submitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-failed-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-health-failing",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"failing\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-send-2",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "2"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-2",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox",
+            "onStorageUnavailable": "volatile"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-2",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-2",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-admitted-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-2.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-downgraded-enqueued-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-2.value.enqueued",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-requested-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.requested",
+            "operator": "equals",
+            "expected": "local-outbox",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-downgraded-durabilityDowngrade-cause-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-2.value.durabilityDowngrade.cause",
+            "operator": "equals",
+            "expected": "quota",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-quota-release",
+            "faultId": "quota-admission-alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "carrier": "storage",
+            "match": {
+              "owner": "al-admission",
+              "kind": "write"
+            },
+            "action": "quota",
+            "remaining": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-send-3",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "storage-unavailable",
+              "send": "3"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-3",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "durability": "local-outbox"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-3",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-storage-unavailable-send-3",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-admitted-3",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-3.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-assert-enqueued-3",
+            "source": "resultCache.alm-rtc-with-ws-fallback-storage-unavailable-sender-observe-admitted-3.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-health-healthy",
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.browser.alm.storage",
+              "payloadPath": "data",
+              "contains": "\"status\":\"healthy\",\"lastFailure\":{\"cause\":\"quota\""
+            },
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
             "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-start",
             "barrierId": "alm-rtc-with-ws-fallback-ordering-resync-start",
             "timeoutMs": 60000
@@ -5409,6 +6234,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -5421,6 +6247,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -5432,6 +6259,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -5680,6 +6508,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -5692,6 +6521,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -5703,6 +6533,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -5780,6 +6611,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -5792,6 +6624,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -5803,6 +6636,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -6066,6 +6900,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -6078,6 +6913,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -6089,6 +6925,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -6166,6 +7003,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -6178,6 +7016,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -6189,6 +7028,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -6452,6 +7292,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -6464,6 +7305,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -6475,6 +7317,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -6633,6 +7476,7 @@
                 "alm.conformance.rtc-with-ws-fallback.not-yet-in-sync-expires",
                 "alm.conformance.rtc-with-ws-fallback.ordering-resync",
                 "alm.conformance.rtc-with-ws-fallback.receipt-exhausted-fallback",
+                "alm.conformance.rtc-with-ws-fallback.storage-unavailable",
                 "alm.conformance.rtc-with-ws-fallback.unicast-fallback",
                 "alm.conformance.rtc-with-ws-fallback.volatile-default",
                 "alm.conformance.rtc-with-ws-fallback.ws-unicast-receipt",
@@ -6645,6 +7489,7 @@
                 "alm.conformance.rtc.durable-opt-in",
                 "alm.conformance.rtc.not-yet-in-sync-expires",
                 "alm.conformance.rtc.ordering-resync",
+                "alm.conformance.rtc.storage-unavailable",
                 "alm.conformance.rtc.volatile-default",
                 "alm.conformance.rtc.ws-unicast-receipt",
                 "alm.conformance.ws.bounded-rejection",
@@ -6656,6 +7501,7 @@
                 "alm.conformance.ws.durable-opt-in",
                 "alm.conformance.ws.ordering-resync",
                 "alm.conformance.ws.server-command",
+                "alm.conformance.ws.storage-unavailable",
                 "alm.conformance.ws.volatile-default",
                 "alm.conformance.ws.ws-unicast-receipt"
               ]
@@ -7121,6 +7967,66 @@
           },
           {
             "kind": "barrier",
+            "commandId": "alm-ws-storage-unavailable-receiver-start",
+            "barrierId": "alm-ws-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-ws-storage-unavailable-receiver-armed",
+            "barrierId": "alm-ws-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-storage-unavailable-receiver-receive-2",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "2"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-storage-unavailable-receiver-receive-3",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "3"
+              }
+            },
+            "timeoutMs": 38000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-storage-unavailable-receiver-absent-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "1"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-storage-unavailable-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
             "commandId": "alm-ws-ordering-resync-receiver-start",
             "barrierId": "alm-ws-ordering-resync-start",
             "timeoutMs": 60000
@@ -7492,6 +8398,66 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-durable-opt-in-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-storage-unavailable-receiver-start",
+            "barrierId": "alm-rtc-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-storage-unavailable-receiver-armed",
+            "barrierId": "alm-rtc-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-storage-unavailable-receiver-receive-2",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "2"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-storage-unavailable-receiver-receive-3",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "3"
+              }
+            },
+            "timeoutMs": 38000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-storage-unavailable-receiver-absent-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "1"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-storage-unavailable-receiver-stats",
             "timeoutMs": 3000
           },
           {
@@ -7889,6 +8855,66 @@
           {
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-durable-opt-in-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-start",
+            "barrierId": "alm-rtc-with-ws-fallback-storage-unavailable-start",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "barrier",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-armed",
+            "barrierId": "alm-rtc-with-ws-fallback-storage-unavailable-armed",
+            "timeoutMs": 60000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-receive-2",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "2"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-receive-3",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "3"
+              }
+            },
+            "timeoutMs": 38000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-absent-1",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "storage-unavailable",
+                "send": "1"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-storage-unavailable-receiver-stats",
             "timeoutMs": 3000
           },
           {
@@ -8480,6 +9506,7 @@
       "delivery-baseline",
       "delivery-lifecycle",
       "durable-opt-in",
+      "storage-unavailable",
       "ordering-resync",
       "ws-unicast-receipt",
       "server-command",
@@ -8492,5 +9519,5 @@
       "capacity"
     ]
   },
-  "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no fallback after the deadline, and the addressed sends: a command to the receiver, its unicast fallback, a command to the server, and the volatile session bound) across ws, rtc, and rtc-with-ws-fallback carriers."
+  "description": "ALM conformance family (the volatile default, bounded rejection, deadline expiry, delivery baseline, lifecycle, the durable opt-in, durable reload, ordering resync, the cross-carrier duplicate, not-yet-in-sync, fallback within the deadline: a dropped RTC leg, a spent RTC receipt, and no fallback after the deadline, and the addressed sends: a command to the receiver, its unicast fallback, a command to the server, and the volatile session bound, and storage unavailable: a durable send refused typed and one downgraded to volatile) across ws, rtc, and rtc-with-ws-fallback carriers."
 }

@@ -16,7 +16,7 @@ export type ALStorageRecoveryOutcome =
     | Readonly<{ kind: 'restored'; claimed: number; expired: number; }>
     | Readonly<{ kind: 'expired-at-recovery'; expired: number; }>
     | Readonly<{ kind: 'storage-created'; }>
-    | Readonly<{ kind: 'storage-reset'; reason: ALStorageResetEvent['reason']; }>;
+    | Readonly<{ kind: 'storage-reset'; reason: ALStorageResetEvent['reason'] | 'other-context'; }>;
 
 export type ALStoragePersistOutcome = 'granted' | 'denied' | 'unsupported';
 
