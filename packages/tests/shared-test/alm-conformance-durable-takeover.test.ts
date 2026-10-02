@@ -98,42 +98,53 @@ describe('durable-takeover conformance scenario', () => {
         ]);
     });
 
-    // The owner's page closes as its recipe ends; over the fallback carrier the row must have left the overlay by then.
-    it('has the fallback owner poll its receipt until the hand-over to WS is recorded', () => {
+    // The owner's page closes as its recipe ends; over the fallback carrier the row must be in the WS store by then.
+    it('has the fallback owner poll its receipt until a WS attempt follows the hand-over', () => {
         const scenario = findTakeover('rtc-with-ws-fallback');
         const poll = scenario.sender.commands.at(-2);
-        const [receipts, handedOver] = poll?.kind === 'loop' ? poll.commands : [];
+        const [receipts, handedOver, wsAttempt, ...rest] = poll?.kind === 'loop' ? poll.commands : [];
 
         expect(poll).toMatchObject({ kind: 'loop', until: 'first-success', intervalMs: 200 });
         expect(poll?.kind === 'loop' ? (poll.count ?? 0) * (poll.intervalMs ?? 0) : 0).toBe(NON_EXPIRING_SEND_TIMEOUT_MS);
         expect(receipts).toMatchObject({ kind: 'messages.receipts', handleId: findSend(scenario).handleId });
         expect(handedOver).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'ws' });
+        expect(wsAttempt).toMatchObject({ kind: 'assert', operator: 'contains', expected: 'ws' });
+        expect(rest).toEqual([]);
     });
 
-    it.each([[['none', 'ws'], true], [['none', 'none', 'none'], false]] as const)(
-        'ends the fallback owner\'s poll on the first receipt naming WS (receipts %j, passes %s)',
-        async (handOvers, passes) => {
-            const poll = findTakeover('rtc-with-ws-fallback').sender.commands.at(-2);
-            const receipts = [...handOvers];
-            let reads = 0;
-            const runtime = createRallarBlackBoxTestRuntime({
-                sleep: async () => {},
-                commandExecutor: (command) => {
-                    if (command.kind !== 'messages.receipts') {
-                        return undefined;
-                    }
-                    const to = receipts[Math.min(reads, receipts.length - 1)];
-                    reads += 1;
-                    return { status: 'ok', value: { carrierFallback: to === 'ws' ? { from: 'rtc', to } : undefined } };
+    // The hand-over is recorded before the WS row commits; only a WS attempt proves the row reached the WS store.
+    it.each(
+        [
+            [['none', 'handed-over', 'ws-attempt'], true, 3],
+            [['handed-over', 'handed-over', 'handed-over'], false, 3],
+            [['none', 'none', 'none'], false, 3]
+        ] as const
+    )('ends the fallback owner\'s poll on the first receipt with a WS attempt (receipts %j, passes %s)', async (stages, passes, expectedReads) => {
+        const poll = findTakeover('rtc-with-ws-fallback').sender.commands.at(-2);
+        let reads = 0;
+        const runtime = createRallarBlackBoxTestRuntime({
+            sleep: async () => {},
+            commandExecutor: (command) => {
+                if (command.kind !== 'messages.receipts') {
+                    return undefined;
                 }
-            });
+                const stage = stages[Math.min(reads, stages.length - 1)];
+                reads += 1;
+                return {
+                    status: 'ok',
+                    value: {
+                        carrierFallback: stage === 'none' ? undefined : { from: 'rtc', to: 'ws' },
+                        attemptCarriers: stage === 'ws-attempt' ? ['rtc', 'ws'] : ['rtc']
+                    }
+                };
+            }
+        });
 
-            const result = await runtime.execute(poll?.kind === 'loop' ? { ...poll, count: receipts.length } : { kind: 'health' });
+        const result = await runtime.execute(poll?.kind === 'loop' ? { ...poll, count: stages.length } : { kind: 'health' });
 
-            expect(result.ok).toBe(passes);
-            expect(reads).toBe(passes ? 2 : 3);
-        }
-    );
+        expect(result.ok).toBe(passes);
+        expect(reads).toBe(expectedReads);
+    });
 
     it.each(['ws', 'rtc'] as const)('ends the %s owner\'s commands at its retained evidence', (carrier) => {
         expect(findTakeover(carrier).sender.commands.some((command) => command.kind === 'loop')).toBe(false);

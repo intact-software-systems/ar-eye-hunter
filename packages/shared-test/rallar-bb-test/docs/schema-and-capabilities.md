@@ -535,8 +535,8 @@ leftover rows can read it healthy, so the third send's own commit is proven by `
 `durable-takeover` runs over every carrier in the same-context family. The sender's page holds its carrier with the
 same native hold as `delivery-reload`, sends one durable original with `ack: 'receiver'` and a `ttlMs` of the
 absence window plus 60 s (above one 10 s lease, the 19.1 s recovery bound and a whole successor connect), and proves
-it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until the
-hand-over to WS is recorded, so the row leaves the overlay store before the page ends. The lane then closes that
+it admitted, enqueued, retained and unsubmitted. Over `rtc-with-ws-fallback` it then polls its receipt until a WS
+attempt follows the hand-over to WS, so the WS row is committed before the page ends. The lane then closes that
 page. Under the hold the row stays reserved until its lease ends, so a successor's prologue first waits out one
 lease and a margin (an absent wait on a topic nothing emits) before it connects: its takeover's first batch then
 claims the row rather than finding it leased. The successor connects with the restored session, waits for the one

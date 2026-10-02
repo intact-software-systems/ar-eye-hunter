@@ -257,18 +257,25 @@ class GeneratedAlmPorts {
             unconfirmedHopPeerIds: [],
             confirmedRecipientPeerIds: [confirmed],
             unconfirmedRecipientPeerIds: [],
-            carrierFallback: message.carrierFallback
+            carrierFallback: message.carrierFallback,
+            attemptCarriers: message.attemptCarriers
         };
-        this.handOverHeldFallback(message);
+        this.advanceHeldFallback(message);
         return { status: 'ok', value };
     }
 
-    /** A held fallback send's RTC attempts hand it to WS a moment after admission, so the first read precedes it. */
-    private handOverHeldFallback(message: PortMessage): void {
+    /**
+     * A held fallback send's RTC attempts hand it to WS a moment after admission, and its held WS attempt follows once
+     * the WS row commits, a moment later again: each read precedes the next step.
+     */
+    private advanceHeldFallback(message: PortMessage): void {
         if (
-            this.handsOverHeldFallback && message.command.carrier === 'rtc-with-ws-fallback' && !message.submitted &&
-            this.isHeld(message.command.typeId)
+            !this.handsOverHeldFallback || message.command.carrier !== 'rtc-with-ws-fallback' || message.submitted ||
+            !this.isHeld(message.command.typeId)
         ) {
+            return;
+        }
+        if (message.carrierFallback === undefined) {
             message.carrierFallback = {
                 from: 'rtc',
                 to: 'ws',
@@ -276,7 +283,10 @@ class GeneratedAlmPorts {
                 atMs: this.now,
                 detail: 'The held RTC leg handed the send over to WS.'
             };
+            return;
         }
+        message.attemptCarriers = ['rtc', 'ws'];
+        message.attemptOutcomes = ['not-ready', 'not-ready'];
     }
 
     private readReceived(command: PortCommand<'messages.received'>): RallarBlackBoxTestCommandOutcome {
@@ -826,9 +836,9 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
         }
         assertEquals(held.map((message) => message.submitted), [true], 'the successor sends the original once');
         assertEquals(
-            held.map((message) => message.carrierFallback?.to),
-            [carrier === 'rtc-with-ws-fallback' ? 'ws' : undefined],
-            'only the fallback owner waits for its hand-over to WS'
+            held.map((message) => [message.carrierFallback?.to, message.attemptCarriers.includes('ws')]),
+            [carrier === 'rtc-with-ws-fallback' ? ['ws', true] : [undefined, false]],
+            'only the fallback owner waits for its hand-over and the WS attempt that follows it'
         );
     });
 }

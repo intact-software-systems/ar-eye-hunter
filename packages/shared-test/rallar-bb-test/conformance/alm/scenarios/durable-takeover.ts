@@ -43,8 +43,8 @@ export const durableTakeover: AlmConformanceScenarioDefinition = {
 
 /**
  * The native hold ends only with the owner's page, so no attempt of the owner ever leaves it. Over the fallback
- * carrier the owner's recipe ends only once its held RTC attempts have handed the original to WS, whose attempts the
- * hold keeps too, so the row the successor restores is in the WS client store.
+ * carrier the owner's recipe ends only once its held RTC attempts have handed the original to WS and a WS attempt is
+ * recorded, which the hold keeps too, so the row the successor restores is committed in the WS client store.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -66,12 +66,15 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
 }
 
 /**
- * The hand-over changes no delivery state, so the owner reads its receipt until the receipt's carrier-fallback evidence
- * names WS, within the budget a fallback send gets to reach its WS copy. Each read is the loop child of its iteration.
+ * The hand-over changes no delivery state, so the owner reads its receipt until its carrier-fallback evidence names WS
+ * and a WS attempt follows, within the budget a fallback send gets to reach its WS copy. The evidence is recorded
+ * before the RTC receipt ends and the WS leg is admitted, in two later transactions; a WS attempt exists only once the
+ * WS row is committed and claimed. Each read is the loop child of its iteration.
  */
 function toHandOverPoll(owner: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const name = 'await-hand-over-1';
     const receipts = { ...owner, index: 1 };
+    const resultName = `${name}:i{loop.iteration}:c1:${toCommandId(receipts, 'receipts-1')}`;
     return {
         kind: 'loop',
         commandId: toCommandId(owner, name),
@@ -83,9 +86,17 @@ function toHandOverPoll(owner: AlmConformanceStepInput): RallarBlackBoxTestComma
             toResultAssertion({
                 step: owner,
                 name: 'assert-handed-over-to-ws-1',
-                resultName: `${name}:i{loop.iteration}:c1:${toCommandId(receipts, 'receipts-1')}`,
+                resultName,
                 field: 'carrierFallback.to',
                 operator: 'equals',
+                expected: 'ws'
+            }),
+            toResultAssertion({
+                step: owner,
+                name: 'assert-ws-attempt-1',
+                resultName,
+                field: 'attemptCarriers',
+                operator: 'contains',
                 expected: 'ws'
             })
         ]
