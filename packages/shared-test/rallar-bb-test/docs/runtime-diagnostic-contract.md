@@ -537,6 +537,15 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   `rtc-with-ws-fallback`, whose hold hands the original to WS before the
   reload.
 
+  Where the browser has the Locks API, only the tab that holds the session's
+  durable-owner lock runs its durable lanes' batches, so the outcomes are the
+  session's and come from that tab alone; another tab of the session reports
+  no `recovery` while it waits. When the owner's connect ends, the next tab's
+  lock is granted, and its first batch, the takeover's, reports `restored` with
+  the rows it claimed: a row the previous owner still held under its lease is
+  claimed by a later batch, at its lease end plus at most 19.1 s. Without the
+  Locks API every tab drains, and reports, as before.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

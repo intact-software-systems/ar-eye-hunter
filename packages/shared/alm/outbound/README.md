@@ -55,8 +55,14 @@ registers its task and runs the bootstrap batch once; that batch's first-batch r
 takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
 batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hears every commit another
 runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
-the same `committed(rows)` its own commits take. The browser hands its per-connect value through the
-WS client's and the RTC overlay's carrier inputs.
+the same `committed(rows)` its own commits take. The browser's value is the connect's
+[`BrowserALDurableWorkClaim`](../../../shared-web/browser/al-runtime/browser-al-durable-work-claim.ts),
+the second name on the lock port: `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>`,
+requested once per connect, never per send, and held until the connect ends; without the Locks API
+every connect owns its work, as before. The claim hands a foreign commit (`applyForeignCommit`) to its
+work type's listeners only while its connect holds the work, so a waiting runtime never runs one nor
+announces it again; its own `announceCommit` reaches no other tab, so a waiting tab's row waits for
+the owner's readiness memory to age.
 
 The transport decoding owners are
 [`decodeALOutboundPreparedMessage`](./al-outbound-effect-validation.ts) for WS

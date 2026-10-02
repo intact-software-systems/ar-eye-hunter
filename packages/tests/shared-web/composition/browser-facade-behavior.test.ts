@@ -1,3 +1,4 @@
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import {
@@ -205,7 +206,8 @@ describe('browser facade restored-session setup', () => {
                     workspaceId: 'match'
                 },
                 timeoutMs: 123,
-                maxPeerConnections: 10
+                maxPeerConnections: 10,
+                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
             }
         );
         expect(runtime.refreshStateSnapshots).toHaveBeenCalledWith(

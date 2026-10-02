@@ -674,6 +674,13 @@ message. A lane send names no channel, so it always refuses. A WS send with
 scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
 the send states `ack`.
 
+Two tabs of one session share its durable stores, and one of them drains them:
+where the browser has the Locks API, the tab holding the session's
+durable-owner lock sends every tab's durable messages, and when it disconnects
+or closes the next tab takes over and sends what it left; a message the closed
+tab was still sending is retried once its lease ends, at most 19.1 s after.
+Without the Locks API every tab sends its own, as before.
+
 A browser without IndexedDB has no durable storage and no memory stand-in:
 each connect decides that once, and its durable sends follow the same rule
 without reaching the carrier. Any other storage failure is tried again by the

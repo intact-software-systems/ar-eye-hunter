@@ -190,6 +190,21 @@ The browser transport storage and WebSocket owners are feature-colocated:
   the others, and the first failure is rethrown after all were tried. The
   pre-scope database `ar-eye-hunter-al-runtime` is never opened or deleted; the
   browser evicts it.
+- [browser-al-durable-work-claim.ts](./al-runtime/browser-al-durable-work-claim.ts)
+  owns one connect's claim on its session's durable work in its scope: the Web
+  Lock `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>` (the
+  scope's parts URI-encoded), requested once per connect by
+  [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
+  with the connect's own signal and released when the connect ends, after its
+  runtimes stop, or when the connect fails. The tab it is granted to drains the
+  session's durable lanes; every other tab admits and waits, and the next
+  tab's lock is granted when the owner's connect ends, whose bootstrap batch
+  takes over. Ownership turns true at most once per connect and never back.
+  Without the Locks API, or when the request fails, every connect owns its
+  work as before. The WS client, the RTC overlay and the RTC receiver hand it
+  to their durable lanes only. The claim relays no commit between tabs: a waiting
+  tab's row reaches the owner when the owner's readiness memory ages, and a
+  foreign commit reaches a lane only while its connect holds the work.
 - [delete-ended-session-al-runtime-entries.ts](./session/delete-ended-session-al-runtime-entries.ts)
   purges an ended session's rows on logout, and a replaced session's rows after
   the disconnect on a login over it or a session switch in `connect`, when the

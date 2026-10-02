@@ -1,12 +1,13 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserTransportInput,
     toBrowserWebSocketQueueBoxInput,
     toRtcOverlayMulticastManagerInput,
-    type MiddlewareInitOptions
+    type BrowserConnectOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -25,11 +26,16 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
-const OPTIONS: MiddlewareInitOptions = {
+const OPTIONS: BrowserConnectOptions = {
     qosProvider: undefined,
     readVolatileSessionLimits: () => ({ maxAdmissions: 3, maxBytes: 4_096 }),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
-    diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+    diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+    durableWorkOwnership: new BrowserALDurableWorkClaim({
+        scope: defaultStateScope(),
+        sessionId: SESSION.sessionId,
+        locks: undefined
+    })
 };
 
 describe('the one volatile bound a browser session hands its carriers (D74)', () => {
@@ -71,8 +77,8 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
     });
 });
 
-describe('the durable work ownership a connect hands its carriers', () => {
-    it('gives the WS client and the RTC overlay the ownership of the transport input', () => {
+describe('the durable work claim a connect hands its carriers', () => {
+    it('gives the WS client and the RTC overlay the connect\'s claim', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
         const qboxEngine = new InboxOutboxEngine();
         onTestFinished(() => qboxEngine.stop());
@@ -88,8 +94,9 @@ describe('the durable work ownership a connect hands its carriers', () => {
             webRtcConnectionService: createConnectionService()
         });
 
-        expect(ws.durableWorkOwnership).toBe(input.durableWorkOwnership);
-        expect(rtc.durableWorkOwnership).toBe(input.durableWorkOwnership);
+        expect(input.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
+        expect(ws.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
+        expect(rtc.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
     });
 });
 

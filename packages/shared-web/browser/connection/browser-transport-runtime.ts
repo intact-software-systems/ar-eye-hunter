@@ -1,9 +1,13 @@
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import {
     initialiseMiddleware,
+    type BrowserConnectOptions,
     type MiddlewareInitOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 
@@ -22,6 +26,7 @@ export interface BrowserTransportRuntimePort {
 export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     readonly deliverySettlements = new BrowserDeliverySettlements();
     private activeMiddleware: ApiMiddleware | undefined;
+    private activeDurableWork: BrowserALDurableWorkClaim | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
 
@@ -62,7 +67,12 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         }
 
         const epoch = this.deliverySettlements.open(options.deliverySettlements);
-        const pendingMiddleware = this.createMiddleware(session, { ...options, deliverySettlements: epoch.settlements })
+        const durableWork = this.claimDurableWork(session, options);
+        const pendingMiddleware = this.createMiddleware(session, {
+            ...options,
+            deliverySettlements: epoch.settlements,
+            durableWorkOwnership: durableWork
+        })
             .then((middleware) => {
                 const currentSession = readSession();
                 if (
@@ -75,10 +85,12 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                 }
 
                 this.activeMiddleware = middleware;
+                this.activeDurableWork = durableWork;
                 return middleware;
             })
             .catch((error) => {
                 epoch.close();
+                durableWork.release();
                 throw error;
             })
             .finally(() => {
@@ -96,16 +108,31 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         this.generation += 1;
         this.pendingMiddleware = undefined;
         const middleware = this.activeMiddleware;
+        const durableWork = this.activeDurableWork;
         this.activeMiddleware = undefined;
+        this.activeDurableWork = undefined;
 
         if (middleware) {
             this.shutdownMiddleware(middleware.middleware, reason);
         }
+        // Released after the runtimes stop, so the next owner's takeover never overlaps this connect's work.
+        durableWork?.release();
+    }
+
+    /** Requested once per connect, in the connect's scope; held until the connect ends. */
+    private claimDurableWork(session: AuthSession, options: MiddlewareInitOptions): BrowserALDurableWorkClaim {
+        const durableWork = new BrowserALDurableWorkClaim({
+            scope: options.scope ?? defaultStateScope(),
+            sessionId: session.sessionId,
+            locks: readALBrowserLocks()
+        });
+        durableWork.request();
+        return durableWork;
     }
 
     private async createMiddleware(
         session: AuthSession,
-        options: MiddlewareInitOptions
+        options: BrowserConnectOptions
     ): Promise<ApiMiddleware> {
         const authFetch: ApiMiddleware['authFetch'] = (input, init) => {
             const headers = new Headers(init?.headers);

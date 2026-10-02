@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
@@ -294,7 +295,8 @@ describe('Rallar facade default scope behavior', () => {
                 timeoutMs: 321,
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3
+                rttReportingDegreeLimit: 3,
+                durableWorkOwnership: expect.any(BrowserALDurableWorkClaim)
             }
         );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(

@@ -1,5 +1,7 @@
+import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
@@ -7,6 +9,7 @@ import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connect
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
+import { toALDurableOwnerLockName, type ALBrowserLockOptions } from '@shared/alm/storage/al-browser-locks.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -466,6 +469,87 @@ describe('the session volatile limits seam', () => {
             .toBe(readVolatileSessionLimits);
     });
 });
+
+describe('the session\'s durable work claim', () => {
+    it('requests the session\'s owner lock once per connect and releases it when the connect ends', async () => {
+        const browser = stubGrantedWebLocks();
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
+
+        await transportRuntime.init(toInitOptions());
+        const ownership = mocks.initialiseMiddleware.mock.calls.at(-1)?.[2].durableWorkOwnership;
+
+        await vi.waitFor(() => expect(ownership?.isOwned()).toBe(true));
+        expect(browser.names).toEqual([toALDurableOwnerLockName(defaultStateScope(), middleware.session.sessionId)]);
+        expect(browser.heldCount()).toBe(1);
+
+        transportRuntime.shutdown();
+
+        await vi.waitFor(() => expect(browser.heldCount()).toBe(0));
+    });
+
+    it('releases the claim of a connect whose transport failed', async () => {
+        const browser = stubGrantedWebLocks();
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockRejectedValue(new Error('network unavailable'));
+        const transportRuntime = new BrowserTransportRuntime();
+
+        await expect(transportRuntime.init(toInitOptions())).rejects.toThrow('network unavailable');
+
+        await vi.waitFor(() => expect(browser.heldCount()).toBe(0));
+        expect(browser.names).toHaveLength(1);
+    });
+
+    it('owns the session\'s durable work in every connect where the Locks API is missing', async () => {
+        vi.stubGlobal('navigator', {});
+        onTestFinished(() => {
+            vi.unstubAllGlobals();
+        });
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
+
+        await transportRuntime.init(toInitOptions());
+
+        expect(mocks.initialiseMiddleware.mock.calls.at(-1)?.[2].durableWorkOwnership.isOwned()).toBe(true);
+    });
+});
+
+/** A browser whose every lock request is granted at once and held until its callback settles. */
+function stubGrantedWebLocks(): { readonly names: readonly string[]; heldCount(): number; } {
+    const names: string[] = [];
+    let held = 0;
+    const request = async <T>(name: string, _options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T> => {
+        names.push(name);
+        held += 1;
+        try {
+            return await callback();
+        }
+        finally {
+            held -= 1;
+        }
+    };
+    vi.stubGlobal('navigator', { locks: { request } });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+    return { names, heldCount: () => held };
+}
+
+function toInitOptions(): MiddlewareInitOptions {
+    return {
+        qosProvider: undefined,
+        readVolatileSessionLimits: undefined,
+        deliverySettlements: { ws: () => {}, rtc: () => {} },
+        diagnosticsPorts: toRallarDiagnosticsPorts(undefined)
+    };
+}
 
 function toConnectionInput(session: AuthSession): RallarSessionConnectionInput {
     return {

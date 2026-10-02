@@ -5,10 +5,7 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
-import {
-    ALWAYS_OWNED_AL_DURABLE_WORK,
-    type ALDurableWorkOwnership
-} from '@shared/alm/work/al-durable-work-ownership.ts';
+import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -95,6 +92,11 @@ export interface MiddlewareInitOptions {
     readonly bootstrapDegree?: number;
     readonly scope?: StateScope;
     readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
+}
+
+/** One connect's options: the caller's, and the connect's claim on its session's durable work. */
+export interface BrowserConnectOptions extends MiddlewareInitOptions {
+    readonly durableWorkOwnership: ALDurableWorkOwnership;
 }
 
 export interface ToCreateWsUrlInput {
@@ -194,7 +196,7 @@ export interface InitialiseBrowserTransportInput {
     readonly volatileBound: BrowserSessionVolatileBound;
     /** The connect's claim on its session's durable work, handed to every carrier's durable lanes. */
     readonly durableWorkOwnership: ALDurableWorkOwnership;
-    readonly options: MiddlewareInitOptions;
+    readonly options: BrowserConnectOptions;
 }
 
 interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
@@ -211,7 +213,7 @@ interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTranspor
 export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
-    options: MiddlewareInitOptions
+    options: BrowserConnectOptions
 ): Promise<RallarBrowserMiddleware> {
     const storageAvailability = initialiseBrowserRuntimeStores(
         session.sessionId,
@@ -253,7 +255,7 @@ export async function initialiseMiddleware(
 
 export function createBrowserTransportInput(
     session: AuthSession,
-    options: MiddlewareInitOptions
+    options: BrowserConnectOptions
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -274,7 +276,7 @@ export function createBrowserTransportInput(
             volatileBound.budget
         ),
         volatileBound,
-        durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+        durableWorkOwnership: options.durableWorkOwnership,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
