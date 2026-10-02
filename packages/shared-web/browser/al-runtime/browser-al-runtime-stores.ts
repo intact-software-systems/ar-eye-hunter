@@ -1,11 +1,8 @@
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { CreateDefaultALRuntimeStoresInput } from '@shared/alm/al-runtime-stores.ts';
 import {
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
-    createDefaultInMemoryALInboundRuntimeStores,
-    createDefaultInMemoryALOutboundRuntimeStores,
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores,
     isIndexedDbALRuntimeStoreSupported
@@ -39,6 +36,11 @@ import {
     toBrowserSessionALInboundRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
+import {
+    BrowserALStorageAvailability,
+    toBrowserStoragePersistRequest,
+    toInitialALStorageAvailability
+} from './browser-al-storage-availability.ts';
 
 type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
@@ -115,29 +117,29 @@ function toBrowserStoreOptions(
     };
 }
 
+/** Always IndexedDB: without it the pair fails at open, and the connect's availability reads `missing`. */
 export function createBrowserALInboundRuntimeStores(
     name: string,
     options: BrowserALRuntimeOptions = {}
 ): ALInboundRuntimeStores {
-    const namespace = `browser:${name}`;
-    return isIndexedDbALRuntimeStoreSupported()
-        ? createDefaultIndexedDbALInboundRuntimeStores({
-            ...options,
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
-            namespace
-        })
-        : createDefaultInMemoryALInboundRuntimeStores({ ...options, namespace });
+    return createDefaultIndexedDbALInboundRuntimeStores({
+        ...options,
+        dbName: BROWSER_AL_RUNTIME_DB_NAME,
+        namespace: `browser:${name}`
+    });
 }
 
+/** Always IndexedDB: without it the pair fails at open, and the connect's availability reads `missing`. */
 export function createBrowserALOutboundRuntimeStores(
     name: string,
     options: BrowserALRuntimeOptions = {}
 ): ALOutboundRuntimeStores<ALOutboundTransportMessage> {
-    const namespace = `browser:${name}`;
-    const outbound = { ...options, namespace, decodePrepared: decodeALOutboundTransportMessage };
-    return isIndexedDbALRuntimeStoreSupported()
-        ? createDefaultIndexedDbALOutboundRuntimeStores({ ...outbound, dbName: BROWSER_AL_RUNTIME_DB_NAME })
-        : createDefaultInMemoryALOutboundRuntimeStores(outbound);
+    return createDefaultIndexedDbALOutboundRuntimeStores({
+        ...options,
+        namespace: `browser:${name}`,
+        decodePrepared: decodeALOutboundTransportMessage,
+        dbName: BROWSER_AL_RUNTIME_DB_NAME
+    });
 }
 
 /** Always memory, whatever the browser supports: the pair a carrier routes volatile admissions to. */
@@ -166,21 +168,19 @@ export function createBrowserALVolatileInboundRuntimeStores(
 export function configureBrowserALRuntimeStores(
     sessionId: string,
     input: ConfigureBrowserALRuntimeStoresInput
-): void {
+): BrowserALStorageAvailability {
     const { diagnosticsPorts, ...options } = input;
-    const inMemory = !isIndexedDbALRuntimeStoreSupported();
     const scoped: BrowserALRuntimeOptions = {
         ...options,
         observer: diagnosticsPorts.indexedDbOperationObserver,
-        canonicalScope: `browser-session:${sessionId}`,
-        inboundBackend: inMemory
-            ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-            : options.inboundBackend,
-        outboundBackend: inMemory
-            ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
-            : options.outboundBackend
+        canonicalScope: `browser-session:${sessionId}`
     };
     configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, diagnosticsPorts.storage));
+    return new BrowserALStorageAvailability({
+        initial: toInitialALStorageAvailability(isIndexedDbALRuntimeStoreSupported()),
+        requestPersist: toBrowserStoragePersistRequest(globalThis.navigator?.storage),
+        storage: diagnosticsPorts.storage
+    });
 }
 
 export function resolveBrowserSessionALInboundRuntimeStores(

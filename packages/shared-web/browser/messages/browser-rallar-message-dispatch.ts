@@ -1,3 +1,7 @@
+import {
+    computeALStorageAvailability,
+    type BrowserALStorageAvailability
+} from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -208,7 +212,7 @@ function toUnadmittedAdmission(message: ALMessage, verdict: ALDeliveryAdmissionV
 async function writeChannelAdmission(
     delivery: BrowserRallarMessageDispatch.Delivery
 ): Promise<CapturedMessageAdmission> {
-    const admitted = await writeCarrierOutboxAdmission(delivery.context, delivery, delivery.message);
+    const admitted = await writeStorageAdmission(delivery);
     if (admitted.verdict.kind !== 'storage-unavailable' || delivery.onStorageUnavailable === 'refuse') {
         return toCapturedAdmission(admitted, undefined);
     }
@@ -220,6 +224,36 @@ async function writeChannelAdmission(
         await writeCarrierOutboxAdmission(delivery.context, delivery, toVolatileALMessage(delivery.message)),
         downgrade
     );
+}
+
+/**
+ * A durable message skips the carrier while storage is missing for the document; any admission that
+ * reaches the carrier re-decides the connect's availability.
+ */
+async function writeStorageAdmission(
+    delivery: BrowserRallarMessageDispatch.Delivery
+): Promise<ALOutboundEnqueueResult> {
+    const storage = delivery.context.middleware.storageAvailability;
+    const skipped = toRequestedDurability(delivery.message) === 'volatile'
+        ? undefined
+        : storage.getDurableLaneSkip();
+    if (skipped !== undefined) {
+        const verdict: ALDeliveryAdmissionVerdict = { kind: 'storage-unavailable', ...skipped };
+        return { verdict, message: delivery.message, entries: [], trackedReceiptAlgo: 'none' };
+    }
+    const admitted = await writeCarrierOutboxAdmission(delivery.context, delivery, delivery.message);
+    recordStorageVerdict(storage, admitted.verdict);
+    return admitted;
+}
+
+function recordStorageVerdict(
+    storage: BrowserALStorageAvailability,
+    verdict: ALDeliveryAdmissionVerdict
+): void {
+    storage.availability.accept(computeALStorageAvailability(storage.availability.get(), verdict));
+    if (verdict.kind === 'admitted' && verdict.durable) {
+        storage.requestPersistentStorage();
+    }
 }
 
 function toCapturedAdmission(

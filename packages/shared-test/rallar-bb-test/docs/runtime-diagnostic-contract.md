@@ -483,6 +483,12 @@ event's `data` is the event itself, with `kind` and, except for `persist`, the
   A send whose channel chose `onStorageUnavailable: 'volatile'` and that its
   carrier then admits without storage is no recovery point.
 
+- `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
+  after its first durable admission: `granted` when the origin already
+  persisted or the browser granted the request, `denied` when it refused or the
+  request failed, `unsupported` without `navigator.storage.persist`. It has no
+  `storeId`.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

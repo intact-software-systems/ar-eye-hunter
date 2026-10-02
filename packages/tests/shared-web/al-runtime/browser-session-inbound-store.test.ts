@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import '../../setup-browser-indexeddb.ts';
+import { describe, expect, it } from 'vitest';
 
 import {
     configureBrowserALRuntimeStores,
@@ -12,12 +13,7 @@ import {
 } from '../../shared/alm/inbound-runtime-test-fixture.ts';
 
 describe('browser session inbound admission store', () => {
-    afterEach(() => {
-        vi.unstubAllGlobals();
-    });
-
-    it('shares one in-memory admission state across every resolve of one session', async () => {
-        vi.stubGlobal('indexedDB', undefined);
+    it('shares one admission state across every resolve of one session', async () => {
         const sessionId = `session-inbound-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
         const first = resolveBrowserSessionALInboundRuntimeStores(sessionId);

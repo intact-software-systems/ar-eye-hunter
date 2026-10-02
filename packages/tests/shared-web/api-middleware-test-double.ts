@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -51,7 +52,8 @@ export function createDefaultApiMiddlewareTestDouble(
             heartbeat: createHeartbeatDouble(
                 session.sessionId,
                 middlewareOverrides.heartbeat
-            )
+            ),
+            storageAvailability: createStorageAvailabilityDouble(middlewareOverrides.storageAvailability)
         }
     };
 }
@@ -72,6 +74,21 @@ export function createDefaultTestSession(): AuthSession {
 // override remains checked against the production signature, while heartbeat is complete below.
 function toServiceTestDouble<TService>(members: Partial<TService>): TService {
     return members as TService;
+}
+
+// The override spread used for the other members would strip a class instance's methods, so a
+// storage availability the test built passes through as it is; otherwise storage is available and
+// never asks to persist.
+function createStorageAvailabilityDouble(
+    override: Partial<RallarBrowserMiddleware['storageAvailability']> | undefined
+): RallarBrowserMiddleware['storageAvailability'] {
+    return override instanceof BrowserALStorageAvailability
+        ? override
+        : new BrowserALStorageAvailability({
+            initial: { kind: 'available' },
+            requestPersist: undefined,
+            storage: () => {}
+        });
 }
 
 function createQboxEngineDouble(

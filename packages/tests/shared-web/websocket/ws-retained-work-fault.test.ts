@@ -27,6 +27,7 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import '../../setup-browser-indexeddb.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -34,7 +35,10 @@ import { createDefaultVolatileSessionBudget } from '../default-volatile-session-
 
 describe('WS retained-work faults', () => {
     beforeEach(() => {
-        vi.useFakeTimers();
+        // fake-indexeddb completes on `setImmediate`, so it stays real, as in `ws-durable-owner-recovery.test.ts`.
+        vi.useFakeTimers({
+            toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval']
+        });
         vi.stubGlobal('WebSocket', TestWebSocket);
     });
     afterEach(() => {

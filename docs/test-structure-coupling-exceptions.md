@@ -3478,6 +3478,111 @@ moved or changed test.
         "requiredConstraint": "The downgrade happens once per send, whichever carrier ends up holding it.",
         "failureRationale": "Asking storage again on the fallback leg would repeat the durable failure and could downgrade twice."
       }
+    },
+    {
+      "id": "browser-storage-missing-skips-carrier",
+      "domain": "Browser storage availability per connect",
+      "owner": "Rallar browser maintainers",
+      "summary": "While storage is missing a durable send on a refusing channel fails without a carrier admission. Executable assertion: “skips the durable lane while storage is missing, so a refusing channel fails without reaching the carrier”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#skips the durable lane while storage is missing, so a refusing channel fails without reaching the carrier",
+      "coverageRelation": "The test gives the middleware a storage availability, sends through the real sender and dispatch, and reads the handle, the availability and the carrier admission port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "No admission reaches the carrier.",
+        "requiredConstraint": "Missing storage holds for the document without a carrier round trip.",
+        "failureRationale": "Reaching a carrier whose durable lane cannot open spends a failing admission on every send."
+      }
+    },
+    {
+      "id": "browser-storage-missing-volatile-admits-once",
+      "domain": "Browser storage availability per connect",
+      "owner": "Rallar browser maintainers",
+      "summary": "While storage is missing a volatile channel reaches the carrier once, with the volatile envelope only. Executable assertion: “sends a missing-storage message on a volatile channel with one carrier admission, without storage”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#sends a missing-storage message on a volatile channel with one carrier admission, without storage",
+      "coverageRelation": "The test gives the middleware a storage availability, sends through the real sender and dispatch, and reads the handle, the availability and the carrier admission port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "One admission, of the volatile envelope.",
+        "requiredConstraint": "The skipped durable attempt never reaches the carrier.",
+        "failureRationale": "A durable attempt first would fail at the lane and cost an admission per send."
+      }
+    },
+    {
+      "id": "browser-storage-missing-never-skips-volatile",
+      "domain": "Browser storage availability per connect",
+      "owner": "Rallar browser maintainers",
+      "summary": "A volatile send reaches the carrier while storage is missing. Executable assertion: “never skips a volatile send”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#never skips a volatile send",
+      "coverageRelation": "The test gives the middleware a storage availability, sends through the real sender and dispatch, and reads the handle, the availability and the carrier admission port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "One admission for a volatile send.",
+        "requiredConstraint": "The skip applies to durable sends only.",
+        "failureRationale": "Skipping a volatile send would refuse a message that needs no storage."
+      }
+    },
+    {
+      "id": "browser-storage-quota-retried-next-send",
+      "domain": "Browser storage availability per connect",
+      "owner": "Rallar browser maintainers",
+      "summary": "A storage failure other than missing is tried again by the next durable send, which re-decides availability. Executable assertion: “tries the durable lane again after a quota failure and reads available once storage holds a send”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#tries the durable lane again after a quota failure and reads available once storage holds a send",
+      "coverageRelation": "The test gives the middleware a storage availability, sends through the real sender and dispatch, and reads the handle, the availability and the carrier admission port.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Carrier outbound admission port (enqueueOutboxIfAbsent)",
+        "observableEffect": "Two admissions: the failed one and the retried one.",
+        "requiredConstraint": "Only missing storage is skipped; quota, closed and the rest are retried.",
+        "failureRationale": "Skipping after a quota failure would refuse every later send even after space frees."
+      }
+    },
+    {
+      "id": "browser-storage-persist-first-durable-admission",
+      "domain": "Browser persistent storage request",
+      "owner": "Rallar browser maintainers",
+      "summary": "A connect asks navigator.storage.persist() once, on its first durable admission and never for a volatile one. Executable assertion: “asks for persistent storage on the first durable admission only”.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#asks for persistent storage on the first durable admission only",
+      "coverageRelation": "The test injects the persist request port, sends a volatile then two durable messages through the real dispatch, and reads the port and the storage events.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser storage persist request port (navigator.storage.persist)",
+        "observableEffect": "Exactly one persist request per connect, raised by the first durable admission.",
+        "requiredConstraint": "Apps that never send durably never ask, and a connect asks at most once.",
+        "failureRationale": "Firefox asks the user on persist(); asking per send or for apps that store nothing prompts users needlessly."
+      }
+    },
+    {
+      "id": "browser-storage-persist-requested-once",
+      "domain": "Browser persistent storage request",
+      "owner": "Rallar browser maintainers",
+      "summary": "The availability asks the browser once however often it is told to, and reports the outcome later. Executable assertion: “asks once and reports the outcome as a persist event after the call returns”.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks once and reports the outcome as a persist event after the call returns",
+      "coverageRelation": "The test calls the request twice with an injected persist port and reads the port and the events.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser storage persist request port (navigator.storage.persist)",
+        "observableEffect": "One persist request for two calls.",
+        "requiredConstraint": "The request is made once per connect and never awaited by its caller.",
+        "failureRationale": "Repeated requests can prompt the user repeatedly."
+      }
+    },
+    {
+      "id": "browser-storage-persist-through-storage-manager",
+      "domain": "Browser persistent storage request",
+      "owner": "Rallar browser maintainers",
+      "summary": "The persist request built from the browser storage manager calls its persist once per request. Executable assertion: “asks through the browser storage manager where it has persist”.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks through the browser storage manager where it has persist",
+      "coverageRelation": "The test builds the request from a storage manager double and calls it once.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser storage persist request port (navigator.storage.persist)",
+        "observableEffect": "One persist call per request.",
+        "requiredConstraint": "The request forwards to the browser once, bound to its storage manager.",
+        "failureRationale": "A request that called persist more than once would prompt the user more than once."
+      }
     }
   ],
   "entries": [
@@ -8001,6 +8106,105 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "The envelope the fallback carrier receives is already volatile.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#hands the downgraded message to the fallback carrier without asking storage again"
+    },
+    {
+      "id": "test-structure-coupling-8c505289aafb62eb",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-missing-skips-carrier",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "No carrier admission while storage is missing.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#skips the durable lane while storage is missing, so a refusing channel fails without reaching the carrier"
+    },
+    {
+      "id": "test-structure-coupling-5bda6f9678cade56",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-missing-volatile-admits-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "One carrier admission, without the skipped durable attempt.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#sends a missing-storage message on a volatile channel with one carrier admission, without storage"
+    },
+    {
+      "id": "test-structure-coupling-5cfc88ff29db5327",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-missing-volatile-admits-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The one admission is the volatile envelope.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#sends a missing-storage message on a volatile channel with one carrier admission, without storage"
+    },
+    {
+      "id": "test-structure-coupling-32072a4545dad5be",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-missing-never-skips-volatile",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A volatile send reaches the carrier.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#never skips a volatile send"
+    },
+    {
+      "id": "test-structure-coupling-722c81978c153256",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-quota-retried-next-send",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The next durable send reaches the carrier again.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#tries the durable lane again after a quota failure and reads available once storage holds a send"
+    },
+    {
+      "id": "test-structure-coupling-c0bae618e1fb4c74",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-persist-first-durable-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "A volatile admission does not ask.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#asks for persistent storage on the first durable admission only"
+    },
+    {
+      "id": "test-structure-coupling-64b9e7b82ad05884",
+      "path": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-persist-first-durable-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Two durable admissions ask once.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-message-storage-unavailable.test.ts#asks for persistent storage on the first durable admission only"
+    },
+    {
+      "id": "test-structure-coupling-0e36d98d5c4b3055",
+      "path": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-persist-requested-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Two calls reach the browser once.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks once and reports the outcome as a persist event after the call returns"
+    },
+    {
+      "id": "test-structure-coupling-e68c595e34c57225",
+      "path": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-storage-persist-through-storage-manager",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "One request calls persist once.",
+      "semanticCoverage": "packages/tests/shared-web/al-runtime/browser-al-storage-availability.test.ts#asks through the browser storage manager where it has persist"
     }
   ]
 }

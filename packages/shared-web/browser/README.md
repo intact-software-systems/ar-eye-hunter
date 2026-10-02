@@ -175,7 +175,12 @@ The browser transport storage and WebSocket owners are feature-colocated:
 - [browser-al-runtime-identity.ts](./al-runtime/browser-al-runtime-identity.ts)
   owns the persisted database, store, and session-key names;
   [browser-al-runtime-stores.ts](./al-runtime/browser-al-runtime-stores.ts)
-  owns session-scoped AL runtime store factories;
+  owns session-scoped AL runtime store factories, whose durable pairs are
+  always IndexedDB;
+  [browser-al-storage-availability.ts](./al-runtime/browser-al-storage-availability.ts)
+  owns the connect's storage availability (`missing` without IndexedDB, any
+  other cause re-decided by the next durable admission) and its one request
+  for persistent storage;
   [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
   owns IndexedDB scanning, expiry scheduling, and session cleanup.
 - [browser-al-work-cleanup.ts](./al-runtime/browser-al-work-cleanup.ts)

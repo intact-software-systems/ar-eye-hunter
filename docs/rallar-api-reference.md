@@ -674,6 +674,15 @@ message. A lane send names no channel, so it always refuses. A WS send with
 scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
 the send states `ack`.
 
+A browser without IndexedDB has no durable storage and no memory stand-in:
+each connect decides that once, and its durable sends follow the same rule
+without reaching the carrier. Any other storage failure is tried again by the
+next durable send. The first durable admission of a connect asks for
+persistent storage: it reads `navigator.storage.persisted()` and, unless the
+origin already persists, calls `navigator.storage.persist()`; the send awaits
+neither, and the outcome arrives as a `persist` event on the storage
+diagnostics port. A denial is asked again by the next connect.
+
 Room channels add room defaults and default `send(...)` to the existing
 `rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
 `onRtc(...)` still subscribe by topic/type. Their callbacks receive the full
