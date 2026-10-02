@@ -46,7 +46,13 @@ normalize `adminPlayerId` when applying commands.
 The browser sends gameplay commands to the server itself on the Rallar WS `command` channel (`room.relic.command`, a
 unicast to the WS server's peer id from `/api/config`, D57 as applied). The server's own ACK is the command's receipt:
 the server admitted it. The server applies it under the sender's session username and publishes the new snapshot
-through the outbox with receipts:
+through the outbox with receipts.
+
+The command channel is `local-outbox` with `onStorageUnavailable: 'refuse'`: the command is stored before it leaves, so
+a reload resumes it under the same message id and deadline (30 s), and a browser whose storage is unavailable reports
+the command failed instead of sending it unstored. There is no command id in the model, so only the ALM message-id dedup
+within the deadline plus grace stops a repeat: the server re-acknowledges a resumed command it already admitted without
+applying it again, and drops one past its deadline as expired.
 
 ```text
 command -> WS unicast to the server -> server ACK (receipt) -> applyCommand -> persisted state -> outbox snapshot (receiver) -> WS snapshot subscription

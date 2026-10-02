@@ -51,7 +51,9 @@ describe('a Relic command to the server (D57 as applied, D72)', () => {
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,
             purpose: 'command',
-            roomId: 'room-42'
+            roomId: 'room-42',
+            durability: 'local-outbox',
+            onStorageUnavailable: 'refuse'
         }]);
         expect(sendWs).toHaveBeenCalledWith(COMMAND, { peerId: 'default-qbox-server' });
         expect(wait).toHaveBeenCalledWith({ timeoutMs: RELIC_COMMAND_RECEIPT_WAIT_MS });

@@ -29,7 +29,9 @@ export async function sendRelicWsCommand(
             topicId: RELIC_TOPICS.command,
             typeId: RELIC_TYPES.command,
             purpose: 'command',
-            roomId
+            roomId,
+            durability: 'local-outbox',
+            onStorageUnavailable: 'refuse'
         })
         .sendWs(command, { peerId: serverPeerId });
     const outcome = await handle.wait({ timeoutMs: RELIC_COMMAND_RECEIPT_WAIT_MS });
