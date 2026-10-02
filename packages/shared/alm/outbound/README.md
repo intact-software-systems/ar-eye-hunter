@@ -30,7 +30,10 @@ constructor builds its `ALWorkQueuePort`, asks the admission store for the scope
 [`ALOutboundControlAdmission`](./control/al-outbound-control-admission.ts), then
 constructs dispatch admission, repair admission, repair retransmission, the
 `ALWorkHandler`, and finally the message-effect owner. Registration does not invoke
-any of them. `ready()` awaits storage readiness before the first claim. Disposing the
+any of them. `ready()` answers the durable lane's storage as a value before the first claim:
+`ALStorageUnavailable` when its pair cannot open, recorded on the pair's health, and the next call
+opens again; any other open failure throws. While its last open failed the lane starts no work
+and its idle readiness probe answers no work without touching storage. Disposing the
 runtime closes dispatch admission, removes its engine task, and aborts owned RTC queue
 items; the same abort signal is what the effect owner reads as "disposed". A supplied
 engine remains available to its other tasks; a runtime-owned engine stops. An
@@ -632,6 +635,16 @@ reservation inside that batch drops the affected entry and retries the rest as o
 queue write conflict degrades the batch once to releasing each entry serially. A retained claim
 is different: it releases on its own settlement, independently of any batch, one claim at a
 time, with no coalescing window or timer.
+
+A storage failure is a value at the lane, never a raw throw out of it
+([`toALStorageUnavailable`](../storage/al-storage-unavailable.ts) names its cause). A send whose
+commit fails for its storage settles `storage-unavailable` with that cause, where a
+`NonRetryableException` settles `failed`; it wrote nothing. A control or a receipt its store cannot
+persist is `not-handled`, and a hand-over whose receipt row cannot end leaves the row to expire. A
+commit inside a work claim (a dequeued row, a repair) still throws into its claim, which retries, and
+a batch that fails for its storage records the failure on the pair's health instead of logging it.
+Every durable commit and every flushed batch is a recovery point, which ends a `failing` health. A
+write deadline, a corrupt row, a conflict and a code defect keep their own meanings.
 
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before

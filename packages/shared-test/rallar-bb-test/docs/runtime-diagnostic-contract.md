@@ -475,6 +475,10 @@ event's `data` is the event itself, with `kind` and, except for `persist`, the
   states only a change of status, never one event per send: `failing` at its
   first storage failure, `healthy` at the first recovery point after it.
 
+  A durable lane records a storage failure of its open, of a send's commit, of a
+  control, receipt or inbound admission, and of a work batch; every durable
+  commit and every flushed batch is a recovery point.
+
 ## Compatibility
 
 Adding optional fields to diagnostic payloads is compatible.

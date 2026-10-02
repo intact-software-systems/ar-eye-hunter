@@ -32,6 +32,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
                 rejection: { relay: 'peer', peerId: 'relay-session', reason: 'resync-required' }
             },
             { kind: 'admission-failed' },
+            { kind: 'storage-unavailable', cause: 'quota' },
             { kind: 'skipped', reason: 'planner-drop' },
             { kind: 'unroutable', reason: 'no-route' },
             { kind: 'attempt-failed', outcome: 'no-targets' },
@@ -63,6 +64,7 @@ describe('the typed failure a delivery observation carries (D75, C2)', () => {
             },
             field: 'failure.rejection'
         },
+        { failure: { kind: 'storage-unavailable', cause: 'full' }, field: 'failure.cause' },
         { failure: { kind: 'skipped', reason: 'no-route' }, field: 'failure.reason' },
         { failure: { kind: 'unroutable', reason: 'planner-drop' }, field: 'failure.reason' },
         { failure: { kind: 'attempt-failed', outcome: 'sent' }, field: 'failure.outcome' },

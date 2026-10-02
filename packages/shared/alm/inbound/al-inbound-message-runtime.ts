@@ -10,6 +10,7 @@ import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
+import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import {
@@ -78,6 +79,8 @@ export namespace ALInboundMessageRuntime {
         /** The durable pair, and the only one of a runtime without `volatileStores`. */
         readonly admissionStore: ALInboundAdmissionStore;
         readonly workQueue: QueueBoxResourceEntryRepository;
+        /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
+        readonly storageHealth: ALStorageHealth | undefined;
         /** The memory pair a volatile message goes to; `undefined` keeps one backend for every message. */
         readonly volatileStores: ALVolatileInboundRuntimeStores | undefined;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
@@ -181,8 +184,10 @@ export class ALInboundMessageRuntime {
         }
     }
 
-    async ready(): Promise<void> {
-        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        return durable;
     }
 
     dispose(): void {

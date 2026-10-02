@@ -20,6 +20,7 @@ import type {
 } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALStorageResetListeners } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageHealth } from '../storage/al-storage-health.ts';
+import type { ALStorageReadiness } from '../storage/al-storage-readiness.ts';
 import type { ALVolatileSessionBudget } from '../volatile-budget/al-volatile-session-budget.ts';
 import type { ALWorkReadinessProbeCause } from '../work/al-work-readiness-memory.ts';
 import type {
@@ -337,6 +338,8 @@ export namespace ALOutboundMessageRuntime {
         readonly workQueue: QueueBoxResourceEntryRepository;
         /** The durable pair's resets; `undefined` for a pair no reset reaches (memory, PostgreSQL). */
         readonly storageResets: ALStorageResetListeners | undefined;
+        /** The health of the durable pair; `undefined` for a pair no storage failure reaches (memory, PostgreSQL). */
+        readonly storageHealth: ALStorageHealth | undefined;
         /** The memory pair a volatile admission goes to; `undefined` keeps one backend for every admission. */
         readonly volatileStores: ALVolatileOutboundRuntimeStores<TPrepared> | undefined;
         readonly effectWorkerId: string;
@@ -451,8 +454,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         });
     }
 
-    async ready(): Promise<void> {
-        await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+    /** What the storage of the durable lane answered; the memory pair of the volatile lane is always ready. */
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        const [durable] = await Promise.all([this.durable.ready(), this.volatile?.ready()]);
+        return durable;
     }
 
     dispose(): void {

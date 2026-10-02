@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type {
     ALWorkAttemptResult,
     ALWorkBatchDiagnostics,
@@ -1150,6 +1152,76 @@ describe('ALWorkHandler', () => {
             consoleErrorSpy.mockRestore();
             handler.dispose();
         }
+    });
+
+    // A failed batch wrote nothing, so its rows wait for the next batch; the store's health says why.
+    it('states a storage failure of a batch as failing health instead of logging it', async () => {
+        const logged: unknown[][] = [];
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+            logged.push(args);
+        });
+        const events: ALStorageEvent[] = [];
+        const handler = new ALWorkHandler({
+            workerId: 'storage-worker',
+            port: recordingPort([], []),
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async () => {
+                throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            },
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined,
+            storageHealth: new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) })
+        });
+
+        await handler.ready();
+
+        await vi.waitFor(() =>
+            expect(events).toEqual([{
+                kind: 'health',
+                storeId: 'store-1',
+                status: 'failing',
+                lastFailure: { cause: 'quota', detail: 'QuotaExceededError: The quota has been exceeded.' },
+                lastRecoveryPointAtMs: undefined
+            }])
+        );
+        expect(logged).toEqual([]);
+        consoleErrorSpy.mockRestore();
+        handler.dispose();
+    });
+
+    // A batch that released claims committed them: a recovery point that ends a failure.
+    it('records a recovery point when a batch flushes its releases', async () => {
+        const events: ALStorageEvent[] = [];
+        const storageHealth = new ALStorageHealth({ storeId: 'store-1', storage: (event) => events.push(event) });
+        storageHealth.recordFailure({ cause: 'quota', detail: 'QuotaExceededError: full' });
+        const handler = new ALWorkHandler({
+            workerId: 'storage-worker',
+            port: recordingPort(['w-1'], []),
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 2_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (port, size) => toTestALWorkReadySelection(await port.claim({ maxCount: size, observedEntries: undefined })),
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined,
+            storageHealth
+        });
+
+        await handler.ready();
+
+        await vi.waitFor(() =>
+            expect(events.map((event) => event.kind === 'health' ? event.status : event.kind))
+                .toEqual(['failing', 'healthy'])
+        );
+        expect(events[1]).toMatchObject({ lastRecoveryPointAtMs: 2_000 });
+        handler.dispose();
     });
 });
 

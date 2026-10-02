@@ -5,6 +5,7 @@ import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEnt
 import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { AL_VOLATILE_STORE_EVICTION_INTERVAL_MS } from '../../ALStoreRetention.ts';
 import type { ALDeliveryAdmissionVerdict } from '../../delivery/al-delivery-lifecycle.ts';
+import { ALStorageReadiness } from '../../storage/al-storage-readiness.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -76,7 +77,7 @@ export namespace ALOutboundStoreLane {
  */
 export class ALOutboundStoreLane<TPrepared> {
     private readonly input: ALOutboundStoreLane.Input<TPrepared>;
-    private readonly readyPromise: Promise<void>;
+    private readonly readiness: ALStorageReadiness;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
@@ -92,7 +93,6 @@ export class ALOutboundStoreLane<TPrepared> {
     constructor(input: ALOutboundStoreLane.Input<TPrepared>) {
         this.input = input;
         const { stores, runtime } = input;
-        this.readyPromise = stores.admissionStore.ready();
         this.leaseRecovery = createLimitedALWorkLeaseRecovery(AL_OUTBOUND_WORK_LEASE_MS, runtime.clock.nowMs());
         const workPort = createALOutboundLaneWorkPort(input, this.leaseRecovery);
         const settlements: ALOutboundSettlementEmitter = (fact) => input.settlements(this.toStoreFact(fact));
@@ -108,11 +108,17 @@ export class ALOutboundStoreLane<TPrepared> {
             ownsQueueEngine: runtime.ownsQueueEngine,
             clock: runtime.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => this.readNextReadyAtMs(port),
+            readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize) => this.selectOutboundWork(port, pageSize),
             runClaim: (claim) => this.runOutboundClaim(claim),
-            diagnostics: (event) => this.recordWorkDiagnostics(event)
+            diagnostics: (event) => this.recordWorkDiagnostics(event),
+            storageHealth: stores.storageHealth
+        });
+        this.readiness = new ALStorageReadiness({
+            openStores: () => stores.admissionStore.ready(),
+            startWork: () => this.work.ready(),
+            storageHealth: stores.storageHealth
         });
         this.effects = new ALOutboundMessageEffects({
             runtime,
@@ -128,9 +134,8 @@ export class ALOutboundStoreLane<TPrepared> {
             : stores.storageResets?.add(() => canonicalHandoff.clear());
     }
 
-    async ready(): Promise<void> {
-        await this.readyPromise;
-        await this.work.ready();
+    async ready(): Promise<ALStorageReadiness.Outcome> {
+        return await this.readiness.ready();
     }
 
     dispose(): void {
@@ -151,6 +156,7 @@ export class ALOutboundStoreLane<TPrepared> {
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
         this.setCanonicalHandoff(result);
+        this.recordStorageHealth(result);
 
         if (hasWrittenWork(result)) {
             this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, [result]));
@@ -168,7 +174,10 @@ export class ALOutboundStoreLane<TPrepared> {
             this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
             throw error;
         });
-        results.forEach((result) => this.setCanonicalHandoff(result));
+        results.forEach((result) => {
+            this.setCanonicalHandoff(result);
+            this.recordStorageHealth(result);
+        });
         if (results.some(hasWrittenWork)) {
             this.work.committed(computeALOutboundCommittedRows(this.input.stores.admissionStore.namespace, results));
         }
@@ -183,11 +192,27 @@ export class ALOutboundStoreLane<TPrepared> {
         }
     }
 
+    /** Every commit of the durable pair is a recovery point; a send its store refused is its failure. */
+    private recordStorageHealth(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
+        const { storageHealth } = this.input.stores;
+        const { verdict } = result.computed;
+        if (verdict.kind === 'storage-unavailable') {
+            storageHealth?.recordFailure({ cause: verdict.cause, detail: verdict.detail });
+        }
+        else if (result.committed) {
+            storageHealth?.recordRecoveryPoint(this.readNowMs());
+        }
+    }
+
+    /** A control its store cannot persist is not handled: it wrote nothing, and its sender sends it again. */
     async acceptControlMessage(
         msg: ALMessage,
         source: ALOutboundControlSource
     ): Promise<ALOutboundControlAdmissionResult> {
-        const admitted = await this.repairAdmission.acceptControlMessage(msg, source);
+        const admitted = await this.readiness.runStoreOperation(
+            () => this.repairAdmission.acceptControlMessage(msg, source),
+            (): ALOutboundControlAdmissionResult => ({ kind: 'not-handled' })
+        );
         // A foreign control and a rejected one write nothing, so they owe no batch.
         if (admitted.kind === 'committed' || admitted.kind === 'pending-control') {
             this.work.committed(AL_WORK_UNDESCRIBED_COMMIT);
@@ -196,12 +221,18 @@ export class ALOutboundStoreLane<TPrepared> {
     }
 
     async acceptReceipt(control: ALMessage): Promise<ALOutboundControlAdmissionResult> {
-        return await this.receiptAdmission.admit(control);
+        return await this.readiness.runStoreOperation(
+            () => this.receiptAdmission.admit(control),
+            (): ALOutboundControlAdmissionResult => ({ kind: 'not-handled' })
+        );
     }
 
-    /** A hand-over ends this lane's receipt of the message and states nothing (D56). */
+    /**
+     * A hand-over ends this lane's receipt of the message and states nothing. A receipt its store
+     * cannot end stays until it expires.
+     */
     async endReceipt(msgId: string): Promise<void> {
-        await this.repairAdmission.endReceipt(msgId);
+        await this.readiness.runStoreOperation(() => this.repairAdmission.endReceipt(msgId), () => undefined);
     }
 
     /** What the admission states, as this lane's store holds it: nothing on the memory pair survives the document. */

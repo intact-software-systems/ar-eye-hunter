@@ -55,6 +55,7 @@ const ALM_ADMISSION_VERDICT_KINDS: Readonly<Record<ALDeliveryAdmissionVerdict['k
     superseded: true,
     expired: true,
     skipped: true,
+    'storage-unavailable': true,
     failed: true
 };
 

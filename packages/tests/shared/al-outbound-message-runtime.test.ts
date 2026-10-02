@@ -59,6 +59,7 @@ describe('ALOutboundMessageRuntime', () => {
             admissionStore,
             workQueue: stores.workQueue,
             storageResets: undefined,
+            storageHealth: undefined,
             volatileStores: undefined,
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',

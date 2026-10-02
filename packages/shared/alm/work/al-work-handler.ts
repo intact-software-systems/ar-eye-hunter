@@ -3,6 +3,8 @@ import { toKeyAsString } from '../../queuebox/ResourceEntry.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import type { ALStorageHealth } from '../storage/al-storage-health.ts';
+import { toALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
 import {
     ALWorkReadinessMemory,
@@ -66,6 +68,11 @@ export interface ALWorkHandlerDependencies {
      */
     readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
+    /**
+     * Absent on the server lane, which has no storage health reporter, so its batch failures are
+     * logged; the browser composition always passes it.
+     */
+    readonly storageHealth?: ALStorageHealth;
 }
 
 export type ALWorkDiagnostics = ALWorkBatchDiagnostics | ALWorkReadinessProbeDiagnostics;
@@ -466,10 +473,14 @@ export class ALWorkHandler {
         releases: readonly ALWorkRelease[],
         progress: ALWorkBatchProgress
     ): Promise<void> {
-        const { clock, port } = this.dependencies;
+        const { clock, port, storageHealth } = this.dependencies;
         const startedAtMs = clock.nowMs();
         await port.releaseAll(releases);
-        progress.releaseDurationMs = computeElapsedMs(startedAtMs, clock.nowMs());
+        const endedAtMs = clock.nowMs();
+        progress.releaseDurationMs = computeElapsedMs(startedAtMs, endedAtMs);
+        if (releases.length > 0) {
+            storageHealth?.recordRecoveryPoint(endedAtMs);
+        }
     }
 
     /**
@@ -489,8 +500,15 @@ export class ALWorkHandler {
             });
     }
 
+    /** A storage failure wrote nothing, so its rows wait for the next batch; the store's health states it. */
     private reportBatchFailure(error: Error): void {
-        console.error('ALM work batch failed', error);
+        const unavailable = toALStorageUnavailable(error);
+        const { storageHealth } = this.dependencies;
+        if (unavailable === undefined || storageHealth === undefined) {
+            console.error('ALM work batch failed', error);
+            return;
+        }
+        storageHealth.recordFailure(unavailable);
     }
 }
 

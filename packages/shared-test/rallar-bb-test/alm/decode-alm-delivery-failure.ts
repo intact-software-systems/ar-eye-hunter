@@ -6,6 +6,7 @@ import type {
     ALDeliverySkippedReason,
     ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
@@ -42,6 +43,16 @@ const ALM_FAILED_ATTEMPT_OUTCOMES: Readonly<Record<AlmFailedAttemptOutcome, true
     'no-targets': true
 };
 
+const ALM_STORAGE_UNAVAILABLE_CAUSES: Readonly<Record<ALStorageUnavailableCause, true>> = {
+    missing: true,
+    'open-failed': true,
+    'reset-blocked': true,
+    quota: true,
+    closed: true,
+    evicted: true,
+    'transaction-failed': true
+};
+
 const ALM_NACK_REASONS: Readonly<Record<ALNackReason, true>> = {
     duplicate: true,
     gap: true,
@@ -63,6 +74,9 @@ const ALM_FAILURE_DECODERS: Readonly<Record<ALDeliveryFailure['kind'], AlmFailur
         decodeAlmRelayRejection(failure.rejection, 'failure.rejection')
             .mapRight((rejection): ALDeliveryFailure => ({ kind: 'relay-rejected', rejection })),
     'admission-failed': () => Either.ofRight<string, ALDeliveryFailure>({ kind: 'admission-failed' }),
+    'storage-unavailable': (failure) =>
+        decodeAlmFailureKey(ALM_STORAGE_UNAVAILABLE_CAUSES, failure.cause, 'cause')
+            .mapRight((cause): ALDeliveryFailure => ({ kind: 'storage-unavailable', cause })),
     skipped: (failure) =>
         decodeAlmFailureKey(ALM_SKIPPED_REASONS, failure.reason, 'reason')
             .mapRight((reason): ALDeliveryFailure => ({ kind: 'skipped', reason })),

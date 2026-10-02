@@ -1,5 +1,6 @@
 import type { ALAckMode } from '../../al-contracts/al-contract.ts';
 import type { ALAckAlgo, ALReceiptMode } from '../../al-contracts/al-policy.ts';
+import type { ALStorageUnavailable } from '../storage/al-storage-unavailable.ts';
 import type { ALDeliveryFailure, ALDeliveryReceiptExhaustion } from './al-delivery-failure.ts';
 
 export type ALDeliveryState =
@@ -88,6 +89,8 @@ export type ALDeliveryAdmissionVerdict =
     | Readonly<{ kind: 'superseded'; detail: string; }>
     | Readonly<{ kind: 'expired'; detail: string; }>
     | Readonly<{ kind: 'skipped'; reason: ALDeliverySkippedReason; detail: string; }>
+    /** The durable store could not persist the admission, so it wrote nothing. */
+    | (Readonly<{ kind: 'storage-unavailable'; }> & ALStorageUnavailable)
     | Readonly<{ kind: 'failed'; detail: string; }>;
 
 export type ALDeliverySettlement =

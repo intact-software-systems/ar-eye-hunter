@@ -174,6 +174,8 @@ function toAdmissionLifecycle(
             return toFailureLifecycle(previous, { kind: 'expired' }, verdict.detail);
         case 'failed':
             return toFailureLifecycle(previous, { kind: 'admission-failed' }, verdict.detail);
+        case 'storage-unavailable':
+            return toFailureLifecycle(previous, { kind: 'storage-unavailable', cause: verdict.cause }, verdict.detail);
         case 'skipped':
             return toFailureLifecycle(previous, { kind: 'skipped', reason: verdict.reason }, verdict.detail);
     }
@@ -269,6 +271,7 @@ const AL_DELIVERY_FAILURE_STATES: Readonly<Record<ALDeliveryFailure['kind'], ALD
     refused: 'rejected',
     'relay-rejected': 'rejected',
     'admission-failed': 'failed',
+    'storage-unavailable': 'failed',
     skipped: 'failed',
     unroutable: 'failed',
     'attempt-failed': 'failed',
