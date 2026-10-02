@@ -697,8 +697,8 @@ every `ALStorageEvent`:
   and connect (`ALStorageRecoveryOutcome`: `restored`, `expired-at-recovery`,
   `storage-created` or `storage-reset`). The session's inbound store is shared
   by the WS and RTC lanes and reports once per lane, as `<store id>/ws` and
-  `<store id>/rtc`. A creation or reset of the database is reported by every
-  store at its first open after it;
+  `<store id>/rtc`. A creation or reset of the database is reported by each
+  store of the connect that found it; a later connect reads the database as it is;
 - `health`: a store's `ALStorageHealthState` on each change of status only,
   `failing` at the first storage failure and `healthy` at the first commit
   after it, with the failure as `lastFailure`; a database evicted under the

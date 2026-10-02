@@ -47,6 +47,7 @@ import {
     type ALStorageResetEvent
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
+import type { ALStorageConnectStoreOpening } from './storage/al-storage-connect-openings.ts';
 import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
@@ -61,8 +62,8 @@ export namespace IndexedDbAdmissionBackend {
         readonly observer: IndexedDbOperationObserver;
         readonly schemaId: string;
         readonly onStorageReset: (event: ALStorageResetEvent) => void;
-        /** The store this backend holds inside a database other stores share; absent for one it holds alone. */
-        readonly storeNamespace?: string;
+        /** Absent for a backend that serves no store of a connect. */
+        readonly connectOpening?: ALStorageConnectStoreOpening;
     }
 }
 
@@ -86,7 +87,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
                 storeName: input.storeName,
                 schemaId: input.schemaId,
                 onStorageReset: input.onStorageReset,
-                storeNamespace: input.storeNamespace
+                connectOpening: input.connectOpening
             });
             this.#opening = opened.opening;
             return opened.db;

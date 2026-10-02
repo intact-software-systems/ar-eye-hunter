@@ -800,9 +800,11 @@ an explicit storage effect.
 Each open also says what it found ([`ALStorageOpening`](../open-indexed-db-admission-database.ts)):
 the database existed, was created, was reset, or was created again after this document
 had opened it (another context's reset after a `versionchange`, an eviction without one).
-A creation, reset or eviction is a fact of the whole database, kept per database for the
-document: every store that shares it reads it at its first open after it, though another
-store's open found it, and a later open of the same store reads the database as it is.
+A creation, reset or eviction one store of a connect found is a fact of that connect
+([`ALStorageConnectOpenings`](../storage/al-storage-connect-openings.ts), one per connect):
+each store of the connect reports it once, though another store's open found it, and a
+later connect reads the database as it is. The document keeps per database only whether a
+`versionchange` closed it, which tells another context's reset from an eviction.
 A pair the factory opens itself, and whose store has an `ALStorageHealth`, carries an
 [`ALStorageRecoveryReporter`](../storage/al-storage-recovery-reporter.ts) on its stores; the lane's
 first `work-batch` diagnostic hands it the batch's claims, and it states the store's one

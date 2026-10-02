@@ -189,7 +189,6 @@ function assessReloadCommands(evidence: ReloadEvidence): readonly string[] {
         : [`${checkpoint.key}: reload must preserve native holds, one original send, subscriptions and exact phase work.`];
 }
 
-/** Fault IDs own map entries, so each possible native lane must retain a distinct held fault. */
 /** The suffix only reads: its waits are the reloaded stores' recovery reads on the storage topic. */
 function isReloadSuffixCommand(command: RallarBlackBoxTestCommand): boolean {
     if (command.kind === 'wait') {
@@ -198,6 +197,7 @@ function isReloadSuffixCommand(command: RallarBlackBoxTestCommand): boolean {
     return ['messages.observe', 'assert', 'storage.counters'].includes(command.kind);
 }
 
+/** Fault IDs own map entries, so each possible native lane must retain a distinct held fault. */
 function hasReloadNativeHolds({ send, prefix }: ReloadEvidence): boolean {
     const selectedCarriers = send.carrier === 'rtc-with-ws-fallback' ? ['rtc', 'ws'] : [send.carrier];
     const sendIndex = prefix.indexOf(send);

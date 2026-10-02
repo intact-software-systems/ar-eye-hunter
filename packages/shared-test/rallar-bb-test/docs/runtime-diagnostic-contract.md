@@ -510,10 +510,10 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   never runs a batch (an outbound store with no work on its carrier) reports
   nothing, and a store whose open failed never starts its work and reads as a
   `failing` `health` event instead. The three stores of a session share one
-  per-scope database, and a creation, reset or eviction is a fact of that
-  database: every store reads it at its first open after it, whichever store's
-  open found it, and a later open of the same store (a reconnect of the same
-  session) reads the database as it is. `outcome` is:
+  per-scope database, and a creation, reset or eviction one of them found is a
+  fact of their connect: each store of that connect reports it once, whichever
+  store's open found it. A later connect, of another session or of the same
+  one, reads the database as it is. `outcome` is:
   - `storage-created`: the database was created, the first time this document
     opened it
   - `storage-reset` with `reason`: the database was reset because it did not

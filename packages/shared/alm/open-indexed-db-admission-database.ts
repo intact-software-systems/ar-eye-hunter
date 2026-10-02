@@ -11,6 +11,7 @@ import { toError } from '../resilience/to-error.ts';
 import { decodeALAdmissionStoredValue } from './al-admission-backend.ts';
 import { decodeALAdmissionValue } from './al-admission-decoder.ts';
 import { decodeALAdmissionString } from './al-admission-value-validation.ts';
+import type { ALStorageConnectStoreOpening } from './storage/al-storage-connect-openings.ts';
 import { ALStorageUnavailableError } from './storage/al-storage-unavailable.ts';
 
 export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
@@ -33,8 +34,8 @@ export interface ALStorageResetEvent {
 /**
  * What one open found. `created` is a first creation in this document; a creation of a database this
  * document opened before is another context's reset after a `versionchange` closed it here, and an
- * eviction without one. A creation, reset or eviction is a fact of the whole database: every store
- * that shares it reads it at its first open after it, though another store's open found it.
+ * eviction without one. A store of a connect reports what another store of that connect found
+ * (`ALStorageConnectOpenings`).
  */
 export type ALStorageOpening =
     | Readonly<{ kind: 'existing'; }>
@@ -52,11 +53,8 @@ export interface OpenIndexedDbAdmissionDatabaseInput {
     readonly storeName: string;
     readonly schemaId: string;
     readonly onStorageReset: (event: ALStorageResetEvent) => void;
-    /**
-     * The store this open serves inside a database other stores share, which reads the database's last
-     * creation or reset once. Absent for an open that serves no store of its own, such as a cleanup.
-     */
-    readonly storeNamespace?: string;
+    /** Absent for an open that serves no store of a connect, such as a cleanup or a standalone pair. */
+    readonly connectOpening?: ALStorageConnectStoreOpening;
 }
 
 /** Thrown when `indexedDB.deleteDatabase` stays blocked by another open connection past its timeout. */
@@ -76,22 +74,11 @@ type OpenOrResetResult =
     | Readonly<{ kind: 'open'; db: IDBDatabase; created: boolean; }>
     | Readonly<{ kind: 'reset'; event: ALStorageResetEvent; }>;
 
-/** What this document saw of one admission database since it last opened it. */
-interface DocumentAdmissionDatabase {
-    readonly closedByVersionChange: boolean;
-    /** The last creation, reset or eviction this document saw, and the stores that have read it. */
-    readonly renewal: DocumentAdmissionDatabaseRenewal | undefined;
-}
-
-interface DocumentAdmissionDatabaseRenewal {
-    readonly opening: ALStorageOpening;
-    readonly storeNamespaces: readonly string[];
-}
-
-interface AdmissionStoreOpening {
-    readonly database: DocumentAdmissionDatabase;
-    readonly opening: ALStorageOpening;
-}
+/**
+ * What this document saw of each admission database: that it opened it, and whether a `versionchange` closed it since.
+ * It tells another context's reset from an eviction; what a connect found stays with that connect.
+ */
+type DocumentAdmissionDatabase = 'opened' | 'versionchange';
 
 const DOCUMENT_ADMISSION_DATABASES = new LatestRepository<string, DocumentAdmissionDatabase>();
 
@@ -161,53 +148,24 @@ function toALStorageOpening(created: boolean, seen: DocumentAdmissionDatabase | 
     if (seen === undefined) {
         return { kind: 'created' };
     }
-    return seen.closedByVersionChange ? { kind: 'reset', reason: 'other-context' } : { kind: 'evicted' };
+    return seen === 'versionchange' ? { kind: 'reset', reason: 'other-context' } : { kind: 'evicted' };
 }
 
-/** Read after the open, not before it: a store sharing the database may have created or reset it meanwhile. */
+/** Decided after the open: another store of the connect may have created or reset the database meanwhile. */
 function initAdmissionStorageOpening(
     input: OpenIndexedDbAdmissionDatabaseInput,
     db: IDBDatabase,
     found: ALStorageOpening
 ): OpenedIndexedDbAdmissionStorage {
-    const opened = computeAdmissionStoreOpening(
-        DOCUMENT_ADMISSION_DATABASES.read(input.dbName),
-        found,
-        input.storeNamespace
-    );
-    DOCUMENT_ADMISSION_DATABASES.set(input.dbName, opened.database);
+    DOCUMENT_ADMISSION_DATABASES.set(input.dbName, 'opened');
     db.addEventListener('versionchange', () => {
-        DOCUMENT_ADMISSION_DATABASES.updateIfPresent(input.dbName, (current) => ({
-            ...current,
-            closedByVersionChange: true
-        }));
+        DOCUMENT_ADMISSION_DATABASES.set(input.dbName, 'versionchange');
     });
-    return { db, opening: opened.opening };
-}
-
-function computeAdmissionStoreOpening(
-    seen: DocumentAdmissionDatabase | undefined,
-    found: ALStorageOpening,
-    storeNamespace: string | undefined
-): AdmissionStoreOpening {
-    if (found.kind !== 'existing') {
-        const storeNamespaces = storeNamespace === undefined ? [] : [storeNamespace];
-        return {
-            database: { closedByVersionChange: false, renewal: { opening: found, storeNamespaces } },
-            opening: found
-        };
-    }
-    const renewal = seen?.renewal;
-    if (storeNamespace === undefined || renewal === undefined || renewal.storeNamespaces.includes(storeNamespace)) {
-        return { database: { closedByVersionChange: false, renewal }, opening: found };
-    }
-    return {
-        database: {
-            closedByVersionChange: false,
-            renewal: { ...renewal, storeNamespaces: [...renewal.storeNamespaces, storeNamespace] }
-        },
-        opening: renewal.opening
-    };
+    const connect = input.connectOpening;
+    const opening = connect === undefined
+        ? found
+        : connect.openings.recordStoreOpening(input.dbName, connect.storeNamespace, found);
+    return { db, opening };
 }
 
 async function openOrReset(

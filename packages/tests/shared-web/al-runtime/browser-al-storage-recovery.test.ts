@@ -24,7 +24,7 @@ import type { ALStorageEvent, ALStorageRecoveryOutcome } from '@shared/alm/stora
 import type { StateScope } from '@shared/api/state-types.ts';
 
 // The phases share one scope's browser database, so they run in order in one test.
-it('names each browser store on the storage port: an eviction as failing health for each store, then a restore', async () => {
+it('names each browser store on the storage port: an eviction as failing health for each store of its connect, then a restore', async () => {
     const scope: StateScope = { applicationId: 'recovery-app', workspaceId: crypto.randomUUID() };
     const dbName = toBrowserALRuntimeDbName(scope);
     const events: ALStorageEvent[] = [];
@@ -46,6 +46,12 @@ it('names each browser store on the storage port: an eviction as failing health 
     await evictedInbound.admissionStore.ready();
     evictedInbound.createStorageRecovery?.({ name: 'ws', workTypeId: 'unused' }).reportFirstBatch(0);
 
+    const laterSession = `later-${crypto.randomUUID()}`;
+    configureBrowserALRuntimeStores(laterSession, { scope, diagnosticsPorts });
+    const later = resolveBrowserSessionALInboundRuntimeStores(laterSession);
+    await later.admissionStore.ready();
+    later.createStorageRecovery?.({ name: 'ws', workTypeId: 'unused' }).reportFirstBatch(0);
+
     configureBrowserALRuntimeStores(evictedSession, { scope, diagnosticsPorts });
     const restored = resolveBrowserWsClientALOutboundRuntimeStores(evictedSession);
     await restored.admissionStore.ready();
@@ -56,9 +62,28 @@ it('names each browser store on the storage port: an eviction as failing health 
         toEvictedHealthEvent(toBrowserSessionALInboundRuntimeStoreId(evictedSession)),
         {
             kind: 'recovery',
+            storeId: `${toBrowserSessionALInboundRuntimeStoreId(laterSession)}/ws`,
+            outcome: { kind: 'restored', claimed: 0, expired: 0 }
+        },
+        {
+            kind: 'recovery',
             storeId: toBrowserWsClientALRuntimeStoreId(evictedSession),
             outcome: { kind: 'restored', claimed: 0, expired: 0 }
         }
+    ]);
+});
+
+// A creation is the fact of the connect that found it: a later session of the document reads the database as it is.
+it('reports restored for each store of a later session after an earlier session created the database', async () => {
+    const scope: StateScope = { applicationId: 'recovery-app', workspaceId: crypto.randomUUID() };
+    await openSessionStores(scope, `first-${crypto.randomUUID()}`);
+
+    const outcomes = await openSessionStores(scope, `later-${crypto.randomUUID()}`);
+
+    expect(outcomes).toEqual([
+        ['browser-session-inbound/ws', { kind: 'restored', claimed: 0, expired: 0 }],
+        ['browser-ws-client', { kind: 'restored', claimed: 0, expired: 0 }],
+        ['browser-rtc-overlay', { kind: 'restored', claimed: 0, expired: 0 }]
     ]);
 });
 

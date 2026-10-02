@@ -1,4 +1,3 @@
-import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import {
     afterEach,
     beforeEach,
@@ -7,6 +6,8 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+
+import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 
 import {
     events,

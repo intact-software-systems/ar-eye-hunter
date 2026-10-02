@@ -39,6 +39,7 @@ import type {
     ALOutboundRuntimeStores,
     ALVolatileOutboundRuntimeStores
 } from './outbound/al-outbound-message-runtime.ts';
+import type { ALStorageConnectOpenings } from './storage/al-storage-connect-openings.ts';
 import type { ALStorageHealth } from './storage/al-storage-health.ts';
 import {
     createALStorageRecoveryReporter,
@@ -77,6 +78,8 @@ export interface CreateIndexedDbALRuntimeStoresInput extends CreateInMemoryALRun
     readonly onStorageReset: (event: ALStorageResetEvent) => void;
     /** The health the pair's lanes record into; `undefined` when no one reads it. */
     readonly storageHealth: ALStorageHealth | undefined;
+    /** The openings of the connect whose stores share the database; `undefined` for a pair of no connect. */
+    readonly connectOpenings: ALStorageConnectOpenings | undefined;
 }
 
 export interface CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared> extends CreateIndexedDbALRuntimeStoresInput {
@@ -102,6 +105,7 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly schemaId?: string;
     readonly onStorageReset?: (event: ALStorageResetEvent) => void;
     readonly storageHealth?: ALStorageHealth;
+    readonly connectOpenings?: ALStorageConnectOpenings;
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
@@ -198,7 +202,9 @@ function createIndexedDbAdmissionBackend(
         observer: input.observer,
         schemaId: input.schemaId,
         onStorageReset,
-        storeNamespace
+        connectOpening: input.connectOpenings === undefined
+            ? undefined
+            : { openings: input.connectOpenings, storeNamespace }
     });
 }
 
@@ -375,6 +381,7 @@ function toDefaultIndexedDbInput(
         observer: options.observer ?? createPassThroughIndexedDbOperationObserver(),
         schemaId: options.schemaId ?? AL_ADMISSION_SCHEMA_ID,
         onStorageReset: options.onStorageReset ?? createPassThroughALStorageResetSink(),
-        storageHealth: options.storageHealth
+        storageHealth: options.storageHealth,
+        connectOpenings: options.connectOpenings
     };
 }

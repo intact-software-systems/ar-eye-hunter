@@ -26,6 +26,7 @@ import {
     decodeALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
+import { ALStorageConnectOpenings } from '@shared/alm/storage/al-storage-connect-openings.ts';
 import { toALStorageResetSink, type ALStorageEventSink } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -48,7 +49,8 @@ interface BrowserALRuntimeOptions extends Omit<CreateDefaultALRuntimeStoresInput
 }
 
 export interface ConfigureBrowserALRuntimeStoresInput
-    extends Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth'> {
+    extends
+        Omit<BrowserALRuntimeOptions, 'dbName' | 'observer' | 'onStorageReset' | 'storageHealth' | 'connectOpenings'> {
     readonly scope: StateScope;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
 }
@@ -173,7 +175,8 @@ export function configureBrowserALRuntimeStores(
         ...options,
         dbName: toBrowserALRuntimeDbName(scope),
         observer: diagnosticsPorts.indexedDbOperationObserver,
-        canonicalScope: `browser-session:${sessionId}`
+        canonicalScope: `browser-session:${sessionId}`,
+        connectOpenings: new ALStorageConnectOpenings()
     };
     configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, scoped, diagnosticsPorts.storage));
     return new BrowserALStorageAvailability({
