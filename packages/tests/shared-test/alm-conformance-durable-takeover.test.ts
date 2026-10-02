@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { toBrowserRtcOverlayALRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
@@ -6,7 +10,10 @@ import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
 
 import { CONNECT_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -20,9 +27,7 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
-type Carrier = (typeof ALM_CONFORMANCE_CARRIERS)[number];
-
-function findTakeover(carrier: Carrier): AlmConformanceScenario & { readonly successor: RallarBlackBoxTestRecipe; } {
+function findTakeover(carrier: AlmConformanceCarrier): AlmConformanceScenario & { readonly successor: RallarBlackBoxTestRecipe; } {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
         .find((candidate) => candidate.scenarioId === 'durable-takeover');
     if (scenario?.successor === undefined) {

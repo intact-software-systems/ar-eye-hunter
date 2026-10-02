@@ -493,6 +493,55 @@ describe('the session\'s durable work claim', () => {
         await vi.waitFor(() => expect(browser.heldCount()).toBe(0));
     });
 
+    it('releases the claim only after the connect\'s runtimes stop', async () => {
+        const effects: string[] = [];
+        stubGrantedWebLocks(effects);
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
+            effects.push('transport-closed');
+        });
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(() => transportRuntime.shutdown());
+
+        await transportRuntime.init(toInitOptions());
+        transportRuntime.shutdown();
+
+        expect(effects).toEqual(['transport-closed', 'lock-released']);
+    });
+
+    // A shutdown while the connect is still initialising finds no active claim; the connect's own
+    // cancellation releases it once the late transport is torn down.
+    it('releases the claim of a connect cancelled while it initialised, after its late transport stops', async () => {
+        const effects: string[] = [];
+        const browser = stubGrantedWebLocks(effects);
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
+            effects.push('transport-closed');
+        });
+        let resolveMiddleware: ((middleware: RallarBrowserMiddleware) => void) | undefined;
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockReturnValue(
+            new Promise((resolve) => {
+                resolveMiddleware = resolve;
+            })
+        );
+        const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(() => transportRuntime.shutdown());
+
+        const pending = transportRuntime.init(toInitOptions());
+        await vi.waitFor(() => expect(browser.heldCount()).toBe(1));
+        transportRuntime.shutdown();
+        expect(effects).toEqual([]);
+        resolveMiddleware?.(middleware.middleware);
+
+        await expect(pending).rejects.toThrow('Rallar connection was cancelled because auth ended.');
+        expect(effects).toEqual(['transport-closed', 'lock-released']);
+        await vi.waitFor(() => expect(browser.heldCount()).toBe(0));
+        expect(browser.names).toHaveLength(1);
+    });
+
     it('releases the claim of a connect whose transport failed', async () => {
         const browser = stubGrantedWebLocks();
         const middleware = createDefaultApiMiddlewareTestDouble();
@@ -523,12 +572,16 @@ describe('the session\'s durable work claim', () => {
     });
 });
 
-/** A browser whose every lock request is granted at once and held until its callback settles. */
-function stubGrantedWebLocks(): { readonly names: readonly string[]; heldCount(): number; } {
+/**
+ * A browser whose every lock request is granted at once and held until its callback settles; `effects` hears
+ * `lock-released` the moment a request's signal aborts.
+ */
+function stubGrantedWebLocks(effects: string[] = []): { readonly names: readonly string[]; heldCount(): number; } {
     const names: string[] = [];
     let held = 0;
-    const request = async <T>(name: string, _options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T> => {
+    const request = async <T>(name: string, options: ALBrowserLockOptions, callback: () => Promise<T>): Promise<T> => {
         names.push(name);
+        options.signal?.addEventListener('abort', () => effects.push('lock-released'), { once: true });
         held += 1;
         try {
             return await callback();

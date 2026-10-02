@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -18,6 +23,23 @@ const SETTLEMENT: ALDeliverySettlement = {
     atMs: 1,
     attemptId: 'attempt-1'
 };
+
+/** Like the browser's `BroadcastChannel`, a closed port throws on post. */
+class ClosableBroadcastChannel extends FakeBroadcastChannel {
+    private closed = false;
+
+    public override postMessage(message: object): void {
+        if (this.closed) {
+            throw new DOMException('BroadcastChannel is closed.', 'InvalidStateError');
+        }
+        super.postMessage(message);
+    }
+
+    public override close(): void {
+        this.closed = true;
+        super.close();
+    }
+}
 
 afterEach(() => {
     FakeBroadcastChannel.clear();
@@ -102,15 +124,38 @@ describe('browser AL session channel', () => {
         tab.channel.onCommitted((commit) => heard.push(commit));
         const raw = new FakeBroadcastChannel('rallar-alm:app%3Aone:work%20space:session-1');
         const envelope = { version: 1, sessionKey: 'app%3Aone:work%20space:session-1', instanceId: 'tab-b' };
+        const bodies = [
+            { kind: 'settlement', settlement: SETTLEMENT },
+            { kind: 'committed', workType: 'AL_OUTBOUND:a', rows: ROWS }
+        ];
 
-        raw.postMessage({ ...envelope, instanceId: 'tab-a', kind: 'settlement', settlement: SETTLEMENT });
-        raw.postMessage({ ...envelope, sessionKey: 'app%3Aone:work%20space:session-2', kind: 'settlement', settlement: SETTLEMENT });
-        raw.postMessage({ ...envelope, version: 2, kind: 'committed', workType: 'AL_OUTBOUND:a', rows: ROWS });
-        raw.postMessage({ ...envelope, kind: 'committed', workType: 'AL_OUTBOUND:a', rows: ROWS });
+        for (const body of bodies) {
+            raw.postMessage({ ...envelope, instanceId: 'tab-a', ...body });
+            raw.postMessage({ ...envelope, sessionKey: 'app%3Aone:work%20space:session-2', ...body });
+            raw.postMessage({ ...envelope, version: 2, ...body });
+            raw.postMessage({ ...envelope, ...body });
+        }
         await flushChannel();
 
-        expect(tab.applied).toEqual([]);
+        expect(tab.applied).toEqual([SETTLEMENT]);
         expect(heard).toEqual([COMMIT]);
+    });
+
+    it('ignores a post after close: it neither throws nor reaches another tab', async () => {
+        const holder = createTab({ sessionId: 'session-1' });
+        const heard: ALDurableWorkCommit[] = [];
+        holder.channel.onCommitted((commit) => heard.push(commit));
+        const closed = createTab({ sessionId: 'session-1', openPort: (name) => new ClosableBroadcastChannel(name) });
+        closed.channel.close();
+
+        expect(() => {
+            closed.channel.announceCommit(COMMIT);
+            closed.channel.relaySettlement(SETTLEMENT);
+        }).not.toThrow();
+        await flushChannel();
+
+        expect(heard).toEqual([]);
+        expect(holder.applied).toEqual([]);
     });
 
     it('posts nothing and wakes nothing where the browser has no channel', () => {

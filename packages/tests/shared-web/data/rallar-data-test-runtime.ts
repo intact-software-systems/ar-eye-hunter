@@ -1,4 +1,8 @@
-import { afterEach, beforeEach, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    vi
+} from 'vitest';
 
 import type { RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 

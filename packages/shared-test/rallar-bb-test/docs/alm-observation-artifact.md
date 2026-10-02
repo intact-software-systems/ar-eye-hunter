@@ -20,6 +20,13 @@ its job log line ends in `family=three-agent`. Its page-diagnostics file carries
 role `sender`, `receiver` or `recipient-b`. The snapshot decoder attributes only the `alm-sender-` and
 `alm-receiver-` agent ids, so the inbound events of the `recipient-b` page read `unattributed`.
 
+A same-context cell (the `same-context family over <carrier>` test, which runs only the scenarios of
+the `same-context` lane family) writes the same three files as `<carrier>-<scope>-same-context*.json`,
+and its job log line ends in `family=same-context`. Its page-diagnostics file carries the sender's and
+the receiver's pages and each scenario's successor page, with role `successor`. The successor's agent
+ids start `alm-successor-`, which the snapshot decoder does not attribute, so its events read
+`unattributed`.
+
 They live beside the per-test output directories rather than inside one, because Playwright deletes
 a passing test's own directory at the end of the run. A failed cell additionally attaches its
 snapshot to the Playwright report, which is where it has always been; a green cell used to leave no

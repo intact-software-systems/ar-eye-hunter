@@ -199,13 +199,14 @@ The browser transport storage and WebSocket owners are feature-colocated:
   runtimes stop, or when the connect fails. The tab it is granted to drains the
   session's durable lanes; every other tab admits and waits, and the next
   tab's lock is granted when the owner's connect ends, whose bootstrap batch
-  takes over. Ownership turns true at most once per connect and never back.
+  takes over. Ownership turns true at most once per connect and never back
+  while its runtimes live; a connect that fails after its WS transport is built
+  leaves those runtimes owning (a carried limit).
   Without the Locks API, or when the request fails, every connect owns its
   work as before. The WS client, the RTC overlay and the RTC receiver hand it
   to their durable lanes only. A waiting tab's commit reaches the owner on the
   connect's session channel (below), and a foreign commit reaches a lane only
-  while its connect holds the work; without `BroadcastChannel` a waiting tab's
-  row reaches the owner when the owner's readiness memory ages.
+  while its connect holds the work.
 - [browser-al-session-channel.ts](./al-runtime/browser-al-session-channel.ts)
   owns one `BroadcastChannel` per connect,
   `rallar-alm:<applicationId>:<workspaceId>:<sessionId>` with the scope parts

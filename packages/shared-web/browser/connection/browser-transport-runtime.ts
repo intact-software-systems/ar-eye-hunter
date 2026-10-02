@@ -14,6 +14,7 @@ import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser
 import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
@@ -87,8 +88,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             return Promise.reject(new Error('Cannot init middleware: no auth session.'));
         }
 
-        const durableWork = this.claimDurableWork(session, options);
-        const epoch = this.deliverySettlements.open(options.deliverySettlements, durableWork.sessionChannel);
+        const scope = options.scope ?? defaultStateScope();
+        const sessionChannel = this.openSessionChannel(scope, session, options.deliverySettlements);
+        const durableWork = this.claimDurableWork(scope, session, sessionChannel);
+        const epoch = this.deliverySettlements.open(options.deliverySettlements, sessionChannel);
         const pendingMiddleware = this.createMiddleware(session, {
             ...options,
             deliverySettlements: epoch.settlements,
@@ -141,21 +144,31 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         durableWork?.release();
     }
 
+    private openSessionChannel(
+        scope: StateScope,
+        session: AuthSession,
+        observers: BrowserDeliverySettlements.Observers
+    ): BrowserALSessionChannel {
+        return new BrowserALSessionChannel({
+            scope,
+            sessionId: session.sessionId,
+            instanceId: crypto.randomUUID(),
+            openPort: this.input.openSessionChannelPort,
+            applySettlement: (settlement) => observers[settlement.carrier](settlement)
+        });
+    }
+
     /** Requested once per connect, in the connect's scope; held, with the connect's session channel, until the connect ends. */
-    private claimDurableWork(session: AuthSession, options: BrowserTransportInitOptions): BrowserALDurableWorkClaim {
-        const scope = options.scope ?? defaultStateScope();
-        const observers = options.deliverySettlements;
+    private claimDurableWork(
+        scope: StateScope,
+        session: AuthSession,
+        sessionChannel: BrowserALSessionChannel
+    ): BrowserALDurableWorkClaim {
         const durableWork = new BrowserALDurableWorkClaim({
             scope,
             sessionId: session.sessionId,
             locks: readALBrowserLocks(),
-            sessionChannel: new BrowserALSessionChannel({
-                scope,
-                sessionId: session.sessionId,
-                instanceId: crypto.randomUUID(),
-                openPort: this.input.openSessionChannelPort,
-                applySettlement: (settlement) => observers[settlement.carrier](settlement)
-            })
+            sessionChannel
         });
         durableWork.request();
         return durableWork;

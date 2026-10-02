@@ -102,7 +102,6 @@ describe('the durable work claim a connect hands its carriers', () => {
             webRtcConnectionService: createConnectionService()
         });
 
-        expect(input.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
         expect(ws.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
         expect(rtc.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
     });

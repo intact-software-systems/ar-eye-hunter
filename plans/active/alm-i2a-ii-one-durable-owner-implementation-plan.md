@@ -175,12 +175,15 @@ Task 8's PR body carries these corrections. The proposal and the roadmap are lef
 
 - **No takeover while the owner page is alive, in the lane** (R-I2a-ii-31). One auth session keeps one server socket, so the queued-callback path is covered only by Task 3's lock-queue unit test. Duplicate ACK relays from two sockets of one session cannot happen, by the same server rule (R-I2a-ii-46).
 - **No takeover before the owner's lease ends, in the lane** (R-I2a-ii-32). Recovery at the lease end plus at most 19.1 s is pinned by `al-work-lease-recovery.test.ts`. A released lock proves nothing about an in-flight batch, so the lease rule and D113's bound stand (proposal §8, "a lock-proven early reclaim").
-- **Cancel from a waiting tab** reaches only that tab's runtimes, and the owner keeps dispatching (R-I2a-ii-9).
+- **Cancel and the RTC→WS fallback hand-over from a waiting tab** reach only the tab that issued them, and the owner keeps dispatching (R-I2a-ii-9). The owner's live RTC attempt is not aborted; the receiver deduplicates by msgId.
+- **A connect that fails after its WS transport is built** leaves that WS client running, and it keeps owning the durable work it held. Its lock is released, so the next connect (a retry or another tab) also owns. The lease keeps each row once, so delivery degrades to every-tab-drains for that session (a pre-existing lifecycle leak; follow-up: tear down a partially built connect before rejecting).
+- **What the Playwright lane proves.** It proves that the closed owner's lock is released and that the successor's claim turns owned and runs its bootstrap batch; it cannot distinguish a lock from no Locks API. Exclusivity, the commit wake and a cross-tab settlement rest on the unit tests (fake locks, fake channel).
 - **Without `BroadcastChannel`** but with Web Locks (no known browser):
   - a waiting tab's row waits for the owner's age-bound probe (D112, at most 6.6 s);
   - the owner's settlements never reach the waiting tab's handle (R-I2a-ii-42).
 - **A takeover whose store cannot open** records failing health in that batch, and the next batch reports the recovery (R-I2a-ii-30).
 - **The session channel's guard is per test** (R-I2a-ii-49). A new unit test that connects through the composition singleton without `installFakeBroadcastChannelPerTest()` opens a real Node channel, and no gate catches it.
+- **Unit tests take Node's real locks.** Composition unit tests that connect through `BrowserTransportRuntime` without stubbing `navigator` take Node's real process-wide lock; Vitest forks isolate files, and a connect never shut down holds it for the rest of its file.
 - **`lane` is optional on `ALDeliverySettlement`** (R-I2a-ii-48). A settlement no lane stated is never relayed.
 - **Relic** (R-I2a-ii-12, -15, -17, Task 7):
   - The non-idempotent command kinds (`start-expedition`, `continue-review`, `force-resolve-round`, `pickup-relic`, `submit-action`) are covered only by msgId dedup within the deadline plus grace (D126).
@@ -8471,8 +8474,10 @@ Expected: the delete succeeds and the count is `0` (if the session may end befor
 `$T/hosted.md`: "delete RALLAR_BLACK_BOX_ALM_SCOPE once run <id> completes"). Acceptance, cell by cell, against
 P1b's accepted read: every `ws` cell passed; `addressed` and `three-agent` over `rtc` passed; `baseline` over `rtc`
 passed or failed only at `not-yet-in-sync-delivered-after-refresh` `received-1`; `rtc-with-ws-fallback` cells any
-outcome, recorded (the 30-minute job timeout cuts them); `durable-takeover` does not run hosted (its family is
-Playwright-lane only, D124), so its hosted column reads "not run, by design". If a read ends with the API's
+outcome, recorded (the 30-minute job timeout cuts them). The full read runs the three `same-context family over
+<carrier> (full)` cells: over `ws` and `rtc` they must pass with `durable-takeover` completed; over
+`rtc-with-ws-fallback` the cell is recorded whatever its outcome, because the 30-minute job timeout cuts the fallback
+cells. Hosted manifests 18 and 22 never select the family (D124). If a read ends with the API's
 "stopping API process" line (the RTC topology lease-lost self-stop, pre-existing since #566), classify it so from the
 job log and state which cells have no hosted read. Any WS red, or an
 RTC red at another step, is not accepted: download the artifact and diagnose before a second read.

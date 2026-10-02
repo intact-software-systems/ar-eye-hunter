@@ -57,8 +57,8 @@ batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hear
 runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
 the same `committed(rows)` its own commits take, so its batch claims the rows at once instead of at
 its remembered answer's age bound; in the browser the announcement travels on the connect's session
-channel ([`BrowserALSessionChannel`](../../../shared-web/browser/al-runtime/browser-al-session-channel.ts)),
-which the claim hands to its lanes only while it owns the work. The browser's value is the connect's
+channel ([`BrowserALSessionChannel`](../../../shared-web/browser/al-runtime/browser-al-session-channel.ts)).
+The browser's value is the connect's
 [`BrowserALDurableWorkClaim`](../../../shared-web/browser/al-runtime/browser-al-durable-work-claim.ts),
 the second name on the lock port: `rallar:al-durable-owner:<applicationId>:<workspaceId>:<sessionId>`,
 requested once per connect, never per send, and held until the connect ends; without the Locks API

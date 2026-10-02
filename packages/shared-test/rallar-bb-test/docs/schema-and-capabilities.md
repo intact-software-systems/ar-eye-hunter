@@ -382,8 +382,8 @@ The same-context family runs, in the full scope, as the `same-context family ove
 scenarios declare a fourth role, `successor`: a second page opened in the sender's own browser context, so it shares
 the sender's IndexedDB and the `auth.session` in `localStorage`, under a control agent of its own. That page skips the
 login screen, and its recipe connects with `rallar` `{ username: '', password: '', restoreSession: true }`, so it
-restores the sender's session rather than signing in afresh. Its connect waits for one ready peer, as the sender's and
-the receiver's do, since both pages are one session and so one peer. The two pages are never connected at once: the
+restores the sender's session rather than signing in afresh. Over the RTC carriers its connect waits for one ready
+peer, as the sender's and the receiver's do, since both pages are one session and so one peer. The two pages are never connected at once: the
 server keeps one WebSocket per auth session and a second upgrade closes the first with `connection-replaced`, after
 which the first page reconnects and replaces the second. The lane therefore starts the receiver, runs the sender's
 recipe, closes the sender's page from Playwright, and only then runs the successor's recipe, whose prologue waits out

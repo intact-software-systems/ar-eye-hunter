@@ -65,7 +65,7 @@ export function toBrowserALSessionKey(scope: StateScope, sessionId: string): str
 export class BrowserALSessionChannel {
     private readonly input: BrowserALSessionChannel.Input;
     private readonly sessionKey: string;
-    private readonly port: BrowserALSessionChannel.Port | undefined;
+    private port: BrowserALSessionChannel.Port | undefined;
     private readonly commitListeners = new Set<(commit: ALDurableWorkCommit) => void>();
 
     constructor(input: BrowserALSessionChannel.Input) {
@@ -94,6 +94,7 @@ export class BrowserALSessionChannel {
 
     close(): void {
         this.port?.close();
+        this.port = undefined;
         this.commitListeners.clear();
     }
 

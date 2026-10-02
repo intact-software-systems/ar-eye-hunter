@@ -75,6 +75,8 @@ export * from './alm/inbound/transition-al-pending-ack.ts';
 export * from './alm/outbound/admission/al-outbound-admission-store.ts';
 export * from './alm/outbound/al-outbound-message-runtime.ts';
 export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
+export * from './alm/storage/al-browser-locks.ts';
+export * from './alm/work/al-durable-work-ownership.ts';
 export * from './services/inbox-queue-reader.ts';
 export * from './services/InboxOutboxEngine.ts';
 export * from './services/outbox-queue-reader.ts';

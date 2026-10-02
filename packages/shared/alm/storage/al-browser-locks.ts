@@ -7,8 +7,8 @@ export interface ALBrowserLockOptions {
 }
 
 /**
- * The Web Locks port every cross-context lock of ALM is a name on. The browser injects
- * `navigator.locks`; a runtime without the API (the server, Node, a browser without it) has none.
+ * The Web Locks port every cross-context lock of ALM is a name on, read from `navigator.locks`. Node and
+ * Deno expose a process-wide one too; only a browser without the API, or an explicit `undefined`, has none.
  */
 export interface ALBrowserLocks {
     /** Holds the named exclusive lock until the single callback invocation settles. */

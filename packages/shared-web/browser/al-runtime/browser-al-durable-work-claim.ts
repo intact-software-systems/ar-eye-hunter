@@ -27,7 +27,8 @@ interface ForeignCommitListener {
  * owner lock once per connect; the connect it is granted to owns the work and holds the lock until
  * `release()`, and the request of the next tab is granted then. A connect whose request fails for any
  * reason but its own release owns the work, as every connect did before there was a claim. Ownership
- * turns true at most once and never back: the lock is held until the connect ends, so it cannot flap.
+ * turns true at most once and never back while the connect's runtimes live, so it cannot flap; a connect
+ * that fails after its WS transport is built leaves those runtimes owning (a carried limit).
  */
 export class BrowserALDurableWorkClaim implements ALDurableWorkOwnership {
     private readonly ownedValue = new ObservableLatestValue<boolean>();
@@ -43,10 +44,6 @@ export class BrowserALDurableWorkClaim implements ALDurableWorkOwnership {
 
     get owned(): ObservableValue<boolean> {
         return this.ownedValue;
-    }
-
-    get sessionChannel(): BrowserALSessionChannel {
-        return this.input.sessionChannel;
     }
 
     /** Requests the owner lock once; its callback is the takeover. */

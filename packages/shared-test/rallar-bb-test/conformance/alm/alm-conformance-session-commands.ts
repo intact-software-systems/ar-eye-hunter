@@ -26,30 +26,10 @@ import {
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
-const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 const OWNER_LEASE_LAPSE_TOPIC = 'rallar.black-box.alm.owner-lease-lapsed';
 
 /** A connect that keeps the auth session its document already holds: no credentials, so it never signs in afresh. */
 export const RESTORED_SESSION_RALLAR = { username: '', password: '', restoreSession: true } as const;
-
-/**
- * The browser fills an omitted TTL with 30 seconds. The absence proof, the end of the old document, and one
- * reserved-work lease consume that before the next owner can submit, so an original that must survive its document
- * states a longer lifetime.
- */
-const RECOVERY_MARGIN_MS = 60_000;
-
-/**
- * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this Deno-loaded catalog
- * cannot import). The session inbound store batches every engine round. An outbound store reports when its first work
- * batch runs, which for a store without work can be long after the connect or never before the document ends, so a
- * wait names the store that holds the original.
- */
-export const RECOVERED_STORE_PREFIXES = {
-    sessionInbound: 'browser-session-inbound',
-    ws: 'browser-ws-client',
-    rtc: 'browser-rtc-overlay'
-} as const;
 
 export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const group = step.input.group;
@@ -170,17 +150,26 @@ export function toStatsCommand(step: AlmConformanceStepInput): RallarBlackBoxTes
     };
 }
 
-function toEnsureRequestId(
-    step: AlmConformanceStepInput,
-    operation: 'group' | 'member'
-): string {
-    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
-        `-${step.role}-${operation}`;
-}
+/**
+ * The browser fills an omitted TTL with 30 seconds. The absence proof, the end of the old document, and one
+ * reserved-work lease consume that before the next owner can submit, so an original that must survive its document
+ * states a longer lifetime.
+ */
+const RECOVERY_MARGIN_MS = 60_000;
 
-function toStatePrefix(group: RallarBlackBoxDistributedGroupRef): string {
-    return `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
-}
+/**
+ * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this Deno-loaded catalog
+ * cannot import). The session inbound store batches every engine round. An outbound store reports when its first work
+ * batch runs, which for a store without work can be long after the connect or never before the document ends, so a
+ * wait names the store that holds the original.
+ */
+export const RECOVERED_STORE_PREFIXES = {
+    sessionInbound: 'browser-session-inbound',
+    ws: 'browser-ws-client',
+    rtc: 'browser-rtc-overlay'
+} as const;
+
+const STORAGE_TOPIC = 'rallar.browser.alm.storage';
 
 export interface AlmConformanceRecoveredStore {
     readonly name: string;
@@ -223,4 +212,16 @@ export function toStoreRecoveryWait(
         },
         timeoutMs: store.timeoutMs
     };
+}
+
+function toEnsureRequestId(
+    step: AlmConformanceStepInput,
+    operation: 'group' | 'member'
+): string {
+    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
+        `-${step.role}-${operation}`;
+}
+
+function toStatePrefix(group: RallarBlackBoxDistributedGroupRef): string {
+    return `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
 }

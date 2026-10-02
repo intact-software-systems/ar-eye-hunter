@@ -3,14 +3,22 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { CONNECT_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toHeldFaultCommands } from '../alm-conformance-fault-commands.ts';
-import { toResultAssertion, toRetainedEvidenceCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
+import {
+    toResultAssertion,
+    toRetainedEvidenceCommands,
+    toSendCommand
+} from '../alm-conformance-message-commands.ts';
 import { toPayloadWait, toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
-import { toOriginalStorePrefix, toRecoveryTtlMs, toStoreRecoveryWait } from '../alm-conformance-session-commands.ts';
+import {
+    toOriginalStorePrefix,
+    toRecoveryTtlMs,
+    toStoreRecoveryWait
+} from '../alm-conformance-session-commands.ts';
 
 /**
  * One durable owner per session: the sender's page admits a durable send it cannot deliver and closes, and the
@@ -70,8 +78,9 @@ function toSuccessorCommands(successor: AlmConformanceStepInput): readonly Ralla
 }
 
 /**
- * The arrival wait starts before the sender connects, so it covers that connect and the original's whole lifetime;
- * the trailing window proves no second copy follows the first.
+ * Over `ws` the arrival wait starts before the sender connects, so it covers that connect and the original's whole
+ * lifetime; over the RTC carriers the receiver's connect waits for one ready peer, so the wait starts once the owner is
+ * ready and its budget only grows more generous. The trailing window proves no second copy follows the first.
  */
 function toDurableTakeoverReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [

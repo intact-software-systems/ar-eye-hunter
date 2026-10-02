@@ -318,7 +318,7 @@ class GeneratedAlmPorts {
         if (role !== 'sender') {
             return;
         }
-        const held = this.messages.filter((message) => isHeldOriginal(message));
+        const held = this.messages.filter(isHeldOriginal);
         const stores = [
             { storeId: `browser-session-inbound:${sessionId}/ws`, claimed: 0 },
             { storeId: `browser-session-inbound:${sessionId}/rtc`, claimed: 0 },
@@ -783,7 +783,7 @@ function isHeldOriginal(message: PortMessage): boolean {
 }
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-    Deno.test(`the lane's ${carrier} takeover hands the closed owner's held original to its successor, delivered once`, async () => {
+    Deno.test(`the ${carrier} takeover's three recipes run end to end against the fixture's takeover model`, async () => {
         const scenario = createAlmConformanceRecipes({
             group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
             carrier,

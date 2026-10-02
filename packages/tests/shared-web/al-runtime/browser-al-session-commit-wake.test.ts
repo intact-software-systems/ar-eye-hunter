@@ -1,6 +1,13 @@
 import '../../setup-browser-indexeddb.ts';
 
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import {

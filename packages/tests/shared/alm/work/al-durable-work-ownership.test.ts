@@ -1,6 +1,13 @@
 import '../../../setup-browser-indexeddb.ts';
 
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
 import { createDefaultIndexedDbALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
@@ -27,7 +34,12 @@ import {
 } from '../inbound-runtime-test-fixture.ts';
 import { createOutboundMessage } from '../outbound-runtime-test-fixture.ts';
 import { createOutboundTestSession, createSessionOutboundTestRuntime } from '../session-outbound-test-runtime.ts';
-import { collectProbe, fakePort, toFakeALWorkKey, toTestALWorkReadySelection } from './al-work-test-entries.ts';
+import {
+    collectProbe,
+    fakePort,
+    toFakeALWorkKey,
+    toTestALWorkReadySelection
+} from './al-work-test-entries.ts';
 
 const WORK_TYPE = 'AL_TEST';
 const COMMITTED_W1: ALWorkCommittedRows = { dueByMs: 1_000, writtenKeys: [toFakeALWorkKey('w-1')] };

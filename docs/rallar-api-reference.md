@@ -679,11 +679,16 @@ where the browser has the Locks API, the tab holding the session's
 durable-owner lock sends every tab's durable messages, and when it disconnects
 or closes the next tab takes over and sends what it left; a message the closed
 tab was still sending is retried once its lease ends, at most 19.1 s after.
-Over `BroadcastChannel` a waiting tab's durable send reaches the owner at once,
-and its handle reads the settlements the owner states for it; a handle's
-`cancel()` reaches only its own tab. Without `BroadcastChannel` the owner finds
-the waiting tab's message on its idle cadence. Without the Locks API every tab
-sends its own, as before.
+The server keeps one WebSocket per session, so only one tab of a session stays
+connected at a time; the hand-over is for close, reload and a tab that has no
+socket. Over `BroadcastChannel` a waiting tab's durable send reaches the owner
+at once, and its handle reads the settlements stated for it: the owner relays
+its own, and any tab that admits the acknowledgement relays that. A handle's
+`cancel()` and the RTC→WS fallback hand-over reach only the tab that issued
+them: the owner's live RTC attempt is not aborted, and the receiver
+deduplicates by msgId. Without `BroadcastChannel` the owner finds the waiting
+tab's message on its idle cadence. Without the Locks API every tab sends its
+own, as before.
 
 A browser without IndexedDB has no durable storage and no memory stand-in:
 each connect decides that once, and its durable sends follow the same rule
