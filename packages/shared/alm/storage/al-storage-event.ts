@@ -1,7 +1,8 @@
 import type { ALStorageResetEvent } from '../open-indexed-db-admission-database.ts';
 import type { ALStorageUnavailable } from './al-storage-unavailable.ts';
 
-export type ALStorageHealthStatus = 'healthy' | 'failing';
+/** `delayed` only on a checkpoint store: its oldest unsaved change outlived the interval, within the lag bound. */
+export type ALStorageHealthStatus = 'healthy' | 'delayed' | 'failing';
 
 export interface ALStorageHealthState {
     readonly status: ALStorageHealthStatus;
@@ -12,6 +13,8 @@ export interface ALStorageHealthState {
     readonly lastFailure: ALStorageUnavailable | undefined;
     /** The store's last recovery point; `undefined` before its first one. */
     readonly lastRecoveryPointAtMs: number | undefined;
+    /** How old a checkpoint store's oldest unsaved change was when it went `delayed` or `failing`; else `undefined`. */
+    readonly oldestUnsavedAgeMs: number | undefined;
 }
 
 /** What a durable store found when its lane started: exactly one per store, or per lane of a shared store, per connect. */

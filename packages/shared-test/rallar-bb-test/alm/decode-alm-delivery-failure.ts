@@ -52,7 +52,8 @@ const ALM_STORAGE_UNAVAILABLE_CAUSES: Readonly<Record<ALStorageUnavailableCause,
     quota: true,
     closed: true,
     evicted: true,
-    'transaction-failed': true
+    'transaction-failed': true,
+    'checkpoint-lag': true
 };
 
 const ALM_DURABILITY_ALGOS: Readonly<Record<ALDurabilityAlgo, true>> = {
