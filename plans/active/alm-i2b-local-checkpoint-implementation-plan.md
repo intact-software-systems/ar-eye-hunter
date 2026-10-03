@@ -14111,7 +14111,7 @@ git -C $WT fetch origin
 git -C $WT rev-parse HEAD origin/$B
 git -C $WT log --oneline HEAD..origin/main | wc -l
 gh variable list -R $R | grep -c RALLAR_BLACK_BOX_ALM_SCOPE
-gh pr view <PR> -R $R --json mergeable,mergeStateStatus --jq '[.mergeable, .mergeStateStatus] | @tsv'
+gh pr view 640 -R $R --json mergeable,mergeStateStatus --jq '[.mergeable, .mergeStateStatus] | @tsv'
 ```
 
 Expected: no status output; the two hashes equal; `0` variables; `MERGEABLE`. If main moved (the `wc -l` is not
@@ -14425,8 +14425,8 @@ Title: `ALM Release 4, I2b: checkpointed durability (D129–D135)`. Body section
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-Publish with `gh pr edit <PR> -R $R --title "..." --body-file $T/pr-body.md`. Leave the PR in draft; the maintainer
-reviews and merges. Then write `Task 9: complete` and `PLAN COMPLETE <date>: PR #<PR> at <H2>` in the ledger.
+Publish with `gh pr edit 640 -R $R --title "..." --body-file $T/pr-body.md`. Leave the PR in draft; the maintainer
+reviews and merges. Then write `Task 9: complete` and `PLAN COMPLETE <date>: PR #640 at <H2>` in the ledger.
 
 - [ ] **Step 15: After the maintainer merges**
 
@@ -14546,7 +14546,7 @@ Per-task bundles (brotli q11, private `TMPDIR`), as `browser/rallar.ts` / headle
 **(b) Placeholder scan.** No `TBD`, `TODO`, "implement later" or "similar to Task N" remains. The angle-bracket tokens
 that remain are deliberate:
 
-- `<PR>` in Task 9: the controller fills it after the draft PR opens.
+- `640` in Task 9: the controller fills it after the draft PR opens.
 - Values read while running Task 9: `<H1>`, `<H2>`, `<RUN>`, `<GATE_RUN>`, `<OBS_JOB>`, `<k>`, `<date>`, `<entry>`,
   `<N>`, `<x.xxx>`, `<x>`, `<sha>`, `<merge sha>`, `<id>` and `<alm-conformance-lane artifact>`.
 - Name patterns in prose, commit messages and store ids: `<sid>`, `<sessionId>`, `<carrier>`, `<namespace>`,
