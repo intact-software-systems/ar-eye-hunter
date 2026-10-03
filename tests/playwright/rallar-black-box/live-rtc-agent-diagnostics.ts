@@ -46,6 +46,17 @@ export interface LiveRtcLifecycleFailureInterval {
     readonly precision: 'attempt-phase-unspecified' | 'initial-attempt' | 'current-cycle-before-close';
 }
 
+export const LIVE_RTC_LIFECYCLE_LIMITS = Object.freeze({
+    inputBytes: 8_388_608,
+    transportBytes: 67_108_864,
+    transportTimeoutMs: 30_000,
+    scannedRows: 20_000,
+    rowBytes: 16_384,
+    retainedRows: 600,
+    eventOutputBytes: 262_144,
+    identityCharacters: 256
+});
+
 interface LiveRtcLifecycleHistoryInput {
     readonly jsonl: string | null;
     readonly bytesRead: number;
@@ -127,16 +138,6 @@ const RTC_LIFECYCLE_KINDS: Readonly<Record<RallarRtcLifecycleKind, true>> = {
     'lane-error': true,
     'signaling-failed': true
 };
-export const LIVE_RTC_LIFECYCLE_LIMITS = Object.freeze({
-    inputBytes: 8_388_608,
-    transportBytes: 67_108_864,
-    transportTimeoutMs: 30_000,
-    scannedRows: 20_000,
-    rowBytes: 16_384,
-    retainedRows: 600,
-    eventOutputBytes: 262_144,
-    identityCharacters: 256
-});
 
 const ROOM_TRANSPORT_STATES: Readonly<Record<RallarRoomTransportState, true>> = {
     off: true,
@@ -234,24 +235,6 @@ export function decodeAgentDiagnostics(
     };
 }
 
-function decodeLaneDiagnostics(
-    value: RtcBaselineJson
-): LiveRtcLaneDiagnostics | null {
-    const lane = jsonRecord(value);
-    return lane &&
-            typeof lane.peerId === 'string' &&
-            typeof lane.laneId === 'string' &&
-            typeof lane.isOpen === 'boolean' &&
-            typeof lane.isReconnectable === 'boolean'
-        ? {
-            peerId: lane.peerId,
-            laneId: lane.laneId,
-            isOpen: lane.isOpen,
-            isReconnectable: lane.isReconnectable
-        }
-        : null;
-}
-
 export function buildLiveRtcAgentDiagnostics(
     agentId: string,
     resultValue: RtcBaselineJson | object
@@ -301,6 +284,49 @@ export function buildLiveRtcAgentDiagnostics(
             formation: toLiveRtcFormationDiagnostics(rallar.formation)
         })
     };
+}
+
+export function compareLaneStates(
+    left: LiveRtcLaneDiagnostics,
+    right: LiveRtcLaneDiagnostics
+): number {
+    return left.peerId.localeCompare(right.peerId) ||
+        left.laneId.localeCompare(right.laneId);
+}
+
+export function toLiveRtcLifecycleHistory(
+    input: LiveRtcLifecycleHistoryInput
+): Readonly<Record<string, RtcBaselineJson>> {
+    // The compact identity index is bounded by the same <=20,000 selected rows, never by an extra read.
+    const sourceIdentities = computeLiveRtcSignalingIdentities(input);
+    const scanned = computeLiveRtcDiagnosticScan(input, sourceIdentities);
+    const scan = computeRetainedLiveRtcSignalingLinks(scanned, sourceIdentities);
+    const history = toLiveRtcLifecycleHistoryMetadata(input, scan);
+    return Object.fromEntries(input.agentIds.map((agentId) => [
+        agentId,
+        normalizeJson({
+            ...history,
+            events: scan.events.filter((event) => event.agentId === agentId)
+        })
+    ]));
+}
+
+function decodeLaneDiagnostics(
+    value: RtcBaselineJson
+): LiveRtcLaneDiagnostics | null {
+    const lane = jsonRecord(value);
+    return lane &&
+            typeof lane.peerId === 'string' &&
+            typeof lane.laneId === 'string' &&
+            typeof lane.isOpen === 'boolean' &&
+            typeof lane.isReconnectable === 'boolean'
+        ? {
+            peerId: lane.peerId,
+            laneId: lane.laneId,
+            isOpen: lane.isOpen,
+            isReconnectable: lane.isReconnectable
+        }
+        : null;
 }
 
 function toLiveRtcFormationDiagnostics(value: RtcBaselineJson | undefined): RtcBaselineJson {
@@ -400,31 +426,6 @@ function hasLiveRtcConnectionTimer(
             connectionDiagnostics?.hasReconnectTimer === true ||
             (numberValue(connectionDiagnostics?.reconnectAttemptsInFlight) ?? 0) !== 0;
     });
-}
-
-export function compareLaneStates(
-    left: LiveRtcLaneDiagnostics,
-    right: LiveRtcLaneDiagnostics
-): number {
-    return left.peerId.localeCompare(right.peerId) ||
-        left.laneId.localeCompare(right.laneId);
-}
-
-export function toLiveRtcLifecycleHistory(
-    input: LiveRtcLifecycleHistoryInput
-): Readonly<Record<string, RtcBaselineJson>> {
-    // The compact identity index is bounded by the same <=20,000 selected rows, never by an extra read.
-    const sourceIdentities = computeLiveRtcSignalingIdentities(input);
-    const scanned = computeLiveRtcDiagnosticScan(input, sourceIdentities);
-    const scan = computeRetainedLiveRtcSignalingLinks(scanned, sourceIdentities);
-    const history = toLiveRtcLifecycleHistoryMetadata(input, scan);
-    return Object.fromEntries(input.agentIds.map((agentId) => [
-        agentId,
-        normalizeJson({
-            ...history,
-            events: scan.events.filter((event) => event.agentId === agentId)
-        })
-    ]));
 }
 
 function toLiveRtcLifecycleHistoryMetadata(
