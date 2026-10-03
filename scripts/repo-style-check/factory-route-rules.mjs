@@ -1,4 +1,10 @@
-import { countMatches, lineFromOffset, lineOffsets, skipWhitespaceAndComments } from './source-text.mjs';
+import {
+    countMatches,
+    lineFromOffset,
+    lineOffsets,
+    maskNonCodeLines,
+    skipWhitespaceAndComments
+} from './source-text.mjs';
 
 export function estimateCyclomaticComplexity(text) {
     return (
@@ -139,6 +145,7 @@ function findOptionalFields(lines, typeName) {
         'u'
     );
 
+    let maskedLines;
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
         if (!startPattern.test(lines[lineIndex])) {
             continue;
@@ -146,9 +153,10 @@ function findOptionalFields(lines, typeName) {
 
         const optionalFields = [];
         let depth = 0;
+        maskedLines ??= maskNonCodeLines(lines);
 
         for (let fieldLineIndex = lineIndex; fieldLineIndex < lines.length; fieldLineIndex += 1) {
-            const clean = lines[fieldLineIndex].split('//')[0];
+            const clean = maskedLines[fieldLineIndex];
             const openCount = (clean.match(/\{/gu) ?? []).length;
             const closeCount = (clean.match(/\}/gu) ?? []).length;
 

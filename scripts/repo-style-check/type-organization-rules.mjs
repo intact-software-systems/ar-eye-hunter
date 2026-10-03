@@ -1,4 +1,4 @@
-import { findMatchingBrace, lineFromOffset, lineOffsets } from './source-text.mjs';
+import { findMatchingBrace, lineFromOffset, lineOffsets, maskNonCodeLines } from './source-text.mjs';
 
 export const typeOrganizationRuleIds = Object.freeze({
     renameAlias: 'types.rename-alias',
@@ -123,8 +123,7 @@ function findRuntimeMemberEntries(namespaceBody) {
         String.raw`^[ \t]*(?:export[ \t]+)?(?:const|let|var|function|class|enum)[ \t]+`,
         'u'
     );
-    return namespaceBody
-        .split('\n')
-        .map((text, lineIndex) => ({ lineIndex, code: text.split('//')[0] }))
+    return maskNonCodeLines(namespaceBody.split('\n'))
+        .map((code, lineIndex) => ({ lineIndex, code }))
         .filter((entry) => runtimeMemberPattern.test(entry.code));
 }

@@ -28,7 +28,7 @@ describe('changed repository style checker', () => {
         expect(result.stdout).toContain('PASS: no new repository style findings');
     });
 
-    it('passes when an equivalent legacy finding changes descriptive text', () => {
+    it('fails when a touched file still carries boundary.unknown', () => {
         const fixture = createGitFixture({
             'apps/example/legacy-file.ts': 'const previousValue: unknown = true;\n'
         });
@@ -37,11 +37,85 @@ describe('changed repository style checker', () => {
 
         const result = runChangedChecker(fixture);
 
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(result.stdout).toContain('apps/example/legacy-file.ts [boundary.unknown]');
+    });
+
+    it('fails when a touched file keeps one of two boundary.unknown bindings', () => {
+        const fixture = createGitFixture({
+            'apps/example/legacy-file.ts': 'const first: unknown = true;\nconst second: unknown = false;\n'
+        });
+        commitAll(fixture, 'base');
+        writeFixture(fixture, 'apps/example/legacy-file.ts', 'const first: unknown = true;\nconst second = false;\n');
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(result.stdout).toContain('apps/example/legacy-file.ts [boundary.unknown]');
+    });
+
+    it('fails when unknown moves between functions without changing the file total', () => {
+        const fixture = createGitFixture({
+            'apps/example/legacy-file.ts': [
+                'export function alpha(value: unknown): string {',
+                '  return String(value);',
+                '}',
+                'export function bravo(value: string): string {',
+                '  return value;',
+                '}'
+            ].join('\n')
+        });
+        commitAll(fixture, 'base');
+        writeFixture(
+            fixture,
+            'apps/example/legacy-file.ts',
+            [
+                'export function alpha(value: string): string {',
+                '  return value;',
+                '}',
+                'export function bravo(value: unknown): string {',
+                '  return String(value);',
+                '}'
+            ].join('\n')
+        );
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
+        expect(result.stdout).toContain('apps/example/legacy-file.ts [boundary.unknown]');
+    });
+
+    it('fails when a renamed file still carries boundary.unknown', () => {
+        const fixture = createGitFixture({
+            'apps/example/legacy-file.ts': 'const previousValue: unknown = true;\n'
+        });
+        commitAll(fixture, 'base');
+        runGit(fixture, ['mv', 'apps/example/legacy-file.ts', 'apps/example/renamed-file.ts']);
+
+        const result = runChangedChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('apps/example/renamed-file.ts [boundary.unknown]');
+    });
+
+    it('does not fail an untouched file that still carries boundary.unknown', () => {
+        const fixture = createGitFixture({
+            'apps/example/legacy-file.ts': 'const previousValue: unknown = true;\n',
+            'apps/example/other.ts': 'export const value = true;\n'
+        });
+        commitAll(fixture, 'base');
+        appendSource(fixture, 'apps/example/other.ts', 'export const added = true;\n');
+
+        const result = runChangedChecker(fixture);
+
         expect(result.status).toBe(0);
         expect(result.stdout).toContain('PASS: no new repository style findings');
     });
 
-    it('passes when a changed file retains a legacy forward capture', () => {
+    it('fails when a touched file still carries a forward capture', () => {
         const fixture = createGitFixture({
             'apps/example/runtime.ts': forwardCaptureSource()
         });
@@ -50,8 +124,8 @@ describe('changed repository style checker', () => {
 
         const result = runChangedChecker(fixture);
 
-        expect(result.status).toBe(0);
-        expect(result.stdout).toContain('PASS: no new repository style findings');
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain('construction.forward-capture');
     });
 
     it('fails when a changed file introduces a forward capture', () => {

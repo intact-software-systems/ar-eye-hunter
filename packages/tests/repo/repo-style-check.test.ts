@@ -3,8 +3,10 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { findUnknownUsages } from '../../../scripts/repo-style-check/contract-rules.mjs';
 import { estimateCyclomaticComplexity, extractRouteHandlerRanges } from '../../../scripts/repo-style-check/factory-route-rules.mjs';
 import { isTestRunnerConfigFile } from '../../../scripts/repo-style-check/repository-scan.mjs';
+import { findMatchingBrace } from '../../../scripts/repo-style-check/source-text.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/repo-style-check.mjs');
@@ -31,6 +33,37 @@ describe('repo style checker', () => {
         });
 
         expect(runChecker(fixtureRoot)).toContain('Command model CreateThingCommand contains optional fields');
+    });
+
+    it('does not treat a commented or quoted optional command field as a command field', () => {
+        const fixtureRoot = createFixture({
+            'command.ts': [
+                'interface CreateThingCommand {',
+                '  // readonly mode?: string;',
+                '  readonly note: \'mode?: string\';',
+                '  readonly id: string;',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('names the real optional command field and not one that exists only in a comment or string', () => {
+        const fixtureRoot = createFixture({
+            'command.ts': [
+                'interface CreateThingCommand {',
+                '  // readonly mode?: string;',
+                '  readonly note: \'mode?: string\';',
+                '  readonly kept?: string;',
+                '}'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Command model CreateThingCommand contains optional fields');
+        expect(result).toContain('readonly kept?: string');
+        expect(result).not.toContain('mode?:');
     });
 
     it('keeps plain-object type guidance disabled unless explicitly requested', () => {
@@ -94,6 +127,40 @@ describe('repo style checker', () => {
         expect(result).toContain('[types.runtime-namespace]');
         expect(result).toContain('Namespace "CreateAccounts" at line 1 contains 1 runtime member');
         expect(result).toContain('first at line 6');
+    });
+
+    it('does not treat a commented or quoted namespace member as a runtime member', () => {
+        const fixtureRoot = createFixture({
+            'create-accounts.ts': [
+                'export namespace CreateAccounts {',
+                '  // export function hidden(): void {}',
+                '  export type Note = \'export const hidden = 1\';',
+                '}',
+                '',
+                'export class CreateAccounts {}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('reports a real namespace runtime member after a commented one', () => {
+        const fixtureRoot = createFixture({
+            'create-accounts.ts': [
+                'export namespace CreateAccounts {',
+                '  // export function hidden(): void {}',
+                '  export type Note = \'export const hidden = 1\';',
+                '  export function submitInput(): void {}',
+                '}',
+                '',
+                'export class CreateAccounts {}'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('[types.runtime-namespace]');
+        expect(result).toContain('contains 1 runtime member');
+        expect(result).toContain('first at line 4');
     });
 
     it('keeps type-only namespaces and ambient declarations unflagged', () => {
@@ -190,6 +257,162 @@ describe('repo style checker', () => {
         expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
     });
 
+    it('reports unknown after an apostrophe inside a line comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                '// the engine\'s own isWork -> runnable path',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('reports unknown after an apostrophe inside a block comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                '/* the engine\'s own isWork -> runnable path */',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('does not report unknown when the word only appears in a comment', () => {
+        const fixtureRoot = createFixture({
+            'notes.ts': [
+                '// this boundary once accepted unknown',
+                '/* and this one returned unknown too */',
+                'export const total = 1;'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('does not read a URL inside a string as a line comment', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const endpoint = \'http://example.com\';',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('reports unknown on the same line as a URL inside a string', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': 'export const endpoint = \'http://example.com\'; const value: unknown = endpoint;\n'
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 1');
+    });
+
+    it('does not report unknown after a URL slash inside a string', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': 'export const endpoint = \'http://example.com/unknown\';\n'
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('recovers quote state at the end of a line holding an unpaired quote', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const quotePattern = /[\'"]/u;',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('reports unknown after a regexp that contains two slashes', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const pattern = /http:\\/\\//; const hidden = /unknown/;',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Review unknown at line 2');
+        expect(result).not.toContain('Review unknown at line 1');
+    });
+
+    it('reports division by unknown and ignores unknown inside a returned regexp', () => {
+        const fixtureRoot = createFixture({
+            'ratio.ts': [
+                'export function measure(total: number): number {',
+                '  const ratio = total / unknown;',
+                '  return ratio;',
+                '}',
+                'export function pattern(): RegExp {',
+                '  return /unknown/;',
+                '}'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Review unknown at line 2');
+        expect(result).not.toContain('Review unknown at line 6');
+    });
+
+    it('does not report unknown inside a backslash-continued string', () => {
+        const fixtureRoot = createFixture({
+            'reject.ts': [
+                'export const text = \'foo\\',
+                'unknown inside\';',
+                'export const onReject = (reason: unknown): void => {',
+                '  throw reason;',
+                '};'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('Review unknown at line 3');
+        expect(result).not.toContain('Review unknown at line 2');
+    });
+
+    it('closes a block comment when the star and slash are on separate lines', () => {
+        const usages = findUnknownUsages([
+            '/* mutation\'s *',
+            '/',
+            'export const onReject = (reason: unknown): void => {'
+        ]);
+
+        expect(usages.map((usage) => usage.line)).toEqual([3]);
+    });
+
+    it('matches the real closing brace when a string and a comment contain braces', () => {
+        const other = 'function short(): void { return; }';
+        const source = [
+            'function readValue(input: string): string {',
+            '  const text = \'brace } inside\';',
+            '  /* comment } inside */',
+            '  return input;',
+            '}'
+        ].join('\n');
+        const opening = source.indexOf('{');
+        const closing = source.lastIndexOf('}');
+
+        expect(findMatchingBrace(other, other.indexOf('{'))).toBe(other.lastIndexOf('}'));
+        expect(findMatchingBrace(source, opening)).toBe(closing);
+        expect(findMatchingBrace(source, opening)).toBe(closing);
+    });
+
     it('does not report synthetic TypeScript inside a multiline template literal', () => {
         const fixtureRoot = createFixture({
             'message.ts': [
@@ -210,7 +433,26 @@ describe('repo style checker', () => {
             ].join('\n')
         });
 
-        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
+    });
+
+    it('does not report unknown inside a nested template string', () => {
+        const fixtureRoot = createFixture({
+            'message.ts': 'const message = `outer ${`inner unknown`}`;'
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('reports unknown inside a nested template interpolation', () => {
+        const fixtureRoot = createFixture({
+            'message.ts': [
+                'declare const value: string;',
+                'const message = `outer ${`inner ${value as unknown}`}`;'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('Review unknown at line 2');
     });
 
     it('does not report unknown consumed by a validating decoder boundary', () => {
@@ -446,6 +688,30 @@ describe('repo style checker', () => {
         });
 
         expect(runChecker(fixtureRoot)).toContain('Prefer required factory input and createDefaultServer()');
+    });
+
+    it('does not treat commented or quoted factory fields as optional input', () => {
+        const fixtureRoot = createFixture({
+            'factory.ts': [
+                'interface CreateServerOptions {',
+                '  // readonly port?: number;',
+                '  // readonly host?: string;',
+                '  // readonly secure?: boolean;',
+                '  readonly label: \'secure?: boolean\';',
+                '  readonly port: number;',
+                '  readonly host: string;',
+                '  readonly secure: boolean;',
+                '}',
+                '',
+                'export function createServer(options: CreateServerOptions = {}) {',
+                '  const port = options.port ?? 8080;',
+                '  const host = options.host ?? \'localhost\';',
+                '  return { port, host };',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
     });
 
     it('warns for hidden factory defaults regardless of the input type suffix', () => {

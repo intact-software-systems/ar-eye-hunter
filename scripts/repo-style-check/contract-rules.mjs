@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 
 import {
     findMatchingBrace,
+    maskNonCodeLines,
     skipWhitespaceAndComments,
     splitTopLevelItems
 } from './source-text.mjs';
@@ -93,6 +94,7 @@ export function scanOutputContractNaming(raw, functions) {
 
 export function extractCommandTypesWithOptionalFields(lines) {
     const commandTypes = [];
+    const maskedLines = maskNonCodeLines(lines);
     const startPattern = /^(?:export\s+)?(?:type|interface)\s+([A-Za-z0-9_]*Command)\s*(?:<[^>]+>)?(?:\s*=\s*)?\{/;
 
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -105,7 +107,7 @@ export function extractCommandTypesWithOptionalFields(lines) {
         const optionalFields = [];
 
         for (let fieldLineIndex = lineIndex; fieldLineIndex < lines.length; fieldLineIndex += 1) {
-            const clean = lines[fieldLineIndex].split('//')[0];
+            const clean = maskedLines[fieldLineIndex];
             const openCount = (clean.match(/\{/g) ?? []).length;
             const closeCount = (clean.match(/\}/g) ?? []).length;
 
@@ -164,7 +166,7 @@ export function findUnknownUsages(lines) {
     let lineStartOffset = 0;
 
     for (const [index, text] of lines.entries()) {
-        const code = codeLines[index].split('//')[0];
+        const code = codeLines[index];
         const pattern = /\bunknown\b/gu;
         let match;
 
@@ -213,95 +215,5 @@ function toPascalCase(name) {
 }
 
 function stripQuotedText(lines) {
-    const state = {
-        mode: 'code',
-        templateExpressionDepths: []
-    };
-    return lines.map((line) => stripQuotedLine(line, state));
-}
-
-function stripQuotedLine(line, state) {
-    let code = '';
-    for (let index = 0; index < line.length;) {
-        const step = quotedTextStep(line, index, state);
-        code += step.code;
-        index += step.width;
-    }
-    return code;
-}
-
-function quotedTextStep(line, index, state) {
-    if (state.mode === 'template') {
-        return templateTextStep(line, index, state);
-    }
-    if (state.mode === 'single' || state.mode === 'double') {
-        return stringTextStep(line, index, state);
-    }
-    return codeTextStep(line, index, state);
-}
-
-function templateTextStep(line, index, state) {
-    const character = line[index];
-    if (character === '\\') {
-        return maskedStep(index + 1 < line.length ? 2 : 1);
-    }
-    if (character === '$' && line[index + 1] === '{') {
-        state.templateExpressionDepths[state.templateExpressionDepths.length - 1] = 1;
-        state.mode = 'code';
-        return maskedStep(2);
-    }
-    if (character === '`') {
-        state.templateExpressionDepths.pop();
-        state.mode = 'code';
-    }
-    return maskedStep(1);
-}
-
-function stringTextStep(line, index, state) {
-    const character = line[index];
-    if (character === '\\') {
-        return maskedStep(index + 1 < line.length ? 2 : 1);
-    }
-    const closingQuote = state.mode === 'single' ? '\'' : '"';
-    if (character === closingQuote) {
-        state.mode = 'code';
-    }
-    return maskedStep(1);
-}
-
-function codeTextStep(line, index, state) {
-    const character = line[index];
-    if (character === '\'' || character === '"') {
-        state.mode = character === '\'' ? 'single' : 'double';
-        return maskedStep(1);
-    }
-    if (character === '`') {
-        state.templateExpressionDepths.push(0);
-        state.mode = 'template';
-        return maskedStep(1);
-    }
-    updateTemplateExpression(character, state);
-    return { code: character, width: 1 };
-}
-
-function updateTemplateExpression(character, state) {
-    const index = state.templateExpressionDepths.length - 1;
-    const depth = state.templateExpressionDepths[index];
-    if (depth === undefined || depth === 0) {
-        return;
-    }
-    if (character === '{') {
-        state.templateExpressionDepths[index] += 1;
-        return;
-    }
-    if (character === '}') {
-        state.templateExpressionDepths[index] -= 1;
-        if (state.templateExpressionDepths[index] === 0) {
-            state.mode = 'template';
-        }
-    }
-}
-
-function maskedStep(width) {
-    return { code: ' '.repeat(width), width };
+    return maskNonCodeLines(lines);
 }
