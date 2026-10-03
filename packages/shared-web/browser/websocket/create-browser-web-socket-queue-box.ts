@@ -11,7 +11,11 @@ import type {
     ALVolatileInboundRuntimeStores
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALCheckpointOutboundRuntimeStores,
+    ALOutboundRuntimeDiagnosticsSink
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
@@ -45,6 +49,8 @@ export namespace CreateBrowserWebSocketQueueBox {
         /** The session's inbound memory pair, the same one the RTC receiver holds. */
         readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
         readonly volatileBudget: ALVolatileSessionBudget;
+        /** The connect's checkpoint pair of the WS client, which its `local-checkpoint` admissions go to. */
+        readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;
         /** The connect's claim on its session's durable work, which only the durable lanes take. */
         readonly durableWorkOwnership: ALDurableWorkOwnership;
         readonly signal?: AbortSignal;
@@ -100,6 +106,7 @@ function createBrowserWebSocketQueueBoxService(
             toBrowserWsClientALRuntimeStoreId(clientData.sessionId),
             input.volatileBudget
         ),
+        outboundCheckpointStores: input.checkpointStores,
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,
         inboundDiagnostics: input.inboundDiagnostics,

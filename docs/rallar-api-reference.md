@@ -619,7 +619,8 @@ Both lanes expose:
 volatile with a 30 s deadline: kept in the memory pair only, no IndexedDB. They
 track no receipt unless the send states `ack` (or `qos.ack`); without one,
 `transport-accepted` is terminal. Opt in to browser storage with
-`qos: { durability: { algo: 'local-outbox' } }`.
+`qos: { durability: { algo: 'local-outbox' } }`, or to a checkpointed memory
+send with `qos: { durability: { algo: 'local-checkpoint' } }`.
 
 `messages.room<T>(definition)` creates a room channel directly;
 `roomSession.message(...)` delegates to it. A typed channel exposes `send`,
@@ -674,6 +675,41 @@ message. A lane send names no channel, so it always refuses. A WS send with
 scope `world` or `all`, and a `best-effort` send, ask for no receipt unless
 the send states `ack`.
 
+`durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
+send is admitted and dispatched from memory and spends no storage operation on
+its way to the carrier; the tab that owns the session's work checkpoints what
+changed into the browser database, in one IndexedDB transaction, at most once
+per interval target (1 s) and when the page hides (`visibilitychange` to
+hidden, `pagehide` or `freeze`), and writes nothing while nothing changed. The
+next connect that owns the session's work, after a reload or in another tab,
+restores the checkpoint before its first work batch: a message it reserved
+retries under the lease rule, one whose deadline passed settles `expired`, and
+a restored message has no handle. Receivers keep it in memory, as they keep
+`local-outbox`. The limits are stated:
+
+- **The loss window.** What was admitted after the last completed checkpoint is
+  lost with the page: up to one interval target, and more when the page closes
+  before its hide flush completes, since the flush is started and not awaited.
+  An interrupted checkpoint leaves the previous one intact.
+- **One tab checkpoints.** Only the tab that owns the session's work writes and
+  restores the checkpoint. A waiting tab's `local-checkpoint` sends dispatch from
+  that tab's memory, are lost with it, and read `admittedDurable: false`.
+- **No positions.** A send that states a `seq` is refused `unsupported`, since a
+  restored copy could reuse a position the receiver already saw; the ordering
+  key alone and latest-wins sends are admitted.
+- **Lag follows `onStorageUnavailable`.** While a checkpoint store's oldest
+  unsaved change is older than the interval target its `health` reads
+  `delayed`; beyond the recovery-lag bound (10 s) it reads `failing` with cause
+  `checkpoint-lag`, and new `local-checkpoint` sends follow the channel's
+  `onStorageUnavailable` (`failed` with `storage-unavailable`, or one volatile
+  send with a `durabilityDowngrade`) until a checkpoint completes. A browser
+  without IndexedDB refuses them with cause `missing`, as it refuses durable
+  sends.
+
+The interval target and the recovery-lag bound are settings of the browser
+composition (`checkpointIntervalMs`, `checkpointLagBoundMs` on the store
+factory's input), 1,000 ms and 10,000 ms by default.
+
 Two tabs of one session share its durable stores, and one of them drains them:
 where the browser has the Locks API, the tab holding the session's
 durable-owner lock sends every tab's durable messages, and when it disconnects
@@ -693,8 +729,8 @@ own, as before.
 A browser without IndexedDB has no durable storage and no memory stand-in:
 each connect decides that once, and its durable sends follow the same rule
 without reaching the carrier. Any other storage failure is tried again by the
-next durable send. The first durable admission of a connect asks for
-persistent storage: it reads `navigator.storage.persisted()` and, unless the
+next durable send. The first durable or `local-checkpoint` admission of a
+connect asks for persistent storage: it reads `navigator.storage.persisted()` and, unless the
 origin already persists, calls `navigator.storage.persist()`; the send awaits
 neither, and the outcome arrives as a `persist` event on the storage
 diagnostics port. A denial is asked again by the next connect.
@@ -715,10 +751,15 @@ every `ALStorageEvent`:
   by the WS and RTC lanes and reports once per lane, as `<store id>/ws` and
   `<store id>/rtc`. A creation or reset of the database is reported by each
   store of the connect that found it; a later connect reads the database as it is;
-- `health`: a store's `ALStorageHealthState` on each change of status only,
-  `failing` at the first storage failure and `healthy` at the first commit
-  after it, with the failure as `lastFailure`; a database evicted under the
-  document reads `failing` with cause `evicted`;
+- `health`: a store's `ALStorageHealthState` on each change of status
+  (`ALStorageHealthStatus`) only, `failing` at the first storage failure and
+  `healthy` at the first commit after it, with the failure as `lastFailure`; a
+  database evicted under the document reads `failing` with cause `evicted`. A
+  checkpoint store (`browser-ws-client-checkpoint:<sessionId>`,
+  `browser-rtc-overlay-checkpoint:<sessionId>`) also reads `delayed` while its
+  oldest unsaved change is older than the interval target, with that age as
+  `oldestUnsavedAgeMs`, and `failing` with cause `checkpoint-lag` beyond the
+  recovery-lag bound;
 - `persist`: the outcome of the connect's one persistence request
   (`ALStoragePersistOutcome`).
 

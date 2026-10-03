@@ -70,8 +70,9 @@ WS server and Node keep the always-owned default.
 - **The durability is the sender's, carried on the envelope.** A data message goes to
   the lane [`resolveALInboundStoreDurability`](./lane/resolve-al-inbound-store-durability.ts)
   names from the envelope's normalized `qos.durability`: the IndexedDB lane exactly when
-  it is `local-inbox`. `local-outbox` keeps the sender's copy only, so it does not make
-  the receiver durable; `volatile` and the default do not either. No receiver-side
+  it is `local-inbox`. `local-checkpoint` and `local-outbox` keep the sender's copy
+  only, so they do not make the receiver durable; `volatile` and the default do not
+  either. No receiver-side
   policy moves the decision, and every copy and retry of one message resolves to the
   same lane.
 - **The origin's own ACK short-circuits.** An acknowledgement of a message this peer

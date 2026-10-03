@@ -4,6 +4,7 @@ import type {
     ALStoragePersistOutcome
 } from '@shared/alm/storage/al-storage-event.ts';
 import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { ObservableLatestValue } from '@shared/cache/ObservableLatestValue.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -23,11 +24,13 @@ export namespace BrowserALStorageAvailability {
 
 /**
  * Storage missing for the document holds until the next connect; any other cause is tried again by
- * the next durable admission, whose verdict re-decides it.
+ * the next durable admission, whose verdict re-decides it. A checkpoint store that lags beyond its
+ * bound skips the checkpoint lane until that store reads healthy or delayed again.
  */
 export class BrowserALStorageAvailability {
     readonly availability = new ObservableLatestValue<ALStorageAvailability>();
     private readonly input: BrowserALStorageAvailability.Input;
+    private readonly checkpointLags = new LatestRepository<string, ALStorageUnavailable>();
     private persistRequested = false;
 
     constructor(input: BrowserALStorageAvailability.Input) {
@@ -40,6 +43,23 @@ export class BrowserALStorageAvailability {
         return current.kind === 'unavailable' && current.reason.cause === 'missing'
             ? current.reason
             : undefined;
+    }
+
+    getCheckpointLaneSkip(): ALStorageUnavailable | undefined {
+        const [lag] = this.checkpointLags.values();
+        return this.getDurableLaneSkip() ?? lag?.peek();
+    }
+
+    /** Only a lag beyond the bound skips the lane: a failed checkpoint write is retried by the next one. */
+    recordCheckpointHealth(event: ALStorageEvent): void {
+        if (event.kind !== 'health') {
+            return;
+        }
+        if (event.status === 'failing' && event.lastFailure?.cause === 'checkpoint-lag') {
+            this.checkpointLags.accept(event.storeId, event.lastFailure);
+            return;
+        }
+        this.checkpointLags.delete(event.storeId);
     }
 
     /** Never awaited: a browser may answer `persist()` only after prompting the user. */

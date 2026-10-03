@@ -11,6 +11,7 @@ import {
 
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -99,6 +100,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
             createDefaultVolatileSessionBudget()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -148,6 +150,7 @@ it('a fresh WS owner recovers the same pending IndexedDB original with a fresh f
             createDefaultVolatileSessionBudget()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(100);
@@ -475,6 +478,7 @@ async function openRecoveryOwner(
             createDefaultVolatileSessionBudget()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

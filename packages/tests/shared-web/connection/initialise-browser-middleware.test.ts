@@ -107,6 +107,38 @@ describe('the durable work claim a connect hands its carriers', () => {
     });
 });
 
+describe('the checkpoint stores a connect hands its carriers', () => {
+    it('gives the WS client and the RTC overlay each the checkpoint pair of its own store', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const input = createBrowserTransportInput(SESSION, OPTIONS);
+        onTestFinished(() => {
+            input.checkpointStores.wsClient.checkpoint.dispose();
+            input.checkpointStores.rtcOverlay.checkpoint.dispose();
+        });
+
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const rtc = toRtcOverlayMulticastManagerInput(input, {
+            qboxEngine,
+            webRtcConnectionService: createConnectionService()
+        });
+
+        expect(ws.checkpointStores).toBe(input.checkpointStores.wsClient);
+        expect(rtc.checkpointStores).toBe(input.checkpointStores.rtcOverlay);
+        expect(ws.checkpointStores.admissionStore.namespace).toBe(
+            'browser:browser-ws-client-checkpoint:session-1:outbound:admission'
+        );
+        expect(rtc.checkpointStores.admissionStore.namespace).toBe(
+            'browser:browser-rtc-overlay-checkpoint:session-1:outbound:admission'
+        );
+    });
+});
+
 function createConnectionService(): WebRtcConnectionService {
     return new WebRtcConnectionService({
         send: async () => undefined,

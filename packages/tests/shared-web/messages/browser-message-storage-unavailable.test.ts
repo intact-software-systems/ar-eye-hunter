@@ -234,6 +234,134 @@ describe('a downgraded send whose storage stays unavailable', () => {
     });
 });
 
+describe('a local-checkpoint send and its checkpoint storage', () => {
+    it('fails without reaching the carrier while a checkpoint store lags beyond its bound, on a channel that refuses', async () => {
+        const fixture = createStorageFixture(AVAILABLE);
+        fixture.middleware.middleware.storageAvailability.recordCheckpointHealth(CHECKPOINT_LAGGING);
+        const admitted = recordWsAdmissions(fixture, toLaneAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('failed');
+        expect(handle.lifecycle().evidence.failure).toEqual({ kind: 'storage-unavailable', cause: 'checkpoint-lag' });
+        expect(admitted).toEqual([]);
+    });
+
+    it('sends it once without storage on a channel that chose volatile, naming the lag as the downgrade', async () => {
+        const fixture = createStorageFixture(AVAILABLE);
+        fixture.middleware.middleware.storageAvailability.recordCheckpointHealth(CHECKPOINT_LAGGING);
+        const admitted = recordWsAdmissions(fixture, toVolatileAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('volatile'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('queued');
+        expect(admitted.map((message) => message.qos?.durability)).toEqual([{ algo: 'volatile' }]);
+        expect(handle.lifecycle().evidence.durabilityDowngrade).toEqual({
+            requested: 'local-checkpoint',
+            cause: 'checkpoint-lag'
+        });
+    });
+
+    it('admits it while a checkpoint store is only delayed', async () => {
+        const fixture = createStorageFixture(AVAILABLE);
+        fixture.middleware.middleware.storageAvailability.recordCheckpointHealth({
+            ...CHECKPOINT_LAGGING,
+            status: 'delayed',
+            lastFailure: undefined,
+            oldestUnsavedAgeMs: 1_500
+        });
+        const admitted = recordWsAdmissions(fixture, toLaneAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('queued');
+        expect(admitted.map((message) => message.qos?.durability)).toEqual([{ algo: 'local-checkpoint' }]);
+    });
+
+    it('fails a local-checkpoint send typed while storage is missing for the document', async () => {
+        const fixture = createStorageFixture(MISSING);
+        const admitted = recordWsAdmissions(fixture, toLaneAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('failed');
+        expect(handle.lifecycle().evidence.failure).toEqual({ kind: 'storage-unavailable', cause: 'missing' });
+        expect(admitted).toEqual([]);
+    });
+
+    it('leaves a local-outbox send to the durable lane whatever the checkpoint lag', async () => {
+        const fixture = createStorageFixture(AVAILABLE);
+        fixture.middleware.middleware.storageAvailability.recordCheckpointHealth(CHECKPOINT_LAGGING);
+        const admitted = recordWsAdmissions(fixture, toLaneAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toDurableChannel('refuse'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('queued');
+        expect(admitted.map((message) => message.qos?.durability)).toEqual([{ algo: 'local-outbox' }]);
+    });
+
+    // A tab that waits for the session's work admits to memory only, so its verdict is not durable; the origin's
+    // persistence still serves the owner's checkpoint. The request never settles, as a browser prompting its user.
+    it('asks for persistent storage on the first checkpoint admission, also one that is not durable', async () => {
+        const asked: string[] = [];
+        const fixture = createStorageFixture(AVAILABLE, () => {
+            asked.push('persist');
+            return new Promise<boolean>(() => {});
+        });
+        recordWsAdmissions(fixture, toVolatileAdmission);
+
+        const first = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+        const second = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+        await expect.poll(() => [first.lifecycle().state, second.lifecycle().state]).toEqual(['queued', 'queued']);
+
+        expect(asked).toEqual(['persist']);
+    });
+
+    // A checkpoint admission writes memory only, so it says nothing about IndexedDB.
+    it('leaves the connect\'s availability as a storage failure left it', async () => {
+        const fixture = createStorageFixture(QUOTA);
+        recordWsAdmissions(fixture, toLaneAdmission);
+
+        const handle = await fixture.sender.sendWs(COMMAND, toCheckpointChannel('refuse'));
+
+        await expect.poll(() => handle.lifecycle().state).toBe('queued');
+        expect(fixture.middleware.middleware.storageAvailability.availability.get()).toEqual(QUOTA);
+    });
+});
+
+const CHECKPOINT_LAGGING: Extract<ALStorageEvent, { kind: 'health'; }> = {
+    kind: 'health',
+    storeId: 'browser-ws-client-checkpoint:session-1',
+    status: 'failing',
+    lastFailure: { cause: 'checkpoint-lag', detail: 'unsaved for 12000 ms' },
+    lastRecoveryPointAtMs: undefined,
+    oldestUnsavedAgeMs: 12_000
+};
+const QUOTA: ALStorageAvailability = {
+    kind: 'unavailable',
+    reason: { cause: 'quota', detail: 'QuotaExceededError' }
+};
+
+/** Every envelope the WS carrier's admission port received, each answered as `answer` states. */
+function recordWsAdmissions(
+    fixture: ReturnType<typeof createBrowserMessageSenderFixture>,
+    answer: (message: ALMessage) => ALOutboundEnqueueResult
+): readonly ALMessage[] {
+    const admitted: ALMessage[] = [];
+    vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent)
+        .mockImplementation(async (message) => {
+            admitted.push(message);
+            return answer(message);
+        });
+    return admitted;
+}
+
+function toCheckpointChannel(
+    onStorageUnavailable: BrowserTypedChannelPolicy['onStorageUnavailable']
+): BrowserTypedChannelPolicy {
+    return { purpose: 'command', durability: 'local-checkpoint', onStorageUnavailable };
+}
+
 const AVAILABLE: ALStorageAvailability = { kind: 'available' };
 const MISSING: ALStorageAvailability = {
     kind: 'unavailable',

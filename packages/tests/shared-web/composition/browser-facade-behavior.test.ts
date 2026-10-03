@@ -94,7 +94,7 @@ installFakeBroadcastChannelPerTest();
 beforeEach(() => {
     browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
-    runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
+    runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, checkpoints: [] });
     runtime.readSession.mockReturnValue(runtime.middleware.session);
     runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     runtime.hydrateStateCache.mockResolvedValue(undefined);

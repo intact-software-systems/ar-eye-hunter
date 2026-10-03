@@ -16,8 +16,8 @@ import {
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
-import { toALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
+import type { ALStorageEvent, ALStorageHealthStatus } from '@shared/alm/storage/al-storage-event.ts';
+import { toALStorageUnavailable, type ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 
 const AVAILABLE: ALStorageAvailability = { kind: 'available' };
@@ -225,6 +225,81 @@ describe('the request for persistent storage', () => {
         expect(persist).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('the checkpoint lane a connect may skip', () => {
+    it('skips nothing while storage is available and every checkpoint store keeps up', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'delayed', undefined));
+
+        expect(storage.getCheckpointLaneSkip()).toBeUndefined();
+    });
+
+    it('skips it while storage is missing, as it skips the durable lane', () => {
+        const storage = createStorageAvailability(MISSING, undefined, () => {});
+
+        expect(storage.getCheckpointLaneSkip()).toEqual({ cause: 'missing', detail: 'No IndexedDB.' });
+    });
+
+    it('skips it while a checkpoint store lags beyond its bound, until that store is healthy again', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', CHECKPOINT_LAG));
+        const lagging = storage.getCheckpointLaneSkip();
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'healthy', CHECKPOINT_LAG));
+
+        expect(lagging).toEqual(CHECKPOINT_LAG);
+        expect(storage.getCheckpointLaneSkip()).toBeUndefined();
+    });
+
+    // Each carrier has its own checkpoint store: one catching up leaves the other's lag standing.
+    it('keeps one store\'s lag while another store recovers', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', CHECKPOINT_LAG));
+        storage.recordCheckpointHealth(toCheckpointHealth(RTC_CHECKPOINT, 'healthy', undefined));
+
+        expect(storage.getCheckpointLaneSkip()).toEqual(CHECKPOINT_LAG);
+    });
+
+    // A failed checkpoint write is retried by the next one; only the lag beyond the bound refuses new admissions.
+    it('skips nothing for a checkpoint store failing for another cause, or for an event that is no health', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', { cause: 'quota', detail: 'QuotaExceededError' }));
+        storage.recordCheckpointHealth({ kind: 'persist', outcome: 'granted' });
+
+        expect(storage.getCheckpointLaneSkip()).toBeUndefined();
+    });
+
+    it('leaves the durable lane to its own availability', () => {
+        const storage = createStorageAvailability(AVAILABLE, undefined, () => {});
+
+        storage.recordCheckpointHealth(toCheckpointHealth(WS_CHECKPOINT, 'failing', CHECKPOINT_LAG));
+
+        expect(storage.getDurableLaneSkip()).toBeUndefined();
+        expect(storage.availability.get()).toEqual(AVAILABLE);
+    });
+});
+
+const WS_CHECKPOINT = 'browser-ws-client-checkpoint:session-1';
+const RTC_CHECKPOINT = 'browser-rtc-overlay-checkpoint:session-1';
+const CHECKPOINT_LAG = { cause: 'checkpoint-lag', detail: 'unsaved for 12000 ms' } as const;
+
+function toCheckpointHealth(
+    storeId: string,
+    status: ALStorageHealthStatus,
+    lastFailure: ALStorageUnavailable | undefined
+): ALStorageEvent {
+    return {
+        kind: 'health',
+        storeId,
+        status,
+        lastFailure,
+        lastRecoveryPointAtMs: undefined,
+        oldestUnsavedAgeMs: status === 'healthy' ? undefined : 12_000
+    };
+}
 
 function createStorageAvailability(
     initial: ALStorageAvailability,

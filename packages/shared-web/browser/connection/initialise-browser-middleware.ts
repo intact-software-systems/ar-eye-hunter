@@ -1,5 +1,6 @@
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type {
     ALInboundRuntimeStores,
     ALVolatileInboundRuntimeStores
@@ -53,6 +54,10 @@ import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-rea
 import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import { listStateGroups } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 
+import {
+    resolveBrowserALCheckpointStores,
+    type BrowserALCheckpointStores
+} from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
@@ -97,6 +102,12 @@ export interface MiddlewareInitOptions {
 /** One connect's options: the caller's, and the connect's claim on its session's durable work. */
 export interface BrowserConnectOptions extends MiddlewareInitOptions {
     readonly durableWorkOwnership: ALDurableWorkOwnership;
+}
+
+/** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
+export interface BrowserConnectedMiddleware {
+    readonly middleware: RallarBrowserMiddleware;
+    readonly checkpoints: readonly ALCheckpointPort[];
 }
 
 export interface ToCreateWsUrlInput {
@@ -194,6 +205,8 @@ export interface InitialiseBrowserTransportInput {
     readonly inboundStores: ALInboundRuntimeStores;
     readonly inboundVolatileStores: ALVolatileInboundRuntimeStores;
     readonly volatileBound: BrowserSessionVolatileBound;
+    /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
+    readonly checkpointStores: BrowserALCheckpointStores;
     readonly options: BrowserConnectOptions;
 }
 
@@ -212,7 +225,7 @@ export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
     options: BrowserConnectOptions
-): Promise<RallarBrowserMiddleware> {
+): Promise<BrowserConnectedMiddleware> {
     const storageAvailability = initialiseBrowserRuntimeStores(
         session.sessionId,
         options.scope ?? defaultStateScope(),
@@ -243,11 +256,10 @@ export async function initialiseMiddleware(
             : undefined
     });
 
+    const { checkpointStores } = transportInput;
     return {
-        ...webSocketTransport,
-        ...rtcTransport,
-        heartbeat: heartbeatHandle,
-        storageAvailability
+        middleware: { ...webSocketTransport, ...rtcTransport, heartbeat: heartbeatHandle, storageAvailability },
+        checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
     };
 }
 
@@ -274,6 +286,7 @@ export function createBrowserTransportInput(
             volatileBound.budget
         ),
         volatileBound,
+        checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -322,6 +335,7 @@ export function toBrowserWebSocketQueueBoxInput(
         ...carrier,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
+        checkpointStores: input.checkpointStores.wsClient,
         submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
         clientData: input.clientData,
         inboundStores: input.inboundStores,
@@ -422,6 +436,7 @@ export function toRtcOverlayMulticastManagerInput(
         ...carrier,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
+        checkpointStores: input.checkpointStores.rtcOverlay,
         durableWorkOwnership: input.options.durableWorkOwnership,
         outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
         outboundSettlements: input.options.deliverySettlements.rtc

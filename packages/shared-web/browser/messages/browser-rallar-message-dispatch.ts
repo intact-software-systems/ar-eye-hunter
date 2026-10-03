@@ -17,6 +17,7 @@ import {
     isALDeliveryFallbackPastDeadline
 } from '@shared/alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALStorageUnavailable } from '@shared/alm/storage/al-storage-unavailable.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -227,31 +228,50 @@ async function writeChannelAdmission(
 }
 
 /**
- * A durable message skips the carrier while storage is missing for the document; any admission that
+ * A durable or checkpoint message skips the carrier while storage is missing for the document, and a
+ * checkpoint message also while a checkpoint store lags beyond its bound; any durable admission that
  * reaches the carrier re-decides the connect's availability.
  */
 async function writeStorageAdmission(
     delivery: BrowserRallarMessageDispatch.Delivery
 ): Promise<ALOutboundEnqueueResult> {
     const storage = delivery.context.middleware.storageAvailability;
-    const skipped = toRequestedDurability(delivery.message) === 'volatile'
-        ? undefined
-        : storage.getDurableLaneSkip();
+    const durability = toRequestedDurability(delivery.message);
+    const skipped = readStorageLaneSkip(storage, durability);
     if (skipped !== undefined) {
         const verdict: ALDeliveryAdmissionVerdict = { kind: 'storage-unavailable', ...skipped };
         return { verdict, message: delivery.message, entries: [], trackedReceiptAlgo: 'none' };
     }
     const admitted = await writeCarrierOutboxAdmission(delivery.context, delivery, delivery.message);
-    recordStorageVerdict(storage, admitted.verdict);
+    recordStorageVerdict(storage, admitted.verdict, durability);
     return admitted;
 }
 
+function readStorageLaneSkip(
+    storage: BrowserALStorageAvailability,
+    durability: ALDurabilityAlgo
+): ALStorageUnavailable | undefined {
+    switch (durability) {
+        case 'volatile':
+            return undefined;
+        case 'local-checkpoint':
+            return storage.getCheckpointLaneSkip();
+        case 'local-outbox':
+        case 'local-inbox':
+            return storage.getDurableLaneSkip();
+    }
+}
+
+/** A checkpoint admission writes memory only, so it says nothing of IndexedDB; the owner's checkpoint still wants persistence. */
 function recordStorageVerdict(
     storage: BrowserALStorageAvailability,
-    verdict: ALDeliveryAdmissionVerdict
+    verdict: ALDeliveryAdmissionVerdict,
+    durability: ALDurabilityAlgo
 ): void {
-    storage.availability.accept(computeALStorageAvailability(storage.availability.get(), verdict));
-    if (verdict.kind === 'admitted' && verdict.durable) {
+    if (durability !== 'local-checkpoint') {
+        storage.availability.accept(computeALStorageAvailability(storage.availability.get(), verdict));
+    }
+    if (verdict.kind === 'admitted' && (verdict.durable || durability === 'local-checkpoint')) {
         storage.requestPersistentStorage();
     }
 }
