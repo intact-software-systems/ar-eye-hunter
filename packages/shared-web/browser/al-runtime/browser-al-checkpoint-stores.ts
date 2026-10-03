@@ -3,6 +3,7 @@ import {
     type CreateDefaultALRuntimeStoresInput
 } from '@shared/alm/al-runtime-stores.ts';
 import { resolveALCheckpointRuntimeStores } from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
 import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -15,9 +16,6 @@ import {
     toBrowserRtcOverlayALRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
-
-const BROWSER_AL_CHECKPOINT_INTERVAL_MS = 1_000;
-const BROWSER_AL_CHECKPOINT_LAG_BOUND_MS = 10_000;
 
 /** The session store's checkpoint settings, which the browser composition states once per connect. */
 export interface BrowserALCheckpointSettingsInput {
@@ -54,8 +52,8 @@ export function resolveBrowserALCheckpointSettings(
     input: BrowserALCheckpointSettingsInput
 ): BrowserALCheckpointSettings {
     return {
-        intervalMs: input.checkpointIntervalMs ?? BROWSER_AL_CHECKPOINT_INTERVAL_MS,
-        lagBoundMs: input.checkpointLagBoundMs ?? BROWSER_AL_CHECKPOINT_LAG_BOUND_MS
+        intervalMs: input.checkpointIntervalMs ?? AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs,
+        lagBoundMs: input.checkpointLagBoundMs ?? AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs
     };
 }
 

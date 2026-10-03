@@ -103,7 +103,7 @@ const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
 // Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
 // widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family,
-// to which checkpoint-recovery and checkpoint-lag add about 90 s (an estimate until the cell is measured again).
+// to which checkpoint-recovery and checkpoint-lag add about 90 s: an estimate, pending the measured full-lane cell.
 const CARRIER_TEST_TIMEOUT_MS = 540_000;
 
 /**

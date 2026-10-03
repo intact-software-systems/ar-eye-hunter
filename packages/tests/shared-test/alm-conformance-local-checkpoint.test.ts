@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
 import { AL_OUTBOUND_WORK_LEASE_MS } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
@@ -12,8 +13,6 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { CHECKPOINT_LAG_BOUND_MS } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/local-checkpoint/checkpoint-lag.ts';
-import { CHECKPOINT_INTERVAL_MS } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/local-checkpoint/checkpoint-recovery.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -178,7 +177,7 @@ describe('checkpoint-recovery', () => {
         const interval = findCommand(sender, 'checkpoint-interval-elapses');
 
         expect(interval.kind === 'wait' && interval.absent).toBe(true);
-        expect(interval.timeoutMs).toBeGreaterThan(CHECKPOINT_INTERVAL_MS);
+        expect(interval.timeoutMs).toBeGreaterThan(AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs);
         expect(findCommand(sender, 'storage-counters-checkpointed')).toMatchObject({ kind: 'storage.counters', reset: false });
         expect(findCommand(sender, 'assert-checkpoint-write')).toMatchObject({
             kind: 'assert',
@@ -320,7 +319,8 @@ describe('checkpoint-lag', () => {
             topic: STORAGE_TOPIC,
             contains: `"kind":"health","storeId":"${storeId}","status":"healthy"`
         });
-        expect(findCommand(sender, 'health-failing').timeoutMs).toBeGreaterThan(CHECKPOINT_LAG_BOUND_MS + CHECKPOINT_INTERVAL_MS);
+        expect(findCommand(sender, 'health-failing').timeoutMs)
+            .toBeGreaterThan(AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs + AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs);
     });
 
     it('matches the health events in the order the store emits their keys', () => {
@@ -349,12 +349,15 @@ describe('flush-on-hide', () => {
             'connect',
             'storage-counters-connected',
             `flush-hold-${carrier}`,
+            'storage-counters-before-send',
             'send-1',
             'observe-admitted-1',
             'assert-admitted-1',
             'assert-enqueued-1',
             'assert-retained-1',
             'assert-unsubmitted-1',
+            'storage-counters-unflushed',
+            'assert-no-interval-write',
             'stats'
         ]);
         expect(findCommand(sender, 'send-1')).toMatchObject({
@@ -364,6 +367,22 @@ describe('flush-on-hide', () => {
             payload: { marker: 'flush-on-hide', carrier }
         });
         expect(sender.commands.some((command) => command.kind === 'wait')).toBe(false);
+    });
+
+    // The counters are sparse: a kind never counted since the reset is absent, so the witness is the absent write count.
+    it('proves the interval had not written when the owner page ended, so the successor\'s row is the flush\'s', () => {
+        const { sender } = findScenario('ws', 'flush-on-hide');
+
+        expect(findCommand(sender, 'storage-counters-before-send')).toMatchObject({ kind: 'storage.counters', reset: true });
+        expect(findCommand(sender, 'storage-counters-unflushed')).toMatchObject({ kind: 'storage.counters', reset: false });
+        expect(findCommand(sender, 'assert-no-interval-write')).toEqual({
+            kind: 'assert',
+            commandId: `${sender.recipeId}-assert-no-interval-write`,
+            source: `resultCache.${sender.recipeId}-storage-counters-unflushed.value.byKind.write`,
+            operator: 'exists',
+            expected: false,
+            timeoutMs: expect.any(Number)
+        });
     });
 
     it.each(['ws', 'rtc'] as const)('has the %s successor restore the checkpoint store with a claim once the lease lapsed', (carrier) => {

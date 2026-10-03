@@ -65,7 +65,7 @@ interface AlmConformanceResultAssertionInput {
     readonly name: string;
     readonly resultName: string;
     readonly field: string;
-    readonly operator: 'equals' | 'matches' | 'gt' | 'contains';
+    readonly operator: 'equals' | 'matches' | 'gt' | 'contains' | 'exists';
     readonly expected: string | number | boolean;
 }
 

@@ -5,7 +5,8 @@ import { toHeldFaultCommands } from '../../alm-conformance-fault-commands.ts';
 import {
     toResultAssertion,
     toRetainedEvidenceCommands,
-    toSendCommand
+    toSendCommand,
+    toStorageCountersCommand
 } from '../../alm-conformance-message-commands.ts';
 import { toPayloadWait, toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
@@ -22,10 +23,12 @@ import {
 /**
  * The page's lifecycle flush saves what the interval has not: the owner page holds its carrier, admits one original
  * from memory and ends its recipe at once, inside the interval; the lane then fires the page's `freeze` event and
- * crashes it, so no `pagehide` flush and no interval write follows. The successor, a second page of the same context
- * and session, restores the row from the checkpoint store and delivers it once. Over the fallback carrier a held
- * original moves to the WS lane at a moment the lane cannot see, so which store holds it when the page ends is open:
- * the scenario runs over `ws` and `rtc`.
+ * crashes it, so no `pagehide` flush and no interval write follows. The owner's last command reads the storage
+ * counters it reset before the send, so a page the interval wrote on before it ended fails here instead of proving
+ * the interval's write as the flush's. The successor, a second page of the same context and session, restores the
+ * row from the checkpoint store and delivers it once. Over the fallback carrier a held original moves to the WS lane
+ * at a moment the lane cannot see, so which store holds it when the page ends is open: the scenario runs over `ws`
+ * and `rtc`.
  */
 export const flushOnHide: AlmConformanceScenarioDefinition = {
     scenarioId: 'flush-on-hide',
@@ -41,6 +44,7 @@ export const flushOnHide: AlmConformanceScenarioDefinition = {
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toHeldFaultCommands(owner, 'flush-hold', 'until-cleared'),
+        toStorageCountersCommand(owner, 'storage-counters-before-send', true),
         toSendCommand({
             ...owner,
             index: 1,
@@ -52,7 +56,26 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
                 commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
             }
         }),
-        ...toRetainedEvidenceCommands({ ...owner, index: 1 }, true)
+        ...toRetainedEvidenceCommands({ ...owner, index: 1 }, true),
+        ...toUnflushedWitnessCommands(owner)
+    ];
+}
+
+/**
+ * The send path writes nothing, so a write counted since the reset before the send is the interval's checkpoint. The
+ * counters are sparse: a kind never counted is absent, and the witness is that absence.
+ */
+function toUnflushedWitnessCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toStorageCountersCommand(owner, 'storage-counters-unflushed', false),
+        toResultAssertion({
+            step: owner,
+            name: 'assert-no-interval-write',
+            resultName: 'storage-counters-unflushed',
+            field: 'byKind.write',
+            operator: 'exists',
+            expected: false
+        })
     ];
 }
 

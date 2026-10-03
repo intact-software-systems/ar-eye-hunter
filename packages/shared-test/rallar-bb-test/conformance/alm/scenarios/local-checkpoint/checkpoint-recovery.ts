@@ -1,3 +1,5 @@
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
+
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import {
@@ -34,12 +36,6 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../../alm-reload-pair.ts';
 
 const CHECKPOINT_INTERVAL_TOPIC = 'rallar.black-box.alm.checkpoint-interval-elapsed';
-
-/**
- * The browser store factory's default interval, which this Deno-loaded catalog cannot import: the first unsaved change
- * arms one checkpoint write this long after it.
- */
-export const CHECKPOINT_INTERVAL_MS = 1_000;
 
 /**
  * A `local-checkpoint` send survives its page through the interval checkpoint: the page holds its carrier, admits one
@@ -102,7 +98,7 @@ function toCheckpointWriteCommands(sender: AlmConformanceStepInput): readonly Ra
             commandId: toCommandId(sender, 'checkpoint-interval-elapses'),
             match: { kind: 'diagnostic', topic: CHECKPOINT_INTERVAL_TOPIC },
             absent: true,
-            timeoutMs: CHECKPOINT_INTERVAL_MS + RESPONSE_MARGIN_MS
+            timeoutMs: AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs + RESPONSE_MARGIN_MS
         },
         toStorageCountersCommand(sender, 'storage-counters-checkpointed', false),
         toResultAssertion({

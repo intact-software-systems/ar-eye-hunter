@@ -10,8 +10,6 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { CHECKPOINT_LAG_BOUND_MS } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/local-checkpoint/checkpoint-lag.ts';
-import { CHECKPOINT_INTERVAL_MS } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/local-checkpoint/checkpoint-recovery.ts';
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -25,6 +23,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
 import type { ALDeliveryCarrierFallback } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
@@ -405,7 +404,9 @@ class GeneratedAlmPorts {
 
     /** The checkpoint timer, run on every fixture step and sleep: a row unsaved for one interval is written. */
     private settleCheckpoints(): void {
-        this.writeCheckpoints(this.messages.filter((message) => isUnsavedCheckpoint(message) && this.now - message.admittedAtMs >= CHECKPOINT_INTERVAL_MS));
+        this.writeCheckpoints(
+            this.messages.filter((message) => isUnsavedCheckpoint(message) && this.now - message.admittedAtMs >= AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs)
+        );
     }
 
     /**
@@ -447,7 +448,7 @@ class GeneratedAlmPorts {
                     status,
                     lastFailure: status === 'delayed'
                         ? undefined
-                        : { cause: 'checkpoint-lag', detail: `The oldest unsaved change passed ${CHECKPOINT_LAG_BOUND_MS} ms.` },
+                        : { cause: 'checkpoint-lag', detail: `The oldest unsaved change passed ${AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs} ms.` },
                     lastRecoveryPointAtMs: undefined
                 }
             }

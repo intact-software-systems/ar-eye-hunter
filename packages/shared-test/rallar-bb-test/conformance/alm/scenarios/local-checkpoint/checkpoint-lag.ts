@@ -1,3 +1,5 @@
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
+
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS, toBudgetMs } from '../../alm-conformance-budgets.ts';
@@ -16,12 +18,6 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toStorageRefusedSendCommands, toStorageScenarioPayload } from '../storage-unavailable.ts';
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
-
-/**
- * The browser store factory's default recovery-lag bound, which this Deno-loaded catalog cannot import: a checkpoint
- * store whose oldest unsaved change is older fails with `checkpoint-lag`.
- */
-export const CHECKPOINT_LAG_BOUND_MS = 10_000;
 
 type CheckpointHealthStatus = 'delayed' | 'failing' | 'healthy';
 
@@ -93,7 +89,7 @@ function toCheckpointHealthWait(
             contains: `"kind":"health","storeId":"${storeId}","status":"${status}"${failure}`
         },
         timeoutMs: status === 'failing'
-            ? CHECKPOINT_LAG_BOUND_MS + NON_EXPIRING_SEND_TIMEOUT_MS
+            ? AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs + NON_EXPIRING_SEND_TIMEOUT_MS
             : toBudgetMs(NON_EXPIRING_SEND_TIMEOUT_MS, step.input.deadlineMs)
     };
 }
@@ -111,7 +107,8 @@ function toCheckpointLagReceiverCommands(receiver: AlmConformanceStepInput): rea
         toWait(1, false),
         {
             ...toWait(3, false),
-            timeoutMs: receiver.input.deadlineMs + CHECKPOINT_LAG_BOUND_MS + 2 * NON_EXPIRING_SEND_TIMEOUT_MS
+            timeoutMs: receiver.input.deadlineMs + AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs +
+                2 * NON_EXPIRING_SEND_TIMEOUT_MS
         },
         toWait(2, true)
     ];
