@@ -60,7 +60,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
         const configResponse = await request.get('/api/config');
         expect(configResponse.ok()).toBe(true);
 
-        const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `${Date.now()}-${crypto.randomUUID()}`;
         const contextA = await browser.newContext();
         const contextB = await browser.newContext();
         const pageA = await contextA.newPage();
@@ -143,7 +143,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
     test('a start command held on its WS leg survives a reload inside its deadline and is applied once', async ({ browser }) => {
         test.setTimeout(180_000);
 
-        const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const suffix = `${Date.now()}-${crypto.randomUUID()}`;
         const contextA = await browser.newContext();
         const contextB = await browser.newContext();
         const commandHold = await routeRelicCommandHold(contextA);
