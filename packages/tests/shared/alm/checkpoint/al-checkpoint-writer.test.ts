@@ -276,7 +276,11 @@ function createWriterFixture(timerLateMs = 0): Readonly<{
     return { writer, writes, events, change };
 }
 
-function toHealthSummary(event: ALStorageEvent): Readonly<Record<string, unknown>> {
+type HealthSummary =
+    | Pick<Extract<ALStorageEvent, { kind: 'health'; }>, 'status' | 'oldestUnsavedAgeMs' | 'lastFailure'>
+    | { readonly kind: ALStorageEvent['kind']; };
+
+function toHealthSummary(event: ALStorageEvent): HealthSummary {
     return event.kind === 'health'
         ? { status: event.status, oldestUnsavedAgeMs: event.oldestUnsavedAgeMs, lastFailure: event.lastFailure }
         : { kind: event.kind };

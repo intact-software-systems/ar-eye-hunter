@@ -3,7 +3,7 @@ import {
     type CreateDefaultALRuntimeStoresInput
 } from '@shared/alm/al-runtime-stores.ts';
 import { resolveALCheckpointRuntimeStores } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-settings.ts';
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALCheckpointOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
