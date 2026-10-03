@@ -21,6 +21,7 @@ import {
     type ALMObservationPageDiagnosticsFile
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { toAlmReloadCheckpoints } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import { readAlmReceiptRolesEntries } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-receipt-role-identity.ts';
 import {
@@ -101,8 +102,9 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
 // Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
-// widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family.
-const CARRIER_TEST_TIMEOUT_MS = 480_000;
+// widest cell, rtc-with-ws-fallback in the full scope, measured at 7.0, 7.0 and 7.1 minutes with the fallback family,
+// to which checkpoint-recovery and checkpoint-lag add about 90 s (an estimate until the cell is measured again).
+const CARRIER_TEST_TIMEOUT_MS = 540_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own
@@ -245,7 +247,7 @@ async function runAlmConformanceScenarios(
                 receiverNavigations += 1;
             }
         };
-        const reload = scenario.scenarioId === 'delivery-reload';
+        const reload = toAlmReloadCheckpoints(scenario.sender.metadata?.almReloadCheckpoints) !== undefined;
         if (reload) {
             run.sender.page.on('framenavigated', onSenderNavigation);
             run.receiver.page.on('framenavigated', onReceiverNavigation);
@@ -307,7 +309,10 @@ interface SameContextCell {
     readonly participants: TwoAgentRunParticipant[];
 }
 
-/** Each scenario closes the page that owns the sender's session, so its successor owns the session for the next one. */
+/**
+ * Each scenario ends the page that owns the sender's session, so its successor owns the session for the next one.
+ * `flush-on-hide` ends it through its lifecycle flush and a crash; every other scenario closes it.
+ */
 async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
     const { run, carrier, testInfo, participants } = cell;
     let owner = run.sender;
@@ -317,7 +322,8 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         }
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
-        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor }, {
+        const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
+        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd }, {
             ...scenario,
             successor: scenario.successor
         });

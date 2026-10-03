@@ -36,12 +36,15 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'ws-unicast-receipt',
         'server-command',
         'capacity',
         ...Array.from({ length: 3 }, () => 'receipted-audience' as const),
-        'durable-takeover'
+        'durable-takeover',
+        'flush-on-hide'
     ],
     rtc: [
         'volatile-default',
@@ -52,13 +55,16 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'not-yet-in-sync',
         'not-yet-in-sync',
         'ws-unicast-receipt',
         'capacity',
         ...Array.from({ length: 4 }, () => 'receipted-audience' as const),
-        'durable-takeover'
+        'durable-takeover',
+        'flush-on-hide'
     ],
     'rtc-with-ws-fallback': [
         'volatile-default',
@@ -69,6 +75,8 @@ const CARRIER_SCENARIO_IDS = {
         'durable-opt-in',
         'delivery-reload',
         'storage-unavailable',
+        'checkpoint-recovery',
+        'checkpoint-lag',
         'ordering-resync',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
@@ -110,9 +118,13 @@ const ALM_CONFORMANCE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
 /**
  * Recipe ids whose hold stays until the page ends. Recipient-b of the frozen audience withholds its ACK,
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
- * The takeover's sender holds its carrier until the lane closes its page, which no later block shares.
+ * The takeover's and the flush's senders hold their carrier until the lane ends their page, which no later block shares.
  */
-const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = ['-frozen-audience-membership-recipient-b', '-durable-takeover-sender'];
+const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
+    '-frozen-audience-membership-recipient-b',
+    '-durable-takeover-sender',
+    '-flush-on-hide-sender'
+];
 
 /**
  * A counted fault runs out after a number of frames, not after a time: a quick retry loop spends it before

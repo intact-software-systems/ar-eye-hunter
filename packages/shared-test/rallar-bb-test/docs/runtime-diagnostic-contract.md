@@ -471,14 +471,20 @@ current shape.
 `rallar.browser.alm.storage` carries every `ALStorageEvent` but a reset; the
 event's `data` is the event itself, with `kind` and, except for `persist`, the
 `storeId` of the store it describes (`browser-session-inbound:<sessionId>`,
-`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`). The
+`browser-ws-client:<sessionId>` or `browser-rtc-overlay:<sessionId>`, and the
+`local-checkpoint` lanes' checkpoint stores `browser-ws-client-checkpoint:<sessionId>`
+and `browser-rtc-overlay-checkpoint:<sessionId>`). The
 session inbound store is shared by the WS and RTC lanes, so its `recovery`
 names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
-`browser-session-inbound:<sessionId>/rtc`).
+`browser-session-inbound:<sessionId>/rtc`). A checkpoint store is the tier's
+saved copy of a memory lane; it is unrelated to the harness's reload
+checkpoints (`AlmReloadCheckpoint`, the `almReloadCheckpoints` metadata), which
+are the sync points of a paired `agent.reload`.
 
-- `health`: `status` (`healthy` or `failing`), `lastFailure` (an
-  `ALStorageUnavailable`: `cause` and `detail`) and `lastRecoveryPointAtMs`
-  (the store's last recovery point, or `undefined` before its first). A store
+- `health`: `status` (`healthy`, `delayed` or `failing`), `lastFailure` (an
+  `ALStorageUnavailable`: `cause` and `detail`), `lastRecoveryPointAtMs`
+  (the store's last recovery point, or `undefined` before its first) and
+  `oldestUnsavedAgeMs` (a checkpoint store's oldest unsaved change). A store
   starts `healthy` without an event and states only a change of status, never
   one event per send: `failing` at its first storage failure, `healthy` at the
   first recovery point after it. Every emitted event carries the failure that
@@ -499,6 +505,17 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   store ids, straight on the port, since those stores are gone. Its
   `lastFailure` is absent when the purge failed for a reason other than
   storage; the browser logs that error instead.
+
+  A checkpoint store states `delayed` once its oldest unsaved change is older
+  than the checkpoint interval (1 s by default) and `failing` with
+  `lastFailure.cause: 'checkpoint-lag'` once it is older than the recovery-lag
+  bound (10 s by default); a completed checkpoint reads `healthy` again. While
+  it is `failing`, a new `local-checkpoint` admission follows its channel's
+  `onStorageUnavailable`. `checkpoint-lag` holds the `quota` storage fault on
+  the sender's page, admits one send from memory, waits for its checkpoint
+  store's `delayed` and then `failing` with that cause, proves the next send
+  refused `storage-unavailable` with cause `checkpoint-lag`, releases the fault,
+  and waits for the store's `healthy`.
 
 - `persist`: `outcome` (`granted`, `denied` or `unsupported`), once per connect
   after its first durable admission: `granted` when the origin already
@@ -556,6 +573,15 @@ names the lane after the store id (`browser-session-inbound:<sessionId>/ws`,
   `carrierFallback.to` is `ws` and that `attemptCarriers` contains `ws`): the
   hand-over is recorded before the WS row commits, and a WS attempt exists only
   once it has, so the held row is in the WS client store the successor reads.
+
+  A checkpoint store reports `restored` when its lane's first batch runs over
+  the rows the owner's restore loaded from the last checkpoint; a non-owner tab
+  restores nothing. `checkpoint-recovery` reads one checkpoint write after the
+  interval, reloads, waits out one lease and reads the held original's
+  checkpoint store (`browser-rtc-overlay-checkpoint` over `rtc`,
+  `browser-ws-client-checkpoint` otherwise) `restored` with `claimed` above 0;
+  `flush-on-hide` reads the same on the successor page after the lane fired the
+  owner page's `freeze` event and crashed it.
 
 ## Compatibility
 
