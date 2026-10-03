@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { EnqueuedType } from '../api/api-config.ts';
+import type { Unsubscribe } from '../cache/RepositoryInterfaces.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -75,6 +76,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
     private readonly now: () => Temporal.Instant;
     private readonly workIndex = new InMemoryQueueWorkIndex();
+    private readonly changeListeners = new Set<(key: ResourceEntryKeyString) => void>();
     private completedRetention: QueueBoxCompletedRetention = { typeIds: [], topicIds: [] };
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
@@ -106,14 +108,38 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return await Promise.all(requests.map((request) => this.readWorkPage(request)));
     }
 
+    /** Names, in the turn it happens, every key a write, reservation, release, expiry or cleanup changes. */
+    onChangeDo(listener: (key: ResourceEntryKeyString) => void): Unsubscribe {
+        this.changeListeners.add(listener);
+        return { unsubscribe: () => this.changeListeners.delete(listener) };
+    }
+
+    /** The entry as held now, expired or not; unlike `getItem` it removes nothing. */
+    peek(key: ResourceEntryKeyString): ResourceEntry | undefined {
+        const entry = this.data.get(key);
+        return entry === undefined ? undefined : toResourceEntrySnapshot(entry);
+    }
+
     private storeEntry(key: string, entry: ResourceEntry): void {
         this.workIndex.replace(key, this.data.get(key), entry);
         this.data.set(key, entry);
+        this.notifyChange(key);
     }
 
     private removeEntry(key: string): void {
-        this.workIndex.remove(key, this.data.get(key));
+        const existing = this.data.get(key);
+        if (existing === undefined) {
+            return;
+        }
+        this.workIndex.remove(key, existing);
         this.data.delete(key);
+        this.notifyChange(key);
+    }
+
+    private notifyChange(key: ResourceEntryKeyString): void {
+        for (const listener of this.changeListeners) {
+            listener(key);
+        }
     }
 
     async cleanupAsync(): Promise<boolean> {

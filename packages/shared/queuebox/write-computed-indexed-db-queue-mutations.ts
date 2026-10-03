@@ -69,6 +69,10 @@ export function submitComputedIndexedDbQueueMutations(
             eligibility.observe(store.delete(mutation.keyString));
             continue;
         }
+        if (mutation.kind === 'put-unconditionally') {
+            eligibility.observe(store.put(mutation.value));
+            continue;
+        }
         const request = eligibility.observe(store.get(mutation.keyString));
         request.onsuccess = () => {
             if (state.conflict || state.storedValueError || eligibility.expired) {
