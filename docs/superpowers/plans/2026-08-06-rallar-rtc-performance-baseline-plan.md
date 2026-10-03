@@ -994,11 +994,17 @@ under Section 9 and seek the human completion decision. B07 remains held.
 ## 12. Baseline Completion Gate
 
 This plan is complete only when required B01-B06 evidence is finalized,
-verified, and recoverably retained; E3 primary and any required repeat pass;
+verified, and recoverably retained; every required B01-B06 primary and every
+controller-required repeat passes correctness, sample, and cohort acceptance;
 every warmup/retained attempt and cohort is accounted without mutation,
 overwrite, or silent discard; selected metrics satisfy noise/comparison rules;
 all provenance/configuration/units/raw hashes and limitations reconcile; and
-conditional E4 is captured whenever the exact candidate requires it.
+conditional E4 primary and every required repeat satisfy the same successful
+acceptance whenever the exact candidate requires that environment.
+
+An unavailable, failed, or unexecuted required workload remains incomplete.
+Retaining and verifying its failed artifact preserves evidence but does not
+satisfy completion.
 
 The human then accepts one separately scoped follow-up or the explicit outcome
 `no optimization justified`. Continuing E2/E3 observation streams do not need a
