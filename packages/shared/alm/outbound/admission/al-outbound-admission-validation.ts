@@ -13,6 +13,7 @@ import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
 } from '../../al-runtime-state-stores.ts';
+import type { ALStoreDurability } from '../../al-runtime-stores.ts';
 import { decodeALOutboundMessageReference, type ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '../to-al-outbound-effect-id.ts';
@@ -33,6 +34,7 @@ export interface ALStoredOutboundMessage {
 }
 
 export interface ALOutboundCapturedPolicy {
+    /** Whether the copy outlives the volatile lane; the row keeps no finer lane. */
     readonly persist: boolean;
     readonly ackTracking: NonNullable<ALOutboundDispatchPlan<never>['ackTracking']> | null;
     readonly retryTracking: NonNullable<ALOutboundDispatchPlan<never>['retryTracking']> | null;
@@ -47,7 +49,7 @@ export interface ALOutboundCapturedPolicy {
 
 export function captureALOutboundPolicy<TPrepared>(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundCapturedPolicy {
     return {
-        persist: plan.persist,
+        persist: plan.lane !== 'volatile',
         ackTracking: plan.ackTracking ?? null,
         retryTracking: plan.retryTracking ?? null,
         repairTracking: plan.repairTracking ?? null,
@@ -81,13 +83,17 @@ export function toALOutboundSentPolicy<TPrepared>(
         : stored;
 }
 
+export function toALOutboundCapturedLane(policy: ALOutboundCapturedPolicy): ALStoreDurability {
+    return policy.persist ? 'durable' : 'volatile';
+}
+
 export function applyALOutboundCapturedPolicy<TPrepared>(
     plan: ALOutboundDispatchPlan<TPrepared>,
     policy: ALOutboundCapturedPolicy
 ): ALOutboundDispatchPlan<TPrepared> {
     return {
         ...plan,
-        persist: policy.persist,
+        lane: policy.persist === (plan.lane !== 'volatile') ? plan.lane : toALOutboundCapturedLane(policy),
         ackTracking: policy.ackTracking
             ? {
                 ...policy.ackTracking,

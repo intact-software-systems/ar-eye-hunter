@@ -44,7 +44,7 @@ const mocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => mocks.apiMiddleware.middleware
+    initialiseMiddleware: async () => ({ middleware: mocks.apiMiddleware.middleware, checkpoints: [] })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
@@ -536,10 +536,15 @@ describe('Rallar typed message channel', () => {
             .toThrow(
                 expect.objectContaining({
                     issues: [
-                        expect.objectContaining({ path: '$.durability', code: 'invalid-durability' })
+                        expect.objectContaining({
+                            path: '$.durability',
+                            code: 'invalid-durability',
+                            message: 'Durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
+                        })
                     ]
                 })
             );
+        expect(define({ typeId: 'chat.message.v1', purpose: 'command', durability: 'local-checkpoint' })).not.toThrow();
         expect(define({ typeId: 'chat.message.v1', purpose: 'command', onStorageUnavailable: 'drop' })).toThrow(
             expect.objectContaining({
                 issues: [

@@ -56,7 +56,7 @@ const IDLE_OWNER_SETTLE_MS = 300;
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }],
     supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
 });
@@ -64,7 +64,7 @@ const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
@@ -72,7 +72,7 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
 const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: msg.id.ts + 30_000 } },
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ text: msg.id.msgId }]
 });
 

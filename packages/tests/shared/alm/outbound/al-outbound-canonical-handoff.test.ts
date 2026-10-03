@@ -104,7 +104,7 @@ describe('the canonical hand-off bound', () => {
         const bundle = await computeOutboundTestAdmission(
             store,
             createOutboundMessage('bounded'),
-            (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: peers })
+            (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: peers })
         );
         const sends = bundle.durableEffects.filter((effect) => effect.payload.kind === 'send-prepared');
         expect(sends).toHaveLength(AL_OUTBOUND_CANONICAL_HANDOFF_LIMIT + 1);
@@ -479,7 +479,7 @@ describe('the committed canonical message handed to dispatch', () => {
         const sent: ALMessage[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             volatileStores: createVolatileOutboundTestStores(),
-            planOutgoingMessage: (msg) => ({ ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined), persist: false }),
+            planOutgoingMessage: (msg) => ({ ...OUTBOUND_TEST_SEND_PLANNER(msg, undefined), lane: 'volatile' }),
             sendPreparedMessage: async (_prepared, _phase, lifecycle) => {
                 sent.push(lifecycle.canonicalMessage);
                 return { status: 'sent', submissionAttempted: true };

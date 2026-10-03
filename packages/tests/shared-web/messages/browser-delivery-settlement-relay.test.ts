@@ -42,6 +42,20 @@ describe('browser delivery settlement relay', () => {
         expect(bystander.registry.getHandle(handle.msgId)).toBeUndefined();
     });
 
+    // A restored checkpoint message has no handle anywhere, so the owner relays its settlements as a durable one's.
+    it('relays a checkpoint lane\'s settlement as it relays a durable lane\'s', async () => {
+        const wire = listenOnSessionChannel('session-1');
+        const sender = createTab('session-1');
+        const owner = createTab('session-1');
+        const handle = sender.registry.open(createMessage('checkpoint-send'), 'ws');
+
+        owner.epoch.settlements.ws({ ...toAttemptStarted(handle.msgId, 'attempt-1'), lane: 'checkpoint' });
+        await flushChannel();
+
+        expect(wire.map((message) => message.kind)).toEqual(['settlement']);
+        expect(handle.lifecycle().evidence.attempts.map((attempt) => attempt.attemptId)).toEqual(['attempt-1']);
+    });
+
     // A volatile message's state lives in the tab that admitted it, and a settlement no lane stated is the
     // recording tab's own; neither reaches another tab.
     it('relays no settlement of a volatile lane and none that no lane stated', async () => {

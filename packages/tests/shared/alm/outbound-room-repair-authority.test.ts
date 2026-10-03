@@ -71,7 +71,7 @@ describe('retained room authority through repair scheduling', () => {
 function toPlan(msg: ALMessage, timeoutMs: number): ALOutboundDispatchPlan<OutboundTestPayload> {
     return {
         msg,
-        persist: true,
+        lane: 'durable',
         dropReasonCode: undefined,
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         admittedAudience: ['frozen-session'],

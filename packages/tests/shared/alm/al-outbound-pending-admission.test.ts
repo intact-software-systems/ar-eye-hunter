@@ -72,7 +72,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         planOutgoingMessage: (msg) => ({
             msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: Date.now() + 1_000 } },
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ peer: 'captured' }]
         }),
         sendPreparedMessage: async () => {
@@ -107,7 +107,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
     const restarted = createDefaultOutboundTestRuntime({
         stores: { admissionStore: restartedStore, workQueue: restartedBackend.workQueue },
         queueEngine: engine,
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ peer: 'changed' }] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ peer: 'changed' }] }),
         sendPreparedMessage: async (prepared, _phase, lifecycle) => {
             sent.push(prepared.peer);
             expect(lifecycle.expiresAtMs).toBe(1_800_000_001_000);

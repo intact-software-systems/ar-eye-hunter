@@ -137,6 +137,7 @@ export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-
 export type {
     ALStorageEvent,
     ALStorageHealthState,
+    ALStorageHealthStatus,
     ALStoragePersistOutcome,
     ALStorageRecoveryOutcome
 } from '@shared/alm/storage/al-storage-event.ts';

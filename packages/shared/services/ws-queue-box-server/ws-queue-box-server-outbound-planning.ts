@@ -136,7 +136,7 @@ export class WsQueueBoxServerOutboundPlanning {
         if (issues.length > 0) {
             return {
                 msg: message,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReasonCode: 'unauthorized',
                 dropReason: 'WS message has no verified scoped audience'
@@ -162,8 +162,8 @@ export class WsQueueBoxServerOutboundPlanning {
         const recipientScope = request.recipientScope === undefined ? undefined : { ...request.recipientScope };
         const directBroadcast = isWsQueueBoxServerDirectScopedBroadcastRow(message, request.referenceKey);
         const audience = admittedAudience ?? resolveALFrozenMulticastAudience(message.targets)?.recipientPeerIds;
-        const persist = shouldAwaitALRoute(normalized.effective);
-        const resolveRecipients = phase === 'dequeue' || !persist;
+        const awaitsRoute = shouldAwaitALRoute(normalized.effective);
+        const resolveRecipients = phase === 'dequeue' || !awaitsRoute;
         const resolved = this.readRecipients(message, {
             resolveRecipients,
             representNoCurrentRecipient: phase === 'dequeue',
@@ -182,7 +182,7 @@ export class WsQueueBoxServerOutboundPlanning {
         return {
             msg: message,
             dropReasonCode: undefined,
-            persist,
+            lane: awaitsRoute ? 'durable' : 'volatile',
             preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                 ? toClusterPreparedMessages(message, recipients)
                 : this.toPreparedRecipients(message, recipients, { ...request, recipientScope }),
@@ -253,7 +253,7 @@ export class WsQueueBoxServerOutboundPlanning {
         return {
             msg: message,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: this.toPreparedRecipients(message, recipients, request),
             admittedAudience: request.admittedAudience,
             recipientScope: request.recipientScope,
@@ -338,7 +338,7 @@ function toNoRouteDispatchPlan(
     message: ALMessage,
     dropReason: string
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReason, dropReasonCode: 'no-route', persist: false, preparedMessages: [] };
+    return { msg: message, dropReason, dropReasonCode: 'no-route', lane: 'volatile', preparedMessages: [] };
 }
 
 interface ToExpectedPeerIdsInput {

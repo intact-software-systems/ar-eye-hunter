@@ -38,7 +38,7 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
@@ -62,7 +62,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [] as readonly OutboundTestPayload[],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
             }),
@@ -129,7 +129,7 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ resourceId: message.route.resourceId }] }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
             origin: intent === 'enqueue' ? 'send' : 'drain',
@@ -154,7 +154,7 @@ describe('outbound dispatch value ownership', () => {
             planner: () => ({
                 msg: message,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ resourceId: 'exhausted-repair' }]
             }),
             observedCanonicalEntry: undefined,

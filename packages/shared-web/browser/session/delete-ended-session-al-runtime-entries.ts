@@ -40,7 +40,8 @@ export async function deleteEndedSessionALRuntimeEntries(
                 storeId,
                 status: 'failing',
                 lastFailure,
-                lastRecoveryPointAtMs: undefined
+                lastRecoveryPointAtMs: undefined,
+                oldestUnsavedAgeMs: undefined
             });
         }
     }

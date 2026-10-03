@@ -1,9 +1,15 @@
 import { assert, assertEquals } from '@std/assert';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
-import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import {
+    ALM_CONFORMANCE_CARRIERS,
+    type AlmConformanceCarrier
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { toAlmReloadCheckpoints, toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import {
+    createAlmConformanceRecipes,
+    type AlmConformanceScenario
+} from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -17,6 +23,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryCarrierFallback } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
@@ -32,9 +39,17 @@ type MessagesPortKind = 'messages.send' | 'messages.observe' | 'messages.cancel'
 
 type PortCommand<TKind extends RallarBlackBoxTestCommand['kind']> = Extract<RallarBlackBoxTestCommand, Readonly<{ kind: TKind; }>>;
 
+/** A `local-checkpoint` row: in memory until a checkpoint saves it, lost if its page ends first. */
+type PortCheckpoint = 'unsaved' | 'saved' | 'lost';
+
+type PortCheckpointHealth = 'healthy' | 'delayed' | 'failing';
+
 interface PortMessage {
     readonly command: RallarBlackBoxTestMessagesSendCommand;
     readonly msgId: string;
+    readonly admittedAtMs: number;
+    /** Undefined for every send that is not an admitted `local-checkpoint` one. */
+    checkpoint: PortCheckpoint | undefined;
     state: string;
     submitted: boolean;
     attemptCarriers: readonly ('rtc' | 'ws')[];
@@ -42,11 +57,11 @@ interface PortMessage {
     /** The volatile bound's refusal or a refused durable send under a storage quota; undefined for every send admitted. */
     readonly failure:
         | Readonly<{ kind: 'refused'; reason: 'capacity'; }>
-        | Readonly<{ kind: 'storage-unavailable'; cause: 'quota'; }>
+        | Readonly<{ kind: 'storage-unavailable'; cause: 'quota' | 'checkpoint-lag'; }>
         | undefined;
     carrierFallback: ALDeliveryCarrierFallback | undefined;
     /** A durable send a volatile channel admitted volatile while its storage was full. */
-    readonly durabilityDowngrade: Readonly<{ requested: string; cause: 'quota'; }> | undefined;
+    readonly durabilityDowngrade: Readonly<{ requested: string; cause: 'quota' | 'checkpoint-lag'; }> | undefined;
 }
 
 interface HandedOverOutcome {
@@ -96,6 +111,8 @@ class GeneratedAlmPorts {
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
     storageFailing = false;
+    /** The page's checkpoint store health, stated on its transitions only. */
+    checkpointHealth: PortCheckpointHealth = 'healthy';
     /** Whether a held fallback send's RTC leg hands it to WS at all. */
     handsOverHeldFallback = true;
     lastQuotaFaultId = '';
@@ -126,6 +143,11 @@ class GeneratedAlmPorts {
         this.absence = undefined;
     }
 
+    /** The page's lifecycle flush: every unsaved checkpoint row is written at once, unless the quota fault fails it. */
+    flushCheckpoints(): void {
+        this.writeCheckpoints(this.messages.filter(isUnsavedCheckpoint));
+    }
+
     replaceSenderDocument(): void {
         if (this.replacesDocument) {
             this.senderDocument += 100;
@@ -133,6 +155,10 @@ class GeneratedAlmPorts {
         this.handles.clear();
         this.holds.clear();
         this.writes.sender = 1;
+        for (const message of this.messages.filter(isUnsavedCheckpoint)) {
+            message.checkpoint = 'lost';
+        }
+        this.checkpointHealth = 'healthy';
         this.sender = this.createRuntime('sender');
     }
 
@@ -142,6 +168,7 @@ class GeneratedAlmPorts {
             sleep: async (duration) => {
                 if (!this.holdNextSleep) {
                     this.now += duration;
+                    this.settleCheckpoints();
                     return;
                 }
                 this.holdNextSleep = false;
@@ -155,6 +182,7 @@ class GeneratedAlmPorts {
     }
 
     private executePort(role: 'sender' | 'receiver', command: RallarBlackBoxTestCommand): RallarBlackBoxTestCommandOutcome | undefined {
+        this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const session = { clientId: role, sessionId: `${role}-stored-session` };
         switch (command.kind) {
@@ -348,11 +376,16 @@ class GeneratedAlmPorts {
             return;
         }
         const held = this.messages.filter(isHeldOriginal);
+        const durable = held.filter((message) => message.checkpoint === undefined);
+        const checkpointed = held.filter((message) => message.checkpoint === 'saved');
+        const overRtc = (message: PortMessage) => message.command.carrier === 'rtc';
         const stores = [
             { storeId: `browser-session-inbound:${sessionId}/ws`, claimed: 0 },
             { storeId: `browser-session-inbound:${sessionId}/rtc`, claimed: 0 },
-            { storeId: `browser-ws-client:${sessionId}`, claimed: held.filter((message) => message.command.carrier !== 'rtc').length },
-            { storeId: `browser-rtc-overlay:${sessionId}`, claimed: held.filter((message) => message.command.carrier === 'rtc').length }
+            { storeId: `browser-ws-client:${sessionId}`, claimed: durable.filter((message) => !overRtc(message)).length },
+            { storeId: `browser-rtc-overlay:${sessionId}`, claimed: durable.filter(overRtc).length },
+            { storeId: `browser-ws-client-checkpoint:${sessionId}`, claimed: checkpointed.filter((message) => !overRtc(message)).length },
+            { storeId: `browser-rtc-overlay-checkpoint:${sessionId}`, claimed: checkpointed.filter(overRtc).length }
         ];
         for (const { storeId, claimed } of stores) {
             this.sender.recordEvent({
@@ -367,6 +400,59 @@ class GeneratedAlmPorts {
                 }
             });
         }
+    }
+
+    /** The checkpoint timer, run on every fixture step and sleep: a row unsaved for one interval is written. */
+    private settleCheckpoints(): void {
+        this.writeCheckpoints(
+            this.messages.filter((message) => isUnsavedCheckpoint(message) && this.now - message.admittedAtMs >= AL_CHECKPOINT_DEFAULT_SETTINGS.intervalMs)
+        );
+    }
+
+    /**
+     * A positive wait runs on the real clock, so the fixture states the lag at once: a row admitted while the quota
+     * fault fails every write reads its store `delayed`, then `failing` past the bound.
+     */
+    private reportCheckpointLag(row: PortMessage): void {
+        this.reportCheckpointHealth(row, 'delayed');
+        this.reportCheckpointHealth(row, 'failing');
+    }
+
+    /** One readwrite saves every row it captured, counted as one admission write of the page. */
+    private writeCheckpoints(rows: readonly PortMessage[]): void {
+        if (rows.length === 0 || this.storageQuotaFaultId !== undefined) {
+            return;
+        }
+        for (const message of rows) {
+            message.checkpoint = 'saved';
+        }
+        this.writes.sender += 1;
+        this.reportCheckpointHealth(rows[0], 'healthy');
+    }
+
+    /** The checkpoint store of the lane holding the row: a held fallback send has moved to WS, an unheld one has not. */
+    private reportCheckpointHealth(row: PortMessage, status: PortCheckpointHealth): void {
+        if (status === this.checkpointHealth) {
+            return;
+        }
+        this.checkpointHealth = status;
+        const overRtc = row.command.carrier === 'rtc' ||
+            (row.command.carrier === 'rtc-with-ws-fallback' && !this.isHeld(row.command.typeId));
+        this.sender.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.storage',
+            payload: {
+                data: {
+                    kind: 'health',
+                    storeId: `${overRtc ? 'browser-rtc-overlay-checkpoint' : 'browser-ws-client-checkpoint'}:sender-stored-session`,
+                    status,
+                    lastFailure: status === 'delayed'
+                        ? undefined
+                        : { cause: 'checkpoint-lag', detail: `The oldest unsaved change passed ${AL_CHECKPOINT_DEFAULT_SETTINGS.lagBoundMs} ms.` },
+                    lastRecoveryPointAtMs: undefined
+                }
+            }
+        });
     }
 
     /** A store's health, stated on its transitions only. */
@@ -395,6 +481,7 @@ class GeneratedAlmPorts {
             if (command.match.owner === 'al-admission') {
                 this.storageQuotaFaultId = command.remaining === 0 ? undefined : command.faultId;
                 this.lastQuotaFaultId = command.faultId;
+                this.writeCheckpoints(this.messages.filter(isUnsavedCheckpoint));
             }
             return { status: 'ok', value: { faultId: command.faultId } };
         }
@@ -417,13 +504,19 @@ class GeneratedAlmPorts {
         // The lowered volatile bound refuses the third capacity send at admission (D78): no attempt, nothing delivered.
         const capacityRefused = command.payload.marker === 'capacity' && command.payload.index === 3;
         const durable = (command.durability ?? 'volatile') !== 'volatile';
+        const checkpointed = command.durability === 'local-checkpoint';
         const quotaHeld = this.storageQuotaFaultId !== undefined;
-        const storageRefused = durable && quotaHeld && command.onStorageUnavailable !== 'volatile';
-        const downgraded = durable && quotaHeld && command.onStorageUnavailable === 'volatile';
+        // The checkpoint tier's send path stores nothing: only a checkpoint lag past its bound makes it unavailable.
+        const unavailable = checkpointed ? this.checkpointHealth === 'failing' : quotaHeld;
+        const storageRefused = durable && unavailable && command.onStorageUnavailable !== 'volatile';
+        const downgraded = durable && unavailable && command.onStorageUnavailable === 'volatile';
+        const cause = checkpointed ? 'checkpoint-lag' : 'quota';
         const rejected = command.payload.marker === 'bounded-rejection' || capacityRefused || storageRefused;
         const message: PortMessage = {
             command,
             msgId: `port-message-${this.messages.length + 1}`,
+            admittedAtMs: this.now,
+            checkpoint: checkpointed && !storageRefused && !downgraded ? 'unsaved' : undefined,
             state: storageRefused ? 'failed' : rejected ? 'rejected' : command.payload.seq === 300 ? 'queued' : 'accepted',
             submitted: false,
             attemptCarriers: [],
@@ -431,22 +524,25 @@ class GeneratedAlmPorts {
             failure: capacityRefused
                 ? { kind: 'refused', reason: 'capacity' }
                 : storageRefused
-                ? { kind: 'storage-unavailable', cause: 'quota' }
+                ? { kind: 'storage-unavailable', cause }
                 : undefined,
             carrierFallback: undefined,
-            durabilityDowngrade: downgraded ? { requested: String(command.durability), cause: 'quota' } : undefined
+            durabilityDowngrade: downgraded ? { requested: String(command.durability), cause } : undefined
         };
-        if (storageRefused && !this.storageFailing) {
+        if (!checkpointed && storageRefused && !this.storageFailing) {
             this.reportStoreHealth('failing');
         }
-        if (durable && !quotaHeld && this.storageFailing) {
+        if (durable && !checkpointed && !quotaHeld && this.storageFailing) {
             this.reportStoreHealth('healthy');
         }
         this.messages.push(message);
         assert(command.handleId);
         this.handles.set(command.handleId, message);
-        if (durable && !quotaHeld) {
+        if (durable && !checkpointed && !quotaHeld) {
             this.writes.sender += 1;
+        }
+        if (message.checkpoint === 'unsaved' && quotaHeld) {
+            this.reportCheckpointLag(message);
         }
         if (command.payload.revision === 'replacement') {
             for (const prior of this.messages) {
@@ -805,10 +901,16 @@ for (const replacesDocument of [true, false]) {
     });
 }
 
-/** A durable original a page held when it ended: a reloaded document's or a closed owner page's. */
+const HELD_ORIGINAL_MARKERS = ['delivery-reload', 'durable-takeover', 'checkpoint-recovery', 'flush-on-hide'];
+
+/** A durable original a page held when it ended, a reloaded document's or an ended owner page's, that its page saved. */
 function isHeldOriginal(message: PortMessage): boolean {
     const marker = isJsonRecordValue(message.command.payload) ? message.command.payload.marker : undefined;
-    return (marker === 'delivery-reload' || marker === 'durable-takeover') && !message.submitted;
+    return HELD_ORIGINAL_MARKERS.includes(String(marker)) && !message.submitted && message.checkpoint !== 'lost';
+}
+
+function isUnsavedCheckpoint(message: PortMessage): boolean {
+    return message.checkpoint === 'unsaved';
 }
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
@@ -860,6 +962,103 @@ Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never han
 
     assertEquals(owner.ok, false, JSON.stringify(owner));
 });
+
+function findCatalogScenario(carrier: AlmConformanceCarrier, scenarioId: string): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes({
+        group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+        carrier,
+        typeId: 'alm.conformance',
+        senderConnection: 'almConformanceSender',
+        receiverConnection: 'almConformanceReceiver',
+        deadlineMs: 18_000
+    }).find((candidate) => candidate.scenarioId === scenarioId);
+    assert(scenario, `${scenarioId} over ${carrier}`);
+    return scenario;
+}
+
+/** The recipe's commands from the one after `after` up to and including `through`; undefined ends at the last. */
+function toSegment(recipe: RallarBlackBoxTestRecipe, after: string | undefined, through: string | undefined): RallarBlackBoxTestRecipe {
+    const ids = recipe.commands.map((command) => command.commandId);
+    const start = after === undefined ? 0 : ids.indexOf(after) + 1;
+    const end = through === undefined ? ids.length : ids.indexOf(through) + 1;
+    return { ...recipe, recipeId: `${recipe.recipeId}:${start}`, commands: recipe.commands.slice(start, end) };
+}
+
+function findMarked(ports: GeneratedAlmPorts, marker: string): readonly PortMessage[] {
+    return ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === marker);
+}
+
+for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+    Deno.test(`the ${carrier} checkpoint-recovery pair restores the interval's checkpoint across the reload`, async () => {
+        const { sender, receiver } = findCatalogScenario(carrier, 'checkpoint-recovery');
+        const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
+        assert(checkpoint);
+        const ports = new GeneratedAlmPorts(true);
+
+        const results = [
+            await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, checkpoint.receiverReadyEnd))),
+            await ports.sender.execute(toRecipeRun(toSegment(sender, undefined, checkpoint.senderPrefixEnd))),
+            await ports.receiver.execute(toRecipeRun(toSegment(receiver, checkpoint.receiverReadyEnd, checkpoint.receiverAbsenceEnd)))
+        ];
+        ports.replaceSenderDocument();
+        results.push(
+            await ports.sender.execute(toRecipeRun(toSegment(sender, checkpoint.senderReload, undefined))),
+            await ports.receiver.execute(toRecipeRun(toSegment(receiver, checkpoint.receiverAbsenceEnd, undefined)))
+        );
+
+        for (const result of results) {
+            assertEquals(result.ok, true, JSON.stringify(result));
+        }
+        assertEquals(findMarked(ports, 'checkpoint-recovery').map((message) => message.submitted), [true], 'the restored original is sent once');
+    });
+
+    Deno.test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
+        const { sender, receiver } = findCatalogScenario(carrier, 'checkpoint-lag');
+        const ports = new GeneratedAlmPorts(true);
+
+        const owner = await ports.sender.execute(toRecipeRun(sender));
+        const received = await ports.receiver.execute(toRecipeRun(receiver));
+
+        assertEquals(owner.ok, true, JSON.stringify(owner));
+        assertEquals(received.ok, true, JSON.stringify(received));
+        assertEquals(
+            findMarked(ports, 'checkpoint-lag').map((message) => [message.state, message.failure]),
+            [['acknowledged', undefined], ['failed', { kind: 'storage-unavailable', cause: 'checkpoint-lag' }], ['acknowledged', undefined]]
+        );
+    });
+}
+
+for (const carrier of ['ws', 'rtc'] as const) {
+    Deno.test(`the ${carrier} flush-on-hide successor restores what the owner's lifecycle flush saved`, async () => {
+        const { sender, receiver, successor } = findCatalogScenario(carrier, 'flush-on-hide');
+        assert(successor);
+        const ports = new GeneratedAlmPorts(true);
+
+        const owner = await ports.sender.execute(toRecipeRun(sender));
+        ports.flushCheckpoints();
+        ports.replaceSenderDocument();
+        const restored = await ports.sender.execute(toRecipeRun(successor));
+        const received = await ports.receiver.execute(toRecipeRun(receiver));
+
+        for (const [role, result] of [['owner', owner], ['successor', restored], ['receiver', received]] as const) {
+            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+        }
+        assertEquals(findMarked(ports, 'flush-on-hide').map((message) => message.submitted), [true]);
+    });
+
+    Deno.test(`the ${carrier} flush-on-hide successor restores nothing when the owner's page ends unflushed inside the interval`, async () => {
+        const { sender, successor } = findCatalogScenario(carrier, 'flush-on-hide');
+        assert(successor);
+        const ports = new GeneratedAlmPorts(true);
+
+        await ports.sender.execute(toRecipeRun(sender));
+        ports.replaceSenderDocument();
+        const restored = await ports.sender.execute(toRecipeRun(successor));
+
+        assertEquals(restored.ok, false, JSON.stringify(restored));
+        assertEquals(findMarked(ports, 'flush-on-hide').map((message) => message.submitted), [false], 'the unsaved admission is lost with its page');
+    });
+}
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
     return { kind: 'recipe.run', commandId: `${recipe.recipeId}-run`, recipe };

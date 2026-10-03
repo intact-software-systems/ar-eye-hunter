@@ -325,7 +325,7 @@ function createControlRuntime(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ transport: 'ws' }]
         }),
         sendPreparedMessage: async () => {

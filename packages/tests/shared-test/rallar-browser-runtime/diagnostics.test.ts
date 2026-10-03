@@ -400,7 +400,8 @@ it('records AL storage recovery, health and persist events on the storage topic'
         storeId: 'browser-ws-client:session-1',
         status: 'failing',
         lastFailure: { cause: 'quota', detail: 'QuotaExceededError: full' },
-        lastRecoveryPointAtMs: 1_000
+        lastRecoveryPointAtMs: 1_000,
+        oldestUnsavedAgeMs: undefined
     });
     storage?.({ kind: 'persist', outcome: 'granted' });
 

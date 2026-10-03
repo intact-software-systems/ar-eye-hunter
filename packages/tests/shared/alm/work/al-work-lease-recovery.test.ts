@@ -195,7 +195,7 @@ function createLeaseRecoveryRun(options: { withVolatileLane?: boolean; } = {}): 
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: msg.route.resourceId !== 'volatile-first',
+            lane: msg.route.resourceId !== 'volatile-first' ? 'durable' : 'volatile',
             preparedMessages: [{ peer: 'receiver' }]
         }),
         sendPreparedMessage: async (_prepared, _phase, lifecycle) => {

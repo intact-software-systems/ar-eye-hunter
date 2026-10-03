@@ -50,8 +50,31 @@ function toParticipant(agentId: string, page: Playwright.Page | undefined): TwoA
     };
 }
 
+/** The owner page's ending as the runner drives it: a lifecycle event in the page, the CDP crash, the close. */
+function toOwnerPage(order: string[]): Playwright.Page {
+    let crash: (() => void) | undefined;
+    const cdp = {
+        send: async (method: string) => {
+            order.push(method);
+            crash?.();
+            return new Promise(() => {});
+        }
+    };
+    const page = {
+        evaluate: async (_dispatch: unknown, eventType: string) => void order.push(`dispatch:${eventType}`),
+        waitForTimeout: async () => void order.push('settle'),
+        context: () => ({ newCDPSession: async () => cdp }),
+        waitForEvent: async (event: string) => {
+            await new Promise<void>((resolve) => crash = resolve);
+            order.push(event === 'crash' ? 'crashed' : event);
+        },
+        close: async () => void order.push('close-owner')
+    };
+    return page as unknown as Playwright.Page;
+}
+
 describe('same-context ALM run', () => {
-    it('selects exactly durable-takeover for the same-context family on every carrier', () => {
+    it('selects durable-takeover on every carrier and flush-on-hide over ws and rtc for the same-context family', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const sameContext = createAlmConformanceRecipes({
                 group,
@@ -62,13 +85,19 @@ describe('same-context ALM run', () => {
                 deadlineMs: 18_000
             }).filter((scenario) => scenario.laneFamily === 'same-context');
 
-            expect(sameContext.map((scenario) => scenario.scenarioKey), carrier).toEqual(['durable-takeover']);
+            expect(sameContext.map((scenario) => scenario.scenarioKey), carrier)
+                .toEqual(carrier === 'rtc-with-ws-fallback' ? ['durable-takeover'] : ['durable-takeover', 'flush-on-hide']);
             expect(sameContext.every((scenario) => scenario.successor !== undefined), carrier).toBe(true);
         }
     });
 
     // One auth session keeps one server socket: the successor connects only once the owner page is gone.
-    it('runs the owner\'s recipe, closes the owner page, then runs the successor, the receiver started first', async () => {
+    it.each(
+        [
+            ['close', ['close-owner']],
+            ['flush-and-crash', ['dispatch:freeze', 'settle', 'Page.crash', 'crashed', 'close-owner']]
+        ] as const
+    )('runs the owner\'s recipe, ends the owner page by %s, then runs the successor, the receiver started first', async (ownerEnd, ending) => {
         const baseline = createAlmConformanceRecipes({
             group,
             carrier: 'ws',
@@ -79,7 +108,6 @@ describe('same-context ALM run', () => {
         }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
         const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
         const order: string[] = [];
-        const ownerPage = { close: async () => void order.push('close-owner') } as Partial<Playwright.Page> as Playwright.Page;
         const request = await Playwright.request.newContext();
         vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
             const data = options?.data;
@@ -93,7 +121,7 @@ describe('same-context ALM run', () => {
             request,
             runId: 'same-context-run',
             group,
-            sender: toParticipant('owner-agent', ownerPage),
+            sender: toParticipant('owner-agent', toOwnerPage(order)),
             receiver: toParticipant('receiver-agent', undefined),
             readSnapshot: async () => ({ results: order.map((commandId) => ({ commandId, ok: true })) }),
             close: async () => {
@@ -103,14 +131,14 @@ describe('same-context ALM run', () => {
         try {
             const outcome = await runRecipeTrioOnSameContext(
                 run,
-                { owner: run.sender, successor: toParticipant('successor-agent', undefined) },
+                { owner: run.sender, successor: toParticipant('successor-agent', undefined), ownerEnd },
                 { sender: baseline.sender, receiver: baseline.receiver, successor }
             );
 
             expect(order).toEqual([
                 `${baseline.receiver.recipeId}-run`,
                 `${baseline.sender.recipeId}-run`,
-                'close-owner',
+                ...ending,
                 `${successor.recipeId}-run`
             ]);
             expect(outcome).toEqual({

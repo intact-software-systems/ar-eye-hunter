@@ -1,13 +1,14 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
     normalizeALQosPolicy,
+    resolveALOutboundStoreDurability,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
-    shouldPersistOutbox,
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
 import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '../../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
 import type {
     ALOutboundDispatchPlan,
     ALOutboundRetryTrackingPlan,
@@ -18,6 +19,7 @@ import {
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
 import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
+import { Either } from '../../resilience/Either.ts';
 import { toWsQueueBoxClientAckTrackingPlan } from './ws-queue-box-client-receipt-tracking.ts';
 
 export interface WsQueueBoxClientDispatchContext {
@@ -48,13 +50,16 @@ export function toWsQueueBoxClientDispatchPlan(
         msg: message,
         carrier: 'ws',
         policy: normalized
-    });
+    }).flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+        (refused) => Either.ofLeft(refused),
+        (admissible) => computeALOutboundOrderingRefusal({ msg: admissible, policy: normalized })
+    );
     return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>(
         (refused) => refused,
         () => ({
             msg: message,
             dropReasonCode: undefined,
-            persist: shouldPersistOutbox(normalized.effective),
+            lane: resolveALOutboundStoreDurability(normalized.effective.durability.algo),
             preparedMessages: [toALOutboundTransportMessage(message)],
             ackTracking: toWsQueueBoxClientAckTrackingPlan(
                 normalized.effective,

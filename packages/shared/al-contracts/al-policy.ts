@@ -1,3 +1,4 @@
+import type { ALStoreDurability } from '../alm/al-runtime-stores.ts';
 import type { ALMessage, ALTargets } from './al-contract.ts';
 
 import type { ALOrderingObservation, ALSupersedenceObservation } from './al-runtime.ts';
@@ -47,7 +48,7 @@ export type ALFanoutAlgo = 'all' | 'limit' | 'random-k';
 
 export type ALCongestionAlgo = 'drop-low' | 'defer' | 'reject';
 
-export type ALDurabilityAlgo = 'volatile' | 'local-outbox' | 'local-inbox';
+export type ALDurabilityAlgo = 'volatile' | 'local-checkpoint' | 'local-outbox' | 'local-inbox';
 
 export type ALOwnershipAlgo = 'shared' | 'exclusive';
 
@@ -390,15 +391,22 @@ export function shouldPersistInbox(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo === 'local-inbox';
 }
 
-/** The sender keeps its copy in browser storage exactly when the channel chose a durability above volatile. */
-export function shouldPersistOutbox(effective: ALQosEffectivePolicy): boolean {
-    return effective.durability.algo !== 'volatile';
+const AL_OUTBOUND_STORE_DURABILITY: Readonly<Record<ALDurabilityAlgo, ALStoreDurability>> = {
+    volatile: 'volatile',
+    'local-checkpoint': 'checkpoint',
+    'local-outbox': 'durable',
+    'local-inbox': 'durable'
+};
+
+/** The sender's store lane for a durability: memory, memory checkpointed to browser storage, or browser storage. */
+export function resolveALOutboundStoreDurability(durability: ALDurabilityAlgo): ALStoreDurability {
+    return AL_OUTBOUND_STORE_DURABILITY[durability];
 }
 
 /**
  * An admission that may wait for a route instead of being refused for lacking one: a message that
- * retries or persists. This is what `shouldPersistOutbox` meant before S3a; the WS server's recipient
- * resolution and the RTC missing-channel check keep that meaning.
+ * retries or is kept beyond the volatile lane. The WS server's recipient resolution and the RTC
+ * missing-channel check read it.
  */
 export function shouldAwaitALRoute(effective: ALQosEffectivePolicy): boolean {
     return effective.durability.algo !== 'volatile' || effective.retry.algo !== 'none';
@@ -528,7 +536,8 @@ function computeMessageDelivery(
         forwarding: {
             enabled: nextHopPeerIds.length > 0,
             nextHopPeerIds,
-            persist: !dropped && shouldPersistOutbox(decision.result.effective)
+            persist: !dropped &&
+                resolveALOutboundStoreDurability(decision.result.effective.durability.algo) !== 'volatile'
         }
     };
 }

@@ -9,7 +9,7 @@ import type {
     RallarTypedMessageChannelDefinition
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { shouldPersistOutbox } from '@shared/al-contracts/al-policy.ts';
+import { resolveALOutboundStoreDurability } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALQosPolicy } from '@shared/al-contracts/normalize-al-qos-policy.ts';
 import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
@@ -62,7 +62,7 @@ describe('director command browser storage volume (D60, D87)', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: shouldPersistOutbox(normalizeALQosPolicy(msg).effective),
+                lane: resolveALOutboundStoreDurability(normalizeALQosPolicy(msg).effective.durability.algo),
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {

@@ -116,7 +116,7 @@ describe('outbound storage unavailability', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })

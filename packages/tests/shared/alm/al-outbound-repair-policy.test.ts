@@ -34,14 +34,14 @@ describe('AL outbound repair policy', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: scenario.repair
             }),
             planRepairMessage: async (msg) =>
                 scenario.noCurrentRecipient
                     ? undefined
-                    : { msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
+                    : { msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
 

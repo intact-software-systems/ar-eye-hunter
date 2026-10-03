@@ -417,7 +417,7 @@ export class WsQueueBoxServerService {
             admittedAudience: authority?.admittedAudience,
             recipientScope: authority?.recipientScope
         });
-        const outgoingMessage = dispatchPlan.persist
+        const outgoingMessage = dispatchPlan.lane !== 'volatile'
             ? decodePersistedALMessageValue(message)
             : message;
 

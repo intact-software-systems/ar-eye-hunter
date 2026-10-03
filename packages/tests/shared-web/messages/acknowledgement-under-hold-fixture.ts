@@ -1,5 +1,6 @@
 import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult } from 'vitest';
 
+import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
     configureBrowserALRuntimeStores,
@@ -277,6 +278,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: undefined,
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
         outboundSettlements: (event) => runtime.registry.record(event),
         webRtcConnectionService: service,
         qboxEngine: runtime.engine
@@ -369,6 +371,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
             createDefaultVolatileSessionBudget()
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
+        checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

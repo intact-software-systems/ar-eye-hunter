@@ -202,6 +202,8 @@ it.each(['memory', 'indexeddb'] as const)(
         await expect.poll(() => delivered).toEqual(['dispatched']);
         await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
 
+        // The batch reports its drain after its last claim; wait for that event.
+        await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         // The row goes back to the queue, so the drain counts it rescheduled and the claim says why.
         expect(claimsOf(diagnostics)[0]?.outcome).toBe('retry');
         expect(drainsOf(diagnostics)[0]).toMatchObject({ claimedCount: 1, completedCount: 0, rescheduledCount: 1 });

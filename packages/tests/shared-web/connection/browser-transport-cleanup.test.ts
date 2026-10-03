@@ -4,10 +4,10 @@ import {
     BrowserTransportRuntime,
     type BrowserTransportInitOptions
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
-import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
@@ -44,7 +44,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -94,7 +94,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -147,7 +147,7 @@ describe('Browser transport cleanup', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -197,8 +197,8 @@ describe('Browser transport cleanup', () => {
             session: { sessionId: 'session-new', accessToken: 'token-new' }
         });
         const initializationSessions: string[] = [];
-        let resolveFirst: ((middleware: RallarBrowserMiddleware) => void) | undefined;
-        let resolveSecond: ((middleware: RallarBrowserMiddleware) => void) | undefined;
+        let resolveFirst: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
+        let resolveSecond: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
         mocks.initialiseMiddleware.mockImplementation((session) => {
             initializationSessions.push(session.sessionId);
             return new Promise((resolve) => {
@@ -239,12 +239,12 @@ describe('Browser transport cleanup', () => {
         await vi.waitFor(() => {
             expect(initializationSessions).toEqual(['session-old', 'session-new']);
         });
-        resolveSecond?.(second.middleware);
+        resolveSecond?.({ middleware: second.middleware, checkpoints: [] });
         await expect(secondConnection).resolves.toMatchObject({
             session: { sessionId: 'session-new' }
         });
 
-        resolveFirst?.(first.middleware);
+        resolveFirst?.({ middleware: first.middleware, checkpoints: [] });
         await expect(firstConnection).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );
@@ -260,7 +260,7 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
         });
-        let resolveMiddleware: ((middleware: RallarBrowserMiddleware) => void) | undefined;
+        let resolveMiddleware: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockReturnValue(
             new Promise((resolve) => {
@@ -277,7 +277,7 @@ describe('Browser transport cleanup', () => {
             deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false }
         });
         transportRuntime.shutdown();
-        resolveMiddleware?.(middleware.middleware);
+        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
 
         await expect(pending).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
@@ -329,7 +329,7 @@ describe('Browser transport cleanup', () => {
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
@@ -386,7 +386,7 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             cleanupEffects.push('websocket-closed');
         });
-        let resolveMiddleware: ((value: RallarBrowserMiddleware) => void) | undefined;
+        let resolveMiddleware: ((value: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockReturnValue(
             new Promise((resolve) => {
@@ -429,7 +429,7 @@ describe('Browser transport cleanup', () => {
         const firstDisconnect = sessionController.connectionOperations.disconnect();
         const secondDisconnect = sessionController.connectionOperations.disconnect();
         expect(secondDisconnect).toBe(firstDisconnect);
-        resolveMiddleware?.(middleware.middleware);
+        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
 
         await Promise.all([firstDisconnect, secondDisconnect]);
         await expect(pendingConnect).rejects.toThrow(
@@ -451,7 +451,7 @@ describe('the session volatile limits seam', () => {
     it('hands the composition\'s limit reader to the session\'s middleware initialisation', async () => {
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
         const readVolatileSessionLimits = () => ({ maxAdmissions: 3, maxBytes: 4_096 });
@@ -477,7 +477,7 @@ describe('the session\'s durable work claim', () => {
         const browser = stubGrantedWebLocks();
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
@@ -501,7 +501,7 @@ describe('the session\'s durable work claim', () => {
             effects.push('transport-closed');
         });
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 
@@ -520,7 +520,7 @@ describe('the session\'s durable work claim', () => {
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
         });
-        let resolveMiddleware: ((middleware: RallarBrowserMiddleware) => void) | undefined;
+        let resolveMiddleware: ((middleware: BrowserConnectedMiddleware) => void) | undefined;
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockReturnValue(
             new Promise((resolve) => {
@@ -534,7 +534,7 @@ describe('the session\'s durable work claim', () => {
         await vi.waitFor(() => expect(browser.heldCount()).toBe(1));
         transportRuntime.shutdown();
         expect(effects).toEqual([]);
-        resolveMiddleware?.(middleware.middleware);
+        resolveMiddleware?.({ middleware: middleware.middleware, checkpoints: [] });
 
         await expect(pending).rejects.toThrow('Rallar connection was cancelled because auth ended.');
         expect(effects).toEqual(['transport-closed', 'lock-released']);
@@ -562,7 +562,7 @@ describe('the session\'s durable work claim', () => {
         });
         const middleware = createDefaultApiMiddlewareTestDouble();
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: middleware.middleware, checkpoints: [] });
         const transportRuntime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transportRuntime.shutdown());
 

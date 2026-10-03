@@ -203,7 +203,7 @@ function planTrackedSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPay
     return {
         msg,
         dropReasonCode: undefined,
-        persist: true,
+        lane: 'durable',
         preparedMessages: [{ kind: 'send' }],
         ackTracking: {
             enabled: true,

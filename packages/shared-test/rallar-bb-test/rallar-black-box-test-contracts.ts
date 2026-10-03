@@ -1,4 +1,4 @@
-import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
@@ -327,7 +327,7 @@ export type RallarBlackBoxTestMessagesSendCommand =
         scope?: 'room' | 'world' | 'all';
         reliability?: 'best-effort' | 'at-least-once';
         ack?: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
-        durability?: 'volatile' | 'local-outbox' | 'local-inbox';
+        durability?: ALDurabilityAlgo;
         /** What the typed channel does when its durable storage is unavailable; absent, it refuses. */
         onStorageUnavailable?: 'refuse' | 'volatile';
         ttlMs?: number;

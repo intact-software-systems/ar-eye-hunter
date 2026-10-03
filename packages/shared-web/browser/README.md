@@ -181,8 +181,32 @@ The browser transport storage and WebSocket owners are feature-colocated:
   the connect resolved, whose durable pairs are always IndexedDB;
   [browser-al-storage-availability.ts](./al-runtime/browser-al-storage-availability.ts)
   owns the connect's storage availability (`missing` without IndexedDB, any
-  other cause re-decided by the next durable admission) and its one request
-  for persistent storage;
+  other cause re-decided by the next durable admission), the checkpoint lane's
+  skip (`missing`, or a checkpoint store whose health reads `failing`, for a lag
+  beyond its bound or any other cause, until that store reads `healthy` or
+  `delayed` again) and its
+  one request for persistent storage, asked by the first durable or
+  `local-checkpoint` admission;
+  [browser-al-checkpoint-stores.ts](./al-runtime/browser-al-checkpoint-stores.ts)
+  owns the connect's two checkpoint pairs, one per outbound carrier under the
+  store ids `browser-ws-client-checkpoint:<sessionId>` and
+  `browser-rtc-overlay-checkpoint:<sessionId>`: a memory pair a
+  `local-checkpoint` admission goes to, whose writer checkpoints it into the
+  scope's database while the connect owns the session's work. The browser
+  composition sets `checkpointIntervalMs` and `checkpointLagBoundMs` on the store
+  factory input, which default to `AL_CHECKPOINT_DEFAULT_SETTINGS` (1,000 ms and
+  10,000 ms); no app-facing option exposes them yet. The pairs are built once per connect
+  under its claim, after `configureBrowserALRuntimeStores` registered their
+  factories beside each outbound scope's durable pair, and the WS client and the
+  RTC overlay each take their own;
+  [browser-page-lifecycle-flush.ts](./al-runtime/browser-page-lifecycle-flush.ts)
+  is the one adapter of the page lifecycle: per connect, and only once the
+  connect owns the session's work,
+  [BrowserTransportRuntime.init](./connection/browser-transport-runtime.ts)
+  listens for `visibilitychange` to hidden, `pagehide` and `freeze`, each of which
+  starts both checkpoints without awaiting them, and removes the listeners when
+  the connect ends. It flushes the two checkpoint ports `initialiseMiddleware`
+  returns beside the middleware, which never carries them;
   [browser-al-runtime-cleanup.ts](./al-runtime/browser-al-runtime-cleanup.ts)
   owns IndexedDB scanning, expiry scheduling, and session cleanup over every
   scope's database that `indexedDB.databases()` lists, or the current scope's

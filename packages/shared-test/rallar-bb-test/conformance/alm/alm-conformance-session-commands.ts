@@ -166,7 +166,9 @@ const RECOVERY_MARGIN_MS = 60_000;
 export const RECOVERED_STORE_PREFIXES = {
     sessionInbound: 'browser-session-inbound',
     ws: 'browser-ws-client',
-    rtc: 'browser-rtc-overlay'
+    rtc: 'browser-rtc-overlay',
+    wsCheckpoint: 'browser-ws-client-checkpoint',
+    rtcCheckpoint: 'browser-rtc-overlay-checkpoint'
 } as const;
 
 const STORAGE_TOPIC = 'rallar.browser.alm.storage';
@@ -188,6 +190,11 @@ export function toRecoveryTtlMs(deadlineMs: number): number {
 /** The fallback carrier's hold hands the original to WS before its page ends, so only `rtc` leaves it in the overlay. */
 export function toOriginalStorePrefix(carrier: AlmConformanceCarrier): string {
     return carrier === 'rtc' ? RECOVERED_STORE_PREFIXES.rtc : RECOVERED_STORE_PREFIXES.ws;
+}
+
+/** The checkpoint store of the lane that holds a held original at the end of its page, as {@link toOriginalStorePrefix}. */
+export function toCheckpointStorePrefix(carrier: AlmConformanceCarrier): string {
+    return carrier === 'rtc' ? RECOVERED_STORE_PREFIXES.rtcCheckpoint : RECOVERED_STORE_PREFIXES.wsCheckpoint;
 }
 
 /**

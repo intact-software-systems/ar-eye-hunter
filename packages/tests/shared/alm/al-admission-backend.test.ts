@@ -688,3 +688,59 @@ describe('memory pair eviction (S3a, ruling 5)', () => {
         expect([...state.data.keys()]).toEqual(['live']);
     });
 });
+
+describe('memory pair change notification', () => {
+    it('names every key a write sets or removes, and nothing for a write whose callback throws', async () => {
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => 1_000);
+        const changed: string[] = [];
+        backend.onChangeDo((key) => changed.push(key));
+
+        await backend.write(async (tx) => {
+            await tx.set('row-a', '1', 5_000);
+            await tx.set('row-b', '2', 5_000);
+        });
+        await backend.write(async (tx) => {
+            await tx.remove('row-a');
+        });
+        await expect(backend.write(async (tx) => {
+            await tx.set('row-c', '3', 5_000);
+            throw new Error('the callback failed');
+        })).rejects.toThrow('the callback failed');
+
+        expect(changed).toEqual(['row-a', 'row-b', 'row-a']);
+        expect(backend.peek('row-b')).toEqual({ key: 'row-b', value: '2', expireAtTimestamp: 5_000 });
+        expect(backend.peek('row-a')).toBeUndefined();
+    });
+
+    it('names the rows a read, a list and an eviction expire; a peek expires nothing', async () => {
+        let nowMs = 1_000;
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => nowMs);
+        await backend.write(async (tx) => {
+            await tx.set('read:a', '1', 2_000);
+            await tx.set('list:b', '2', 2_000);
+            await tx.set('evict:c', '3', 2_000);
+        });
+        const changed: string[] = [];
+        backend.onChangeDo((key) => changed.push(key));
+        nowMs = 3_000;
+
+        expect(backend.peek('read:a')).toEqual({ key: 'read:a', value: '1', expireAtTimestamp: 2_000 });
+        expect(await backend.read('read:a', decodeVersion)).toBeUndefined();
+        expect(await backend.list('list:', decodeVersion)).toEqual([]);
+        backend.evictExpired();
+
+        expect(changed).toEqual(['read:a', 'list:b', 'evict:c']);
+    });
+
+    it('stops naming keys once unsubscribed', async () => {
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), () => 1_000);
+        const changed: string[] = [];
+        backend.onChangeDo((key) => changed.push(key)).unsubscribe();
+
+        await backend.write(async (tx) => {
+            await tx.set('row', '1', 5_000);
+        });
+
+        expect(changed).toEqual([]);
+    });
+});

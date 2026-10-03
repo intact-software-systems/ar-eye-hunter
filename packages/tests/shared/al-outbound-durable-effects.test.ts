@@ -59,7 +59,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             sendPreparedMessage: send,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         await runtime.enqueueIfAbsent(createOutboundMessage('expires-during-receipt-read', { ttlMs: 1_000 }));
         await settleOutboundWork(stores);
@@ -79,7 +79,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 sent.push(String(prepared.msgId));
                 return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent', submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         const message = createOutboundMessage('retained-completion-failure');
         await runtime.enqueueIfAbsent(message);
@@ -106,7 +106,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 attempts.push(String(prepared.msgId));
                 return { status: 'queued', settled: settlement.promise };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
         });
         const message = createOutboundMessage(`retained-${status}`);
         await runtime.enqueueIfAbsent(message);
@@ -148,7 +148,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
         });
@@ -175,7 +175,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 repairTracking: {
                     enabled: true,
@@ -186,7 +186,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'repair', msgId: plannedMsg.id.msgId, trigger: request.trigger }]
             })
         });
@@ -247,7 +247,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
         });
@@ -311,7 +311,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
         });
@@ -321,7 +321,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
         });
@@ -382,7 +382,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -401,7 +401,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -474,7 +474,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -493,7 +493,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -522,7 +522,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
@@ -582,7 +582,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
@@ -616,7 +616,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
@@ -665,7 +665,7 @@ describe('AL outbound durable effect lifecycle', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
             })
         });
@@ -696,7 +696,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
                 return { status: 'sent' as const, submissionAttempted: true };
             },
-            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, persist: false, preparedMessages: [] })
+            planOutgoingMessage: (msg) => ({ msg: msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] })
         });
         await restarted.ready();
         await vi.advanceTimersByTimeAsync(Math.max(0, retryAt - Date.now()));
@@ -748,7 +748,7 @@ function createUndrainedOutboundRuntime(
         planOutgoingMessage: (plannedMsg) => ({
             msg: plannedMsg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }]
         })
     });

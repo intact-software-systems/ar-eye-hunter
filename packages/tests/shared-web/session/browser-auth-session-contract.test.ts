@@ -99,7 +99,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             ...mocks.ctx.session,
             expiresAtEpochMs: 1_500
         };
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, checkpoints: [] });
         mocks.readSession.mockImplementation(() =>
             Date.now() >= expiringSession.expiresAtEpochMs
                 ? undefined
@@ -205,7 +205,7 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         };
         let currentSession: typeof oldSession | undefined = oldSession;
         let transportClosed = false;
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
+        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, checkpoints: [] });
         mocks.readSession.mockImplementation(() => currentSession);
         mocks.clearSession.mockImplementation(() => {
             currentSession = undefined;

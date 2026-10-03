@@ -105,7 +105,7 @@ const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket)
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
+        initialiseMiddleware: async (_session, _topic, options) => ({ middleware: (await mocks.initialiseApiMiddleware(options)).middleware, checkpoints: [] })
     })
 );
 

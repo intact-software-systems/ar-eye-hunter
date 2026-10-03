@@ -96,6 +96,13 @@ describe('the durability downgrade a delivery observation carries', () => {
             .toEqual(durabilityDowngrade);
     });
 
+    it('reads a downgraded local-checkpoint send', () => {
+        const durabilityDowngrade = { requested: 'local-checkpoint', cause: 'missing' };
+
+        expect(decodeAlmDeliveryResultValue({ ...OBSERVATION, durabilityDowngrade }).durabilityDowngrade)
+            .toEqual(durabilityDowngrade);
+    });
+
     it('reads an observation without a downgrade as none', () => {
         expect(decodeAlmDeliveryResultValue(OBSERVATION).durabilityDowngrade).toBeUndefined();
     });
