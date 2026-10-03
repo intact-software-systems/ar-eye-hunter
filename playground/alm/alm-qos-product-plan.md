@@ -533,7 +533,7 @@ which the roadmap renumbers 5 to 8 (D88). Its slices are:
   sweeps behind a lock-limiter pair per outbound lane, the hand-off on the cache library and the
   receipted reading recorded as I2b evidence.
 - **I2a, storage lifetime:** section 8.
-- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115).
+- **I2b, checkpointed durability:** sections 4 and 5, after I2a (D115). Delivered (I2b, d6cb46a7a).
 
 The roadmap's "Releases 4 to 8" table states each slice's outcome and exit evidence.
 
