@@ -922,12 +922,13 @@ describe('decodeALMObservationSnapshot', () => {
             events: [
                 toLaneNamedEvent(toCommitPhaseEvent(1_000, 12, 'send'), 'volatile'),
                 toLaneNamedEvent(toCommitPhaseEvent(1_001, 12, 'send'), 'memory'),
+                toLaneNamedEvent(toCommitPhaseEvent(1_004, 12, 'send'), 'checkpoint'),
                 toLaneNamedEvent(toReadinessProbeEvent(1_002, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 'volatile'),
                 toLaneNamedEvent(toReadinessProbeEvent(1_003, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 0 }), 7)
             ]
         });
 
-        expect(decoded.right?.commitPhases.map((phase) => phase.lane)).toEqual(['volatile']);
+        expect(decoded.right?.commitPhases.map((phase) => phase.lane)).toEqual(['volatile', 'checkpoint']);
         expect(decoded.right?.readinessProbes.map((probe) => probe.lane)).toEqual(['volatile']);
     });
 

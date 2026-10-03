@@ -37,7 +37,7 @@ describe('the WS client dispatch plan', () => {
         const plan = toWsQueueBoxClientDispatchPlan(commandToServer(), CONTEXT);
 
         expect(plan).toMatchObject({
-            persist: true,
+            lane: 'durable',
             ackTracking: {
                 enabled: true,
                 mode: 'receiver',

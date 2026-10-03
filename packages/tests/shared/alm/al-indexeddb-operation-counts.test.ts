@@ -228,7 +228,7 @@ describe('outbound default send IndexedDB volume', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-default-send' }),
             nowMs: () => laneNowMs,
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
@@ -263,7 +263,7 @@ describe('outbound volatile send IndexedDB volume', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -307,7 +307,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {
@@ -344,7 +344,7 @@ describe('an idle durable outbound owner beside a volatile send', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send' }]
             }),
             sendPreparedMessage: async () => {

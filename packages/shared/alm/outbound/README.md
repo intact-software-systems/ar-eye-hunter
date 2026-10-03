@@ -88,13 +88,22 @@ admission, repair retransmission, work handler and engine task over its one pair
 shared engine. The WS server builds the runtime without a memory pair (`volatileStores: undefined`), so
 every server message keeps its one backend.
 
-- **Routing by durability.** An admission goes to the lane its plan's `persist` names, and every
-  browser planner states `persist` as `shouldPersistOutbox(effective)`: the message's effective
-  durability alone. `local-outbox` and `local-inbox` go to IndexedDB; `volatile`, the default for
-  every send that names none, goes to memory. Reliability no longer implies durability: a default
+- **Routing by durability.** An admission goes to the lane its plan's `lane` names, and every
+  browser planner states `lane` as `resolveALOutboundStoreDurability(effective.durability.algo)`: the
+  message's effective durability alone. `local-outbox` and `local-inbox` name `durable` and go to
+  IndexedDB; `volatile`, the default for every send that names none, goes to memory; `local-checkpoint`
+  names `checkpoint`, which goes to the durable lane while the runtime holds no checkpoint lane. A
+  dropping plan names `volatile`. A captured policy row keeps only whether its copy outlives memory
+  (`persist`), so a re-plan under it keeps its own lane when the two agree and reads `durable` or
+  `volatile` when they do not. Reliability no longer implies durability: a default
   typed send is at-least-once, receipted and volatile (D2, D52), and a lane send that names no
   durability is volatile too (R-S3a-0). The plan is computed once and handed to that lane's admission. The admission verdict's
   `durable` says whether rows were persisted: the memory lane states every admission `durable: false`.
+- **A `local-checkpoint` send carries no client sequence.** A restored checkpoint could send a `seq`
+  again for different content, so both browser planners refuse a `local-checkpoint` send that carries
+  one as `unsupported` ([`computeALOutboundOrderingRefusal`](./admission/compute-al-outbound-ordering-refusal.ts)).
+  An ordering key alone carries no position (every room send carries its group key), and a superseded
+  unsent copy was never seen outside the runtime, so both pass.
 - **Grouped sends.** A group whose members differ in durability commits as one group per lane: there
   is no cross-store atomicity. No caller mixes today; an ACK batch is all volatile.
 - **Controls, receipts and retransmission** go to the volatile lane when it owns the target message
@@ -128,8 +137,8 @@ every server message keeps its one backend.
   so it completes within the caller's microtask chain, and a loop of awaited volatile sends yields no
   task turn until it ends (R-S3a-7). A burst loop should yield or batch; fairness is V1's.
 - **Every lane-emitted diagnostic names its lane.** `commit-phases`, `effect-drain` and
-  `readiness-probe` carry a required `lane: 'durable' | 'volatile'` (R-S3a-15), so a reader of the
-  runner's storage speed can leave the memory lane out.
+  `readiness-probe` carry a required `lane` (`ALStoreDurability`: `durable`, `checkpoint` or
+  `volatile`) (R-S3a-15), so a reader of the runner's storage speed can leave the memory lane out.
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):

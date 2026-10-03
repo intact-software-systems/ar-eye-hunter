@@ -36,7 +36,7 @@ describe('outbound store lanes (S3a, D54)', () => {
         return {
             msg,
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [{ kind: 'send' }]
         };
     }
@@ -51,7 +51,7 @@ describe('outbound store lanes (S3a, D54)', () => {
             volatileStores,
             planOutgoingMessage: (msg) => ({
                 ...planVolatileSend(msg),
-                persist: msg.id.msgId === kept.id.msgId
+                lane: msg.id.msgId === kept.id.msgId ? 'durable' : 'volatile'
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });

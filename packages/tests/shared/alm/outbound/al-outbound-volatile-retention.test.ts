@@ -73,7 +73,7 @@ describe('the rows a volatile outbound send keeps (D74)', () => {
         const pair = createObservedOutboundPair('durable');
         const runtime = createDefaultOutboundTestRuntime({
             stores: pair.stores,
-            planOutgoingMessage: (msg) => ({ ...planSend(msg), persist: true }),
+            planOutgoingMessage: (msg) => ({ ...planSend(msg), lane: 'durable' }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
         });
         const message = createOutboundMessage('durable-rows', { ttlMs: 1_000 });
@@ -183,7 +183,7 @@ function createVolatileSendRuntime(
 }
 
 function planSend(msg: ALMessage): ALOutboundDispatchPlan<OutboundTestPayload> {
-    return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] };
+    return { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [{ kind: 'send' }] };
 }
 
 function readDeadlineMs(message: ALMessage): number {
@@ -268,7 +268,7 @@ describe('the control rows a volatile outbound send keeps (D74)', () => {
             stores: pair.stores,
             planOutgoingMessage: (msg) => ({
                 ...planSend(msg),
-                persist: true,
+                lane: 'durable',
                 ackTracking: trackOutboundTestAcks(['peer-1'])
             }),
             sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })

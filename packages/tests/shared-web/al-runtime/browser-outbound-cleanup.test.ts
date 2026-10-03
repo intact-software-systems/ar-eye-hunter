@@ -309,7 +309,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })

@@ -72,7 +72,7 @@ export function createSessionOutboundTestRuntime<TOwnership extends ALDurableWor
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: msg.route.resourceId.startsWith('durable'),
+            lane: msg.route.resourceId.startsWith('durable') ? 'durable' : 'volatile',
             preparedMessages: [{ peer: 'receiver' }]
         }),
         sendPreparedMessage: async (_prepared, _phase, lifecycle) => {

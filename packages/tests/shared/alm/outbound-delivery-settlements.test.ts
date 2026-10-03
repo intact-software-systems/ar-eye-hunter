@@ -93,7 +93,7 @@ function planSend(
     return (msg) => ({
         msg,
         dropReasonCode: undefined,
-        persist: true,
+        lane: 'durable',
         preparedMessages: [PREPARED],
         ackTracking
     });
@@ -136,7 +136,10 @@ it('stamps every settlement with the lane that stated it, and its own cancel wit
         stores: createStores('memory'),
         volatileStores: createVolatileOutboundTestStores(),
         settlements: (settlement) => settlements.push(settlement),
-        planOutgoingMessage: (msg) => ({ ...planSend()(msg), persist: msg.route.resourceId === 'msg-durable-lane' }),
+        planOutgoingMessage: (msg) => ({
+            ...planSend()(msg),
+            lane: msg.route.resourceId === 'msg-durable-lane' ? 'durable' : 'volatile'
+        }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const durable = createOutboundMessage('msg-durable-lane');

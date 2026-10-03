@@ -332,7 +332,7 @@ it('observes a retained pending admission without storage reads and wakes on the
         stores,
         carrier: 'ws',
         settlements: (settlement) => fixture.registry.record(settlement),
-        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send' }] }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
@@ -616,12 +616,14 @@ it('decodes a declared send durability and refuses an unknown one', () => {
 
     expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'local-outbox' }).right)
         .toMatchObject({ durability: 'local-outbox' });
+    expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'local-checkpoint' }).right)
+        .toMatchObject({ durability: 'local-checkpoint' });
     expect(decodeBlackBoxRallarMessageSendInput(send).right).toMatchObject({
         durability: undefined
     });
     expect(decodeBlackBoxRallarMessageSendInput({ ...send, durability: 'forever' }).left)
         .toEqual({
-            message: 'messages.send.durability must be volatile, local-outbox or local-inbox.'
+            message: 'messages.send.durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
         });
 });
 

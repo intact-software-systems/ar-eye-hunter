@@ -39,7 +39,7 @@ export function validateRallarTypedChannelPolicy(
         issues.push({
             path: '$.durability',
             code: 'invalid-durability',
-            message: 'Durability must be volatile, local-outbox or local-inbox.'
+            message: 'Durability must be volatile, local-checkpoint, local-outbox or local-inbox.'
         });
     }
     if (

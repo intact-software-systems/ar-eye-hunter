@@ -35,7 +35,7 @@ function createHandOverFixture(persist: boolean, receiptTimeoutMs = 60_000) {
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist,
+            lane: persist ? 'durable' : 'volatile',
             preparedMessages: [{ message: msg.id.msgId }],
             ackTracking: { ...trackOutboundTestAcks(['peer-1']), timeoutMs: receiptTimeoutMs }
         }),

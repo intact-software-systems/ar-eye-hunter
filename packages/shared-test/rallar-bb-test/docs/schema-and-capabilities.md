@@ -154,7 +154,7 @@ that refusal fails the step.
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
 `reliability`, `ack`, `durability`, `onStorageUnavailable`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
 `minSnapshotVersion`, `qos` and `toPeer`. It returns `{ handleId, msgId, carrier, status, reason? }`.
-`durability` (`volatile`, `local-outbox`, `local-inbox`) declares the typed
+`durability` (`volatile`, `local-checkpoint`, `local-outbox`, `local-inbox`) declares the typed
 channel's durability; absent, the send is volatile. `onStorageUnavailable`
 (`refuse`, `volatile`) is the channel's choice when its storage cannot hold a
 durable send: `refuse` fails the send with `failure.kind: 'storage-unavailable'`,

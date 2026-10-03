@@ -49,11 +49,12 @@ import {
 import type { ALVolatileSessionBudget } from './volatile-budget/al-volatile-session-budget.ts';
 
 /**
- * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`) or the session's memory
- * pair (`volatile`). A lane names it on every diagnostic it states, so a reader of storage timings can keep
- * the two apart; the WS server's single-lane runtime is always `durable`.
+ * Which store pair of a runtime a lane runs over: the IndexedDB pair (`durable`), the session's memory
+ * pair (`volatile`), or a memory pair whose rows a checkpoint copies to IndexedDB (`checkpoint`). A lane
+ * names it on every diagnostic it states, so a reader of storage timings can keep them apart; the WS
+ * server's single-lane runtime is always `durable`.
  */
-export type ALStoreDurability = 'volatile' | 'durable';
+export type ALStoreDurability = 'volatile' | 'checkpoint' | 'durable';
 
 export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;

@@ -734,7 +734,7 @@ describe('IndexedDB AL runtime stores', () => {
             planOutgoingMessage: (plannedMsg) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
@@ -753,7 +753,7 @@ describe('IndexedDB AL runtime stores', () => {
             planRepairMessage: async (plannedMsg, request) => ({
                 msg: plannedMsg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -850,7 +850,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             planOutgoingMessage: input.planOutgoingMessage ?? ((msg) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
                 repairTracking: {
                     enabled: true,
@@ -861,7 +861,7 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
             planRepairMessage: input.planRepairMessage ?? (async (msg, request) => ({
                 msg: msg,
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [
                     {
                         kind: 'repair',
@@ -885,7 +885,7 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
     return (msg) => ({
         msg: msg,
         dropReasonCode: undefined,
-        persist: false,
+        lane: 'volatile',
         preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
         repairTracking: {
             enabled: true,

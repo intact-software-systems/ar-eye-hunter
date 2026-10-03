@@ -113,7 +113,10 @@ export interface RallarTypedMessageChannelDefinition {
     readonly typeId: string;
     /** Fixes the send defaults (D2): at-least-once, receipted, volatile, 30 s; a send option overrides each. */
     readonly purpose: ALChannelPurpose;
-    /** Absent, the purpose's `volatile`; `local-outbox`/`local-inbox` opt the channel into browser storage. */
+    /**
+     * Absent, the purpose's `volatile`; `local-checkpoint`, `local-outbox` and `local-inbox` opt the
+     * channel into browser storage.
+     */
     readonly durability?: ALDurabilityAlgo;
     /**
      * Absent, `refuse`: a durable send storage cannot hold reads `failed`. `volatile` sends it once without

@@ -78,7 +78,7 @@ describe('AL outbound dequeue work', () => {
             planOutgoingMessage: (msg) => ({
                 msg,
                 dropReasonCode: undefined,
-                persist: true,
+                lane: 'durable',
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
@@ -109,7 +109,7 @@ describe('AL outbound dequeue work', () => {
                     msg,
                     dropReason: 'Dropped before a route exists',
                     dropReasonCode,
-                    persist: false,
+                    lane: 'volatile',
                     preparedMessages: []
                 }),
                 afterDequeueAdmission: async (msg) => {
@@ -142,11 +142,11 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) =>
                 msg.route.resourceId === 'no-route'
-                    ? { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }
+                    ? { msg, dropReasonCode: undefined, lane: 'volatile', preparedMessages: [] }
                     : {
                         msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                         dropReasonCode: undefined,
-                        persist: false,
+                        lane: 'volatile',
                         preparedMessages: []
                     },
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
@@ -178,7 +178,7 @@ describe('AL outbound dequeue work', () => {
                 msg,
                 dropReason: 'No outbound transport route',
                 dropReasonCode: 'no-route',
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
@@ -216,7 +216,7 @@ describe('AL outbound dequeue work', () => {
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
                 dropReasonCode: undefined,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: []
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
@@ -240,7 +240,7 @@ describe('AL outbound dequeue work', () => {
             outbox,
             queueEngine,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
-            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();

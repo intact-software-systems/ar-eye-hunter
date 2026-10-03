@@ -1,4 +1,5 @@
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type {
@@ -29,7 +30,7 @@ interface AlmConformanceSendDelivery {
     readonly commandTimeoutMs?: number;
     readonly ack?: 'receiver' | 'all-logical-recipients';
     readonly reliability?: 'at-least-once';
-    readonly durability?: 'local-outbox' | 'local-inbox';
+    readonly durability?: Exclude<ALDurabilityAlgo, 'volatile'>;
     /** Absent, the channel refuses a durable send its storage cannot take. */
     readonly onStorageUnavailable?: 'refuse' | 'volatile';
     readonly orderingKey?: string;

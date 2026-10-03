@@ -161,7 +161,7 @@ async function createReceiptedSendFixture(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [{ kind: 'send' }],
             ackTracking,
             retryTracking: { enabled: true, maxAttempts: 3 }

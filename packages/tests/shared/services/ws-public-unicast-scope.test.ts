@@ -136,7 +136,7 @@ describe('public WS unicast scope', () => {
         const recipientScope = { ...SCOPE };
         const policy = captureALOutboundPolicy({
             msg: message,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [],
             dropReasonCode: undefined,
             recipientScope

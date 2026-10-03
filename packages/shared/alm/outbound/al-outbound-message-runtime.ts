@@ -152,7 +152,8 @@ export interface ALOutboundDispatchPlan<TPrepared> {
     readonly dropReason?: string;
     /** Required so every planner states its drop code; `undefined` means the plan is not dropping the message. */
     readonly dropReasonCode: ALOutboundDropReasonCode | undefined;
-    readonly persist: boolean;
+    /** The store lane the admission runs in: the message's durability, or `volatile` for a dropping plan. */
+    readonly lane: ALStoreDurability;
     readonly preparedMessages: readonly TPrepared[];
     readonly ackTracking?: ALOutboundAckTrackingPlan;
     /**
@@ -399,7 +400,8 @@ export namespace ALOutboundMessageRuntime {
  * cancellation, the settlement guard and disposal.
  *
  * - An admission (`enqueueIfAbsent`, each member of `enqueueAllIfAbsent`) goes to the lane its plan's
- *   `persist` names: the durability decision (`shouldPersistOutbox`) on every browser planner. The plan
+ *   `lane` names: the durability decision (`resolveALOutboundStoreDurability`) on every browser planner.
+ *   Until the runtime holds a checkpoint lane, a `checkpoint` plan goes to the durable lane. The plan
  *   is computed once and handed to that lane's admission of the same message, so the admission never
  *   plans the message twice. The lane over the memory pair states no admission durable.
  * - Members with different durability plans stay in one logical enqueue group but route to separate store lanes.
@@ -622,9 +624,9 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return { lane, planner: toPlannedOnce(msg, bounded, planOutgoingMessage) };
     }
 
-    /** The lane a durable plan names, or the only lane of a runtime with one backend. */
+    /** The memory lane for a volatile plan; every other plan, and every plan of a one-backend runtime, is durable. */
     private resolveLaneForPlan(plan: ALOutboundDispatchPlan<TPrepared>): ALOutboundStoreLane<TPrepared> {
-        return plan.persist || this.volatile === undefined ? this.durable : this.volatile;
+        return plan.lane === 'volatile' && this.volatile !== undefined ? this.volatile : this.durable;
     }
 
     /** A memory read, so a control about a volatile message never reaches IndexedDB. */

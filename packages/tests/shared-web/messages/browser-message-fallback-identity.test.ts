@@ -85,7 +85,7 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
 
@@ -136,7 +136,7 @@ describe('typed message fallback identity', () => {
         const detail = 'ack receiver is unsupported for rtc multicast targets';
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc-with-ws-fallback', ack: 'receiver' });
 
@@ -158,7 +158,7 @@ describe('typed message fallback identity', () => {
         const fixture = createChannel({
             firstVerdict: ADMITTED_VERDICT,
             firstDurationMs: 101,
-            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
+            firstPlanner: (msg) => ({ msg, lane: 'volatile', preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
         });
         const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100, ack: 'receiver' });
 
@@ -201,7 +201,7 @@ describe('typed message fallback identity', () => {
             firstVerdict: ADMITTED_VERDICT,
             firstPlanner: (msg) => ({
                 msg,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'The session is over its volatile bound.',
                 dropReasonCode: 'capacity'
@@ -257,7 +257,7 @@ describe('typed message fallback identity', () => {
                     : change === 'authority'
                     ? { ...msg, targets: { mode: 'unicast', toPeerId: 'changed' } }
                     : msg,
-                persist: false,
+                lane: 'volatile',
                 preparedMessages: [],
                 dropReason: 'No route',
                 dropReasonCode: 'no-route'

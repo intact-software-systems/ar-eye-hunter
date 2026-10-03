@@ -8,10 +8,10 @@ import {
     ALQosNormalizationResult,
     normalizeALQosPolicy,
     planALMessageHandling,
+    resolveALOutboundStoreDurability,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
     shouldAwaitALRoute,
-    shouldPersistOutbox,
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
@@ -21,6 +21,7 @@ import type {
 } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
+import { computeALOutboundOrderingRefusal } from '../alm/outbound/admission/compute-al-outbound-ordering-refusal.ts';
 import type {
     ALOutboundCancelOutcome,
     ALOutboundEnqueueResult,
@@ -531,6 +532,10 @@ export class WebRtcOverlayMulticastManager {
         const policy = this.readOutgoingQosPolicy(frozen, context);
         const msg = toALOutboundMessage(frozen, policy.effective);
         const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
+            .flatMap<ALOutboundDispatchPlan<ALOutboundTransportMessage>, ALMessage>(
+                (refusal) => Either.ofLeft(refusal),
+                (admissible) => computeALOutboundOrderingRefusal({ msg: admissible, policy })
+            )
             .flatMap((refusal) => Either.ofLeft(refusal), computeRtcFrozenAudienceRefusal)
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, availability, alreadyOwned));
         return toRtcFrozenAudienceDispatchPlan(toRtcEmptyAudienceDispatchPlan(plan, policy.effective), selfPeerId);
@@ -558,7 +563,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: availability.reason,
                 dropReasonCode: availability.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
@@ -615,7 +620,7 @@ export class WebRtcOverlayMulticastManager {
         }
         return {
             msg,
-            persist: true,
+            lane: resolveALOutboundStoreDurability(handling.effective.durability.algo),
             preparedMessages: [],
             dropReasonCode: undefined,
             ackTracking: toRtcAckTrackingPlan(handling.effective, []),
@@ -644,7 +649,7 @@ export class WebRtcOverlayMulticastManager {
         return {
             msg,
             dropReasonCode: 'no-route',
-            persist: false,
+            lane: 'volatile',
             preparedMessages: [],
             dropReason: `Skipping RTC outbound message ${msg.id.msgId} ${reason}`
         };
@@ -658,14 +663,14 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping RTC outbound message ${msg.id.msgId} without targets or next hop`,
                 dropReasonCode: 'no-route',
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
         }
         return {
             dropReasonCode: undefined,
-            persist: shouldPersistOutbox(effective),
+            lane: resolveALOutboundStoreDurability(effective.durability.algo),
             msg,
             preparedMessages: [toALOutboundTransportMessage(msg)],
             ackTracking: toRtcAckTrackingPlan(effective, msg.forwarding.nextHopPeerIds),
@@ -682,7 +687,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping planned RTC dispatch: ${plan.handlingPlan.dropReason}`,
                 dropReasonCode: toALOutboundDropReasonCodeFromHandlingPlan(plan.handlingPlan.dropReasonCode),
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
@@ -693,7 +698,7 @@ export class WebRtcOverlayMulticastManager {
                 dropReason: this.describeNoDispatchReason(plan),
                 // A repair request has a real (if unimplemented) route; only the no-transport default is routeless.
                 dropReasonCode: plan.handlingPlan.repair.enabled ? 'planner-drop' : 'no-route',
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
@@ -704,7 +709,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: `Skipping immediate RTC dispatch without RTC channel for peer ${missingPeerId}`,
                 dropReasonCode: 'no-route',
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
@@ -712,7 +717,7 @@ export class WebRtcOverlayMulticastManager {
 
         return {
             dropReasonCode: undefined,
-            persist: plan.handlingPlan.forwarding.persist,
+            lane: resolveALOutboundStoreDurability(plan.handlingPlan.effective.durability.algo),
             msg,
             preparedMessages: plan.transportMessages.map(toALOutboundTransportMessage),
             receiptNextHopPeerIds: plan.transportMessages.flatMap((message) =>
@@ -929,7 +934,7 @@ export class WebRtcOverlayMulticastManager {
             return {
                 dropReason: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
                 dropReasonCode: admission.kind === 'pending' ? 'not-yet-in-sync' : 'unauthorized',
-                persist: false,
+                lane: 'volatile',
                 msg,
                 preparedMessages: []
             };
@@ -937,7 +942,7 @@ export class WebRtcOverlayMulticastManager {
         const normalized = this.readOutgoingQosPolicy(msg, toAcceptedOverlayContext(this.readOutboundObservation(msg)));
         return {
             dropReasonCode: undefined,
-            persist: false,
+            lane: 'volatile',
             msg,
             preparedMessages: [toRtcTargetedRepairCopy({
                 dispatch: this.planOutgoingMessage(msg),

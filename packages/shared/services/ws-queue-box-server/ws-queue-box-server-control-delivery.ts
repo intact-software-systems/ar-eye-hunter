@@ -80,5 +80,5 @@ function toWsQueueBoxServerHandedOffControl(message: ALMessage, nowMs: number): 
 function toWsQueueBoxServerHandedOffControlPlan(
     message: ALMessage
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] };
+    return { msg: message, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] };
 }

@@ -57,6 +57,7 @@ const ALM_STORAGE_UNAVAILABLE_CAUSES: Readonly<Record<ALStorageUnavailableCause,
 
 const ALM_DURABILITY_ALGOS: Readonly<Record<ALDurabilityAlgo, true>> = {
     volatile: true,
+    'local-checkpoint': true,
     'local-outbox': true,
     'local-inbox': true
 };

@@ -395,7 +395,7 @@ export function createOutboundCanonicalEntry<TPrepared>(
 export async function computeOutboundTestAdmission<TPrepared>(
     store: ALOutboundAdmissionStore<TPrepared>,
     message: ALMessage,
-    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
+    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, dropReasonCode: undefined, lane: 'durable', preparedMessages: [] })
 ) {
     const read = await store.readOutgoingMessage({
         msg: message,
@@ -480,7 +480,7 @@ export function createIndexedDbOutboundTestStores(
 export const OUTBOUND_TEST_SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     msg,
     dropReasonCode: undefined,
-    persist: true,
+    lane: 'durable',
     preparedMessages: [{ peer: 'receiver' }]
 });
 

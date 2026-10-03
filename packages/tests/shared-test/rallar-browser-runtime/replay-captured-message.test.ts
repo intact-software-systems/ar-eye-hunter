@@ -101,7 +101,7 @@ function createUnsubmittingOutbound(
         planOutgoingMessage: (msg) => ({
             msg,
             dropReasonCode: undefined,
-            persist: true,
+            lane: 'durable',
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })

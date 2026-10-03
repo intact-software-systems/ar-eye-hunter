@@ -417,7 +417,7 @@ function decodeLane(value: unknown): ALStoreDurability | undefined {
     if (value === undefined) {
         return 'durable';
     }
-    return value === 'durable' || value === 'volatile' ? value : undefined;
+    return value === 'durable' || value === 'volatile' || value === 'checkpoint' ? value : undefined;
 }
 
 function decodeBoolean(value: unknown): boolean | undefined {
