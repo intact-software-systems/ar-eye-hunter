@@ -118,7 +118,10 @@ that cannot complete a checkpoint for ten seconds reads `failing`.
 
 The connect lifetime registers `visibilitychange` (to hidden), `pagehide` and `freeze` listeners,
 owner only, removed at release, in one named adapter; each calls `flush()` on both checkpoint
-lanes. H5 (completion on phones) stays unmeasured and is stated as a limit.
+lanes. The flush starts the readwrite and the shared mutation writer asks the transaction to
+`commit()` at once, since an unload-time write without it landed 0 of 4 times in measurement. H5
+(completion on phones) and the browser's real freeze stay unmeasured and are stated as limits: the
+lane can only dispatch a synthetic `freeze` and crash the page.
 
 ### 2.j Evidence
 
@@ -127,8 +130,8 @@ Unit: the writer with a fake clock and a fake transaction (aborted write, held w
 Pins: the D55 zero pin extended to the tier (zero `al-admission`, zero non-probe `al-work` during
 sends; exactly one write per checkpoint; zero while clean); the warm ledger, cold, inbound and
 snapshot pins unedited. Lane (full tag): `checkpoint-recovery` on the reload pair,
-`checkpoint-lag` through the storage fault port, `flush-on-hide` Playwright-only through CDP
-`Page.setWebLifecycleState`. Hosted manifests 18 and 22 byte-identical; the hosted full read runs
+`checkpoint-lag` through the storage fault port, `flush-on-hide` Playwright-only (a synthetic
+`freeze`, then a CDP page crash, then the successor's restore). Hosted manifests 18 and 22 byte-identical; the hosted full read runs
 the new cells. Relic: a reload-mid-command case in the manual full-stack suite.
 
 ### 2.k Relic (D134)
@@ -159,8 +162,15 @@ them as D129 to D135.
    full-stack Playwright spec (D134).** Declined: keeping `local-outbox`; `onStorageUnavailable:
    'volatile'`.
 7. **Lifecycle listeners in the connect lifetime, proven by a Playwright-only `flush-on-hide` cell
-   through CDP (D135).** Declined: a new `agent.hide` command (proves the listener, not the browser);
-   unit tests only.
+   (D135).** Declined: a new `agent.hide` command (proves the listener, not the browser); unit tests
+   only. **Amended 2026-10-03:** the writer measured CDP `Page.setWebLifecycleState` as a no-op on
+   headless Chromium (no `freeze`, timers keep running), so the cell dispatches a synthetic `freeze`,
+   waits 250 ms, crashes the page through CDP `Page.crash` and lets the successor restore what the
+   flush wrote; the real freeze stays unproven in the lane and joins H5 as a limit. The same report
+   measured unload-time readwrites landing 0 of 4 without `IDBTransaction.commit()` and 2 to 3 of 4
+   with it, so the shared mutation writer calls `transaction.commit()` for every caller. Declined:
+   unit tests only; an in-page `agent.hide` command (the interval timer or the reload's own flush
+   would save the rows anyway).
 
 ## 4. Corrections to the roadmap and the QoS plan
 
