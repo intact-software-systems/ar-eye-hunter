@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+
+import { RELIC_TYPES } from '../../../packages/relic-hunters/src/protocol.ts';
 
 const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
     process.env.RELIC_HUNTERS_FULL_STACK === 'true';
@@ -65,42 +67,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
         const pageB = await contextB.newPage();
 
         try {
-            await registerHunter(pageA, {
-                username: `alice-${suffix}`,
-                displayName: 'Alice',
-                password: `alice-pass-${suffix}`
-            });
-            await registerHunter(pageB, {
-                username: `bob-${suffix}`,
-                displayName: 'Bob',
-                password: `bob-pass-${suffix}`
-            });
-
-            await pageA.getByRole('button', { name: 'New Room' }).click();
-            await expect(pageA.getByRole('button', { name: /Join as/ })).toBeVisible();
-            const roomId = await waitForRoomId(pageA);
-
-            await pageB.getByRole('button', { name: 'Refresh' }).click();
-            const roomButtonB = pageB.locator(`button.room-row[data-room-id="${roomId}"]`);
-            await expect(roomButtonB).toBeVisible();
-            await roomButtonB.click();
-            await waitForRuntime(pageB, (runtime) => runtime.roomId === roomId);
-
-            await pageA.getByRole('button', { name: /Join as/ }).click();
-            await expectConverged(pageA, pageB, {
-                phase: 'lobby',
-                round: 1,
-                playerCount: 1,
-                submittedCount: 0
-            });
-
-            await pageB.getByRole('button', { name: /Join as/ }).click();
-            await expectConverged(pageA, pageB, {
-                phase: 'lobby',
-                round: 1,
-                playerCount: 2,
-                submittedCount: 0
-            });
+            await enterLobbyWithTwoHunters(pageA, pageB, suffix);
 
             await expect(pageA.locator('.lobby-begin-btn')).toBeEnabled();
             await pageA.locator('.lobby-begin-btn').click();
@@ -171,7 +138,132 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
             ]);
         }
     });
+
+    // The command's WS frame never reaches the server, so only the page's checkpoint carries it across the reload.
+    test('a start command held on its WS leg survives a reload inside its deadline and is applied once', async ({ browser }) => {
+        test.setTimeout(180_000);
+
+        const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const contextA = await browser.newContext();
+        const contextB = await browser.newContext();
+        const commandHold = await routeRelicCommandHold(contextA);
+        const pageA = await contextA.newPage();
+        const pageB = await contextB.newPage();
+
+        try {
+            await enterLobbyWithTwoHunters(pageA, pageB, suffix);
+            const eventCount = (await readRuntime(pageA))?.snapshot?.eventCount ?? 0;
+
+            commandHold.hold();
+            await pageA.locator('.lobby-begin-btn').click();
+            await expect.poll(() => commandHold.heldCount()).toBeGreaterThan(0);
+            // An admission inside the last checkpoint interval is lost with its page, so the reload waits one out.
+            await pageA.waitForTimeout(CHECKPOINT_SETTLE_MS);
+            expect((await readRuntime(pageB))?.snapshot?.phase).toBe('lobby');
+            commandHold.release();
+            await pageA.reload();
+
+            await expectConverged(pageA, pageB, {
+                phase: 'planning',
+                round: 1,
+                playerCount: 2,
+                submittedCount: 0,
+                minEventCount: eventCount + 1
+            });
+            await waitForRuntime(pageA, (runtime) => runtime.diagnostics.phase === 'ready');
+            // A second application would append a second start event; give a repeat time to land before counting.
+            await pageA.waitForTimeout(REPEAT_WINDOW_MS);
+            const [runtimeA, runtimeB] = await Promise.all([readRuntime(pageA), readRuntime(pageB)]);
+            expect(runtimeA?.snapshot?.eventCount).toBe(eventCount + 1);
+            expect(runtimeB?.snapshot?.eventCount).toBe(eventCount + 1);
+        }
+        finally {
+            await Promise.all([
+                contextA.close(),
+                contextB.close()
+            ]);
+        }
+    });
 });
+
+/** One checkpoint interval (1 s, the browser default) and a margin. */
+const CHECKPOINT_SETTLE_MS = 2_000;
+const REPEAT_WINDOW_MS = 3_000;
+const RALLAR_WS_PATH = /\/api\/ws\//;
+
+interface RelicCommandHold {
+    hold(): void;
+    release(): void;
+    heldCount(): number;
+}
+
+/**
+ * Withholds the page's Relic command frames from the server while held, as a carrier that accepted them and never
+ * delivered. Every other frame, and every frame of a socket opened after the release, goes through.
+ */
+async function routeRelicCommandHold(context: BrowserContext): Promise<RelicCommandHold> {
+    let holding = false;
+    let held = 0;
+    await context.routeWebSocket(RALLAR_WS_PATH, (socket) => {
+        const server = socket.connectToServer();
+        socket.onMessage((message) => {
+            if (holding && String(message).includes(RELIC_TYPES.command)) {
+                held += 1;
+                return;
+            }
+            server.send(message);
+        });
+    });
+    return {
+        hold: () => {
+            holding = true;
+        },
+        release: () => {
+            holding = false;
+        },
+        heldCount: () => held
+    };
+}
+
+/** Two hunters register, Alice opens a room, both join it, and both pages agree on the lobby. */
+async function enterLobbyWithTwoHunters(pageA: Page, pageB: Page, suffix: string): Promise<void> {
+    await registerHunter(pageA, {
+        username: `alice-${suffix}`,
+        displayName: 'Alice',
+        password: `alice-pass-${suffix}`
+    });
+    await registerHunter(pageB, {
+        username: `bob-${suffix}`,
+        displayName: 'Bob',
+        password: `bob-pass-${suffix}`
+    });
+
+    await pageA.getByRole('button', { name: 'New Room' }).click();
+    await expect(pageA.getByRole('button', { name: /Join as/ })).toBeVisible();
+    const roomId = await waitForRoomId(pageA);
+
+    await pageB.getByRole('button', { name: 'Refresh' }).click();
+    const roomButtonB = pageB.locator(`button.room-row[data-room-id="${roomId}"]`);
+    await expect(roomButtonB).toBeVisible();
+    await roomButtonB.click();
+    await waitForRuntime(pageB, (runtime) => runtime.roomId === roomId);
+
+    await pageA.getByRole('button', { name: /Join as/ }).click();
+    await expectConverged(pageA, pageB, {
+        phase: 'lobby',
+        round: 1,
+        playerCount: 1,
+        submittedCount: 0
+    });
+
+    await pageB.getByRole('button', { name: /Join as/ }).click();
+    await expectConverged(pageA, pageB, {
+        phase: 'lobby',
+        round: 1,
+        playerCount: 2,
+        submittedCount: 0
+    });
+}
 
 async function registerHunter(
     page: Page,
