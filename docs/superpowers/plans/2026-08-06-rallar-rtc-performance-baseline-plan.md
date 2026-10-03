@@ -106,7 +106,7 @@ Required offer identity, retained-peer redial, heartbeat lease renewal,
 overlay-gap recovery, cluster signaling, and named retention phase diagnostics
 are delivered; none proves that every E3 reconnect now succeeds.
 
-The latest completed B06 run at audit,
+An earlier completed B06 diagnostic,
 [36761155884](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/36761155884),
 was a pre-#566-merge diagnostic on
 `cf8e975045f6beb9a33506b18f7aa9ba4acf9c89`. Runners 1/2/3 failed retention
@@ -128,12 +128,40 @@ This is proposed diagnostic evidence, not an accepted E3 primary or a merged
 checked-in corpus increment. Only cycle-0 RTC diagnostics survived: teardown
 preceded failure capture, and health projection omitted formation. These facts
 prove diagnostic loss, not a native watchdog, signaling, or close/reset cause.
-Task 15 delivered a later live health snapshot before finalizer teardown, with
-allowlisted formation facts and original failure precedence. Task 16's exact-head
-diagnostic verified this preservation on all four failures while demonstrating
-that later snapshots still cannot attribute the earlier lifecycle failure. The
-next correction reuses the canonical recorder's bounded sanitized lifecycle
-history; Sections 10–11 retain the incomplete acceptance and proof gates.
+Task 15 delivered complete later health before finalizer teardown with bounded
+formation facts and original failure precedence; Task 16 proved its normal
+failure paths. Task 17 delivered one bounded, sanitized lifecycle sequence from
+the canonical recorder, partitioned into the actual three agents after completed
+health. Its independent review passed specification and approved quality with
+zero findings; retained unit evidence covered 93 tests across nine files and the
+maintained test typecheck. That review does not prove rare direct-spec finalizer
+faults or a real failed window fitting the limits.
+
+Task 18's exact-head non-publishing diagnostic
+[37123318628](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37123318628),
+attempt 1 on `bbf0f6b007a85234f9b9e970ab535ff3b4b391e2`, is terminal
+COMPLETED/FAILURE: all three diagnostic jobs failed, source passed, accepted
+capture/publication skipped. The watcher is retired; no producer remains.
+Independent verification matched all 82 original files against complete sibling
+inventories, sizes and SHA256s. The archive digests are GitHub-recorded, not
+locally recomputed. Twelve scenario executions passed, three retention executions
+failed, and twelve gated executions skipped. R1/R2/R3 failed at cycles 17/8/8
+after 16/7/7 completed reconnects and retained 41/37/44 useful events (122 total),
+including 4/6/5 positive timeout notifications. Each failure retained exactly
+three distinct later-health agents and its frozen inclusive interval. Real prefix
+loss and 12/6/6 oversized rows correctly mark incomplete coverage. Successful
+and periodic outputs suppressed history; this is archived-output/source proof,
+not runtime call telemetry. Normal pre-cleanup collection and original rejection
+survived; deadline/unavailable/output/rare direct-spec cleanup faults were not
+live exercised.
+
+R3 retains B-side establishment/lane-open, opposite C-side timeout, then B-side
+lane loss. The canonical facade event already carries peer/lane status, but the
+projector discarded it. Later health cannot recover C's local state at that
+notification. Task 19 therefore preserves only those existing bounded event
+observations; Task 20 will prove the reviewed head. Recorder origin, native
+generation, deletion issuer and RTC causality remain unknown. No policy change,
+accepted metric, new checked-in corpus count or completed E3 baseline follows.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -592,8 +620,8 @@ npm run check --workspace=packages/shared-rtc-bench
 The controller ran this unchanged package check during the refresh: TypeScript
 and Deno passed; Vitest passed 45 files / 415 tests. It also ran the direct E3
 semantics gate below: five files / 49 tests passed. These are baseline tooling
-and semantic evidence, not TDD or fresh performance measurements from this
-prose change.
+and semantic evidence, not TDD or fresh performance measurements from that
+prose refresh.
 
 ```bash
 npx vitest run \
@@ -659,7 +687,7 @@ broad final validation. Resolve a real conflict first; mergeable `BEHIND` create
 no work. At publication handoff the controller runs
 `npm run pr:delivery -- ready` once and stops when GitHub reports merged.
 
-For this plan-only refresh, use pinned `npm exec -- dprint check <plan-path>`,
+For plan prose changes, use pinned `npm exec -- dprint check <plan-path>`,
 `git diff --check`, whole-file review, and semantic command/path/contract review.
 Do not add an artificial source-text test or rerun unrelated unit/CI/build suites.
 
@@ -926,127 +954,109 @@ justified yet.”
 
 ## 10. Delivered Outcomes And Remaining Acceptance
 
-| Task    | Delivered outcome / remaining state                                                                                                                                                                        |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                      |
-| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                            |
-| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                      |
-| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                 |
-| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                  |
-| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                      |
-| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                             |
-| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                              |
-| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                 |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                   |
-| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                      |
-| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Exact-head run 37116496639 verified later health on four failures; bounded lifecycle preservation and proof come next. |
-| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                        |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                   |
+| Task    | Delivered outcome / remaining state                                                                                                                                                                                                         |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                       |
+| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                                                             |
+| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                                                       |
+| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                                                  |
+| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                                                   |
+| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                                                       |
+| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                              |
+| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                               |
+| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                  |
+| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                    |
+| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                       |
+| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Task 19 event observations and Task 20 proof come next. |
+| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                         |
+| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                    |
+| 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                           |
+| 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                        |
 
 ## 11. Next Two Useful Slices
 
-### Slice 1: Preserve canonical failure lifecycle evidence and obtain independent review
+### Task 19: Preserve existing lifecycle event observations and obtain independent review
 
-**Files:** The existing three-browser attempt finalizer, control diagnostic
-capture, agent diagnostic projection, diagnostic workflow environment, and
-focused HTTP and shell environment tests. Keep existing evidence/envelope/protocol
-contracts and workload identities unchanged.
+**Files:** The existing pure agent diagnostic projector and its actual
+`captureDiagnostics` HTTP/projection tests, plus this plan refresh. The recorder,
+HTTP reader, frozen failure interval, canonical spec finalizer, workflow, runtime
+and public contracts keep their existing ownership and behavior.
 
-**Evidence changing this horizon:** Task 15 delivered complete later health.
-Exact-head diagnostic run
-[37116496639](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37116496639)
-on `73b9344098b9dd05696a3849691c68ff125b6fff` failed; the audit verified all
-92 preserved files, with eleven passing and four failing scenario executions.
-Every failed scenario preserved three-agent health and its original readiness
-rejection before cleanup; observed successes suppressed failure output. Stalled
-offer/answer and ICE states differ across pairs. Those later snapshots do not
-identify a paired native generation, earlier removal issuer, or safe RTC policy
-change. Rare output/collection/cleanup faults remain client-test evidence.
+**Behavior:** Extend only `agents[].details.lifecycleHistory.events` from the
+canonical `value.payload.data.peer` and `.lane`. Match bounded peer/lane identities
+to each event; preserve finite allowlisted wrapper/native connection, ICE,
+gathering and signaling states; description presence, makingOffer, pending ICE,
+and the eight canonical offer/answer/ICE/signaling-error counts; and bounded lane
+identity, actual open/reconnectable booleans and native readyState. Invalid or
+missing fields and observations remain null, with genuine zero distinct from
+unavailable. No fallback to event.status.peers or later health is allowed.
 
-**Interfaces:** Read the existing `/runs/{id}/events.jsonl` once only on failure,
-after complete health collection and before optional output and cleanup. The
-existing diagnostics owner partitions one sanitized sequence into the three
-actual `agents[].details`; history unavailability preserves completed health.
-Freeze the requested interval at rejection. Retention starts before the current
-cycle close, with cycle zero using the initial attempt; default/all intervals
-retain explicit phase uncertainty. Producer timestamps and recorder row order
-do not establish causal ordering, recorder origin/completeness, native generation,
-or removal issuer. No apparent successful read claims complete history.
+Label observations `facade-current-at-notification`: deferred peer-deleted can
+observe a replacement, not the original deleted native resource. Keep native
+generation/deletion issuer unknown and control/runtime/browser clocks separate;
+retained stream order is not causal order. Exclude raw roots, arbitrary reasons
+and errors, SDP/ICE contents/addresses/candidates, stream IDs, full call counters,
+environment values and credentials. No new native hook, token, public DTO,
+archive/protocol migration, history store or duplicate collector is authorized.
 
-Use existing diagnostic-only recorder storage in distinct invocation directories
-outside uploaded diagnostic outputs. Read at most 64 MiB of accepted response
-body under a 30-second deadline while retaining only its last 8 MiB. Parse the
-last 20,000 nonblank retained rows of at most 16 KiB; retain the latest permitted
-600 events / 256 KiB in stream order, with identities at most 256 characters.
-This suffix policy preserves late current-agent failures after long earlier
-phases within those limits; an early prefix could silently miss them. Prefix
-loss, row selection and output eviction always mark incomplete coverage. Relative
-retained-body row ordinals remain visible; absolute recorder ordinals are unknown.
-Native buffers, the last incoming chunk and serialization add working memory;
-these are no exact socket-byte or total-envelope ceilings. Selection traverses
-bounded retained text without allocating every row. A history beyond 64 MiB,
-30 seconds, or a requested interval exceeding the retained suffix/rows/events
-can still omit required facts; an empty current window is incomplete evidence,
-not a useful causal trace. Configured URL reads carry no copied Playwright
-credentials, redirect or authorization fallback; denied supplementary reads
-remain unavailable.
+Keep limits verbatim: 64 MiB accepted HTTP response / 30 seconds; 8 MiB suffix
+of accepted bytes; last 20,000 nonblank rows / 16 KiB per row; latest 600 events /
+256 KiB serialized event output; identities at most 256 characters. Added fields
+count toward the same output budget and oldest-event eviction. New peer-lane
+traversal is explicitly array-checked and bounded by the accepted 16 KiB JSON
+row (each element consumes serialized bytes); this is no total-allocation or
+network-buffer promise. Preserve inclusive frozen intervals, existing loss flags,
+unknown/incomplete/unavailable semantics and actual three-agent partitioning.
 
-- [ ] Complete the bounded correction with witnessed literal canonical JSONL
-      HTTP RED/GREEN and real shell environment behavior, then review the
-      complete touched-file closure and focused behavior/consumer checks.
-      Every changed human-authored file is reviewed/remediated in full; every
-      remediation support file enters closure recursively; independent untouched
-      code remains outside closure. Keep the verified older peer-readiness
-      algorithm and formation-readiness semantics distinct.
-- [ ] Obtain independent review of producer-to-recorder nesting, stream limits,
-      unknown coverage, storage/upload separation, projection, failure precedence,
-      complete-checkpoint validation, and direct spec ordering. Client HTTP fault
-      tests do not prove the canonical spec finalizer's rare fault paths. No RTC
-      policy fix, new history store, migration, duplicate diagnostic algorithm,
-      watchdog renewal, or workload reduction is authorized.
+- [x] Implement literal real-HTTP semantic RED/GREEN for established/open,
+      opposite-side timeout with distinct local state, and later deferred deleted
+      notification with replacement state; independently assert observations,
+      clocks/order and deliberately different later health. Cover missing,
+      mismatched, oversized and invalid observations, zeros, privacy, JSON numeric
+      overflow and unchanged latest-event byte eviction.
+- [ ] Obtain fresh independent review after final affected tests, maintained
+      `npm run typecheck:tests`, and full-file closure. Every changed authored file
+      is reviewed/remediated in full; every modified remediation support file
+      enters closure recursively; independent untouched code remains outside
+      closure. No new affected legacy retention is authorized. This local
+      implementation does not self-certify independent review or live proof.
 
-**Exit:** A reviewed bounded diagnostic correction with semantic evidence;
-this does not establish an RTC runtime cause or complete Task 10.
+**Exit:** Reviewed event observation preservation at the existing diagnostic
+boundary. Completed-health-first, one failure-only request, success/ordinary/
+periodic suppression, optional-output independence, original rejection precedence
+and canonical cleanup remain required. No retry/watchdog/timer/readiness budget,
+workload/sample or native correctness correction is earned by these observations.
 
-### Slice 2: Prove exact-head lifecycle preservation and analyze the first failure
+### Task 20: Prove exact-head observations without publishing accepted metrics
 
-**Files:** Root-owned exact-head non-publishing diagnostic execution and ignored
-artifact analysis; no speculative RTC changes or new accepted observation.
+**Files:** Controller-owned exact-head non-publishing diagnostic execution and
+ignored retained-artifact analysis of the freshly independently reviewed head.
 
-**Interfaces:** Consume the independently reviewed correction at its exact source
-head. Verify later health plus bounded lifecycle rows or explicit history
-unavailability through the real attempt path. HTTP 200 cannot distinguish a
-persisted recorder from preview fallback or prove append continuity. Requested
-window precision, observed producer clocks and truncation/loss remain visible.
+- [ ] Verify exact source provenance, complete inventories/inner hashes, privacy,
+      three-agent health, useful requested-window observations and honest losses
+      before finalizer cleanup. Check timeout-local state, establishment/lane-loss
+      transitions and deferred deleted-current observations only when retained;
+      record unavailable facts explicitly. Do not infer a shared generation,
+      clock causality or deletion issuer from identities or later health.
+- [ ] Preserve the first scenario failure, cycle and original rejection; verify
+      success/periodic suppression and absence of raw recorder storage from
+      uploads. Separate normal-path live evidence from unexercised deadline,
+      transport/output/direct-spec cleanup fault branches. No producer green or
+      partial retention result establishes cycle 100 or accepted E3 metrics.
 
-- [ ] Prove the canonical attempt path retains failure diagnostics before
-      finalizer teardown, preserves its retention cycle and original rejection,
-      suppresses new history reads on successes and periodic checkpoints, and
-      does not fabricate post-GC checkpoints or accepted failed metrics. Verify
-      raw recorder/snapshot storage is absent from uploaded sanitized outputs.
-- [ ] Analyze the first failure before causal not-runs. Report generation,
-      setup/deadline, offer/answer, and close/reset actor facts only if observed;
-      projected lifecycle rows may still omit the native generation and issuer.
-      Unknown or incomplete history may require a separately scoped evidence
-      correction; neither a later snapshot nor a peer-deleted row licenses a
-      causal runtime change by itself.
-- [ ] Deliver a proved correction before capturing a new accepted observation
-      from then-current main. Preserve default 1/5, all-scenarios 1/3, and
-      retention-100 1/3 plus the canonical required-repeat rules. No diagnostic
-      green or partial case result establishes E3 acceptance.
+**Exit:** Honest exact-head proof and first-failure analysis. Any further runtime
+correction needs its own causally earned semantic RED, closure and independent
+review; a separately unmet public/persisted/protocol requirement requires an
+explicit compatibility decision before expansion.
 
-**Exit:** Exact-head non-publishing proof and an honest first-failure analysis;
-any remaining runtime correction requires independent evidence and review.
-
-After representative E3 succeeds, recover/verify E1 evidence or capture the
-complete governed B01-B04 matrix on a quiet clean source snapshot. Keep this
-later work outcome-shaped until E3 evidence earns it. Task 12 then explicitly
-selects B05 IDs or a declared time window and the B06 ID, verifies every selected
-archive, retains failures/confounders, and keeps E1/E2/E3 distributions separate.
-A database-backed admission/topology-persistence/AppInbox/outbox/cluster-transport
-candidate requires separate accepted E4-pg primary/repeat evidence; otherwise
-record its nonempty not-required reason. Rank at most one candidate or `none`
-under Section 9 and seek the human completion decision. B07 remains held.
+Accepted E3 capture remains outcome-gated: preserve default 1/5, all-scenarios
+1/3, retention-100 1/3 and canonical required-repeat rules. After representative
+E3 succeeds, recover/verify relevant E1 or capture the governed B01-B04 matrix.
+Task 12 selects explicit B05 IDs/window and B06 identity, verifies every selected
+archive, preserves failures/confounders and keeps source/environment distributions
+separate. A database-backed candidate requires accepted E4-pg primary/repeat;
+otherwise retain its nonempty not-required reason. Rank at most one candidate or
+`none` under Section 9 for the human completion decision. B07 remains held.
 
 ## 12. Baseline Completion Gate
 

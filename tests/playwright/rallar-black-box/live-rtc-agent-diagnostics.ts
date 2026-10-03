@@ -111,6 +111,50 @@ const ROOM_TRANSPORT_STATES: Readonly<Record<RallarRoomTransportState, true>> = 
     failed: true
 };
 
+const RTC_WRAPPER_STATES = ['Idle', 'Connecting', 'Open', 'Closed', 'Failed'] as const;
+const RTC_CONNECTION_STATES = [
+    'new',
+    'connecting',
+    'connected',
+    'disconnected',
+    'failed',
+    'closed'
+] as const satisfies readonly RTCPeerConnectionState[];
+const RTC_ICE_CONNECTION_STATES = [
+    'new',
+    'checking',
+    'connected',
+    'completed',
+    'disconnected',
+    'failed',
+    'closed'
+] as const satisfies readonly RTCIceConnectionState[];
+const RTC_ICE_GATHERING_STATES = ['new', 'gathering', 'complete'] as const satisfies readonly RTCIceGatheringState[];
+const RTC_SIGNALING_STATES = [
+    'stable',
+    'have-local-offer',
+    'have-remote-offer',
+    'have-local-pranswer',
+    'have-remote-pranswer',
+    'closed'
+] as const satisfies readonly RTCSignalingState[];
+const RTC_LANE_READY_STATES = [
+    'connecting',
+    'open',
+    'closing',
+    'closed'
+] as const satisfies readonly RTCDataChannelState[];
+const RTC_SIGNALING_COUNT_FIELDS = [
+    'outboundOfferCount',
+    'outboundAnswerCount',
+    'outboundIceCandidateCount',
+    'inboundOfferCount',
+    'inboundAnswerCount',
+    'inboundIceCandidateCount',
+    'outboundSignalingErrorCount',
+    'inboundSignalingErrorCount'
+] as const;
+
 export function decodeAgentDiagnostics(
     value: RtcBaselineJson
 ): LiveRtcAgentDiagnostics | null {
@@ -424,7 +468,7 @@ function scanLiveRtcLifecycleRows(input: LiveRtcLifecycleHistoryInput, scan: Liv
             scan.malformedRows += 1;
             continue;
         }
-        const controlAtEpochMs = toLifecycleTimestamp(decoded.atEpochMs);
+        const controlAtEpochMs = toFiniteNonnegativeObservation(decoded.atEpochMs);
         if (controlAtEpochMs !== null) {
             scan.firstControlAtEpochMs ??= controlAtEpochMs;
             scan.lastControlAtEpochMs = controlAtEpochMs;
@@ -483,7 +527,12 @@ function computeLiveRtcLifecycleScanWindow(input: LiveRtcLifecycleHistoryInput):
 
 function toLiveRtcRecorderRow(line: string): LiveRtcJsonRecord | null {
     try {
-        return jsonRecord(normalizeJson(JSON.parse(line)));
+        const decoded = JSON.parse(
+            line,
+            (_key: string, value: RtcBaselineJson) =>
+                typeof value === 'number' && !Number.isFinite(value) ? null : value
+        );
+        return jsonRecord(normalizeJson(decoded));
     }
     catch {
         return null;
@@ -499,7 +548,9 @@ function toLiveRtcLifecycleEvent(
     const diagnostic = jsonRecord(runtime?.payload);
     const event = jsonRecord(diagnostic?.data);
     const agentId = toBoundedIdentity(row.agentId);
-    const controlAtEpochMs = toLifecycleTimestamp(row.atEpochMs);
+    const controlAtEpochMs = toFiniteNonnegativeObservation(row.atEpochMs);
+    const peerId = toBoundedIdentity(event?.peerId);
+    const laneId = toBoundedIdentity(event?.laneId);
     if (
         !agentId || !input.agentIds.includes(agentId) || runtime?.topic !== 'rallar.browser.rtc.lifecycle' ||
         !event || typeof event.kind !== 'string' || !Object.hasOwn(RTC_LIFECYCLE_KINDS, event.kind) ||
@@ -514,13 +565,86 @@ function toLiveRtcLifecycleEvent(
         agentId,
         kind: event.kind,
         controlAtEpochMs,
-        runtimeAtEpochMs: toLifecycleTimestamp(diagnostic?.atEpochMs),
-        browserAtEpochMs: toLifecycleTimestamp(event.atEpochMs),
-        peerId: toBoundedIdentity(event.peerId),
-        laneId: toBoundedIdentity(event.laneId)
+        runtimeAtEpochMs: toFiniteNonnegativeObservation(diagnostic?.atEpochMs),
+        browserAtEpochMs: toFiniteNonnegativeObservation(event.atEpochMs),
+        peerId,
+        laneId,
+        observation: 'facade-current-at-notification',
+        peerObservation: toLifecyclePeerObservation(event.peer, peerId),
+        laneObservation: laneId === null
+            ? null
+            : toLifecycleLaneObservation(event.lane, peerId, laneId)
     };
 }
 
-function toLifecycleTimestamp(value: RtcBaselineJson | undefined): number | null {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+function toFiniteNonnegativeObservation(value: RtcBaselineJson | undefined): number | null {
+    return isFiniteNonnegativeNumber(value) ? value : null;
+}
+
+function toLifecyclePeerObservation(value: RtcBaselineJson | undefined, peerId: string | null): RtcBaselineJson {
+    const peer = jsonRecord(value);
+    if (peerId === null || !peer || toBoundedIdentity(peer.peerId) !== peerId) {
+        return null;
+    }
+    return {
+        peerId,
+        connection: toLifecycleConnectionObservation(peer.connection),
+        lanes: Array.isArray(peer.lanes)
+            ? peer.lanes.map((lane) => toLifecycleLaneObservation(lane, peerId, null))
+            : null
+    };
+}
+
+function toLifecycleConnectionObservation(value: RtcBaselineJson | undefined): RtcBaselineJson {
+    const connection = jsonRecord(value);
+    if (!connection) {
+        return null;
+    }
+    const signaling = jsonRecord(connection.signaling);
+    return {
+        state: toAllowedLifecycleState(connection.state, RTC_WRAPPER_STATES),
+        connectionState: toAllowedLifecycleState(connection.connectionState, RTC_CONNECTION_STATES),
+        iceConnectionState: toAllowedLifecycleState(connection.iceConnectionState, RTC_ICE_CONNECTION_STATES),
+        iceGatheringState: toAllowedLifecycleState(connection.iceGatheringState, RTC_ICE_GATHERING_STATES),
+        signalingState: toAllowedLifecycleState(connection.signalingState, RTC_SIGNALING_STATES),
+        hasLocalDescription: toLifecycleBoolean(connection.hasLocalDescription),
+        hasRemoteDescription: toLifecycleBoolean(connection.hasRemoteDescription),
+        makingOffer: toLifecycleBoolean(connection.makingOffer),
+        iceCandidateQueueSize: toFiniteNonnegativeObservation(connection.iceCandidateQueueSize),
+        signaling: signaling
+            ? Object.fromEntries(
+                RTC_SIGNALING_COUNT_FIELDS.map((field) => [field, toFiniteNonnegativeObservation(signaling[field])])
+            )
+            : null
+    };
+}
+
+function toLifecycleLaneObservation(
+    value: RtcBaselineJson | undefined,
+    peerId: string | null,
+    laneId: string | null
+): RtcBaselineJson {
+    const lane = jsonRecord(value);
+    const observedLaneId = toBoundedIdentity(lane?.laneId);
+    if (
+        peerId === null || !lane || toBoundedIdentity(lane.peerId) !== peerId || observedLaneId === null ||
+        (laneId !== null && observedLaneId !== laneId)
+    ) {
+        return null;
+    }
+    return {
+        peerId,
+        laneId: observedLaneId,
+        isOpen: toLifecycleBoolean(lane.isOpen),
+        isReconnectable: toLifecycleBoolean(lane.isReconnectable),
+        readyState: toAllowedLifecycleState(jsonRecord(lane.channel)?.readyState, RTC_LANE_READY_STATES)
+    };
+}
+
+function toAllowedLifecycleState(value: RtcBaselineJson | undefined, states: readonly string[]): string | null {
+    return typeof value === 'string' && states.includes(value) ? value : null;
+}
+
+function toLifecycleBoolean(value: RtcBaselineJson | undefined): boolean | null {
+    return typeof value === 'boolean' ? value : null;
 }

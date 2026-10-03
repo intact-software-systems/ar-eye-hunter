@@ -106,6 +106,138 @@ describe('live RTC control client', () => {
         expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
     });
 
+    it('preserves facade-current-at-notification peer and lane observations through real capture HTTP', async () => {
+        rtcDiagnosticPeers = [{ peerId: 'session-b', connection: { state: 'Closed', reconnecting: false }, lanes: [] }];
+        recorderJsonl = [
+            '{"name":"established","agentId":"agent-b","atEpochMs":110,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"atEpochMs":109,"data":{"kind":"peer-established","atEpochMs":108,"peerId":"session-c","peer":{"peerId":"session-c","connection":{"state":"Open","connectionState":"connected","iceConnectionState":"completed","iceGatheringState":"complete","signalingState":"stable","hasLocalDescription":true,"hasRemoteDescription":true,"makingOffer":false,"iceCandidateQueueSize":0,"signaling":{"outboundOfferCount":1,"outboundAnswerCount":0,"outboundIceCandidateCount":3,"inboundOfferCount":0,"inboundAnswerCount":1,"inboundIceCandidateCount":2,"outboundSignalingErrorCount":0,"inboundSignalingErrorCount":0}},"lanes":[{"peerId":"session-c","laneId":"realtime","isOpen":true,"isReconnectable":false,"channel":{"readyState":"open","state":"Open","candidate":"secret-event-sentinel"}}]}}}}}',
+            '{"name":"open","agentId":"agent-b","atEpochMs":115,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"atEpochMs":114,"data":{"kind":"lane-open","atEpochMs":113,"peerId":"session-c","laneId":"realtime","lane":{"peerId":"session-c","laneId":"realtime","isOpen":true,"isReconnectable":false,"channel":{"readyState":"open","state":"Open","streamId":"secret-event-sentinel"}}}}}}',
+            '{"name":"timeout","agentId":"agent-c","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"atEpochMs":119,"data":{"kind":"peer-timeout","atEpochMs":117,"peerId":"session-b","peer":{"peerId":"session-b","connection":{"state":"Connecting","connectionState":"connecting","iceConnectionState":"checking","iceGatheringState":"gathering","signalingState":"have-remote-offer","hasLocalDescription":false,"hasRemoteDescription":true,"makingOffer":true,"iceCandidateQueueSize":4,"signaling":{"outboundOfferCount":0,"outboundAnswerCount":1,"outboundIceCandidateCount":2,"inboundOfferCount":3,"inboundAnswerCount":0,"inboundIceCandidateCount":5,"outboundSignalingErrorCount":1,"inboundSignalingErrorCount":2},"localStreamId":"secret-event-sentinel","sdp":"secret-event-sentinel","connectCallCount":99},"lanes":[{"peerId":"session-b","laneId":"realtime","isOpen":false,"isReconnectable":false,"channel":{"readyState":"connecting","state":"Connecting","candidate":"secret-event-sentinel"}}],"credential":"secret-event-sentinel"},"status":{"peers":[{"peerId":"session-b","connection":{"state":"Open"}}],"credential":"secret-event-sentinel"},"reason":"secret-event-sentinel","signaling":{"reason":"secret-event-sentinel"}}}}}',
+            '{"name":"deleted","agentId":"agent-c","atEpochMs":130,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"atEpochMs":129,"data":{"kind":"peer-deleted","atEpochMs":128,"peerId":"session-b","peer":{"peerId":"session-b","connection":{"state":"Idle","connectionState":"new","iceConnectionState":"new","iceGatheringState":"new","signalingState":"stable","hasLocalDescription":false,"hasRemoteDescription":false,"makingOffer":false,"iceCandidateQueueSize":0,"signaling":{"outboundOfferCount":0,"outboundAnswerCount":0,"outboundIceCandidateCount":0,"inboundOfferCount":0,"inboundAnswerCount":0,"inboundIceCandidateCount":0,"outboundSignalingErrorCount":0,"inboundSignalingErrorCount":0}},"lanes":[{"peerId":"session-b","laneId":"realtime","isOpen":false,"isReconnectable":true,"channel":{"state":"Idle"}}]}}}}}'
+        ].join('\n');
+        const captured = await control.captureDiagnostics({
+            testInfo: { attach: async () => {} },
+            runId: 'notification-state',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure-later-health',
+            cycle: 8,
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' }
+        });
+        expect(captured.checkpoint.agents[1].details).toMatchObject({
+            lifecycleHistory: {
+                events: [
+                    {
+                        eventId: 'established',
+                        streamRow: 1,
+                        peerObservation: {
+                            connection: {
+                                state: 'Open',
+                                connectionState: 'connected',
+                                iceConnectionState: 'completed',
+                                iceGatheringState: 'complete',
+                                signalingState: 'stable',
+                                hasLocalDescription: true,
+                                hasRemoteDescription: true,
+                                makingOffer: false,
+                                iceCandidateQueueSize: 0,
+                                signaling: {
+                                    outboundOfferCount: 1,
+                                    outboundAnswerCount: 0,
+                                    outboundIceCandidateCount: 3,
+                                    inboundOfferCount: 0,
+                                    inboundAnswerCount: 1,
+                                    inboundIceCandidateCount: 2,
+                                    outboundSignalingErrorCount: 0,
+                                    inboundSignalingErrorCount: 0
+                                }
+                            },
+                            lanes: [{ peerId: 'session-c', laneId: 'realtime', isOpen: true, isReconnectable: false, readyState: 'open' }]
+                        }
+                    },
+                    {
+                        eventId: 'open',
+                        streamRow: 2,
+                        peerObservation: null,
+                        laneObservation: { peerId: 'session-c', laneId: 'realtime', isOpen: true, isReconnectable: false, readyState: 'open' }
+                    }
+                ]
+            }
+        });
+        expect(captured.checkpoint.agents[2].details).toMatchObject({
+            diagnostics: { peers: [{ connection: { state: 'Closed' } }] },
+            lifecycleHistory: {
+                nativeGenerationAndDeletionIssuer: 'unknown',
+                events: [
+                    {
+                        eventId: 'timeout',
+                        streamRow: 3,
+                        observation: 'facade-current-at-notification',
+                        controlAtEpochMs: 120,
+                        runtimeAtEpochMs: 119,
+                        browserAtEpochMs: 117,
+                        peerObservation: {
+                            peerId: 'session-b',
+                            connection: {
+                                state: 'Connecting',
+                                connectionState: 'connecting',
+                                iceConnectionState: 'checking',
+                                iceGatheringState: 'gathering',
+                                signalingState: 'have-remote-offer',
+                                hasLocalDescription: false,
+                                hasRemoteDescription: true,
+                                makingOffer: true,
+                                iceCandidateQueueSize: 4,
+                                signaling: {
+                                    outboundOfferCount: 0,
+                                    outboundAnswerCount: 1,
+                                    outboundIceCandidateCount: 2,
+                                    inboundOfferCount: 3,
+                                    inboundAnswerCount: 0,
+                                    inboundIceCandidateCount: 5,
+                                    outboundSignalingErrorCount: 1,
+                                    inboundSignalingErrorCount: 2
+                                }
+                            },
+                            lanes: [{ peerId: 'session-b', laneId: 'realtime', isOpen: false, isReconnectable: false, readyState: 'connecting' }]
+                        },
+                        laneObservation: null
+                    },
+                    {
+                        eventId: 'deleted',
+                        streamRow: 4,
+                        observation: 'facade-current-at-notification',
+                        peerObservation: {
+                            peerId: 'session-b',
+                            connection: {
+                                state: 'Idle',
+                                connectionState: 'new',
+                                iceConnectionState: 'new',
+                                iceGatheringState: 'new',
+                                signalingState: 'stable',
+                                hasLocalDescription: false,
+                                hasRemoteDescription: false,
+                                makingOffer: false,
+                                iceCandidateQueueSize: 0,
+                                signaling: {
+                                    outboundOfferCount: 0,
+                                    outboundAnswerCount: 0,
+                                    outboundIceCandidateCount: 0,
+                                    inboundOfferCount: 0,
+                                    inboundAnswerCount: 0,
+                                    inboundIceCandidateCount: 0,
+                                    outboundSignalingErrorCount: 0,
+                                    inboundSignalingErrorCount: 0
+                                }
+                            },
+                            lanes: [{ peerId: 'session-b', laneId: 'realtime', isOpen: false, isReconnectable: true, readyState: null }]
+                        }
+                    }
+                ]
+            }
+        });
+        expect(JSON.stringify(captured)).not.toContain('secret-event-sentinel');
+        expect(JSON.stringify(captured)).not.toContain('connectCallCount');
+    });
+
     it.each([401, 403, 500])('retains completed health with sanitized unavailable history after recorder HTTP %s', async (status) => {
         recorderStatus = status;
         recorderJsonl = 'secret-recorder-error-sentinel';
@@ -356,7 +488,42 @@ describe('live RTC control client', () => {
                         kind: 'lane-open',
                         atEpochMs: 109,
                         peerId: longIdentities ? 'p'.repeat(256) : 'peer',
-                        laneId: longIdentities ? 'l'.repeat(256) : 'lane'
+                        laneId: longIdentities ? 'l'.repeat(256) : 'lane',
+                        ...(longIdentities
+                            ? {
+                                peer: {
+                                    peerId: 'p'.repeat(256),
+                                    connection: {
+                                        state: 'Connecting',
+                                        connectionState: 'connecting',
+                                        iceConnectionState: 'checking',
+                                        iceGatheringState: 'gathering',
+                                        signalingState: 'have-local-offer',
+                                        hasLocalDescription: true,
+                                        hasRemoteDescription: false,
+                                        makingOffer: true,
+                                        iceCandidateQueueSize: 4,
+                                        signaling: {
+                                            outboundOfferCount: 1,
+                                            outboundAnswerCount: 0,
+                                            outboundIceCandidateCount: 2,
+                                            inboundOfferCount: 0,
+                                            inboundAnswerCount: 0,
+                                            inboundIceCandidateCount: 0,
+                                            outboundSignalingErrorCount: 0,
+                                            inboundSignalingErrorCount: 0
+                                        }
+                                    },
+                                    lanes: [{
+                                        peerId: 'p'.repeat(256),
+                                        laneId: 'l'.repeat(256),
+                                        isOpen: false,
+                                        isReconnectable: false,
+                                        channel: { readyState: 'connecting' }
+                                    }]
+                                }
+                            }
+                            : {})
                     }
                 }
             }
@@ -381,6 +548,13 @@ describe('live RTC control client', () => {
             expect(history.events.length).toBeGreaterThan(0);
             expect(history.events.length).toBeLessThan(600);
             expect(history.observed.outputDroppedRows).toBeGreaterThan(0);
+            expect(history.events[0].streamRow).toBeGreaterThan(1);
+            expect(history.events.at(-1).streamRow).toBe(601);
+            expect(history.events.at(-1).peerObservation.connection).toMatchObject({ state: 'Connecting', iceCandidateQueueSize: 4 });
+            expect(history.observed.outputBytes).toBe(
+                history.events.reduce((bytes: number, event: object) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)
+            );
+            expect(history.observed.outputDroppedRows + history.events.length).toBe(601);
         }
         else {
             expect(history.observed).toMatchObject({ scannedRows: 20_000, filteredRows: 20_000, rowLimitReached: true });
