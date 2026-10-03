@@ -1,6 +1,6 @@
 import { request, type APIRequestContext } from '@playwright/test';
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -28,6 +28,8 @@ describe('live RTC control client', () => {
     let control: LiveRtcControlClient;
     let nowMs: number;
     let readyPeerIds: string[];
+    let rtcDiagnosticPeers: LiveRtcJsonRecord[];
+    let formation: LiveRtcJsonRecord | undefined;
     let diagnosticsRoot: string;
     let results: LiveRtcControlClient.Result[];
     let events: LiveRtcControlClient.Event[];
@@ -36,9 +38,136 @@ describe('live RTC control client', () => {
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
+    it('preserves collected connecting room and open lane facts when live state closes during output', async () => {
+        formation = {
+            roomRef: { applicationId: 'app', workspaceId: 'space', groupId: 'room' },
+            stage: 'connecting',
+            room: {
+                state: 'connecting',
+                desiredPeerIds: ['session-b', 'session-c'],
+                readyPeerIds: ['session-b'],
+                activePeerIds: ['session-b'],
+                failedPeerIds: []
+            }
+        };
+        rtcDiagnosticPeers = [{
+            peerId: 'session-b',
+            connection: { reconnecting: false },
+            lanes: [{ laneId: 'messages.rtc', isOpen: true, isReconnectable: true }]
+        }];
+        const captured = await control.captureDiagnostics({
+            testInfo: {
+                attach: async () => {
+                    readyPeerIds = [];
+                    formation = { stage: 'dormant', room: { state: 'closed' } };
+                    rtcDiagnosticPeers = [];
+                    throw new Error('sensitive-output-sentinel');
+                }
+            },
+            runId: 'run-state-change',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure-later-health',
+            cycle: 8
+        });
+        const serialized = JSON.stringify(captured.checkpoint);
+        for (const diagnostic of captured.checkpoint.agents) {
+            expect(diagnostic.laneStates).toEqual([{ peerId: 'session-b', laneId: 'messages.rtc', isOpen: true, isReconnectable: true }]);
+            expect(diagnostic.details).toMatchObject({ healthCapturedAtEpochMs: 0, formation: { stage: 'connecting', roomTransportState: 'connecting' } });
+        }
+        expect(serialized).not.toContain('closed');
+        expect(serialized).not.toContain('sensitive-output-sentinel');
+        const laterHealth = await control.executeOk({ runId: 'run-state-change', agentId: 'agent-a', commandId: 'later-health', command: { kind: 'health' } });
+        expect(control.readyPeerIds(laterHealth)).toEqual([]);
+    });
+
+    it.each(['attachment', 'sidecar', 'both'])('returns complete health despite optional %s output failure', async (failedOutput) => {
+        if (failedOutput !== 'attachment') {
+            rmSync(diagnosticsRoot, { recursive: true });
+            writeFileSync(diagnosticsRoot, 'blocked-output');
+        }
+        const outputFailure = new Error('sensitive-output-sentinel');
+        const captured = await control.captureDiagnostics({
+            testInfo: {
+                attach: async () => {
+                    if (failedOutput !== 'sidecar') {
+                        throw outputFailure;
+                    }
+                }
+            },
+            runId: 'run-output-failure',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure-later-health',
+            cycle: 8
+        });
+        expect(captured.checkpoint).toMatchObject({
+            label: 'attempt-failure-later-health',
+            cycle: 8,
+            agents: [{ agentId: 'agent-a' }, { agentId: 'agent-b' }, { agentId: 'agent-c' }]
+        });
+        if (failedOutput === 'attachment') {
+            expect(readFileSync(path.join(diagnosticsRoot, 'live-rtc-diagnostics-attempt-failure-later-health.json'), 'utf8')).not.toContain(
+                'sensitive-output-sentinel'
+            );
+        }
+    });
+
+    it('rejects an incomplete participant set instead of publishing a valid-looking checkpoint', async () => {
+        const attachments: string[] = [];
+        await expect(control.captureDiagnostics({
+            testInfo: {
+                attach: async (_name, options) => {
+                    attachments.push(String(options?.body));
+                }
+            },
+            runId: 'run-incomplete-health',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }],
+            label: 'attempt-failure-later-health',
+            cycle: 8
+        })).rejects.toThrow('three distinct');
+        expect(attachments).toEqual([]);
+    });
+
+    it('publishes no partial health when one participating agent cannot be read', async () => {
+        healthCommandFailure = { agentId: 'agent-b', body: 'secret-health-failure-sentinel' };
+        const attachments: string[] = [];
+        await expect(control.captureDiagnostics({
+            testInfo: {
+                attach: async (_name, options) => {
+                    attachments.push(String(options?.body));
+                }
+            },
+            runId: 'run-partial-health',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure-later-health',
+            cycle: 8
+        })).rejects.toThrow();
+        expect(attachments).toEqual([]);
+    });
+
+    it.each(['health', 'sidecar'])('preserves the original readiness rejection when %s diagnostics fail', async (failedDiagnostic) => {
+        const original = new Error('original readiness failure');
+        refreshRoom.mockRejectedValue(original);
+        if (failedDiagnostic === 'health') {
+            healthCommandFailure = { agentId: 'agent-a', body: 'secret-health-failure-sentinel' };
+        }
+        else {
+            rmSync(diagnosticsRoot, { recursive: true });
+            writeFileSync(diagnosticsRoot, 'blocked-output');
+        }
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-readiness-failure',
+            agent,
+            expectedPeerIds: ['session-b'],
+            suffix: 'failure',
+            startedAtMs: 100
+        })).rejects.toBe(original);
+    });
+
     beforeEach(async () => {
         nowMs = 100;
         readyPeerIds = ['session-b', 'session-c'];
+        rtcDiagnosticPeers = [];
+        formation = undefined;
         diagnosticsRoot = mkdtempSync(
             path.join(tmpdir(), 'live-rtc-control-client-')
         );
@@ -68,7 +197,7 @@ describe('live RTC control client', () => {
                 if (
                     healthCommandFailure &&
                     agentId === healthCommandFailure.agentId &&
-                    command.commandId.startsWith('health-message-failure-')
+                    (command.commandId.startsWith('health-') || command.commandId.startsWith('rtc-diagnostics-'))
                 ) {
                     response.writeHead(500).end(healthCommandFailure.body);
                     return;
@@ -82,7 +211,10 @@ describe('live RTC control client', () => {
                     ok: true,
                     result: {
                         value: {
+                            credential: 'secret-health-root-sentinel',
                             rallar: {
+                                session: { accessToken: 'secret-health-session-sentinel' },
+                                ...(formation ? { formation } : {}),
                                 rtcStatus: {
                                     activePeerIds: readyPeerIds,
                                     readyPeerIds
@@ -90,10 +222,10 @@ describe('live RTC control client', () => {
                                 rtcDiagnostics: {
                                     sessionId: 'health-session',
                                     generatedAtEpochMs: 0,
-                                    peerCount: 0,
-                                    connectedPeerCount: 0,
+                                    peerCount: rtcDiagnosticPeers.length,
+                                    connectedPeerCount: rtcDiagnosticPeers.length,
                                     relayPeerCount: 0,
-                                    peers: []
+                                    peers: rtcDiagnosticPeers
                                 }
                             }
                         }
@@ -277,27 +409,15 @@ describe('live RTC control client', () => {
                 startedAtMs: 100
             })
         ).rejects.toThrow('readiness deadline');
-        expect(
-            JSON.parse(
-                readFileSync(
-                    path.join(
-                        diagnosticsRoot,
-                        'live-rtc-readiness-failure-agent-a-delivery.json'
-                    ),
-                    'utf8'
-                )
-            )
-        ).toMatchObject({
+        const artifactBody = readFileSync(path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-delivery.json'), 'utf8');
+        expect(artifactBody).not.toContain('secret-health-');
+        expect(JSON.parse(artifactBody)).toMatchObject({
             runId: 'run-readiness',
             agentId: 'agent-a',
             expectedPeerIds: ['session-b'],
             health: {
-                ok: true,
-                result: {
-                    value: {
-                        rallar: { rtcStatus: { readyPeerIds: [] } }
-                    }
-                }
+                agentId: 'agent-a',
+                readyPeerIds: []
             }
         });
     });

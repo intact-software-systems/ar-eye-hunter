@@ -78,16 +78,16 @@ navigation is [Shared RTC Bench](../../../packages/shared-rtc-bench/README.md).
 
 The audited main snapshot is `c727caad561347a151a426579cf0d598e39f8ac4`.
 Tasks 0-7 and observation tooling are delivered. This plan remains incomplete:
-E1 evidence is unavailable to the audit, E3 has no accepted primary, Task 12 is
-gated, and B07 remains held. A package check proves tooling, not capture.
+E1 measurement evidence remains unverified, E3 has no accepted primary, Task 12
+is gated, and B07 remains held. A package check proves tooling, not capture.
 
-| Environment / workload | Evidence available at the audit                                                                                         | Acceptance consequence                                                                                                                                                    |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E1-local / B01-B04     | No finalized artifact in tracked files or local `tmp/perf`.                                                             | Task 8 is unverified; recover and verify an artifact or capture afresh after representative E3 succeeds.                                                                  |
-| E2-browser / B05       | 31 ZIP/index pairs (Aug 29-Sep 27), all passed with accepted metrics; 17 need no repeat and 14 required repeats passed. | Task 9 is active. 22 final selected distributions have every metric CV at or below 10%; nine retain noisy `firstOpenDurationMs` after repeat, which remains inconclusive. |
-| E3-memory / B06        | 14 ZIP/index pairs (Aug 30-Sep 11), all failed, `acceptedMetrics: false`, no repeat required/run.                       | Valid diagnostic archives; zero accepted E3 primaries or metrics. Partial default successes do not satisfy B06.                                                           |
-| E4-pg                  | No capture; existing E3 decisions say not required because no database-backed candidate is selected.                    | No database-backed conclusion. Revisit for the exact candidate.                                                                                                           |
-| E5-remote / B07        | Held.                                                                                                                   | No B07 performance claim; outside default completion unless separately required.                                                                                          |
+| Environment / workload | Evidence available at the audit                                                                                                                                                                                    | Acceptance consequence                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1-local / B01-B04     | Issue #267 historically reports `20260818-22bb4919c92f-e1-local` and a required repeat on `22bb4919c92f96d785ff65d7f308a6d2fd3318e7`; bounded recovery did not find envelope bytes, checksums, or the repeat link. | Task 8 remains unverified. Synthetic #274 memory fixtures are not measurement evidence; recover/verify or capture after representative E3 succeeds.                       |
+| E2-browser / B05       | 31 ZIP/index pairs (Aug 29-Sep 27), all passed with accepted metrics; 17 need no repeat and 14 required repeats passed.                                                                                            | Task 9 is active. 22 final selected distributions have every metric CV at or below 10%; nine retain noisy `firstOpenDurationMs` after repeat, which remains inconclusive. |
+| E3-memory / B06        | 14 ZIP/index pairs (Aug 30-Sep 11), all failed, `acceptedMetrics: false`, no repeat required/run.                                                                                                                  | Valid diagnostic archives; zero accepted E3 primaries or metrics. Partial default successes do not satisfy B06.                                                           |
+| E4-pg                  | No capture; existing E3 decisions say not required because no database-backed candidate is selected.                                                                                                               | No database-backed conclusion. Revisit for the exact candidate.                                                                                                           |
+| E5-remote / B07        | Held.                                                                                                                                                                                                              | No B07 performance claim; outside default completion unless separately required.                                                                                          |
 
 All 45 checked-in ZIP/index pairs passed the current package-owned
 `verify-observation` command. Archive length, SHA-256, and internal observation
@@ -115,11 +115,21 @@ skipped, so this is not an accepted primary. The error establishes failure to
 regain formation readiness, not the RTC close/reset/remove issuer or a safe
 watchdog fix. Deadline renewal is neither implemented nor authorized by it.
 
-The controller has dispatched unchanged publish run
+Unchanged main run
 [37108696378](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37108696378)
-from audited main `c727caad561347a151a426579cf0d598e39f8ac4`. It is in progress,
-not accepted or archived evidence. Monitor this run; do not dispatch a duplicate
-because this plan names it.
+completed capture on `c727caad561347a151a426579cf0d598e39f8ac4` and finalized
+**FAILED**, with no accepted metrics and no repeat. Ten earlier default and
+all-scenarios attempts passed; the first retention warmup failed formation
+reconnect readiness at cycle 8. Retained retention attempts are causal not-runs.
+No job budget fired. Publication separately failed with HTTP 401; the canonical
+publisher recovered the exact unchanged archive in
+[PR #639](https://github.com/intact-software-systems/ar-eye-hunter/pull/639).
+This is proposed diagnostic evidence, not an accepted E3 primary or a merged
+checked-in corpus increment. Only cycle-0 RTC diagnostics survived: teardown
+preceded failure capture, and health projection omitted formation. These facts
+prove diagnostic loss, not a native watchdog, signaling, or close/reset cause.
+The bounded correction preserves a later live health snapshot before finalizer
+teardown, with allowlisted formation facts and original failure precedence.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -130,13 +140,18 @@ owner with cross-tab session/work claims. The old design-only IndexedDB status
 is obsolete. Their evidence does not substitute for B06 acceptance or prove the
 RTC reconnect failure resolved.
 
-B05 scheduled captures after Sep 27 succeeded but publication failed. Latest
-[36991203603](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/36991203603)
-reports `HTTP 401: Bad credentials` at pull-request publication. This is an
-operational credential problem. Preserve recoverable capture artifacts and
-verify the same ZIP/index pair before publication with working authentication;
-restore workflow publication credentials through the operational owner. A
-capture need not be rerun to replace its identity after publication failure.
+Five Sep 28–Oct 2 B05 archives were recovered unchanged through ordinary
+observation publication in
+[PR #634](https://github.com/intact-software-systems/ar-eye-hunter/pull/634),
+[PR #635](https://github.com/intact-software-systems/ar-eye-hunter/pull/635),
+[PR #636](https://github.com/intact-software-systems/ar-eye-hunter/pull/636),
+[PR #637](https://github.com/intact-software-systems/ar-eye-hunter/pull/637), and
+[PR #638](https://github.com/intact-software-systems/ar-eye-hunter/pull/638).
+They are proposed observations; the checked-in corpus counts above remain
+unchanged. Required repeats passed where needed. Oct 2 duration and first-open,
+and Sep 29 first-open remain noisy/inconclusive. The publication HTTP 401 is
+separate from capture outcomes; artifact recovery does not require replacing
+capture identity.
 
 ## 2. Evidence Classes And Work Boundaries
 
@@ -907,79 +922,75 @@ justified yet.”
 
 ## 10. Delivered Outcomes And Remaining Acceptance
 
-| Task    | Delivered outcome / remaining state                                                                                                                                      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                    |
-| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                          |
-| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                    |
-| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                               |
-| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                |
-| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                    |
-| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                           |
-| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                            |
-| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                               |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete. |
-| 9       | E2 nightly/manual observation stream active with 31 archived passed observations. Preserve noisy metric classification and repair operational publication credentials.   |
-| 10      | E3 manual stream active; accepted representative primary and any required repeat are missing. Current publish run is in progress.                                        |
-| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                      |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                 |
+| Task    | Delivered outcome / remaining state                                                                                                                                                      |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                    |
+| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                          |
+| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                    |
+| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                               |
+| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                |
+| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                    |
+| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                           |
+| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                            |
+| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                               |
+| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                 |
+| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                    |
+| 10      | E3 has no accepted primary/repeat. Run 37108696378 finalized FAILED at retention warmup cycle 8; exact recovery is proposed in PR #639. Bounded diagnostic correction/proof comes first. |
+| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                      |
+| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                 |
 
 ## 11. Next Two Useful Slices
 
-### Slice 1: Finish the unchanged E3 publish observation
+### Slice 1: Preserve failure health and independently review the correction
 
-**Files:** No production/test/workflow edits. The controller owns capture,
-ignored downloads, and any ordinary observation-only ZIP/index publication.
+**Files:** The canonical three-browser attempt finalizer, control diagnostic
+capture, agent diagnostic projection, and their focused semantic tests. Keep
+existing evidence/envelope/protocol contracts and workload identities unchanged.
 
-**Interfaces:** Consume the existing main-dispatch workflow and package
-`observe-live-rtc`; produce one verified immutable archive/index pair preserving
-source SHA/tree, every expected attempt, outcomes, raw samples, and required
-repeat. Failed evidence is a valid deliverable but does not complete Task 10.
+**Interfaces:** Collect a complete later health snapshot before finalizer
+teardown into `rawEvidence.diagnostics`, labeling the failure and current
+retention cycle. Add only a bounded allowlisted formation projection through
+existing generic details. Health collection and optional output are distinct;
+complete capture survives output failure, incomplete capture is honestly
+unavailable, the original rejection remains primary, and cleanup still runs.
 
-- [ ] Monitor already-dispatched run 37108696378. Its `publish` source is main;
-      its checkout is immutable. Keep default 1/5, all-scenarios 1/3,
-      retention-100 1/3: three warmups and eleven retained fresh full-stack
-      attempts. No new dispatch or concurrent performance work.
-- [ ] Read finalized outcome/accounting. Only a passed primary can trigger the
-      controller's one complete doubled retained repeat. Preserve initial
-      failures and causal not-run identities; diagnose instead of expanding
-      retry/watchdog/timeout/workload budgets.
-- [ ] Verify the archive and exact row. Publish them unchanged through ordinary
-      observation delivery. If credentials fail, recover that same artifact
-      through working authentication; classify the operational failure separately.
-
-**Exit:** A verified archived result, with Task 10 accepted only if every primary
-correctness gate and required repeat passes. No diagnostic green or partial
-case result satisfies this exit.
-
-### Slice 2: Diagnose the first failure or reconcile verified E3 evidence
-
-**Files:** Read-only evidence/production trace first. An actual correction has
-only the canonical evidenced owner and its focused semantic tests in scope;
-no speculative retained legacy, migration, duplicated behavior, or new wrapper.
-
-**Interfaces:** Consume the first failed attempt and its existing evidence;
-produce an attributable cause and reviewed bounded correction, or a verified
-successful E3 result ready for later evidence reconciliation.
-
-- [ ] If failed, inspect the first failed attempt from this exact run before
-      interpreting later causal not-run entries. Link peer/native generation,
-      setup start/deadline, admitted offer and answer identity/timing, lane and
-      connection state, and the exact close/reset/remove actor. Missing causal
-      facts justify only the smallest semantically tested diagnostic boundary.
-- [ ] For an evidenced correctness defect, witness an independent semantic RED,
-      implement minimum GREEN in its canonical owner, refactor, run focused
-      affected package/application checks, and obtain independent task review.
+- [ ] Witness independent semantic RED, implement minimum GREEN, review the
+      complete touched-file closure, and run focused behavior/consumer checks.
       Every changed human-authored file is reviewed/remediated in full; every
       remediation support file enters closure recursively; independent untouched
-      code remains outside closure. Keep one correction/proof PR while testing;
-      exact-head branch diagnostics are non-publishing. Merge a proved correction
-      before capturing a new accepted observation from then-current main.
-- [ ] If E3 passes, reconcile and retain its verified primary/required repeat
-      without claiming ranking complete. Do not turn source movement into work.
+      code remains outside closure. Keep the verified older peer-readiness
+      algorithm and formation-readiness semantics distinct.
+- [ ] Obtain independent review of projection, failure precedence, cleanup,
+      sanitization, complete-checkpoint validation, and the direct spec ordering
+      boundary. No runtime fix, event-history system, migration, duplicate
+      diagnostic algorithm, watchdog renewal, or workload reduction is authorized.
 
-**Exit:** The first failure is causally classified and any actual correction is
-proved, or representative E3 succeeds with durable verified evidence.
+**Exit:** A reviewed bounded diagnostic correction with semantic evidence;
+this does not establish an RTC runtime cause or complete Task 10.
+
+### Slice 2: Prove exact-head diagnostics and analyze the first failure
+
+**Files:** Root-owned exact-head non-publishing diagnostic execution and ignored
+artifact analysis; no speculative RTC changes or new accepted observation.
+
+**Interfaces:** Consume the reviewed correction at its exact source head and
+produce attributable failure-time room/readiness versus native peer/lane/timer
+facts, or explicit capture unavailability. This health summary is a later
+snapshot, not the result returned by the failed readiness wait or causal history.
+
+- [ ] Prove the canonical attempt path retains failure diagnostics before
+      finalizer teardown, preserves its retention cycle and original rejection,
+      and does not fabricate post-GC checkpoints or accepted failed metrics.
+- [ ] Analyze the first failure before causal not-runs. Report generation,
+      setup/deadline, offer/answer, and close/reset actor facts only if available;
+      a health snapshot cannot attribute an actor it does not observe.
+- [ ] Deliver a proved correction before capturing a new accepted observation
+      from then-current main. Preserve default 1/5, all-scenarios 1/3, and
+      retention-100 1/3 plus the canonical required-repeat rules. No diagnostic
+      green or partial case result establishes E3 acceptance.
+
+**Exit:** Exact-head non-publishing proof and an honest first-failure analysis;
+any remaining runtime correction requires independent evidence and review.
 
 After representative E3 succeeds, recover/verify E1 evidence or capture the
 complete governed B01-B04 matrix on a quiet clean source snapshot. Keep this

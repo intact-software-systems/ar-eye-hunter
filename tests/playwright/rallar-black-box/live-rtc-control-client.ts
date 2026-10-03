@@ -183,9 +183,9 @@ export namespace LiveRtcControlClient {
     }
 
     export interface CaptureDiagnosticsInput {
-        testInfo: TestInfo;
+        testInfo: Pick<TestInfo, 'attach'>;
         runId: string;
-        agents: readonly Agent[];
+        agents: readonly Pick<FormationAgent, 'agentId' | 'prefix'>[];
         label: string;
         cycle: number | null;
     }
@@ -193,6 +193,13 @@ export namespace LiveRtcControlClient {
     export interface CapturedDiagnostics {
         commandIds: readonly string[];
         checkpoint: LiveRtcDiagnosticsCheckpoint;
+    }
+
+    export interface ReadAgentDiagnosticsInput {
+        readonly runId: string;
+        readonly agentId: string;
+        readonly commandId: string;
+        readonly timeoutMs: number;
     }
 }
 
@@ -520,13 +527,10 @@ export class LiveRtcControlClient {
         }
         catch (cause) {
             try {
-                await this.#recordReadinessFailure(input, attempt, toError(cause));
+                await this.#recordReadinessFailure(input, attempt);
             }
-            catch (diagnosticCause) {
-                console.error(
-                    'Failed to record RTC readiness diagnostics',
-                    toError(diagnosticCause)
-                );
+            catch {
+                console.error('Live RTC readiness diagnostic capture unavailable.');
             }
             throw cause;
         }
@@ -573,17 +577,15 @@ export class LiveRtcControlClient {
 
     async #recordReadinessFailure(
         input: LiveRtcControlClient.WaitForRtcReadinessInput,
-        attempt: number,
-        failure: Error
+        attempt: number
     ): Promise<void> {
         if (!this.#diagnosticsOutDir) {
             return;
         }
-        const health = await this.executeResult({
+        const health = await this.#readAgentDiagnostics({
             runId: input.runId,
             agentId: input.agent.agentId,
             commandId: `health-readiness-failure-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt}`,
-            command: { kind: 'health', includeRtcDiagnostics: true },
             timeoutMs: 15_000
         });
         await this.#writeDiagnosticsArtifact(
@@ -594,7 +596,7 @@ export class LiveRtcControlClient {
                     agentId: input.agent.agentId,
                     expectedPeerIds: input.expectedPeerIds,
                     capturedAtEpochMs: this.#epochNow(),
-                    failure: { name: failure.name, message: failure.message },
+                    failure: { name: 'rtc-readiness-failed', message: 'RTC peer readiness observation failed.' },
                     health
                 },
                 null,
@@ -718,23 +720,52 @@ export class LiveRtcControlClient {
     async captureDiagnostics(
         input: LiveRtcControlClient.CaptureDiagnosticsInput
     ): Promise<LiveRtcControlClient.CapturedDiagnostics> {
+        if (input.agents.length !== 3 || new Set(input.agents.map((agent) => agent.agentId)).size !== 3) {
+            throw new Error('RTC diagnostics require three distinct agents.');
+        }
+        const captured = await this.#readDiagnostics(input);
+        const body = JSON.stringify(
+            {
+                runId: input.runId,
+                capturedAtEpochMs: this.#epochNow(),
+                ...captured.checkpoint
+            },
+            null,
+            2
+        );
+        try {
+            await input.testInfo.attach(`live-rtc-diagnostics-${input.label}.json`, {
+                body,
+                contentType: 'application/json'
+            });
+        }
+        catch {
+            console.error('Live RTC diagnostic attachment unavailable.');
+        }
+        try {
+            await this.#writeDiagnosticsArtifact(`live-rtc-diagnostics-${safeFileName(input.label)}.json`, body);
+        }
+        catch {
+            console.error('Live RTC diagnostic sidecar unavailable.');
+        }
+        return captured;
+    }
+
+    async #readDiagnostics(
+        input: LiveRtcControlClient.CaptureDiagnosticsInput
+    ): Promise<LiveRtcControlClient.CapturedDiagnostics> {
         const commandIds: string[] = [];
         const agents: LiveRtcAgentDiagnostics[] = [];
         for (const agent of input.agents) {
             const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${input.label}`;
             commandIds.push(commandId);
-            const result = await this.executeOk({
-                runId: input.runId,
-                agentId: agent.agentId,
-                commandId,
-                command: {
-                    kind: 'health',
-                    includeRtcDiagnostics: true
-                },
-                timeoutMs: 30_000
-            });
             agents.push(
-                buildLiveRtcAgentDiagnostics(agent.agentId, this.resultValue(result))
+                await this.#readAgentDiagnostics({
+                    runId: input.runId,
+                    agentId: agent.agentId,
+                    commandId,
+                    timeoutMs: 30_000
+                })
             );
         }
         const checkpoint: LiveRtcDiagnosticsCheckpoint = {
@@ -742,24 +773,24 @@ export class LiveRtcControlClient {
             cycle: input.cycle,
             agents
         };
-        const body = JSON.stringify(
-            {
-                runId: input.runId,
-                capturedAtEpochMs: this.#epochNow(),
-                ...checkpoint
-            },
-            null,
-            2
-        );
-        await input.testInfo.attach(`live-rtc-diagnostics-${input.label}.json`, {
-            body,
-            contentType: 'application/json'
-        });
-        await this.#writeDiagnosticsArtifact(
-            `live-rtc-diagnostics-${safeFileName(input.label)}.json`,
-            body
-        );
         return { commandIds, checkpoint };
+    }
+
+    async #readAgentDiagnostics(
+        input: LiveRtcControlClient.ReadAgentDiagnosticsInput
+    ): Promise<LiveRtcAgentDiagnostics> {
+        const result = await this.executeOk({
+            ...input,
+            command: { kind: 'health', includeRtcDiagnostics: true }
+        });
+        const diagnostics = buildLiveRtcAgentDiagnostics(input.agentId, this.resultValue(result));
+        return {
+            ...diagnostics,
+            details: normalizeJson({
+                ...requiredJsonRecord(diagnostics.details, 'RTC diagnostic details'),
+                healthCapturedAtEpochMs: this.#epochNow()
+            })
+        };
     }
 
     async #writeDiagnosticsArtifact(

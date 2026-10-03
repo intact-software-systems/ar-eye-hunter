@@ -1,4 +1,7 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+import type { RallarRoomTransportState } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
+import { isGroupLayoutIdentity } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
+import { GROUP_LIFECYCLE_STATES } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import {
     exactStringArray,
@@ -33,6 +36,17 @@ export interface LiveRtcLaneDiagnostics {
     isOpen: boolean;
     isReconnectable: boolean;
 }
+
+const ROOM_TRANSPORT_STATES: Readonly<Record<RallarRoomTransportState, true>> = {
+    off: true,
+    halted: true,
+    idle: true,
+    connecting: true,
+    partial: true,
+    open: true,
+    degraded: true,
+    failed: true
+};
 
 export function decodeAgentDiagnostics(
     value: RtcBaselineJson
@@ -138,9 +152,67 @@ export function buildLiveRtcAgentDiagnostics(
             generatedAtEpochMs: diagnostics.generatedAtEpochMs,
             status,
             diagnostics,
-            rtcDiagnosticsError: rallar.rtcDiagnosticsError ?? null
+            rtcDiagnosticsError: rallar.rtcDiagnosticsError ?? null,
+            formation: toLiveRtcFormationDiagnostics(rallar.formation)
         })
     };
+}
+
+function toLiveRtcFormationDiagnostics(value: RtcBaselineJson | undefined): RtcBaselineJson {
+    const formation = jsonRecord(value);
+    const observation = 'health-summary-not-readiness-wait-result';
+    if (!formation) {
+        return { observation, available: false };
+    }
+    const room = jsonRecord(formation.room);
+    const roomRef = jsonRecord(formation.roomRef);
+    return {
+        observation,
+        available: true,
+        roomRef: roomRef
+            ? {
+                applicationId: toBoundedIdentity(roomRef.applicationId),
+                workspaceId: toBoundedIdentity(roomRef.workspaceId),
+                groupId: toBoundedIdentity(roomRef.groupId)
+            }
+            : null,
+        stage: GROUP_LIFECYCLE_STATES.find((stage) => stage === formation.stage) ?? null,
+        roomTransportState: typeof room?.state === 'string' && Object.hasOwn(ROOM_TRANSPORT_STATES, room.state)
+            ? room.state
+            : null,
+        desiredPeerIds: toBoundedPeerIdentities(room?.desiredPeerIds),
+        readyPeerIds: toBoundedPeerIdentities(room?.readyPeerIds),
+        activePeerIds: toBoundedPeerIdentities(room?.activePeerIds),
+        failedPeerIds: toBoundedPeerIdentities(room?.failedPeerIds),
+        peerIdentitiesTruncated: ['desiredPeerIds', 'readyPeerIds', 'activePeerIds', 'failedPeerIds']
+            .some((field) => Array.isArray(room?.[field]) && room[field].length > 100),
+        acceptedLayoutIdentity: toFormationLayoutIdentity(room?.acceptedLayoutIdentity)
+    };
+}
+
+function toBoundedIdentity(value: RtcBaselineJson | undefined): string | null {
+    return typeof value === 'string' && value.length > 0 && value.length <= 256 ? value : null;
+}
+
+function toBoundedPeerIdentities(value: RtcBaselineJson | undefined): RtcBaselineJson {
+    if (!Array.isArray(value) || value.some((identity) => toBoundedIdentity(identity) === null)) {
+        return null;
+    }
+    return [...value.slice(0, 100)].sort();
+}
+
+function toFormationLayoutIdentity(value: RtcBaselineJson | undefined): RtcBaselineJson {
+    const record = jsonRecord(value);
+    if (!record) {
+        return null;
+    }
+    const identity = {
+        groupRevision: record.groupRevision,
+        presenceRevision: record.presenceRevision,
+        version: record.version,
+        state: record.state
+    };
+    return isGroupLayoutIdentity(identity) ? normalizeJson(identity) : null;
 }
 
 function toLiveRtcLaneStates(

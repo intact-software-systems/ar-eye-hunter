@@ -128,17 +128,87 @@ interface WriteAttemptEvidenceInput {
     readonly assertions: LiveRtcPerformanceRawEvidence['assertions'];
 }
 
+interface RetireLiveRtcAttemptAgentsInput {
+    readonly control: LiveRtcControlClient;
+    readonly runId: string;
+    readonly agents: LiveRtcAgentTrio;
+    readonly openHandles: readonly LiveRtcControlClient.Agent[];
+    readonly suffix: string;
+    readonly sessions: Readonly<Record<AgentPrefix, string>> | undefined;
+}
+
+interface RetiredLiveRtcAttemptAgents {
+    readonly commandIds: readonly string[];
+    readonly openHandles: LiveRtcControlClient.Agent[];
+}
+
 interface FinalizeLiveRtcAttemptInput extends WriteAttemptEvidenceInput {
     readonly control: LiveRtcControlClient;
     readonly testInfo: TestInfo;
     readonly runId: string;
     readonly agents: readonly LiveRtcControlClient.Agent[];
     readonly suffix: string;
+    readonly failureCycle: number | null;
 }
 
 async function finalizeLiveRtcAttempt(
     input: FinalizeLiveRtcAttemptInput
 ): Promise<void> {
+    const diagnostics = await captureLiveRtcAttemptFailureHealth(input);
+    const errors = await closeLiveRtcAttemptResources(input);
+    try {
+        await input.control.attachRunSummary({ testInfo: input.testInfo, runId: input.runId });
+    }
+    catch (cause) {
+        errors.push(toError(cause));
+    }
+    await attachLiveRtcCleanupErrors(input.testInfo, errors);
+    const producerExitStatus = errors.length > 0 ? 1 : input.producerExitStatus;
+    const attemptFailure = producerExitStatus === 0
+        ? null
+        : await input.control.captureAttemptFailure({ runId: input.runId });
+    try {
+        await writeAttemptEvidence({ ...input, diagnostics, producerExitStatus }, attemptFailure);
+    }
+    catch (cause) {
+        if (input.producerExitStatus === 0) {
+            throw cause;
+        }
+        console.error('Live RTC failed-attempt evidence output unavailable.');
+    }
+    if (errors.length > 0 && input.producerExitStatus === 0) {
+        throw new AggregateError(errors, 'Live RTC attempt cleanup failed.');
+    }
+}
+
+async function captureLiveRtcAttemptFailureHealth(
+    input: FinalizeLiveRtcAttemptInput
+): Promise<readonly LiveRtcDiagnosticsCheckpoint[]> {
+    if (input.producerExitStatus === 0 || input.agents.length === 0) {
+        return input.diagnostics;
+    }
+    const label = `attempt-failure-later-health-${input.suffix}`;
+    try {
+        const captured = await input.control.captureDiagnostics({
+            testInfo: input.testInfo,
+            runId: input.runId,
+            agents: input.agents,
+            label,
+            cycle: input.failureCycle
+        });
+        return [...input.diagnostics, captured.checkpoint];
+    }
+    catch {
+        console.error('Live RTC attempt failure health capture unavailable.', {
+            kind: 'attempt-failure-health-unavailable',
+            cycle: input.failureCycle,
+            message: 'A complete three-agent later health snapshot could not be collected.'
+        });
+        return input.diagnostics;
+    }
+}
+
+async function closeLiveRtcAttemptResources(input: FinalizeLiveRtcAttemptInput): Promise<Error[]> {
     const commandResults = await Promise.allSettled(
         input.agents.map(async (agent) => {
             const result = await input.control.executeResult({
@@ -157,21 +227,41 @@ async function finalizeLiveRtcAttempt(
     );
     const errors = commandResults.flatMap((result) => result.status === 'rejected' ? [toError(result.reason)] : []);
     errors.push(...(await closeLiveRtcBrowserAgentContexts(input.agents)));
-    try {
-        await input.control.attachRunSummary({
-            testInfo: input.testInfo,
-            runId: input.runId
+    return errors;
+}
+
+async function retireLiveRtcAttemptAgents(
+    input: RetireLiveRtcAttemptAgentsInput
+): Promise<RetiredLiveRtcAttemptAgents> {
+    const commandIds = input.sessions
+        ? await liveRtcDeliveryOperations.closeAndResetSettledAgentTrio({
+            control: input.control,
+            runId: input.runId,
+            agents: input.agents,
+            sessions: input.sessions,
+            suffix: input.suffix
+        })
+        : await liveRtcDeliveryOperations.closeAndResetAgents({
+            control: input.control,
+            runId: input.runId,
+            agents: input.agents,
+            suffix: input.suffix
         });
+    const closeErrors = await closeLiveRtcBrowserAgentContexts(input.agents);
+    if (closeErrors.length > 0) {
+        throw new AggregateError(closeErrors, 'Failed to retire live RTC browser agents.');
     }
-    catch (cause) {
-        errors.push(toError(cause));
-    }
+    const retiredAgentIds = new Set(input.agents.map((agent) => agent.agentId));
+    return { commandIds, openHandles: input.openHandles.filter((agent) => !retiredAgentIds.has(agent.agentId)) };
+}
+
+async function attachLiveRtcCleanupErrors(testInfo: TestInfo, errors: readonly Error[]): Promise<void> {
     if (errors.length > 0) {
         for (const error of errors) {
             console.error('Live RTC attempt cleanup failed', error);
         }
         try {
-            await input.testInfo.attach('live-rtc-cleanup-errors.json', {
+            await testInfo.attach('live-rtc-cleanup-errors.json', {
                 body: JSON.stringify(
                     errors.map((error) => ({ name: error.name, message: error.message }))
                 ),
@@ -184,14 +274,6 @@ async function finalizeLiveRtcAttempt(
                 toError(cause)
             );
         }
-    }
-    const producerExitStatus = errors.length > 0 ? 1 : input.producerExitStatus;
-    const attemptFailure = producerExitStatus === 0
-        ? null
-        : await input.control.captureAttemptFailure({ runId: input.runId });
-    await writeAttemptEvidence({ ...input, producerExitStatus }, attemptFailure);
-    if (errors.length > 0 && input.producerExitStatus === 0) {
-        throw new AggregateError(errors, 'Live RTC attempt cleanup failed.');
     }
 }
 
@@ -260,7 +342,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const runId = `rallar-live-three-browser-${suffix}`;
         const groupId = `${roomSeed}-${suffix}`;
         const allHandles: LiveRtcControlClient.Agent[] = [];
-        const openHandles: LiveRtcControlClient.Agent[] = [];
+        let openHandles: LiveRtcControlClient.Agent[] = [];
         const commandIds: string[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
@@ -270,68 +352,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         let matrixPassed = false;
         let artifactBundlePassed = false;
         let unexpectedDeliveryCount = 0;
-        const openAgents = async (
-            label: string
-        ): Promise<
-            readonly [
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent
-            ]
-        > => {
-            const agents = await openAgentTrio(browser, {
-                runId,
-                groupId,
-                suffix,
-                label
-            });
-            allHandles.push(...agents);
-            openHandles.push(...agents);
-            return agents;
-        };
-        const retireAgents = async (
-            agents: readonly [
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent
-            ],
-            closeSuffix: string,
-            sessions?: Readonly<Record<AgentPrefix, string>>
-        ): Promise<readonly string[]> => {
-            const retiredCommandIds = sessions
-                ? await liveRtcDeliveryOperations.closeAndResetSettledAgentTrio({
-                    control,
-                    runId,
-                    agents,
-                    sessions,
-                    suffix: closeSuffix
-                })
-                : await liveRtcDeliveryOperations.closeAndResetAgents({
-                    control,
-                    runId,
-                    agents,
-                    suffix: closeSuffix
-                });
-            const closeErrors = await closeLiveRtcBrowserAgentContexts(agents);
-            if (closeErrors.length > 0) {
-                throw new AggregateError(
-                    closeErrors,
-                    'Failed to retire live RTC browser agents.'
-                );
-            }
-            for (const agent of agents) {
-                const index = openHandles.findIndex(
-                    (candidate) => candidate.agentId === agent.agentId
-                );
-                if (index >= 0) {
-                    openHandles.splice(index, 1);
-                }
-            }
-            return retiredCommandIds;
-        };
 
         try {
-            const realtimeAgents = await openAgents('live-realtime');
+            const realtimeAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-realtime' });
+            allHandles.push(...realtimeAgents);
+            openHandles.push(...realtimeAgents);
             commandIds.push(
                 ...(await liveRtcDeliveryOperations.setupGroupMembership({
                     control,
@@ -376,15 +401,20 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             });
             commandIds.push(...realtimeDiagnostics.commandIds);
             diagnostics.push(realtimeDiagnostics.checkpoint);
-            commandIds.push(
-                ...(await retireAgents(
-                    realtimeAgents,
-                    `${suffix}-after-realtime`,
-                    realtime.sessions
-                ))
-            );
+            const retiredRealtimeAgents = await retireLiveRtcAttemptAgents({
+                control,
+                runId,
+                agents: realtimeAgents,
+                openHandles,
+                suffix: `${suffix}-after-realtime`,
+                sessions: realtime.sessions
+            });
+            openHandles = retiredRealtimeAgents.openHandles;
+            commandIds.push(...retiredRealtimeAgents.commandIds);
 
-            const messageAgents = await openAgents('live-messages');
+            const messageAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-messages' });
+            allHandles.push(...messageAgents);
+            openHandles.push(...messageAgents);
             const messages = await liveRtcDeliveryOperations.runDeliveryMatrix({
                 control,
                 runId,
@@ -498,6 +528,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 runId,
                 agents: openHandles,
                 suffix,
+                failureCycle: null,
                 context: evidenceContext,
                 producerExitStatus,
                 timings,
@@ -544,7 +575,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const runId = `rallar-live-three-browser-all-${suffix}`;
         const groupId = `${roomSeed}-${suffix}`;
         const allHandles: LiveRtcControlClient.Agent[] = [];
-        const openHandles: LiveRtcControlClient.Agent[] = [];
+        let openHandles: LiveRtcControlClient.Agent[] = [];
         const commandIds: string[] = [];
         const scenarios: LiveRtcControlClient.DeliveryScenario[] = [];
         const timings: LiveRtcPerformanceTiming[] = [];
@@ -555,60 +586,11 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         let artifactBundlePassed = false;
         let reconnectPassed = false;
         let unexpectedDeliveryCount = 0;
-        const openAgents = async (label: string) => {
-            const agents = await openAgentTrio(browser, {
-                runId,
-                groupId,
-                suffix,
-                label
-            });
-            allHandles.push(...agents);
-            openHandles.push(...agents);
-            return agents;
-        };
-        const retireAgents = async (
-            agents: readonly [
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent,
-                LiveRtcControlClient.Agent
-            ],
-            closeSuffix: string,
-            sessions?: Readonly<Record<AgentPrefix, string>>
-        ): Promise<readonly string[]> => {
-            const retired = sessions
-                ? await liveRtcDeliveryOperations.closeAndResetSettledAgentTrio({
-                    control,
-                    runId,
-                    agents,
-                    sessions,
-                    suffix: closeSuffix
-                })
-                : await liveRtcDeliveryOperations.closeAndResetAgents({
-                    control,
-                    runId,
-                    agents,
-                    suffix: closeSuffix
-                });
-            const closeErrors = await closeLiveRtcBrowserAgentContexts(agents);
-            if (closeErrors.length > 0) {
-                throw new AggregateError(
-                    closeErrors,
-                    'Failed to retire live RTC browser agents.'
-                );
-            }
-            for (const agent of agents) {
-                const index = openHandles.findIndex(
-                    (candidate) => candidate.agentId === agent.agentId
-                );
-                if (index >= 0) {
-                    openHandles.splice(index, 1);
-                }
-            }
-            return retired;
-        };
 
         try {
-            const realtimeAgents = await openAgents('live-all-realtime');
+            const realtimeAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-all-realtime' });
+            allHandles.push(...realtimeAgents);
+            openHandles.push(...realtimeAgents);
             commandIds.push(
                 ...(await liveRtcDeliveryOperations.setupGroupMembership({
                     control,
@@ -648,15 +630,20 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             });
             commandIds.push(...realtimeDiagnostics.commandIds);
             diagnostics.push(realtimeDiagnostics.checkpoint);
-            commandIds.push(
-                ...(await retireAgents(
-                    realtimeAgents,
-                    `${suffix}-after-realtime-all`,
-                    realtime.sessions
-                ))
-            );
+            const retiredRealtimeAgents = await retireLiveRtcAttemptAgents({
+                control,
+                runId,
+                agents: realtimeAgents,
+                openHandles,
+                suffix: `${suffix}-after-realtime-all`,
+                sessions: realtime.sessions
+            });
+            openHandles = retiredRealtimeAgents.openHandles;
+            commandIds.push(...retiredRealtimeAgents.commandIds);
 
-            const wsAgents = await openAgents('live-all-ws');
+            const wsAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-all-ws' });
+            allHandles.push(...wsAgents);
+            openHandles.push(...wsAgents);
             commandIds.push(
                 ...(await liveRtcDeliveryOperations.runWebSocketOpenSendCloseMatrix({
                     control,
@@ -666,11 +653,20 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     suffix
                 }))
             );
-            commandIds.push(
-                ...(await retireAgents(wsAgents, `${suffix}-after-ws-all`))
-            );
+            const retiredWsAgents = await retireLiveRtcAttemptAgents({
+                control,
+                runId,
+                agents: wsAgents,
+                openHandles,
+                suffix: `${suffix}-after-ws-all`,
+                sessions: undefined
+            });
+            openHandles = retiredWsAgents.openHandles;
+            commandIds.push(...retiredWsAgents.commandIds);
 
-            const messageAgents = await openAgents('live-all-messages');
+            const messageAgents = await openAgentTrio(browser, { runId, groupId, suffix, label: 'live-all-messages' });
+            allHandles.push(...messageAgents);
+            openHandles.push(...messageAgents);
             const messages = await liveRtcDeliveryOperations.runAllDeliveryPermutations({
                 control,
                 runId,
@@ -837,6 +833,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                 runId,
                 agents: openHandles,
                 suffix,
+                failureCycle: null,
                 context: evidenceContext,
                 producerExitStatus,
                 timings,
@@ -887,6 +884,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
         const diagnostics: LiveRtcDiagnosticsCheckpoint[] = [];
         const failureDiagnostics: LiveRtcNackFailureDiagnostic[] = [];
         const checkpoints: LiveRtcRetentionCheckpoint[] = [];
+        let currentRetentionCycle = 0;
         const openHandles: LiveRtcControlClient.Agent[] = [];
         let producerExitStatus = 0;
         let matrixPassed = false;
@@ -977,6 +975,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
 
             let currentSessionId = initialFormation.sessions.C;
             for (let cycle = 1; cycle <= 100; cycle += 1) {
+                currentRetentionCycle = cycle;
                 const closeCommandId = `retention-close-c-${cycle}-${suffix}`;
                 await runRetentionPhase(
                     `retention-100 cycle ${cycle}: close peer C`,
@@ -1080,6 +1079,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         runId,
                         agents: openHandles,
                         suffix,
+                        failureCycle: currentRetentionCycle,
                         context: evidenceContext,
                         producerExitStatus,
                         timings,
