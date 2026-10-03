@@ -184,8 +184,10 @@ holds). A `checkpoint` plan
 
 The storage cost is pinned in
 [`al-indexeddb-operation-counts.test.ts`](../../../tests/shared/alm/al-indexeddb-operation-counts.test.ts):
-one durable send spends 10 `al-admission` and 11 `al-work` IndexedDB operations; one
-volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations. The
+one durable send spends 10 `al-admission` and 9 `al-work` IndexedDB operations; one
+volatile send beside a durable pair spends 0 `al-admission` and 0 non-probe `al-work` operations, and
+so do `local-checkpoint` sends on the checkpoint lane, whose checkpoint is counted on its own: one
+IndexedDB `write` per interval, whatever the sends changed, and none while the lane is clean. The
 idle durable owner's probes (`work-page`, `work-probe`) are reported beside that zero, never inside it
 (D55): a cold runtime's first volatile send runs the durable owner's one-time bootstrap batch over an
 empty queue, which spends only probes, and its second send spends nothing. A queue read that reserves,

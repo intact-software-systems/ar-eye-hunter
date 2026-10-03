@@ -6,9 +6,11 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDurabilityAlgo } from '@shared/al-contracts/al-policy.ts';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
 import {
+    createCheckpointALOutboundRuntimeStores,
     createVolatileALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
 } from '@shared/alm/al-runtime-stores.ts';
+import type { ALCheckpointWriter } from '@shared/alm/checkpoint/al-checkpoint-writer.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -24,6 +26,7 @@ import {
     AL_VOLATILE_SESSION_MAX_BYTES,
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createLimitedALWorkLeaseRecovery } from '@shared/alm/work/al-work-lease-recovery.ts';
 import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
@@ -72,6 +75,8 @@ const INBOUND_IDLE_ROUNDS_PROBED_AT_LEAST = INBOUND_IDLE_ROUNDS / 2;
 const WORK_TYPES = ['AL_OUTBOUND:counts', 'WS_OUTBOX'] as const;
 /** The resource inbox's timeout-claim and fairness rate-limit window, so the pin crosses at least one of each. */
 const IDLE_OWNER_RATE_WINDOW_MS = 60_000;
+const CHECKPOINT_INTERVAL_MS = 1_000;
+const CHECKPOINT_LAG_BOUND_MS = 10_000;
 const NO_DEFERRAL: ALOutboundWorkDeferral = {
     dequeue: { types: new Set<string>(), readyAtMs: undefined },
     leaseSweeps: { isTimeoutOpen: true, isFinalizationOpen: true }
@@ -290,6 +295,63 @@ describe('outbound volatile send IndexedDB volume', () => {
         expect(computeNonProbeWorkOperations(counts), 'no non-probe al-work operation').toBe(0);
         // S3c-ii (D74): the session budget counts the send in memory and moves no IndexedDB counter.
         expect(budget.readUsage(Date.now()).admissions, 'the bounded send is counted once').toBe(1);
+        runtime.dispose();
+    });
+});
+
+describe('outbound local-checkpoint send IndexedDB volume', () => {
+    // The send path is the volatile zero; the checkpoint is counted on its own, one write per interval and none while clean.
+    it('sends local-checkpoint messages beside a durable pair in 0 al-admission and 0 non-probe al-work operations, and checkpoints them in one write', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const timers = createManualCheckpointTimers();
+        const sent: string[] = [];
+        const checkpointStores = createCheckpointALOutboundRuntimeStores({
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: 'outbound-checkpoint-send',
+            dbName: `outbound-checkpoint-send-${crypto.randomUUID()}`,
+            observer,
+            ownership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            intervalMs: CHECKPOINT_INTERVAL_MS,
+            lagBoundMs: CHECKPOINT_LAG_BOUND_MS,
+            timers
+        });
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createIndexedDbOutboundTestStores({ observer, namespace: 'outbound-checkpoint-durable' }),
+            checkpointStores,
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                lane: 'checkpoint',
+                preparedMessages: [{ kind: 'send' }]
+            }),
+            sendPreparedMessage: async () => {
+                sent.push('send');
+                return { status: 'sent' as const, submissionAttempted: true };
+            }
+        });
+        await runtime.ready();
+        observer.reset();
+
+        for (const msgId of ['msg-checkpoint-1', 'msg-checkpoint-2', 'msg-checkpoint-3']) {
+            const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage(msgId));
+            expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        }
+        await vi.waitFor(() => expect(sent).toEqual(['send', 'send', 'send']));
+        await vi.waitFor(async () => expect(await readSettledInboundWork(checkpointStores.workQueue)).toBe(true));
+        const sends = observer.getCounts();
+        const armedBySends = timers.armed();
+        observer.reset();
+        timers.fire();
+        await vi.waitFor(() => expect(observer.getCounts().byKind.write).toBe(1));
+        const checkpoint = observer.getCounts();
+        observer.reset();
+
+        expect(sends.byOwner['al-admission'], 'a local-checkpoint send commits nothing to IndexedDB').toBe(0);
+        expect(computeNonProbeWorkOperations(sends), 'no non-probe al-work operation').toBe(0);
+        expect(armedBySends, 'the first change arms the one interval timer and later ones never postpone it').toBe(1);
+        expect(checkpoint.total, 'one checkpoint is one IndexedDB write, whatever the sends changed').toBe(1);
+        expect(timers.armed(), 'nothing is armed while the lane is clean').toBe(0);
+        expect(observer.getCounts().total, 'nothing runs while the lane is clean').toBe(0);
         runtime.dispose();
     });
 });
@@ -694,6 +756,23 @@ async function readSettledInboundWork(workQueue: QueueBoxResourceEntryRepository
     const keys = await workQueue.getAllKeys();
     const rows = await Promise.all(keys.map(async (key) => await workQueue.getItem(key)));
     return rows.length > 0 && rows.every((row) => row?.status === EntityStatus.COMPLETED);
+}
+
+/** Holds the checkpoint writer's interval timers, so the test fires the one it armed instead of waiting a second. */
+function createManualCheckpointTimers(): ALCheckpointWriter.Timers & { armed(): number; fire(): void; } {
+    const pending = new Set<() => void>();
+    return {
+        schedule: (run) => {
+            pending.add(run);
+            return () => pending.delete(run);
+        },
+        armed: () => pending.size,
+        fire: () => {
+            const due = [...pending];
+            pending.clear();
+            due.forEach((callback) => callback());
+        }
+    };
 }
 
 /** The production bound over one session's memory pairs (D74). */
