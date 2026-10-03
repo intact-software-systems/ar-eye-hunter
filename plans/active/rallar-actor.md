@@ -5,6 +5,12 @@ change `docs/product.md`. The pull request is the delivery record. This file
 names the product and the outcomes a later implementation would have to meet.
 It does not describe how to build them.
 
+Two companion proposals sit beside this file. The
+[market survey](./rallar-actor-market-survey.md) compares related products. The
+[business brainstorm](./rallar-actor-business.md) reads the plans this
+repository already has and sketches how a RallarActor offer could be sold.
+Neither companion changes this product proposal.
+
 ## The job
 
 Rallar is a room product. A room has members, presence, validated events, and
@@ -29,7 +35,7 @@ hold.
 
 One actor is one participant. It signs in, holds the groups the application
 names, stays present in those groups, sends and receives, reconnects, and
-leaves when the host stops. Other members see an ordinary room member.
+leaves when the host stops. Other members see an ordinary group member.
 
 The actor can hold one group or several at the same time. The application
 chooses each join and each leave. A party and a match, a player standing in
@@ -75,7 +81,7 @@ The host can ask the actor to do the work of a member:
 
 The actor holds that participant's sign-in. The host on the same machine is
 allowed to speak as that participant. Members on other machines see only the
-room member.
+group member.
 
 The application owns the tick and the interest set. It decides who should
 receive each fact, then tells the actor which groups to hold and which members
@@ -217,7 +223,8 @@ These are customer-visible stages. They are not a build plan.
 
 1. **A shared group.** One actor, one group, presence, one reliable event, and
    one live stream. A Unity host, an Unreal host, and a browser can meet and
-   see one another.
+   see one another. The smallest host attachment is part of this stage: start
+   the actor, join one group, and exchange those two kinds of payload.
 2. **Several groups.** The same actor joins a second group and stays in the
    first. Presence, events, and live updates stay inside the group they belong
    to.
@@ -227,10 +234,10 @@ These are customer-visible stages. They are not a build plan.
    for each tick payload. A player actor holds a party group and a match or
    shard group together. A publishing actor sends one tick to different member
    lists in different groups. A boundary cross overlaps two groups, then
-   leaves the old one. The tick path runs in the host process.
-5. **Host kits.** First-party Unity and Unreal attachments, plus a short
-   attachment guide for any other process. All of them use the same actor.
-6. **Companion members.** A tool or observer process joins a group that
+   leaves the old one. The tick path runs in the host process. The Unity and
+   Unreal kits grow to that attachment here, and a short guide covers any
+   other process.
+5. **Companion members.** A tool or observer process joins a group that
    already contains players, as its own participant.
 
 ## Success
