@@ -10,6 +10,7 @@ import {
     toLiveRtcLifecycleHistory
 } from '../../../tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts';
 import { countUnexpectedLiveRtcDeliveries, type LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import { requiredJsonArray, requiredJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 interface NotificationFixture {
     readonly name: string;
@@ -41,6 +42,25 @@ const unavailableNotifications: readonly NotificationFixture[] = [
     }
 ];
 
+const admittedSignal = { kind: 'admission-outcome', workerId: 'worker', msgId: 'signal', typeId: 'rtc-signaling', carrier: 'ws', outcome: 'committed' };
+const dispatchedSignal = {
+    kind: 'claim-settled',
+    lane: 'durable',
+    workerId: 'worker',
+    effectId: 'dispatch',
+    msgId: 'signal',
+    subjectMsgId: 'signal',
+    typeId: null,
+    payloadKind: 'dispatch-local',
+    outcome: 'completed',
+    attempts: 1,
+    queueWaitMs: 0,
+    durationMs: 0,
+    dueAtMs: 5,
+    batchStartedAtMs: 5,
+    startedAtMs: 5
+};
+
 function toNotificationHistory(jsonl: string) {
     return toLiveRtcLifecycleHistory({
         jsonl,
@@ -52,6 +72,15 @@ function toNotificationHistory(jsonl: string) {
         cycle: 8,
         agentIds: ['agent-a', 'agent-b', 'agent-c']
     })['agent-a'];
+}
+
+function toSignalingRow(event: object, name = 'event', agentId = 'agent-a'): string {
+    return JSON.stringify({
+        name,
+        agentId,
+        atEpochMs: 120,
+        value: { topic: 'rallar.browser.alm.inbound_diagnostics', payload: { atEpochMs: 119, data: event } }
+    });
 }
 
 describe('live RTC diagnostic normalization', () => {
@@ -369,5 +398,277 @@ describe('lifecycle notification observations', () => {
                 }
             }]
         });
+    });
+});
+
+describe('RTC signaling evidence correlation', () => {
+    it('joins reversed recorder arrival and repeated identical admission facts without inventing another message', () => {
+        const history = toNotificationHistory([
+            toSignalingRow(dispatchedSignal, 'dispatch'),
+            toSignalingRow(admittedSignal, 'admission'),
+            toSignalingRow(admittedSignal, 'duplicate')
+        ].join('\n'));
+        expect(history).toMatchObject({
+            events: [
+                {
+                    eventId: 'dispatch',
+                    typeId: null,
+                    identifiedTypeId: 'rtc-signaling',
+                    admissionLink: { sourceObserved: 'matched', retained: 'matched' },
+                    queueWaitMs: 0,
+                    intraBatchWaitMs: 0,
+                    durationMs: 0
+                },
+                { eventId: 'admission', dispatchLink: { sourceObserved: 'matched', retained: 'matched' } },
+                { eventId: 'duplicate', dispatchLink: { sourceObserved: 'matched', retained: 'matched' } }
+            ]
+        });
+    });
+
+    it('retains local commit zeros while invalid identities vocabulary and legal numeric overflow remain null', () => {
+        const history = toNotificationHistory(
+            '{"name":"commit","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.alm.outbound_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"commit-phases","senderId":"","msgId":false,"typeId":"rtc-signaling","lane":"private-state","origin":"private-origin","commitOutcome":"private-outcome","readDurationMs":0,"readOperationCount":1e400,"commitDurationMs":-1,"route":{"token":"private-token"},"payload":{"candidate":"private-candidate"},"error":"private-error"}}}}'
+        );
+        expect(history).toMatchObject({
+            observed: { malformedRows: 0, retainedRows: 1 },
+            events: [{
+                eventId: 'commit',
+                senderId: null,
+                msgId: null,
+                typeId: 'rtc-signaling',
+                lane: null,
+                origin: null,
+                commitOutcome: null,
+                readDurationMs: 0,
+                readOperationCount: null,
+                commitDurationMs: null,
+                observation: 'local-admission-store-commit-not-network-delivery'
+            }]
+        });
+        expect(JSON.stringify(history)).not.toContain('private-');
+    });
+
+    it('uses exact durable and volatile lane ownership while excluding foreign workers agents subjects and non-null claim types', () => {
+        const history = toNotificationHistory([
+            toSignalingRow(admittedSignal, 'admission'),
+            toSignalingRow({ ...dispatchedSignal, lane: 'volatile', workerId: 'worker/volatile' }, 'volatile'),
+            toSignalingRow({ ...dispatchedSignal, workerId: 'worker/volatile' }, 'wrong-durable'),
+            toSignalingRow({ ...dispatchedSignal, lane: 'volatile', workerId: 'worker/volatile-extra' }, 'wrong-volatile'),
+            toSignalingRow({ ...dispatchedSignal, subjectMsgId: 'other' }, 'wrong-subject'),
+            toSignalingRow({ ...dispatchedSignal, typeId: 'rtc-signaling' }, 'wrong-type'),
+            toSignalingRow({ ...dispatchedSignal, typeId: undefined }, 'missing-type'),
+            toSignalingRow(dispatchedSignal, 'wrong-agent', 'agent-b')
+        ].join('\n'));
+        expect(history).toMatchObject({
+            observed: { filteredRows: 6, retainedRows: 2 },
+            events: [
+                { eventId: 'admission', dispatchLink: { sourceObserved: 'matched', retained: 'matched' } },
+                { eventId: 'volatile', workerId: 'worker/volatile', lane: 'volatile', admissionLink: { sourceObserved: 'matched', retained: 'matched' } }
+            ]
+        });
+    });
+
+    it('retains RTC identity with ambiguous conflicting type observations and excludes an unqualified claim', () => {
+        const history = toNotificationHistory([
+            toSignalingRow(admittedSignal, 'rtc'),
+            toSignalingRow({ ...admittedSignal, typeId: 'app-message' }, 'app-conflict'),
+            toSignalingRow(dispatchedSignal, 'dispatch'),
+            toSignalingRow({ ...dispatchedSignal, msgId: 'missing', subjectMsgId: 'missing' }, 'unqualified')
+        ].join('\n'));
+        expect(history).toMatchObject({
+            observed: { retainedRows: 2, filteredRows: 2 },
+            events: [
+                { eventId: 'rtc', dispatchLink: { sourceObserved: 'ambiguous', retained: 'ambiguous' } },
+                { eventId: 'dispatch', typeId: null, identifiedTypeId: null, admissionLink: { sourceObserved: 'ambiguous', retained: 'ambiguous' } }
+            ]
+        });
+    });
+
+    it('normalizes bounded identities finite vocabulary and numeric overflow without leaking sensitive extras', () => {
+        const history = toNotificationHistory(
+            [
+                toSignalingRow({
+                    ...admittedSignal,
+                    workerId: 'w'.repeat(257),
+                    msgId: '',
+                    carrier: 'secret-extra',
+                    outcome: 'secret-extra',
+                    reason: 'secret-extra',
+                    payload: { sdp: 'secret-extra' }
+                }, 'invalid'),
+                toSignalingRow({ ...admittedSignal, workerId: 'w'.repeat(256), msgId: 'm'.repeat(256), carrier: 'rtc', outcome: 'pending' }, 'boundary'),
+                toSignalingRow({
+                    ...dispatchedSignal,
+                    attempts: -1,
+                    durationMs: '0',
+                    queueWaitMs: null,
+                    startedAtMs: false,
+                    dueAtMs: -1,
+                    batchStartedAtMs: 0,
+                    effectId: 'e'.repeat(257),
+                    outcome: 'secret-extra',
+                    error: 'secret-extra'
+                }, 'claim'),
+                toSignalingRow(admittedSignal, 'valid')
+            ].join('\n').replace('"queueWaitMs":null', '"queueWaitMs":1e400')
+        );
+        expect(history).toMatchObject({
+            events: [
+                {
+                    eventId: 'invalid',
+                    workerId: null,
+                    msgId: null,
+                    carrier: null,
+                    outcome: null,
+                    dispatchLink: { sourceObserved: 'unknown', retained: 'unknown' }
+                },
+                { eventId: 'boundary', workerId: 'w'.repeat(256), msgId: 'm'.repeat(256), carrier: 'rtc', outcome: 'pending' },
+                {
+                    eventId: 'claim',
+                    effectId: null,
+                    attempts: null,
+                    durationMs: null,
+                    queueWaitMs: null,
+                    startedAtMs: null,
+                    dueAtMs: null,
+                    batchStartedAtMs: 0,
+                    intraBatchWaitMs: null,
+                    outcome: null
+                },
+                { eventId: 'valid' }
+            ]
+        });
+        expect(JSON.stringify(history)).not.toContain('secret-extra');
+    });
+
+    it('shares latest-event row eviction with lifecycle facts and distinguishes evicted admission from source-observed linkage', () => {
+        const lifecycle =
+            '{"name":"lifecycle","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"data":{"kind":"peer-created"}}}}';
+        const history = toNotificationHistory([
+            toSignalingRow(admittedSignal, 'evicted-admission'),
+            ...Array(599).fill(lifecycle),
+            toSignalingRow(dispatchedSignal, 'dispatch')
+        ].join('\n'));
+        expect(history).toMatchObject({
+            coverage: 'incomplete',
+            observed: { retainedRows: 600, outputDroppedRows: 1 },
+            events: expect.arrayContaining([
+                {
+                    streamRow: 601,
+                    eventId: 'dispatch',
+                    agentId: 'agent-a',
+                    kind: 'claim-settled',
+                    controlAtEpochMs: 120,
+                    runtimeAtEpochMs: 119,
+                    workerId: 'worker',
+                    effectId: 'dispatch',
+                    msgId: 'signal',
+                    subjectMsgId: 'signal',
+                    typeId: null,
+                    identifiedTypeId: 'rtc-signaling',
+                    payloadKind: 'dispatch-local',
+                    lane: 'durable',
+                    outcome: 'completed',
+                    attempts: 1,
+                    queueWaitMs: 0,
+                    durationMs: 0,
+                    dueAtMs: 5,
+                    batchStartedAtMs: 5,
+                    startedAtMs: 5,
+                    intraBatchWaitMs: 0,
+                    observation: 'awaited-owned-dispatch-return-not-native-application',
+                    admissionLink: { sourceObserved: 'matched', retained: 'unknown' }
+                }
+            ])
+        });
+        expect(JSON.stringify(history)).not.toContain('evicted-admission');
+    });
+});
+
+describe('shared RTC signaling output and loss limits', () => {
+    it('charges UTF8 bytes once across agent partitions and evicts oldest mixed facts under the shared serialized budget', () => {
+        const workerId = '界'.repeat(247);
+        const msgId = 'ø'.repeat(256);
+        const lifecycle = JSON.stringify({
+            name: 'last-lifecycle',
+            agentId: 'agent-a',
+            atEpochMs: 120,
+            value: { topic: 'rallar.browser.rtc.lifecycle', payload: { atEpochMs: 119, data: { kind: 'peer-timeout' } } }
+        });
+        const rows = [lifecycle];
+        for (let index = 0; index < 300; index += 1) {
+            const agentId = index % 2 === 0 ? 'agent-a' : 'agent-b';
+            rows.push(toSignalingRow({ ...admittedSignal, workerId, msgId }, `admission-${index}`, agentId));
+            rows.push(toSignalingRow({ ...dispatchedSignal, workerId, msgId, subjectMsgId: msgId, effectId: 'é'.repeat(256) }, `claim-${index}`, agentId));
+        }
+        rows.push(lifecycle);
+        const jsonl = rows.join('\n');
+        const histories = toLiveRtcLifecycleHistory({
+            jsonl,
+            bytesRead: Buffer.byteLength(jsonl),
+            retainedBytes: Buffer.byteLength(jsonl),
+            retainedPrefixDropped: false,
+            transportTruncated: false,
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' },
+            cycle: 8,
+            agentIds: ['agent-a', 'agent-b']
+        });
+        const first = requiredJsonRecord(histories['agent-a'], 'agent-a');
+        const second = requiredJsonRecord(histories['agent-b'], 'agent-b');
+        const events = [...requiredJsonArray(first.events, 'events'), ...requiredJsonArray(second.events, 'events')];
+        expect(first).toMatchObject({ observed: { scannedRows: 602, retainedRows: 119, outputDroppedRows: 483, outputBytes: 261116 } });
+        expect(second).toMatchObject({ observed: { retainedRows: 119, outputBytes: 261116 } });
+        expect(events).toHaveLength(119);
+        expect(events.reduce<number>((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0)).toBe(261116);
+        expect(requiredJsonArray(second.events, 'agent-b events')[0]).toMatchObject({ eventId: 'admission-241', streamRow: 484 });
+        expect(JSON.stringify(histories)).not.toContain('admission-240');
+        expect(first).toMatchObject({ events: expect.arrayContaining([expect.objectContaining({ eventId: 'last-lifecycle', streamRow: 602 })]) });
+    });
+
+    it('reports a source-observed dispatch as unknown in retained history when that settlement was evicted', () => {
+        const lifecycle =
+            '{"name":"lifecycle","agentId":"agent-a","atEpochMs":120,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"data":{"kind":"peer-created"}}}}';
+        const history = toNotificationHistory(
+            [toSignalingRow(dispatchedSignal, 'evicted-dispatch'), ...Array(599).fill(lifecycle), toSignalingRow(admittedSignal, 'admission')].join('\n')
+        );
+        expect(history).toMatchObject({
+            observed: { retainedRows: 600, outputDroppedRows: 1 },
+            events: expect.arrayContaining([
+                expect.objectContaining({ eventId: 'admission', dispatchLink: { sourceObserved: 'matched', retained: 'unknown' } })
+            ])
+        });
+        expect(JSON.stringify(history)).not.toContain('evicted-dispatch');
+    });
+
+    it.each(['prefix', 'transport', 'row-cap', 'oversized', 'interval'])('cannot widen %s loss to recover a signaling counterpart', (loss) => {
+        const admission = toSignalingRow(admittedSignal, 'admission');
+        const dispatch = toSignalingRow(dispatchedSignal, 'dispatch');
+        const unrelated = '{"atEpochMs":120,"agentId":"agent-a","value":{"topic":"unrelated","payload":{"data":{}}}}\n';
+        const jsonl = loss === 'prefix'
+            ? admission + '\n' + dispatch + '\n'
+            : loss === 'transport'
+            ? admission + '\n' + dispatch
+            : loss === 'row-cap'
+            ? admission + '\n' + unrelated.repeat(19999) + dispatch
+            : loss === 'oversized'
+            ? toSignalingRow({ ...admittedSignal, payload: 'private'.repeat(3000) }, 'oversized') + '\n' + dispatch
+            : admission.replace('"atEpochMs":120', '"atEpochMs":99') + '\n' + dispatch;
+        const history = toLiveRtcLifecycleHistory({
+            jsonl,
+            bytesRead: Buffer.byteLength(jsonl),
+            retainedBytes: Buffer.byteLength(jsonl),
+            retainedPrefixDropped: loss === 'prefix',
+            transportTruncated: loss === 'transport',
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' },
+            cycle: 8,
+            agentIds: ['agent-a']
+        })['agent-a'];
+        expect(history).toMatchObject({
+            coverage: 'incomplete',
+            events: loss === 'transport'
+                ? [expect.objectContaining({ eventId: 'admission', dispatchLink: { sourceObserved: 'unknown', retained: 'unknown' } })]
+                : []
+        });
+        expect(JSON.stringify(history)).not.toContain('private');
     });
 });

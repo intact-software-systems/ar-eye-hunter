@@ -119,6 +119,108 @@ describe('live RTC control client', () => {
         expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history', 'output']);
     });
 
+    it('preserves existing RTC commit admission and owned dispatch facts at capture HTTP without implying native application', async () => {
+        rtcDiagnosticPeers = [{ peerId: 'session-b', connection: { state: 'Closed', reconnecting: false }, lanes: [] }];
+        recorderJsonl = [
+            '{"name":"commit","agentId":"agent-a","atEpochMs":100,"value":{"topic":"rallar.browser.alm.outbound_diagnostics","payload":{"atEpochMs":99,"data":{"kind":"commit-phases","senderId":"session-a","msgId":"signal-1","typeId":"rtc-signaling","lane":"durable","origin":"send","readDurationMs":2,"readOperationCount":3,"commitDurationMs":4,"commitOutcome":"committed","payload":{"sdp":"secret-signal-sentinel"}}}}}',
+            '{"name":"admission","agentId":"agent-b","atEpochMs":110,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":109,"data":{"kind":"admission-outcome","workerId":"worker-b","msgId":"signal-1","typeId":"rtc-signaling","carrier":"ws","outcome":"committed","reason":"secret-signal-sentinel"}}}}',
+            '{"name":"dispatch","agentId":"agent-b","atEpochMs":120,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":119,"data":{"kind":"claim-settled","workerId":"worker-b","effectId":"dispatch-1","msgId":"signal-1","subjectMsgId":"signal-1","typeId":null,"payloadKind":"dispatch-local","lane":"durable","outcome":"completed","attempts":1,"queueWaitMs":7,"durationMs":5,"dueAtMs":1000,"batchStartedAtMs":1007,"startedAtMs":1010,"error":"secret-signal-sentinel"}}}}',
+            '{"name":"app","agentId":"agent-b","atEpochMs":121,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"admission-outcome","workerId":"worker-b","msgId":"app-1","typeId":"app-message","carrier":"ws","outcome":"committed"}}}}',
+            '{"name":"unqualified","agentId":"agent-b","atEpochMs":122,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"claim-settled","workerId":"worker-b","msgId":"missing","subjectMsgId":"missing","typeId":null,"payloadKind":"dispatch-local","lane":"durable"}}}}',
+            '{"name":"wrong-worker","agentId":"agent-b","atEpochMs":123,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"claim-settled","workerId":"worker-other","msgId":"signal-1","subjectMsgId":"signal-1","typeId":null,"payloadKind":"dispatch-local","lane":"durable"}}}}',
+            '{"name":"wrong-agent","agentId":"agent-c","atEpochMs":124,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"claim-settled","workerId":"worker-b","msgId":"signal-1","subjectMsgId":"signal-1","typeId":null,"payloadKind":"dispatch-local","lane":"durable"}}}}',
+            '{"name":"native-kind","agentId":"agent-a","atEpochMs":125,"value":{"topic":"rallar.browser.alm.outbound_diagnostics","payload":{"data":{"kind":"commit-phases","msgId":"offer-1","typeId":"Offer"}}}}',
+            '{"name":"without-dispatch","agentId":"agent-c","atEpochMs":130,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"admission-outcome","workerId":"worker-c","msgId":"signal-2","typeId":"rtc-signaling","carrier":"ws","outcome":"committed"}}}}',
+            '{"name":"conflicting-rtc","agentId":"agent-c","atEpochMs":131,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"admission-outcome","workerId":"worker-c","msgId":"collision","typeId":"rtc-signaling","carrier":"ws","outcome":"committed"}}}}',
+            '{"name":"conflicting-app","agentId":"agent-c","atEpochMs":132,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"data":{"kind":"admission-outcome","workerId":"worker-c","msgId":"collision","typeId":"app-message","carrier":"ws","outcome":"committed"}}}}',
+            '{"name":"ambiguous-dispatch","agentId":"agent-c","atEpochMs":133,"value":{"topic":"rallar.browser.alm.inbound_diagnostics","payload":{"atEpochMs":132,"data":{"kind":"claim-settled","workerId":"worker-c","effectId":"dispatch-collision","msgId":"collision","subjectMsgId":"collision","typeId":null,"payloadKind":"dispatch-local","lane":"durable","outcome":"completed","attempts":1,"queueWaitMs":3,"durationMs":2,"dueAtMs":2000,"batchStartedAtMs":2003,"startedAtMs":2003}}}}',
+            '{"name":"timeout","agentId":"agent-b","atEpochMs":150,"value":{"topic":"rallar.browser.rtc.lifecycle","payload":{"atEpochMs":149,"data":{"kind":"peer-timeout","atEpochMs":148,"peerId":"session-a","peer":{"peerId":"session-a","connection":{"state":"Connecting","hasRemoteDescription":false},"lanes":[]}}}}}'
+        ].join('\n');
+        const captured = await control.captureDiagnostics({
+            testInfo: { attach: async () => {} },
+            runId: 'signal-evidence',
+            agents: [{ prefix: 'A', agentId: 'agent-a' }, { prefix: 'B', agentId: 'agent-b' }, { prefix: 'C', agentId: 'agent-c' }],
+            label: 'attempt-failure',
+            cycle: 8,
+            failureInterval: { caseId: 'retention-100', startedAtEpochMs: 100, failedAtEpochMs: 150, precision: 'current-cycle-before-close' }
+        });
+        expect(captured.checkpoint.agents[0].details).toMatchObject({
+            lifecycleHistory: {
+                events: [{
+                    eventId: 'commit',
+                    kind: 'commit-phases',
+                    controlAtEpochMs: 100,
+                    runtimeAtEpochMs: 99,
+                    senderId: 'session-a',
+                    msgId: 'signal-1',
+                    typeId: 'rtc-signaling',
+                    lane: 'durable',
+                    origin: 'send',
+                    readDurationMs: 2,
+                    readOperationCount: 3,
+                    commitDurationMs: 4,
+                    commitOutcome: 'committed',
+                    observation: 'local-admission-store-commit-not-network-delivery'
+                }]
+            }
+        });
+        expect(captured.checkpoint.agents[1].details).toMatchObject({
+            diagnostics: { peers: [{ connection: { state: 'Closed' } }] },
+            lifecycleHistory: {
+                nativeApplication: 'unknown',
+                nativeGenerationAndDeletionIssuer: 'unknown',
+                events: [
+                    {
+                        eventId: 'admission',
+                        kind: 'admission-outcome',
+                        workerId: 'worker-b',
+                        carrier: 'ws',
+                        outcome: 'committed',
+                        dispatchLink: { sourceObserved: 'matched', retained: 'matched' }
+                    },
+                    {
+                        eventId: 'dispatch',
+                        kind: 'claim-settled',
+                        typeId: null,
+                        identifiedTypeId: 'rtc-signaling',
+                        workerId: 'worker-b',
+                        effectId: 'dispatch-1',
+                        msgId: 'signal-1',
+                        subjectMsgId: 'signal-1',
+                        controlAtEpochMs: 120,
+                        runtimeAtEpochMs: 119,
+                        queueWaitMs: 7,
+                        durationMs: 5,
+                        dueAtMs: 1000,
+                        batchStartedAtMs: 1007,
+                        startedAtMs: 1010,
+                        intraBatchWaitMs: 3,
+                        observation: 'awaited-owned-dispatch-return-not-native-application',
+                        admissionLink: { sourceObserved: 'matched', retained: 'matched' }
+                    },
+                    { eventId: 'timeout', peerObservation: { connection: { state: 'Connecting', hasRemoteDescription: false } } }
+                ]
+            }
+        });
+        expect(captured.checkpoint.agents[2].details).toMatchObject({
+            lifecycleHistory: {
+                events: [
+                    { eventId: 'without-dispatch', dispatchLink: { sourceObserved: 'unknown', retained: 'unknown' } },
+                    { eventId: 'conflicting-rtc', dispatchLink: { sourceObserved: 'ambiguous', retained: 'ambiguous' } },
+                    {
+                        eventId: 'ambiguous-dispatch',
+                        typeId: null,
+                        identifiedTypeId: null,
+                        admissionLink: { sourceObserved: 'ambiguous', retained: 'ambiguous' }
+                    }
+                ]
+            }
+        });
+        expect(JSON.stringify(captured)).not.toContain('secret-signal-sentinel');
+        expect(recorderReads).toBe(1);
+        expect(captureEffects).toEqual(['health:agent-a', 'health:agent-b', 'health:agent-c', 'history']);
+    });
+
     it('preserves facade-current-at-notification peer and lane observations through real capture HTTP', async () => {
         rtcDiagnosticPeers = [{ peerId: 'session-b', connection: { state: 'Closed', reconnecting: false }, lanes: [] }];
         recorderJsonl = [
@@ -274,6 +376,8 @@ describe('live RTC control client', () => {
     });
 
     it('performs no supplemental recorder read for ordinary checkpoints', async () => {
+        recorderJsonl =
+            '{"name":"ordinary-commit","agentId":"agent-a","atEpochMs":100,"value":{"topic":"rallar.browser.alm.outbound_diagnostics","payload":{"data":{"kind":"commit-phases","msgId":"ordinary-signal","typeId":"rtc-signaling"}}}}';
         const captured = await control.captureDiagnostics({
             testInfo: { attach: async () => {} },
             runId: 'ordinary-capture',

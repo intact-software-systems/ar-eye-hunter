@@ -158,10 +158,48 @@ live exercised.
 R3 retains B-side establishment/lane-open, opposite C-side timeout, then B-side
 lane loss. The canonical facade event already carries peer/lane status, but the
 projector discarded it. Later health cannot recover C's local state at that
-notification. Task 19 therefore preserves only those existing bounded event
-observations; Task 20 will prove the reviewed head. Recorder origin, native
-generation, deletion issuer and RTC causality remain unknown. No policy change,
-accepted metric, new checked-in corpus count or completed E3 baseline follows.
+notification. Task 19 delivered their bounded preservation in the existing pure
+projector. Final independent specification review passed and quality was approved
+on `7214bdd0288005bac4f34c4964f995adaa188d4e`, after an import-only correction
+closed the sole Minor finding; no findings remain. The retained 105 passing tests
+across nine files and 1,434 enforced test files with zero type errors belong to
+pre-fix `8739df12f7a39d89d7e78acd42be76914617823d`; the import-only final head
+received formatter, diff and complete import-layout verification, without a new
+semantic/typecheck claim.
+
+Task 20's exact-head non-publishing diagnostic
+[37130139368](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/37130139368),
+attempt 1 on `7214bdd0288005bac4f34c4964f995adaa188d4e`, is terminal
+COMPLETED/FAILURE. Source passed; all three diagnostic jobs failed; accepted
+capture/publication skipped. Watcher 94391 is retired and no producer remains.
+Independent verification matched all 81 original files, 4,081,384 inner bytes,
+complete inventories, hashes and source. Outer ZIP digests are GitHub-recorded,
+not locally recomputed. Twelve scenarios passed, three original retention
+failures occurred at cycles 5/7/1, and twelve gated executions skipped. Every
+failure preserved complete three-agent later health and its frozen inclusive
+current-cycle-before-close interval.
+
+The 100 useful events occupy 117,722 serialized bytes. All 94 peer-specific and
+34 direct-lane observations match their event identities; ten timeout
+notifications show locally non-established state and six establishment
+notifications have an open lane. Each runner reports 12 oversized rows; R2 also
+reports prefix loss. No output eviction, row cap, transport or deadline limit
+fired. Twenty-seven non-failure snapshots suppress history. These archives prove
+normal collection/publication paths and current notification state; rare
+output/transport/direct-spec finalizer faults remain source/unit scope. They do
+not prove an incorrect timeout guard or the native establishment cause.
+
+The next missing fact is where existing signaling work stops before native
+application. Canonical recorder producers already emit RTC AL local
+commit-phases, remote admission-outcome, and owned dispatch claim-settled rows;
+the lifecycle-only projection omitted them and uploaded summaries retain only
+counts. Source-proven availability does not reconstruct omitted original rows.
+Task 21 preserves bounded allowlisted facts at the existing consumer, and Task
+22 proves its independently reviewed exact head. Recorder origin/continuity,
+native application/generation, deletion issuer, cross-agent causal order and
+one-way network latency remain unknown. No runtime policy change, accepted
+primary/repeat, E1 reconciliation, ranking completion, new checked-in corpus
+count or completed E3 baseline follows.
 
 Newer merged ALM work [#627](https://github.com/intact-software-systems/ar-eye-hunter/pull/627),
 [#628](https://github.com/intact-software-systems/ar-eye-hunter/pull/628),
@@ -228,6 +266,17 @@ AppInbox, durable authority, optimistic convergence, named effects, and existing
 transaction/retry semantics. Measurement never bypasses those boundaries.
 Room-scoped consumer examples remain at `examples/room-realtime-channel/README.md`
 and `examples/room-message-channel/README.md`.
+
+The RTC AL evidence path begins at
+`packages/shared/alm/outbound/al-outbound-commit-phases.ts#toEvent`,
+`packages/shared/alm/inbound/al-inbound-message-runtime.ts#recordAdmissionOutcome`
+and `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts#recordClaimSettled`.
+`al-inbound-runtime-diagnostics.ts#toALInboundClaimIdentity` owns message identity;
+`black-box-rallar-diagnostics.ts#createBlackBoxRallarDiagnosticsPorts` emits through
+the existing runtime recorder. `AppTopics.rtcSignaling` owns `rtc-signaling`;
+native Offer/Answer/IceCandidate kinds are separate. The private consumer remains
+`tests/playwright/rallar-black-box/live-rtc-agent-diagnostics.ts`, exercised by its
+pure tests and literal `live-rtc-control-client.test.ts` capture HTTP boundary.
 
 ## 4. Implemented Harness Coverage And Timing Boundaries
 
@@ -954,109 +1003,106 @@ justified yet.”
 
 ## 10. Delivered Outcomes And Remaining Acceptance
 
-| Task    | Delivered outcome / remaining state                                                                                                                                                                                                         |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                       |
-| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                                                             |
-| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                                                       |
-| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                                                  |
-| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                                                   |
-| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                                                       |
-| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                              |
-| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                               |
-| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                  |
-| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                    |
-| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                       |
-| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Task 19 event observations and Task 20 proof come next. |
-| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                         |
-| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                    |
-| 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                           |
-| 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                        |
+| Task    | Delivered outcome / remaining state                                                                                                                                                                                                                                                                                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0       | Execution authorization and initial foundations delivered; no renewed exact-blob activation ceremony.                                                                                                                                                                                                                              |
+| 1       | One canonical dense artifact/configuration/identity/accounting/finalization boundary delivered.                                                                                                                                                                                                                                    |
+| 2       | B01 signaling/ICE/listener workers and semantic assertions delivered.                                                                                                                                                                                                                                                              |
+| 3       | B02 queue replacement/drain/close/error workers delivered.                                                                                                                                                                                                                                                                         |
+| 4       | B03 topology/RTT/filter/inactive-churn workers delivered.                                                                                                                                                                                                                                                                          |
+| 4A / 4B | Private package ownership and standards/legacy review delivered; current canonical owners replace old scripts. No relocation/migration slice remains.                                                                                                                                                                              |
+| 5       | B04 multicast/group/cache/heartbeat instrumentation delivered.                                                                                                                                                                                                                                                                     |
+| 6       | B05 per-iteration native lifecycle instrumentation delivered.                                                                                                                                                                                                                                                                      |
+| 7       | Measurement gates/source-fingerprint tooling delivered. Current captures use their own immutable source snapshot, not a final-main anchor.                                                                                                                                                                                         |
+| 8       | E1 capture unverified: recover and validate retained evidence or perform governed capture after representative E3 succeeds. Tool availability cannot mark this complete.                                                                                                                                                           |
+| 9       | E2 stream active with 31 checked-in passed observations; five recovered Sep 28–Oct 2 archives are proposed in PRs #634–638. Retain noisy/inconclusive classification.                                                                                                                                                              |
+| 10      | E3 has no accepted primary/repeat. Run 37108696378 recovery is proposed in PR #639. Tasks 17/18 delivered reviewed bounded lifecycle preservation and exact-head normal-path proof; Tasks 19/20 delivered independently approved event observations and exact-head normal-path proof; bounded AL evidence and its proof come next. |
+| 11      | B07 held pending its separate human decision; no remote run in the current horizon.                                                                                                                                                                                                                                                |
+| 12      | Ranking gated on accepted E3 and required repeat plus reconciled relevant E1/E2 evidence; E4 remains conditional to the exact candidate.                                                                                                                                                                                           |
+| 17      | Bounded canonical lifecycle preservation delivered and independently approved with zero findings; one shared sanitized sequence, completed-health-first and failure-only capture.                                                                                                                                                  |
+| 18      | Exact-head non-publishing proof delivered: run 37123318628 attempt 1, source bbf0f6b007a85234f9b9e970ab535ff3b4b391e2, all 82 files verified, 122 useful events; normal-path scope and incomplete coverage retained.                                                                                                               |
+| 19      | Existing peer/lane notification observations delivered; final independent specification PASS and quality APPROVED after the import-only fix, zero remaining findings. Retained 105 tests / 1,434-file zero-error typecheck are attributed to the pre-fix source.                                                                   |
+| 20      | Exact-head non-publishing proof delivered: run 37130139368 attempt 1 on 7214bdd0288005bac4f34c4964f995adaa188d4e, 81 verified original files / 4,081,384 inner bytes, 100 useful events / 117,722 bytes; all three original retention failures and honest losses preserved, watcher retired.                                       |
 
 ## 11. Next Two Useful Slices
 
-### Task 19: Preserve existing lifecycle event observations and obtain independent review
+### Task 21: Preserve bounded existing RTC AL evidence and obtain independent review
 
-**Files:** The existing pure agent diagnostic projector and its actual
-`captureDiagnostics` HTTP/projection tests, plus this plan refresh. The recorder,
-HTTP reader, frozen failure interval, canonical spec finalizer, workflow, runtime
-and public contracts keep their existing ownership and behavior.
+**Files:** The existing pure agent diagnostics projector and literal capture HTTP
+and pure projection tests, plus this factual plan refresh. Recorder, HTTP reader,
+canonical spec finalizer, workflow and native/public producers keep their owners.
 
-**Behavior:** Extend only `agents[].details.lifecycleHistory.events` from the
-canonical `value.payload.data.peer` and `.lane`. Match bounded peer/lane identities
-to each event; preserve finite allowlisted wrapper/native connection, ICE,
-gathering and signaling states; description presence, makingOffer, pending ICE,
-and the eight canonical offer/answer/ICE/signaling-error counts; and bounded lane
-identity, actual open/reconnectable booleans and native readyState. Invalid or
-missing fields and observations remain null, with genuine zero distinct from
-unavailable. No fallback to event.status.peers or later health is allowed.
+**Behavior:** Preserve allowlisted `rallar.browser.alm.outbound_diagnostics`
+commit-phases and `rallar.browser.alm.inbound_diagnostics` admission-outcome for
+positively typed `AppTopics.rtcSignaling` (`rtc-signaling`). Qualify dispatch-local
+claim-settled with its canonical equal msgId/subjectMsgId, null typeId and an RTC
+admission in the same emitting agent and exact lane/worker ownership: durable
+uses the carrier effectWorkerId; volatile uses exactly its `/volatile` child.
+Missing/null type is not a wildcard. Exclude unrelated AL/app/control traffic
+and unqualified claims. Preserve source observations and repeated admission
+facts; conflicting admission types stay ambiguous. Report source-observed versus
+retained counterpart linkage separately when eviction removes a row. Do not
+fabricate sender-peer, OfferID or native-generation pairing.
 
-Label observations `facade-current-at-notification`: deferred peer-deleted can
-observe a replacement, not the original deleted native resource. Keep native
-generation/deletion issuer unknown and control/runtime/browser clocks separate;
-retained stream order is not causal order. Exclude raw roots, arbitrary reasons
-and errors, SDP/ICE contents/addresses/candidates, stream IDs, full call counters,
-environment values and credentials. No new native hook, token, public DTO,
-archive/protocol migration, history store or duplicate collector is authorized.
+Keep local admission-store commit distinct from network delivery, remote admitted
+owned work distinct from dispatch, and awaited owned dispatch return distinct
+from native application. Receiver error catches and native retirement can release
+the dispatch caller. Keep AL producer clock/timing, runtime emitter clock and
+control-event clock distinct; queueWaitMs is clamped batchStartedAtMs minus
+dueAtMs, intra-batch wait is startedAtMs minus batchStartedAtMs, and durationMs
+surrounds the awaited effect. Native application, generation and deletion issuer
+remain unknown. Missing settlement cannot prove signaling loss or blocked work.
 
-Keep limits verbatim: 64 MiB accepted HTTP response / 30 seconds; 8 MiB suffix
-of accepted bytes; last 20,000 nonblank rows / 16 KiB per row; latest 600 events /
-256 KiB serialized event output; identities at most 256 characters. Added fields
-count toward the same output budget and oldest-event eviction. New peer-lane
-traversal is explicitly array-checked and bounded by the accepted 16 KiB JSON
-row (each element consumes serialized bytes); this is no total-allocation or
-network-buffer promise. Preserve inclusive frozen intervals, existing loss flags,
-unknown/incomplete/unavailable semantics and actual three-agent partitioning.
+Keep bounds verbatim: accepted HTTP 67,108,864 bytes / 30,000 ms; retained suffix
+8,388,608 bytes; last 20,000 nonblank rows / 16,384 bytes per source row; latest
+600 permitted events / 262,144 serialized event-output bytes; identities at most
+256 characters. Correlation fields share the same event budget and oldest-event
+eviction. The temporary compact identity index is bounded by those selected
+source rows; no new collector, emitter, read, persistent store or uncapped buffer.
+Keep inclusive frozen interval, real agent partitions, lifecycle observations,
+later health, all accounting/loss flags and unknown/incomplete/unavailable
+coverage. Exclude raw signal roots, SDP/candidates/addresses/ICE contents, route,
+payload/content, arbitrary reasons/errors, credentials and environment values.
 
-- [x] Implement literal real-HTTP semantic RED/GREEN for established/open,
-      opposite-side timeout with distinct local state, and later deferred deleted
-      notification with replacement state; independently assert observations,
-      clocks/order and deliberately different later health. Cover missing,
-      mismatched, oversized and invalid observations, zeros, privacy, JSON numeric
-      overflow and unchanged latest-event byte eviction.
-- [ ] Obtain fresh independent review after final affected tests, maintained
-      `npm run typecheck:tests`, and full-file closure. Every changed authored file
+- [x] Witness literal semantic RED at actual capture HTTP for missing commit,
+      admission and dispatch facts; obtain minimum GREEN and mixed-event
+      identity/privacy/clock/ownership/linkage/loss/byte/row regression coverage.
+- [ ] Obtain fresh independent specification/quality review after covering final
+      checks and maintained `npm run typecheck:tests`. Every changed authored file
       is reviewed/remediated in full; every modified remediation support file
       enters closure recursively; independent untouched code remains outside
-      closure. No new affected legacy retention is authorized. This local
-      implementation does not self-certify independent review or live proof.
+      closure. No affected legacy retention is authorized. Local implementation
+      cannot self-certify independent review or live proof.
 
-**Exit:** Reviewed event observation preservation at the existing diagnostic
-boundary. Completed-health-first, one failure-only request, success/ordinary/
-periodic suppression, optional-output independence, original rejection precedence
-and canonical cleanup remain required. No retry/watchdog/timer/readiness budget,
-workload/sample or native correctness correction is earned by these observations.
+**Exit:** Independently reviewed bounded private evidence projection. One completed
+three-agent health capture precedes one failure-only recorder read; frozen end
+precedes finalizer health/cleanup. Success/ordinary/periodic suppression, real
+cycle/phase, optional-output independence, original readiness rejection and
+mandatory cleanup/evidence failures remain visible. No retry/watchdog/timer,
+readiness budget, workload/sample/environment or native-policy change is earned.
 
-### Task 20: Prove exact-head observations without publishing accepted metrics
+### Task 22: Prove exact-head AL evidence without publishing accepted metrics
 
-**Files:** Controller-owned exact-head non-publishing diagnostic execution and
-ignored retained-artifact analysis of the freshly independently reviewed head.
+**Files:** Controller-owned exact-head non-publishing proof and ignored original
+artifact analysis, after Task 21 clean independent review and exact remote feature
+SHA with no live producer. No producer is authorized by the implementation slice.
 
-- [ ] Verify exact source provenance, complete inventories/inner hashes, privacy,
-      three-agent health, useful requested-window observations and honest losses
-      before finalizer cleanup. Check timeout-local state, establishment/lane-loss
-      transitions and deferred deleted-current observations only when retained;
-      record unavailable facts explicitly. Do not infer a shared generation,
-      clock causality or deletion issuer from identities or later health.
-- [ ] Preserve the first scenario failure, cycle and original rejection; verify
-      success/periodic suppression and absence of raw recorder storage from
-      uploads. Separate normal-path live evidence from unexercised deadline,
-      transport/output/direct-spec cleanup fault branches. No producer green or
-      partial retention result establishes cycle 100 or accepted E3 metrics.
+- [ ] Verify exact source, complete original inventories/inner hashes and privacy;
+      inspect useful positively identified RTC commit/admission/dispatch facts
+      when actually retained, honest source-versus-retained links, event budgets,
+      timeout-local observations and complete three-agent later health in the
+      frozen window. Do not reconstruct absent rows or widen a loss boundary.
+- [ ] Preserve original first scenario failure, cycle and rejection; verify normal
+      success/periodic suppression and keep unexercised transport/output/rare
+      direct-spec faults in source/unit scope. No partial run proves cycle 100,
+      native application, accepted E3 primary/repeat or baseline completion.
 
-**Exit:** Honest exact-head proof and first-failure analysis. Any further runtime
-correction needs its own causally earned semantic RED, closure and independent
-review; a separately unmet public/persisted/protocol requirement requires an
-explicit compatibility decision before expansion.
-
-Accepted E3 capture remains outcome-gated: preserve default 1/5, all-scenarios
-1/3, retention-100 1/3 and canonical required-repeat rules. After representative
-E3 succeeds, recover/verify relevant E1 or capture the governed B01-B04 matrix.
-Task 12 selects explicit B05 IDs/window and B06 identity, verifies every selected
-archive, preserves failures/confounders and keeps source/environment distributions
-separate. A database-backed candidate requires accepted E4-pg primary/repeat;
-otherwise retain its nonempty not-required reason. Rank at most one candidate or
-`none` under Section 9 for the human completion decision. B07 remains held.
+**Exit:** Honest exact-head proof and first-failure analysis. Any further native
+correction requires a causally earned semantic RED, full closure and independent
+review. A real public/persisted/protocol conflict requires explicit compatibility
+direction. Full B01–B06 acceptance, E1 reconciliation, required E3 repeat, ranking
+and human completion remain required; B07 stays held and E4 conditional. No
+accepted workload/noise/accounting/completion gate is changed by this horizon.
 
 ## 12. Baseline Completion Gate
 

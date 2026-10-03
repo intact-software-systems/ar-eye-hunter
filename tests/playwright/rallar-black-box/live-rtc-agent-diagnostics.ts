@@ -1,6 +1,7 @@
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import type { RallarRtcLifecycleKind } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarRoomTransportState } from '../../../packages/shared-web/browser/rallar-rtc-facade.ts';
+import { AppTopics } from '../../../packages/shared/api/api-config.ts';
 import { isGroupLayoutIdentity } from '../../../packages/shared/api/group-lifecycle/group-layout-identity.ts';
 import { GROUP_LIFECYCLE_STATES } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
@@ -75,6 +76,43 @@ interface LiveRtcLifecycleScanWindow {
     readonly firstStreamRow: number;
     readonly rowLimitReached: boolean;
 }
+
+interface LiveRtcEventRetention {
+    readonly droppedRows: number;
+    readonly outputBytes: number;
+}
+
+interface LiveRtcRecorderLine {
+    readonly line: string;
+    readonly streamRow: number;
+}
+
+interface LiveRtcScopedRecorderEvent {
+    readonly agentId: string;
+    readonly topic: string | null;
+    readonly event: LiveRtcJsonRecord;
+    readonly controlAtEpochMs: number;
+    readonly runtimeAtEpochMs: number | null;
+    readonly eventId: string | null;
+    readonly streamRow: number;
+}
+
+interface LiveRtcSignalingIdentityObservations {
+    readonly rtcAdmission: boolean;
+    readonly conflictingAdmission: boolean;
+    readonly dispatch: boolean;
+}
+
+type LiveRtcSignalingLink = 'matched' | 'ambiguous' | 'unknown';
+
+const RTC_AL_OUTBOUND_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
+const RTC_AL_INBOUND_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
+const AL_LANES = ['durable', 'volatile'] as const;
+const AL_COMMIT_ORIGINS = ['send', 'drain', 'repair'] as const;
+const AL_COMMIT_OUTCOMES = ['committed', 'conflict', 'expired', 'not-attempted'] as const;
+const AL_CARRIERS = ['rtc', 'ws'] as const;
+const AL_ADMISSION_OUTCOMES = ['committed', 'not-handled', 'rejected', 'unauthorized', 'pending'] as const;
+const AL_CLAIM_OUTCOMES = ['completed', 'non-retryable', 'retry', 'not-ready'] as const;
 
 const RTC_LIFECYCLE_KINDS: Readonly<Record<RallarRtcLifecycleKind, true>> = {
     snapshot: true,
@@ -375,23 +413,28 @@ export function compareLaneStates(
 export function toLiveRtcLifecycleHistory(
     input: LiveRtcLifecycleHistoryInput
 ): Readonly<Record<string, RtcBaselineJson>> {
-    const scan: LiveRtcLifecycleScan = {
-        events: [],
-        scannedRows: 0,
-        filteredRows: 0,
-        malformedRows: 0,
-        oversizedRows: 0,
-        outputDroppedRows: 0,
-        outputBytes: 0,
-        rowLimitReached: false,
-        firstControlAtEpochMs: null,
-        lastControlAtEpochMs: null
-    };
-    scanLiveRtcLifecycleRows(input, scan);
-    const history = {
+    // The compact identity index is bounded by the same <=20,000 selected rows, never by an extra read.
+    const sourceIdentities = computeLiveRtcSignalingIdentities(input);
+    const scanned = computeLiveRtcDiagnosticScan(input, sourceIdentities);
+    const scan = computeRetainedLiveRtcSignalingLinks(scanned, sourceIdentities);
+    const history = toLiveRtcLifecycleHistoryMetadata(input, scan);
+    return Object.fromEntries(input.agentIds.map((agentId) => [
+        agentId,
+        normalizeJson({
+            ...history,
+            events: scan.events.filter((event) => event.agentId === agentId)
+        })
+    ]));
+}
+
+function toLiveRtcLifecycleHistoryMetadata(
+    input: LiveRtcLifecycleHistoryInput,
+    scan: LiveRtcLifecycleScan
+): LiveRtcJsonRecord {
+    return {
         coverage: computeLiveRtcLifecycleCoverage(input, scan),
         recorderOrigin: 'unknown',
-        requestedInterval: input.failureInterval,
+        requestedInterval: normalizeJson(input.failureInterval),
         cycle: input.cycle,
         windowClock: 'control-event-atEpochMs',
         timestampPrecision: 'producer-clocks-not-recorder-receipt',
@@ -402,6 +445,10 @@ export function toLiveRtcLifecycleHistory(
         rowSelection: 'last-retained-rows',
         eventSelection: 'latest-permitted-events-in-stream-order',
         nativeGenerationAndDeletionIssuer: 'unknown',
+        nativeApplication: 'unknown',
+        signalingClock: 'AL-producer-clock-separate-from-runtime-emission-and-control-event',
+        signalingJoin: 'same-agent-message-exact-lane-worker-all-admission-types-agree-duplicates-preserved',
+        signalingIndexSelection: 'compact-identities-from-at-most-20000-selected-source-rows',
         limits: LIVE_RTC_LIFECYCLE_LIMITS,
         failure: input.jsonl === null ? 'RTC lifecycle recorder history unavailable.' : null,
         observed: {
@@ -421,13 +468,6 @@ export function toLiveRtcLifecycleHistory(
             lastControlAtEpochMs: scan.lastControlAtEpochMs
         }
     };
-    return Object.fromEntries(input.agentIds.map((agentId) => [
-        agentId,
-        normalizeJson({
-            ...history,
-            events: scan.events.filter((event) => event.agentId === agentId)
-        })
-    ]));
 }
 
 function computeLiveRtcLifecycleCoverage(
@@ -444,20 +484,24 @@ function computeLiveRtcLifecycleCoverage(
         : 'unknown';
 }
 
-function scanLiveRtcLifecycleRows(input: LiveRtcLifecycleHistoryInput, scan: LiveRtcLifecycleScan): void {
-    const jsonl = input.jsonl ?? '';
-    const window = computeLiveRtcLifecycleScanWindow(input);
-    scan.rowLimitReached = window.rowLimitReached;
-    let streamRow = window.firstStreamRow;
-    for (let cursor = window.startedAt; cursor < window.endedAt;) {
-        const delimiter = jsonl.indexOf('\n', cursor);
-        const endedAt = delimiter < 0 ? window.endedAt : Math.min(delimiter, window.endedAt);
-        const line = jsonl.slice(cursor, endedAt);
-        cursor = endedAt + 1;
-        const row = streamRow++;
-        if (line.trim().length === 0) {
-            continue;
-        }
+function computeLiveRtcDiagnosticScan(
+    input: LiveRtcLifecycleHistoryInput,
+    sourceIdentities: ReadonlyMap<string, LiveRtcSignalingIdentityObservations>
+): LiveRtcLifecycleScan {
+    const scan: LiveRtcLifecycleScan = {
+        events: [],
+        scannedRows: 0,
+        filteredRows: 0,
+        malformedRows: 0,
+        oversizedRows: 0,
+        outputDroppedRows: 0,
+        outputBytes: 0,
+        rowLimitReached: false,
+        firstControlAtEpochMs: null,
+        lastControlAtEpochMs: null
+    };
+    scan.rowLimitReached = computeLiveRtcLifecycleScanWindow(input).rowLimitReached;
+    for (const { line, streamRow } of toLiveRtcRecorderLines(input)) {
         scan.scannedRows += 1;
         if (Buffer.byteLength(line) > LIVE_RTC_LIFECYCLE_LIMITS.rowBytes) {
             scan.oversizedRows += 1;
@@ -473,23 +517,51 @@ function scanLiveRtcLifecycleRows(input: LiveRtcLifecycleHistoryInput, scan: Liv
             scan.firstControlAtEpochMs ??= controlAtEpochMs;
             scan.lastControlAtEpochMs = controlAtEpochMs;
         }
-        const event = toLiveRtcLifecycleEvent(decoded, input, row);
+        const scoped = toLiveRtcScopedRecorderEvent(decoded, input, streamRow);
+        const event = scoped ? toLiveRtcDiagnosticEvent(scoped, sourceIdentities) : null;
         if (!event) {
             scan.filteredRows += 1;
             continue;
         }
-        const bytes = Buffer.byteLength(JSON.stringify(event));
         scan.events.push(event);
-        scan.outputBytes += bytes;
-        while (
-            scan.events.length > LIVE_RTC_LIFECYCLE_LIMITS.retainedRows ||
-            scan.outputBytes > LIVE_RTC_LIFECYCLE_LIMITS.eventOutputBytes
-        ) {
-            const dropped = scan.events.shift();
-            scan.outputBytes -= Buffer.byteLength(JSON.stringify(dropped));
-            scan.outputDroppedRows += 1;
+        scan.outputBytes += Buffer.byteLength(JSON.stringify(event));
+        const retention = computeLiveRtcEventRetention(scan.events, scan.outputBytes);
+        scan.events.splice(0, retention.droppedRows);
+        scan.outputDroppedRows += retention.droppedRows;
+        scan.outputBytes = retention.outputBytes;
+    }
+    return scan;
+}
+
+function* toLiveRtcRecorderLines(input: LiveRtcLifecycleHistoryInput): Generator<LiveRtcRecorderLine> {
+    const jsonl = input.jsonl ?? '';
+    const window = computeLiveRtcLifecycleScanWindow(input);
+    let streamRow = window.firstStreamRow;
+    for (let cursor = window.startedAt; cursor < window.endedAt;) {
+        const delimiter = jsonl.indexOf('\n', cursor);
+        const endedAt = delimiter < 0 ? window.endedAt : Math.min(delimiter, window.endedAt);
+        const line = jsonl.slice(cursor, endedAt);
+        cursor = endedAt + 1;
+        const row = streamRow++;
+        if (line.trim().length > 0) {
+            yield { line, streamRow: row };
         }
     }
+}
+
+function computeLiveRtcEventRetention(
+    events: readonly LiveRtcJsonRecord[],
+    outputBytes: number
+): LiveRtcEventRetention {
+    let droppedRows = 0;
+    let retainedBytes = outputBytes;
+    while (
+        events.length - droppedRows > LIVE_RTC_LIFECYCLE_LIMITS.retainedRows ||
+        retainedBytes > LIVE_RTC_LIFECYCLE_LIMITS.eventOutputBytes
+    ) {
+        retainedBytes -= Buffer.byteLength(JSON.stringify(events[droppedRows++]));
+    }
+    return { droppedRows, outputBytes: retainedBytes };
 }
 
 function computeLiveRtcLifecycleScanWindow(input: LiveRtcLifecycleHistoryInput): LiveRtcLifecycleScanWindow {
@@ -539,42 +611,254 @@ function toLiveRtcRecorderRow(line: string): LiveRtcJsonRecord | null {
     }
 }
 
-function toLiveRtcLifecycleEvent(
+function toLiveRtcScopedRecorderEvent(
     row: LiveRtcJsonRecord,
     input: LiveRtcLifecycleHistoryInput,
     streamRow: number
-): LiveRtcJsonRecord | null {
+): LiveRtcScopedRecorderEvent | null {
     const runtime = jsonRecord(row.value);
     const diagnostic = jsonRecord(runtime?.payload);
     const event = jsonRecord(diagnostic?.data);
     const agentId = toBoundedIdentity(row.agentId);
     const controlAtEpochMs = toFiniteNonnegativeObservation(row.atEpochMs);
-    const peerId = toBoundedIdentity(event?.peerId);
-    const laneId = toBoundedIdentity(event?.laneId);
     if (
-        !agentId || !input.agentIds.includes(agentId) || runtime?.topic !== 'rallar.browser.rtc.lifecycle' ||
-        !event || typeof event.kind !== 'string' || !Object.hasOwn(RTC_LIFECYCLE_KINDS, event.kind) ||
-        controlAtEpochMs === null || controlAtEpochMs < input.failureInterval.startedAtEpochMs ||
+        !agentId || !input.agentIds.includes(agentId) || !event || controlAtEpochMs === null ||
+        controlAtEpochMs < input.failureInterval.startedAtEpochMs ||
         controlAtEpochMs > input.failureInterval.failedAtEpochMs
     ) {
         return null;
     }
     return {
-        streamRow,
-        eventId: toBoundedIdentity(row.name),
         agentId,
-        kind: event.kind,
+        event,
+        streamRow,
         controlAtEpochMs,
+        topic: typeof runtime?.topic === 'string' ? runtime.topic : null,
         runtimeAtEpochMs: toFiniteNonnegativeObservation(diagnostic?.atEpochMs),
+        eventId: toBoundedIdentity(row.name)
+    };
+}
+
+function toLiveRtcDiagnosticEvent(
+    scoped: LiveRtcScopedRecorderEvent,
+    sourceIdentities: ReadonlyMap<string, LiveRtcSignalingIdentityObservations>
+): LiveRtcJsonRecord | null {
+    const { event, topic } = scoped;
+    const identity = {
+        streamRow: scoped.streamRow,
+        eventId: scoped.eventId,
+        agentId: scoped.agentId,
+        kind: event.kind ?? null,
+        controlAtEpochMs: scoped.controlAtEpochMs,
+        runtimeAtEpochMs: scoped.runtimeAtEpochMs
+    };
+    if (topic === RTC_AL_OUTBOUND_TOPIC && event.kind === 'commit-phases' && event.typeId === AppTopics.rtcSignaling) {
+        return { ...identity, ...toLiveRtcSignalingCommit(event) };
+    }
+    if (topic === RTC_AL_INBOUND_TOPIC) {
+        const signaling = toLiveRtcSignalingInbound(event, scoped.agentId, sourceIdentities);
+        return signaling ? { ...identity, ...signaling } : null;
+    }
+    if (
+        topic !== 'rallar.browser.rtc.lifecycle' || typeof event.kind !== 'string' ||
+        !Object.hasOwn(RTC_LIFECYCLE_KINDS, event.kind)
+    ) {
+        return null;
+    }
+    const peerId = toBoundedIdentity(event.peerId);
+    const laneId = toBoundedIdentity(event.laneId);
+    return {
+        ...identity,
         browserAtEpochMs: toFiniteNonnegativeObservation(event.atEpochMs),
         peerId,
         laneId,
         observation: 'facade-current-at-notification',
         peerObservation: toLifecyclePeerObservation(event.peer, peerId),
-        laneObservation: laneId === null
-            ? null
-            : toLifecycleLaneObservation(event.lane, peerId, laneId)
+        laneObservation: laneId === null ? null : toLifecycleLaneObservation(event.lane, peerId, laneId)
     };
+}
+
+function toLiveRtcSignalingCommit(event: LiveRtcJsonRecord): LiveRtcJsonRecord {
+    return {
+        senderId: toBoundedIdentity(event.senderId),
+        msgId: toBoundedIdentity(event.msgId),
+        typeId: AppTopics.rtcSignaling,
+        lane: toAllowedLifecycleState(event.lane, AL_LANES),
+        origin: toAllowedLifecycleState(event.origin, AL_COMMIT_ORIGINS),
+        commitOutcome: toAllowedLifecycleState(event.commitOutcome, AL_COMMIT_OUTCOMES),
+        readDurationMs: toFiniteNonnegativeObservation(event.readDurationMs),
+        readOperationCount: toFiniteNonnegativeObservation(event.readOperationCount),
+        commitDurationMs: toFiniteNonnegativeObservation(event.commitDurationMs),
+        observation: 'local-admission-store-commit-not-network-delivery'
+    };
+}
+
+function toLiveRtcSignalingInbound(
+    event: LiveRtcJsonRecord,
+    agentId: string,
+    sourceIdentities: ReadonlyMap<string, LiveRtcSignalingIdentityObservations>
+): LiveRtcJsonRecord | null {
+    const key = toLiveRtcInboundIdentityKey(event, agentId);
+    const observations = key === null ? undefined : sourceIdentities.get(key);
+    const link = { sourceObserved: resolveLiveRtcSignalingLink(observations), retained: 'unknown' };
+    if (event.kind === 'admission-outcome' && event.typeId === AppTopics.rtcSignaling) {
+        return {
+            workerId: toBoundedIdentity(event.workerId),
+            msgId: toBoundedIdentity(event.msgId),
+            typeId: AppTopics.rtcSignaling,
+            carrier: toAllowedLifecycleState(event.carrier, AL_CARRIERS),
+            outcome: toAllowedLifecycleState(event.outcome, AL_ADMISSION_OUTCOMES),
+            observation: 'owned-work-admission-not-dispatch',
+            dispatchLink: link
+        };
+    }
+    if (event.kind !== 'claim-settled' || !observations?.rtcAdmission) {
+        return null;
+    }
+    const startedAtMs = toFiniteNonnegativeObservation(event.startedAtMs);
+    const batchStartedAtMs = toFiniteNonnegativeObservation(event.batchStartedAtMs);
+    return {
+        workerId: toBoundedIdentity(event.workerId),
+        effectId: toBoundedIdentity(event.effectId),
+        msgId: toBoundedIdentity(event.msgId),
+        subjectMsgId: toBoundedIdentity(event.subjectMsgId),
+        typeId: null,
+        identifiedTypeId: observations.conflictingAdmission ? null : AppTopics.rtcSignaling,
+        payloadKind: 'dispatch-local',
+        lane: toAllowedLifecycleState(event.lane, AL_LANES),
+        outcome: toAllowedLifecycleState(event.outcome, AL_CLAIM_OUTCOMES),
+        attempts: toFiniteNonnegativeObservation(event.attempts),
+        queueWaitMs: toFiniteNonnegativeObservation(event.queueWaitMs),
+        durationMs: toFiniteNonnegativeObservation(event.durationMs),
+        dueAtMs: toFiniteNonnegativeObservation(event.dueAtMs),
+        batchStartedAtMs,
+        startedAtMs,
+        intraBatchWaitMs: startedAtMs !== null && batchStartedAtMs !== null && startedAtMs >= batchStartedAtMs
+            ? startedAtMs - batchStartedAtMs
+            : null,
+        observation: 'awaited-owned-dispatch-return-not-native-application',
+        admissionLink: link
+    };
+}
+
+function toLiveRtcInboundIdentityKey(event: LiveRtcJsonRecord, agentId: string): string | null {
+    const msgId = toBoundedIdentity(event.msgId);
+    const workerId = toBoundedIdentity(event.workerId);
+    if (!msgId || !workerId) {
+        return null;
+    }
+    if (event.kind === 'admission-outcome') {
+        return JSON.stringify([agentId, workerId, msgId]);
+    }
+    if (
+        event.kind !== 'claim-settled' || event.payloadKind !== 'dispatch-local' || event.typeId !== null ||
+        toBoundedIdentity(event.subjectMsgId) !== msgId
+    ) {
+        return null;
+    }
+    if (event.lane === 'durable') {
+        return JSON.stringify([agentId, workerId, msgId]);
+    }
+    if (event.lane === 'volatile' && workerId.endsWith('/volatile') && workerId.length > '/volatile'.length) {
+        return JSON.stringify([agentId, workerId.slice(0, -'/volatile'.length), msgId]);
+    }
+    return null;
+}
+
+function computeLiveRtcSignalingIdentities(
+    input: LiveRtcLifecycleHistoryInput
+): Map<string, LiveRtcSignalingIdentityObservations> {
+    const identities = new Map<string, LiveRtcSignalingIdentityObservations>();
+    for (const { line, streamRow } of toLiveRtcRecorderLines(input)) {
+        if (Buffer.byteLength(line) > LIVE_RTC_LIFECYCLE_LIMITS.rowBytes) {
+            continue;
+        }
+        const row = toLiveRtcRecorderRow(line);
+        const scoped = row ? toLiveRtcScopedRecorderEvent(row, input, streamRow) : null;
+        if (scoped?.topic === RTC_AL_INBOUND_TOPIC) {
+            const key = toLiveRtcInboundIdentityKey(scoped.event, scoped.agentId);
+            if (key !== null) {
+                identities.set(key, computeLiveRtcSignalingIdentityObservations(identities.get(key), scoped.event));
+            }
+        }
+    }
+    return identities;
+}
+
+function computeLiveRtcSignalingIdentityObservations(
+    previous: LiveRtcSignalingIdentityObservations | undefined,
+    event: LiveRtcJsonRecord
+): LiveRtcSignalingIdentityObservations {
+    return {
+        rtcAdmission: previous?.rtcAdmission === true ||
+            (event.kind === 'admission-outcome' && event.typeId === AppTopics.rtcSignaling),
+        conflictingAdmission: previous?.conflictingAdmission === true ||
+            (event.kind === 'admission-outcome' && event.typeId !== AppTopics.rtcSignaling),
+        dispatch: previous?.dispatch === true || event.kind === 'claim-settled'
+    };
+}
+
+function resolveLiveRtcSignalingLink(
+    observations: LiveRtcSignalingIdentityObservations | undefined
+): LiveRtcSignalingLink {
+    if (!observations?.rtcAdmission || !observations.dispatch) {
+        return 'unknown';
+    }
+    return observations.conflictingAdmission ? 'ambiguous' : 'matched';
+}
+
+function computeRetainedLiveRtcSignalingLinks(
+    scanned: LiveRtcLifecycleScan,
+    sourceIdentities: ReadonlyMap<string, LiveRtcSignalingIdentityObservations>
+): LiveRtcLifecycleScan {
+    const scan = { ...scanned, events: [...scanned.events] };
+    let droppedRows: number;
+    do {
+        droppedRows = scan.outputDroppedRows;
+        const retainedIdentities = new Map<string, LiveRtcSignalingIdentityObservations>();
+        for (const event of scan.events) {
+            if (
+                typeof event.agentId === 'string' &&
+                (event.kind === 'admission-outcome' || event.kind === 'claim-settled')
+            ) {
+                const key = toLiveRtcInboundIdentityKey(event, event.agentId);
+                if (key !== null) {
+                    retainedIdentities.set(
+                        key,
+                        computeLiveRtcSignalingIdentityObservations(retainedIdentities.get(key), event)
+                    );
+                }
+            }
+        }
+        scan.events.forEach((event, index) => {
+            const field = event.kind === 'admission-outcome'
+                ? 'dispatchLink'
+                : event.kind === 'claim-settled'
+                ? 'admissionLink'
+                : null;
+            if (field && typeof event.agentId === 'string') {
+                const key = toLiveRtcInboundIdentityKey(event, event.agentId);
+                const sourceObserved = resolveLiveRtcSignalingLink(
+                    key === null ? undefined : sourceIdentities.get(key)
+                );
+                const retained = resolveLiveRtcSignalingLink(key === null ? undefined : retainedIdentities.get(key));
+                scan.events[index] = {
+                    ...event,
+                    [field]: {
+                        sourceObserved,
+                        retained: retained === 'matched' && sourceObserved === 'ambiguous' ? 'ambiguous' : retained
+                    }
+                };
+            }
+        });
+        scan.outputBytes = scan.events.reduce((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)), 0);
+        const retention = computeLiveRtcEventRetention(scan.events, scan.outputBytes);
+        scan.events.splice(0, retention.droppedRows);
+        scan.outputDroppedRows += retention.droppedRows;
+        scan.outputBytes = retention.outputBytes;
+    }
+    while (scan.outputDroppedRows !== droppedRows);
+    return scan;
 }
 
 function toFiniteNonnegativeObservation(value: RtcBaselineJson | undefined): number | null {
