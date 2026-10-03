@@ -2,7 +2,8 @@ import {
     expect,
     it,
     onTestFinished,
-    vi
+    vi,
+    type Mock
 } from 'vitest';
 
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
@@ -36,6 +37,7 @@ interface DispatchFixtureInput {
 
 interface DispatchFixture {
     readonly delivery: ALInboundAdmittedDelivery;
+    readonly canDispatchMessage: Mock<() => boolean>;
     readonly resources: ALInboundMessageRuntime.Resources;
     readonly calls: readonly string[];
     readonly events: readonly ALInboundRuntimeDiagnosticsEvent[];
@@ -49,6 +51,7 @@ interface ObservedDispatch {
 function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
     const events: ALInboundRuntimeDiagnosticsEvent[] = [];
     const calls: string[] = [];
+    const canDispatchMessage = vi.fn(() => input.canDispatch);
     const resources = createDefaultALInboundRuntimeResources({
         selfPeerId: 'receiver',
         nowMs: () => 100,
@@ -60,7 +63,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
         lane: 'durable',
         effectWorkerId: 'worker',
         planIncomingMessage: (msg) => planALMessageHandling(msg, { selfPeerId: 'receiver', nowMs: 100 }),
-        canDispatchMessage: () => input.canDispatch,
+        canDispatchMessage,
         dispatchInboxEntry: async () => {
             calls.push('port');
             if (input.returned instanceof Error) {
@@ -76,7 +79,7 @@ function createDispatchFixture(input: DispatchFixtureInput): DispatchFixture {
         }
     });
     onTestFinished(() => delivery.dispose());
-    return { delivery, resources, calls, events };
+    return { delivery, resources, calls, events, canDispatchMessage };
 }
 
 function createObservedDispatch(planChange: (plan: ALMessageHandlingPlan) => ALMessageHandlingPlan, ordered = false): ObservedDispatch {
@@ -202,4 +205,18 @@ it('keeps the actual durable and volatile worker identities separate across conc
         expect.objectContaining({ msgId: 'durable', lane: 'durable', workerId: 'worker', carrier: 'ws', attempts: 1, disposition: 'port-returned' }),
         expect.objectContaining({ msgId: 'volatile', lane: 'volatile', workerId: 'worker/volatile', carrier: 'ws', attempts: 1, disposition: 'port-returned' })
     ]));
+});
+
+it.each([false, true])('preserves readiness callback disposal when the callback returns %s', async (ready) => {
+    const fixture = createDispatchFixture({ returned: 'completed', canDispatch: true, sinkThrows: false });
+    fixture.canDispatchMessage.mockImplementation(() => {
+        fixture.delivery.dispose();
+        return ready;
+    });
+    const { effect, observed } = createObservedDispatch((plan) => plan);
+
+    expect(await fixture.delivery.deliver(effect, observed)).toBe(ready ? 'completed' : 'retry');
+    expect(fixture.canDispatchMessage).toHaveBeenCalledTimes(1);
+    expect(fixture.calls).toEqual(ready ? ['port'] : []);
+    expect(fixture.events).toMatchObject([{ disposition: ready ? 'port-returned' : 'shutdown' }]);
 });

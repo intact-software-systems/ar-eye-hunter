@@ -1101,17 +1101,23 @@ Real agent partitions, frozen interval, later health, failure-only read and curr
 finalizer remain. No arbitrary error/reason, payload/route, SDP/ICE/address or secret
 escapes the allowlist; all producer, runtime and recorder clocks remain separate.
 
-- [x] Witness independent callback-count semantic producer RED and literal pure/
+- [x] Witness semantic producer RED with independent callback assertions and literal pure/
       capture HTTP RED; obtain minimum GREEN for disabled/dropped/ordered bypass,
       pre-port retry, exact return/retry/throw, wildcard/onAny-only selection and
-      privacy/identity/clock/retention distinctions.
+      privacy/identity/clock/retention distinctions. Three parameterized WS REDs
+      fail at the missing-event poll before their later callback-count assertions;
+      passing tests establish both the actual calls and the new observations.
 - [x] Run covering semantic and maintained type checks on the implementation;
       review every changed authored file and recursively affected support in full.
-- [ ] Resolve the changed-style gate's admitted-delivery cohesion warning
-      (cognitive load 63 versus base 49), then obtain fresh controller-owned
-      specification and quality review. No artificial owner split, affected legacy
-      exception, public migration or policy change is authorized. Local work
-      cannot self-certify independent review, required gate passage or live proof.
+- [x] Resolve the changed-style gate's admitted-delivery cohesion warning through
+      same-owner simplification (63 to 49, original base 49); required changed-style
+      now passes. Fix validation passes 554 tests / 29 files, maintained test types
+      (1,436 files, zero errors) and shared package types.
+- [ ] Obtain fresh controller-owned specification and quality review of the fix.
+      The original review was SPEC FAIL / QUALITY NEEDS FIXES for the style gate.
+      No artificial owner split, affected legacy exception, public migration or
+      policy change is authorized. Local work cannot self-certify independent
+      review or live proof.
 
 **Exit:** Independently reviewed diagnostic refinement with original expiry,
 shutdown, ordering, retry, readiness, error identity/precedence and cleanup
